@@ -1,0 +1,17 @@
+appId: com.flcopilot.mobile
+---
+- launchApp
+- assertVisible: "Votre rayon prend ses repères"
+- tapOn: "Ma semaine.*"
+- assertVisible: "Aucune opération disponible"
+- tapOn: "Analyses.*"
+- assertVisible: "Pas encore de données à analyser"
+- tapOn: "Casse.*"
+- assertVisible: "Aucun ticket enregistré"
+- tapOn: "Plus.*"
+- tapOn: "À propos de l’application"
+- assertVisible: "Fermer"
+- tapOn: "Fermer"
+- assertVisible: "Votre application"
+- tapOn: "Aujourd’hui.*"
+- assertVisible: "Votre rayon prend ses repères"

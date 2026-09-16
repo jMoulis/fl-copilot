@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Fruits & Légumes",
+    "slug": "fruits-vegetables-copilot",
+    "version": "0.1.0",
+    "scheme": "flcopilot",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.flcopilot.mobile",
+      "infoPlist": {
+        "CFBundleDevelopmentRegion": "fr",
+        "CFBundleLocalizations": ["fr"]
+      }
+    },
+    "android": {
+      "package": "com.flcopilot.mobile"
+    },
+    "plugins": ["expo-router", "expo-font", "expo-dev-client", "expo-system-ui"]
+  }
+}

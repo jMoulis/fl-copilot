@@ -15,7 +15,7 @@ const required = [
   "docs/specs/TECHNICAL_ARCHITECTURE_AND_IMPLEMENTATION_SPEC.md",
   "docs/specs/DATABASE_AND_API_CONTRACTS.md",
   "docs/specs/UX_FLOWS_AND_SCREEN_SPEC.md",
-  "docs/specs/IMPLEMENTATION_PLAN.md"
+  "docs/specs/IMPLEMENTATION_PLAN.md",
 ];
 
 const missing = required.filter((entry) => !fs.existsSync(path.resolve(entry)));
