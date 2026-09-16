@@ -10,3 +10,7 @@ coverage/
 .DS_Store
 .expo/
 *.log
+
+apps/mobile/ios/
+apps/mobile/android/
+.maestro/tests/

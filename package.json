@@ -4,9 +4,32 @@
   "private": true,
   "scripts": {
     "verify:structure": "node scripts/verify-structure.mjs",
-    "build": "pnpm -r --if-present build",
-    "lint": "pnpm -r --if-present lint",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "test": "pnpm -r --if-present test"
+    "dev:mobile": "pnpm --filter @fl-copilot/mobile start",
+    "dev:api": "pnpm --filter @fl-copilot/api dev",
+    "build": "turbo run build",
+    "lint": "eslint . --max-warnings 0",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "pnpm verify:structure && pnpm lint && pnpm typecheck && pnpm test",
+    "preview:web": "pnpm --filter @fl-copilot/mobile export:web && pnpm --filter @fl-copilot/mobile preview:web"
+  },
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22.13.0 <25"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^24.0.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.6.0",
+    "turbo": "^2.5.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^4.0.0"
   }
 }
