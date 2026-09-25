@@ -16,7 +16,9 @@
     "eas:config:staging": "pnpm dlx eas-cli@24.8.0 config --platform ios --profile staging --non-interactive",
     "eas:config:production": "pnpm dlx eas-cli@24.8.0 config --platform ios --profile production --non-interactive",
     "eas:build:development:android": "pnpm dlx eas-cli@24.8.0 build --profile development --platform android",
-    "eas:build:development:ios": "pnpm dlx eas-cli@24.8.0 build --profile development --platform ios"
+    "eas:build:development:ios": "pnpm dlx eas-cli@24.8.0 build --profile development --platform ios",
+    "eas:build:staging:android": "pnpm dlx eas-cli@24.8.0 build --profile staging --platform android",
+    "eas:build:staging:ios": "pnpm dlx eas-cli@24.8.0 build --profile staging --platform ios"
   },
   "dependencies": {
     "@expo/dom-webview": "~57.0.1",
