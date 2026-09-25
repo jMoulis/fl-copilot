@@ -7,6 +7,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import type { Db } from "mongodb";
+import { Resend } from "resend";
 import type {
   AuthChallengeRequest,
   AuthChallengeResponse,
@@ -27,10 +28,27 @@ export class AuthError extends Error {
 }
 
 export type AuthCodeSender = (input: {
+  challengeId: string;
   email: string;
   code: string;
   expiresAt: Date;
 }) => Promise<void>;
+
+type ResendAuthEmail = {
+  from: string;
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  tags: { name: string; value: string }[];
+};
+
+export interface ResendEmailClient {
+  send(
+    email: ResendAuthEmail,
+    options: { idempotencyKey: string },
+  ): Promise<{ error: unknown | null }>;
+}
 
 export interface AuthService {
   requestChallenge(input: AuthChallengeRequest): Promise<AuthChallengeResponse>;
@@ -141,7 +159,7 @@ export function createMongoAuthService(
         .collection<ChallengeDocument>("authChallenges")
         .insertOne(document);
       try {
-        await sender({ email: input.email, code, expiresAt });
+        await sender({ challengeId, email: input.email, code, expiresAt });
       } catch (error) {
         await db
           .collection<ChallengeDocument>("authChallenges")
@@ -230,29 +248,52 @@ export function createMongoAuthService(
   };
 }
 
-function createConfiguredCodeSender(config: ApiConfig): AuthCodeSender {
+export function createConfiguredCodeSender(
+  config: ApiConfig,
+  emailClient?: ResendEmailClient,
+): AuthCodeSender {
   if (config.AUTH_DEVELOPMENT_CODE && config.NODE_ENV !== "production") {
     return async () => undefined;
   }
-  return async ({ email, code, expiresAt }) => {
-    if (!config.AUTH_EMAIL_WEBHOOK_URL || !config.AUTH_EMAIL_WEBHOOK_TOKEN) {
+  if (!config.RESEND_API_KEY || !config.AUTH_EMAIL_FROM) {
+    return async () => {
       throw deliveryUnavailableError();
-    }
+    };
+  }
+
+  const client = emailClient ?? new Resend(config.RESEND_API_KEY).emails;
+
+  return async ({ challengeId, email, code, expiresAt }) => {
+    const expirationTime = new Intl.DateTimeFormat("fr-FR", {
+      timeZone: "Europe/Paris",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(expiresAt);
+
     try {
-      const response = await fetch(config.AUTH_EMAIL_WEBHOOK_URL, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${config.AUTH_EMAIL_WEBHOOK_TOKEN}`,
-          "content-type": "application/json",
+      const { error } = await client.send(
+        {
+          from: `F&L Copilot <${config.AUTH_EMAIL_FROM}>`,
+          to: email,
+          subject: "Votre code de connexion F&L Copilot",
+          text: [
+            `Votre code de connexion est : ${code}`,
+            `Ce code expire à ${expirationTime} (heure de Paris).`,
+            "Si vous n’avez pas demandé ce code, ignorez cet email.",
+          ].join("\n\n"),
+          html: [
+            '<div lang="fr" style="font-family:Arial,sans-serif;color:#17211a;line-height:1.5">',
+            "<h1>Votre code de connexion</h1>",
+            `<p style="font-size:32px;font-weight:700;letter-spacing:6px">${code}</p>`,
+            `<p>Ce code expire à ${expirationTime} (heure de Paris).</p>`,
+            "<p>Si vous n’avez pas demandé ce code, ignorez cet email.</p>",
+            "</div>",
+          ].join(""),
+          tags: [{ name: "category", value: "authentication" }],
         },
-        body: JSON.stringify({
-          email,
-          code,
-          expiresAt: expiresAt.toISOString(),
-        }),
-        signal: AbortSignal.timeout(5_000),
-      });
-      if (!response.ok) throw deliveryUnavailableError();
+        { idempotencyKey: `auth-challenge/${challengeId}` },
+      );
+      if (error) throw deliveryUnavailableError();
     } catch {
       throw deliveryUnavailableError();
     }
