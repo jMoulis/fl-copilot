@@ -9,7 +9,11 @@ import {
 import { buildApp } from "../src/app.js";
 import { parseEnvironment } from "../src/config.js";
 import type { DatabaseService, DatabaseStatus } from "../src/database/types.js";
-import type { AuthService } from "../src/auth/service.js";
+import {
+  createConfiguredCodeSender,
+  type AuthService,
+  type ResendEmailClient,
+} from "../src/auth/service.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
   return {
@@ -184,7 +188,7 @@ describe("environment validation", () => {
       }),
     ).toThrow("AUTH_TOKEN_SECRET");
   });
-  it("requires a secure email delivery adapter in production", () => {
+  it("requires Resend delivery settings in production", () => {
     expect(() =>
       parseEnvironment({
         NODE_ENV: "production",
@@ -192,7 +196,81 @@ describe("environment validation", () => {
         AUTH_TOKEN_SECRET: "t".repeat(32),
         AUTH_CODE_PEPPER: "p".repeat(32),
       }),
-    ).toThrow("AUTH_EMAIL_WEBHOOK_URL");
+    ).toThrow("RESEND_API_KEY");
+  });
+
+  it("accepts a complete production Resend configuration", () => {
+    expect(
+      parseEnvironment({
+        NODE_ENV: "production",
+        MONGODB_URI: "mongodb://localhost:27017",
+        AUTH_TOKEN_SECRET: "t".repeat(32),
+        AUTH_CODE_PEPPER: "p".repeat(32),
+        RESEND_API_KEY: "re_production_key",
+        AUTH_EMAIL_FROM: "connexion@auth.example.com",
+      }),
+    ).toMatchObject({
+      RESEND_API_KEY: "re_production_key",
+      AUTH_EMAIL_FROM: "connexion@auth.example.com",
+    });
+  });
+});
+
+describe("Resend authentication email delivery", () => {
+  const input = {
+    challengeId: "11111111-1111-4111-8111-111111111111",
+    email: "manager@example.test",
+    code: "123456",
+    expiresAt: new Date("2026-09-25T20:00:00.000Z"),
+  };
+  const config = parseEnvironment({
+    NODE_ENV: "test",
+    RESEND_API_KEY: "re_test_api_key",
+    AUTH_EMAIL_FROM: "connexion@auth.example.com",
+  });
+
+  it("sends a French code email once per challenge", async () => {
+    const deliveries: Array<{
+      email: Parameters<ResendEmailClient["send"]>[0];
+      options: Parameters<ResendEmailClient["send"]>[1];
+    }> = [];
+    const client: ResendEmailClient = {
+      send: async (email, options) => {
+        deliveries.push({ email, options });
+        return { error: null };
+      },
+    };
+
+    await createConfiguredCodeSender(config, client)(input);
+
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({
+      email: {
+        from: "F&L Copilot <connexion@auth.example.com>",
+        to: "manager@example.test",
+        subject: "Votre code de connexion F&L Copilot",
+        tags: [{ name: "category", value: "authentication" }],
+      },
+      options: {
+        idempotencyKey: "auth-challenge/11111111-1111-4111-8111-111111111111",
+      },
+    });
+    expect(deliveries[0]?.email.text).toContain("123456");
+    expect(deliveries[0]?.email.html).toContain("123456");
+  });
+
+  it("returns a retryable public error when Resend rejects delivery", async () => {
+    const client: ResendEmailClient = {
+      send: async () => ({ error: { message: "private provider detail" } }),
+    };
+
+    await expect(
+      createConfiguredCodeSender(config, client)(input),
+    ).rejects.toMatchObject({
+      statusCode: 503,
+      publicCode: "AUTH_DELIVERY_UNAVAILABLE",
+      retryable: true,
+    });
   });
 });
 

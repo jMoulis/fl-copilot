@@ -7,6 +7,14 @@ pnpm dev:api
 
 The example configuration binds to `127.0.0.1:3000`. Set `HOST=0.0.0.0` explicitly when a container or physical device needs access.
 
+Authentication emails are sent by the API through Resend. Production requires `RESEND_API_KEY` and `AUTH_EMAIL_FROM`; the sender address must belong to a domain verified in Resend. Keep the API key server-side and use a restricted sending-only key. Local development keeps `AUTH_DEVELOPMENT_CODE=123456`, which skips external email delivery.
+
+The native application never contacts Resend directly:
+
+```text
+mobile app → Fastify API → Resend → recipient mailbox
+```
+
 `GET /health` is intentionally public and reports API plus MongoDB readiness. A connected database returns HTTP 200; an unavailable database returns HTTP 503 and `status: "degraded"`. A later health request retries initialization, so the process can recover when MongoDB comes back. It does not assert authentication readiness. There are no business endpoints yet.
 
 `buildApp` does not open a socket; tests use Fastify injection. `server.ts` validates environment settings, listens and handles shutdown. Build with `pnpm --filter @fl-copilot/api build`; start the resulting bundle with `pnpm --filter @fl-copilot/api start`.

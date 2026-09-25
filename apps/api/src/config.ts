@@ -23,8 +23,8 @@ const environmentSchema = z.object({
     .string()
     .regex(/^\d{6}$/)
     .optional(),
-  AUTH_EMAIL_WEBHOOK_URL: z.string().url().optional(),
-  AUTH_EMAIL_WEBHOOK_TOKEN: z.string().min(16).optional(),
+  RESEND_API_KEY: z.string().trim().startsWith("re_").min(11).optional(),
+  AUTH_EMAIL_FROM: z.string().trim().email().optional(),
   AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce
     .number()
     .int()
@@ -73,13 +73,9 @@ export function parseEnvironment(
   }
   if (
     result.data.NODE_ENV === "production" &&
-    (!result.data.AUTH_EMAIL_WEBHOOK_URL ||
-      !result.data.AUTH_EMAIL_WEBHOOK_TOKEN ||
-      !result.data.AUTH_EMAIL_WEBHOOK_URL.startsWith("https://"))
+    (!result.data.RESEND_API_KEY || !result.data.AUTH_EMAIL_FROM)
   ) {
-    throw new Error(
-      "Invalid environment: AUTH_EMAIL_WEBHOOK_URL, AUTH_EMAIL_WEBHOOK_TOKEN",
-    );
+    throw new Error("Invalid environment: RESEND_API_KEY, AUTH_EMAIL_FROM");
   }
   if (
     result.data.NODE_ENV === "production" &&
