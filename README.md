@@ -93,7 +93,7 @@ pnpm dlx eas-cli@24.8.0 env:set --name EXPO_PUBLIC_API_URL --environment preview
 pnpm dlx eas-cli@24.8.0 env:set --name EXPO_PUBLIC_API_URL --environment production --visibility plaintext
 ```
 
-`EXPO_PUBLIC_` values are embedded in the client and must never contain secrets. A staging or production app refuses to start without an explicit HTTP(S) API URL. Start the iOS/Android development build with `pnpm eas:build:development`; the first iOS run requires interactive Apple credential setup.
+`EXPO_PUBLIC_` values are embedded in the client and must never contain secrets. A staging or production app refuses to start without an explicit HTTP(S) API URL. Start a development build explicitly with `pnpm eas:build:development:android` or `pnpm eas:build:development:ios`; the first iOS run requires interactive Apple credential setup.
 
 For native navigation acceptance, run the Maestro scenario against an installed, running development build with Metro available:
 
