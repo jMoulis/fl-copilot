@@ -11,7 +11,7 @@ M0-T01 had directories but no runnable typecheck/test/lint toolchain; that gap i
 ## Implemented
 
 - Root pnpm lockfile, Node version, Turborepo, strict package typechecks, ESLint, Prettier and GitHub Actions checks.
-- Expo SDK 55, React Native 0.83, Expo Router, NativeWind v4, form dependencies, scoped UI-only Zustand store and remote-coordination QueryClient.
+- Expo SDK 57, React Native 0.86, Expo Router, NativeWind v4, form dependencies, scoped UI-only Zustand store and remote-coordination QueryClient.
 - Five French tabs with honest empty states, plus a working About modal.
 - AppScreen, AppHeader, MetricCard, SectionCard, StatusBadge, PrimaryButton, SecondaryButton, InlineAlert, EmptyState, SyncState and BottomSheet.
 - Fastify app/server separation, Zod request/response validation, environment validation, public process liveness, generated correlation IDs, sanitized French errors and graceful shutdown.
@@ -70,4 +70,4 @@ References: [Expo SDK compatibility](https://docs.expo.dev/versions/latest/), [E
 2. Complete M0-T08 device-restart and production email-delivery acceptance, then M0-T09/T10 environments/EAS and observability.
 3. Close the M0 gate before the M1 synchronization proof. No business feature work bypasses M1.
 
-The repository changes are local; no commit, push, release or deployment was performed.
+The foundation and authentication changes were committed and merged into `master` through PRs #1 and #2; no release or deployment has been performed.
