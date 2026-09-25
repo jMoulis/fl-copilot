@@ -1,6 +1,6 @@
 # M0 foundation implementation and acceptance
 
-Date: 2026-09-16.
+Date: 2026-09-25.
 
 ## Scope and source specifications
 
@@ -31,7 +31,7 @@ The first remote infrastructure migration initializes the migration registry and
 | Check                                    | Result                                                                                                                             |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `pnpm install`                           | Passed; lockfile generated                                                                                                         |
-| `pnpm check`                             | Passed: structure, lint, strict TypeScript in all 9 workspace packages, 25 Vitest cases; 3 integration cases conditionally skipped |
+| `pnpm check`                             | Passed: structure, lint, strict TypeScript in all 9 workspace packages, 28 Vitest cases; 3 integration cases conditionally skipped |
 | `pnpm build`                             | Passed; production API bundle generated                                                                                            |
 | `pnpm format:check`                      | Passed                                                                                                                             |
 | MongoDB integration                      | Real isolated MongoDB 6 write/read passed; migration recorded once and reused                                                      |
@@ -47,6 +47,7 @@ The first remote infrastructure migration initializes the migration registry and
 | Stable device identity                   | Same UUID after terminate/relaunch; different secure-random UUID after clean simulator reinstall                                   |
 | iOS manual UI navigation                 | All five tabs opened with expected French content; About opened and closed; return to Plus verified                                |
 | Browser, 390 × 844                       | All five tabs and About open/close verified after correcting web focus behavior; no browser errors reported in final run           |
+| Physical iPhone authentication           | Resend sandbox code delivered and verified; session restored after terminate/relaunch; logout cleared access                       |
 | `git diff --check`                       | Passed                                                                                                                             |
 
 The API tests cover connected and degraded readiness, independent request IDs, 404 errors, valid/invalid Zod payloads, malformed JSON, oversized payloads, safe internal errors, response schema failures, environment validation and authentication routes. The conditional integration suite covers MongoDB migrations, one-time-code consumption, refresh-token rotation and reuse revocation. The local SQLite tests cover schema creation, restart persistence, atomic rollback without losing pending outbox work and stable/distinct device identity. Business authorization/store-isolation tests belong with future business endpoints; `/health` is intentionally public and store-independent.
@@ -67,7 +68,7 @@ References: [Expo SDK compatibility](https://docs.expo.dev/versions/latest/), [E
 ## Remaining gates and next work
 
 1. Complete Android runtime/navigation and native accessibility acceptance for M0-T02/M0-T03. The installed Android emulator image is x86_64; the verified APK is arm64-v8a.
-2. Complete M0-T08 device-restart and production email-delivery acceptance, then M0-T09/T10 environments/EAS and observability.
+2. Implement M0-T09 environments/EAS, including verified-domain production email delivery, then M0-T10 observability.
 3. Close the M0 gate before the M1 synchronization proof. No business feature work bypasses M1.
 
-The foundation and authentication changes were committed and merged into `master` through PRs #1 and #2; no release or deployment has been performed.
+The foundation and authentication changes were committed and merged into `master` through PRs #1 through #4. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery; no release or production deployment has been performed.
