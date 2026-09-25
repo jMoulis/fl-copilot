@@ -13,7 +13,12 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm verify:structure && pnpm lint && pnpm typecheck && pnpm test",
-    "preview:web": "pnpm --filter @fl-copilot/mobile export:web && pnpm --filter @fl-copilot/mobile preview:web"
+    "preview:web": "pnpm --filter @fl-copilot/mobile export:web && pnpm --filter @fl-copilot/mobile preview:web",
+    "eas:config:development": "pnpm --filter @fl-copilot/mobile eas:config:development",
+    "eas:config:staging": "pnpm --filter @fl-copilot/mobile eas:config:staging",
+    "eas:config:production": "pnpm --filter @fl-copilot/mobile eas:config:production",
+    "eas:build:development:android": "pnpm --filter @fl-copilot/mobile eas:build:development:android",
+    "eas:build:development:ios": "pnpm --filter @fl-copilot/mobile eas:build:development:ios"
   },
   "packageManager": "pnpm@9.15.9",
   "engines": {

@@ -11,7 +11,8 @@
       "bundleIdentifier": "com.flcopilot.mobile",
       "infoPlist": {
         "CFBundleDevelopmentRegion": "fr",
-        "CFBundleLocalizations": ["fr"]
+        "CFBundleLocalizations": ["fr"],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -34,6 +35,13 @@
           }
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0073c570-07c3-49f0-a7ad-8148ae536bbe"
+      }
+    },
+    "owner": "julesmoulis"
   }
 }

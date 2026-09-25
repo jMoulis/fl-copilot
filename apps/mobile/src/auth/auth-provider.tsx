@@ -11,6 +11,7 @@ import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { ApiClient, ApiClientError } from "@fl-copilot/api-client";
 import type { AuthSessionResponse } from "@fl-copilot/sync-contracts";
+import { getApiBaseUrl } from "@/config/environment";
 import { useDeviceIdentity } from "@/providers/database-provider";
 import {
   clearStoredSession,
@@ -38,21 +39,13 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-function defaultApiUrl() {
-  if (Platform.OS === "android") return "http://10.0.2.2:3000";
-  return "http://127.0.0.1:3000";
-}
-
 export function AuthProvider({ children }: PropsWithChildren) {
   const deviceId = useDeviceIdentity();
   const [status, setStatus] = useState<AuthContextValue["status"]>("loading");
   const [session, setSession] = useState<SessionView | null>(null);
   const [pendingChallenge, setPendingChallenge] =
     useState<PendingChallenge | null>(null);
-  const api = useMemo(
-    () => new ApiClient(process.env.EXPO_PUBLIC_API_URL ?? defaultApiUrl()),
-    [],
-  );
+  const api = useMemo(() => new ApiClient(getApiBaseUrl()), []);
 
   const applySession = useCallback(async (next: AuthSessionResponse) => {
     await saveStoredSession(next);
