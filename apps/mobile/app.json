@@ -17,6 +17,23 @@
     "android": {
       "package": "com.flcopilot.mobile"
     },
-    "plugins": ["expo-router", "expo-font", "expo-dev-client", "expo-system-ui"]
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-dev-client",
+      "expo-system-ui",
+      "expo-secure-store",
+      "expo-splash-screen",
+      "expo-sqlite",
+      "expo-status-bar",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "enableSceneSupport": true
+          }
+        }
+      ]
+    ]
   }
 }

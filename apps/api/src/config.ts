@@ -17,12 +17,40 @@ const environmentSchema = z.object({
     .regex(/^[A-Za-z0-9_-]+$/)
     .default("fl_copilot"),
   MONGODB_MAX_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(20),
+  AUTH_TOKEN_SECRET: z.string().min(32).optional(),
+  AUTH_CODE_PEPPER: z.string().min(32).optional(),
+  AUTH_DEVELOPMENT_CODE: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
+  AUTH_EMAIL_WEBHOOK_URL: z.string().url().optional(),
+  AUTH_EMAIL_WEBHOOK_TOKEN: z.string().min(16).optional(),
+  AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(60)
+    .max(3600)
+    .default(900),
+  AUTH_REFRESH_TOKEN_TTL_DAYS: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(365)
+    .default(30),
+  AUTH_CHALLENGE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(60)
+    .max(1800)
+    .default(600),
 });
 export type ApiConfig = Omit<
   z.infer<typeof environmentSchema>,
-  "MONGODB_URI"
+  "MONGODB_URI" | "AUTH_TOKEN_SECRET" | "AUTH_CODE_PEPPER"
 > & {
   MONGODB_URI: string;
+  AUTH_TOKEN_SECRET: string;
+  AUTH_CODE_PEPPER: string;
 };
 export function parseEnvironment(
   env: Record<string, string | undefined>,
@@ -37,10 +65,38 @@ export function parseEnvironment(
   if (result.data.NODE_ENV === "production" && !result.data.MONGODB_URI) {
     throw new Error("Invalid environment: MONGODB_URI");
   }
+  if (
+    result.data.NODE_ENV === "production" &&
+    (!result.data.AUTH_TOKEN_SECRET || !result.data.AUTH_CODE_PEPPER)
+  ) {
+    throw new Error("Invalid environment: AUTH_TOKEN_SECRET, AUTH_CODE_PEPPER");
+  }
+  if (
+    result.data.NODE_ENV === "production" &&
+    (!result.data.AUTH_EMAIL_WEBHOOK_URL ||
+      !result.data.AUTH_EMAIL_WEBHOOK_TOKEN ||
+      !result.data.AUTH_EMAIL_WEBHOOK_URL.startsWith("https://"))
+  ) {
+    throw new Error(
+      "Invalid environment: AUTH_EMAIL_WEBHOOK_URL, AUTH_EMAIL_WEBHOOK_TOKEN",
+    );
+  }
+  if (
+    result.data.NODE_ENV === "production" &&
+    result.data.AUTH_DEVELOPMENT_CODE
+  ) {
+    throw new Error("Invalid environment: AUTH_DEVELOPMENT_CODE");
+  }
   return {
     ...result.data,
     MONGODB_URI:
       result.data.MONGODB_URI ??
       "mongodb://127.0.0.1:27017/?directConnection=true",
+    AUTH_TOKEN_SECRET:
+      result.data.AUTH_TOKEN_SECRET ??
+      "local-access-token-secret-change-before-production",
+    AUTH_CODE_PEPPER:
+      result.data.AUTH_CODE_PEPPER ??
+      "local-auth-code-pepper-change-before-production",
   };
 }

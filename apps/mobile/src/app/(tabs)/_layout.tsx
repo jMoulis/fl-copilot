@@ -1,8 +1,12 @@
-import { Tabs } from "expo-router";
+import { Redirect, Tabs, type Href } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useWindowDimensions } from "react-native";
+import { useAuth } from "@/auth/auth-provider";
 export default function TabLayout() {
+  const { status } = useAuth();
   const { fontScale } = useWindowDimensions();
+  if (status === "loading") return null;
+  if (status !== "authenticated") return <Redirect href={"/login" as Href} />;
   return (
     <Tabs
       screenOptions={{

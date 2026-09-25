@@ -80,6 +80,10 @@ export function useLocalDatabase() {
   return database;
 }
 
+export function useDeviceIdentity() {
+  return useLocalDatabase().deviceId;
+}
+
 const styles = StyleSheet.create({
   centered: {
     alignItems: "center",

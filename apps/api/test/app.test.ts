@@ -2,11 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   apiErrorSchema,
+  authChallengeResponseSchema,
+  authSessionResponseSchema,
   healthResponseSchema,
 } from "@fl-copilot/sync-contracts";
 import { buildApp } from "../src/app.js";
 import { parseEnvironment } from "../src/config.js";
 import type { DatabaseService, DatabaseStatus } from "../src/database/types.js";
+import type { AuthService } from "../src/auth/service.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
   return {
@@ -20,6 +23,14 @@ function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
 function createApp(status: DatabaseStatus = "connected") {
   const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
     database: createDatabase(status),
+  });
+  apps.push(app);
+  return app;
+}
+function createAuthApp(auth: AuthService) {
+  const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
+    database: createDatabase(),
+    auth,
   });
   apps.push(app);
   return app;
@@ -164,5 +175,110 @@ describe("environment validation", () => {
     expect(() => parseEnvironment({ NODE_ENV: "production" })).toThrow(
       "Invalid environment: MONGODB_URI",
     );
+  });
+  it("requires authentication secrets in production", () => {
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: "production",
+        MONGODB_URI: "mongodb://localhost:27017",
+      }),
+    ).toThrow("AUTH_TOKEN_SECRET");
+  });
+  it("requires a secure email delivery adapter in production", () => {
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: "production",
+        MONGODB_URI: "mongodb://localhost:27017",
+        AUTH_TOKEN_SECRET: "t".repeat(32),
+        AUTH_CODE_PEPPER: "p".repeat(32),
+      }),
+    ).toThrow("AUTH_EMAIL_WEBHOOK_URL");
+  });
+});
+
+describe("authentication routes", () => {
+  const challengeId = "11111111-1111-4111-8111-111111111111";
+  const session = {
+    accessToken: "header.payload.signature",
+    accessTokenExpiresAt: "2026-09-16T20:00:00.000Z",
+    refreshToken: "r".repeat(43),
+    user: {
+      id: "22222222-2222-4222-8222-222222222222",
+      email: "manager@example.test",
+      displayName: "Manager",
+    },
+    stores: [],
+  };
+
+  function fakeAuth(): AuthService {
+    return {
+      requestChallenge: async () => ({
+        challengeId,
+        expiresAt: "2026-09-16T20:00:00.000Z",
+      }),
+      verifyChallenge: async () => session,
+      refreshSession: async () => session,
+      logout: async () => undefined,
+    };
+  }
+
+  it("validates and creates an email-code challenge", async () => {
+    const app = createAuthApp(fakeAuth());
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/challenges",
+      payload: { email: "invalid" },
+    });
+    expect(invalid.statusCode).toBe(400);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/challenges",
+      payload: {
+        email: "MANAGER@example.test",
+        deviceId: "33333333-3333-4333-8333-333333333333",
+        platform: "IOS",
+        appVersion: "0.1.0",
+      },
+    });
+    expect(response.statusCode).toBe(201);
+    expect(authChallengeResponseSchema.parse(response.json()).challengeId).toBe(
+      challengeId,
+    );
+  });
+
+  it("verifies codes, refreshes sessions and requires a bearer token to logout", async () => {
+    const app = createAuthApp(fakeAuth());
+    const verified = await app.inject({
+      method: "POST",
+      url: `/api/v1/auth/challenges/${challengeId}/verify`,
+      payload: { code: "123456" },
+    });
+    expect(verified.statusCode).toBe(200);
+    expect(authSessionResponseSchema.parse(verified.json()).user.email).toBe(
+      "manager@example.test",
+    );
+
+    const refreshed = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/refresh",
+      payload: {
+        deviceId: "33333333-3333-4333-8333-333333333333",
+        refreshToken: "r".repeat(43),
+      },
+    });
+    expect(refreshed.statusCode).toBe(200);
+
+    const unauthorized = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+    });
+    expect(unauthorized.statusCode).toBe(401);
+    const logout = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { authorization: "Bearer header.payload.signature" },
+    });
+    expect(logout.json()).toEqual({ revoked: true });
   });
 });

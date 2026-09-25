@@ -22,6 +22,34 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ name: 1 }, { unique: true });
     },
   },
+  {
+    version: 2,
+    name: "initialize-authentication-indexes",
+    async up(database) {
+      await Promise.all([
+        database
+          .collection("users")
+          .createIndex({ email: 1 }, { unique: true }),
+        database
+          .collection("authChallenges")
+          .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        database.collection("authChallenges").createIndex({
+          email: 1,
+          deviceId: 1,
+          createdAt: -1,
+        }),
+        database
+          .collection("deviceSessions")
+          .createIndex({ userId: 1, deviceId: 1 }, { unique: true }),
+        database
+          .collection("deviceSessions")
+          .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+        database
+          .collection("storeMemberships")
+          .createIndex({ userId: 1, storeId: 1 }, { unique: true }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(

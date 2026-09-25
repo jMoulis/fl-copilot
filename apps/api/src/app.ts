@@ -1,22 +1,44 @@
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
+import { z } from "zod";
 import {
   serializerCompiler,
   validatorCompiler,
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import {
+  authChallengeRequestSchema,
+  authChallengeResponseSchema,
+  authSessionResponseSchema,
+  authVerificationRequestSchema,
   healthResponseSchema,
+  logoutResponseSchema,
+  refreshSessionRequestSchema,
   type ApiErrorDto,
 } from "@fl-copilot/sync-contracts";
 import type { ApiConfig } from "./config.js";
+import {
+  AuthError,
+  createMongoAuthService,
+  type AuthCodeSender,
+  type AuthService,
+} from "./auth/service.js";
 import type { DatabaseService } from "./database/types.js";
 
 type AppDependencies = {
   database: DatabaseService;
+  auth?: AuthService;
+  sendAuthCode?: AuthCodeSender;
 };
 
 export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
+  const auth =
+    dependencies.auth ??
+    createMongoAuthService(
+      dependencies.database,
+      config,
+      dependencies.sendAuthCode,
+    );
   const app = Fastify({
     logger:
       config.NODE_ENV === "test"
@@ -54,6 +76,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     } satisfies ApiErrorDto),
   );
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof AuthError) {
+      return reply.code(error.statusCode).send({
+        code: error.publicCode,
+        messageFr: error.messageFr,
+        retryable: error.retryable,
+        requestId: request.id,
+      } satisfies ApiErrorDto);
+    }
     const candidate = error as { validation?: unknown; statusCode?: number };
     const status = candidate.validation
       ? 400
@@ -115,6 +145,52 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       return databaseStatus === "connected"
         ? reply.code(200).send(response)
         : reply.code(503).send(response);
+    },
+  );
+  app.post(
+    "/api/v1/auth/challenges",
+    {
+      schema: {
+        body: authChallengeRequestSchema,
+        response: { 201: authChallengeResponseSchema },
+      },
+    },
+    async (request, reply) =>
+      reply.code(201).send(await auth.requestChallenge(request.body)),
+  );
+  app.post(
+    "/api/v1/auth/challenges/:challengeId/verify",
+    {
+      schema: {
+        params: z.object({ challengeId: z.string().uuid() }),
+        body: authVerificationRequestSchema,
+        response: { 200: authSessionResponseSchema },
+      },
+    },
+    async (request) =>
+      auth.verifyChallenge(request.params.challengeId, request.body.code),
+  );
+  app.post(
+    "/api/v1/auth/refresh",
+    {
+      schema: {
+        body: refreshSessionRequestSchema,
+        response: { 200: authSessionResponseSchema },
+      },
+    },
+    async (request) =>
+      auth.refreshSession(request.body.deviceId, request.body.refreshToken),
+  );
+  app.post(
+    "/api/v1/auth/logout",
+    { schema: { response: { 200: logoutResponseSchema } } },
+    async (request) => {
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith("Bearer ")) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      await auth.logout(authorization.slice("Bearer ".length));
+      return { revoked: true as const };
     },
   );
   return app;

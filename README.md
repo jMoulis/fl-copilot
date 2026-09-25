@@ -4,7 +4,7 @@ Native French iOS/Android department copilot, built with React Native + Expo and
 
 ## Current increment
 
-M0 foundation: executable monorepo tooling, Expo navigation and design primitives, Fastify API, shared transport errors, pooled MongoDB infrastructure, versioned local SQLite storage with Drizzle schemas and stable secure-random device identity. Business screens currently show honest empty states. Authentication and synchronization remain subsequent tickets; this is not yet an operational MVP.
+M0 foundation: executable monorepo tooling, Expo navigation and design primitives, Fastify API, shared transport errors, pooled MongoDB infrastructure, versioned local SQLite storage with Drizzle schemas, stable secure-random device identity and the email-code authentication foundation. Authentication still needs device restart and production delivery acceptance; synchronization remains a subsequent ticket. This is not yet an operational MVP.
 
 Read `AGENTS.md` and the canonical specifications in `docs/specs/` before implementing a ticket. See `docs/progress/M0_FOUNDATION.md` for acceptance evidence and remaining gates.
 
@@ -12,10 +12,10 @@ Read `AGENTS.md` and the canonical specifications in `docs/specs/` before implem
 
 - Node 24 (`nvm use`; exact version in `.nvmrc`)
 - pnpm 9.15.9
-- iOS: Xcode 26.2+ and CocoaPods 1.16.2+
+- iOS: Xcode 27 and CocoaPods 1.17+
 - Android: Java 17+, Android SDK 36 and an emulator/device
 
-Expo SDK 55 is pinned to match the available Xcode 26.3 toolchain. Native dependencies follow Expo's compatibility matrix. NativeWind uses stable v4 and Tailwind v3. A move to a newer SDK must revalidate both native platforms.
+Expo SDK 57 is pinned with its official iOS scene support enabled for Xcode 27. Native dependencies follow Expo's compatibility matrix. NativeWind uses stable v4 and Tailwind v3.
 
 ## Install and verify
 
