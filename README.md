@@ -4,7 +4,7 @@ Native French iOS/Android department copilot, built with React Native + Expo and
 
 ## Current increment
 
-M0 foundation: executable monorepo tooling, Expo navigation and design primitives, Fastify API, shared transport errors, pooled MongoDB infrastructure, versioned local SQLite storage with Drizzle schemas, stable secure-random device identity and the email-code authentication foundation. Authentication still needs device restart and production delivery acceptance; synchronization remains a subsequent ticket. This is not yet an operational MVP.
+M0 foundation: executable monorepo tooling, Expo navigation and design primitives, Fastify API, shared transport errors, pooled MongoDB infrastructure, versioned local SQLite storage with Drizzle schemas, stable secure-random device identity and the email-code authentication foundation. Authentication has passed physical-iPhone login, restart persistence and logout acceptance. Verified-domain production delivery belongs to the environment/deployment increment; synchronization remains a subsequent ticket. This is not yet an operational MVP.
 
 Read `AGENTS.md` and the canonical specifications in `docs/specs/` before implementing a ticket. See `docs/progress/M0_FOUNDATION.md` for acceptance evidence and remaining gates.
 

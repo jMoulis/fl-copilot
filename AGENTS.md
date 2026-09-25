@@ -521,7 +521,7 @@ Do not use superseded technical documents from outside this repository.
 The active increment is:
 
 ```text
-M0-T01 through M0-T07 — Tooling, native shell, design primitives, API, MongoDB, local SQLite and stable device identity
+M0-T01 through M0-T08 — Tooling, native shell, design primitives, API, MongoDB, local SQLite, stable device identity and authentication
 ```
 
 Read `docs/progress/M0_FOUNDATION.md` for actual acceptance evidence and remaining gates. Do not treat implemented code or bundle export as proof that native-device acceptance has passed. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`; no business milestone may bypass M1.
