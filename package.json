@@ -18,7 +18,9 @@
     "eas:config:staging": "pnpm --filter @fl-copilot/mobile eas:config:staging",
     "eas:config:production": "pnpm --filter @fl-copilot/mobile eas:config:production",
     "eas:build:development:android": "pnpm --filter @fl-copilot/mobile eas:build:development:android",
-    "eas:build:development:ios": "pnpm --filter @fl-copilot/mobile eas:build:development:ios"
+    "eas:build:development:ios": "pnpm --filter @fl-copilot/mobile eas:build:development:ios",
+    "eas:build:staging:android": "pnpm --filter @fl-copilot/mobile eas:build:staging:android",
+    "eas:build:staging:ios": "pnpm --filter @fl-copilot/mobile eas:build:staging:ios"
   },
   "packageManager": "pnpm@9.15.9",
   "engines": {

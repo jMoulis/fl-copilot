@@ -50,6 +50,8 @@ The first remote infrastructure migration initializes the migration registry and
 | Physical iPhone authentication           | Resend sandbox code delivered and verified; session restored after terminate/relaunch; logout cleared access                       |
 | EAS environment configuration            | Project linked; development, staging and production profiles resolve with EAS CLI 24.8.0 under Node 24 ARM64                       |
 | EAS development build                    | Android internal-distribution APK completed successfully; EAS build `1eeebfe9-d57d-4db2-9a33-5d32baa00e9a`                         |
+| EAS iOS development build                | Correct `com.flcopilot.mobile` Dev Client IPA completed with iPhone Air provisioning; build `c529c83e-972c-493e-a685-9e4742a93d78` |
+| EAS iOS staging acceptance               | Ad Hoc IPA with embedded JavaScript launched without Metro on iPhone Air; build `2464328f-b916-49a2-9411-3c3815368dfc`             |
 | `git diff --check`                       | Passed                                                                                                                             |
 
 The API tests cover connected and degraded readiness, independent request IDs, 404 errors, valid/invalid Zod payloads, malformed JSON, oversized payloads, safe internal errors, response schema failures, environment validation and authentication routes. The conditional integration suite covers MongoDB migrations, one-time-code consumption, refresh-token rotation and reuse revocation. The local SQLite tests cover schema creation, restart persistence, atomic rollback without losing pending outbox work and stable/distinct device identity. Business authorization/store-isolation tests belong with future business endpoints; `/health` is intentionally public and store-independent.
@@ -71,7 +73,7 @@ References: [Expo SDK compatibility](https://docs.expo.dev/versions/latest/), [E
 ## Remaining gates and next work
 
 1. Complete Android runtime/navigation and native accessibility acceptance for M0-T02/M0-T03. The installed Android emulator image is x86_64; the verified APK is arm64-v8a.
-2. Set preview and production API URLs when those remote environments exist. The profiles already isolate their values. iOS EAS signing and Resend domain verification are intentionally deferred until production preparation.
+2. Replace the preview LAN API URL with a hosted staging endpoint and set the production API URL when those remote environments exist. The profiles already isolate their values. Resend domain verification remains deferred until production preparation.
 3. Implement M0-T10 observability, then close the M0 gate before the M1 synchronization proof. No business feature work bypasses M1.
 
 The foundation and authentication changes were committed and merged into `master` through PRs #1 through #4. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery; no release or production deployment has been performed.
