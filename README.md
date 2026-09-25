@@ -75,6 +75,26 @@ pnpm dev:mobile
 
 The five native tabs are Aujourd’hui, Ma semaine, Analyses, Casse and Plus. The Plus tab opens an accessible About sheet. No API connection is required to open this foundation shell.
 
+## EAS environments
+
+The mobile project is linked to EAS and defines `development`, `staging` and `production` build profiles in `apps/mobile/eas.json`. Run `nvm use` first so every command uses the ARM64 Node version pinned by the repository, then validate a profile from the repository root:
+
+```sh
+pnpm eas:config:development
+pnpm eas:config:staging
+pnpm eas:config:production
+```
+
+Development reads `apps/mobile/.env.local` and keeps platform-specific localhost fallbacks. Staging uses the EAS `preview` environment and production uses the EAS `production` environment. Configure their public API endpoints outside Git when those APIs are deployed:
+
+```sh
+cd apps/mobile
+pnpm dlx eas-cli@24.8.0 env:set --name EXPO_PUBLIC_API_URL --environment preview --visibility plaintext
+pnpm dlx eas-cli@24.8.0 env:set --name EXPO_PUBLIC_API_URL --environment production --visibility plaintext
+```
+
+`EXPO_PUBLIC_` values are embedded in the client and must never contain secrets. A staging or production app refuses to start without an explicit HTTP(S) API URL. Start the iOS/Android development build with `pnpm eas:build:development`; the first iOS run requires interactive Apple credential setup.
+
 For native navigation acceptance, run the Maestro scenario against an installed, running development build with Metro available:
 
 ```sh

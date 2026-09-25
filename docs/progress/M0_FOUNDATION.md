@@ -48,6 +48,7 @@ The first remote infrastructure migration initializes the migration registry and
 | iOS manual UI navigation                 | All five tabs opened with expected French content; About opened and closed; return to Plus verified                                |
 | Browser, 390 × 844                       | All five tabs and About open/close verified after correcting web focus behavior; no browser errors reported in final run           |
 | Physical iPhone authentication           | Resend sandbox code delivered and verified; session restored after terminate/relaunch; logout cleared access                       |
+| EAS environment configuration            | Project linked; development, staging and production profiles resolve with EAS CLI 24.8.0 under Node 24 ARM64                       |
 | `git diff --check`                       | Passed                                                                                                                             |
 
 The API tests cover connected and degraded readiness, independent request IDs, 404 errors, valid/invalid Zod payloads, malformed JSON, oversized payloads, safe internal errors, response schema failures, environment validation and authentication routes. The conditional integration suite covers MongoDB migrations, one-time-code consumption, refresh-token rotation and reuse revocation. The local SQLite tests cover schema creation, restart persistence, atomic rollback without losing pending outbox work and stable/distinct device identity. Business authorization/store-isolation tests belong with future business endpoints; `/health` is intentionally public and store-independent.
@@ -62,13 +63,14 @@ The Maestro scenario is committed but has not been executed: Maestro is not inst
 - Expo prebuild and `pod install` complete without custom patches. Native iOS and Android debug builds pass.
 - The optional experimental typed-route setup stalled Metro locally. It is disabled in the app configuration; TypeScript strict checking remains enabled.
 - The native validation server used port 8088 with TypeScript auto-setup skipped; the compiled web preview uses port 8087.
+- The project-local commands use EAS CLI 24.8.0 through `pnpm dlx` after `nvm use`; this avoids the obsolete Intel CLI installed under `/usr/local`.
 
 References: [Expo SDK compatibility](https://docs.expo.dev/versions/latest/), [Expo monorepos](https://docs.expo.dev/guides/monorepos/), [NativeWind v4 setup](https://www.nativewind.dev/docs/getting-started/installation), [Fastify server configuration](https://fastify.dev/docs/latest/Reference/Server/).
 
 ## Remaining gates and next work
 
 1. Complete Android runtime/navigation and native accessibility acceptance for M0-T02/M0-T03. The installed Android emulator image is x86_64; the verified APK is arm64-v8a.
-2. Implement M0-T09 environments/EAS, including verified-domain production email delivery, then M0-T10 observability.
-3. Close the M0 gate before the M1 synchronization proof. No business feature work bypasses M1.
+2. Complete the first EAS iOS development build after interactive Apple credential renewal. Set distinct preview and production API URLs when those remote environments exist. Resend domain verification is intentionally deferred until production preparation.
+3. Implement M0-T10 observability, then close the M0 gate before the M1 synchronization proof. No business feature work bypasses M1.
 
 The foundation and authentication changes were committed and merged into `master` through PRs #1 through #4. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery; no release or production deployment has been performed.
