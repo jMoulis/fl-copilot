@@ -8,5 +8,9 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fl-copilot/sync-contracts": "workspace:*",
+    "zod": "^4.1.0"
   }
 }

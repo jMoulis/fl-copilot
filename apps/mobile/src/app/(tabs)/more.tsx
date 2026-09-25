@@ -7,9 +7,11 @@ import {
   BottomSheet,
 } from "@/components/ui";
 import { useUiStore } from "@/store/ui";
+import { useAuth } from "@/auth/auth-provider";
 export default function MoreScreen() {
   const visible = useUiStore((state) => state.aboutVisible);
   const setVisible = useUiStore((state) => state.setAboutVisible);
+  const { session, logout } = useAuth();
   return (
     <AppScreen>
       <AppHeader title="Plus" subtitle="Votre espace Fruits & Légumes." />
@@ -21,6 +23,17 @@ export default function MoreScreen() {
         <SecondaryButton
           label="À propos de l’application"
           onPress={() => setVisible(true)}
+        />
+      </SectionCard>
+      <SectionCard title="Votre session">
+        <Text className="text-base leading-6 text-muted">
+          {session?.user.email ?? "Session locale"}
+        </Text>
+        <SecondaryButton
+          label="Se déconnecter"
+          onPress={() => {
+            void logout();
+          }}
         />
       </SectionCard>
       <BottomSheet
