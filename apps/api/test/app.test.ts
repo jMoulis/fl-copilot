@@ -5,6 +5,7 @@ import {
   authChallengeResponseSchema,
   authSessionResponseSchema,
   healthResponseSchema,
+  syncPushResponseSchema,
 } from "@fl-copilot/sync-contracts";
 import { buildApp } from "../src/app.js";
 import { parseEnvironment } from "../src/config.js";
@@ -14,6 +15,7 @@ import {
   type AuthService,
   type ResendEmailClient,
 } from "../src/auth/service.js";
+import type { SyncPushService } from "../src/sync/push-service.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
   return {
@@ -34,10 +36,11 @@ function createApp(
   apps.push(app);
   return app;
 }
-function createAuthApp(auth: AuthService) {
+function createAuthApp(auth: AuthService, syncPush?: SyncPushService) {
   const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
     database: createDatabase(),
     auth,
+    syncPush,
   });
   apps.push(app);
   return app;
@@ -330,6 +333,13 @@ describe("authentication routes", () => {
       }),
       verifyChallenge: async () => session,
       refreshSession: async () => session,
+      authorizeStore: async (_accessToken, storeId, deviceId) => ({
+        userId: session.user.id,
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        deviceId,
+        storeId,
+        role: "MANAGER",
+      }),
       logout: async () => undefined,
     };
   }
@@ -392,5 +402,151 @@ describe("authentication routes", () => {
       headers: { authorization: "Bearer header.payload.signature" },
     });
     expect(logout.json()).toEqual({ revoked: true });
+  });
+});
+
+describe("synchronization push route", () => {
+  const deviceId = "33333333-3333-4333-8333-333333333333";
+  const storeId = "44444444-4444-4444-8444-444444444444";
+  const commandId = "55555555-5555-4555-8555-555555555555";
+  const entityId = "66666666-6666-4666-8666-666666666666";
+  const request = {
+    syncProtocolVersion: 1 as const,
+    appVersion: "0.1.0",
+    deviceId,
+    storeId,
+    commands: [
+      {
+        commandId,
+        localSequence: 1,
+        type: "SYNC_TEST_ENTITY_UPSERT",
+        entityType: "sync_test_entity",
+        entityId,
+        expectedRemoteVersion: null,
+        createdAt: "2026-09-26T08:00:00.000Z",
+        payload: {
+          id: entityId,
+          storeId,
+          label: "Tomates",
+          remoteVersion: 0,
+          createdAt: "2026-09-26T08:00:00.000Z",
+          updatedAt: "2026-09-26T08:00:00.000Z",
+        },
+      },
+    ],
+  };
+
+  function fakeAuth(onAuthorize?: () => void): AuthService {
+    return {
+      requestChallenge: async () => {
+        throw new Error("not used");
+      },
+      verifyChallenge: async () => {
+        throw new Error("not used");
+      },
+      refreshSession: async () => {
+        throw new Error("not used");
+      },
+      authorizeStore: async (
+        _accessToken,
+        authorizedStoreId,
+        authorizedDeviceId,
+      ) => {
+        onAuthorize?.();
+        return {
+          userId: "77777777-7777-4777-8777-777777777777",
+          sessionId: "88888888-8888-4888-8888-888888888888",
+          deviceId: authorizedDeviceId,
+          storeId: authorizedStoreId,
+          role: "MANAGER",
+        };
+      },
+      logout: async () => undefined,
+    };
+  }
+
+  it("authorizes the store and returns the shared push response", async () => {
+    let authorized = false;
+    const syncPush: SyncPushService = {
+      push: async (input) => ({
+        results: input.commands.map((command) => ({
+          commandId: command.commandId,
+          status: "APPLIED" as const,
+          entityType: command.entityType,
+          entityId: command.entityId,
+          remoteVersion: 1,
+        })),
+        serverTime: "2026-09-26T08:01:00.000Z",
+      }),
+    };
+    const app = createAuthApp(
+      fakeAuth(() => {
+        authorized = true;
+      }),
+      syncPush,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/sync/push",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+        "x-sync-protocol-version": "1",
+      },
+      payload: request,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(authorized).toBe(true);
+    expect(
+      syncPushResponseSchema.parse(response.json()).results[0],
+    ).toMatchObject({
+      commandId,
+      status: "APPLIED",
+      remoteVersion: 1,
+    });
+  });
+
+  it("requires authentication and matching store and protocol headers", async () => {
+    const app = createAuthApp(fakeAuth(), {
+      push: async () => {
+        throw new Error("push must not run");
+      },
+    });
+    const missingAuth = await app.inject({
+      method: "POST",
+      url: "/api/v1/sync/push",
+      headers: {
+        "x-store-id": storeId,
+        "x-sync-protocol-version": "1",
+      },
+      payload: request,
+    });
+    expect(missingAuth.statusCode).toBe(401);
+
+    const wrongStore = await app.inject({
+      method: "POST",
+      url: "/api/v1/sync/push",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": "99999999-9999-4999-8999-999999999999",
+        "x-sync-protocol-version": "1",
+      },
+      payload: request,
+    });
+    expect(wrongStore.statusCode).toBe(403);
+
+    const wrongProtocol = await app.inject({
+      method: "POST",
+      url: "/api/v1/sync/push",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+        "x-sync-protocol-version": "2",
+      },
+      payload: request,
+    });
+    expect(wrongProtocol.statusCode).toBe(400);
   });
 });
