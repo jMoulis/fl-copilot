@@ -1,4 +1,10 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 export const appMetadata = sqliteTable("app_metadata", {
   key: text("key").primaryKey(),
@@ -16,26 +22,29 @@ export const syncInboxState = sqliteTable("sync_inbox_state", {
 export const syncOutbox = sqliteTable(
   "sync_outbox",
   {
-    id: text("id").primaryKey(),
+    commandId: text("command_id").primaryKey(),
     storeId: text("store_id").notNull(),
     deviceId: text("device_id").notNull(),
+    localSequence: integer("local_sequence").notNull(),
+    commandType: text("command_type").notNull(),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
-    operation: text("operation").notNull(),
+    expectedRemoteVersion: integer("expected_remote_version"),
     payloadJson: text("payload_json").notNull(),
-    baseVersion: integer("base_version"),
-    localSequence: integer("local_sequence").notNull(),
+    createdAt: text("created_at").notNull(),
     status: text("status").notNull(),
     attemptCount: integer("attempt_count").notNull().default(0),
-    nextAttemptAt: text("next_attempt_at"),
-    lastError: text("last_error"),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
+    lastAttemptAt: text("last_attempt_at"),
+    lastErrorCode: text("last_error_code"),
   },
   (table) => [
     index("idx_outbox_pending").on(
       table.storeId,
       table.status,
+      table.localSequence,
+    ),
+    uniqueIndex("idx_outbox_device_sequence").on(
+      table.deviceId,
       table.localSequence,
     ),
   ],
