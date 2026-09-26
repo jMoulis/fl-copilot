@@ -73,6 +73,7 @@ export interface AuthorizedStoreContext {
   sessionId: string;
   deviceId: string;
   storeId: string;
+  storeName: string;
   role: string;
 }
 
@@ -282,6 +283,7 @@ export function createMongoAuthService(
         sessionId: claims.sessionId,
         deviceId: claims.deviceId,
         storeId,
+        storeName: membership.storeName,
         role: membership.role,
       };
     },

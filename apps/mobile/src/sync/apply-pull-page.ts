@@ -1,18 +1,9 @@
-import { z } from "zod";
 import {
   SYNC_PROTOCOL_VERSION,
   type SyncPullResponse,
 } from "@fl-copilot/sync-contracts";
 import type { AtomicMutationDatabase } from "./atomic-local-mutation";
-
-const syncTestEntitySchema = z.object({
-  id: z.string().uuid(),
-  storeId: z.string().uuid(),
-  label: z.string().trim().min(1),
-  remoteVersion: z.number().int().positive(),
-  createdAt: z.string().datetime({ offset: true }),
-  updatedAt: z.string().datetime({ offset: true }),
-});
+import { synchronizedTestEntitySchema } from "./sync-test-entity-schema";
 
 export async function applyPullPage(
   database: AtomicMutationDatabase,
@@ -39,7 +30,7 @@ export async function applyPullPage(
         continue;
       }
 
-      const entity = syncTestEntitySchema.parse(change.entity);
+      const entity = synchronizedTestEntitySchema.parse(change.entity);
       if (
         entity.id !== change.entityId ||
         entity.storeId !== storeId ||

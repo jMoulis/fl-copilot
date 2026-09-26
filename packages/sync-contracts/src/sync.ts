@@ -4,6 +4,8 @@ import { apiErrorSchema } from "./api-error";
 export const SYNC_PROTOCOL_VERSION = 1;
 export const MAX_SYNC_PUSH_COMMANDS = 100;
 export const MAX_SYNC_PULL_CHANGES = 500;
+export const DEFAULT_BOOTSTRAP_RAW_OBSERVATION_DAYS = 90;
+export const MAX_BOOTSTRAP_RAW_OBSERVATION_DAYS = 365;
 
 const idSchema = z.string().uuid();
 const nonEmptyStringSchema = z.string().trim().min(1);
@@ -90,7 +92,18 @@ export const syncPullResponseSchema = z.object({
 });
 export type SyncPullResponse = z.infer<typeof syncPullResponseSchema>;
 
+export const bootstrapQuerySchema = z.object({
+  rawObservationDays: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_BOOTSTRAP_RAW_OBSERVATION_DAYS)
+    .default(DEFAULT_BOOTSTRAP_RAW_OBSERVATION_DAYS),
+});
+export type BootstrapQuery = z.infer<typeof bootstrapQuerySchema>;
+
 export const bootstrapEntitiesSchema = z.object({
+  syncTestEntities: z.array(jsonObjectSchema),
   products: z.array(jsonObjectSchema),
   productIdentifiers: z.array(jsonObjectSchema),
   productAliases: z.array(jsonObjectSchema),

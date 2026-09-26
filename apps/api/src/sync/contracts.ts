@@ -1,4 +1,5 @@
 export {
+  bootstrapQuerySchema,
   bootstrapResponseSchema,
   syncChangeEnvelopeSchema,
   syncPullQuerySchema,

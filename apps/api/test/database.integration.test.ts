@@ -11,6 +11,7 @@ import {
 } from "../src/sync/processed-command-service.js";
 import { createMongoSyncChangeService } from "../src/sync/sync-change-service.js";
 import { createMongoSyncPushService } from "../src/sync/push-service.js";
+import { createMongoSyncBootstrapService } from "../src/sync/bootstrap-service.js";
 import {
   createMongoSyncPullService,
   SyncPullCursorError,
@@ -376,6 +377,90 @@ describeWithMongo("MongoDB infrastructure", () => {
       expect(emptyPage.changes).toEqual([]);
       expect(emptyPage.nextCursor).toBe(secondPage.nextCursor);
       expect(emptyPage.hasMore).toBe(false);
+    },
+  );
+
+  itWithMongoTransactions(
+    "bootstraps a snapshot whose cursor precedes only later changes",
+    async () => {
+      const push = createMongoSyncPushService(database);
+      const pull = createMongoSyncPullService(database);
+      const bootstrap = createMongoSyncBootstrapService(
+        database,
+        () => new Date("2026-09-26T08:10:00.000Z"),
+        () => "bootstrap-revision-1",
+      );
+      const storeId = randomUUID();
+      const deviceId = randomUUID();
+      const timestamp = "2026-09-26T08:00:00.000Z";
+      const command = (localSequence: number) => {
+        const entityId = randomUUID();
+        return {
+          commandId: randomUUID(),
+          localSequence,
+          type: "SYNC_TEST_ENTITY_UPSERT",
+          entityType: "sync_test_entity",
+          entityId,
+          expectedRemoteVersion: null,
+          createdAt: timestamp,
+          payload: {
+            id: entityId,
+            storeId,
+            label: `Bootstrap ${localSequence}`,
+            remoteVersion: 0,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        };
+      };
+      await push.push(
+        {
+          syncProtocolVersion: 1,
+          appVersion: "0.1.0",
+          deviceId,
+          storeId,
+          commands: [command(1), command(2)],
+        },
+        "before-bootstrap",
+      );
+
+      const snapshot = await bootstrap.bootstrap(
+        {
+          userId: randomUUID(),
+          sessionId: randomUUID(),
+          deviceId,
+          storeId,
+          storeName: "Magasin bootstrap",
+          role: "MANAGER",
+        },
+        { rawObservationDays: 90 },
+      );
+      expect(snapshot).toMatchObject({
+        snapshotRevision: "bootstrap-revision-1",
+        store: { id: storeId, name: "Magasin bootstrap", role: "MANAGER" },
+        historyPolicy: { rawObservationDays: 90 },
+      });
+      expect(snapshot.entities.syncTestEntities).toHaveLength(2);
+
+      await push.push(
+        {
+          syncProtocolVersion: 1,
+          appVersion: "0.1.0",
+          deviceId,
+          storeId,
+          commands: [command(3)],
+        },
+        "after-bootstrap",
+      );
+      const later = await pull.pull(storeId, {
+        cursor: snapshot.cursor,
+        limit: 10,
+      });
+      expect(later.changes).toHaveLength(1);
+      expect(later.changes[0]).toMatchObject({
+        sequence: "3",
+        entity: expect.objectContaining({ label: "Bootstrap 3" }),
+      });
     },
   );
 

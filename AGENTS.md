@@ -521,7 +521,7 @@ Do not use superseded technical documents from outside this repository.
 The active increment is:
 
 ```text
-M1-T01 through M1-T07 — Shared synchronization DTOs, atomic Outbox and pull application, remote idempotency, store-scoped change sequencing, push and pull endpoints
+M1-T01 through M1-T08 — Shared synchronization DTOs, atomic Outbox, pull and bootstrap application, remote idempotency, store-scoped change sequencing, push, pull and bootstrap endpoints
 ```
 
 Read `docs/progress/M0_FOUNDATION.md` for M0 acceptance evidence and remaining native gates, and `docs/progress/M1_SYNC_FOUNDATION.md` for the active synchronization increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`; no business milestone may bypass M1.

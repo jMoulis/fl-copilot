@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 through M1-T07 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, durable atomic local Outbox and pull-page application, remote command idempotency, store-scoped change sequencing and the authenticated push and pull endpoints.
+The active increment covers M1-T01 through M1-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, durable atomic local Outbox, pull-page and bootstrap application, remote command idempotency, store-scoped change sequencing and the authenticated push, pull and bootstrap endpoints.
 
 ## Implemented
 
@@ -35,6 +35,10 @@ The active increment covers M1-T01 through M1-T07 from `docs/specs/IMPLEMENTATIO
 - Ordered MongoDB change pages based on 64-bit sequence values, with `hasMore` lookahead and canonical synchronized entities in UPSERT envelopes.
 - A canonical SQLite inbox-state migration that stores the opaque cursor, protocol version, bootstrap revision and last successful sync timestamp.
 - Atomic mobile pull-page application that commits synchronized entities and the next cursor together, retaining both prior values when the transaction rolls back.
+- `GET /api/v1/sync/bootstrap` with the authenticated store context and a validated raw-observation history window from 1 to 365 days, defaulting to 90.
+- A snapshot read transaction that returns the store, synchronized proof entities, a snapshot revision and a cursor for the exact observed change sequence.
+- Atomic mobile bootstrap application that replaces the selected store snapshot and records its revision and cursor together while preserving other stores.
+- Explicit rejection of unsupported non-empty bootstrap collections until their owning domain repositories are implemented.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
@@ -59,11 +63,13 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 | CI MongoDB integration       | Replica-set tests cover transactional command idempotency, change ordering and mixed push batches    |
 | Ordered pull pagination      | Pages remain store-scoped and sequence-ordered; `hasMore` and opaque cursor continuation are covered |
 | Atomic pull application      | Entity writes and cursor advancement commit or roll back together in SQLite                          |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 54 tests; 7 conditional MongoDB tests skipped   |
+| Bootstrap consistency        | Snapshot and cursor share one MongoDB view; later pull returns only subsequent changes               |
+| Atomic bootstrap application | Snapshot replacement, revision and cursor commit or roll back together in SQLite                     |
+| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 58 tests; 8 conditional MongoDB tests skipped   |
 | `pnpm format:check`          | Passed                                                                                               |
 | `git diff --check`           | Passed                                                                                               |
 
 ## Next work
 
-1. M1-T08: provide the initial store snapshot and cursor through the bootstrap endpoint.
-2. Apply bootstrap into a fresh or staged SQLite transaction before recording its revision and cursor.
+1. M1-T09: orchestrate bootstrap, push and pull through the mobile `SyncService`.
+2. Add a per-store synchronization lock, safe retry backoff, foreground triggering and manual triggering.

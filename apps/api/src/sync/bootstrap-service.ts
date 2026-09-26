@@ -1,0 +1,102 @@
+import { randomUUID } from "node:crypto";
+import { Long } from "mongodb";
+import {
+  SYNC_PROTOCOL_VERSION,
+  type BootstrapQuery,
+  type BootstrapResponse,
+} from "@fl-copilot/sync-contracts";
+import type { AuthorizedStoreContext } from "../auth/service.js";
+import type { DatabaseService } from "../database/types.js";
+import { encodeSyncCursor } from "./pull-service.js";
+import {
+  serializeSyncTestEntity,
+  type SyncTestEntityDocument,
+} from "./sync-test-entity.js";
+
+interface SyncStoreCounterDocument {
+  _id: string;
+  nextSequence: Long;
+}
+
+export interface SyncBootstrapService {
+  bootstrap(
+    store: AuthorizedStoreContext,
+    query: BootstrapQuery,
+  ): Promise<BootstrapResponse>;
+}
+
+export function createMongoSyncBootstrapService(
+  database: DatabaseService,
+  now: () => Date = () => new Date(),
+  generateRevision: () => string = randomUUID,
+): SyncBootstrapService {
+  return {
+    async bootstrap(store, query) {
+      const mongoDatabase = await database.getDb();
+      const session = mongoDatabase.client.startSession();
+      let response: BootstrapResponse | undefined;
+
+      try {
+        await session.withTransaction(
+          async () => {
+            const counter = await mongoDatabase
+              .collection<SyncStoreCounterDocument>("syncStoreCounters")
+              .findOne(
+                { _id: store.storeId },
+                { session, promoteLongs: false },
+              );
+            const syncTestEntities = await mongoDatabase
+              .collection<SyncTestEntityDocument>("syncTestEntities")
+              .find({ storeId: store.storeId }, { session })
+              .sort({ _id: 1 })
+              .toArray();
+            const sequence = counter?.nextSequence ?? Long.ZERO;
+            response = {
+              protocolVersion: SYNC_PROTOCOL_VERSION,
+              store: {
+                id: store.storeId,
+                name: store.storeName,
+                role: store.role,
+              },
+              snapshotRevision: generateRevision(),
+              cursor: encodeSyncCursor(store.storeId, sequence),
+              historyPolicy: {
+                rawObservationDays: query.rawObservationDays,
+              },
+              entities: {
+                syncTestEntities: syncTestEntities.map(serializeSyncTestEntity),
+                products: [],
+                productIdentifiers: [],
+                productAliases: [],
+                needUnits: [],
+                needMemberships: [],
+                productSubstitutions: [],
+                salesObservations: [],
+                wasteObservations: [],
+                commercialOperations: [],
+                offers: [],
+                marketSignals: [],
+                executionInstructions: [],
+                storeEvents: [],
+                productDailyPerformance: [],
+                departmentDailyPerformance: [],
+                recommendations: [],
+                decisions: [],
+                actionExecutions: [],
+              },
+              serverTime: now().toISOString(),
+            };
+          },
+          { readConcern: { level: "snapshot" }, readPreference: "primary" },
+        );
+      } finally {
+        await session.endSession();
+      }
+
+      if (!response) {
+        throw new Error("Bootstrap snapshot transaction did not complete.");
+      }
+      return response;
+    },
+  };
+}
