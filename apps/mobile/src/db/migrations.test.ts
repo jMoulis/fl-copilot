@@ -47,7 +47,7 @@ describe("local SQLite migrations", () => {
   it("creates the foundation schema and exposes its version", async () => {
     const { adapter, database } = openTemporaryDatabase();
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(4);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(5);
 
     const tables = database
       .prepare(
@@ -64,12 +64,12 @@ describe("local SQLite migrations", () => {
       "sync_outbox",
       "sync_test_entities",
     ]);
-    expect(await getLocalSchemaVersion(adapter)).toBe(4);
+    expect(await getLocalSchemaVersion(adapter)).toBe(5);
     expect(
       database
         .prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'")
         .get(),
-    ).toEqual({ value: "4" });
+    ).toEqual({ value: "5" });
     expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({
       foreign_keys: 1,
     });
@@ -105,7 +105,7 @@ describe("local SQLite migrations", () => {
 
     const reopenedDatabase = new DatabaseSync(path);
     const reopenedAdapter = new NodeSQLiteAdapter(reopenedDatabase);
-    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(4);
+    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(5);
     expect(
       reopenedDatabase
         .prepare("SELECT id, status FROM local_jobs WHERE id = ?")
@@ -159,7 +159,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:02:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(4);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(5);
     expect(
       database
         .prepare(
@@ -207,6 +207,52 @@ describe("local SQLite migrations", () => {
     database.close();
   });
 
+  it("preserves legacy conflict payloads in the canonical conflict table", async () => {
+    const { adapter, database } = openTemporaryDatabase();
+    await runLocalMigrations(adapter, localMigrations.slice(0, 1));
+    database
+      .prepare(
+        `
+          INSERT INTO sync_conflicts (
+            id, store_id, entity_type, entity_id, local_payload_json,
+            remote_payload_json, status, detected_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        "conflict-1",
+        "store-1",
+        "product",
+        "product-1",
+        '{"name":"Tomate locale"}',
+        '{"name":"Tomate distante"}',
+        "open",
+        "2026-09-16T10:03:00.000Z",
+      );
+
+    await expect(runLocalMigrations(adapter)).resolves.toBe(5);
+    expect(
+      database
+        .prepare(
+          `
+            SELECT command_id, local_payload_json, remote_payload_json,
+                   conflict_type, status, created_at
+            FROM sync_conflicts WHERE id = ?
+          `,
+        )
+        .get("conflict-1"),
+    ).toEqual({
+      command_id: null,
+      local_payload_json: '{"name":"Tomate locale"}',
+      remote_payload_json: '{"name":"Tomate distante"}',
+      conflict_type: "LEGACY_CONFLICT",
+      status: "OPEN",
+      created_at: "2026-09-16T10:03:00.000Z",
+    });
+
+    database.close();
+  });
+
   it("rolls back a failed migration without losing pending outbox work", async () => {
     const { adapter, database } = openTemporaryDatabase();
     await runLocalMigrations(adapter);
@@ -235,11 +281,11 @@ describe("local SQLite migrations", () => {
     await expect(
       runLocalMigrations(adapter, [
         ...localMigrations,
-        { version: 5, name: "invalid-migration", sql: "CREATE TABLE broken (" },
+        { version: 6, name: "invalid-migration", sql: "CREATE TABLE broken (" },
       ]),
-    ).rejects.toThrow("Local migration 5 (invalid-migration) failed");
+    ).rejects.toThrow("Local migration 6 (invalid-migration) failed");
 
-    expect(await getLocalSchemaVersion(adapter)).toBe(4);
+    expect(await getLocalSchemaVersion(adapter)).toBe(5);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
     ).toEqual({ count: 1 });

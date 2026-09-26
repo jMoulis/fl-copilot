@@ -10,6 +10,7 @@ import {
 import { applyBootstrap } from "./apply-bootstrap";
 import { applyPullPage } from "./apply-pull-page";
 import type { AtomicMutationDatabase } from "./atomic-local-mutation";
+import { ConflictRepository } from "./conflict-repository";
 import {
   OutboxRepository,
   type OutboxCommand,
@@ -169,6 +170,7 @@ export class MobileSyncService {
     );
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
       const outbox = new OutboxRepository(transaction, this.now);
+      const conflictsRepository = new ConflictRepository(transaction, this.now);
       for (const command of commands) {
         const result = results.get(command.commandId);
         const code = result?.error?.code ?? "SYNC_RESULT_MISSING";
@@ -182,6 +184,7 @@ export class MobileSyncService {
           await outbox.markAcknowledged(command.commandId);
           pushed += 1;
         } else if (result.status === "CONFLICT") {
+          await conflictsRepository.recordPushConflict(command, result);
           await outbox.markConflict(command.commandId, code);
           conflicts += 1;
         } else {

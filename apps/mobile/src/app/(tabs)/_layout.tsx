@@ -70,6 +70,7 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen name="sync" options={{ href: null }} />
+      <Tabs.Screen name="sync-conflict" options={{ href: null }} />
     </Tabs>
   );
 }

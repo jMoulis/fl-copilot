@@ -71,16 +71,21 @@ export const syncConflicts = sqliteTable(
   {
     id: text("id").primaryKey(),
     storeId: text("store_id").notNull(),
+    commandId: text("command_id"),
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
     localPayloadJson: text("local_payload_json").notNull(),
     remotePayloadJson: text("remote_payload_json").notNull(),
+    localExpectedVersion: integer("local_expected_version"),
+    remoteVersion: integer("remote_version"),
+    conflictType: text("conflict_type").notNull(),
     status: text("status").notNull(),
-    detectedAt: text("detected_at").notNull(),
+    createdAt: text("created_at").notNull(),
     resolvedAt: text("resolved_at"),
   },
   (table) => [
     index("idx_conflicts_store_status").on(table.storeId, table.status),
+    uniqueIndex("idx_conflicts_command").on(table.commandId),
   ],
 );
 

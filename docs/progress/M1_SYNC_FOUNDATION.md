@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 through M1-T10 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts, durable atomic local application, remote command idempotency, store-scoped change sequencing, authenticated endpoints, mobile synchronization-cycle orchestration and user-visible synchronization health.
+The active increment covers M1-T01 through M1-T11 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts, durable atomic local application, remote command idempotency, store-scoped change sequencing, authenticated endpoints, mobile synchronization-cycle orchestration, user-visible synchronization health and durable conflict capture.
 
 ## Implemented
 
@@ -48,6 +48,10 @@ The active increment covers M1-T01 through M1-T10 from `docs/specs/IMPLEMENTATIO
 - The six specified synchronization states: synchronized, offline, pending, synchronizing, conflict and error.
 - A `Plus > Synchronisation` entry and detail screen with a manual trigger, store context, live counters and contextual offline, conflict and error guidance.
 - Outbox change notifications after every successful local status transition so the pending count updates without polling.
+- A data-preserving migration from the provisional M0 conflict table to the canonical conflict contract, including command identity, local and remote versions, conflict type and resolution timestamps.
+- A local conflict repository that retains the complete local command payload and the server's current entity payload for every version conflict.
+- Atomic conflict capture with the Outbox `SYNCING` to `CONFLICT` transition so a recorded conflict and its terminal command state cannot diverge.
+- A conflict list under `Plus > Synchronisation` and a generic French detail shell that compares safe summaries of the local and synchronized versions without offering unsupported resolution actions.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
@@ -77,12 +81,14 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 | Cycle exclusion              | Concurrent triggers across service instances receive the same active per-store cycle                 |
 | Safe retry                   | Network and command-level transient failures reuse the same command ID with bounded backoff          |
 | Reactive status UI           | Enqueue and Outbox transitions notify the provider; the pending counter updates from SQLite          |
-| Expo Web export              | The authenticated route graph and native/web provider variants bundle successfully                   |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 61 tests; 8 conditional MongoDB tests skipped   |
+| Conflict migration           | Legacy local and remote payloads survive migration into the canonical conflict table                 |
+| Conflict payload retention   | A version conflict preserves the local entity and stores both local and remote payloads atomically   |
+| Expo exports                 | iOS, Android and Web route graphs, including conflict detail, bundle successfully                    |
+| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 64 tests; 8 conditional MongoDB tests skipped   |
 | `pnpm format:check`          | Passed                                                                                               |
 | `git diff --check`           | Passed                                                                                               |
 
 ## Next work
 
-1. M1-T11: persist conflict records locally and create the generic conflict-detail shell.
-2. Connect conflict outcomes from push and pull application to the local conflict repository.
+1. M1-T12: prove offline creation, restart, push and pull propagation across two independent device databases.
+2. Complete the hard M1 exit gate before starting Product Master work.

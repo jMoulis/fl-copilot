@@ -279,4 +279,105 @@ describe("mobile sync service", () => {
 
     database.close();
   });
+
+  it("stores a remote version conflict without losing the local payload", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    database
+      .prepare(
+        `
+          INSERT INTO sync_inbox_state (
+            store_id, cursor, protocol_version, last_successful_sync_at
+          ) VALUES (?, ?, 1, NULL)
+        `,
+      )
+      .run(storeId, "cursor-1");
+    await createSyncTestEntity(adapter, {
+      id: entityId,
+      commandId,
+      storeId,
+      deviceId,
+      label: "Version locale conservée",
+      createdAt: "2026-09-26T08:00:00.000Z",
+    });
+    const remoteEntity = {
+      id: entityId,
+      storeId,
+      label: "Version distante",
+      remoteVersion: 2,
+      createdAt: "2026-09-26T07:00:00.000Z",
+      updatedAt: "2026-09-26T08:05:00.000Z",
+    };
+    const transport: SyncTransport = {
+      bootstrap: async () => {
+        throw new Error("bootstrap must not run");
+      },
+      push: async () => ({
+        results: [
+          {
+            commandId,
+            status: "CONFLICT",
+            entityType: "sync_test_entity",
+            entityId,
+            remoteVersion: 2,
+            remoteEntity,
+            error: {
+              code: "SYNC_VERSION_CONFLICT",
+              messageFr: "Cette donnée a été modifiée sur un autre appareil.",
+              retryable: false,
+            },
+          },
+        ],
+        serverTime: "2026-09-26T08:10:00.000Z",
+      }),
+      pull: async (_storeId, cursor) => emptyPull(cursor),
+    };
+    const service = new MobileSyncService(adapter, transport, {
+      appVersion: "0.1.0",
+      deviceId,
+      now: () => "2026-09-26T08:12:00.000Z",
+    });
+
+    await expect(service.sync(storeId)).resolves.toMatchObject({
+      conflicts: 1,
+      pushed: 0,
+      failed: 0,
+    });
+    expect(
+      database
+        .prepare("SELECT label FROM sync_test_entities WHERE id = ?")
+        .get(entityId),
+    ).toEqual({ label: "Version locale conservée" });
+    const conflict = database
+      .prepare(
+        `
+          SELECT local_payload_json, remote_payload_json, remote_version,
+                 conflict_type, status
+          FROM sync_conflicts WHERE command_id = ?
+        `,
+      )
+      .get(commandId) as {
+      local_payload_json: string;
+      remote_payload_json: string;
+      remote_version: number;
+      conflict_type: string;
+      status: string;
+    };
+    expect(JSON.parse(conflict.local_payload_json)).toMatchObject({
+      label: "Version locale conservée",
+    });
+    expect(JSON.parse(conflict.remote_payload_json)).toEqual(remoteEntity);
+    expect(conflict).toMatchObject({
+      remote_version: 2,
+      conflict_type: "SYNC_VERSION_CONFLICT",
+      status: "OPEN",
+    });
+    expect(
+      database
+        .prepare("SELECT status FROM sync_outbox WHERE command_id = ?")
+        .get(commandId),
+    ).toEqual({ status: "CONFLICT" });
+
+    database.close();
+  });
 });
