@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment is M2-T01 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical Product, ProductIdentifier and ProductAlias contracts, their local and remote persistence, and replication through the M1 synchronization pipeline.
+The active increment covers M2-T01 through M2-T02 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical Product, ProductIdentifier and ProductAlias contracts, their local and remote persistence, replication through the M1 synchronization pipeline, and a local-first product editor.
 
 ## Implemented
 
@@ -19,6 +19,13 @@ The active increment is M2-T01 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonic
 - Product collections in bootstrap snapshots and incremental pull pages, with deleted records excluded from new snapshots.
 - Safe mobile snapshot and pull application that preserves dirty local changes and accepts a push acknowledgement only when it still matches the local version that was sent.
 - Transactional two-device coverage for creation, update and deletion, including an EAN beginning with zero and a clean bootstrap after deletion.
+- A French product list and editor under `Plus > Produits` for label, category, nature, sales unit, packaging, identifiers and aliases.
+- Immediate offline saves through the product repository, with every changed entity represented by an ordered Outbox command.
+- Version chaining for repeated offline edits so a later local command expects the preceding local version instead of conflicting with its own device.
+- Product and aggregate-level synchronization badges; identifier and alias conflicts are surfaced on the owning product.
+- Conflict-safe editing: the complete local form remains readable, while a new save is blocked until the conflict is examined.
+- Leading-zero guidance beside identifier inputs and French validation, error and success states.
+- An explicit no-store state instead of a generic SQLite error, plus an idempotent non-production command that provisions the first development user with an active pilot store.
 
 ## Verification evidence
 
@@ -31,11 +38,14 @@ The active increment is M2-T01 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonic
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                 |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                  |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 70 tests; 10 MongoDB tests skipped locally and enabled in CI                   |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 72 tests; 10 MongoDB tests skipped locally and enabled in CI                   |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                           |
+| Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands               |
+| Repeated offline edits    | A second save targets the first local version, allowing both commands to synchronize in order                             |
+| Conflict visibility       | Open product, identifier and alias conflicts resolve to the owning product and block an unsafe new save                   |
 
 ## Next work
 
-1. Merge M2-T01 after the transactional MongoDB CI gate passes.
-2. Begin M2-T02: Mercalys workbook ingestion contracts and deterministic parsing fixtures.
+1. Merge M2-T02 after CI and native visual acceptance pass.
+2. Begin M2-T03: deterministic product matching with exact-identifier precedence.
