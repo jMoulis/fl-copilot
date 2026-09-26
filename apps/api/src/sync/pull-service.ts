@@ -60,7 +60,7 @@ export function createMongoSyncPullService(
 
       return {
         changes,
-        nextCursor: encodeCursor(storeId, nextSequence),
+        nextCursor: encodeSyncCursor(storeId, nextSequence),
         hasMore,
         serverTime: now().toISOString(),
       };
@@ -68,7 +68,7 @@ export function createMongoSyncPullService(
   };
 }
 
-function encodeCursor(storeId: string, sequence: Long) {
+export function encodeSyncCursor(storeId: string, sequence: Long) {
   return Buffer.from(
     JSON.stringify({ version: 1, storeId, sequence: sequence.toString() }),
   ).toString("base64url");

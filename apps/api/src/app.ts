@@ -11,6 +11,8 @@ import {
   authChallengeResponseSchema,
   authSessionResponseSchema,
   authVerificationRequestSchema,
+  bootstrapQuerySchema,
+  bootstrapResponseSchema,
   healthResponseSchema,
   logoutResponseSchema,
   refreshSessionRequestSchema,
@@ -31,6 +33,10 @@ import {
 import type { DatabaseService } from "./database/types.js";
 import { captureApiError, logRemoteEvent } from "./observability.js";
 import {
+  createMongoSyncBootstrapService,
+  type SyncBootstrapService,
+} from "./sync/bootstrap-service.js";
+import {
   createMongoSyncPullService,
   SyncPullCursorError,
   type SyncPullService,
@@ -44,6 +50,7 @@ type AppDependencies = {
   database: DatabaseService;
   auth?: AuthService;
   sendAuthCode?: AuthCodeSender;
+  syncBootstrap?: SyncBootstrapService;
   syncPull?: SyncPullService;
   syncPush?: SyncPushService;
 };
@@ -60,6 +67,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     dependencies.syncPush ?? createMongoSyncPushService(dependencies.database);
   const syncPull =
     dependencies.syncPull ?? createMongoSyncPullService(dependencies.database);
+  const syncBootstrap =
+    dependencies.syncBootstrap ??
+    createMongoSyncBootstrapService(dependencies.database);
   const app = Fastify({
     logger:
       config.NODE_ENV === "test"
@@ -309,6 +319,43 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         }
         throw error;
       }
+    },
+  );
+  app.get(
+    "/api/v1/sync/bootstrap",
+    {
+      schema: {
+        querystring: bootstrapQuerySchema,
+        response: { 200: bootstrapResponseSchema },
+      },
+    },
+    async (request) => {
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith("Bearer ")) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string") {
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué pour synchroniser les données.",
+        );
+      }
+      const protocolVersion = request.headers["x-sync-protocol-version"];
+      if (protocolVersion !== String(SYNC_PROTOCOL_VERSION)) {
+        throw new AuthError(
+          400,
+          "SYNC_PROTOCOL_UNSUPPORTED",
+          "Cette version du protocole de synchronisation n’est pas prise en charge.",
+        );
+      }
+      const accessToken = authorization.slice("Bearer ".length);
+      if (!accessToken) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      const store = await auth.authorizeStore(accessToken, storeId);
+      return syncBootstrap.bootstrap(store, request.query);
     },
   );
   if (config.SENTRY_TEST_ROUTE_ENABLED) {

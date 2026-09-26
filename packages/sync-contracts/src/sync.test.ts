@@ -8,8 +8,11 @@ import {
   syncPushRequestSchema as mobileSyncPushRequestSchema,
 } from "../../../apps/mobile/src/sync/contracts";
 import {
+  DEFAULT_BOOTSTRAP_RAW_OBSERVATION_DAYS,
+  MAX_BOOTSTRAP_RAW_OBSERVATION_DAYS,
   MAX_SYNC_PULL_CHANGES,
   MAX_SYNC_PUSH_COMMANDS,
+  bootstrapQuerySchema,
   bootstrapResponseSchema,
   syncChangeEnvelopeSchema,
   syncCommandResultSchema,
@@ -38,6 +41,7 @@ const command = {
 };
 
 const emptyBootstrapEntities = {
+  syncTestEntities: [],
   products: [],
   productIdentifiers: [],
   productAliases: [],
@@ -130,6 +134,14 @@ describe("shared synchronization contracts", () => {
     expect(syncPullQuerySchema.parse({ limit: "25" })).toEqual({ limit: 25 });
     expect(() =>
       syncPullQuerySchema.parse({ limit: MAX_SYNC_PULL_CHANGES + 1 }),
+    ).toThrow();
+    expect(bootstrapQuerySchema.parse({})).toEqual({
+      rawObservationDays: DEFAULT_BOOTSTRAP_RAW_OBSERVATION_DAYS,
+    });
+    expect(() =>
+      bootstrapQuerySchema.parse({
+        rawObservationDays: MAX_BOOTSTRAP_RAW_OBSERVATION_DAYS + 1,
+      }),
     ).toThrow();
 
     const change = syncChangeEnvelopeSchema.parse({

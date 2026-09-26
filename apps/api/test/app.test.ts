@@ -4,6 +4,7 @@ import {
   apiErrorSchema,
   authChallengeResponseSchema,
   authSessionResponseSchema,
+  bootstrapResponseSchema,
   healthResponseSchema,
   syncPullResponseSchema,
   syncPushResponseSchema,
@@ -18,6 +19,7 @@ import {
 } from "../src/auth/service.js";
 import type { SyncPushService } from "../src/sync/push-service.js";
 import type { SyncPullService } from "../src/sync/pull-service.js";
+import type { SyncBootstrapService } from "../src/sync/bootstrap-service.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
   return {
@@ -42,10 +44,12 @@ function createAuthApp(
   auth: AuthService,
   syncPush?: SyncPushService,
   syncPull?: SyncPullService,
+  syncBootstrap?: SyncBootstrapService,
 ) {
   const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
     database: createDatabase(),
     auth,
+    syncBootstrap,
     syncPull,
     syncPush,
   });
@@ -345,6 +349,7 @@ describe("authentication routes", () => {
         sessionId: "44444444-4444-4444-8444-444444444444",
         deviceId: deviceId ?? "33333333-3333-4333-8333-333333333333",
         storeId,
+        storeName: "Magasin test",
         role: "MANAGER",
       }),
       logout: async () => undefined,
@@ -465,6 +470,7 @@ describe("synchronization push route", () => {
           sessionId: "88888888-8888-4888-8888-888888888888",
           deviceId: authorizedDeviceId ?? deviceId,
           storeId: authorizedStoreId,
+          storeName: "Magasin test",
           role: "MANAGER",
         };
       },
@@ -580,6 +586,7 @@ describe("synchronization pull route", () => {
           sessionId: "88888888-8888-4888-8888-888888888888",
           deviceId: "33333333-3333-4333-8333-333333333333",
           storeId: authorizedStoreId,
+          storeName: "Magasin test",
           role: "MANAGER",
         };
       },
@@ -661,5 +668,102 @@ describe("synchronization pull route", () => {
       },
     });
     expect(invalidLimit.statusCode).toBe(400);
+  });
+});
+
+describe("synchronization bootstrap route", () => {
+  const storeId = "44444444-4444-4444-8444-444444444444";
+
+  function fakeAuth(): AuthService {
+    return {
+      requestChallenge: async () => {
+        throw new Error("not used");
+      },
+      verifyChallenge: async () => {
+        throw new Error("not used");
+      },
+      refreshSession: async () => {
+        throw new Error("not used");
+      },
+      authorizeStore: async () => ({
+        userId: "77777777-7777-4777-8777-777777777777",
+        sessionId: "88888888-8888-4888-8888-888888888888",
+        deviceId: "33333333-3333-4333-8333-333333333333",
+        storeId,
+        storeName: "Magasin test",
+        role: "MANAGER",
+      }),
+      logout: async () => undefined,
+    };
+  }
+
+  it("returns an authorized snapshot with the requested history policy", async () => {
+    const syncBootstrap: SyncBootstrapService = {
+      bootstrap: async (store, query) => ({
+        protocolVersion: 1,
+        store: { id: store.storeId, name: store.storeName, role: store.role },
+        snapshotRevision: "revision-1",
+        cursor: "opaque-cursor",
+        historyPolicy: { rawObservationDays: query.rawObservationDays },
+        entities: {
+          syncTestEntities: [],
+          products: [],
+          productIdentifiers: [],
+          productAliases: [],
+          needUnits: [],
+          needMemberships: [],
+          productSubstitutions: [],
+          salesObservations: [],
+          wasteObservations: [],
+          commercialOperations: [],
+          offers: [],
+          marketSignals: [],
+          executionInstructions: [],
+          storeEvents: [],
+          productDailyPerformance: [],
+          departmentDailyPerformance: [],
+          recommendations: [],
+          decisions: [],
+          actionExecutions: [],
+        },
+        serverTime: "2026-09-26T08:00:00.000Z",
+      }),
+    };
+    const app = createAuthApp(fakeAuth(), undefined, undefined, syncBootstrap);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/sync/bootstrap?rawObservationDays=30",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+        "x-sync-protocol-version": "1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(bootstrapResponseSchema.parse(response.json())).toMatchObject({
+      store: { id: storeId, name: "Magasin test" },
+      historyPolicy: { rawObservationDays: 30 },
+      cursor: "opaque-cursor",
+    });
+  });
+
+  it("rejects an unsupported history window", async () => {
+    const app = createAuthApp(fakeAuth(), undefined, undefined, {
+      bootstrap: async () => {
+        throw new Error("bootstrap must not run");
+      },
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/sync/bootstrap?rawObservationDays=366",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+        "x-sync-protocol-version": "1",
+      },
+    });
+    expect(response.statusCode).toBe(400);
   });
 });
