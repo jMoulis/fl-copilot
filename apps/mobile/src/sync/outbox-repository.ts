@@ -1,6 +1,21 @@
 export const OUTBOX_LOCAL_SEQUENCE_KEY = "outbox_local_sequence";
 export const MAX_PENDING_COMMANDS = 100;
 
+const outboxChangeListeners = new Set<() => void>();
+
+export function subscribeOutboxChanges(listener: () => void) {
+  outboxChangeListeners.add(listener);
+  return () => {
+    outboxChangeListeners.delete(listener);
+  };
+}
+
+function notifyOutboxChanged() {
+  setTimeout(() => {
+    for (const listener of outboxChangeListeners) listener();
+  }, 0);
+}
+
 export const outboxStatuses = [
   "PENDING",
   "SYNCING",
@@ -144,6 +159,7 @@ export class OutboxRepository {
     );
     const command = await this.getById(input.commandId);
     if (!command) throw new Error("Outbox command could not be persisted.");
+    notifyOutboxChanged();
     return command;
   }
 
@@ -189,6 +205,7 @@ export class OutboxRepository {
       commandId,
     );
     assertChanged(result, `${commandId} PENDING -> SYNCING`);
+    notifyOutboxChanged();
   }
 
   async markAcknowledged(commandId: string) {
@@ -214,6 +231,7 @@ export class OutboxRepository {
       commandId,
     );
     assertChanged(result, `${commandId} SYNCING -> PENDING`);
+    notifyOutboxChanged();
   }
 
   async recoverInterrupted(storeId: string) {
@@ -225,7 +243,9 @@ export class OutboxRepository {
       `,
       storeId,
     );
-    return Number(result.changes);
+    const changes = Number(result.changes);
+    if (changes > 0) notifyOutboxChanged();
+    return changes;
   }
 
   private async markTerminal(
@@ -244,5 +264,6 @@ export class OutboxRepository {
       commandId,
     );
     assertChanged(result, `${commandId} SYNCING -> ${status}`);
+    notifyOutboxChanged();
   }
 }

@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 through M1-T09 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts, durable atomic local application, remote command idempotency, store-scoped change sequencing, authenticated endpoints and mobile synchronization-cycle orchestration.
+The active increment covers M1-T01 through M1-T10 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts, durable atomic local application, remote command idempotency, store-scoped change sequencing, authenticated endpoints, mobile synchronization-cycle orchestration and user-visible synchronization health.
 
 ## Implemented
 
@@ -44,6 +44,10 @@ The active increment covers M1-T01 through M1-T09 from `docs/specs/IMPLEMENTATIO
 - A process-wide per-store cycle lock so foreground, manual and provider-recreation triggers attach to one active synchronization cycle.
 - Bounded exponential backoff for retryable transport failures and per-command `RETRYABLE_ERROR` results while retaining stable command IDs.
 - A native synchronization provider that starts a cycle after authentication and whenever the app returns to the foreground, plus an exposed manual trigger; the web preview uses a neutral provider.
+- A reactive synchronization snapshot backed by the local Outbox and inbox state, exposing pending, conflict and failed counts together with the last successful synchronization time.
+- The six specified synchronization states: synchronized, offline, pending, synchronizing, conflict and error.
+- A `Plus > Synchronisation` entry and detail screen with a manual trigger, store context, live counters and contextual offline, conflict and error guidance.
+- Outbox change notifications after every successful local status transition so the pending count updates without polling.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
@@ -72,11 +76,13 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 | Atomic bootstrap application | Snapshot replacement, revision and cursor commit or roll back together in SQLite                     |
 | Cycle exclusion              | Concurrent triggers across service instances receive the same active per-store cycle                 |
 | Safe retry                   | Network and command-level transient failures reuse the same command ID with bounded backoff          |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 60 tests; 8 conditional MongoDB tests skipped   |
+| Reactive status UI           | Enqueue and Outbox transitions notify the provider; the pending counter updates from SQLite          |
+| Expo Web export              | The authenticated route graph and native/web provider variants bundle successfully                   |
+| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 61 tests; 8 conditional MongoDB tests skipped   |
 | `pnpm format:check`          | Passed                                                                                               |
 | `git diff --check`           | Passed                                                                                               |
 
 ## Next work
 
-1. M1-T10: expose synchronization state and a manual trigger in `Plus > Synchronisation`.
-2. Make the pending Outbox count and cycle state reactive for the status UI.
+1. M1-T11: persist conflict records locally and create the generic conflict-detail shell.
+2. Connect conflict outcomes from push and pull application to the local conflict repository.
