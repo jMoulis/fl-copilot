@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { runLocalMigrations } from "../db/migrations";
 import {
   OutboxRepository,
+  subscribeOutboxChanges,
   type EnqueueOutboxCommand,
   type OutboxDatabase,
 } from "./outbox-repository";
@@ -64,6 +65,26 @@ afterEach(() => {
 });
 
 describe("OutboxRepository", () => {
+  it("notifies subscribers when the pending command count changes", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    const repository = new OutboxRepository(adapter);
+    const notification = new Promise<void>((resolve) => {
+      const unsubscribe = subscribeOutboxChanges(() => {
+        unsubscribe();
+        resolve();
+      });
+    });
+
+    await repository.enqueue(command("reactive-command"));
+
+    await expect(notification).resolves.toBeUndefined();
+    await expect(
+      repository.listPending(command("unused").storeId),
+    ).resolves.toHaveLength(1);
+    database.close();
+  });
+
   it("persists commands across restart with monotonic oldest-first sequences", async () => {
     const first = temporaryDatabase();
     await runLocalMigrations(first.adapter);

@@ -521,7 +521,7 @@ Do not use superseded technical documents from outside this repository.
 The active increment is:
 
 ```text
-M1-T01 through M1-T09 — Complete synchronization foundation with shared contracts, atomic local application, idempotent remote endpoints and mobile cycle orchestration
+M1-T01 through M1-T10 — Complete synchronization foundation with shared contracts, atomic local application, idempotent remote endpoints, mobile cycle orchestration and reactive status UI
 ```
 
 Read `docs/progress/M0_FOUNDATION.md` for M0 acceptance evidence and remaining native gates, and `docs/progress/M1_SYNC_FOUNDATION.md` for the active synchronization increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`; no business milestone may bypass M1.

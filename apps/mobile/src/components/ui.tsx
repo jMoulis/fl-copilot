@@ -89,7 +89,7 @@ const statusPresentation = {
   synced: ["Synchronisé", "checkmark-circle-outline"],
   conflict: ["Conflit", "warning-outline"],
   offline: ["Hors connexion", "cloud-offline-outline"],
-  error: ["Erreur de synchronisation", "alert-circle-outline"],
+  error: ["Erreur", "alert-circle-outline"],
   aiPending: ["Analyse IA en attente", "hourglass-outline"],
   incomplete: ["Données incomplètes", "information-circle-outline"],
 } as const;

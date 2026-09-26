@@ -1,20 +1,24 @@
 import { useState } from "react";
 import { Text } from "react-native";
+import { router, type Href } from "expo-router";
 import {
   AppScreen,
   AppHeader,
   SectionCard,
   SecondaryButton,
   BottomSheet,
+  SyncState,
 } from "@/components/ui";
 import { useUiStore } from "@/store/ui";
 import { useAuth } from "@/auth/auth-provider";
 import { getAppEnvironment } from "@/config/environment";
 import { sendMobileObservabilityTest } from "@/observability/sentry";
+import { useSync } from "@/sync/sync-provider";
 export default function MoreScreen() {
   const visible = useUiStore((state) => state.aboutVisible);
   const setVisible = useUiStore((state) => state.setAboutVisible);
   const { session, logout } = useAuth();
+  const { status: syncStatus, pendingCount } = useSync();
   const [monitoringStatus, setMonitoringStatus] = useState<string>();
   const canTestMonitoring = getAppEnvironment() !== "production";
   return (
@@ -39,6 +43,21 @@ export default function MoreScreen() {
           onPress={() => {
             void logout();
           }}
+        />
+      </SectionCard>
+      <SectionCard title="Synchronisation">
+        <SyncState
+          status={syncStatus}
+          onPress={() => router.push("/(tabs)/sync" as Href)}
+        />
+        <Text className="text-base leading-6 text-muted">
+          {pendingCount === 0
+            ? "Toutes les modifications locales ont été traitées."
+            : `${pendingCount} modification${pendingCount > 1 ? "s" : ""} à synchroniser.`}
+        </Text>
+        <SecondaryButton
+          label="Voir la synchronisation"
+          onPress={() => router.push("/(tabs)/sync" as Href)}
         />
       </SectionCard>
       {canTestMonitoring ? (
