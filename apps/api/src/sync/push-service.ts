@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type {
   ApiErrorDto,
   SyncCommand,
@@ -14,24 +13,11 @@ import {
   type ProcessedCommandDocument,
 } from "./processed-command-service.js";
 import { createMongoSyncChangeService } from "./sync-change-service.js";
-
-const syncTestEntityPayloadSchema = z.object({
-  id: z.string().uuid(),
-  storeId: z.string().uuid(),
-  label: z.string().trim().min(1),
-  remoteVersion: z.number().int().nonnegative(),
-  createdAt: z.string().datetime({ offset: true }),
-  updatedAt: z.string().datetime({ offset: true }),
-});
-
-interface SyncTestEntityDocument {
-  _id: string;
-  storeId: string;
-  label: string;
-  version: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import {
+  serializeSyncTestEntity,
+  syncTestEntityPayloadSchema,
+  type SyncTestEntityDocument,
+} from "./sync-test-entity.js";
 
 interface StoredCommandResponse {
   remoteEntity?: SyncCommandResult["remoteEntity"];
@@ -142,7 +128,9 @@ async function applyCommand(
       resultStatus: "CONFLICT" as const,
       resultingVersion: actualVersion,
       responseJson: {
-        ...(existing ? { remoteEntity: serializeEntity(existing) } : {}),
+        ...(existing
+          ? { remoteEntity: serializeSyncTestEntity(existing) }
+          : {}),
         error: publicError(
           "SYNC_VERSION_CONFLICT",
           "Cette donnée a été modifiée sur un autre appareil.",
@@ -176,7 +164,7 @@ async function applyCommand(
     resultStatus: "APPLIED" as const,
     resultingVersion: entity.version,
     responseJson: {
-      remoteEntity: serializeEntity(entity),
+      remoteEntity: serializeSyncTestEntity(entity),
     } satisfies StoredCommandResponse,
   };
 }
@@ -255,15 +243,4 @@ function publicError(
   retryable = false,
 ): ApiErrorDto {
   return { code, messageFr, retryable, requestId };
-}
-
-function serializeEntity(entity: SyncTestEntityDocument) {
-  return {
-    id: entity._id,
-    storeId: entity.storeId,
-    label: entity.label,
-    remoteVersion: entity.version,
-    createdAt: entity.createdAt.toISOString(),
-    updatedAt: entity.updatedAt.toISOString(),
-  };
 }

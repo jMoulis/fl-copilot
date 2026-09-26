@@ -63,7 +63,7 @@ export interface AuthService {
   authorizeStore(
     accessToken: string,
     storeId: string,
-    deviceId: string,
+    deviceId?: string,
   ): Promise<AuthorizedStoreContext>;
   logout(accessToken: string): Promise<void>;
 }
@@ -248,7 +248,7 @@ export function createMongoAuthService(
 
     async authorizeStore(accessToken, storeId, deviceId) {
       const claims = verifyAccessToken(config.AUTH_TOKEN_SECRET, accessToken);
-      if (claims.deviceId !== deviceId) {
+      if (deviceId && claims.deviceId !== deviceId) {
         throw new AuthError(
           403,
           "AUTH_DEVICE_MISMATCH",
@@ -262,7 +262,7 @@ export function createMongoAuthService(
         .findOne({
           _id: claims.sessionId,
           userId: claims.sub,
-          deviceId,
+          deviceId: claims.deviceId,
           revokedAt: { $exists: false },
           expiresAt: { $gt: now },
         });
@@ -280,7 +280,7 @@ export function createMongoAuthService(
       return {
         userId: claims.sub,
         sessionId: claims.sessionId,
-        deviceId,
+        deviceId: claims.deviceId,
         storeId,
         role: membership.role,
       };

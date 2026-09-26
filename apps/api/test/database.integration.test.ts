@@ -11,6 +11,10 @@ import {
 } from "../src/sync/processed-command-service.js";
 import { createMongoSyncChangeService } from "../src/sync/sync-change-service.js";
 import { createMongoSyncPushService } from "../src/sync/push-service.js";
+import {
+  createMongoSyncPullService,
+  SyncPullCursorError,
+} from "../src/sync/pull-service.js";
 
 const testMongoUri = process.env.TEST_MONGODB_URI;
 const describeWithMongo = testMongoUri ? describe : describe.skip;
@@ -301,6 +305,77 @@ describeWithMongo("MongoDB infrastructure", () => {
       await expect(
         mongoDatabase.collection("syncChanges").countDocuments({ storeId }),
       ).resolves.toBe(2);
+    },
+  );
+
+  itWithMongoTransactions(
+    "returns store-scoped change pages in sequence order",
+    async () => {
+      const push = createMongoSyncPushService(database);
+      const pull = createMongoSyncPullService(database);
+      const storeId = randomUUID();
+      const deviceId = randomUUID();
+      const timestamp = "2026-09-26T08:00:00.000Z";
+      const commands = Array.from({ length: 3 }, (_, index) => {
+        const entityId = randomUUID();
+        return {
+          commandId: randomUUID(),
+          localSequence: index + 1,
+          type: "SYNC_TEST_ENTITY_UPSERT",
+          entityType: "sync_test_entity",
+          entityId,
+          expectedRemoteVersion: null,
+          createdAt: timestamp,
+          payload: {
+            id: entityId,
+            storeId,
+            label: `Entité ${index + 1}`,
+            remoteVersion: 0,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          },
+        };
+      });
+      await push.push(
+        {
+          syncProtocolVersion: 1,
+          appVersion: "0.1.0",
+          deviceId,
+          storeId,
+          commands,
+        },
+        "pull-fixture-request",
+      );
+
+      const firstPage = await pull.pull(storeId, { limit: 2 });
+      expect(firstPage.changes.map(({ sequence }) => sequence)).toEqual([
+        "1",
+        "2",
+      ]);
+      expect(firstPage.changes.map(({ entity }) => entity)).toEqual([
+        expect.objectContaining({ label: "Entité 1", remoteVersion: 1 }),
+        expect.objectContaining({ label: "Entité 2", remoteVersion: 1 }),
+      ]);
+      expect(firstPage.hasMore).toBe(true);
+      await expect(
+        pull.pull(randomUUID(), { cursor: firstPage.nextCursor, limit: 2 }),
+      ).rejects.toBeInstanceOf(SyncPullCursorError);
+
+      const secondPage = await pull.pull(storeId, {
+        cursor: firstPage.nextCursor,
+        limit: 2,
+      });
+      expect(secondPage.changes.map(({ sequence }) => sequence)).toEqual(["3"]);
+      expect(secondPage.hasMore).toBe(false);
+      expect(secondPage.nextCursor).not.toBe(firstPage.nextCursor);
+
+      const emptyPage = await pull.pull(storeId, {
+        cursor: secondPage.nextCursor,
+        limit: 2,
+      });
+      expect(emptyPage.changes).toEqual([]);
+      expect(emptyPage.nextCursor).toBe(secondPage.nextCursor);
+      expect(emptyPage.hasMore).toBe(false);
     },
   );
 

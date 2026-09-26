@@ -5,6 +5,7 @@ import {
   authChallengeResponseSchema,
   authSessionResponseSchema,
   healthResponseSchema,
+  syncPullResponseSchema,
   syncPushResponseSchema,
 } from "@fl-copilot/sync-contracts";
 import { buildApp } from "../src/app.js";
@@ -16,6 +17,7 @@ import {
   type ResendEmailClient,
 } from "../src/auth/service.js";
 import type { SyncPushService } from "../src/sync/push-service.js";
+import type { SyncPullService } from "../src/sync/pull-service.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
   return {
@@ -36,10 +38,15 @@ function createApp(
   apps.push(app);
   return app;
 }
-function createAuthApp(auth: AuthService, syncPush?: SyncPushService) {
+function createAuthApp(
+  auth: AuthService,
+  syncPush?: SyncPushService,
+  syncPull?: SyncPullService,
+) {
   const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
     database: createDatabase(),
     auth,
+    syncPull,
     syncPush,
   });
   apps.push(app);
@@ -336,7 +343,7 @@ describe("authentication routes", () => {
       authorizeStore: async (_accessToken, storeId, deviceId) => ({
         userId: session.user.id,
         sessionId: "44444444-4444-4444-8444-444444444444",
-        deviceId,
+        deviceId: deviceId ?? "33333333-3333-4333-8333-333333333333",
         storeId,
         role: "MANAGER",
       }),
@@ -456,7 +463,7 @@ describe("synchronization push route", () => {
         return {
           userId: "77777777-7777-4777-8777-777777777777",
           sessionId: "88888888-8888-4888-8888-888888888888",
-          deviceId: authorizedDeviceId,
+          deviceId: authorizedDeviceId ?? deviceId,
           storeId: authorizedStoreId,
           role: "MANAGER",
         };
@@ -548,5 +555,111 @@ describe("synchronization push route", () => {
       payload: request,
     });
     expect(wrongProtocol.statusCode).toBe(400);
+  });
+});
+
+describe("synchronization pull route", () => {
+  const storeId = "44444444-4444-4444-8444-444444444444";
+  const entityId = "66666666-6666-4666-8666-666666666666";
+
+  function fakeAuth(onAuthorize: (storeId: string) => void): AuthService {
+    return {
+      requestChallenge: async () => {
+        throw new Error("not used");
+      },
+      verifyChallenge: async () => {
+        throw new Error("not used");
+      },
+      refreshSession: async () => {
+        throw new Error("not used");
+      },
+      authorizeStore: async (_accessToken, authorizedStoreId) => {
+        onAuthorize(authorizedStoreId);
+        return {
+          userId: "77777777-7777-4777-8777-777777777777",
+          sessionId: "88888888-8888-4888-8888-888888888888",
+          deviceId: "33333333-3333-4333-8333-333333333333",
+          storeId: authorizedStoreId,
+          role: "MANAGER",
+        };
+      },
+      logout: async () => undefined,
+    };
+  }
+
+  it("authorizes the store and applies the bounded pull query", async () => {
+    const authorizedStores: string[] = [];
+    const syncPull: SyncPullService = {
+      pull: async (pulledStoreId, query) => ({
+        changes: [
+          {
+            sequence: "1",
+            entityType: "sync_test_entity",
+            entityId,
+            operation: "UPSERT",
+            entityVersion: 1,
+            entity: { id: entityId },
+            changedAt: "2026-09-26T08:00:00.000Z",
+          },
+        ],
+        nextCursor: `${pulledStoreId}:${query.limit}`,
+        hasMore: false,
+        serverTime: "2026-09-26T08:01:00.000Z",
+      }),
+    };
+    const app = createAuthApp(
+      fakeAuth((authorizedStoreId) => authorizedStores.push(authorizedStoreId)),
+      undefined,
+      syncPull,
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/sync/pull?limit=25",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+        "x-sync-protocol-version": "1",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(authorizedStores).toEqual([storeId]);
+    expect(syncPullResponseSchema.parse(response.json())).toMatchObject({
+      nextCursor: `${storeId}:25`,
+      hasMore: false,
+    });
+  });
+
+  it("rejects missing context headers and invalid page limits", async () => {
+    const app = createAuthApp(
+      fakeAuth(() => undefined),
+      undefined,
+      {
+        pull: async () => {
+          throw new Error("pull must not run");
+        },
+      },
+    );
+    const missingStore = await app.inject({
+      method: "GET",
+      url: "/api/v1/sync/pull",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-sync-protocol-version": "1",
+      },
+    });
+    expect(missingStore.statusCode).toBe(400);
+
+    const invalidLimit = await app.inject({
+      method: "GET",
+      url: "/api/v1/sync/pull?limit=501",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+        "x-sync-protocol-version": "1",
+      },
+    });
+    expect(invalidLimit.statusCode).toBe(400);
   });
 });

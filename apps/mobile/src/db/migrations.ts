@@ -163,6 +163,30 @@ export const localMigrations: readonly LocalMigration[] = [
         ON sync_test_entities (store_id, updated_at);
     `,
   },
+  {
+    version: 4,
+    name: "align-sync-inbox-state-with-protocol",
+    sql: `
+      ALTER TABLE sync_inbox_state RENAME TO sync_inbox_state_legacy;
+
+      CREATE TABLE sync_inbox_state (
+        store_id TEXT PRIMARY KEY NOT NULL,
+        cursor TEXT,
+        last_successful_sync_at TEXT,
+        protocol_version INTEGER NOT NULL,
+        bootstrap_revision TEXT
+      );
+
+      INSERT INTO sync_inbox_state (
+        store_id, cursor, last_successful_sync_at, protocol_version,
+        bootstrap_revision
+      )
+      SELECT store_id, NULL, last_sync_at, 1, NULL
+      FROM sync_inbox_state_legacy;
+
+      DROP TABLE sync_inbox_state_legacy;
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

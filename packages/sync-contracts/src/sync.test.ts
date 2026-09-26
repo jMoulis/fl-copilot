@@ -8,11 +8,13 @@ import {
   syncPushRequestSchema as mobileSyncPushRequestSchema,
 } from "../../../apps/mobile/src/sync/contracts";
 import {
+  MAX_SYNC_PULL_CHANGES,
   MAX_SYNC_PUSH_COMMANDS,
   bootstrapResponseSchema,
   syncChangeEnvelopeSchema,
   syncCommandResultSchema,
   syncCommandSchema,
+  syncPullQuerySchema,
   syncPullResponseSchema,
   syncPushRequestSchema,
   syncPushResponseSchema,
@@ -122,6 +124,14 @@ describe("shared synchronization contracts", () => {
   });
 
   it("validates pull changes and the complete bootstrap envelope", () => {
+    expect(syncPullQuerySchema.parse({})).toEqual({
+      limit: MAX_SYNC_PULL_CHANGES,
+    });
+    expect(syncPullQuerySchema.parse({ limit: "25" })).toEqual({ limit: 25 });
+    expect(() =>
+      syncPullQuerySchema.parse({ limit: MAX_SYNC_PULL_CHANGES + 1 }),
+    ).toThrow();
+
     const change = syncChangeEnvelopeSchema.parse({
       sequence: "42",
       entityType: "product",
