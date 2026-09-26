@@ -44,6 +44,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@fl-copilot/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@fl-copilot/sync-contracts':
         specifier: workspace:*
         version: link:../../packages/sync-contracts
@@ -84,6 +87,9 @@ importers:
       '@fl-copilot/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@fl-copilot/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@fl-copilot/sync-contracts':
         specifier: workspace:*
         version: link:../../packages/sync-contracts
@@ -204,12 +210,19 @@ importers:
 
   packages/commercial-core: {}
 
-  packages/domain: {}
+  packages/domain:
+    dependencies:
+      zod:
+        specifier: ^4.1.0
+        version: 4.6.5
 
   packages/substitution-core: {}
 
   packages/sync-contracts:
     dependencies:
+      '@fl-copilot/domain':
+        specifier: workspace:*
+        version: link:../domain
       zod:
         specifier: ^4.1.0
         version: 4.6.5
@@ -6931,9 +6944,7 @@ snapshots:
       metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

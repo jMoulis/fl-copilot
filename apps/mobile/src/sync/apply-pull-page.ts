@@ -4,6 +4,7 @@ import {
 } from "@fl-copilot/sync-contracts";
 import type { AtomicMutationDatabase } from "./atomic-local-mutation";
 import { synchronizedTestEntitySchema } from "./sync-test-entity-schema";
+import { applyProductMasterChange } from "../products/apply-product-master";
 
 export async function applyPullPage(
   database: AtomicMutationDatabase,
@@ -12,6 +13,9 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (await applyProductMasterChange(transaction, storeId, change)) {
+        continue;
+      }
       if (change.entityType !== "sync_test_entity") {
         throw new Error(
           `Unsupported synchronized entity type: ${change.entityType}`,

@@ -1,6 +1,7 @@
 import {
   index,
   integer,
+  real,
   sqliteTable,
   text,
   uniqueIndex,
@@ -125,6 +126,91 @@ export const localFiles = sqliteTable(
   ],
 );
 
+export const products = sqliteTable(
+  "products",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    label: text("label").notNull(),
+    category: text("category").notNull(),
+    nature: text("nature").notNull(),
+    salesUnit: text("sales_unit").notNull(),
+    packagingQuantity: text("packaging_quantity"),
+    packagingUnit: text("packaging_unit"),
+    packagingSourceLabel: text("packaging_source_label"),
+    familyId: text("family_id"),
+    subfamilyId: text("subfamily_id"),
+    status: text("status").notNull(),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("SYNCED"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(0),
+  },
+  (table) => [
+    index("idx_products_store_status").on(table.storeId, table.status),
+    index("idx_products_store_label").on(table.storeId, table.label),
+  ],
+);
+
+export const productIdentifiers = sqliteTable(
+  "product_identifiers",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    type: text("type").notNull(),
+    value: text("value").notNull(),
+    source: text("source").notNull(),
+    status: text("status").notNull(),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("SYNCED"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(0),
+  },
+  (table) => [
+    index("idx_product_identifiers_lookup").on(
+      table.storeId,
+      table.type,
+      table.value,
+    ),
+    index("idx_product_identifiers_product").on(table.storeId, table.productId),
+  ],
+);
+
+export const productAliases = sqliteTable(
+  "product_aliases",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    alias: text("alias").notNull(),
+    normalizedAlias: text("normalized_alias").notNull(),
+    source: text("source").notNull(),
+    status: text("status").notNull(),
+    confidence: real("confidence"),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("SYNCED"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(0),
+  },
+  (table) => [
+    index("idx_product_aliases_lookup").on(
+      table.storeId,
+      table.normalizedAlias,
+    ),
+    index("idx_product_aliases_product").on(table.storeId, table.productId),
+  ],
+);
+
 export const localSchema = {
   appMetadata,
   syncInboxState,
@@ -133,4 +219,7 @@ export const localSchema = {
   syncConflicts,
   localJobs,
   localFiles,
+  products,
+  productIdentifiers,
+  productAliases,
 };

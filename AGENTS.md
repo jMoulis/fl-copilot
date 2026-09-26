@@ -521,7 +521,7 @@ Do not use superseded technical documents from outside this repository.
 The active increment is:
 
 ```text
-M1-T01 through M1-T12 — Complete synchronization foundation with shared contracts, atomic local application, idempotent remote endpoints, mobile cycle orchestration, reactive status UI, durable conflict capture and two-device propagation proof
+M2-T01 — Canonical Product, ProductIdentifier and ProductAlias contracts, local/remote repositories and cross-device replication
 ```
 
-Read `docs/progress/M0_FOUNDATION.md` for M0 acceptance evidence and remaining native gates, and `docs/progress/M1_SYNC_FOUNDATION.md` for the active synchronization increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`; no business milestone may bypass M1.
+Read `docs/progress/M0_FOUNDATION.md` and `docs/progress/M1_SYNC_FOUNDATION.md` for completed foundation evidence, and `docs/progress/M2_PRODUCT_MASTER.md` for the active product-master increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`.

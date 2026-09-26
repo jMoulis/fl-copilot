@@ -18,6 +18,10 @@ import {
   syncTestEntityPayloadSchema,
   type SyncTestEntityDocument,
 } from "./sync-test-entity.js";
+import {
+  applyProductMasterCommand,
+  isProductMasterCommand,
+} from "../products/product-master.js";
 
 interface StoredCommandResponse {
   remoteEntity?: SyncCommandResult["remoteEntity"];
@@ -83,6 +87,16 @@ async function applyCommand(
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
 ) {
+  if (isProductMasterCommand(command)) {
+    return applyProductMasterCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      now,
+      syncChanges,
+    );
+  }
   if (
     command.type !== "SYNC_TEST_ENTITY_UPSERT" ||
     command.entityType !== "sync_test_entity"

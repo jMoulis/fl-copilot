@@ -11,6 +11,7 @@ import { applyBootstrap } from "./apply-bootstrap";
 import { applyPullPage } from "./apply-pull-page";
 import type { AtomicMutationDatabase } from "./atomic-local-mutation";
 import { ConflictRepository } from "./conflict-repository";
+import { applyProductMasterChange } from "../products/apply-product-master";
 import {
   OutboxRepository,
   type OutboxCommand,
@@ -181,6 +182,36 @@ export class MobileSyncService {
           result.status === "APPLIED" ||
           result.status === "ALREADY_APPLIED"
         ) {
+          if (
+            typeof result.remoteVersion === "number" &&
+            ["product", "product_identifier", "product_alias"].includes(
+              command.entityType,
+            )
+          ) {
+            const localVersion =
+              typeof command.payload === "object" &&
+              command.payload !== null &&
+              "version" in command.payload &&
+              typeof command.payload.version === "number"
+                ? command.payload.version
+                : undefined;
+            await applyProductMasterChange(
+              transaction,
+              storeId,
+              {
+                entityType: command.entityType,
+                entityId: command.entityId,
+                entityVersion: result.remoteVersion,
+                operation: command.commandType.endsWith("_DELETE")
+                  ? "DELETE"
+                  : "UPSERT",
+                ...(result.remoteEntity === undefined
+                  ? {}
+                  : { entity: result.remoteEntity }),
+              },
+              localVersion,
+            );
+          }
           await outbox.markAcknowledged(command.commandId);
           pushed += 1;
         } else if (result.status === "CONFLICT") {

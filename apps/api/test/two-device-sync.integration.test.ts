@@ -21,6 +21,8 @@ import {
   type SyncTransport,
 } from "../../mobile/src/sync/sync-service.js";
 import { createSyncTestEntity } from "../../mobile/src/sync/sync-test-entity.js";
+import { normalizeProductLabel } from "@fl-copilot/domain";
+import { ProductMasterRepository } from "../../mobile/src/products/product-master-repository.js";
 
 type SQLiteValue = string | number | null;
 
@@ -207,6 +209,210 @@ describeWithMongoTransactions("M1 two-device synchronization proof", () => {
 
     deviceAAfterRestart.database.close();
     deviceB.database.close();
+  });
+
+  it("replicates a product aggregate without coercing its identifier", async () => {
+    const storeId = randomUUID();
+    const productId = randomUUID();
+    const identifierId = randomUUID();
+    const aliasId = randomUUID();
+    const deviceAId = randomUUID();
+    const deviceBId = randomUUID();
+    const timestamp = "2026-09-26T09:00:00.000Z";
+    const deviceA = await openDevice(createLocalDatabasePath("product-a"));
+    const deviceB = await openDevice(createLocalDatabasePath("product-b"));
+    const remoteNow = () => new Date("2026-09-26T09:10:00.000Z");
+    const push = createMongoSyncPushService(remoteDatabase, remoteNow);
+    const pull = createMongoSyncPullService(remoteDatabase, remoteNow);
+    const bootstrap = createMongoSyncBootstrapService(
+      remoteDatabase,
+      remoteNow,
+      () => "product-bootstrap-revision",
+    );
+    const transportFor = (deviceId: string): SyncTransport => ({
+      push: (request) => push.push(request, `product-request-${deviceId}`),
+      pull: (pulledStoreId, cursor) =>
+        pull.pull(pulledStoreId, { cursor, limit: 500 }),
+      bootstrap: (bootstrappedStoreId) =>
+        bootstrap.bootstrap(
+          {
+            userId: randomUUID(),
+            sessionId: randomUUID(),
+            deviceId,
+            storeId: bootstrappedStoreId,
+            storeName: "Magasin produits",
+            role: "MANAGER",
+          },
+          { rawObservationDays: 90 },
+        ),
+    });
+    await new MobileSyncService(deviceB, transportFor(deviceBId), {
+      appVersion: "0.1.0",
+      deviceId: deviceBId,
+    }).bootstrap(storeId);
+
+    const repositoryA = new ProductMasterRepository(deviceA);
+    await repositoryA.upsertProduct(
+      {
+        id: productId,
+        storeId,
+        label: "Poire Conférence vrac",
+        category: "FRUIT",
+        nature: "BULK",
+        salesUnit: "KG",
+        packaging: null,
+        familyId: null,
+        subfamilyId: null,
+        status: "ACTIVE",
+        version: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null,
+      },
+      { commandId: randomUUID(), deviceId: deviceAId },
+    );
+    await repositoryA.upsertIdentifier(
+      {
+        id: identifierId,
+        storeId,
+        productId,
+        type: "EAN",
+        value: "0000087003017",
+        source: "MERCALYS",
+        status: "VALIDATED",
+        version: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null,
+      },
+      { commandId: randomUUID(), deviceId: deviceAId },
+    );
+    const alias = "Poire conférence vra";
+    await repositoryA.upsertAlias(
+      {
+        id: aliasId,
+        storeId,
+        productId,
+        alias,
+        normalizedAlias: normalizeProductLabel(alias),
+        source: "MERCALYS",
+        status: "VALIDATED",
+        confidence: null,
+        version: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null,
+      },
+      { commandId: randomUUID(), deviceId: deviceAId },
+    );
+
+    await expect(
+      new MobileSyncService(deviceA, transportFor(deviceAId), {
+        appVersion: "0.1.0",
+        deviceId: deviceAId,
+      }).sync(storeId),
+    ).resolves.toMatchObject({ pushed: 3, conflicts: 0, failed: 0 });
+    await expect(
+      new MobileSyncService(deviceB, transportFor(deviceBId), {
+        appVersion: "0.1.0",
+        deviceId: deviceBId,
+      }).sync(storeId),
+    ).resolves.toMatchObject({ pushed: 0, pulled: 3 });
+
+    const repositoryB = new ProductMasterRepository(deviceB);
+    await expect(repositoryB.getProduct(productId)).resolves.toMatchObject({
+      entity: { id: productId, label: "Poire Conférence vrac", version: 1 },
+      syncState: "SYNCED",
+      dirty: false,
+      remoteVersion: 1,
+    });
+    await expect(repositoryB.listIdentifiers(productId)).resolves.toMatchObject(
+      [
+        {
+          entity: { id: identifierId, value: "0000087003017", version: 1 },
+          syncState: "SYNCED",
+        },
+      ],
+    );
+    await expect(repositoryB.listAliases(productId)).resolves.toHaveLength(1);
+
+    const mongoDatabase = await remoteDatabase.getDb();
+    await expect(
+      mongoDatabase
+        .collection<{ storeId: string; value: string }>("productIdentifiers")
+        .findOne({ storeId, value: "0000087003017" }),
+    ).resolves.toMatchObject({ value: "0000087003017" });
+
+    const updateTimestamp = "2026-09-26T09:20:00.000Z";
+    await repositoryA.upsertProduct(
+      {
+        id: productId,
+        storeId,
+        label: "Poire Conférence",
+        category: "FRUIT",
+        nature: "BULK",
+        salesUnit: "KG",
+        packaging: null,
+        familyId: null,
+        subfamilyId: null,
+        status: "ACTIVE",
+        version: 2,
+        createdAt: timestamp,
+        updatedAt: updateTimestamp,
+        deletedAt: null,
+      },
+      {
+        commandId: randomUUID(),
+        deviceId: deviceAId,
+        expectedRemoteVersion: 1,
+      },
+    );
+    await repositoryA.delete(
+      "product_alias",
+      aliasId,
+      storeId,
+      updateTimestamp,
+      {
+        commandId: randomUUID(),
+        deviceId: deviceAId,
+        expectedRemoteVersion: 1,
+      },
+    );
+
+    await expect(
+      new MobileSyncService(deviceA, transportFor(deviceAId), {
+        appVersion: "0.1.0",
+        deviceId: deviceAId,
+      }).sync(storeId),
+    ).resolves.toMatchObject({ pushed: 2, conflicts: 0, failed: 0 });
+    await expect(
+      new MobileSyncService(deviceB, transportFor(deviceBId), {
+        appVersion: "0.1.0",
+        deviceId: deviceBId,
+      }).sync(storeId),
+    ).resolves.toMatchObject({ pushed: 0, pulled: 2 });
+
+    await expect(repositoryB.getProduct(productId)).resolves.toMatchObject({
+      entity: { label: "Poire Conférence", version: 2 },
+      syncState: "SYNCED",
+      dirty: false,
+      remoteVersion: 2,
+    });
+    await expect(repositoryB.listAliases(productId)).resolves.toEqual([]);
+
+    const deviceCId = randomUUID();
+    const deviceC = await openDevice(createLocalDatabasePath("product-c"));
+    await new MobileSyncService(deviceC, transportFor(deviceCId), {
+      appVersion: "0.1.0",
+      deviceId: deviceCId,
+    }).bootstrap(storeId);
+    await expect(
+      new ProductMasterRepository(deviceC).listAliases(productId),
+    ).resolves.toEqual([]);
+
+    deviceA.database.close();
+    deviceB.database.close();
+    deviceC.database.close();
   });
 
   function createLocalDatabasePath(label: string) {

@@ -93,5 +93,4 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 
 ## Next work
 
-1. Merge the M1-T12 proof after the transactional MongoDB CI gate passes.
-2. Begin M2-T01 with canonical Product, ProductIdentifier and ProductAlias schemas and repositories.
+M1-T01 through M1-T12 are complete. Product-master work continues in `docs/progress/M2_PRODUCT_MASTER.md`.

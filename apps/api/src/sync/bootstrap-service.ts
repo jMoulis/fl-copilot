@@ -12,6 +12,14 @@ import {
   serializeSyncTestEntity,
   type SyncTestEntityDocument,
 } from "./sync-test-entity.js";
+import {
+  serializeProductAliasDocument,
+  serializeProductDocument,
+  serializeProductIdentifierDocument,
+  type ProductAliasDocument,
+  type ProductDocument,
+  type ProductIdentifierDocument,
+} from "../products/product-master.js";
 
 interface SyncStoreCounterDocument {
   _id: string;
@@ -45,11 +53,33 @@ export function createMongoSyncBootstrapService(
                 { _id: store.storeId },
                 { session, promoteLongs: false },
               );
-            const syncTestEntities = await mongoDatabase
-              .collection<SyncTestEntityDocument>("syncTestEntities")
-              .find({ storeId: store.storeId }, { session })
-              .sort({ _id: 1 })
-              .toArray();
+            const [
+              syncTestEntities,
+              products,
+              productIdentifiers,
+              productAliases,
+            ] = await Promise.all([
+              mongoDatabase
+                .collection<SyncTestEntityDocument>("syncTestEntities")
+                .find({ storeId: store.storeId }, { session })
+                .sort({ _id: 1 })
+                .toArray(),
+              mongoDatabase
+                .collection<ProductDocument>("products")
+                .find({ storeId: store.storeId, deletedAt: null }, { session })
+                .sort({ _id: 1 })
+                .toArray(),
+              mongoDatabase
+                .collection<ProductIdentifierDocument>("productIdentifiers")
+                .find({ storeId: store.storeId, deletedAt: null }, { session })
+                .sort({ _id: 1 })
+                .toArray(),
+              mongoDatabase
+                .collection<ProductAliasDocument>("productAliases")
+                .find({ storeId: store.storeId, deletedAt: null }, { session })
+                .sort({ _id: 1 })
+                .toArray(),
+            ]);
             const sequence = counter?.nextSequence ?? Long.ZERO;
             response = {
               protocolVersion: SYNC_PROTOCOL_VERSION,
@@ -65,9 +95,13 @@ export function createMongoSyncBootstrapService(
               },
               entities: {
                 syncTestEntities: syncTestEntities.map(serializeSyncTestEntity),
-                products: [],
-                productIdentifiers: [],
-                productAliases: [],
+                products: products.map(serializeProductDocument),
+                productIdentifiers: productIdentifiers.map(
+                  serializeProductIdentifierDocument,
+                ),
+                productAliases: productAliases.map(
+                  serializeProductAliasDocument,
+                ),
                 needUnits: [],
                 needMemberships: [],
                 productSubstitutions: [],
