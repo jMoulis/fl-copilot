@@ -8,6 +8,12 @@ const environmentSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
+  SENTRY_DSN: z.string().url().optional(),
+  SENTRY_ENVIRONMENT: z.string().trim().min(1).optional(),
+  SENTRY_TEST_ROUTE_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   MONGODB_URI: z
     .string()
     .regex(/^mongodb(?:\+srv)?:\/\//, "must be a MongoDB connection URI")
@@ -82,6 +88,12 @@ export function parseEnvironment(
     result.data.AUTH_DEVELOPMENT_CODE
   ) {
     throw new Error("Invalid environment: AUTH_DEVELOPMENT_CODE");
+  }
+  if (
+    result.data.NODE_ENV === "production" &&
+    result.data.SENTRY_TEST_ROUTE_ENABLED
+  ) {
+    throw new Error("Invalid environment: SENTRY_TEST_ROUTE_ENABLED");
   }
   return {
     ...result.data,

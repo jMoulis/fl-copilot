@@ -23,6 +23,8 @@ The web build bypasses native SQLite because it is a visual preview. Native iOS/
 
 M0-T07 generates `deviceId` with Expo Crypto and persists it in local metadata. It survives ordinary restarts and is regenerated after a clean installation. The initialized database context exposes it for authentication and synchronization envelopes. M0-T08 adds the email-code flow and secure session persistence. M0-T09 separates development, staging and production configuration; staging and production require their own EAS-managed API URL.
 
+M0-T10 initializes Sentry when `EXPO_PUBLIC_SENTRY_DSN` is configured. Error events omit user identity, request data, attachments and breadcrumb payloads. In development and staging, **Plus → Diagnostic de développement** sends one deliberate test error. The public organization and project slugs are part of the Expo plugin configuration. Source-map upload during EAS builds additionally requires a sensitive `SENTRY_AUTH_TOKEN`, which must stay out of Git.
+
 See the root README and `docs/progress/M0_FOUNDATION.md` for setup and validation evidence.
 
 ## Browser preview

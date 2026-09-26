@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Text } from "react-native";
 import {
   AppScreen,
@@ -8,10 +9,14 @@ import {
 } from "@/components/ui";
 import { useUiStore } from "@/store/ui";
 import { useAuth } from "@/auth/auth-provider";
+import { getAppEnvironment } from "@/config/environment";
+import { sendMobileObservabilityTest } from "@/observability/sentry";
 export default function MoreScreen() {
   const visible = useUiStore((state) => state.aboutVisible);
   const setVisible = useUiStore((state) => state.setAboutVisible);
   const { session, logout } = useAuth();
+  const [monitoringStatus, setMonitoringStatus] = useState<string>();
+  const canTestMonitoring = getAppEnvironment() !== "production";
   return (
     <AppScreen>
       <AppHeader title="Plus" subtitle="Votre espace Fruits & Légumes." />
@@ -36,6 +41,34 @@ export default function MoreScreen() {
           }}
         />
       </SectionCard>
+      {canTestMonitoring ? (
+        <SectionCard title="Diagnostic de développement">
+          <Text className="text-base leading-6 text-muted">
+            Envoyez une erreur volontaire pour vérifier le projet Sentry mobile.
+          </Text>
+          <SecondaryButton
+            label="Tester le suivi des erreurs"
+            onPress={() => {
+              setMonitoringStatus("Envoi en cours…");
+              void sendMobileObservabilityTest().then((sent) => {
+                setMonitoringStatus(
+                  sent
+                    ? "Événement de test envoyé."
+                    : "Événement non envoyé. Vérifiez la configuration Sentry.",
+                );
+              });
+            }}
+          />
+          {monitoringStatus ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              className="text-sm text-muted"
+            >
+              {monitoringStatus}
+            </Text>
+          ) : null}
+        </SectionCard>
+      ) : null}
       <BottomSheet
         visible={visible}
         title="Fruits & Légumes"

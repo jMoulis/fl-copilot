@@ -34,6 +34,13 @@
             "enableSceneSupport": true
           }
         }
+      ],
+      [
+        "@sentry/react-native",
+        {
+          "organization": "moulis",
+          "project": "fruits-et-legumes"
+        }
       ]
     ],
     "extra": {

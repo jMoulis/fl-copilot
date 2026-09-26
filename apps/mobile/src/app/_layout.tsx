@@ -1,4 +1,5 @@
 import "../../global.css";
+import { useEffect } from "react";
 import { Stack, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { AppProviders } from "@/providers/app-providers";
@@ -8,7 +9,19 @@ import {
   InlineAlert,
   PrimaryButton,
 } from "@/components/ui";
-export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
+import {
+  captureScreenError,
+  initializeObservability,
+  withSentry,
+} from "@/observability/sentry";
+
+initializeObservability();
+
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
+    captureScreenError(error, "root");
+  }, [error]);
+
   return (
     <AppProviders>
       <AppScreen>
@@ -27,7 +40,7 @@ export function ErrorBoundary({ retry }: ErrorBoundaryProps) {
     </AppProviders>
   );
 }
-export default function RootLayout() {
+function RootLayout() {
   return (
     <AppProviders>
       <StatusBar style="dark" />
@@ -40,3 +53,5 @@ export default function RootLayout() {
     </AppProviders>
   );
 }
+
+export default withSentry(RootLayout);

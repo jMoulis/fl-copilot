@@ -24,6 +24,7 @@ import {
   type AuthService,
 } from "./auth/service.js";
 import type { DatabaseService } from "./database/types.js";
+import { captureApiError, logRemoteEvent } from "./observability.js";
 
 type AppDependencies = {
   database: DatabaseService;
@@ -112,8 +113,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       (status >= 500
         ? ["INTERNAL_ERROR", "Une erreur est survenue. Veuillez réessayer."]
         : ["REQUEST_REJECTED", "Cette requête ne peut pas être traitée."]);
-    if (status >= 500)
+    if (status >= 500) {
       request.log.error({ code, requestId: request.id }, "Request failed");
+      const safeContext = {
+        code,
+        method: request.method,
+        requestId: request.id,
+      };
+      logRemoteEvent("error", "API request failed", safeContext);
+      captureApiError(error, safeContext);
+    }
     return reply.code(status).send({
       code,
       messageFr,
@@ -193,5 +202,10 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       return { revoked: true as const };
     },
   );
+  if (config.SENTRY_TEST_ROUTE_ENABLED) {
+    app.post("/api/v1/observability/test-error", async () => {
+      throw new Error("M0-T10 API monitoring test error");
+    });
+  }
   return app;
 }

@@ -1,10 +1,10 @@
 # M0 foundation implementation and acceptance
 
-Date: 2026-09-25.
+Date: 2026-09-26.
 
 ## Scope and source specifications
 
-This increment implements the code for M0-T01 through M0-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`. It follows the native architecture, primary navigation and error DTO from the canonical architecture, UX and database/API specifications. No source specification was replaced.
+This increment implements the code for M0-T01 through M0-T10 from `docs/specs/IMPLEMENTATION_PLAN.md`. It follows the native architecture, primary navigation and error DTO from the canonical architecture, UX and database/API specifications. No source specification was replaced. M0-T10 passed physical-device acceptance with deliberate API and mobile errors observed in their non-production Sentry projects.
 
 M0-T01 had directories but no runnable typecheck/test/lint toolchain; that gap is now filled. This is an early foundation increment, not completion of M0 or of the MVP.
 
@@ -23,36 +23,42 @@ M0-T01 had directories but no runnable typecheck/test/lint toolchain; that gap i
 - Shared `ApiErrorDto` and health schemas in `packages/sync-contracts` (no premature sync protocol implementation).
 - Browser preview using the same Expo components, with `pnpm preview:web`; it does not replace native platform acceptance.
 - A Maestro navigation flow for later repeatable native E2E execution.
+- Sentry error monitoring for mobile and API, Sentry-backed structured API logs, source-map-ready Metro configuration and non-production deliberate test triggers.
+- Explicit telemetry minimization: no user identity, request payloads, headers, cookies, query parameters, database values, local variables, source context, screenshots or view hierarchy.
 
 The first remote infrastructure migration initializes the migration registry and its unique name index. The second adds authentication indexes for users, challenges, device sessions and store memberships. No source capture, imports, business KPI, synchronization or recommendation is represented as working.
 
 ## Verification evidence
 
-| Check                                    | Result                                                                                                                             |
-| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm install`                           | Passed; lockfile generated                                                                                                         |
-| `pnpm check`                             | Passed: structure, lint, strict TypeScript in all 9 workspace packages, 28 Vitest cases; 3 integration cases conditionally skipped |
-| `pnpm build`                             | Passed; production API bundle generated                                                                                            |
-| `pnpm format:check`                      | Passed                                                                                                                             |
-| MongoDB integration                      | Real isolated MongoDB 6 write/read passed; migration recorded once and reused                                                      |
-| Compiled API real HTTP `GET /health`     | HTTP 200 while MongoDB is connected; HTTP 503 degraded response while unavailable                                                  |
-| MongoDB recovery                         | Same API process moved from HTTP 503 to HTTP 200 after MongoDB started; no API restart required                                    |
-| Expo Doctor                              | Passed all 21 checks for SDK 57                                                                                                    |
-| iOS and Android JavaScript/Hermes export | Passed                                                                                                                             |
-| Android `app:assembleDebug`              | BUILD SUCCESSFUL, 491 tasks for arm64-v8a, armeabi-v7a, x86 and x86_64; runtime test still pending                                 |
-| iOS simulator build                      | BUILD SUCCEEDED with Expo SDK 57, iOS 16.4 target and Xcode 27                                                                     |
-| Native SQLite fresh migration            | iOS database created with all 6 tables, `PRAGMA user_version = 1` and metadata `schema_version = 1`                                |
-| Native SQLite restart persistence        | Temporary local job remained after terminate/relaunch and was removed after verification                                           |
-| Local migration safety tests             | Fresh schema, reopen persistence and failed-migration rollback preserving a pending outbox command passed                          |
-| Stable device identity                   | Same UUID after terminate/relaunch; different secure-random UUID after clean simulator reinstall                                   |
-| iOS manual UI navigation                 | All five tabs opened with expected French content; About opened and closed; return to Plus verified                                |
-| Browser, 390 × 844                       | All five tabs and About open/close verified after correcting web focus behavior; no browser errors reported in final run           |
-| Physical iPhone authentication           | Resend sandbox code delivered and verified; session restored after terminate/relaunch; logout cleared access                       |
-| EAS environment configuration            | Project linked; development, staging and production profiles resolve with EAS CLI 24.8.0 under Node 24 ARM64                       |
-| EAS development build                    | Android internal-distribution APK completed successfully; EAS build `1eeebfe9-d57d-4db2-9a33-5d32baa00e9a`                         |
-| EAS iOS development build                | Correct `com.flcopilot.mobile` Dev Client IPA completed with iPhone Air provisioning; build `c529c83e-972c-493e-a685-9e4742a93d78` |
-| EAS iOS staging acceptance               | Ad Hoc IPA with embedded JavaScript launched without Metro on iPhone Air; build `2464328f-b916-49a2-9411-3c3815368dfc`             |
-| `git diff --check`                       | Passed                                                                                                                             |
+| Check                                    | Result                                                                                                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm install`                           | Passed; lockfile generated                                                                                                                           |
+| `pnpm check`                             | Passed: structure, lint, strict TypeScript in all 9 workspace packages, 31 Vitest cases; 3 integration cases conditionally skipped                   |
+| `pnpm build`                             | Passed; production API bundle generated                                                                                                              |
+| `pnpm format:check`                      | Passed                                                                                                                                               |
+| MongoDB integration                      | Real isolated MongoDB 6 write/read passed; migration recorded once and reused                                                                        |
+| Compiled API real HTTP `GET /health`     | HTTP 200 while MongoDB is connected; HTTP 503 degraded response while unavailable                                                                    |
+| MongoDB recovery                         | Same API process moved from HTTP 503 to HTTP 200 after MongoDB started; no API restart required                                                      |
+| Expo Doctor                              | Passed all 21 checks for SDK 57                                                                                                                      |
+| iOS and Android JavaScript/Hermes export | Passed                                                                                                                                               |
+| Android `app:assembleDebug`              | BUILD SUCCESSFUL, 491 tasks for arm64-v8a, armeabi-v7a, x86 and x86_64; runtime test still pending                                                   |
+| iOS simulator build                      | BUILD SUCCEEDED with Expo SDK 57, iOS 16.4 target and Xcode 27                                                                                       |
+| Native SQLite fresh migration            | iOS database created with all 6 tables, `PRAGMA user_version = 1` and metadata `schema_version = 1`                                                  |
+| Native SQLite restart persistence        | Temporary local job remained after terminate/relaunch and was removed after verification                                                             |
+| Local migration safety tests             | Fresh schema, reopen persistence and failed-migration rollback preserving a pending outbox command passed                                            |
+| Stable device identity                   | Same UUID after terminate/relaunch; different secure-random UUID after clean simulator reinstall                                                     |
+| iOS manual UI navigation                 | All five tabs opened with expected French content; About opened and closed; return to Plus verified                                                  |
+| Browser, 390 × 844                       | All five tabs and About open/close verified after correcting web focus behavior; no browser errors reported in final run                             |
+| Physical iPhone authentication           | Resend sandbox code delivered and verified; session restored after terminate/relaunch; logout cleared access                                         |
+| EAS environment configuration            | Project linked; development, staging and production profiles resolve with EAS CLI 24.8.0 under Node 24 ARM64                                         |
+| EAS development build                    | Android internal-distribution APK completed successfully; EAS build `1eeebfe9-d57d-4db2-9a33-5d32baa00e9a`                                           |
+| EAS iOS development build                | Sentry-enabled `com.flcopilot.mobile` Dev Client IPA completed with iPhone Air provisioning; build `8e592b01-f87f-4199-ba33-06efa5c6e108`            |
+| EAS iOS staging acceptance               | Ad Hoc IPA with embedded JavaScript launched without Metro on iPhone Air; build `2464328f-b916-49a2-9411-3c3815368dfc`                               |
+| Sentry API error monitoring              | Deliberate development error received as `FRUITS-ET-LEGUMES-API-1`; identity and IP fields were empty                                                |
+| Sentry structured API logs               | Controlled `API started` and `API request failed` entries received remotely without request content                                                  |
+| Sentry mobile error monitoring           | Deliberate iPhone error received as `FRUITS-ET-LEGUMES-1` in `development`; zero users and no source-context lines or breadcrumb content were stored |
+| Sentry mobile privacy filter             | Automated test proves removal of user, request, extra, breadcrumb message/data and stack-frame source context before transmission                    |
+| `git diff --check`                       | Passed                                                                                                                                               |
 
 The API tests cover connected and degraded readiness, independent request IDs, 404 errors, valid/invalid Zod payloads, malformed JSON, oversized payloads, safe internal errors, response schema failures, environment validation and authentication routes. The conditional integration suite covers MongoDB migrations, one-time-code consumption, refresh-token rotation and reuse revocation. The local SQLite tests cover schema creation, restart persistence, atomic rollback without losing pending outbox work and stable/distinct device identity. Business authorization/store-isolation tests belong with future business endpoints; `/health` is intentionally public and store-independent.
 
@@ -74,6 +80,5 @@ References: [Expo SDK compatibility](https://docs.expo.dev/versions/latest/), [E
 
 1. Complete Android runtime/navigation and native accessibility acceptance for M0-T02/M0-T03. The installed Android emulator image is x86_64; the verified APK is arm64-v8a.
 2. Replace the preview LAN API URL with a hosted staging endpoint and set the production API URL when those remote environments exist. The profiles already isolate their values. Resend domain verification remains deferred until production preparation.
-3. Implement M0-T10 observability, then close the M0 gate before the M1 synchronization proof. No business feature work bypasses M1.
 
-The foundation and authentication changes were committed and merged into `master` through PRs #1 through #4. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery; no release or production deployment has been performed.
+The foundation and authentication changes were committed and merged into `master` through PRs #1 through #7. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery, and M0-T10 passed its API and physical-iPhone Sentry acceptance. No release or production deployment has been performed.
