@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Long } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseEnvironment } from "../src/config.js";
 import { createMongoDatabase } from "../src/database/mongo.js";
@@ -8,6 +9,7 @@ import {
   createMongoProcessedCommandService,
   type MongoCommandMutationContext,
 } from "../src/sync/processed-command-service.js";
+import { createMongoSyncChangeService } from "../src/sync/sync-change-service.js";
 
 const testMongoUri = process.env.TEST_MONGODB_URI;
 const describeWithMongo = testMongoUri ? describe : describe.skip;
@@ -74,6 +76,10 @@ describeWithMongo("MongoDB infrastructure", () => {
       _id: 3,
       name: "initialize-processed-command-indexes",
     });
+    await expect(migrations.findOne({ _id: 4 })).resolves.toMatchObject({
+      _id: 4,
+      name: "initialize-sync-change-indexes",
+    });
   });
 
   itWithMongoTransactions(
@@ -131,6 +137,69 @@ describeWithMongo("MongoDB infrastructure", () => {
       expect(
         outcomes.map(({ alreadyApplied }) => alreadyApplied).sort(),
       ).toEqual([false, true]);
+    },
+  );
+
+  itWithMongoTransactions(
+    "allocates unique ordered change sequences for concurrent mutations",
+    async () => {
+      const commands = createMongoProcessedCommandService(database);
+      const changes = createMongoSyncChangeService();
+      const storeId = randomUUID();
+      const entityIds = Array.from({ length: 10 }, () => randomUUID());
+
+      await Promise.all(
+        entityIds.map((entityId) =>
+          commands.execute(
+            {
+              commandId: randomUUID(),
+              storeId,
+              deviceId: randomUUID(),
+              commandType: "SYNC_TEST_ENTITY_UPSERT",
+              entityType: "sync_test_entity",
+              entityId,
+            },
+            async (context) => {
+              await context.database
+                .collection<{ _id: string; version: number }>(
+                  "syncTestEntities",
+                )
+                .insertOne(
+                  { _id: entityId, version: 1 },
+                  { session: context.session },
+                );
+              const change = await changes.append(context, {
+                storeId,
+                entityType: "sync_test_entity",
+                entityId,
+                operation: "UPSERT",
+                entityVersion: 1,
+              });
+              return {
+                resultStatus: "APPLIED",
+                resultingVersion: 1,
+                responseJson: { sequence: change.sequence.toString() },
+              };
+            },
+          ),
+        ),
+      );
+
+      const mongoDatabase = await database.getDb();
+      const persisted = await mongoDatabase
+        .collection<{ _id: string; storeId: string; sequence: Long }>(
+          "syncChanges",
+        )
+        .find({ storeId })
+        .sort({ sequence: 1 })
+        .toArray();
+      expect(persisted.map(({ sequence }) => sequence.toString())).toEqual(
+        Array.from({ length: 10 }, (_, index) => String(index + 1)),
+      );
+      const counter = await mongoDatabase
+        .collection<{ _id: string; nextSequence: Long }>("syncStoreCounters")
+        .findOne({ _id: storeId });
+      expect(counter?.nextSequence.toString()).toBe("10");
     },
   );
 
