@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 through M1-T03 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, the durable local SQLite Outbox repository and the atomic local mutation boundary. It does not implement remote idempotency, change sequencing or HTTP synchronization endpoints.
+The active increment covers M1-T01 through M1-T04 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, durable atomic local Outbox mutations and remote command idempotency. It does not implement store-scoped change sequencing or HTTP synchronization endpoints.
 
 ## Implemented
 
@@ -21,6 +21,9 @@ The active increment covers M1-T01 through M1-T03 from `docs/specs/IMPLEMENTATIO
 - Durable enqueue and lookup, bounded oldest-first pending queries, guarded state transitions, attempt tracking and interrupted-sync recovery.
 - A reusable exclusive-transaction helper that commits a local business mutation and its Outbox command as one SQLite unit.
 - A temporary synchronized test entity and schema migration used to prove the transaction boundary before real domain repositories adopt it.
+- A MongoDB `processedCommands` service that stores each globally unique command ID and its original result in the same transaction as the remote mutation.
+- Concurrent duplicate handling that returns the stored result without repeating the domain mutation, plus identity checks against command-ID reuse across stores or entities.
+- A MongoDB migration for the initial `processedCommands` operational index; MongoDB's `_id` index enforces global command-ID uniqueness.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
@@ -36,11 +39,15 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 | Outbox restart persistence   | Commands survive a SQLite file reopen and the next local sequence continues monotonically           |
 | Outbox ordering/transitions  | Pending commands return oldest first; retry, failure and interrupted-sync recovery metadata pass    |
 | Atomic local mutation        | Entity, Outbox command and sequence commit together; a failure before commit rolls all three back   |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 41 tests; 3 integration tests skipped          |
+| Remote command idempotency   | Concurrent duplicate commands produce one domain mutation and replay the original stored result     |
+| Remote transaction rollback  | A failed remote mutation persists neither the domain effect nor a processed-command record          |
+| Command identity guard       | Reuse of a command ID for a different store, device, type or entity is rejected                     |
+| Live Atlas integration       | Four isolated database tests pass, including concurrent transactional command idempotency           |
+| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 44 tests; 4 integration tests skipped          |
 | `pnpm format:check`          | Passed                                                                                              |
 | `git diff --check`           | Passed                                                                                              |
 
 ## Next work
 
-1. M1-T04: implement remote command idempotency with the `processedCommands` collection.
-2. Add store-scoped change sequencing before exposing push and pull endpoints.
+1. M1-T05: add atomic store-scoped sequencing with `syncStoreCounters` and `syncChanges`.
+2. Expose the idempotent command path through the push endpoint after sequencing is proven.
