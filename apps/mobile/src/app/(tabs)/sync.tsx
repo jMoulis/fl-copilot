@@ -1,5 +1,5 @@
 import { Text, View } from "react-native";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import {
   AppHeader,
   AppScreen,
@@ -11,6 +11,8 @@ import {
 } from "@/components/ui";
 import { useAuth } from "@/auth/auth-provider";
 import { useSync } from "@/sync/sync-provider";
+import { useOpenSyncConflicts } from "@/sync/use-sync-conflicts";
+import { conflictEntityLabel } from "@/sync/conflict-presentation";
 
 export default function SynchronizationScreen() {
   const { session } = useAuth();
@@ -23,6 +25,7 @@ export default function SynchronizationScreen() {
     syncNow,
   } = useSync();
   const store = session?.stores[0];
+  const conflicts = useOpenSyncConflicts(store?.storeId, conflictCount);
 
   return (
     <AppScreen>
@@ -76,6 +79,30 @@ export default function SynchronizationScreen() {
           title="Synchronisation incomplète"
           message="Certaines modifications n’ont pas pu être traitées. Réessayez maintenant."
         />
+      ) : null}
+
+      {conflicts.length > 0 ? (
+        <SectionCard title="Conflits à examiner">
+          {conflicts.map((conflict) => (
+            <View
+              key={conflict.id}
+              className="gap-3 border-t border-line pt-4 first:border-t-0 first:pt-0"
+            >
+              <Text className="text-base font-semibold text-ink">
+                {conflictEntityLabel(conflict)}
+              </Text>
+              <Text className="text-sm leading-5 text-muted">
+                Cette donnée a été modifiée sur un autre appareil.
+              </Text>
+              <SecondaryButton
+                label="Examiner"
+                onPress={() =>
+                  router.push(`/(tabs)/sync-conflict/${conflict.id}` as Href)
+                }
+              />
+            </View>
+          ))}
+        </SectionCard>
       ) : null}
 
       <SecondaryButton label="Retour" onPress={() => router.back()} />

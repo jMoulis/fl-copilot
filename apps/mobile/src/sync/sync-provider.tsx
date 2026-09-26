@@ -150,21 +150,28 @@ async function readLocalSyncSnapshot(
   database: ReturnType<typeof useLocalDatabase>["sqlite"],
   storeId: string,
 ): Promise<LocalSyncSnapshot> {
-  const counts = await database.getFirstAsync<{
+  const outboxCounts = await database.getFirstAsync<{
     pending_count: number;
-    conflict_count: number;
     failed_count: number;
   }>(
     `
         SELECT
           SUM(CASE WHEN status IN ('PENDING', 'SYNCING') THEN 1 ELSE 0 END)
             AS pending_count,
-          SUM(CASE WHEN status = 'CONFLICT' THEN 1 ELSE 0 END)
-            AS conflict_count,
           SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END)
             AS failed_count
         FROM sync_outbox
         WHERE store_id = ?
+      `,
+    storeId,
+  );
+  const conflictCounts = await database.getFirstAsync<{
+    conflict_count: number;
+  }>(
+    `
+        SELECT COUNT(*) AS conflict_count
+        FROM sync_conflicts
+        WHERE store_id = ? AND status = 'OPEN'
       `,
     storeId,
   );
@@ -179,9 +186,9 @@ async function readLocalSyncSnapshot(
     storeId,
   );
   return {
-    pendingCount: Number(counts?.pending_count ?? 0),
-    conflictCount: Number(counts?.conflict_count ?? 0),
-    failedCount: Number(counts?.failed_count ?? 0),
+    pendingCount: Number(outboxCounts?.pending_count ?? 0),
+    conflictCount: Number(conflictCounts?.conflict_count ?? 0),
+    failedCount: Number(outboxCounts?.failed_count ?? 0),
     ...(inbox?.last_successful_sync_at
       ? { lastSyncedAt: inbox.last_successful_sync_at }
       : {}),

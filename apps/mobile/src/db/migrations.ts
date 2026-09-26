@@ -187,6 +187,48 @@ export const localMigrations: readonly LocalMigration[] = [
       DROP TABLE sync_inbox_state_legacy;
     `,
   },
+  {
+    version: 5,
+    name: "align-sync-conflicts-with-canonical-contract",
+    sql: `
+      ALTER TABLE sync_conflicts RENAME TO sync_conflicts_legacy;
+
+      CREATE TABLE sync_conflicts (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        command_id TEXT,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        local_payload_json TEXT NOT NULL,
+        remote_payload_json TEXT NOT NULL,
+        local_expected_version INTEGER,
+        remote_version INTEGER,
+        conflict_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT
+      );
+
+      INSERT INTO sync_conflicts (
+        id, store_id, command_id, entity_type, entity_id,
+        local_payload_json, remote_payload_json, local_expected_version,
+        remote_version, conflict_type, status, created_at, resolved_at
+      )
+      SELECT
+        id, store_id, NULL, entity_type, entity_id,
+        local_payload_json, remote_payload_json, NULL,
+        NULL, 'LEGACY_CONFLICT', UPPER(status), detected_at, resolved_at
+      FROM sync_conflicts_legacy;
+
+      DROP TABLE sync_conflicts_legacy;
+
+      CREATE INDEX idx_conflicts_store_status
+        ON sync_conflicts (store_id, status);
+      CREATE UNIQUE INDEX idx_conflicts_command
+        ON sync_conflicts (command_id)
+        WHERE command_id IS NOT NULL;
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {
