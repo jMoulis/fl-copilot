@@ -24,8 +24,11 @@ function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
     close: async () => undefined,
   };
 }
-function createApp(status: DatabaseStatus = "connected") {
-  const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
+function createApp(
+  status: DatabaseStatus = "connected",
+  environment: Record<string, string> = {},
+) {
+  const app = buildApp(parseEnvironment({ NODE_ENV: "test", ...environment }), {
     database: createDatabase(status),
   });
   apps.push(app);
@@ -142,6 +145,24 @@ describe("API foundation", () => {
     expect(apiErrorSchema.parse(response.json()).retryable).toBe(true);
     expect(response.body).not.toContain("secret");
   });
+  it("exposes the deliberate monitoring error only outside production", async () => {
+    const development = await createApp("connected", {
+      SENTRY_TEST_ROUTE_ENABLED: "true",
+    }).inject({
+      method: "POST",
+      url: "/api/v1/observability/test-error",
+    });
+    expect(development.statusCode).toBe(500);
+    expect(apiErrorSchema.parse(development.json()).code).toBe(
+      "INTERNAL_ERROR",
+    );
+
+    const disabled = await createApp().inject({
+      method: "POST",
+      url: "/api/v1/observability/test-error",
+    });
+    expect(disabled.statusCode).toBe(404);
+  });
   it("rejects an invalid response through the response schema", async () => {
     const app = createApp();
     app.get(
@@ -213,6 +234,19 @@ describe("environment validation", () => {
       RESEND_API_KEY: "re_production_key",
       AUTH_EMAIL_FROM: "connexion@auth.example.com",
     });
+  });
+  it("forbids the deliberate monitoring route in production", () => {
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: "production",
+        MONGODB_URI: "mongodb://localhost:27017",
+        AUTH_TOKEN_SECRET: "t".repeat(32),
+        AUTH_CODE_PEPPER: "p".repeat(32),
+        RESEND_API_KEY: "re_production_key",
+        AUTH_EMAIL_FROM: "connexion@auth.example.com",
+        SENTRY_TEST_ROUTE_ENABLED: "true",
+      }),
+    ).toThrow("SENTRY_TEST_ROUTE_ENABLED");
   });
 });
 

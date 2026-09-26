@@ -21,6 +21,8 @@ mobile app → Fastify API → Resend → recipient mailbox
 
 Errors follow `ApiErrorDto` from `packages/sync-contracts`. Request IDs are server-generated and returned in the `x-request-id` header and error body. Request bodies, headers, URLs and raw exception messages are not logged by the foundation logger. The health endpoint has no store context and exposes no tenant data; authenticated store-isolation tests must be introduced with business endpoints.
 
+Configure the API Sentry project with `SENTRY_DSN` and optionally `SENTRY_ENVIRONMENT`. Unexpected server errors are captured with only the HTTP method, public error code and correlation ID; request bodies, headers, cookies, query parameters, database values, local variables and source context are disabled. Structured startup and failure logs use the same remote transport. Set `SENTRY_TEST_ROUTE_ENABLED=true` temporarily to expose `POST /api/v1/observability/test-error` for M0-T10 acceptance; production rejects this setting at startup.
+
 MongoDB uses the native driver with one shared client pool. Production requires an explicit `MONGODB_URI`; local development defaults to the loopback server. `MONGODB_DATABASE` and `MONGODB_MAX_POOL_SIZE` are validated at startup.
 
 Ordered, idempotent migrations live in `src/database/migrations.ts` and are recorded in `schemaMigrations`. Add a migration before repository code that depends on it. Migration numbers and recorded names are immutable.

@@ -4,7 +4,7 @@ Date: 2026-09-25.
 
 ## Scope and source specifications
 
-This increment implements the code for M0-T01 through M0-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`. It follows the native architecture, primary navigation and error DTO from the canonical architecture, UX and database/API specifications. No source specification was replaced.
+This increment implements the code for M0-T01 through M0-T10 from `docs/specs/IMPLEMENTATION_PLAN.md`. It follows the native architecture, primary navigation and error DTO from the canonical architecture, UX and database/API specifications. No source specification was replaced. M0-T10 remains open until the deliberate mobile error is observed from a new native build containing the Sentry module.
 
 M0-T01 had directories but no runnable typecheck/test/lint toolchain; that gap is now filled. This is an early foundation increment, not completion of M0 or of the MVP.
 
@@ -23,6 +23,8 @@ M0-T01 had directories but no runnable typecheck/test/lint toolchain; that gap i
 - Shared `ApiErrorDto` and health schemas in `packages/sync-contracts` (no premature sync protocol implementation).
 - Browser preview using the same Expo components, with `pnpm preview:web`; it does not replace native platform acceptance.
 - A Maestro navigation flow for later repeatable native E2E execution.
+- Sentry error monitoring for mobile and API, Sentry-backed structured API logs, source-map-ready Metro configuration and non-production deliberate test triggers.
+- Explicit telemetry minimization: no user identity, request payloads, headers, cookies, query parameters, database values, local variables, source context, screenshots or view hierarchy.
 
 The first remote infrastructure migration initializes the migration registry and its unique name index. The second adds authentication indexes for users, challenges, device sessions and store memberships. No source capture, imports, business KPI, synchronization or recommendation is represented as working.
 
@@ -52,6 +54,9 @@ The first remote infrastructure migration initializes the migration registry and
 | EAS development build                    | Android internal-distribution APK completed successfully; EAS build `1eeebfe9-d57d-4db2-9a33-5d32baa00e9a`                         |
 | EAS iOS development build                | Correct `com.flcopilot.mobile` Dev Client IPA completed with iPhone Air provisioning; build `c529c83e-972c-493e-a685-9e4742a93d78` |
 | EAS iOS staging acceptance               | Ad Hoc IPA with embedded JavaScript launched without Metro on iPhone Air; build `2464328f-b916-49a2-9411-3c3815368dfc`             |
+| Sentry API error monitoring              | Deliberate development error received as `FRUITS-ET-LEGUMES-API-1`; identity and IP fields were empty                              |
+| Sentry structured API logs               | Controlled `API started` and `API request failed` entries received remotely without request content                                |
+| Sentry mobile integration                | Expo plugin, Metro source-map integration, native dependency and iOS/Android/web exports passed; live device event remains pending |
 | `git diff --check`                       | Passed                                                                                                                             |
 
 The API tests cover connected and degraded readiness, independent request IDs, 404 errors, valid/invalid Zod payloads, malformed JSON, oversized payloads, safe internal errors, response schema failures, environment validation and authentication routes. The conditional integration suite covers MongoDB migrations, one-time-code consumption, refresh-token rotation and reuse revocation. The local SQLite tests cover schema creation, restart persistence, atomic rollback without losing pending outbox work and stable/distinct device identity. Business authorization/store-isolation tests belong with future business endpoints; `/health` is intentionally public and store-independent.
@@ -74,6 +79,6 @@ References: [Expo SDK compatibility](https://docs.expo.dev/versions/latest/), [E
 
 1. Complete Android runtime/navigation and native accessibility acceptance for M0-T02/M0-T03. The installed Android emulator image is x86_64; the verified APK is arm64-v8a.
 2. Replace the preview LAN API URL with a hosted staging endpoint and set the production API URL when those remote environments exist. The profiles already isolate their values. Resend domain verification remains deferred until production preparation.
-3. Implement M0-T10 observability, then close the M0 gate before the M1 synchronization proof. No business feature work bypasses M1.
+3. Store the Sentry source-map token as an EAS secret, build a new native Dev Client containing the Sentry module, then observe the deliberate mobile error. The API error and structured remote logs have already passed. No business feature work bypasses M1.
 
-The foundation and authentication changes were committed and merged into `master` through PRs #1 through #4. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery; no release or production deployment has been performed.
+The foundation and authentication changes were committed and merged into `master` through PRs #1 through #7. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery; no release or production deployment has been performed.
