@@ -47,7 +47,7 @@ describe("local SQLite migrations", () => {
   it("creates the foundation schema and exposes its version", async () => {
     const { adapter, database } = openTemporaryDatabase();
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(3);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(4);
 
     const tables = database
       .prepare(
@@ -64,12 +64,12 @@ describe("local SQLite migrations", () => {
       "sync_outbox",
       "sync_test_entities",
     ]);
-    expect(await getLocalSchemaVersion(adapter)).toBe(3);
+    expect(await getLocalSchemaVersion(adapter)).toBe(4);
     expect(
       database
         .prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'")
         .get(),
-    ).toEqual({ value: "3" });
+    ).toEqual({ value: "4" });
     expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({
       foreign_keys: 1,
     });
@@ -105,7 +105,7 @@ describe("local SQLite migrations", () => {
 
     const reopenedDatabase = new DatabaseSync(path);
     const reopenedAdapter = new NodeSQLiteAdapter(reopenedDatabase);
-    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(3);
+    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(4);
     expect(
       reopenedDatabase
         .prepare("SELECT id, status FROM local_jobs WHERE id = ?")
@@ -144,8 +144,22 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:00:00.000Z",
         "2026-09-16T10:01:00.000Z",
       );
+    database
+      .prepare(
+        `
+          INSERT INTO sync_inbox_state (
+            store_id, last_server_sequence, last_sync_at, updated_at
+          ) VALUES (?, ?, ?, ?)
+        `,
+      )
+      .run(
+        "store-1",
+        12,
+        "2026-09-16T10:02:00.000Z",
+        "2026-09-16T10:02:00.000Z",
+      );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(3);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(4);
     expect(
       database
         .prepare(
@@ -172,6 +186,23 @@ describe("local SQLite migrations", () => {
         .prepare("SELECT value FROM app_metadata WHERE key = ?")
         .get("outbox_local_sequence"),
     ).toEqual({ value: "7" });
+    expect(
+      database
+        .prepare(
+          `
+            SELECT cursor, last_successful_sync_at, protocol_version,
+                   bootstrap_revision
+            FROM sync_inbox_state
+            WHERE store_id = ?
+          `,
+        )
+        .get("store-1"),
+    ).toEqual({
+      cursor: null,
+      last_successful_sync_at: "2026-09-16T10:02:00.000Z",
+      protocol_version: 1,
+      bootstrap_revision: null,
+    });
 
     database.close();
   });
@@ -204,11 +235,11 @@ describe("local SQLite migrations", () => {
     await expect(
       runLocalMigrations(adapter, [
         ...localMigrations,
-        { version: 4, name: "invalid-migration", sql: "CREATE TABLE broken (" },
+        { version: 5, name: "invalid-migration", sql: "CREATE TABLE broken (" },
       ]),
-    ).rejects.toThrow("Local migration 4 (invalid-migration) failed");
+    ).rejects.toThrow("Local migration 5 (invalid-migration) failed");
 
-    expect(await getLocalSchemaVersion(adapter)).toBe(3);
+    expect(await getLocalSchemaVersion(adapter)).toBe(4);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
     ).toEqual({ count: 1 });

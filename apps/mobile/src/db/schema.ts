@@ -14,9 +14,10 @@ export const appMetadata = sqliteTable("app_metadata", {
 
 export const syncInboxState = sqliteTable("sync_inbox_state", {
   storeId: text("store_id").primaryKey(),
-  lastServerSequence: integer("last_server_sequence").notNull().default(0),
-  lastSyncAt: text("last_sync_at"),
-  updatedAt: text("updated_at").notNull(),
+  cursor: text("cursor"),
+  lastSuccessfulSyncAt: text("last_successful_sync_at"),
+  protocolVersion: integer("protocol_version").notNull(),
+  bootstrapRevision: text("bootstrap_revision"),
 });
 
 export const syncOutbox = sqliteTable(

@@ -15,6 +15,8 @@ import {
   logoutResponseSchema,
   refreshSessionRequestSchema,
   SYNC_PROTOCOL_VERSION,
+  syncPullQuerySchema,
+  syncPullResponseSchema,
   syncPushRequestSchema,
   syncPushResponseSchema,
   type ApiErrorDto,
@@ -29,6 +31,11 @@ import {
 import type { DatabaseService } from "./database/types.js";
 import { captureApiError, logRemoteEvent } from "./observability.js";
 import {
+  createMongoSyncPullService,
+  SyncPullCursorError,
+  type SyncPullService,
+} from "./sync/pull-service.js";
+import {
   createMongoSyncPushService,
   type SyncPushService,
 } from "./sync/push-service.js";
@@ -37,6 +44,7 @@ type AppDependencies = {
   database: DatabaseService;
   auth?: AuthService;
   sendAuthCode?: AuthCodeSender;
+  syncPull?: SyncPullService;
   syncPush?: SyncPushService;
 };
 
@@ -50,6 +58,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     );
   const syncPush =
     dependencies.syncPush ?? createMongoSyncPushService(dependencies.database);
+  const syncPull =
+    dependencies.syncPull ?? createMongoSyncPullService(dependencies.database);
   const app = Fastify({
     logger:
       config.NODE_ENV === "test"
@@ -251,6 +261,54 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.body.deviceId,
       );
       return syncPush.push(request.body, request.id);
+    },
+  );
+  app.get(
+    "/api/v1/sync/pull",
+    {
+      schema: {
+        querystring: syncPullQuerySchema,
+        response: { 200: syncPullResponseSchema },
+      },
+    },
+    async (request) => {
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith("Bearer ")) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string") {
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué pour synchroniser les données.",
+        );
+      }
+      const protocolVersion = request.headers["x-sync-protocol-version"];
+      if (protocolVersion !== String(SYNC_PROTOCOL_VERSION)) {
+        throw new AuthError(
+          400,
+          "SYNC_PROTOCOL_UNSUPPORTED",
+          "Cette version du protocole de synchronisation n’est pas prise en charge.",
+        );
+      }
+      const accessToken = authorization.slice("Bearer ".length);
+      if (!accessToken) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      await auth.authorizeStore(accessToken, storeId);
+      try {
+        return await syncPull.pull(storeId, request.query);
+      } catch (error) {
+        if (error instanceof SyncPullCursorError) {
+          throw new AuthError(
+            400,
+            "SYNC_CURSOR_INVALID",
+            "Le curseur de synchronisation est invalide.",
+          );
+        }
+        throw error;
+      }
     },
   );
   if (config.SENTRY_TEST_ROUTE_ENABLED) {

@@ -1,6 +1,7 @@
 export {
   bootstrapResponseSchema,
   syncChangeEnvelopeSchema,
+  syncPullQuerySchema,
   syncCommandSchema,
   syncPullResponseSchema,
   syncPushRequestSchema,

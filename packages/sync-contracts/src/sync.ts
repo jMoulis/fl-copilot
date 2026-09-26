@@ -3,6 +3,7 @@ import { apiErrorSchema } from "./api-error";
 
 export const SYNC_PROTOCOL_VERSION = 1;
 export const MAX_SYNC_PUSH_COMMANDS = 100;
+export const MAX_SYNC_PULL_CHANGES = 500;
 
 const idSchema = z.string().uuid();
 const nonEmptyStringSchema = z.string().trim().min(1);
@@ -69,6 +70,17 @@ export const syncChangeEnvelopeSchema = z.object({
   changedAt: timestampSchema,
 });
 export type SyncChangeEnvelope = z.infer<typeof syncChangeEnvelopeSchema>;
+
+export const syncPullQuerySchema = z.object({
+  cursor: nonEmptyStringSchema.optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(MAX_SYNC_PULL_CHANGES)
+    .default(MAX_SYNC_PULL_CHANGES),
+});
+export type SyncPullQuery = z.infer<typeof syncPullQuerySchema>;
 
 export const syncPullResponseSchema = z.object({
   changes: z.array(syncChangeEnvelopeSchema),
