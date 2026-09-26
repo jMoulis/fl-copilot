@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 through M1-T04 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, durable atomic local Outbox mutations and remote command idempotency. It does not implement store-scoped change sequencing or HTTP synchronization endpoints.
+The active increment covers M1-T01 through M1-T05 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, durable atomic local Outbox mutations, remote command idempotency and store-scoped change sequencing. It does not implement HTTP synchronization endpoints.
 
 ## Implemented
 
@@ -24,30 +24,34 @@ The active increment covers M1-T01 through M1-T04 from `docs/specs/IMPLEMENTATIO
 - A MongoDB `processedCommands` service that stores each globally unique command ID and its original result in the same transaction as the remote mutation.
 - Concurrent duplicate handling that returns the stored result without repeating the domain mutation, plus identity checks against command-ID reuse across stores or entities.
 - A MongoDB migration for the initial `processedCommands` operational index; MongoDB's `_id` index enforces global command-ID uniqueness.
+- A `syncStoreCounters` allocator backed by atomic MongoDB `$inc` using 64-bit `Long` sequences.
+- Transaction-aware `syncChanges` appends with the canonical entity identity, operation, version, timestamp and optional payload revision.
+- A unique `(storeId, sequence)` MongoDB index and replica-set CI runtime so transaction and concurrency acceptance tests execute on every pull request.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
 ## Verification evidence
 
-| Check                        | Result                                                                                              |
-| ---------------------------- | --------------------------------------------------------------------------------------------------- |
-| Shared runtime imports       | API and mobile façades resolve to the same `SyncCommand` and `SyncPushRequest` schema instances     |
-| Push request contract        | Protocol version, UUID identifiers, positive local sequence and the 100-command limit are validated |
-| Push response contract       | All five canonical per-command statuses parse successfully                                          |
-| Pull and bootstrap contracts | Change pages and the complete named bootstrap envelope parse successfully                           |
-| Outbox migration             | A populated M0 row is preserved and mapped to canonical M1 columns; its sequence counter resumes    |
-| Outbox restart persistence   | Commands survive a SQLite file reopen and the next local sequence continues monotonically           |
-| Outbox ordering/transitions  | Pending commands return oldest first; retry, failure and interrupted-sync recovery metadata pass    |
-| Atomic local mutation        | Entity, Outbox command and sequence commit together; a failure before commit rolls all three back   |
-| Remote command idempotency   | Concurrent duplicate commands produce one domain mutation and replay the original stored result     |
-| Remote transaction rollback  | A failed remote mutation persists neither the domain effect nor a processed-command record          |
-| Command identity guard       | Reuse of a command ID for a different store, device, type or entity is rejected                     |
-| Live Atlas integration       | Four isolated database tests pass, including concurrent transactional command idempotency           |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 44 tests; 4 integration tests skipped          |
-| `pnpm format:check`          | Passed                                                                                              |
-| `git diff --check`           | Passed                                                                                              |
+| Check                        | Result                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Shared runtime imports       | API and mobile façades resolve to the same `SyncCommand` and `SyncPushRequest` schema instances        |
+| Push request contract        | Protocol version, UUID identifiers, positive local sequence and the 100-command limit are validated    |
+| Push response contract       | All five canonical per-command statuses parse successfully                                             |
+| Pull and bootstrap contracts | Change pages and the complete named bootstrap envelope parse successfully                              |
+| Outbox migration             | A populated M0 row is preserved and mapped to canonical M1 columns; its sequence counter resumes       |
+| Outbox restart persistence   | Commands survive a SQLite file reopen and the next local sequence continues monotonically              |
+| Outbox ordering/transitions  | Pending commands return oldest first; retry, failure and interrupted-sync recovery metadata pass       |
+| Atomic local mutation        | Entity, Outbox command and sequence commit together; a failure before commit rolls all three back      |
+| Remote command idempotency   | Concurrent duplicate commands produce one domain mutation and replay the original stored result        |
+| Remote transaction rollback  | A failed remote mutation persists neither the domain effect nor a processed-command record             |
+| Command identity guard       | Reuse of a command ID for a different store, device, type or entity is rejected                        |
+| Store-scoped sequencing      | Concurrent changes receive unique, gap-free sequences while separate stores retain separate counters   |
+| Live Atlas integration       | Four isolated database tests pass, including concurrent transactional command idempotency              |
+| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 46 tests; 5 conditional integration tests skipped |
+| `pnpm format:check`          | Passed                                                                                                 |
+| `git diff --check`           | Passed                                                                                                 |
 
 ## Next work
 
-1. M1-T05: add atomic store-scoped sequencing with `syncStoreCounters` and `syncChanges`.
-2. Expose the idempotent command path through the push endpoint after sequencing is proven.
+1. M1-T06: expose the idempotent mutation and change-log path through `POST /api/v1/sync/push`.
+2. Return independent per-command results so one rejected command does not roll back the rest of a batch.

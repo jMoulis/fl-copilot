@@ -59,6 +59,15 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, processedAt: -1 });
     },
   },
+  {
+    version: 4,
+    name: "initialize-sync-change-indexes",
+    async up(database) {
+      await database
+        .collection("syncChanges")
+        .createIndex({ storeId: 1, sequence: 1 }, { unique: true });
+    },
+  },
 ];
 
 export async function runMongoMigrations(
