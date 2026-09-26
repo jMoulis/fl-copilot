@@ -10,6 +10,7 @@ import {
   type MongoCommandMutationContext,
 } from "../src/sync/processed-command-service.js";
 import { createMongoSyncChangeService } from "../src/sync/sync-change-service.js";
+import { createMongoSyncPushService } from "../src/sync/push-service.js";
 
 const testMongoUri = process.env.TEST_MONGODB_URI;
 const describeWithMongo = testMongoUri ? describe : describe.skip;
@@ -203,6 +204,106 @@ describeWithMongo("MongoDB infrastructure", () => {
     },
   );
 
+  itWithMongoTransactions(
+    "returns independent results for a mixed push batch",
+    async () => {
+      const service = createMongoSyncPushService(database);
+      const storeId = randomUUID();
+      const deviceId = randomUUID();
+      const entityIds = [randomUUID(), randomUUID()];
+      const commandIds = [
+        randomUUID(),
+        randomUUID(),
+        randomUUID(),
+        randomUUID(),
+      ];
+      const timestamp = "2026-09-26T08:00:00.000Z";
+      const createCommand = (
+        commandId: string,
+        entityId: string,
+        localSequence: number,
+      ) => ({
+        commandId,
+        localSequence,
+        type: "SYNC_TEST_ENTITY_UPSERT",
+        entityType: "sync_test_entity",
+        entityId,
+        expectedRemoteVersion: null,
+        createdAt: timestamp,
+        payload: {
+          id: entityId,
+          storeId,
+          label: `Entité ${localSequence}`,
+          remoteVersion: 0,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      });
+      const firstCommand = createCommand(commandIds[0]!, entityIds[0]!, 1);
+      const response = await service.push(
+        {
+          syncProtocolVersion: 1,
+          appVersion: "0.1.0",
+          deviceId,
+          storeId,
+          commands: [
+            firstCommand,
+            {
+              ...createCommand(commandIds[1]!, randomUUID(), 2),
+              type: "UNSUPPORTED_COMMAND",
+            },
+            createCommand(commandIds[2]!, entityIds[1]!, 3),
+            {
+              ...createCommand(commandIds[3]!, entityIds[0]!, 4),
+              expectedRemoteVersion: 0,
+            },
+          ],
+        },
+        "integration-request",
+      );
+
+      expect(response.results.map(({ status }) => status)).toEqual([
+        "APPLIED",
+        "REJECTED",
+        "APPLIED",
+        "CONFLICT",
+      ]);
+      const mongoDatabase = await database.getDb();
+      await expect(
+        mongoDatabase
+          .collection("syncTestEntities")
+          .countDocuments({ storeId }),
+      ).resolves.toBe(2);
+      await expect(
+        mongoDatabase.collection("syncChanges").countDocuments({ storeId }),
+      ).resolves.toBe(2);
+      await expect(
+        mongoDatabase
+          .collection<{ _id: string }>("processedCommands")
+          .countDocuments({ _id: { $in: commandIds } }),
+      ).resolves.toBe(4);
+
+      const replay = await service.push(
+        {
+          syncProtocolVersion: 1,
+          appVersion: "0.1.0",
+          deviceId,
+          storeId,
+          commands: [firstCommand],
+        },
+        "replay-request",
+      );
+      expect(replay.results[0]).toMatchObject({
+        commandId: commandIds[0],
+        status: "ALREADY_APPLIED",
+        remoteVersion: 1,
+      });
+      await expect(
+        mongoDatabase.collection("syncChanges").countDocuments({ storeId }),
+      ).resolves.toBe(2);
+    },
+  );
+
   it("verifies a one-time code, rotates refresh tokens and revokes reuse", async () => {
     const config = parseEnvironment({
       NODE_ENV: "test",
@@ -226,6 +327,26 @@ describeWithMongo("MongoDB infrastructure", () => {
     const first = await auth.verifyChallenge(challenge.challengeId, "123456");
     expect(first.user.email).toBe("manager@example.test");
     expect(first.refreshToken).toHaveLength(43);
+    const storeId = randomUUID();
+    const mongoDatabase = await database.getDb();
+    await mongoDatabase.collection("storeMemberships").insertOne({
+      userId: first.user.id,
+      storeId,
+      storeName: "Magasin test",
+      role: "MANAGER",
+      active: true,
+    });
+    await expect(
+      auth.authorizeStore(first.accessToken, storeId, deviceId),
+    ).resolves.toMatchObject({
+      userId: first.user.id,
+      storeId,
+      deviceId,
+      role: "MANAGER",
+    });
+    await expect(
+      auth.authorizeStore(first.accessToken, randomUUID(), deviceId),
+    ).rejects.toMatchObject({ publicCode: "STORE_ACCESS_DENIED" });
     await expect(
       auth.verifyChallenge(challenge.challengeId, "123456"),
     ).rejects.toMatchObject({ publicCode: "AUTH_CODE_INVALID" });

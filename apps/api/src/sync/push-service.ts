@@ -1,0 +1,269 @@
+import { z } from "zod";
+import type {
+  ApiErrorDto,
+  SyncCommand,
+  SyncCommandResult,
+  SyncPushRequest,
+  SyncPushResponse,
+} from "@fl-copilot/sync-contracts";
+import type { DatabaseService } from "../database/types.js";
+import {
+  createMongoProcessedCommandService,
+  ProcessedCommandIdentityError,
+  type MongoCommandMutationContext,
+  type ProcessedCommandDocument,
+} from "./processed-command-service.js";
+import { createMongoSyncChangeService } from "./sync-change-service.js";
+
+const syncTestEntityPayloadSchema = z.object({
+  id: z.string().uuid(),
+  storeId: z.string().uuid(),
+  label: z.string().trim().min(1),
+  remoteVersion: z.number().int().nonnegative(),
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+
+interface SyncTestEntityDocument {
+  _id: string;
+  storeId: string;
+  label: string;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface StoredCommandResponse {
+  remoteEntity?: SyncCommandResult["remoteEntity"];
+  error?: ApiErrorDto;
+}
+
+export interface SyncPushService {
+  push(input: SyncPushRequest, requestId: string): Promise<SyncPushResponse>;
+}
+
+export function createMongoSyncPushService(
+  database: DatabaseService,
+  now: () => Date = () => new Date(),
+): SyncPushService {
+  const processedCommands = createMongoProcessedCommandService(database, now);
+  const syncChanges = createMongoSyncChangeService(now);
+
+  return {
+    async push(input, requestId) {
+      const results: SyncCommandResult[] = [];
+      for (const command of input.commands) {
+        try {
+          const outcome = await processedCommands.execute(
+            {
+              commandId: command.commandId,
+              storeId: input.storeId,
+              deviceId: input.deviceId,
+              commandType: command.type,
+              entityType: command.entityType,
+              entityId: command.entityId,
+            },
+            (context) =>
+              applyCommand(
+                context,
+                input.storeId,
+                command,
+                requestId,
+                now,
+                syncChanges,
+              ),
+          );
+          results.push(
+            toCommandResult(outcome.command, outcome.alreadyApplied),
+          );
+        } catch (error) {
+          results.push(
+            error instanceof ProcessedCommandIdentityError
+              ? rejectedIdentityResult(command, requestId)
+              : retryableResult(command, requestId),
+          );
+        }
+      }
+      return { results, serverTime: now().toISOString() };
+    },
+  };
+}
+
+async function applyCommand(
+  context: MongoCommandMutationContext,
+  storeId: string,
+  command: SyncCommand,
+  requestId: string,
+  now: () => Date,
+  syncChanges: ReturnType<typeof createMongoSyncChangeService>,
+) {
+  if (
+    command.type !== "SYNC_TEST_ENTITY_UPSERT" ||
+    command.entityType !== "sync_test_entity"
+  ) {
+    return rejectedMutation(
+      "SYNC_COMMAND_UNSUPPORTED",
+      "Cette commande de synchronisation n’est pas prise en charge.",
+      requestId,
+    );
+  }
+
+  const parsed = syncTestEntityPayloadSchema.safeParse(command.payload);
+  if (
+    !parsed.success ||
+    parsed.data.id !== command.entityId ||
+    parsed.data.storeId !== storeId
+  ) {
+    return rejectedMutation(
+      "SYNC_COMMAND_INVALID",
+      "Cette commande de synchronisation est invalide.",
+      requestId,
+    );
+  }
+
+  const collection =
+    context.database.collection<SyncTestEntityDocument>("syncTestEntities");
+  const existing = await collection.findOne(
+    { _id: command.entityId },
+    { session: context.session },
+  );
+  if (existing && existing.storeId !== storeId) {
+    return rejectedMutation(
+      "SYNC_ENTITY_STORE_MISMATCH",
+      "Cette entité appartient à un autre magasin.",
+      requestId,
+    );
+  }
+
+  const expectedVersion = command.expectedRemoteVersion ?? null;
+  const actualVersion = existing?.version ?? null;
+  if (expectedVersion !== actualVersion) {
+    return {
+      resultStatus: "CONFLICT" as const,
+      resultingVersion: actualVersion,
+      responseJson: {
+        ...(existing ? { remoteEntity: serializeEntity(existing) } : {}),
+        error: publicError(
+          "SYNC_VERSION_CONFLICT",
+          "Cette donnée a été modifiée sur un autre appareil.",
+          requestId,
+        ),
+      } satisfies StoredCommandResponse,
+    };
+  }
+
+  const timestamp = now();
+  const entity: SyncTestEntityDocument = {
+    _id: command.entityId,
+    storeId,
+    label: parsed.data.label,
+    version: (actualVersion ?? 0) + 1,
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+  };
+  await collection.replaceOne({ _id: entity._id }, entity, {
+    upsert: true,
+    session: context.session,
+  });
+  await syncChanges.append(context, {
+    storeId,
+    entityType: command.entityType,
+    entityId: command.entityId,
+    operation: "UPSERT",
+    entityVersion: entity.version,
+  });
+  return {
+    resultStatus: "APPLIED" as const,
+    resultingVersion: entity.version,
+    responseJson: {
+      remoteEntity: serializeEntity(entity),
+    } satisfies StoredCommandResponse,
+  };
+}
+
+function rejectedMutation(code: string, messageFr: string, requestId: string) {
+  return {
+    resultStatus: "REJECTED" as const,
+    resultingVersion: null,
+    responseJson: {
+      error: publicError(code, messageFr, requestId),
+    } satisfies StoredCommandResponse,
+  };
+}
+
+function toCommandResult(
+  command: ProcessedCommandDocument,
+  alreadyProcessed: boolean,
+): SyncCommandResult {
+  const response = (command.responseJson ?? {}) as StoredCommandResponse;
+  const status =
+    alreadyProcessed && command.resultStatus === "APPLIED"
+      ? ("ALREADY_APPLIED" as const)
+      : command.resultStatus;
+  return {
+    commandId: command._id,
+    status,
+    entityType: command.entityType,
+    entityId: command.entityId,
+    remoteVersion: command.resultingVersion,
+    ...(response.remoteEntity === undefined
+      ? {}
+      : { remoteEntity: response.remoteEntity }),
+    ...(response.error === undefined ? {} : { error: response.error }),
+  };
+}
+
+function retryableResult(
+  command: SyncCommand,
+  requestId: string,
+): SyncCommandResult {
+  return {
+    commandId: command.commandId,
+    status: "RETRYABLE_ERROR",
+    entityType: command.entityType,
+    entityId: command.entityId,
+    error: publicError(
+      "SYNC_TEMPORARILY_UNAVAILABLE",
+      "Cette commande n’a pas pu être synchronisée. Réessayez.",
+      requestId,
+      true,
+    ),
+  };
+}
+
+function rejectedIdentityResult(
+  command: SyncCommand,
+  requestId: string,
+): SyncCommandResult {
+  return {
+    commandId: command.commandId,
+    status: "REJECTED",
+    entityType: command.entityType,
+    entityId: command.entityId,
+    error: publicError(
+      "SYNC_COMMAND_ID_REUSED",
+      "L’identifiant de cette commande a déjà été utilisé.",
+      requestId,
+    ),
+  };
+}
+
+function publicError(
+  code: string,
+  messageFr: string,
+  requestId: string,
+  retryable = false,
+): ApiErrorDto {
+  return { code, messageFr, retryable, requestId };
+}
+
+function serializeEntity(entity: SyncTestEntityDocument) {
+  return {
+    id: entity._id,
+    storeId: entity.storeId,
+    label: entity.label,
+    remoteVersion: entity.version,
+    createdAt: entity.createdAt.toISOString(),
+    updatedAt: entity.updatedAt.toISOString(),
+  };
+}

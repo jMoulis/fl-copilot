@@ -14,6 +14,9 @@ import {
   healthResponseSchema,
   logoutResponseSchema,
   refreshSessionRequestSchema,
+  SYNC_PROTOCOL_VERSION,
+  syncPushRequestSchema,
+  syncPushResponseSchema,
   type ApiErrorDto,
 } from "@fl-copilot/sync-contracts";
 import type { ApiConfig } from "./config.js";
@@ -25,11 +28,16 @@ import {
 } from "./auth/service.js";
 import type { DatabaseService } from "./database/types.js";
 import { captureApiError, logRemoteEvent } from "./observability.js";
+import {
+  createMongoSyncPushService,
+  type SyncPushService,
+} from "./sync/push-service.js";
 
 type AppDependencies = {
   database: DatabaseService;
   auth?: AuthService;
   sendAuthCode?: AuthCodeSender;
+  syncPush?: SyncPushService;
 };
 
 export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
@@ -40,6 +48,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       config,
       dependencies.sendAuthCode,
     );
+  const syncPush =
+    dependencies.syncPush ?? createMongoSyncPushService(dependencies.database);
   const app = Fastify({
     logger:
       config.NODE_ENV === "test"
@@ -200,6 +210,47 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       }
       await auth.logout(authorization.slice("Bearer ".length));
       return { revoked: true as const };
+    },
+  );
+  app.post(
+    "/api/v1/sync/push",
+    {
+      schema: {
+        body: syncPushRequestSchema,
+        response: { 200: syncPushResponseSchema },
+      },
+    },
+    async (request) => {
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith("Bearer ")) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      const storeId = request.headers["x-store-id"];
+      if (storeId !== request.body.storeId) {
+        throw new AuthError(
+          403,
+          "STORE_CONTEXT_MISMATCH",
+          "Le magasin demandé ne correspond pas à la requête.",
+        );
+      }
+      const protocolVersion = request.headers["x-sync-protocol-version"];
+      if (protocolVersion !== String(SYNC_PROTOCOL_VERSION)) {
+        throw new AuthError(
+          400,
+          "SYNC_PROTOCOL_UNSUPPORTED",
+          "Cette version du protocole de synchronisation n’est pas prise en charge.",
+        );
+      }
+      const accessToken = authorization.slice("Bearer ".length);
+      if (!accessToken) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      await auth.authorizeStore(
+        accessToken,
+        request.body.storeId,
+        request.body.deviceId,
+      );
+      return syncPush.push(request.body, request.id);
     },
   );
   if (config.SENTRY_TEST_ROUTE_ENABLED) {

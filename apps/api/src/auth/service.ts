@@ -60,7 +60,20 @@ export interface AuthService {
     deviceId: string,
     refreshToken: string,
   ): Promise<AuthSessionResponse>;
+  authorizeStore(
+    accessToken: string,
+    storeId: string,
+    deviceId: string,
+  ): Promise<AuthorizedStoreContext>;
   logout(accessToken: string): Promise<void>;
+}
+
+export interface AuthorizedStoreContext {
+  userId: string;
+  sessionId: string;
+  deviceId: string;
+  storeId: string;
+  role: string;
 }
 
 type ChallengeDocument = {
@@ -231,6 +244,46 @@ export function createMongoAuthService(
         .findOne({ _id: session.userId });
       if (!user) throw sessionExpiredError();
       return issueSession(db, config, user, deviceId, now, session);
+    },
+
+    async authorizeStore(accessToken, storeId, deviceId) {
+      const claims = verifyAccessToken(config.AUTH_TOKEN_SECRET, accessToken);
+      if (claims.deviceId !== deviceId) {
+        throw new AuthError(
+          403,
+          "AUTH_DEVICE_MISMATCH",
+          "Cet appareil ne peut pas utiliser cette session.",
+        );
+      }
+      const db = await database.getDb();
+      const now = new Date();
+      const session = await db
+        .collection<SessionDocument>("deviceSessions")
+        .findOne({
+          _id: claims.sessionId,
+          userId: claims.sub,
+          deviceId,
+          revokedAt: { $exists: false },
+          expiresAt: { $gt: now },
+        });
+      if (!session) throw sessionExpiredError();
+      const membership = await db
+        .collection<MembershipDocument>("storeMemberships")
+        .findOne({ userId: claims.sub, storeId, active: true });
+      if (!membership) {
+        throw new AuthError(
+          403,
+          "STORE_ACCESS_DENIED",
+          "Vous ne pouvez pas accéder à ce magasin.",
+        );
+      }
+      return {
+        userId: claims.sub,
+        sessionId: claims.sessionId,
+        deviceId,
+        storeId,
+        role: membership.role,
+      };
     },
 
     async logout(accessToken) {
