@@ -147,6 +147,22 @@ export const localMigrations: readonly LocalMigration[] = [
         updated_at = excluded.updated_at;
     `,
   },
+  {
+    version: 3,
+    name: "add-sync-proof-entities",
+    sql: `
+      CREATE TABLE sync_test_entities (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        remote_version INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_sync_test_entities_store
+        ON sync_test_entities (store_id, updated_at);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

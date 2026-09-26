@@ -47,7 +47,7 @@ describe("local SQLite migrations", () => {
   it("creates the foundation schema and exposes its version", async () => {
     const { adapter, database } = openTemporaryDatabase();
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(2);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(3);
 
     const tables = database
       .prepare(
@@ -62,13 +62,14 @@ describe("local SQLite migrations", () => {
       "sync_conflicts",
       "sync_inbox_state",
       "sync_outbox",
+      "sync_test_entities",
     ]);
-    expect(await getLocalSchemaVersion(adapter)).toBe(2);
+    expect(await getLocalSchemaVersion(adapter)).toBe(3);
     expect(
       database
         .prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'")
         .get(),
-    ).toEqual({ value: "2" });
+    ).toEqual({ value: "3" });
     expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({
       foreign_keys: 1,
     });
@@ -104,7 +105,7 @@ describe("local SQLite migrations", () => {
 
     const reopenedDatabase = new DatabaseSync(path);
     const reopenedAdapter = new NodeSQLiteAdapter(reopenedDatabase);
-    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(2);
+    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(3);
     expect(
       reopenedDatabase
         .prepare("SELECT id, status FROM local_jobs WHERE id = ?")
@@ -144,7 +145,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:01:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(2);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(3);
     expect(
       database
         .prepare(
@@ -203,11 +204,11 @@ describe("local SQLite migrations", () => {
     await expect(
       runLocalMigrations(adapter, [
         ...localMigrations,
-        { version: 3, name: "invalid-migration", sql: "CREATE TABLE broken (" },
+        { version: 4, name: "invalid-migration", sql: "CREATE TABLE broken (" },
       ]),
-    ).rejects.toThrow("Local migration 3 (invalid-migration) failed");
+    ).rejects.toThrow("Local migration 4 (invalid-migration) failed");
 
-    expect(await getLocalSchemaVersion(adapter)).toBe(2);
+    expect(await getLocalSchemaVersion(adapter)).toBe(3);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
     ).toEqual({ count: 1 });
