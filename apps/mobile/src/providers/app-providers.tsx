@@ -4,6 +4,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DatabaseProvider } from "./database-provider";
 import { AuthProvider } from "@/auth/auth-provider";
+import { SyncProvider } from "@/sync/sync-provider";
 
 export function AppProviders({ children }: PropsWithChildren) {
   const [queryClient] = useState(
@@ -20,7 +21,9 @@ export function AppProviders({ children }: PropsWithChildren) {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <DatabaseProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <SyncProvider>{children}</SyncProvider>
+            </AuthProvider>
           </DatabaseProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

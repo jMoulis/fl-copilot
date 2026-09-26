@@ -2,11 +2,18 @@ import {
   apiErrorSchema,
   authChallengeResponseSchema,
   authSessionResponseSchema,
+  bootstrapResponseSchema,
   logoutResponseSchema,
+  syncPullResponseSchema,
+  syncPushResponseSchema,
   type ApiErrorDto,
   type AuthChallengeRequest,
   type AuthChallengeResponse,
   type AuthSessionResponse,
+  type BootstrapResponse,
+  type SyncPullResponse,
+  type SyncPushRequest,
+  type SyncPushResponse,
 } from "@fl-copilot/sync-contracts";
 import type { z } from "zod";
 
@@ -54,6 +61,52 @@ export class ApiClient {
     );
   }
 
+  pushSync(accessToken: string, input: SyncPushRequest) {
+    return this.request(
+      "/api/v1/sync/push",
+      {
+        method: "POST",
+        headers: syncHeaders(accessToken, input.storeId),
+        body: JSON.stringify(input),
+      },
+      syncPushResponseSchema,
+    ) as Promise<SyncPushResponse>;
+  }
+
+  pullSync(
+    accessToken: string,
+    storeId: string,
+    cursor?: string,
+    limit?: number,
+  ) {
+    const query = new URLSearchParams();
+    if (cursor) query.set("cursor", cursor);
+    if (limit !== undefined) query.set("limit", String(limit));
+    const encodedQuery = query.toString();
+    const suffix = encodedQuery ? `?${encodedQuery}` : "";
+    return this.request(
+      `/api/v1/sync/pull${suffix}`,
+      { method: "GET", headers: syncHeaders(accessToken, storeId) },
+      syncPullResponseSchema,
+    ) as Promise<SyncPullResponse>;
+  }
+
+  bootstrapSync(
+    accessToken: string,
+    storeId: string,
+    rawObservationDays?: number,
+  ) {
+    const suffix =
+      rawObservationDays === undefined
+        ? ""
+        : `?rawObservationDays=${encodeURIComponent(rawObservationDays)}`;
+    return this.request(
+      `/api/v1/sync/bootstrap${suffix}`,
+      { method: "GET", headers: syncHeaders(accessToken, storeId) },
+      bootstrapResponseSchema,
+    ) as Promise<BootstrapResponse>;
+  }
+
   private async request<T extends z.ZodType>(
     path: string,
     init: RequestInit,
@@ -99,4 +152,12 @@ export class ApiClient {
     }
     return parsed.data;
   }
+}
+
+function syncHeaders(accessToken: string, storeId: string) {
+  return {
+    authorization: `Bearer ${accessToken}`,
+    "x-store-id": storeId,
+    "x-sync-protocol-version": "1",
+  };
 }
