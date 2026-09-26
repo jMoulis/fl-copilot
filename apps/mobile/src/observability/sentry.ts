@@ -1,5 +1,6 @@
 import * as Sentry from "@sentry/react-native";
 import { getAppEnvironment } from "@/config/environment";
+import { sanitizeMobileEvent } from "./sanitize-event";
 
 let initialized = false;
 
@@ -19,21 +20,7 @@ export function initializeObservability() {
     enableLogs: true,
     enableAutoPerformanceTracing: false,
     tracesSampleRate: 0,
-    beforeSend(event) {
-      // Keep diagnostics, but never send identity, request payloads or breadcrumb data.
-      event.user = undefined;
-      event.request = undefined;
-      event.extra = undefined;
-      event.breadcrumbs = event.breadcrumbs?.map(
-        ({ category, level, timestamp, type }) => ({
-          category,
-          level,
-          timestamp,
-          type,
-        }),
-      );
-      return event;
-    },
+    beforeSend: sanitizeMobileEvent,
   });
 }
 
