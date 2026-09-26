@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 through M1-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, durable atomic local Outbox, pull-page and bootstrap application, remote command idempotency, store-scoped change sequencing and the authenticated push, pull and bootstrap endpoints.
+The active increment covers M1-T01 through M1-T09 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts, durable atomic local application, remote command idempotency, store-scoped change sequencing, authenticated endpoints and mobile synchronization-cycle orchestration.
 
 ## Implemented
 
@@ -39,6 +39,11 @@ The active increment covers M1-T01 through M1-T08 from `docs/specs/IMPLEMENTATIO
 - A snapshot read transaction that returns the store, synchronized proof entities, a snapshot revision and a cursor for the exact observed change sequence.
 - Atomic mobile bootstrap application that replaces the selected store snapshot and records its revision and cursor together while preserving other stores.
 - Explicit rejection of unsupported non-empty bootstrap collections until their owning domain repositories are implemented.
+- Shared API-client methods for bootstrap, push and pull with the canonical authorization, store and protocol headers and runtime response validation.
+- A mobile `SyncService` that recovers interrupted Outbox work, pushes before bootstrap to preserve offline creations, bootstraps when needed and pulls every change page.
+- A process-wide per-store cycle lock so foreground, manual and provider-recreation triggers attach to one active synchronization cycle.
+- Bounded exponential backoff for retryable transport failures and per-command `RETRYABLE_ERROR` results while retaining stable command IDs.
+- A native synchronization provider that starts a cycle after authentication and whenever the app returns to the foreground, plus an exposed manual trigger; the web preview uses a neutral provider.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
@@ -65,11 +70,13 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 | Atomic pull application      | Entity writes and cursor advancement commit or roll back together in SQLite                          |
 | Bootstrap consistency        | Snapshot and cursor share one MongoDB view; later pull returns only subsequent changes               |
 | Atomic bootstrap application | Snapshot replacement, revision and cursor commit or roll back together in SQLite                     |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 58 tests; 8 conditional MongoDB tests skipped   |
+| Cycle exclusion              | Concurrent triggers across service instances receive the same active per-store cycle                 |
+| Safe retry                   | Network and command-level transient failures reuse the same command ID with bounded backoff          |
+| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 60 tests; 8 conditional MongoDB tests skipped   |
 | `pnpm format:check`          | Passed                                                                                               |
 | `git diff --check`           | Passed                                                                                               |
 
 ## Next work
 
-1. M1-T09: orchestrate bootstrap, push and pull through the mobile `SyncService`.
-2. Add a per-store synchronization lock, safe retry backoff, foreground triggering and manual triggering.
+1. M1-T10: expose synchronization state and a manual trigger in `Plus > Synchronisation`.
+2. Make the pending Outbox count and cycle state reactive for the status UI.
