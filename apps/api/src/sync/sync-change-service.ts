@@ -77,7 +77,12 @@ class MongoSyncChangeStore implements SyncChangeStore<MongoCommandMutationContex
       .findOneAndUpdate(
         { _id: storeId },
         { $inc: { nextSequence: Long.ONE } },
-        { upsert: true, returnDocument: "after", session },
+        {
+          upsert: true,
+          returnDocument: "after",
+          promoteLongs: false,
+          session,
+        },
       );
     if (!counter) {
       throw new Error(`Sync sequence allocation failed for store ${storeId}.`);
