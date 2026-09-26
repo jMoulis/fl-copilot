@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 through M1-T11 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts, durable atomic local application, remote command idempotency, store-scoped change sequencing, authenticated endpoints, mobile synchronization-cycle orchestration, user-visible synchronization health and durable conflict capture.
+The completed increment covers M1-T01 through M1-T12 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts, durable atomic local application, remote command idempotency, store-scoped change sequencing, authenticated endpoints, mobile synchronization-cycle orchestration, user-visible synchronization health, durable conflict capture and cross-device propagation proof.
 
 ## Implemented
 
@@ -52,6 +52,8 @@ The active increment covers M1-T01 through M1-T11 from `docs/specs/IMPLEMENTATIO
 - A local conflict repository that retains the complete local command payload and the server's current entity payload for every version conflict.
 - Atomic conflict capture with the Outbox `SYNCING` to `CONFLICT` transition so a recorded conflict and its terminal command state cannot diverge.
 - A conflict list under `Plus > Synchronisation` and a generic French detail shell that compares safe summaries of the local and synchronized versions without offering unsupported resolution actions.
+- A transactional two-device integration proof using two independent SQLite files and the real MongoDB push, bootstrap and pull services.
+- Verified offline creation on device A, restart persistence, exactly-once remote mutation and incremental delivery of the same stable entity ID and version to device B.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
@@ -82,13 +84,14 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 | Safe retry                   | Network and command-level transient failures reuse the same command ID with bounded backoff          |
 | Reactive status UI           | Enqueue and Outbox transitions notify the provider; the pending counter updates from SQLite          |
 | Conflict migration           | Legacy local and remote payloads survive migration into the canonical conflict table                 |
-| Conflict payload retention   | A version conflict preserves the local entity and stores both local and remote payloads atomically   |
+| Conflict payload retention   | A version conflict stores both the local and remote payloads atomically for later resolution         |
+| Two-device propagation       | A survives restart, pushes once, and B pulls the same stable ID and remote version                   |
 | Expo exports                 | iOS, Android and Web route graphs, including conflict detail, bundle successfully                    |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 64 tests; 8 conditional MongoDB tests skipped   |
+| `pnpm check`                 | Passed locally: 9 workspace typechecks, 64 tests; 9 MongoDB tests skipped; CI runs all 73 tests      |
 | `pnpm format:check`          | Passed                                                                                               |
 | `git diff --check`           | Passed                                                                                               |
 
 ## Next work
 
-1. M1-T12: prove offline creation, restart, push and pull propagation across two independent device databases.
-2. Complete the hard M1 exit gate before starting Product Master work.
+1. Merge the M1-T12 proof after the transactional MongoDB CI gate passes.
+2. Begin M2-T01 with canonical Product, ProductIdentifier and ProductAlias schemas and repositories.
