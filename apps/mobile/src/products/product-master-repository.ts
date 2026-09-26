@@ -109,6 +109,18 @@ export class ProductMasterRepository {
     return row ? mapProduct(row) : null;
   }
 
+  async listProducts(storeId: string) {
+    const rows = await this.database.getAllAsync<ProductRow>(
+      `
+        SELECT * FROM products
+        WHERE store_id = ? AND deleted_at IS NULL
+        ORDER BY label COLLATE NOCASE, id
+      `,
+      storeId,
+    );
+    return rows.map(mapProduct);
+  }
+
   async getIdentifier(id: string) {
     const row = await this.database.getFirstAsync<IdentifierRow>(
       "SELECT * FROM product_identifiers WHERE id = ?",

@@ -34,6 +34,16 @@ export default function MoreScreen() {
           onPress={() => setVisible(true)}
         />
       </SectionCard>
+      <SectionCard title="Référentiel produit">
+        <Text className="text-base leading-6 text-muted">
+          Créez et corrigez les produits, identifiants et alias du rayon, même
+          hors connexion.
+        </Text>
+        <SecondaryButton
+          label="Voir les produits"
+          onPress={() => router.push("/(tabs)/products" as Href)}
+        />
+      </SectionCard>
       <SectionCard title="Votre session">
         <Text className="text-base leading-6 text-muted">
           {session?.user.email ?? "Session locale"}

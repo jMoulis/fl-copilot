@@ -27,6 +27,14 @@ MongoDB uses the native driver with one shared client pool. Production requires 
 
 Ordered, idempotent migrations live in `src/database/migrations.ts` and are recorded in `schemaMigrations`. Add a migration before repository code that depends on it. Migration numbers and recorded names are immutable.
 
+After a developer signs in for the first time, provision that account with a non-production store before testing business data:
+
+```sh
+pnpm --filter @fl-copilot/api dev:ensure-store
+```
+
+The command selects the only development user and creates `Magasin pilote` if no active membership exists. When several users exist, set `DEVELOPMENT_USER_EMAIL`; `DEVELOPMENT_STORE_NAME` optionally changes the display name. The command refuses to run with `NODE_ENV=production`. Restart or reconnect the mobile session afterward so its authorized-store list is refreshed.
+
 The integration test is enabled by `TEST_MONGODB_URI`:
 
 ```sh
