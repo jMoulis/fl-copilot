@@ -50,6 +50,15 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 3,
+    name: "initialize-processed-command-indexes",
+    async up(database) {
+      await database
+        .collection("processedCommands")
+        .createIndex({ storeId: 1, processedAt: -1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(
