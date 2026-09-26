@@ -16,6 +16,7 @@ import type { AtomicMutationDatabase } from "./atomic-local-mutation";
 import type { OutboxDatabase } from "./outbox-repository";
 import { MobileSyncService, type SyncTransport } from "./sync-service";
 import { createSyncTestEntity } from "./sync-test-entity";
+import { ProductMasterRepository } from "../products/product-master-repository";
 
 type SQLiteValue = string | number | null;
 
@@ -378,6 +379,87 @@ describe("mobile sync service", () => {
         .get(commandId),
     ).toEqual({ status: "CONFLICT" });
 
+    database.close();
+  });
+
+  it("does not overwrite a newer local product edit when an older push is acknowledged", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    database
+      .prepare(
+        `
+          INSERT INTO sync_inbox_state (
+            store_id, cursor, protocol_version, last_successful_sync_at
+          ) VALUES (?, ?, 1, NULL)
+        `,
+      )
+      .run(storeId, "cursor-1");
+    const repository = new ProductMasterRepository(adapter);
+    const product = {
+      id: entityId,
+      storeId,
+      label: "Tomate locale v1",
+      category: "VEGETABLE" as const,
+      nature: "BULK" as const,
+      salesUnit: "KG" as const,
+      status: "ACTIVE" as const,
+      version: 1,
+      createdAt: "2026-09-26T08:00:00.000Z",
+      updatedAt: "2026-09-26T08:00:00.000Z",
+    };
+    await repository.upsertProduct(product, { commandId, deviceId });
+    const newerCommandId = "55555555-5555-4555-8555-555555555555";
+    const transport: SyncTransport = {
+      bootstrap: async () => {
+        throw new Error("bootstrap must not run");
+      },
+      pull: async (_storeId, cursor) => emptyPull(cursor),
+      push: async () => {
+        await repository.upsertProduct(
+          {
+            ...product,
+            label: "Tomate locale v2",
+            version: 2,
+            updatedAt: "2026-09-26T08:01:00.000Z",
+          },
+          {
+            commandId: newerCommandId,
+            deviceId,
+            expectedRemoteVersion: null,
+          },
+        );
+        return {
+          results: [
+            {
+              commandId,
+              status: "APPLIED",
+              entityType: "product",
+              entityId,
+              remoteVersion: 1,
+              remoteEntity: { ...product, version: 1 },
+            },
+          ],
+          serverTime: "2026-09-26T08:02:00.000Z",
+        };
+      },
+    };
+
+    await expect(
+      new MobileSyncService(adapter, transport, {
+        appVersion: "0.1.0",
+        deviceId,
+      }).push(storeId),
+    ).resolves.toMatchObject({ pushed: 1 });
+    await expect(repository.getProduct(entityId)).resolves.toMatchObject({
+      entity: { label: "Tomate locale v2", version: 2 },
+      syncState: "PENDING",
+      dirty: true,
+    });
+    expect(
+      database
+        .prepare("SELECT status FROM sync_outbox WHERE command_id = ?")
+        .get(newerCommandId),
+    ).toEqual({ status: "PENDING" });
     database.close();
   });
 });

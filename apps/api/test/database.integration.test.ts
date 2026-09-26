@@ -86,6 +86,10 @@ describeWithMongo("MongoDB infrastructure", () => {
       _id: 4,
       name: "initialize-sync-change-indexes",
     });
+    await expect(migrations.findOne({ _id: 5 })).resolves.toMatchObject({
+      _id: 5,
+      name: "initialize-product-master-indexes",
+    });
   });
 
   itWithMongoTransactions(

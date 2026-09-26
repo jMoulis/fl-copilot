@@ -68,6 +68,31 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, sequence: 1 }, { unique: true });
     },
   },
+  {
+    version: 5,
+    name: "initialize-product-master-indexes",
+    async up(database) {
+      await Promise.all([
+        database.collection("products").createIndex({ storeId: 1, status: 1 }),
+        database.collection("productIdentifiers").createIndex(
+          { storeId: 1, type: 1, value: 1 },
+          {
+            unique: true,
+            partialFilterExpression: { deletedAt: null },
+          },
+        ),
+        database
+          .collection("productIdentifiers")
+          .createIndex({ storeId: 1, productId: 1 }),
+        database
+          .collection("productAliases")
+          .createIndex({ storeId: 1, normalizedAlias: 1 }),
+        database
+          .collection("productAliases")
+          .createIndex({ storeId: 1, productId: 1 }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(

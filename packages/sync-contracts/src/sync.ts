@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  productAliasSchema,
+  productIdentifierSchema,
+  productSchema,
+} from "@fl-copilot/domain";
 import { apiErrorSchema } from "./api-error";
 
 export const SYNC_PROTOCOL_VERSION = 1;
@@ -104,9 +109,9 @@ export type BootstrapQuery = z.infer<typeof bootstrapQuerySchema>;
 
 export const bootstrapEntitiesSchema = z.object({
   syncTestEntities: z.array(jsonObjectSchema),
-  products: z.array(jsonObjectSchema),
-  productIdentifiers: z.array(jsonObjectSchema),
-  productAliases: z.array(jsonObjectSchema),
+  products: z.array(productSchema),
+  productIdentifiers: z.array(productIdentifierSchema),
+  productAliases: z.array(productAliasSchema),
   needUnits: z.array(jsonObjectSchema),
   needMemberships: z.array(jsonObjectSchema),
   productSubstitutions: z.array(jsonObjectSchema),

@@ -229,6 +229,80 @@ export const localMigrations: readonly LocalMigration[] = [
         WHERE command_id IS NOT NULL;
     `,
   },
+  {
+    version: 6,
+    name: "add-product-master",
+    sql: `
+      CREATE TABLE products (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        label TEXT NOT NULL,
+        category TEXT NOT NULL,
+        nature TEXT NOT NULL,
+        sales_unit TEXT NOT NULL,
+        packaging_quantity TEXT,
+        packaging_unit TEXT,
+        packaging_source_label TEXT,
+        family_id TEXT,
+        subfamily_id TEXT,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'SYNCED',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX idx_products_store_status
+        ON products (store_id, status);
+      CREATE INDEX idx_products_store_label
+        ON products (store_id, label);
+
+      CREATE TABLE product_identifiers (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        value TEXT NOT NULL,
+        source TEXT NOT NULL,
+        status TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'SYNCED',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX idx_product_identifiers_lookup
+        ON product_identifiers (store_id, type, value);
+      CREATE INDEX idx_product_identifiers_product
+        ON product_identifiers (store_id, product_id);
+
+      CREATE TABLE product_aliases (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        alias TEXT NOT NULL,
+        normalized_alias TEXT NOT NULL,
+        source TEXT NOT NULL,
+        status TEXT NOT NULL,
+        confidence REAL,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'SYNCED',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX idx_product_aliases_lookup
+        ON product_aliases (store_id, normalized_alias);
+      CREATE INDEX idx_product_aliases_product
+        ON product_aliases (store_id, product_id);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

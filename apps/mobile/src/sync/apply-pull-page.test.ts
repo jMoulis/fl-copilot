@@ -153,4 +153,112 @@ describe("atomic pull page application", () => {
 
     database.close();
   });
+
+  it("applies a product aggregate and preserves its leading-zero identifier", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    const productId = "33333333-3333-4333-8333-333333333333";
+    const identifierId = "44444444-4444-4444-8444-444444444444";
+    const aliasId = "55555555-5555-4555-8555-555555555555";
+    const timestamp = "2026-09-26T09:00:00.000Z";
+    const productPage: SyncPullResponse = {
+      changes: [
+        {
+          sequence: "1",
+          entityType: "product",
+          entityId: productId,
+          operation: "UPSERT",
+          entityVersion: 1,
+          entity: {
+            id: productId,
+            storeId,
+            label: "Poire Conférence vrac",
+            category: "FRUIT",
+            nature: "BULK",
+            salesUnit: "KG",
+            packaging: null,
+            familyId: null,
+            subfamilyId: null,
+            status: "ACTIVE",
+            version: 1,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            deletedAt: null,
+          },
+          changedAt: timestamp,
+        },
+        {
+          sequence: "2",
+          entityType: "product_identifier",
+          entityId: identifierId,
+          operation: "UPSERT",
+          entityVersion: 1,
+          entity: {
+            id: identifierId,
+            storeId,
+            productId,
+            type: "EAN",
+            value: "0000087003017",
+            source: "MERCALYS",
+            status: "VALIDATED",
+            version: 1,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            deletedAt: null,
+          },
+          changedAt: timestamp,
+        },
+        {
+          sequence: "3",
+          entityType: "product_alias",
+          entityId: aliasId,
+          operation: "UPSERT",
+          entityVersion: 1,
+          entity: {
+            id: aliasId,
+            storeId,
+            productId,
+            alias: "Poire conférence vra",
+            normalizedAlias: "POIRE CONFERENCE VRA",
+            source: "MERCALYS",
+            status: "VALIDATED",
+            confidence: null,
+            version: 1,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            deletedAt: null,
+          },
+          changedAt: timestamp,
+        },
+      ],
+      nextCursor: "product-cursor-3",
+      hasMore: false,
+      serverTime: "2026-09-26T09:01:00.000Z",
+    };
+
+    await applyPullPage(adapter, storeId, productPage);
+
+    expect(
+      database
+        .prepare(
+          "SELECT label, remote_version, dirty FROM products WHERE id = ?",
+        )
+        .get(productId),
+    ).toEqual({
+      label: "Poire Conférence vrac",
+      remote_version: 1,
+      dirty: 0,
+    });
+    expect(
+      database
+        .prepare("SELECT value FROM product_identifiers WHERE id = ?")
+        .get(identifierId),
+    ).toEqual({ value: "0000087003017" });
+    expect(
+      database
+        .prepare("SELECT normalized_alias FROM product_aliases WHERE id = ?")
+        .get(aliasId),
+    ).toEqual({ normalized_alias: "POIRE CONFERENCE VRA" });
+    database.close();
+  });
 });

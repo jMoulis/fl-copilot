@@ -11,6 +11,12 @@ import {
   serializeSyncTestEntity,
   type SyncTestEntityDocument,
 } from "./sync-test-entity.js";
+import {
+  serializeProductMasterDocument,
+  type ProductAliasDocument,
+  type ProductDocument,
+  type ProductIdentifierDocument,
+} from "../products/product-master.js";
 
 const cursorPayloadSchema = z.object({
   version: z.literal(1),
@@ -55,7 +61,14 @@ export function createMongoSyncPullService(
         storeId,
         selected,
       );
-      const changes = selected.map((change) => toEnvelope(change, entities));
+      const productEntities = await loadProductMasterEntities(
+        mongoDatabase,
+        storeId,
+        selected,
+      );
+      const changes = selected.map((change) =>
+        toEnvelope(change, entities, productEntities),
+      );
       const nextSequence = selected.at(-1)?.sequence ?? afterSequence;
 
       return {
@@ -112,6 +125,10 @@ async function loadSyncTestEntities(
 function toEnvelope(
   change: SyncChangeDocument,
   syncTestEntities: Map<string, SyncTestEntityDocument>,
+  productEntities: Map<
+    string,
+    ProductDocument | ProductIdentifierDocument | ProductAliasDocument
+  >,
 ): SyncChangeEnvelope {
   if (change.operation === "DELETE") {
     return {
@@ -124,9 +141,21 @@ function toEnvelope(
     };
   }
   if (change.entityType !== "sync_test_entity") {
-    throw new Error(
-      `Unsupported synchronized entity type: ${change.entityType}`,
+    const entity = productEntities.get(
+      `${change.entityType}:${change.entityId}`,
     );
+    if (!entity) {
+      throw new Error(`Synchronized entity is missing: ${change.entityId}`);
+    }
+    return {
+      sequence: change.sequence.toString(),
+      entityType: change.entityType,
+      entityId: change.entityId,
+      operation: change.operation,
+      entityVersion: entity.version,
+      entity: serializeProductMasterDocument(change.entityType, entity),
+      changedAt: change.changedAt.toISOString(),
+    };
   }
   const entity = syncTestEntities.get(change.entityId);
   if (!entity) {
@@ -141,4 +170,53 @@ function toEnvelope(
     entity: serializeSyncTestEntity(entity),
     changedAt: change.changedAt.toISOString(),
   };
+}
+
+async function loadProductMasterEntities(
+  database: Awaited<ReturnType<DatabaseService["getDb"]>>,
+  storeId: string,
+  changes: SyncChangeDocument[],
+) {
+  const idsFor = (entityType: string) =>
+    changes
+      .filter(
+        (change) =>
+          change.operation === "UPSERT" && change.entityType === entityType,
+      )
+      .map((change) => change.entityId);
+  const productIds = idsFor("product");
+  const identifierIds = idsFor("product_identifier");
+  const aliasIds = idsFor("product_alias");
+  const [products, identifiers, aliases] = await Promise.all([
+    productIds.length
+      ? database
+          .collection<ProductDocument>("products")
+          .find({ _id: { $in: productIds }, storeId })
+          .toArray()
+      : [],
+    identifierIds.length
+      ? database
+          .collection<ProductIdentifierDocument>("productIdentifiers")
+          .find({ _id: { $in: identifierIds }, storeId })
+          .toArray()
+      : [],
+    aliasIds.length
+      ? database
+          .collection<ProductAliasDocument>("productAliases")
+          .find({ _id: { $in: aliasIds }, storeId })
+          .toArray()
+      : [],
+  ]);
+  const entities = new Map<
+    string,
+    ProductDocument | ProductIdentifierDocument | ProductAliasDocument
+  >();
+  for (const entity of products) entities.set(`product:${entity._id}`, entity);
+  for (const entity of identifiers) {
+    entities.set(`product_identifier:${entity._id}`, entity);
+  }
+  for (const entity of aliases) {
+    entities.set(`product_alias:${entity._id}`, entity);
+  }
+  return entities;
 }

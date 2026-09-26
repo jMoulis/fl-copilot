@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { BootstrapResponse } from "@fl-copilot/sync-contracts";
 import type { AtomicMutationDatabase } from "./atomic-local-mutation";
 import { synchronizedTestEntitySchema } from "./sync-test-entity-schema";
+import { applyProductMasterSnapshot } from "../products/apply-product-master";
 
 const bootstrapStoreSchema = z.object({ id: z.string().uuid() });
 
@@ -14,7 +15,7 @@ export async function applyBootstrap(
   if (store.id !== storeId) {
     throw new Error("Bootstrap store does not match the local store.");
   }
-  assertOnlyProofEntities(bootstrap);
+  assertOnlySupportedEntities(bootstrap);
   const entities = bootstrap.entities.syncTestEntities.map((entity) => {
     const parsed = synchronizedTestEntitySchema.parse(entity);
     if (parsed.storeId !== storeId) {
@@ -24,6 +25,7 @@ export async function applyBootstrap(
   });
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
+    await applyProductMasterSnapshot(transaction, storeId, bootstrap.entities);
     await transaction.runAsync(
       "DELETE FROM sync_test_entities WHERE store_id = ?",
       storeId,
@@ -64,10 +66,16 @@ export async function applyBootstrap(
   });
 }
 
-function assertOnlyProofEntities(bootstrap: BootstrapResponse) {
+function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
+  const supported = new Set([
+    "syncTestEntities",
+    "products",
+    "productIdentifiers",
+    "productAliases",
+  ]);
   if (
     Object.entries(bootstrap.entities).some(
-      ([name, entities]) => name !== "syncTestEntities" && entities.length > 0,
+      ([name, entities]) => !supported.has(name) && entities.length > 0,
     )
   ) {
     throw new Error("Bootstrap contains unsupported entity types.");
