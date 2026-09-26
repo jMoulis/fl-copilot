@@ -47,7 +47,7 @@ describe("local SQLite migrations", () => {
   it("creates the foundation schema and exposes its version", async () => {
     const { adapter, database } = openTemporaryDatabase();
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(1);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(2);
 
     const tables = database
       .prepare(
@@ -63,12 +63,12 @@ describe("local SQLite migrations", () => {
       "sync_inbox_state",
       "sync_outbox",
     ]);
-    expect(await getLocalSchemaVersion(adapter)).toBe(1);
+    expect(await getLocalSchemaVersion(adapter)).toBe(2);
     expect(
       database
         .prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'")
         .get(),
-    ).toEqual({ value: "1" });
+    ).toEqual({ value: "2" });
     expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({
       foreign_keys: 1,
     });
@@ -104,7 +104,7 @@ describe("local SQLite migrations", () => {
 
     const reopenedDatabase = new DatabaseSync(path);
     const reopenedAdapter = new NodeSQLiteAdapter(reopenedDatabase);
-    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(1);
+    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(2);
     expect(
       reopenedDatabase
         .prepare("SELECT id, status FROM local_jobs WHERE id = ?")
@@ -114,6 +114,67 @@ describe("local SQLite migrations", () => {
     reopenedDatabase.close();
   });
 
+  it("migrates legacy Outbox rows to the canonical command contract", async () => {
+    const { adapter, database } = openTemporaryDatabase();
+    await runLocalMigrations(adapter, localMigrations.slice(0, 1));
+    database
+      .prepare(
+        `
+          INSERT INTO sync_outbox (
+            id, store_id, device_id, entity_type, entity_id, operation,
+            payload_json, base_version, local_sequence, status, attempt_count,
+            last_error, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        "legacy-command",
+        "store-1",
+        "device-1",
+        "product",
+        "product-1",
+        "PRODUCT_UPSERT",
+        '{"name":"Tomate"}',
+        4,
+        7,
+        "pending",
+        1,
+        "NETWORK_ERROR",
+        "2026-09-16T10:00:00.000Z",
+        "2026-09-16T10:01:00.000Z",
+      );
+
+    await expect(runLocalMigrations(adapter)).resolves.toBe(2);
+    expect(
+      database
+        .prepare(
+          `
+            SELECT command_id, command_type, expected_remote_version,
+                   local_sequence, status, attempt_count, last_attempt_at,
+                   last_error_code
+            FROM sync_outbox
+          `,
+        )
+        .get(),
+    ).toEqual({
+      command_id: "legacy-command",
+      command_type: "PRODUCT_UPSERT",
+      expected_remote_version: 4,
+      local_sequence: 7,
+      status: "PENDING",
+      attempt_count: 1,
+      last_attempt_at: "2026-09-16T10:01:00.000Z",
+      last_error_code: "NETWORK_ERROR",
+    });
+    expect(
+      database
+        .prepare("SELECT value FROM app_metadata WHERE key = ?")
+        .get("outbox_local_sequence"),
+    ).toEqual({ value: "7" });
+
+    database.close();
+  });
+
   it("rolls back a failed migration without losing pending outbox work", async () => {
     const { adapter, database } = openTemporaryDatabase();
     await runLocalMigrations(adapter);
@@ -121,33 +182,32 @@ describe("local SQLite migrations", () => {
       .prepare(
         `
           INSERT INTO sync_outbox (
-            id, store_id, device_id, entity_type, entity_id, operation,
-            payload_json, local_sequence, status, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            command_id, store_id, device_id, local_sequence, command_type,
+            entity_type, entity_id, payload_json, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
       )
       .run(
         "outbox-1",
         "store-1",
         "device-1",
+        1,
+        "PRODUCT_UPSERT",
         "product",
         "product-1",
-        "upsert",
         "{}",
-        1,
-        "pending",
-        "2026-09-16T10:00:00.000Z",
+        "PENDING",
         "2026-09-16T10:00:00.000Z",
       );
 
     await expect(
       runLocalMigrations(adapter, [
         ...localMigrations,
-        { version: 2, name: "invalid-migration", sql: "CREATE TABLE broken (" },
+        { version: 3, name: "invalid-migration", sql: "CREATE TABLE broken (" },
       ]),
-    ).rejects.toThrow("Local migration 2 (invalid-migration) failed");
+    ).rejects.toThrow("Local migration 3 (invalid-migration) failed");
 
-    expect(await getLocalSchemaVersion(adapter)).toBe(1);
+    expect(await getLocalSchemaVersion(adapter)).toBe(2);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
     ).toEqual({ count: 1 });

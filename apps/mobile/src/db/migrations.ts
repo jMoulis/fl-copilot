@@ -92,6 +92,61 @@ export const localMigrations: readonly LocalMigration[] = [
         ON local_files (store_id, upload_status);
     `,
   },
+  {
+    version: 2,
+    name: "align-outbox-with-sync-contract",
+    sql: `
+      ALTER TABLE sync_outbox RENAME TO sync_outbox_legacy;
+
+      CREATE TABLE sync_outbox (
+        command_id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        local_sequence INTEGER NOT NULL,
+        command_type TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        expected_remote_version INTEGER,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        last_error_code TEXT
+      );
+
+      INSERT INTO sync_outbox (
+        command_id, store_id, device_id, local_sequence, command_type,
+        entity_type, entity_id, expected_remote_version, payload_json,
+        created_at, status, attempt_count, last_attempt_at, last_error_code
+      )
+      SELECT
+        id, store_id, device_id, local_sequence, operation,
+        entity_type, entity_id, base_version, payload_json,
+        created_at, UPPER(status), attempt_count,
+        CASE WHEN attempt_count > 0 THEN updated_at ELSE NULL END,
+        last_error
+      FROM sync_outbox_legacy;
+
+      DROP TABLE sync_outbox_legacy;
+
+      CREATE INDEX idx_outbox_pending
+        ON sync_outbox (store_id, status, local_sequence);
+      CREATE UNIQUE INDEX idx_outbox_device_sequence
+        ON sync_outbox (device_id, local_sequence);
+
+      INSERT INTO app_metadata (key, value, updated_at)
+      SELECT
+        'outbox_local_sequence',
+        CAST(COALESCE(MAX(local_sequence), 0) AS TEXT),
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      FROM sync_outbox
+      WHERE true
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at;
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {
