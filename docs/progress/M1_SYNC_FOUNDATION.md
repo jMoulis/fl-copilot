@@ -4,7 +4,7 @@ Date: 2026-09-26.
 
 ## Scope
 
-The active increment covers M1-T01 and M1-T02 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol and the durable local SQLite Outbox repository. It does not implement atomic business mutations, remote idempotency, change sequencing or HTTP synchronization endpoints.
+The active increment covers M1-T01 through M1-T03 from `docs/specs/IMPLEMENTATION_PLAN.md`: shared, runtime-neutral Zod contracts for the synchronization protocol, the durable local SQLite Outbox repository and the atomic local mutation boundary. It does not implement remote idempotency, change sequencing or HTTP synchronization endpoints.
 
 ## Implemented
 
@@ -19,6 +19,8 @@ The active increment covers M1-T01 and M1-T02 from `docs/specs/IMPLEMENTATION_PL
 - A data-preserving local migration from the M0 provisional Outbox columns to the canonical M1 contract.
 - Atomic, persistent local-sequence allocation backed by `app_metadata`, with a unique device/sequence index.
 - Durable enqueue and lookup, bounded oldest-first pending queries, guarded state transitions, attempt tracking and interrupted-sync recovery.
+- A reusable exclusive-transaction helper that commits a local business mutation and its Outbox command as one SQLite unit.
+- A temporary synchronized test entity and schema migration used to prove the transaction boundary before real domain repositories adopt it.
 
 Bootstrap entity values remain opaque JSON objects until their canonical schemas are implemented in their owning domain packages. The synchronization package owns the envelope and does not duplicate future product, observation, commercial or recommendation contracts.
 
@@ -33,11 +35,12 @@ Bootstrap entity values remain opaque JSON objects until their canonical schemas
 | Outbox migration             | A populated M0 row is preserved and mapped to canonical M1 columns; its sequence counter resumes    |
 | Outbox restart persistence   | Commands survive a SQLite file reopen and the next local sequence continues monotonically           |
 | Outbox ordering/transitions  | Pending commands return oldest first; retry, failure and interrupted-sync recovery metadata pass    |
-| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 39 tests; 3 integration tests skipped          |
+| Atomic local mutation        | Entity, Outbox command and sequence commit together; a failure before commit rolls all three back   |
+| `pnpm check`                 | Passed: structure, lint, all 9 workspace typechecks, 41 tests; 3 integration tests skipped          |
 | `pnpm format:check`          | Passed                                                                                              |
 | `git diff --check`           | Passed                                                                                              |
 
 ## Next work
 
-1. M1-T03: prove atomic local business write plus Outbox insertion with a temporary test entity.
-2. Continue through remote command idempotency and store-scoped change sequencing before exposing push and pull endpoints.
+1. M1-T04: implement remote command idempotency with the `processedCommands` collection.
+2. Add store-scoped change sequencing before exposing push and pull endpoints.

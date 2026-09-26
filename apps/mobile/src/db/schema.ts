@@ -50,6 +50,21 @@ export const syncOutbox = sqliteTable(
   ],
 );
 
+export const syncTestEntities = sqliteTable(
+  "sync_test_entities",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    label: text("label").notNull(),
+    remoteVersion: integer("remote_version").notNull().default(0),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_sync_test_entities_store").on(table.storeId, table.updatedAt),
+  ],
+);
+
 export const syncConflicts = sqliteTable(
   "sync_conflicts",
   {
@@ -108,6 +123,7 @@ export const localSchema = {
   appMetadata,
   syncInboxState,
   syncOutbox,
+  syncTestEntities,
   syncConflicts,
   localJobs,
   localFiles,
