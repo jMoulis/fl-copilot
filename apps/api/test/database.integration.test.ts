@@ -11,6 +11,8 @@ import {
 
 const testMongoUri = process.env.TEST_MONGODB_URI;
 const describeWithMongo = testMongoUri ? describe : describe.skip;
+const itWithMongoTransactions =
+  process.env.TEST_MONGODB_TRANSACTIONS === "true" ? it : it.skip;
 
 describeWithMongo("MongoDB infrastructure", () => {
   let database: DatabaseService;
@@ -74,56 +76,63 @@ describeWithMongo("MongoDB infrastructure", () => {
     });
   });
 
-  it("applies concurrent duplicate commands exactly once", async () => {
-    const service = createMongoProcessedCommandService(database);
-    const commandId = randomUUID();
-    const entityId = randomUUID();
-    const input = {
-      commandId,
-      storeId: randomUUID(),
-      deviceId: randomUUID(),
-      commandType: "SYNC_TEST_ENTITY_UPSERT",
-      entityType: "sync_test_entity",
-      entityId,
-    };
-    const mutate = async ({
-      database: mongoDatabase,
-      session,
-    }: MongoCommandMutationContext) => {
-      await mongoDatabase
-        .collection<{ _id: string; mutationCount: number }>("syncTestEntities")
-        .updateOne(
-          { _id: entityId },
-          { $inc: { mutationCount: 1 } },
-          { upsert: true, session },
-        );
-      return {
-        resultStatus: "APPLIED" as const,
-        resultingVersion: 1,
-        responseJson: { entityId },
+  itWithMongoTransactions(
+    "applies concurrent duplicate commands exactly once",
+    async () => {
+      const service = createMongoProcessedCommandService(database);
+      const commandId = randomUUID();
+      const entityId = randomUUID();
+      const input = {
+        commandId,
+        storeId: randomUUID(),
+        deviceId: randomUUID(),
+        commandType: "SYNC_TEST_ENTITY_UPSERT",
+        entityType: "sync_test_entity",
+        entityId,
       };
-    };
+      const mutate = async ({
+        database: mongoDatabase,
+        session,
+      }: MongoCommandMutationContext) => {
+        await mongoDatabase
+          .collection<{ _id: string; mutationCount: number }>(
+            "syncTestEntities",
+          )
+          .updateOne(
+            { _id: entityId },
+            { $inc: { mutationCount: 1 } },
+            { upsert: true, session },
+          );
+        return {
+          resultStatus: "APPLIED" as const,
+          resultingVersion: 1,
+          responseJson: { entityId },
+        };
+      };
 
-    const outcomes = await Promise.all([
-      service.execute(input, mutate),
-      service.execute(input, mutate),
-    ]);
+      const outcomes = await Promise.all([
+        service.execute(input, mutate),
+        service.execute(input, mutate),
+      ]);
 
-    const mongoDatabase = await database.getDb();
-    await expect(
-      mongoDatabase
-        .collection<{ _id: string; mutationCount: number }>("syncTestEntities")
-        .findOne({ _id: entityId }),
-    ).resolves.toMatchObject({ mutationCount: 1 });
-    await expect(
-      mongoDatabase
-        .collection<{ _id: string }>("processedCommands")
-        .countDocuments({ _id: commandId }),
-    ).resolves.toBe(1);
-    expect(outcomes.map(({ alreadyApplied }) => alreadyApplied).sort()).toEqual(
-      [false, true],
-    );
-  });
+      const mongoDatabase = await database.getDb();
+      await expect(
+        mongoDatabase
+          .collection<{ _id: string; mutationCount: number }>(
+            "syncTestEntities",
+          )
+          .findOne({ _id: entityId }),
+      ).resolves.toMatchObject({ mutationCount: 1 });
+      await expect(
+        mongoDatabase
+          .collection<{ _id: string }>("processedCommands")
+          .countDocuments({ _id: commandId }),
+      ).resolves.toBe(1);
+      expect(
+        outcomes.map(({ alreadyApplied }) => alreadyApplied).sort(),
+      ).toEqual([false, true]);
+    },
+  );
 
   it("verifies a one-time code, rotates refresh tokens and revokes reuse", async () => {
     const config = parseEnvironment({
