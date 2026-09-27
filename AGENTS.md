@@ -521,7 +521,7 @@ Do not use superseded technical documents from outside this repository.
 The active increment is:
 
 ```text
-M2-T01 through M2-T04 — Product master, deterministic matching, and local source documents
+M2-T01 through M2-T05 — Product master, local sources, and native XLSX adapter validation
 ```
 
 Read `docs/progress/M0_FOUNDATION.md` and `docs/progress/M1_SYNC_FOUNDATION.md` for completed foundation evidence, and `docs/progress/M2_PRODUCT_MASTER.md` for the active product-master increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`.
