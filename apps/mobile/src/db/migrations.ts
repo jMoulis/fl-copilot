@@ -303,6 +303,65 @@ export const localMigrations: readonly LocalMigration[] = [
         ON product_aliases (store_id, product_id);
     `,
   },
+  {
+    version: 7,
+    name: "add-local-source-documents",
+    sql: `
+      CREATE TABLE source_documents (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        original_filename TEXT,
+        local_file_uri TEXT,
+        checksum TEXT,
+        source_generated_at TEXT,
+        business_period_start TEXT,
+        business_period_end TEXT,
+        local_processing_status TEXT NOT NULL,
+        remote_upload_status TEXT NOT NULL,
+        remote_processing_status TEXT,
+        parser_version TEXT,
+        extraction_model_version TEXT,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'LOCAL_ONLY',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 1
+      );
+      CREATE INDEX idx_source_documents_store_status
+        ON source_documents (store_id, local_processing_status);
+      CREATE INDEX idx_source_documents_checksum
+        ON source_documents (store_id, source_type, checksum);
+
+      CREATE TABLE source_records (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        source_document_id TEXT NOT NULL,
+        source_index INTEGER,
+        source_page INTEGER,
+        raw_payload_json TEXT NOT NULL,
+        normalized_payload_json TEXT,
+        status TEXT NOT NULL,
+        error_codes_json TEXT NOT NULL,
+        warning_codes_json TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        FOREIGN KEY (source_document_id) REFERENCES source_documents(id)
+          ON DELETE RESTRICT
+      );
+      CREATE INDEX idx_source_records_document
+        ON source_records (store_id, source_document_id, source_index);
+      CREATE INDEX idx_source_records_status
+        ON source_records (store_id, status);
+
+      CREATE INDEX idx_local_files_source_document
+        ON local_files (source_document_id);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {
