@@ -123,6 +123,73 @@ export const localFiles = sqliteTable(
   },
   (table) => [
     index("idx_local_files_upload").on(table.storeId, table.uploadStatus),
+    index("idx_local_files_source_document").on(table.sourceDocumentId),
+  ],
+);
+
+export const sourceDocuments = sqliteTable(
+  "source_documents",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    sourceType: text("source_type").notNull(),
+    originalFilename: text("original_filename"),
+    localFileUri: text("local_file_uri"),
+    checksum: text("checksum"),
+    sourceGeneratedAt: text("source_generated_at"),
+    businessPeriodStart: text("business_period_start"),
+    businessPeriodEnd: text("business_period_end"),
+    localProcessingStatus: text("local_processing_status").notNull(),
+    remoteUploadStatus: text("remote_upload_status").notNull(),
+    remoteProcessingStatus: text("remote_processing_status"),
+    parserVersion: text("parser_version"),
+    extractionModelVersion: text("extraction_model_version"),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("LOCAL_ONLY"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(1),
+  },
+  (table) => [
+    index("idx_source_documents_store_status").on(
+      table.storeId,
+      table.localProcessingStatus,
+    ),
+    index("idx_source_documents_checksum").on(
+      table.storeId,
+      table.sourceType,
+      table.checksum,
+    ),
+  ],
+);
+
+export const sourceRecords = sqliteTable(
+  "source_records",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    sourceDocumentId: text("source_document_id").notNull(),
+    sourceIndex: integer("source_index"),
+    sourcePage: integer("source_page"),
+    rawPayloadJson: text("raw_payload_json").notNull(),
+    normalizedPayloadJson: text("normalized_payload_json"),
+    status: text("status").notNull(),
+    errorCodesJson: text("error_codes_json").notNull(),
+    warningCodesJson: text("warning_codes_json").notNull(),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+  },
+  (table) => [
+    index("idx_source_records_document").on(
+      table.storeId,
+      table.sourceDocumentId,
+      table.sourceIndex,
+    ),
+    index("idx_source_records_status").on(table.storeId, table.status),
   ],
 );
 
@@ -219,6 +286,8 @@ export const localSchema = {
   syncConflicts,
   localJobs,
   localFiles,
+  sourceDocuments,
+  sourceRecords,
   products,
   productIdentifiers,
   productAliases,

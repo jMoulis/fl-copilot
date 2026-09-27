@@ -47,7 +47,7 @@ describe("local SQLite migrations", () => {
   it("creates the foundation schema and exposes its version", async () => {
     const { adapter, database } = openTemporaryDatabase();
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(6);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(7);
 
     const tables = database
       .prepare(
@@ -62,17 +62,19 @@ describe("local SQLite migrations", () => {
       "product_aliases",
       "product_identifiers",
       "products",
+      "source_documents",
+      "source_records",
       "sync_conflicts",
       "sync_inbox_state",
       "sync_outbox",
       "sync_test_entities",
     ]);
-    expect(await getLocalSchemaVersion(adapter)).toBe(6);
+    expect(await getLocalSchemaVersion(adapter)).toBe(7);
     expect(
       database
         .prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'")
         .get(),
-    ).toEqual({ value: "6" });
+    ).toEqual({ value: "7" });
     expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({
       foreign_keys: 1,
     });
@@ -108,7 +110,7 @@ describe("local SQLite migrations", () => {
 
     const reopenedDatabase = new DatabaseSync(path);
     const reopenedAdapter = new NodeSQLiteAdapter(reopenedDatabase);
-    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(6);
+    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(7);
     expect(
       reopenedDatabase
         .prepare("SELECT id, status FROM local_jobs WHERE id = ?")
@@ -116,6 +118,52 @@ describe("local SQLite migrations", () => {
     ).toEqual({ id: "job-persistence", status: "pending" });
 
     reopenedDatabase.close();
+  });
+
+  it("adds source tables without losing pre-existing local files", async () => {
+    const { adapter, database } = openTemporaryDatabase();
+    await runLocalMigrations(adapter, localMigrations.slice(0, 6));
+    database
+      .prepare(
+        `
+          INSERT INTO local_files (
+            id, store_id, source_document_id, local_uri, mime_type,
+            size_bytes, checksum, retention_status, upload_status,
+            created_at, updated_at
+          ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        "file-before-m2-t04",
+        "store-1",
+        "file:///documents/source.xlsx",
+        "application/octet-stream",
+        128,
+        "sha256:before-migration",
+        "RETAINED",
+        "LOCAL_ONLY",
+        "2026-09-27T10:00:00.000Z",
+        "2026-09-27T10:00:00.000Z",
+      );
+
+    await expect(runLocalMigrations(adapter)).resolves.toBe(7);
+    expect(
+      database
+        .prepare("SELECT id, checksum FROM local_files WHERE id = ?")
+        .get("file-before-m2-t04"),
+    ).toEqual({
+      id: "file-before-m2-t04",
+      checksum: "sha256:before-migration",
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'table' AND name IN ('source_documents', 'source_records')",
+        )
+        .get(),
+    ).toEqual({ count: 2 });
+
+    database.close();
   });
 
   it("migrates legacy Outbox rows to the canonical command contract", async () => {
@@ -162,7 +210,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:02:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(6);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(7);
     expect(
       database
         .prepare(
@@ -233,7 +281,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:03:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(6);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(7);
     expect(
       database
         .prepare(
@@ -284,11 +332,11 @@ describe("local SQLite migrations", () => {
     await expect(
       runLocalMigrations(adapter, [
         ...localMigrations,
-        { version: 7, name: "invalid-migration", sql: "CREATE TABLE broken (" },
+        { version: 8, name: "invalid-migration", sql: "CREATE TABLE broken (" },
       ]),
-    ).rejects.toThrow("Local migration 7 (invalid-migration) failed");
+    ).rejects.toThrow("Local migration 8 (invalid-migration) failed");
 
-    expect(await getLocalSchemaVersion(adapter)).toBe(6);
+    expect(await getLocalSchemaVersion(adapter)).toBe(7);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
     ).toEqual({ count: 1 });
