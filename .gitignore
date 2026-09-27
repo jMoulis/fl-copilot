@@ -14,3 +14,6 @@ coverage/
 apps/mobile/ios/
 apps/mobile/android/
 .maestro/tests/
+
+# User-owned pilot workbooks stay local; commit only explicitly anonymized fixtures elsewhere.
+/docs/files_examples/*.xlsx

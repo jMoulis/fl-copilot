@@ -96,6 +96,14 @@ export default function MoreScreen() {
               {monitoringStatus}
             </Text>
           ) : null}
+          <Text className="text-base leading-6 text-muted">
+            Vérifiez la lecture locale d’un fichier XLSX et relevez ses
+            caractéristiques sur cet appareil.
+          </Text>
+          <SecondaryButton
+            label="Tester un fichier XLSX"
+            onPress={() => router.push("/(tabs)/xlsx-diagnostic" as Href)}
+          />
         </SectionCard>
       ) : null}
       <BottomSheet
