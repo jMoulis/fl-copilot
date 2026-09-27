@@ -1,10 +1,10 @@
 # M2 product master
 
-Date: 2026-09-26.
+Date: 2026-09-27.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T02 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical Product, ProductIdentifier and ProductAlias contracts, their local and remote persistence, replication through the M1 synchronization pipeline, and a local-first product editor.
+The active increment covers M2-T01 through M2-T03 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical Product, ProductIdentifier and ProductAlias contracts, their local and remote persistence, replication through the M1 synchronization pipeline, a local-first product editor, and deterministic product matching.
 
 ## Implemented
 
@@ -26,6 +26,10 @@ The active increment covers M2-T01 through M2-T02 from `docs/specs/IMPLEMENTATIO
 - Conflict-safe editing: the complete local form remains readable, while a new save is blocked until the conflict is examined.
 - Leading-zero guidance beside identifier inputs and French validation, error and success states.
 - An explicit no-store state instead of a generic SQLite error, plus an idempotent non-production command that provisions the first development user with an active pilot store.
+- A runtime-neutral product matcher that follows the specified priority: exact validated identifier, exact validated alias, canonical normalized label, then fuzzy candidates.
+- Exact ITM8, EAN and PLU values are compared as strings; identifier conflicts return an explicit ambiguous result and never auto-match.
+- Only active products and non-deleted validated identifiers and aliases from the requested store can establish identity.
+- Fuzzy scores use a versioned, configurable policy and remain review proposals; they never assert product truth automatically.
 
 ## Verification evidence
 
@@ -38,14 +42,17 @@ The active increment covers M2-T01 through M2-T02 from `docs/specs/IMPLEMENTATIO
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                 |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                  |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 72 tests; 10 MongoDB tests skipped locally and enabled in CI                   |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 80 tests; 10 MongoDB tests skipped locally and enabled in CI                   |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                           |
 | Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands               |
 | Repeated offline edits    | A second save targets the first local version, allowing both commands to synchronize in order                             |
 | Conflict visibility       | Open product, identifier and alias conflicts resolve to the owning product and block an unsafe new save                   |
+| Matcher precedence        | An exact validated identifier wins before alias and label matching, while contradictory ITM8/EAN identities block         |
+| Matching safety           | Unvalidated aliases and inactive, review-only, deleted or cross-store products cannot auto-match                          |
+| Fuzzy proposals           | Candidate, review and ambiguity thresholds are configuration inputs recorded through the matcher version                  |
 
 ## Next work
 
-1. Merge M2-T02 after CI and native visual acceptance pass.
-2. Begin M2-T03: deterministic product matching with exact-identifier precedence.
+1. Merge M2-T03 after CI.
+2. Begin M2-T04: local SourceDocument model.
