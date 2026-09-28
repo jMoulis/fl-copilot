@@ -1,0 +1,76 @@
+{
+  "sourceType": "MERCALYS_WASTE",
+  "parserVersion": "mercalys-waste.article.v1",
+  "formatVersion": "mercalys-entries-outputs.article.v1",
+  "sheetName": "Mercalys",
+  "headerRowIndex": 7,
+  "businessPeriodStart": "2026-09-26",
+  "businessPeriodEnd": "2026-09-26",
+  "records": [
+    {
+      "sourceIndex": 8,
+      "itm8": "0000087010621",
+      "ean": "3250399883471",
+      "rawLabel": "PDT VAPEUR BLONDE 2.5KG ITM",
+      "businessDate": "2026-09-26",
+      "quantity": 3,
+      "purchaseValue": 8.25,
+      "rceValue": 0,
+      "salesValue": 14.13,
+      "vatValue": 0.74,
+      "marginValue": 5.14,
+      "marginRate": 36.4,
+      "rawValues": {
+        "itm8": "0000087010621",
+        "ean": "3250399883471",
+        "rawLabel": "PDT VAPEUR BLONDE 2.5KG ITM",
+        "businessDate": null,
+        "quantity": 3,
+        "purchaseValue": 8.25,
+        "rceValue": 0,
+        "salesValue": 14.13,
+        "vatValue": 0.74,
+        "marginValue": 5.14,
+        "marginRate": 36.4
+      }
+    },
+    {
+      "sourceIndex": 9,
+      "itm8": "0000087010680",
+      "ean": "3250399887516",
+      "rawLabel": "CHAMPIGNON PLEUROTE 200G ITM",
+      "businessDate": "2026-09-26",
+      "quantity": 3,
+      "purchaseValue": 5.97,
+      "rceValue": 0,
+      "salesValue": 10.59,
+      "vatValue": 0.55,
+      "marginValue": 4.07,
+      "marginRate": 38.41,
+      "rawValues": {
+        "itm8": "0000087010680",
+        "ean": "3250399887516",
+        "rawLabel": "CHAMPIGNON PLEUROTE 200G ITM",
+        "businessDate": null,
+        "quantity": "3,00",
+        "purchaseValue": "5,97",
+        "rceValue": "0",
+        "salesValue": "10,59",
+        "vatValue": "0,55",
+        "marginValue": "4,07",
+        "marginRate": "38,41"
+      }
+    }
+  ],
+  "controlTotals": {
+    "quantity": 6,
+    "purchaseValue": 14.22,
+    "rceValue": 0,
+    "salesValue": 24.72,
+    "vatValue": 1.29,
+    "marginValue": 9.21,
+    "marginRate": 37.26
+  },
+  "declaredLineCount": 2,
+  "issues": []
+}
