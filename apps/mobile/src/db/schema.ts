@@ -193,6 +193,92 @@ export const sourceRecords = sqliteTable(
   ],
 );
 
+export const salesObservations = sqliteTable(
+  "sales_observations",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    businessDate: text("business_date").notNull(),
+    quantity: text("quantity").notNull(),
+    purchaseValue: text("purchase_value"),
+    rceValue: text("rce_value"),
+    salesValue: text("sales_value"),
+    vatValue: text("vat_value"),
+    marginValue: text("margin_value"),
+    marginRate: text("margin_rate"),
+    sourceDocumentId: text("source_document_id").notNull(),
+    sourceRecordId: text("source_record_id").notNull(),
+    validationStatus: text("validation_status").notNull(),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("SYNCED"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(0),
+  },
+  (table) => [
+    index("idx_sales_date_product").on(
+      table.storeId,
+      table.businessDate,
+      table.productId,
+    ),
+    index("idx_sales_product_date").on(
+      table.storeId,
+      table.productId,
+      table.businessDate,
+    ),
+    uniqueIndex("idx_sales_source_record").on(
+      table.storeId,
+      table.sourceRecordId,
+    ),
+  ],
+);
+
+export const wasteObservations = sqliteTable(
+  "waste_observations",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    businessDate: text("business_date").notNull(),
+    productNature: text("product_nature").notNull(),
+    quantity: text("quantity"),
+    purchaseValueKnown: text("purchase_value_known"),
+    purchaseValueEstimated: text("purchase_value_estimated"),
+    salesValue: text("sales_value"),
+    costQuality: text("cost_quality").notNull(),
+    sourceType: text("source_type").notNull(),
+    sourceDocumentId: text("source_document_id"),
+    sourceRecordId: text("source_record_id").notNull(),
+    validationStatus: text("validation_status").notNull(),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("SYNCED"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(0),
+  },
+  (table) => [
+    index("idx_waste_date_product").on(
+      table.storeId,
+      table.businessDate,
+      table.productId,
+    ),
+    index("idx_waste_product_date").on(
+      table.storeId,
+      table.productId,
+      table.businessDate,
+    ),
+    uniqueIndex("idx_waste_source_record").on(
+      table.storeId,
+      table.sourceRecordId,
+    ),
+  ],
+);
+
 export const products = sqliteTable(
   "products",
   {
@@ -288,6 +374,8 @@ export const localSchema = {
   localFiles,
   sourceDocuments,
   sourceRecords,
+  salesObservations,
+  wasteObservations,
   products,
   productIdentifiers,
   productAliases,

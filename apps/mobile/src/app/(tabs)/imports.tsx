@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
+import { CryptoDigestAlgorithm, digest, randomUUID } from "expo-crypto";
+import { Directory, File as ExpoFile, Paths } from "expo-file-system";
 import type { ProductMatchCatalog } from "@fl-copilot/domain";
 import { useAuth } from "@/auth/auth-provider";
 import {
@@ -16,6 +18,10 @@ import {
   validateMercalysImport,
   type MercalysImportValidationSummary,
 } from "@/documents/mercalys-import-validation";
+import {
+  MercalysImportPublicationRepository,
+  type PublishedMercalysImport,
+} from "@/documents/mercalys-import-publication";
 import { SheetJsSpreadsheetParser } from "@/documents/sheetjs-spreadsheet-parser";
 import { ProductMasterRepository } from "@/products/product-master-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
@@ -61,9 +67,16 @@ export default function MercalysImportsScreen() {
     () => new ProductMasterRepository(sqlite),
     [sqlite],
   );
+  const publicationRepository = useMemo(
+    () => new MercalysImportPublicationRepository(sqlite, randomUUID),
+    [sqlite],
+  );
   const [stage, setStage] = useState<ImportStage>("IDLE");
   const [filename, setFilename] = useState<string>();
   const [summary, setSummary] = useState<MercalysImportValidationSummary>();
+  const [selectedBytes, setSelectedBytes] = useState<Uint8Array<ArrayBuffer>>();
+  const [publication, setPublication] = useState<PublishedMercalysImport>();
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string>();
   const loading = ["READING", "MATCHING", "VALIDATING"].includes(stage);
 
@@ -71,6 +84,8 @@ export default function MercalysImportsScreen() {
     if (!hasNativeFilePicker || !storeId) return;
     setFilename(undefined);
     setSummary(undefined);
+    setSelectedBytes(undefined);
+    setPublication(undefined);
     setError(undefined);
 
     try {
@@ -105,6 +120,7 @@ export default function MercalysImportsScreen() {
       setStage("VALIDATING");
       await yieldToInterface();
       setSummary(nextSummary);
+      setSelectedBytes(bytes);
       setStage("COMPLETE");
     } catch (caught) {
       setError(importErrorMessage(caught));
@@ -116,7 +132,45 @@ export default function MercalysImportsScreen() {
     setStage("IDLE");
     setFilename(undefined);
     setSummary(undefined);
+    setSelectedBytes(undefined);
+    setPublication(undefined);
     setError(undefined);
+  }
+
+  async function publishValidLines() {
+    if (!storeId || !filename || !summary || !selectedBytes) return;
+    setPublishing(true);
+    setError(undefined);
+    let durableFile: ExpoFile | undefined;
+    try {
+      const directory = new Directory(Paths.document, "mercalys-imports");
+      directory.create({ idempotent: true, intermediates: true });
+      durableFile = new ExpoFile(directory, `${randomUUID()}.xlsx`);
+      durableFile.create({ intermediates: true });
+      durableFile.write(selectedBytes);
+
+      const checksum = `sha256:${await sha256Hex(selectedBytes)}`;
+      const result = await publicationRepository.publish({
+        storeId,
+        filename,
+        localFileUri: durableFile.uri,
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: selectedBytes.byteLength,
+        checksum,
+        summary,
+      });
+      setPublication(result);
+    } catch (caught) {
+      if (durableFile?.exists) durableFile.delete();
+      setError(
+        caught instanceof Error && caught.message
+          ? caught.message
+          : "Les lignes valides n’ont pas pu être publiées localement.",
+      );
+    } finally {
+      setPublishing(false);
+    }
   }
 
   return (
@@ -177,7 +231,15 @@ export default function MercalysImportsScreen() {
       {error ? <InlineAlert title="Import impossible" message={error} /> : null}
 
       {summary ? (
-        <ValidationSummary summary={summary} onCancel={reset} />
+        <ValidationSummary
+          summary={summary}
+          publication={publication}
+          publishing={publishing}
+          onPublish={() => {
+            void publishValidLines();
+          }}
+          onCancel={reset}
+        />
       ) : null}
     </AppScreen>
   );
@@ -201,9 +263,15 @@ async function loadProductCatalog(
 
 function ValidationSummary({
   summary,
+  publication,
+  publishing,
+  onPublish,
   onCancel,
 }: {
   summary: MercalysImportValidationSummary;
+  publication?: PublishedMercalysImport;
+  publishing: boolean;
+  onPublish: () => void;
   onCancel: () => void;
 }) {
   const reviewLines = summary.lines.filter(
@@ -278,16 +346,31 @@ function ValidationSummary({
       ) : null}
 
       <SectionCard title="Publication">
-        <Text className="text-base leading-6 text-muted">
-          La publication locale sera activée à l’étape suivante. Ce contrôle n’a
-          encore modifié aucune vente, aucune casse et aucun indicateur.
-        </Text>
+        {publication ? (
+          <InlineAlert
+            title={`${publication.publishedCount} ligne${publication.publishedCount > 1 ? "s" : ""} publiée${publication.publishedCount > 1 ? "s" : ""} localement`}
+            message={
+              publication.remainingCount > 0
+                ? `${publication.remainingCount} ligne${publication.remainingCount > 1 ? "s restent" : " reste"} à corriger. La synchronisation du fichier est en attente.`
+                : "Les données sont disponibles hors connexion. La synchronisation du fichier est en attente."
+            }
+          />
+        ) : (
+          <Text className="text-base leading-6 text-muted">
+            Seules les lignes prêtes seront enregistrées. Les autres resteront à
+            corriger et le fichier sera conservé sur cet appareil.
+          </Text>
+        )}
         <PrimaryButton
-          label="Publier les lignes valides"
-          disabled
-          onPress={() => {}}
+          label={publication ? "Lignes publiées" : "Publier les lignes valides"}
+          disabled={summary.readyCount === 0 || publication !== undefined}
+          loading={publishing}
+          onPress={onPublish}
         />
-        <SecondaryButton label="Annuler l’import" onPress={onCancel} />
+        <SecondaryButton
+          label={publication ? "Importer un autre fichier" : "Annuler l’import"}
+          onPress={onCancel}
+        />
       </SectionCard>
     </>
   );
@@ -406,4 +489,11 @@ function issueLabel(code: string) {
 
 function yieldToInterface() {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>) {
+  const hash = new Uint8Array(
+    await digest(CryptoDigestAlgorithm.SHA256, bytes),
+  );
+  return [...hash].map((value) => value.toString(16).padStart(2, "0")).join("");
 }
