@@ -1,10 +1,10 @@
 # M2 product master
 
-Date: 2026-09-27.
+Date: 2026-09-28.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T05 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, and the native XLSX adapter spike.
+The active increment covers M2-T01 through M2-T06 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, the native XLSX adapter, and Mercalys source detection.
 
 ## Implemented
 
@@ -37,9 +37,13 @@ The active increment covers M2-T01 through M2-T05 from `docs/specs/IMPLEMENTATIO
 - Local file metadata, checksums and raw records survive database restart while the source remains explicitly `LOCAL_ONLY` until the M2-T13 upload flow exists.
 - An isolated SheetJS CE 0.20.3 adapter preserves raw values, formatted text, number formats, formulas, dates and empty worksheets from `ArrayBuffer` input.
 - Generated characterization tests cover leading-zero numeric formats, metadata, distinct business dates, decimal variants, totals, empty sheets and a 10,000-row memory baseline.
-- Six local pilot workbooks pass structural characterization without being added to Git; their formats cover monthly periods, decimals and empty worksheets.
+- Four current Mercalys sales and waste exports pass structural characterization without being added to Git; they cover daily and weekly selections, leading-zero identifiers, decimals, totals and optional empty worksheets.
 - A non-production `Plus > Diagnostic XLSX` screen reads a selected workbook locally through Expo DocumentPicker and Expo FileSystem and reports device-side timing and structural counts.
 - ADR 0001 records the accepted iPhone SheetJS decision after real-file and 10,000-row device validation.
+- A bounded semantic detector identifies explicit Mercalys `Vente Nette` and `Casse` reports from their report content and validated article columns, independent of filenames.
+- Single-day non-detailed files are accepted because their selection date is unambiguous; multi-day files are accepted only with `Par Jour` detail and an article `Date` column.
+- Weekly and monthly aggregates without daily dates are recognized but returned as unsupported, while generic, structurally incomplete and contradictory workbooks fail closed.
+- ADR 0002 records daily facts as the required storage grain and recommends daily routine imports, with weekly daily-detail files allowed for catch-up.
 
 ## Verification evidence
 
@@ -52,7 +56,7 @@ The active increment covers M2-T01 through M2-T05 from `docs/specs/IMPLEMENTATIO
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                 |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                  |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 91 tests; 10 MongoDB tests skipped locally and enabled in CI                   |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 100 tests; 10 MongoDB tests skipped locally and enabled in CI                  |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                           |
 | Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands               |
@@ -65,13 +69,14 @@ The active increment covers M2-T01 through M2-T05 from `docs/specs/IMPLEMENTATIO
 | Source atomicity          | A local-file insertion failure rolls back its source document; mismatched store, URI or checksum is rejected              |
 | Source lineage            | Raw JSON and issue codes retain their stable `sourceDocumentId` relationship                                              |
 | XLSX edge cases           | Leading zeroes, report metadata, dates, decimals, totals and empty worksheets survive the adapter boundary                |
-| Pilot XLSX compatibility  | Six local workbooks parse successfully; each contains one populated and two empty sheets                                  |
+| Pilot XLSX compatibility  | Four current Mercalys exports parse successfully; sales/waste and daily/weekly variants retain identifiers and values     |
 | Workstation memory        | A generated 10,000-row/2.49 MB workbook parsed in 88.8 ms with 42.6 MB measured heap growth on Node 24.14.0               |
-| iPhone pilot workbook     | `08-2025.xlsx` parsed 323 rows in 70 ms; 3 sheets, 2 empty sheets and 28 leading-zero cells were retained                 |
+| iPhone adapter gate       | An earlier 27.7 KiB characterization file parsed 323 rows in 70 ms and retained 28 leading-zero cells                     |
 | iPhone stress test        | A generated 10,000-row workbook parsed in 828 ms; the result rendered and the iPhone Air remained open and usable         |
+| Mercalys source detection | Daily sales/waste examples are accepted; weekly aggregates are identified but safely rejected for missing daily dates     |
 
 ## Next work
 
-1. Merge M2-T05 after CI.
-2. Begin M2-T06 Mercalys source detection with the accepted iPhone adapter.
-3. Run the same compatibility and memory checks on target Android hardware before the Android milestone is accepted.
+1. Merge M2-T06 after CI.
+2. Begin M2-T07 local Mercalys sales parsing with an anonymized daily golden fixture.
+3. Run the same XLSX compatibility and memory checks on target Android hardware before the Android milestone is accepted.

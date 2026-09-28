@@ -11,14 +11,12 @@ const fixtureNames = existsSync(fixtureDirectory)
   : [];
 
 describe.skipIf(fixtureNames.length === 0)("local pilot XLSX fixtures", () => {
-  it("reads every available monthly export within the workstation memory budget", () => {
+  it("reads the available Mercalys exports within the workstation memory budget", () => {
     expect(fixtureNames).toEqual([
-      "08-2025.xlsx",
-      "08_2026.xlsx",
-      "09-2025.xlsx",
-      "10_2025.xlsx",
-      "11_2025.xlsx",
-      "12_2025.xlsx",
+      "39_2026.xlsx",
+      "casse_39_2026.xlsx",
+      "casse_day_example.xlsx",
+      "ventes_day_example.xlsx",
     ]);
     const parser = new SheetJsSpreadsheetParser();
     const heapBefore = process.memoryUsage().heapUsed;
@@ -26,21 +24,35 @@ describe.skipIf(fixtureNames.length === 0)("local pilot XLSX fixtures", () => {
     for (const fixtureName of fixtureNames) {
       const bytes = readFileSync(resolve(fixtureDirectory, fixtureName));
       const workbook = parser.parse(bytes);
-      expect(workbook.sheets).toHaveLength(3);
-      expect(workbook.sheets.filter((sheet) => sheet.empty)).toHaveLength(2);
+      expect(workbook.sheets.length).toBeGreaterThanOrEqual(1);
 
       const populatedSheet = workbook.sheets.find((sheet) => !sheet.empty);
-      expect(populatedSheet?.rowCount).toBeGreaterThan(250);
-      expect(populatedSheet?.columnCount).toBe(6);
-      expect(populatedSheet?.rows[0]?.map((cell) => cell.value)).toEqual([
+      expect(populatedSheet?.name).toBe("Mercalys");
+      expect(populatedSheet?.rowCount).toBeGreaterThan(30);
+      expect(populatedSheet?.columnCount).toBe(10);
+      expect(populatedSheet?.rows[7]?.map((cell) => cell.value)).toEqual([
+        "ITM8 Prio",
+        "EAN Prio",
         "Libellé",
-        "Année/Mois",
         "Quantité",
+        "Valeur prix achat",
+        "Valeur RCE",
         "Valeur prix vente",
+        "Valeur TVA",
         "Val Marge",
         "% Marge",
       ]);
-      expect(populatedSheet?.rows[1]?.[1]?.value).toMatch(/^\d{4}\/\d{2}$/);
+      expect(populatedSheet?.rows[8]?.[0]?.value).toEqual(expect.any(String));
+      expect(populatedSheet?.rows[8]?.[1]?.value).toEqual(expect.any(String));
+      expect(
+        populatedSheet?.rows
+          .slice(8)
+          .flatMap((row) => row.slice(0, 2))
+          .some(
+            (cell) =>
+              typeof cell.value === "string" && /^0\d+$/.test(cell.value),
+          ),
+      ).toBe(true);
       expect(
         populatedSheet?.rows
           .flat()

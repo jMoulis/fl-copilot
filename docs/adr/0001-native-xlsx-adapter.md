@@ -64,29 +64,29 @@ On the development Mac with Node 24.14.0, the 10,000-row workbook parsed in 88.8
 
 ### Local pilot workbooks
 
-Six user-owned workbooks in `docs/files_examples` were exercised locally and remain excluded from Git:
+Four user-owned Mercalys exports in `docs/files_examples` were exercised locally and remain excluded from Git:
 
-| Fixture        | Size   | Rows | Sheets | Empty sheets | Parse time | Heap growth |
-| -------------- | ------ | ---: | -----: | -----------: | ---------: | ----------: |
-| `08-2025.xlsx` | 28,362 |  323 |      3 |            2 |    13.1 ms |   2,749,424 |
-| `08_2026.xlsx` | 26,524 |  291 |      3 |            2 |     5.9 ms |   1,236,584 |
-| `09-2025.xlsx` | 28,474 |  325 |      3 |            2 |     5.5 ms |   1,505,824 |
-| `10_2025.xlsx` | 27,528 |  306 |      3 |            2 |     5.4 ms |   1,142,792 |
-| `11_2025.xlsx` | 26,997 |  295 |      3 |            2 |     3.6 ms |     990,368 |
-| `12_2025.xlsx` | 27,207 |  299 |      3 |            2 |     3.5 ms |   1,007,944 |
+| Fixture                   | Size   | Rows | Sheets | Empty sheets | Meaning      |
+| ------------------------- | ------ | ---: | -----: | -----------: | ------------ |
+| `39_2026.xlsx`            | 31,680 |  249 |      1 |            0 | Weekly sales |
+| `casse_39_2026.xlsx`      | 17,916 |   92 |      3 |            2 | Weekly waste |
+| `casse_day_example.xlsx`  | 13,442 |   39 |      3 |            2 | Daily waste  |
+| `ventes_day_example.xlsx` | 24,223 |  159 |      3 |            2 | Daily sales  |
 
-Each workbook exposes the expected monthly headers, `YYYY/MM` business period text, numeric decimals, one populated sheet and two empty sheets. These examples do not contain ITM8/EAN columns, daily dates or total rows, so the generated characterization workbook covers those adapter behaviors. M2-T07 and M2-T08 still require anonymized golden sales and waste fixtures with the complete validated Mercalys formats.
+All four parse through the adapter and expose the ten observed article columns, leading-zero identifiers, decimal values, a total row and a line-count row. ADR 0002 defines which temporal variants are safe to publish as daily facts.
 
-### Target device gate
+Six earlier monthly-shaped files were also used to characterize the adapter before these exports were supplied. They established only that SheetJS could read their workbook structures; they were not validated Mercalys business fixtures and were superseded on 2026-09-28.
+
+### Target device adapter gate
 
 The iPhone Air target passed both the real-file diagnostic and a conservative generated stress test on 2026-09-27:
 
-| Workbook                             |                Size | Parse time |   Rows | Sheets | Empty sheets | Leading-zero cells | Date cells | Total labels | Result                                         |
-| ------------------------------------ | ------------------: | ---------: | -----: | -----: | -----------: | -----------------: | ---------: | -----------: | ---------------------------------------------- |
-| `08-2025.xlsx`                       |            27.7 KiB |      70 ms |    323 |      3 |            2 |                 28 |          0 |            0 | Result displayed normally                      |
-| Generated 10,000-row stress workbook | Generated on device |     828 ms | 10,006 |      2 |            1 |             20,000 |          1 |            1 | Result displayed; app remained open and usable |
+| Workbook                                     |                Size | Parse time |   Rows | Sheets | Empty sheets | Leading-zero cells | Date cells | Total labels | Result                                         |
+| -------------------------------------------- | ------------------: | ---------: | -----: | -----: | -----------: | -----------------: | ---------: | -----------: | ---------------------------------------------- |
+| Earlier `08-2025.xlsx` characterization file |            27.7 KiB |      70 ms |    323 |      3 |            2 |                 28 |          0 |            0 | Result displayed normally                      |
+| Generated 10,000-row stress workbook         | Generated on device |     828 ms | 10,006 |      2 |            1 |             20,000 |          1 |            1 | Result displayed; app remained open and usable |
 
-The stress path generates and parses the workbook in the same application process, so it places more transient pressure on the device than parsing the bytes alone. The app remained alive and responsive after completion. This validates the iPhone gate for M2-T06. An exact Instruments peak was not captured and remains useful profiling evidence before materially larger production files are accepted. Android validation is required before the Android milestone is accepted.
+The stress path generates and parses the workbook in the same application process, so it places more transient pressure on the device than parsing the bytes alone. The app remained alive and responsive after completion. This validates the SheetJS runtime and memory gate on iPhone; it does not validate the earlier file as a Mercalys business format. An exact Instruments peak was not captured and remains useful profiling evidence before materially larger production files are accepted. Android validation is required before the Android milestone is accepted.
 
 Record for each device:
 
