@@ -1,0 +1,76 @@
+{
+  "sourceType": "MERCALYS_SALES",
+  "parserVersion": "mercalys-sales.article.v1",
+  "formatVersion": "mercalys-entries-outputs.article.v1",
+  "sheetName": "Mercalys",
+  "headerRowIndex": 7,
+  "businessPeriodStart": "2026-09-26",
+  "businessPeriodEnd": "2026-09-26",
+  "records": [
+    {
+      "sourceIndex": 8,
+      "itm8": "0000087003017",
+      "ean": "0000000003017",
+      "rawLabel": "POIRE CONFERENCE VRAC",
+      "businessDate": "2026-09-26",
+      "quantity": 1.82,
+      "purchaseValue": 4.65,
+      "rceValue": 0,
+      "salesValue": 7.28,
+      "vatValue": 0.38,
+      "marginValue": 2.25,
+      "marginRate": 30.88,
+      "rawValues": {
+        "itm8": "0000087003017",
+        "ean": "0000000003017",
+        "rawLabel": "POIRE CONFERENCE VRAC",
+        "businessDate": null,
+        "quantity": 1.82,
+        "purchaseValue": 4.65,
+        "rceValue": 0,
+        "salesValue": 7.28,
+        "vatValue": 0.38,
+        "marginValue": 2.25,
+        "marginRate": 30.88
+      }
+    },
+    {
+      "sourceIndex": 9,
+      "itm8": "0000087003024",
+      "ean": "2800146000000",
+      "rawLabel": "POIRE ROCHA VRAC",
+      "businessDate": "2026-09-26",
+      "quantity": 1.25,
+      "purchaseValue": 3.24,
+      "rceValue": 0,
+      "salesValue": 5.01,
+      "vatValue": 0.26,
+      "marginValue": 1.5,
+      "marginRate": 30.02,
+      "rawValues": {
+        "itm8": "0000087003024",
+        "ean": "2800146000000",
+        "rawLabel": "POIRE ROCHA VRAC",
+        "businessDate": null,
+        "quantity": "1,25",
+        "purchaseValue": "3,24",
+        "rceValue": "0",
+        "salesValue": "5,01",
+        "vatValue": "0,26",
+        "marginValue": "1,50",
+        "marginRate": "30,02"
+      }
+    }
+  ],
+  "controlTotals": {
+    "quantity": 3.07,
+    "purchaseValue": 7.89,
+    "rceValue": 0,
+    "salesValue": 12.29,
+    "vatValue": 0.64,
+    "marginValue": 3.75,
+    "marginRate": 30.51
+  },
+  "declaredLineCount": 2,
+  "issues": []
+}
