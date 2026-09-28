@@ -4,7 +4,7 @@ Date: 2026-09-28.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T07 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, the native XLSX adapter, Mercalys source detection, and local Mercalys sales parsing.
+The active increment covers M2-T01 through M2-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, the native XLSX adapter, Mercalys source detection, and local Mercalys sales/waste parsing.
 
 ## Implemented
 
@@ -48,6 +48,8 @@ The active increment covers M2-T01 through M2-T07 from `docs/specs/IMPLEMENTATIO
 - Report totals and declared line counts are returned as control metadata rather than article records; empty rows and worksheets are ignored.
 - Invalid identifiers, dates, quantities and numeric values fail closed at row level, and a declared-line-count mismatch remains visible for the later validation workflow.
 - An anonymized daily golden result covers metadata exclusion, leading zeroes, localized decimals, report controls and empty worksheets; the local real example produces 147 valid records without issues.
+- Sales and waste use one source-specific Mercalys article parser behind explicit flow-specific entry points, so both formats share identifier, date, numeric and report-control behavior without conflating their source types.
+- An anonymized waste golden result verifies that total and line-count rows are excluded; the real daily waste example produces 27 valid records and preserves its 68-unit control total separately.
 
 ## Verification evidence
 
@@ -60,7 +62,7 @@ The active increment covers M2-T01 through M2-T07 from `docs/specs/IMPLEMENTATIO
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                 |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                  |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 105 tests; 10 MongoDB tests skipped locally and enabled in CI                  |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 108 tests; 10 MongoDB tests skipped locally and enabled in CI                  |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                           |
 | Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands               |
@@ -80,9 +82,11 @@ The active increment covers M2-T01 through M2-T07 from `docs/specs/IMPLEMENTATIO
 | Mercalys source detection | Daily sales/waste examples are accepted; weekly aggregates are identified but safely rejected for missing daily dates     |
 | Mercalys sales golden     | Two anonymized rows match expected JSON; metadata, total, line count and empty worksheet do not become article records    |
 | Real daily sales example  | 147 article rows normalize for 2026-09-26; declared count and report total remain separate and no issue is reported       |
+| Mercalys waste golden     | Two anonymized rows match expected JSON; sales reports and weekly aggregates are rejected through explicit error codes    |
+| Real daily waste example  | 27 article rows normalize for 2026-09-26; the 68-unit report total remains separate and no issue is reported              |
 
 ## Next work
 
-1. Merge M2-T07 after CI.
-2. Begin M2-T08 local Mercalys waste parsing from the shared article-report structure and the daily waste example.
+1. Merge M2-T08 after CI.
+2. Begin M2-T09 local import validation UX with readable progress, ready/ambiguous/error summaries and no premature publication.
 3. Run the same XLSX compatibility and memory checks on target Android hardware before the Android milestone is accepted.
