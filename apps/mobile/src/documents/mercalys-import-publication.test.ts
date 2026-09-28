@@ -8,7 +8,10 @@ import { runLocalMigrations } from "../db/migrations";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
-import { MercalysImportPublicationRepository } from "./mercalys-import-publication";
+import {
+  MercalysExactDuplicateError,
+  MercalysImportPublicationRepository,
+} from "./mercalys-import-publication";
 
 type SQLiteValue = string | number | null;
 
@@ -154,6 +157,103 @@ describe("MercalysImportPublicationRepository", () => {
     database.close();
   });
 
+  it("detects an exact duplicate and cannot publish it twice", async () => {
+    const { adapter, database } = await openDatabase();
+    insertProduct(database, "BULK");
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    const publication = input(summary("MERCALYS_SALES"));
+
+    const first = await repository.publish(publication);
+    await expect(
+      repository.findExactDuplicate(
+        storeId,
+        "MERCALYS_SALES",
+        publication.checksum,
+      ),
+    ).resolves.toMatchObject({
+      sourceDocumentId: first.sourceDocumentId,
+      originalFilename: publication.filename,
+      localProcessingStatus: "PUBLISHED",
+      createdAt: timestamp,
+    });
+    const duplicateError = await repository
+      .publish(publication)
+      .catch((error: unknown) => error);
+    expect(duplicateError).toBeInstanceOf(MercalysExactDuplicateError);
+    expect(duplicateError).toMatchObject({
+      priorImport: { sourceDocumentId: first.sourceDocumentId },
+    });
+
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM source_documents").get(),
+    ).toEqual({ count: 1 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM sales_observations")
+        .get(),
+    ).toEqual({ count: 1 });
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM local_jobs").get(),
+    ).toEqual({ count: 1 });
+    database.close();
+  });
+
+  it("does not conflate identical bytes from different Mercalys source types", async () => {
+    const { adapter, database } = await openDatabase();
+    insertProduct(database, "BULK");
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+
+    await repository.publish(input(summary("MERCALYS_SALES")));
+    await expect(
+      repository.publish(input(summary("MERCALYS_WASTE"))),
+    ).resolves.toMatchObject({ publishedCount: 1 });
+
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM source_documents").get(),
+    ).toEqual({ count: 2 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM waste_observations")
+        .get(),
+    ).toEqual({ count: 1 });
+    database.close();
+  });
+
+  it.each(["FAILED", "CANCELLED"])(
+    "allows review and republishing after a %s import",
+    async (failedStatus) => {
+      const { adapter, database } = await openDatabase();
+      insertProduct(database, "BULK");
+      insertFailedSourceDocument(database, failedStatus);
+      const repository = new MercalysImportPublicationRepository(
+        adapter,
+        idGenerator(),
+        () => timestamp,
+      );
+
+      await expect(
+        repository.findExactDuplicate(storeId, "MERCALYS_SALES", "sha256:test"),
+      ).resolves.toBeNull();
+      await expect(
+        repository.publish(input(summary("MERCALYS_SALES"))),
+      ).resolves.toMatchObject({ publishedCount: 1 });
+      expect(
+        database
+          .prepare("SELECT COUNT(*) AS count FROM source_documents")
+          .get(),
+      ).toEqual({ count: 2 });
+      database.close();
+    },
+  );
+
   it("rolls the whole publication back if the matched product is no longer active", async () => {
     const { adapter, database } = await openDatabase();
     insertProduct(database, "BULK", "INACTIVE");
@@ -206,6 +306,26 @@ function insertProduct(
   `,
     )
     .run(productId, storeId, nature, status, timestamp, timestamp);
+}
+
+function insertFailedSourceDocument(database: DatabaseSync, status: string) {
+  database
+    .prepare(
+      `
+        INSERT INTO source_documents (
+          id, store_id, source_type, original_filename, checksum,
+          local_processing_status, remote_upload_status, version,
+          created_at, updated_at, sync_state, dirty
+        ) VALUES (?, ?, 'MERCALYS_SALES', 'failed.xlsx', 'sha256:test', ?, 'FAILED', 1, ?, ?, 'ERROR', 1)
+      `,
+    )
+    .run(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      storeId,
+      status,
+      timestamp,
+      timestamp,
+    );
 }
 
 function input(summaryValue: MercalysImportValidationSummary) {
