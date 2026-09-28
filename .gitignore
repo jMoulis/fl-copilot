@@ -15,5 +15,5 @@ apps/mobile/ios/
 apps/mobile/android/
 .maestro/tests/
 
-# User-owned pilot workbooks stay local; commit only explicitly anonymized fixtures elsewhere.
-/docs/files_examples/*.xlsx
+# User-owned pilot workbooks and receipt photos stay local; commit only explicitly anonymized fixtures elsewhere.
+/docs/files_examples/
