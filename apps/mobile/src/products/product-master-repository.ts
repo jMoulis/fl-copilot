@@ -149,6 +149,18 @@ export class ProductMasterRepository {
     return rows.map(mapIdentifier);
   }
 
+  async listIdentifiersByStore(storeId: string) {
+    const rows = await this.database.getAllAsync<IdentifierRow>(
+      `
+        SELECT * FROM product_identifiers
+        WHERE store_id = ? AND deleted_at IS NULL
+        ORDER BY type, value, id
+      `,
+      storeId,
+    );
+    return rows.map(mapIdentifier);
+  }
+
   async listAliases(productId: string) {
     const rows = await this.database.getAllAsync<AliasRow>(
       `
@@ -157,6 +169,18 @@ export class ProductMasterRepository {
         ORDER BY normalized_alias, id
       `,
       productId,
+    );
+    return rows.map(mapAlias);
+  }
+
+  async listAliasesByStore(storeId: string) {
+    const rows = await this.database.getAllAsync<AliasRow>(
+      `
+        SELECT * FROM product_aliases
+        WHERE store_id = ? AND deleted_at IS NULL
+        ORDER BY normalized_alias, id
+      `,
+      storeId,
     );
     return rows.map(mapAlias);
   }

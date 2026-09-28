@@ -131,6 +131,14 @@ describe("ProductMasterRepository", () => {
       { entity: { value: "0000087003017" }, syncState: "PENDING" },
     ]);
     await expect(repository.listAliases(productId)).resolves.toHaveLength(1);
+    await expect(
+      repository.listIdentifiersByStore(storeId),
+    ).resolves.toMatchObject([
+      { entity: { productId, value: "0000087003017" } },
+    ]);
+    await expect(repository.listAliasesByStore(storeId)).resolves.toMatchObject(
+      [{ entity: { productId, normalizedAlias: "POIRE CONFERENCE VRA" } }],
+    );
     expect(
       database
         .prepare(

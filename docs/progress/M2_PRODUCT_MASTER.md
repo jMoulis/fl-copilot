@@ -4,7 +4,7 @@ Date: 2026-09-28.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, the native XLSX adapter, Mercalys source detection, and local Mercalys sales/waste parsing.
+The active increment covers M2-T01 through M2-T09 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, and the local import validation experience.
 
 ## Implemented
 
@@ -50,43 +50,49 @@ The active increment covers M2-T01 through M2-T08 from `docs/specs/IMPLEMENTATIO
 - An anonymized daily golden result covers metadata exclusion, leading zeroes, localized decimals, report controls and empty worksheets; the local real example produces 147 valid records without issues.
 - Sales and waste use one source-specific Mercalys article parser behind explicit flow-specific entry points, so both formats share identifier, date, numeric and report-control behavior without conflating their source types.
 - An anonymized waste golden result verifies that total and line-count rows are excluded; the real daily waste example produces 27 valid records and preserves its 68-unit control total separately.
+- A native `Imports Mercalys` screen runs file reading, product identification and data verification locally, with visible progress and no network dependency.
+- The validation summary separates ready lines from products requiring confirmation and parser anomalies, shows a short review list, and explains unsupported weekly aggregates in French.
+- Product matching uses the active local product, identifier and alias catalog; only deterministic `AUTO_MATCH` results are ready, while review, ambiguity and missing products remain explicitly unresolved.
+- Publication is deliberately disabled in this increment, so validation cannot mutate sales, waste or KPI state before M2-T10 adds the atomic publication path.
 
 ## Verification evidence
 
-| Check                     | Result                                                                                                                    |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Shared contracts          | Product, identifier and alias payloads are parsed by the same domain schemas in mobile, API and sync contracts            |
-| Leading zeroes            | `0000087003017` remains an exact string through local persistence, MongoDB and device-to-device replication               |
-| Atomic local writes       | Product-master rows and their Outbox commands commit in one SQLite transaction                                            |
-| Optimistic remote writes  | Expected remote versions gate every upsert and delete; mismatches return a durable conflict result                        |
-| Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                 |
-| Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                  |
-| Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 108 tests; 10 MongoDB tests skipped locally and enabled in CI                  |
-| Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                |
-| Formatting                | `pnpm format:check` and `git diff --check` pass                                                                           |
-| Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands               |
-| Repeated offline edits    | A second save targets the first local version, allowing both commands to synchronize in order                             |
-| Conflict visibility       | Open product, identifier and alias conflicts resolve to the owning product and block an unsafe new save                   |
-| Matcher precedence        | An exact validated identifier wins before alias and label matching, while contradictory ITM8/EAN identities block         |
-| Matching safety           | Unvalidated aliases and inactive, review-only, deleted or cross-store products cannot auto-match                          |
-| Fuzzy proposals           | Candidate, review and ambiguity thresholds are configuration inputs recorded through the matcher version                  |
-| Source restart durability | Source-document, local-file and raw-record metadata remain available after closing and reopening the SQLite database      |
-| Source atomicity          | A local-file insertion failure rolls back its source document; mismatched store, URI or checksum is rejected              |
-| Source lineage            | Raw JSON and issue codes retain their stable `sourceDocumentId` relationship                                              |
-| XLSX edge cases           | Leading zeroes, report metadata, dates, decimals, totals and empty worksheets survive the adapter boundary                |
-| Pilot XLSX compatibility  | Four current Mercalys exports parse successfully; sales/waste and daily/weekly variants retain identifiers and values     |
-| Workstation memory        | A generated 10,000-row/2.49 MB workbook parsed in 88.8 ms with 42.6 MB measured heap growth on Node 24.14.0               |
-| iPhone adapter gate       | An earlier 27.7 KiB characterization file parsed 323 rows in 70 ms and retained 28 leading-zero cells                     |
-| iPhone stress test        | A generated 10,000-row workbook parsed in 828 ms; the result rendered and the iPhone Air remained open and usable         |
-| Mercalys source detection | Daily sales/waste examples are accepted; weekly aggregates are identified but safely rejected for missing daily dates     |
-| Mercalys sales golden     | Two anonymized rows match expected JSON; metadata, total, line count and empty worksheet do not become article records    |
-| Real daily sales example  | 147 article rows normalize for 2026-09-26; declared count and report total remain separate and no issue is reported       |
-| Mercalys waste golden     | Two anonymized rows match expected JSON; sales reports and weekly aggregates are rejected through explicit error codes    |
-| Real daily waste example  | 27 article rows normalize for 2026-09-26; the 68-unit report total remains separate and no issue is reported              |
+| Check                     | Result                                                                                                                     |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Shared contracts          | Product, identifier and alias payloads are parsed by the same domain schemas in mobile, API and sync contracts             |
+| Leading zeroes            | `0000087003017` remains an exact string through local persistence, MongoDB and device-to-device replication                |
+| Atomic local writes       | Product-master rows and their Outbox commands commit in one SQLite transaction                                             |
+| Optimistic remote writes  | Expected remote versions gate every upsert and delete; mismatches return a durable conflict result                         |
+| Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                  |
+| Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                   |
+| Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot  |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 111 tests; 10 MongoDB tests skipped locally and enabled in CI                   |
+| Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                 |
+| Formatting                | `pnpm format:check` and `git diff --check` pass                                                                            |
+| Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands                |
+| Repeated offline edits    | A second save targets the first local version, allowing both commands to synchronize in order                              |
+| Conflict visibility       | Open product, identifier and alias conflicts resolve to the owning product and block an unsafe new save                    |
+| Matcher precedence        | An exact validated identifier wins before alias and label matching, while contradictory ITM8/EAN identities block          |
+| Matching safety           | Unvalidated aliases and inactive, review-only, deleted or cross-store products cannot auto-match                           |
+| Fuzzy proposals           | Candidate, review and ambiguity thresholds are configuration inputs recorded through the matcher version                   |
+| Source restart durability | Source-document, local-file and raw-record metadata remain available after closing and reopening the SQLite database       |
+| Source atomicity          | A local-file insertion failure rolls back its source document; mismatched store, URI or checksum is rejected               |
+| Source lineage            | Raw JSON and issue codes retain their stable `sourceDocumentId` relationship                                               |
+| XLSX edge cases           | Leading zeroes, report metadata, dates, decimals, totals and empty worksheets survive the adapter boundary                 |
+| Pilot XLSX compatibility  | Four current Mercalys exports parse successfully; sales/waste and daily/weekly variants retain identifiers and values      |
+| Workstation memory        | A generated 10,000-row/2.49 MB workbook parsed in 88.8 ms with 42.6 MB measured heap growth on Node 24.14.0                |
+| iPhone adapter gate       | An earlier 27.7 KiB characterization file parsed 323 rows in 70 ms and retained 28 leading-zero cells                      |
+| iPhone stress test        | A generated 10,000-row workbook parsed in 828 ms; the result rendered and the iPhone Air remained open and usable          |
+| Mercalys source detection | Daily sales/waste examples are accepted; weekly aggregates are identified but safely rejected for missing daily dates      |
+| Mercalys sales golden     | Two anonymized rows match expected JSON; metadata, total, line count and empty worksheet do not become article records     |
+| Real daily sales example  | 147 article rows normalize for 2026-09-26; declared count and report total remain separate and no issue is reported        |
+| Mercalys waste golden     | Two anonymized rows match expected JSON; sales reports and weekly aggregates are rejected through explicit error codes     |
+| Real daily waste example  | 27 article rows normalize for 2026-09-26; the 68-unit report total remains separate and no issue is reported               |
+| Import validation summary | Sales and waste fixtures each classify one ready, one ambiguous and one unmatched row; weekly aggregate guidance is tested |
+| Import route export       | Expo Router Web export passes with a native-only import screen and an explicit Web fallback                                |
 
 ## Next work
 
-1. Merge M2-T08 after CI.
-2. Begin M2-T09 local import validation UX with readable progress, ready/ambiguous/error summaries and no premature publication.
+1. Validate M2-T09 on the target iPhone with the daily sales and waste exports, then merge after CI.
+2. Begin M2-T10 atomic local publication with source lineage and offline availability.
 3. Run the same XLSX compatibility and memory checks on target Android hardware before the Android milestone is accepted.
