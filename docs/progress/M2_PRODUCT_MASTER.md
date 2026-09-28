@@ -4,7 +4,7 @@ Date: 2026-09-28.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T06 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, the native XLSX adapter, and Mercalys source detection.
+The active increment covers M2-T01 through M2-T07 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, the native XLSX adapter, Mercalys source detection, and local Mercalys sales parsing.
 
 ## Implemented
 
@@ -44,6 +44,10 @@ The active increment covers M2-T01 through M2-T06 from `docs/specs/IMPLEMENTATIO
 - Single-day non-detailed files are accepted because their selection date is unambiguous; multi-day files are accepted only with `Par Jour` detail and an article `Date` column.
 - Weekly and monthly aggregates without daily dates are recognized but returned as unsupported, while generic, structurally incomplete and contradictory workbooks fail closed.
 - ADR 0002 records daily facts as the required storage grain and recommends daily routine imports, with weekly daily-detail files allowed for catch-up.
+- A source-specific sales parser normalizes identifiers, labels, business dates and the seven observed numeric measures while retaining the raw source values and zero-based worksheet row index.
+- Report totals and declared line counts are returned as control metadata rather than article records; empty rows and worksheets are ignored.
+- Invalid identifiers, dates, quantities and numeric values fail closed at row level, and a declared-line-count mismatch remains visible for the later validation workflow.
+- An anonymized daily golden result covers metadata exclusion, leading zeroes, localized decimals, report controls and empty worksheets; the local real example produces 147 valid records without issues.
 
 ## Verification evidence
 
@@ -56,7 +60,7 @@ The active increment covers M2-T01 through M2-T06 from `docs/specs/IMPLEMENTATIO
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                 |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                  |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 100 tests; 10 MongoDB tests skipped locally and enabled in CI                  |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 105 tests; 10 MongoDB tests skipped locally and enabled in CI                  |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                           |
 | Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands               |
@@ -74,9 +78,11 @@ The active increment covers M2-T01 through M2-T06 from `docs/specs/IMPLEMENTATIO
 | iPhone adapter gate       | An earlier 27.7 KiB characterization file parsed 323 rows in 70 ms and retained 28 leading-zero cells                     |
 | iPhone stress test        | A generated 10,000-row workbook parsed in 828 ms; the result rendered and the iPhone Air remained open and usable         |
 | Mercalys source detection | Daily sales/waste examples are accepted; weekly aggregates are identified but safely rejected for missing daily dates     |
+| Mercalys sales golden     | Two anonymized rows match expected JSON; metadata, total, line count and empty worksheet do not become article records    |
+| Real daily sales example  | 147 article rows normalize for 2026-09-26; declared count and report total remain separate and no issue is reported       |
 
 ## Next work
 
-1. Merge M2-T06 after CI.
-2. Begin M2-T07 local Mercalys sales parsing with an anonymized daily golden fixture.
+1. Merge M2-T07 after CI.
+2. Begin M2-T08 local Mercalys waste parsing from the shared article-report structure and the daily waste example.
 3. Run the same XLSX compatibility and memory checks on target Android hardware before the Android milestone is accepted.
