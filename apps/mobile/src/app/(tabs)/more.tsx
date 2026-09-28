@@ -44,6 +44,16 @@ export default function MoreScreen() {
           onPress={() => router.push("/(tabs)/products" as Href)}
         />
       </SectionCard>
+      <SectionCard title="Imports Mercalys">
+        <Text className="text-base leading-6 text-muted">
+          Vérifiez localement un export de ventes ou de casse avant sa
+          publication.
+        </Text>
+        <SecondaryButton
+          label="Importer un fichier Mercalys"
+          onPress={() => router.push("/(tabs)/imports" as Href)}
+        />
+      </SectionCard>
       <SectionCard title="Votre session">
         <Text className="text-base leading-6 text-muted">
           {session?.user.email ?? "Session locale"}
