@@ -29,6 +29,7 @@ export interface MercalysImportValidationLine {
 
 export interface MercalysImportValidationSummary {
   sourceType: MercalysSourceType;
+  parserVersion: string;
   businessPeriodStart: string;
   businessPeriodEnd: string;
   detectedLineCount: number;
@@ -80,6 +81,7 @@ export function validateMercalysImport(
 
   return {
     sourceType: detection.sourceType,
+    parserVersion: parsed.parserVersion,
     businessPeriodStart: parsed.businessPeriodStart,
     businessPeriodEnd: parsed.businessPeriodEnd,
     detectedLineCount:

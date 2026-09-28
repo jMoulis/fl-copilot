@@ -362,6 +362,77 @@ export const localMigrations: readonly LocalMigration[] = [
         ON local_files (source_document_id);
     `,
   },
+  {
+    version: 8,
+    name: "add-local-observations",
+    sql: `
+      CREATE TABLE sales_observations (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        business_date TEXT NOT NULL,
+        quantity TEXT NOT NULL,
+        purchase_value TEXT,
+        rce_value TEXT,
+        sales_value TEXT,
+        vat_value TEXT,
+        margin_value TEXT,
+        margin_rate TEXT,
+        source_document_id TEXT NOT NULL,
+        source_record_id TEXT NOT NULL,
+        validation_status TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'SYNCED',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+        FOREIGN KEY (source_document_id) REFERENCES source_documents(id) ON DELETE RESTRICT,
+        FOREIGN KEY (source_record_id) REFERENCES source_records(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX idx_sales_date_product
+        ON sales_observations (store_id, business_date, product_id);
+      CREATE INDEX idx_sales_product_date
+        ON sales_observations (store_id, product_id, business_date);
+      CREATE UNIQUE INDEX idx_sales_source_record
+        ON sales_observations (store_id, source_record_id);
+
+      CREATE TABLE waste_observations (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        business_date TEXT NOT NULL,
+        product_nature TEXT NOT NULL,
+        quantity TEXT,
+        purchase_value_known TEXT,
+        purchase_value_estimated TEXT,
+        sales_value TEXT,
+        cost_quality TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        source_document_id TEXT,
+        source_record_id TEXT NOT NULL,
+        validation_status TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'SYNCED',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT,
+        FOREIGN KEY (source_document_id) REFERENCES source_documents(id) ON DELETE RESTRICT,
+        FOREIGN KEY (source_record_id) REFERENCES source_records(id) ON DELETE RESTRICT
+      );
+      CREATE INDEX idx_waste_date_product
+        ON waste_observations (store_id, business_date, product_id);
+      CREATE INDEX idx_waste_product_date
+        ON waste_observations (store_id, product_id, business_date);
+      CREATE UNIQUE INDEX idx_waste_source_record
+        ON waste_observations (store_id, source_record_id);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

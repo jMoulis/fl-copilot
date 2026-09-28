@@ -157,6 +157,7 @@ export const updateProductAliasSchema = createProductAliasSchema
   );
 
 export type Product = z.infer<typeof productSchema>;
+export type ProductNature = z.infer<typeof productNatureSchema>;
 export type ProductIdentifier = z.infer<typeof productIdentifierSchema>;
 export type ProductAlias = z.infer<typeof productAliasSchema>;
 export type CreateProduct = z.infer<typeof createProductSchema>;
