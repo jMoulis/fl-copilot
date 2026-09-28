@@ -19,7 +19,9 @@ import {
   type MercalysImportValidationSummary,
 } from "@/documents/mercalys-import-validation";
 import {
+  MercalysExactDuplicateError,
   MercalysImportPublicationRepository,
+  type ExactDuplicateImport,
   type PublishedMercalysImport,
 } from "@/documents/mercalys-import-publication";
 import { SheetJsSpreadsheetParser } from "@/documents/sheetjs-spreadsheet-parser";
@@ -75,6 +77,8 @@ export default function MercalysImportsScreen() {
   const [filename, setFilename] = useState<string>();
   const [summary, setSummary] = useState<MercalysImportValidationSummary>();
   const [selectedBytes, setSelectedBytes] = useState<Uint8Array<ArrayBuffer>>();
+  const [selectedChecksum, setSelectedChecksum] = useState<string>();
+  const [duplicate, setDuplicate] = useState<ExactDuplicateImport>();
   const [publication, setPublication] = useState<PublishedMercalysImport>();
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string>();
@@ -85,6 +89,8 @@ export default function MercalysImportsScreen() {
     setFilename(undefined);
     setSummary(undefined);
     setSelectedBytes(undefined);
+    setSelectedChecksum(undefined);
+    setDuplicate(undefined);
     setPublication(undefined);
     setError(undefined);
 
@@ -119,6 +125,18 @@ export default function MercalysImportsScreen() {
 
       setStage("VALIDATING");
       await yieldToInterface();
+      const checksum = `sha256:${await sha256Hex(bytes)}`;
+      const priorImport = await publicationRepository.findExactDuplicate(
+        storeId,
+        nextSummary.sourceType,
+        checksum,
+      );
+      setSelectedChecksum(checksum);
+      if (priorImport) {
+        setDuplicate(priorImport);
+        setStage("COMPLETE");
+        return;
+      }
       setSummary(nextSummary);
       setSelectedBytes(bytes);
       setStage("COMPLETE");
@@ -133,12 +151,21 @@ export default function MercalysImportsScreen() {
     setFilename(undefined);
     setSummary(undefined);
     setSelectedBytes(undefined);
+    setSelectedChecksum(undefined);
+    setDuplicate(undefined);
     setPublication(undefined);
     setError(undefined);
   }
 
   async function publishValidLines() {
-    if (!storeId || !filename || !summary || !selectedBytes) return;
+    if (
+      !storeId ||
+      !filename ||
+      !summary ||
+      !selectedBytes ||
+      !selectedChecksum
+    )
+      return;
     setPublishing(true);
     setError(undefined);
     let durableFile: ExpoFile | undefined;
@@ -149,7 +176,6 @@ export default function MercalysImportsScreen() {
       durableFile.create({ intermediates: true });
       durableFile.write(selectedBytes);
 
-      const checksum = `sha256:${await sha256Hex(selectedBytes)}`;
       const result = await publicationRepository.publish({
         storeId,
         filename,
@@ -157,12 +183,18 @@ export default function MercalysImportsScreen() {
         mimeType:
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         sizeBytes: selectedBytes.byteLength,
-        checksum,
+        checksum: selectedChecksum,
         summary,
       });
       setPublication(result);
     } catch (caught) {
       if (durableFile?.exists) durableFile.delete();
+      if (caught instanceof MercalysExactDuplicateError) {
+        setSummary(undefined);
+        setSelectedBytes(undefined);
+        setDuplicate(caught.priorImport);
+        return;
+      }
       setError(
         caught instanceof Error && caught.message
           ? caught.message
@@ -241,7 +273,62 @@ export default function MercalysImportsScreen() {
           onCancel={reset}
         />
       ) : null}
+
+      {duplicate ? (
+        <DuplicateSummary duplicate={duplicate} onCancel={reset} />
+      ) : null}
     </AppScreen>
+  );
+}
+
+function DuplicateSummary({
+  duplicate,
+  onCancel,
+}: {
+  duplicate: ExactDuplicateImport;
+  onCancel: () => void;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  return (
+    <>
+      <InlineAlert
+        title="Ce fichier a déjà été importé"
+        message={`${formatImportDate(duplicate.createdAt)} · ${duplicateStatusLabel(duplicate)}`}
+      />
+      {showDetails ? (
+        <SectionCard title="Import précédent">
+          <SummaryLine
+            label="Fichier"
+            value={duplicate.originalFilename ?? "Nom indisponible"}
+          />
+          <SummaryLine
+            label="Source"
+            value={
+              duplicate.sourceType === "MERCALYS_SALES"
+                ? "Ventes Mercalys"
+                : "Casse Mercalys"
+            }
+          />
+          {duplicate.businessPeriodStart && duplicate.businessPeriodEnd ? (
+            <SummaryLine
+              label="Période"
+              value={formatPeriod(
+                duplicate.businessPeriodStart,
+                duplicate.businessPeriodEnd,
+              )}
+            />
+          ) : null}
+          <SummaryLine label="État" value={duplicateStatusLabel(duplicate)} />
+        </SectionCard>
+      ) : null}
+      <SectionCard title="Actions">
+        <PrimaryButton
+          label={showDetails ? "Masquer les détails" : "Voir l’import"}
+          onPress={() => setShowDetails((value) => !value)}
+        />
+        <SecondaryButton label="Annuler" onPress={onCancel} />
+      </SectionCard>
+    </>
   );
 }
 
@@ -474,6 +561,24 @@ function formatPeriod(start: string, end: string) {
 function formatIsoDate(value: string) {
   const [year, month, day] = value.split("-");
   return `${day}/${month}/${year}`;
+}
+
+function formatImportDate(value: string) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function duplicateStatusLabel(duplicate: ExactDuplicateImport) {
+  if (duplicate.remoteProcessingStatus === "PUBLISHED") {
+    return "Publié et vérifié";
+  }
+  if (duplicate.localProcessingStatus === "PUBLISHED") {
+    return "Publié localement · Synchronisation en attente";
+  }
+  return "Import déjà enregistré";
 }
 
 function issueLabel(code: string) {

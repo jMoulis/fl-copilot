@@ -10,6 +10,7 @@ import {
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
+import type { MercalysSourceType } from "./mercalys-source-detector";
 
 type PublicationDatabase = AtomicMutationDatabase & OutboxDatabase;
 type GenerateId = () => string;
@@ -31,12 +32,38 @@ export interface PublishedMercalysImport {
   remainingCount: number;
 }
 
+export interface ExactDuplicateImport {
+  sourceDocumentId: string;
+  sourceType: MercalysSourceType;
+  originalFilename: string | null;
+  businessPeriodStart: string | null;
+  businessPeriodEnd: string | null;
+  localProcessingStatus: string;
+  remoteProcessingStatus: string | null;
+  createdAt: string;
+}
+
+export class MercalysExactDuplicateError extends Error {
+  constructor(readonly priorImport: ExactDuplicateImport) {
+    super("MERCALYS_EXACT_DUPLICATE");
+    this.name = "MercalysExactDuplicateError";
+  }
+}
+
 export class MercalysImportPublicationRepository {
   constructor(
     private readonly database: PublicationDatabase,
     private readonly generateId: GenerateId,
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
+
+  async findExactDuplicate(
+    storeId: string,
+    sourceType: MercalysSourceType,
+    checksum: string,
+  ) {
+    return findExactDuplicate(this.database, storeId, sourceType, checksum);
+  }
 
   async publish(
     input: PublishMercalysImportInput,
@@ -56,6 +83,14 @@ export class MercalysImportPublicationRepository {
     let publishedCount = 0;
 
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const duplicate = await findExactDuplicate(
+        transaction,
+        input.storeId,
+        input.summary.sourceType,
+        input.checksum,
+      );
+      if (duplicate) throw new MercalysExactDuplicateError(duplicate);
+
       await insertDocument(transaction, {
         id: sourceDocumentId,
         ...input,
@@ -189,6 +224,51 @@ export class MercalysImportPublicationRepository {
         input.summary.productReviewCount + input.summary.errorCount,
     };
   }
+}
+
+async function findExactDuplicate(
+  database: OutboxDatabase,
+  storeId: string,
+  sourceType: MercalysSourceType,
+  checksum: string,
+): Promise<ExactDuplicateImport | null> {
+  const row = await database.getFirstAsync<{
+    id: string;
+    source_type: MercalysSourceType;
+    original_filename: string | null;
+    business_period_start: string | null;
+    business_period_end: string | null;
+    local_processing_status: string;
+    remote_processing_status: string | null;
+    created_at: string;
+  }>(
+    `
+      SELECT id, source_type, original_filename, business_period_start,
+             business_period_end, local_processing_status,
+             remote_processing_status, created_at
+      FROM source_documents
+      WHERE store_id = ? AND source_type = ? AND checksum = ?
+        AND local_processing_status NOT IN ('FAILED', 'CANCELLED')
+        AND deleted_at IS NULL
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1
+    `,
+    storeId,
+    sourceType,
+    checksum,
+  );
+  return row
+    ? {
+        sourceDocumentId: row.id,
+        sourceType: row.source_type,
+        originalFilename: row.original_filename,
+        businessPeriodStart: row.business_period_start,
+        businessPeriodEnd: row.business_period_end,
+        localProcessingStatus: row.local_processing_status,
+        remoteProcessingStatus: row.remote_processing_status,
+        createdAt: row.created_at,
+      }
+    : null;
 }
 
 async function activeProduct(
