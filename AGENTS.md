@@ -72,6 +72,7 @@ Use:
 Node.js
 TypeScript
 Fastify
+Vercel Functions
 MongoDB Atlas
 Vercel Blob (private)
 Inngest

@@ -82,6 +82,9 @@ The active increment covers M2-T01 through M2-T13 from `docs/specs/IMPLEMENTATIO
 - Failed offline attempts remain pending with bounded backoff; app activation, manual synchronization and a one-minute pending-work retry resume the queue.
 - A deterministic object key plus idempotent init and completion means a connection loss after the Blob write confirms the existing object instead of uploading another copy.
 - Confirmed files become cleanup-eligible but are not deleted by this increment.
+- ADR 0004 records Vercel Functions with Fluid Compute as the approved Fastify deployment target, replacing the unprovisioned Google Cloud Run target for the pilot.
+- The Vercel Function uses an explicit bundled handler so runtime-neutral pnpm workspace packages are present at invocation time; the local process keeps its normal listening entrypoint.
+- Preview deployment validation returns a connected `200` health response from Paris and rejects a structurally valid unauthenticated source-upload request with `401 AUTH_REQUIRED`.
 
 ## Verification evidence
 
@@ -131,9 +134,10 @@ The active increment covers M2-T01 through M2-T13 from `docs/specs/IMPLEMENTATIO
 | Upload authorization      | Authenticated store-scoped API tests accept allowed XLSX metadata and reject unsupported payloads before issuing a URL                      |
 | Upload idempotence        | API service and SQLite queue tests prove one Blob write when confirmation fails, followed by confirmation of the existing object            |
 | Offline upload durability | An unavailable authorization endpoint leaves the source file retained and the job pending for a later retry                                 |
+| Vercel API runtime        | Protected Preview returns `200` with connected MongoDB health from `cdg1`; a valid upload request without a session returns `401`           |
 
 ## Next work
 
-1. Connect a private Vercel Blob store to the deployed Fastify project and validate M2-T13 end to end on the target iPhone.
+1. Merge the Vercel runtime correction, let `master` deploy production, and validate M2-T13 end to end on the target iPhone against `fl-copilot-blob`.
 2. Begin M2-T14 remote import verification after the real Blob upload is confirmed.
 3. Run the same XLSX compatibility, publication, upload, and memory checks on target Android hardware before the Android milestone is accepted.

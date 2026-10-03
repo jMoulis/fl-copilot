@@ -49,6 +49,8 @@ Expected response:
 
 The endpoint reports API and MongoDB readiness. It returns HTTP 503 with `status: "degraded"` when MongoDB is unavailable and retries the connection on later health checks. Configuration is validated at startup; malformed requests and unexpected exceptions return French structured errors with server-generated request IDs.
 
+Production deploys the API as a Vercel Function with Fluid Compute in Paris (`cdg1`). The Vercel project root is `apps/api`; Git branches create protected Preview deployments and `master` updates the public production API domain. The build bundles internal workspace packages into the Function artifact while local development continues to use the normal Fastify process above. See `docs/adr/0004-vercel-functions-api-deployment.md`.
+
 ## Visual preview without native tools
 
 ```sh
