@@ -1,3 +1,7 @@
+// Keep a direct Fastify import so Vercel's zero-config detector recognizes
+// this file as the application entrypoint.
+import "fastify";
+
 // Vercel runs the repository build before compiling this Fastify entrypoint.
 // The generated runtime bundle contains the internal pnpm workspace packages,
 // which are otherwise omitted from the deployed Function's file trace.
