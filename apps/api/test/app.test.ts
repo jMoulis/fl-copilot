@@ -6,6 +6,7 @@ import {
   authSessionResponseSchema,
   bootstrapResponseSchema,
   healthResponseSchema,
+  initSourceUploadResponseSchema,
   syncPullResponseSchema,
   syncPushResponseSchema,
 } from "@fl-copilot/sync-contracts";
@@ -20,6 +21,7 @@ import {
 import type { SyncPushService } from "../src/sync/push-service.js";
 import type { SyncPullService } from "../src/sync/pull-service.js";
 import type { SyncBootstrapService } from "../src/sync/bootstrap-service.js";
+import type { SourceUploadService } from "../src/uploads/source-upload-service.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
   return {
@@ -45,6 +47,7 @@ function createAuthApp(
   syncPush?: SyncPushService,
   syncPull?: SyncPullService,
   syncBootstrap?: SyncBootstrapService,
+  sourceUploads?: SourceUploadService,
 ) {
   const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
     database: createDatabase(),
@@ -52,12 +55,163 @@ function createAuthApp(
     syncBootstrap,
     syncPull,
     syncPush,
+    sourceUploads,
   });
   apps.push(app);
   return app;
 }
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
+});
+
+describe("source upload routes", () => {
+  const storeId = "44444444-4444-4444-8444-444444444444";
+  const sourceDocumentId = "55555555-5555-4555-8555-555555555555";
+  const uploadId = "66666666-6666-4666-8666-666666666666";
+  const checksum = `sha256:${"a".repeat(64)}`;
+
+  function fakeAuth(): AuthService {
+    return {
+      requestChallenge: async () => {
+        throw new Error("not used");
+      },
+      verifyChallenge: async () => {
+        throw new Error("not used");
+      },
+      refreshSession: async () => {
+        throw new Error("not used");
+      },
+      authorizeStore: async (_token, authorizedStoreId) => ({
+        userId: "77777777-7777-4777-8777-777777777777",
+        sessionId: "88888888-8888-4888-8888-888888888888",
+        deviceId: "99999999-9999-4999-8999-999999999999",
+        storeId: authorizedStoreId,
+        storeName: "Magasin test",
+        role: "MANAGER",
+      }),
+      logout: async () => undefined,
+    };
+  }
+
+  it("authorizes a scoped private upload and confirms it", async () => {
+    const calls: string[] = [];
+    const uploads: SourceUploadService = {
+      init: async (authorizedStoreId, userId, input) => {
+        calls.push(
+          `init:${authorizedStoreId}:${userId}:${input.sourceDocumentId}`,
+        );
+        return {
+          uploadId,
+          objectKey: `sources/${storeId}/${sourceDocumentId}/file.xlsx`,
+          status: "UPLOAD_REQUIRED",
+          uploadUrl: "https://blob.example.test/presigned",
+          expiresAt: "2026-10-03T12:10:00.000Z",
+          headers: { "content-type": input.mimeType },
+        };
+      },
+      complete: async (authorizedStoreId, authorizedUploadId, input) => {
+        calls.push(
+          `complete:${authorizedStoreId}:${authorizedUploadId}:${input.sizeBytes}`,
+        );
+        return {
+          sourceDocumentId,
+          remoteUploadStatus: "CONFIRMED",
+          jobId: null,
+        };
+      },
+    };
+    const app = createAuthApp(
+      fakeAuth(),
+      undefined,
+      undefined,
+      undefined,
+      uploads,
+    );
+    const headers = {
+      authorization: "Bearer access-token",
+      "x-store-id": storeId,
+    };
+    const initialized = await app.inject({
+      method: "POST",
+      url: "/api/v1/uploads/init",
+      headers,
+      payload: {
+        sourceDocumentId,
+        sourceType: "MERCALYS_SALES",
+        filename: "ventes.xlsx",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: 27_700,
+        checksum,
+      },
+    });
+    expect(initialized.statusCode).toBe(200);
+    expect(
+      initSourceUploadResponseSchema.parse(initialized.json()),
+    ).toMatchObject({
+      uploadId,
+      status: "UPLOAD_REQUIRED",
+    });
+
+    const completed = await app.inject({
+      method: "POST",
+      url: `/api/v1/uploads/${uploadId}/complete`,
+      headers,
+      payload: { sizeBytes: 27_700, checksum },
+    });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json()).toMatchObject({
+      sourceDocumentId,
+      remoteUploadStatus: "CONFIRMED",
+    });
+    expect(calls).toEqual([
+      `init:${storeId}:77777777-7777-4777-8777-777777777777:${sourceDocumentId}`,
+      `complete:${storeId}:${uploadId}:27700`,
+    ]);
+  });
+
+  it("rejects anonymous and invalid upload requests before issuing a URL", async () => {
+    const uploads: SourceUploadService = {
+      init: async () => {
+        throw new Error("must not run");
+      },
+      complete: async () => {
+        throw new Error("must not run");
+      },
+    };
+    const app = createAuthApp(
+      fakeAuth(),
+      undefined,
+      undefined,
+      undefined,
+      uploads,
+    );
+    const anonymous = await app.inject({
+      method: "POST",
+      url: "/api/v1/uploads/init",
+      headers: { "x-store-id": storeId },
+      payload: {},
+    });
+    expect(anonymous.statusCode).toBe(400);
+
+    const invalid = await app.inject({
+      method: "POST",
+      url: "/api/v1/uploads/init",
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+      },
+      payload: {
+        sourceDocumentId,
+        sourceType: "MERCALYS_SALES",
+        filename: "ventes.exe",
+        mimeType: "application/x-msdownload",
+        sizeBytes: 1,
+        checksum,
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+  });
 });
 describe("API foundation", () => {
   it("exposes public process liveness with the shared response contract", async () => {

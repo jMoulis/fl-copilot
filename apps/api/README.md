@@ -15,7 +15,9 @@ The native application never contacts Resend directly:
 mobile app → Fastify API → Resend → recipient mailbox
 ```
 
-`GET /health` is intentionally public and reports API plus MongoDB readiness. A connected database returns HTTP 200; an unavailable database returns HTTP 503 and `status: "degraded"`. A later health request retries initialization, so the process can recover when MongoDB comes back. It does not assert authentication readiness. There are no business endpoints yet.
+`GET /health` is intentionally public and reports API plus MongoDB readiness. A connected database returns HTTP 200; an unavailable database returns HTTP 503 and `status: "degraded"`. A later health request retries initialization, so the process can recover when MongoDB comes back. It does not assert authentication readiness.
+
+Original source files use a private Vercel Blob store. Connect that store to the API project so Vercel provides `BLOB_READ_WRITE_TOKEN`, or `VERCEL_OIDC_TOKEN` plus `BLOB_STORE_ID`. The API issues a ten-minute upload URL scoped to one deterministic pathname, MIME type and exact file size. The mobile app uploads directly to Blob, then asks the API to verify and confirm the object. Never expose a Blob credential through an `EXPO_PUBLIC_*` variable.
 
 `buildApp` does not open a socket; tests use Fastify injection. `server.ts` validates environment settings, listens and handles shutdown. Build with `pnpm --filter @fl-copilot/api build`; start the resulting bundle with `pnpm --filter @fl-copilot/api start`.
 

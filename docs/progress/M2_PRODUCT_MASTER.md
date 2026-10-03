@@ -4,7 +4,7 @@ Date: 2026-10-03.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T12A from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, overlapping-version reconciliation, and imported-product confirmation.
+The active increment covers M2-T01 through M2-T13 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, overlapping-version reconciliation, imported-product confirmation, and private source upload.
 
 ## Implemented
 
@@ -76,6 +76,12 @@ The active increment covers M2-T01 through M2-T12A from `docs/specs/IMPLEMENTATI
 - Safe unknown references can be created as a batch, while fuzzy or ambiguous candidates remain individual decisions.
 - Confirming or creating products writes normal Product Master Outbox commands and reruns deterministic matching immediately, without selecting the workbook again.
 - ADR 0003 records private Vercel Blob as the source-file store, with Fastify-issued short-lived client upload authorization and no permanent storage credential in the native application.
+- Fastify authorizes each source upload against the authenticated store and issues a ten-minute Vercel Blob URL restricted to one deterministic private pathname, MIME type and exact maximum size.
+- MongoDB registers upload ownership and immutable file metadata under unique store/source-document and store/object-key indexes.
+- The native upload queue sends the retained file directly from app-owned storage to Vercel Blob, then asks Fastify to verify the object before marking local metadata confirmed.
+- Failed offline attempts remain pending with bounded backoff; app activation, manual synchronization and a one-minute pending-work retry resume the queue.
+- A deterministic object key plus idempotent init and completion means a connection loss after the Blob write confirms the existing object instead of uploading another copy.
+- Confirmed files become cleanup-eligible but are not deleted by this increment.
 
 ## Verification evidence
 
@@ -88,7 +94,7 @@ The active increment covers M2-T01 through M2-T12A from `docs/specs/IMPLEMENTATI
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                                   |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                                    |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot                   |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 126 tests; 10 MongoDB tests skipped locally and enabled in CI                                    |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 131 tests; 10 MongoDB tests skipped locally and enabled in CI                                    |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                                  |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                                             |
 | Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands                                 |
@@ -120,10 +126,14 @@ The active increment covers M2-T01 through M2-T12A from `docs/specs/IMPLEMENTATI
 | Reconciliation safety     | Blind overlapping publication and ambiguous bulk application are rejected transactionally                                                   |
 | Reconciliation audit      | Apply-new and keep-existing decisions retain actor, timestamp, incoming values, and previous/new source lineage                             |
 | Product confirmation      | The real 147-line daily sales file yields 147 safe explicit creations; shared identifiers and ambiguous candidates stay manual              |
+| iPhone product resolution | On the target iPhone Air, all 147 unknown products were created, rematched, and published locally without reselecting the workbook          |
+| iPhone reconciliation     | A corrected daily file classified 146 unchanged and 1 modified row (`POIRE CONFERENCE VRAC`, quantity 20 → 21), then applied successfully   |
+| Upload authorization      | Authenticated store-scoped API tests accept allowed XLSX metadata and reject unsupported payloads before issuing a URL                      |
+| Upload idempotence        | API service and SQLite queue tests prove one Blob write when confirmation fails, followed by confirmation of the existing object            |
+| Offline upload durability | An unavailable authorization endpoint leaves the source file retained and the job pending for a later retry                                 |
 
 ## Next work
 
-1. Validate M2-T12A on the target iPhone by creating the unknown references from `ventes_day_example.xlsx`, confirming that all resolved lines become ready, and publishing locally.
-2. Validate M2-T12 with a corrected version of that daily file and confirm the summary and explicit decision flow.
-3. Begin M2-T13 private Vercel Blob source upload with short-lived client authorization and an offline retry queue.
-4. Run the same XLSX compatibility, publication, and memory checks on target Android hardware before the Android milestone is accepted.
+1. Connect a private Vercel Blob store to the deployed Fastify project and validate M2-T13 end to end on the target iPhone.
+2. Begin M2-T14 remote import verification after the real Blob upload is confirmed.
+3. Run the same XLSX compatibility, publication, upload, and memory checks on target Android hardware before the Android milestone is accepted.

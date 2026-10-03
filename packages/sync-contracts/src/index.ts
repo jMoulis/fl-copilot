@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export * from "./api-error";
 export * from "./sync";
+export * from "./uploads";
 
 /** API and database readiness, introduced in M0-T05. */
 export const healthResponseSchema = z.object({
