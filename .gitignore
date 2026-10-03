@@ -10,7 +10,6 @@ coverage/
 .DS_Store
 .expo/
 *.log
-apps/api/api/
 
 apps/mobile/ios/
 apps/mobile/android/
