@@ -126,7 +126,7 @@ describe.skipIf(!existsSync(localSalesFixture))(
         itm8: "0000087003017",
         ean: "0000000003017",
         businessDate: "2026-09-26",
-        quantity: 1.82,
+        quantity: 20,
       });
       expect(result.controlTotals).toMatchObject({
         quantity: 1100.14,

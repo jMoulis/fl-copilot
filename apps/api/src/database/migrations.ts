@@ -93,6 +93,23 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 6,
+    name: "initialize-source-upload-indexes",
+    async up(database) {
+      await Promise.all([
+        database
+          .collection("sourceUploads")
+          .createIndex({ storeId: 1, sourceDocumentId: 1 }, { unique: true }),
+        database
+          .collection("sourceUploads")
+          .createIndex({ storeId: 1, objectKey: 1 }, { unique: true }),
+        database
+          .collection("sourceDocuments")
+          .createIndex({ storeId: 1, checksum: 1 }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(

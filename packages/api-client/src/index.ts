@@ -3,6 +3,8 @@ import {
   authChallengeResponseSchema,
   authSessionResponseSchema,
   bootstrapResponseSchema,
+  completeSourceUploadResponseSchema,
+  initSourceUploadResponseSchema,
   logoutResponseSchema,
   syncPullResponseSchema,
   syncPushResponseSchema,
@@ -11,6 +13,10 @@ import {
   type AuthChallengeResponse,
   type AuthSessionResponse,
   type BootstrapResponse,
+  type CompleteSourceUploadRequest,
+  type CompleteSourceUploadResponse,
+  type InitSourceUploadRequest,
+  type InitSourceUploadResponse,
   type SyncPullResponse,
   type SyncPushRequest,
   type SyncPushResponse,
@@ -107,6 +113,39 @@ export class ApiClient {
     ) as Promise<BootstrapResponse>;
   }
 
+  initSourceUpload(
+    accessToken: string,
+    storeId: string,
+    input: InitSourceUploadRequest,
+  ) {
+    return this.request(
+      "/api/v1/uploads/init",
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      initSourceUploadResponseSchema,
+    ) as Promise<InitSourceUploadResponse>;
+  }
+
+  completeSourceUpload(
+    accessToken: string,
+    storeId: string,
+    uploadId: string,
+    input: CompleteSourceUploadRequest,
+  ) {
+    return this.request(
+      `/api/v1/uploads/${encodeURIComponent(uploadId)}/complete`,
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      completeSourceUploadResponseSchema,
+    ) as Promise<CompleteSourceUploadResponse>;
+  }
+
   private async request<T extends z.ZodType>(
     path: string,
     init: RequestInit,
@@ -156,8 +195,14 @@ export class ApiClient {
 
 function syncHeaders(accessToken: string, storeId: string) {
   return {
+    ...authorizedStoreHeaders(accessToken, storeId),
+    "x-sync-protocol-version": "1",
+  };
+}
+
+function authorizedStoreHeaders(accessToken: string, storeId: string) {
+  return {
     authorization: `Bearer ${accessToken}`,
     "x-store-id": storeId,
-    "x-sync-protocol-version": "1",
   };
 }

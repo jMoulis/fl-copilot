@@ -39,6 +39,7 @@ import {
 import { SheetJsSpreadsheetParser } from "@/documents/sheetjs-spreadsheet-parser";
 import { ProductMasterRepository } from "@/products/product-master-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
+import { useSync } from "@/sync/sync-provider";
 
 type ImportStage =
   "IDLE" | "READING" | "MATCHING" | "VALIDATING" | "COMPLETE" | "ERROR";
@@ -76,6 +77,7 @@ const hasNativeFilePicker =
 export default function MercalysImportsScreen() {
   const { sqlite, deviceId } = useLocalDatabase();
   const { session } = useAuth();
+  const { syncNow } = useSync();
   const storeId = session?.stores[0]?.storeId;
   const actorUserId = session?.user.id;
   const repository = useMemo(
@@ -325,6 +327,7 @@ export default function MercalysImportsScreen() {
       });
       setPublication(result);
       setReconciliation(undefined);
+      void syncNow(storeId);
     } catch (caught) {
       if (durableFile?.exists) durableFile.delete();
       if (caught instanceof MercalysExactDuplicateError) {

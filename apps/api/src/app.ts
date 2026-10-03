@@ -14,6 +14,10 @@ import {
   bootstrapQuerySchema,
   bootstrapResponseSchema,
   healthResponseSchema,
+  completeSourceUploadRequestSchema,
+  completeSourceUploadResponseSchema,
+  initSourceUploadRequestSchema,
+  initSourceUploadResponseSchema,
   logoutResponseSchema,
   refreshSessionRequestSchema,
   SYNC_PROTOCOL_VERSION,
@@ -45,6 +49,10 @@ import {
   createMongoSyncPushService,
   type SyncPushService,
 } from "./sync/push-service.js";
+import {
+  createMongoSourceUploadService,
+  type SourceUploadService,
+} from "./uploads/source-upload-service.js";
 
 type AppDependencies = {
   database: DatabaseService;
@@ -53,6 +61,7 @@ type AppDependencies = {
   syncBootstrap?: SyncBootstrapService;
   syncPull?: SyncPullService;
   syncPush?: SyncPushService;
+  sourceUploads?: SourceUploadService;
 };
 
 export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
@@ -70,6 +79,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
   const syncBootstrap =
     dependencies.syncBootstrap ??
     createMongoSyncBootstrapService(dependencies.database);
+  const sourceUploads =
+    dependencies.sourceUploads ??
+    createMongoSourceUploadService(dependencies.database);
   const app = Fastify({
     logger:
       config.NODE_ENV === "test"
@@ -356,6 +368,64 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       }
       const store = await auth.authorizeStore(accessToken, storeId);
       return syncBootstrap.bootstrap(store, request.query);
+    },
+  );
+  app.post(
+    "/api/v1/uploads/init",
+    {
+      schema: {
+        body: initSourceUploadRequestSchema,
+        response: { 200: initSourceUploadResponseSchema },
+      },
+    },
+    async (request) => {
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith("Bearer ")) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string") {
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué pour envoyer le fichier.",
+        );
+      }
+      const context = await auth.authorizeStore(
+        authorization.slice("Bearer ".length),
+        storeId,
+      );
+      return sourceUploads.init(storeId, context.userId, request.body);
+    },
+  );
+  app.post(
+    "/api/v1/uploads/:uploadId/complete",
+    {
+      schema: {
+        params: z.object({ uploadId: z.string().uuid() }),
+        body: completeSourceUploadRequestSchema,
+        response: { 200: completeSourceUploadResponseSchema },
+      },
+    },
+    async (request) => {
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith("Bearer ")) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string") {
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué pour confirmer le fichier.",
+        );
+      }
+      await auth.authorizeStore(authorization.slice("Bearer ".length), storeId);
+      return sourceUploads.complete(
+        storeId,
+        request.params.uploadId,
+        request.body,
+      );
     },
   );
   if (config.SENTRY_TEST_ROUTE_ENABLED) {

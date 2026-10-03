@@ -13,6 +13,7 @@ import { ApiClient, ApiClientError } from "@fl-copilot/api-client";
 import { useAuth } from "@/auth/auth-provider";
 import { getApiBaseUrl } from "@/config/environment";
 import { useLocalDatabase } from "@/providers/database-provider";
+import { SourceUploadQueue } from "@/documents/source-upload-queue";
 import { MobileSyncService, type SyncSummary } from "./sync-service";
 import { subscribeOutboxChanges } from "./outbox-repository";
 
@@ -59,6 +60,17 @@ export function SyncProvider({ children }: PropsWithChildren) {
       },
     );
   }, [database.deviceId, database.sqlite, session?.accessToken]);
+  const uploadQueue = useMemo(() => {
+    if (!session?.accessToken) return undefined;
+    const api = new ApiClient(getApiBaseUrl());
+    const accessToken = session.accessToken;
+    return new SourceUploadQueue(database.sqlite, {
+      init: (storeId, input) =>
+        api.initSourceUpload(accessToken, storeId, input),
+      complete: (storeId, uploadId, input) =>
+        api.completeSourceUpload(accessToken, storeId, uploadId, input),
+    });
+  }, [database.sqlite, session?.accessToken]);
   const defaultStoreId = session?.stores[0]?.storeId;
 
   const refreshLocalState = useCallback(async () => {
@@ -85,6 +97,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       }
       setState((current) => ({ ...current, status: "syncing" }));
       try {
+        await uploadQueue?.process(storeId);
         const summary = await service.sync(storeId);
         const snapshot = await readLocalSyncSnapshot(database.sqlite, storeId);
         setState({ ...snapshot, status: deriveStatus(snapshot) });
@@ -101,7 +114,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         return undefined;
       }
     },
-    [database.sqlite, defaultStoreId, service],
+    [database.sqlite, defaultStoreId, service, uploadQueue],
   );
 
   useEffect(() => {
@@ -125,6 +138,14 @@ export function SyncProvider({ children }: PropsWithChildren) {
     });
     return () => subscription.remove();
   }, [defaultStoreId, service, syncNow]);
+
+  useEffect(() => {
+    if (!service || !defaultStoreId || state.pendingCount === 0) return;
+    const retry = setTimeout(() => {
+      void syncNow(defaultStoreId);
+    }, 60_000);
+    return () => clearTimeout(retry);
+  }, [defaultStoreId, service, state.pendingCount, syncNow]);
 
   return (
     <SyncContext.Provider value={{ ...state, syncNow }}>
@@ -175,6 +196,21 @@ async function readLocalSyncSnapshot(
       `,
     storeId,
   );
+  const jobCounts = await database.getFirstAsync<{
+    pending_count: number;
+    failed_count: number;
+  }>(
+    `
+      SELECT
+        SUM(CASE WHEN status IN ('PENDING', 'RETRY', 'RUNNING') THEN 1 ELSE 0 END)
+          AS pending_count,
+        SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END)
+          AS failed_count
+      FROM local_jobs
+      WHERE json_extract(payload_json, '$.storeId') = ?
+    `,
+    storeId,
+  );
   const inbox = await database.getFirstAsync<{
     last_successful_sync_at: string | null;
   }>(
@@ -186,9 +222,13 @@ async function readLocalSyncSnapshot(
     storeId,
   );
   return {
-    pendingCount: Number(outboxCounts?.pending_count ?? 0),
+    pendingCount:
+      Number(outboxCounts?.pending_count ?? 0) +
+      Number(jobCounts?.pending_count ?? 0),
     conflictCount: Number(conflictCounts?.conflict_count ?? 0),
-    failedCount: Number(outboxCounts?.failed_count ?? 0),
+    failedCount:
+      Number(outboxCounts?.failed_count ?? 0) +
+      Number(jobCounts?.failed_count ?? 0),
     ...(inbox?.last_successful_sync_at
       ? { lastSyncedAt: inbox.last_successful_sync_at }
       : {}),
