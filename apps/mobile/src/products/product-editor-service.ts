@@ -38,6 +38,8 @@ interface SaveProductEditorOptions {
   existing?: ProductEditorSnapshot;
   now(): string;
   generateId(): string;
+  identifierSource?: ProductIdentifier["source"];
+  aliasSource?: ProductAlias["source"];
 }
 
 export async function loadProductEditorSnapshot(
@@ -107,7 +109,7 @@ export async function saveProductEditor(
         productId,
         type: input.type,
         value,
-        source: existing?.entity.source ?? "USER",
+        source: existing?.entity.source ?? options.identifierSource ?? "USER",
         status: existing?.entity.status ?? "VALIDATED",
         version: (existing?.entity.version ?? 0) + 1,
         createdAt: existing?.entity.createdAt ?? timestamp,
@@ -154,7 +156,7 @@ export async function saveProductEditor(
         productId,
         alias,
         normalizedAlias: normalizeProductLabel(alias),
-        source: existing?.entity.source ?? "USER",
+        source: existing?.entity.source ?? options.aliasSource ?? "USER",
         status: existing?.entity.status ?? "VALIDATED",
         confidence: existing?.entity.confidence ?? null,
         version: (existing?.entity.version ?? 0) + 1,

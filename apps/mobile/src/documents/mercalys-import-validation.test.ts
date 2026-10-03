@@ -7,6 +7,7 @@ import type {
 } from "@fl-copilot/domain";
 import {
   MercalysImportValidationError,
+  rematchMercalysImport,
   validateMercalysImport,
 } from "./mercalys-import-validation";
 import { SheetJsSpreadsheetParser } from "./sheetjs-spreadsheet-parser";
@@ -63,6 +64,24 @@ describe("validateMercalysImport", () => {
         code: "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES",
       }),
     );
+  });
+
+  it("re-evaluates unresolved lines after the local product master changes", () => {
+    const initial = validateMercalysImport(
+      workbook("Vente Nette", "Du 26/09/2026 Au 26/09/2026"),
+      storeId,
+      { products: [], identifiers: [], aliases: [] },
+    );
+    expect(initial).toMatchObject({ readyCount: 0, productReviewCount: 3 });
+
+    const rematched = rematchMercalysImport(initial, storeId, catalog());
+
+    expect(rematched).toMatchObject({ readyCount: 1, productReviewCount: 2 });
+    expect(rematched.lines.map(({ match }) => match.state)).toEqual([
+      "AUTO_MATCH",
+      "AMBIGUOUS",
+      "NO_MATCH",
+    ]);
   });
 });
 

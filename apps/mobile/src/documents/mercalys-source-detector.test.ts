@@ -119,7 +119,10 @@ describe("detectMercalysSource", () => {
 const fixtureDirectory = resolve(process.cwd(), "docs/files_examples");
 const fixtureNames = existsSync(fixtureDirectory)
   ? readdirSync(fixtureDirectory)
-      .filter((name) => name.toLowerCase().endsWith(".xlsx"))
+      .filter(
+        (name) =>
+          !name.startsWith("~$") && name.toLowerCase().endsWith(".xlsx"),
+      )
       .sort()
   : [];
 

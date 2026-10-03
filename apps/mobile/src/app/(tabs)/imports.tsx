@@ -3,7 +3,7 @@ import { Text, View } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { CryptoDigestAlgorithm, digest, randomUUID } from "expo-crypto";
 import { Directory, File as ExpoFile, Paths } from "expo-file-system";
-import type { ProductMatchCatalog } from "@fl-copilot/domain";
+import type { Product, ProductMatchCatalog } from "@fl-copilot/domain";
 import { useAuth } from "@/auth/auth-provider";
 import {
   AppHeader,
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui";
 import {
   MercalysImportValidationError,
+  rematchMercalysImport,
   validateMercalysImport,
   type MercalysImportValidationSummary,
 } from "@/documents/mercalys-import-validation";
@@ -29,6 +30,12 @@ import type {
   MercalysReconciliation,
   MercalysReconciliationRow,
 } from "@/documents/mercalys-import-reconciliation";
+import {
+  buildMercalysProductResolutions,
+  confirmMercalysProductMapping,
+  createMercalysProducts,
+  type MercalysProductResolution,
+} from "@/documents/mercalys-product-resolution";
 import { SheetJsSpreadsheetParser } from "@/documents/sheetjs-spreadsheet-parser";
 import { ProductMasterRepository } from "@/products/product-master-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
@@ -67,7 +74,7 @@ const hasNativeFilePicker =
   nativeDocumentPicker !== null && nativeFileSystem !== null;
 
 export default function MercalysImportsScreen() {
-  const { sqlite } = useLocalDatabase();
+  const { sqlite, deviceId } = useLocalDatabase();
   const { session } = useAuth();
   const storeId = session?.stores[0]?.storeId;
   const actorUserId = session?.user.id;
@@ -82,6 +89,7 @@ export default function MercalysImportsScreen() {
   const [stage, setStage] = useState<ImportStage>("IDLE");
   const [filename, setFilename] = useState<string>();
   const [summary, setSummary] = useState<MercalysImportValidationSummary>();
+  const [productCatalog, setProductCatalog] = useState<ProductMatchCatalog>();
   const [selectedBytes, setSelectedBytes] = useState<Uint8Array<ArrayBuffer>>();
   const [selectedChecksum, setSelectedChecksum] = useState<string>();
   const [duplicate, setDuplicate] = useState<ExactDuplicateImport>();
@@ -90,19 +98,30 @@ export default function MercalysImportsScreen() {
   const [keptExisting, setKeptExisting] = useState(false);
   const [publication, setPublication] = useState<PublishedMercalysImport>();
   const [publishing, setPublishing] = useState(false);
+  const [resolvingProducts, setResolvingProducts] = useState(false);
+  const [resolutionProgress, setResolutionProgress] = useState<{
+    completed: number;
+    total: number;
+  }>();
   const [error, setError] = useState<string>();
+  const productResolutions = useMemo(
+    () => (summary ? buildMercalysProductResolutions(summary) : []),
+    [summary],
+  );
   const loading = ["READING", "MATCHING", "VALIDATING"].includes(stage);
 
   async function chooseWorkbook() {
     if (!hasNativeFilePicker || !storeId) return;
     setFilename(undefined);
     setSummary(undefined);
+    setProductCatalog(undefined);
     setSelectedBytes(undefined);
     setSelectedChecksum(undefined);
     setDuplicate(undefined);
     setReconciliation(undefined);
     setKeptExisting(false);
     setPublication(undefined);
+    setResolutionProgress(undefined);
     setError(undefined);
 
     try {
@@ -133,6 +152,7 @@ export default function MercalysImportsScreen() {
       await yieldToInterface();
       const catalog = await loadProductCatalog(repository, storeId);
       const nextSummary = validateMercalysImport(workbook, storeId, catalog);
+      setProductCatalog(catalog);
 
       setStage("VALIDATING");
       await yieldToInterface();
@@ -166,13 +186,93 @@ export default function MercalysImportsScreen() {
     setStage("IDLE");
     setFilename(undefined);
     setSummary(undefined);
+    setProductCatalog(undefined);
     setSelectedBytes(undefined);
     setSelectedChecksum(undefined);
     setDuplicate(undefined);
     setReconciliation(undefined);
     setKeptExisting(false);
     setPublication(undefined);
+    setResolutionProgress(undefined);
     setError(undefined);
+  }
+
+  async function refreshProductMatches(
+    currentSummary: MercalysImportValidationSummary,
+  ) {
+    if (!storeId) throw new Error("Aucun magasin actif.");
+    const catalog = await loadProductCatalog(repository, storeId);
+    const nextSummary = rematchMercalysImport(currentSummary, storeId, catalog);
+    const overlap = await publicationRepository.analyzeOverlap(
+      storeId,
+      nextSummary,
+    );
+    setProductCatalog(catalog);
+    setSummary(nextSummary);
+    setReconciliation(overlap ?? undefined);
+  }
+
+  async function createMissingProducts(
+    selectedResolutions: readonly MercalysProductResolution[] = productResolutions,
+  ) {
+    if (!storeId || !summary) {
+      setError(
+        "Sélectionnez de nouveau le fichier avant de créer les produits.",
+      );
+      return;
+    }
+    setResolvingProducts(true);
+    setResolutionProgress(undefined);
+    setError(undefined);
+    try {
+      await createMercalysProducts(
+        repository,
+        selectedResolutions,
+        {
+          storeId,
+          deviceId,
+          now: () => new Date().toISOString(),
+          generateId: randomUUID,
+        },
+        (completed, total) => setResolutionProgress({ completed, total }),
+      );
+      await refreshProductMatches(summary);
+    } catch {
+      try {
+        await refreshProductMatches(summary);
+      } catch {
+        // Keep the original resolution error visible if refreshing also fails.
+      }
+      setError(
+        "La création des produits s’est interrompue. Les produits déjà créés sont conservés; relancez l’action pour terminer.",
+      );
+    } finally {
+      setResolvingProducts(false);
+    }
+  }
+
+  async function confirmProductMapping(
+    resolution: MercalysProductResolution,
+    productId: string,
+  ) {
+    if (!storeId || !summary) return;
+    setResolvingProducts(true);
+    setError(undefined);
+    try {
+      await confirmMercalysProductMapping(repository, resolution, productId, {
+        storeId,
+        deviceId,
+        now: () => new Date().toISOString(),
+        generateId: randomUUID,
+      });
+      await refreshProductMatches(summary);
+    } catch {
+      setError(
+        "La correspondance produit n’a pas pu être enregistrée localement.",
+      );
+    } finally {
+      setResolvingProducts(false);
+    }
   }
 
   async function publishValidLines() {
@@ -352,6 +452,16 @@ export default function MercalysImportsScreen() {
           summary={summary}
           publication={publication}
           publishing={publishing}
+          productResolutions={productResolutions}
+          products={productCatalog?.products ?? []}
+          resolvingProducts={resolvingProducts}
+          resolutionProgress={resolutionProgress}
+          onCreateProducts={(resolutions) => {
+            void createMissingProducts(resolutions);
+          }}
+          onConfirmProduct={(resolution, productId) => {
+            void confirmProductMapping(resolution, productId);
+          }}
           onPublish={() => {
             void publishValidLines();
           }}
@@ -589,18 +699,30 @@ function ValidationSummary({
   summary,
   publication,
   publishing,
+  productResolutions,
+  products,
+  resolvingProducts,
+  resolutionProgress,
+  onCreateProducts,
+  onConfirmProduct,
   onPublish,
   onCancel,
 }: {
   summary: MercalysImportValidationSummary;
   publication?: PublishedMercalysImport;
   publishing: boolean;
+  productResolutions: MercalysProductResolution[];
+  products: readonly Product[];
+  resolvingProducts: boolean;
+  resolutionProgress?: { completed: number; total: number };
+  onCreateProducts(resolutions: readonly MercalysProductResolution[]): void;
+  onConfirmProduct(
+    resolution: MercalysProductResolution,
+    productId: string,
+  ): void;
   onPublish: () => void;
   onCancel: () => void;
 }) {
-  const reviewLines = summary.lines.filter(
-    ({ match }) => match.state !== "AUTO_MATCH",
-  );
   return (
     <>
       <SectionCard title="Résumé de validation">
@@ -633,33 +755,15 @@ function ValidationSummary({
         <CountLine label="Anomalies" value={summary.errorCount} tone="error" />
       </SectionCard>
 
-      {reviewLines.length > 0 ? (
-        <SectionCard title="Produits à examiner">
-          {reviewLines.slice(0, 5).map(({ record, match }) => (
-            <View
-              key={record.sourceIndex}
-              className="gap-1 border-b border-line pb-3"
-            >
-              <Text className="text-base font-semibold text-ink">
-                {record.rawLabel}
-              </Text>
-              <Text className="text-sm text-muted">
-                {match.state === "AMBIGUOUS"
-                  ? "Plusieurs produits possibles"
-                  : match.state === "REVIEW"
-                    ? "Correspondance à confirmer"
-                    : "Produit absent du référentiel"}
-              </Text>
-            </View>
-          ))}
-          {reviewLines.length > 5 ? (
-            <Text className="text-sm text-muted">
-              Et {reviewLines.length - 5} autre
-              {reviewLines.length - 5 > 1 ? "s" : ""} ligne
-              {reviewLines.length - 5 > 1 ? "s" : ""} à examiner.
-            </Text>
-          ) : null}
-        </SectionCard>
+      {productResolutions.length > 0 ? (
+        <ProductResolutionSummary
+          resolutions={productResolutions}
+          products={products}
+          loading={resolvingProducts}
+          progress={resolutionProgress}
+          onCreate={onCreateProducts}
+          onConfirm={onConfirmProduct}
+        />
       ) : null}
 
       {summary.issueCodes.length > 0 ? (
@@ -703,6 +807,97 @@ function ValidationSummary({
         />
       </SectionCard>
     </>
+  );
+}
+
+function ProductResolutionSummary({
+  resolutions,
+  products,
+  loading,
+  progress,
+  onCreate,
+  onConfirm,
+}: {
+  resolutions: MercalysProductResolution[];
+  products: readonly Product[];
+  loading: boolean;
+  progress?: { completed: number; total: number };
+  onCreate(resolutions: readonly MercalysProductResolution[]): void;
+  onConfirm(resolution: MercalysProductResolution, productId: string): void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const creatable = resolutions.filter(({ canCreate }) => canCreate);
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const visibleResolutions = showAll ? resolutions : resolutions.slice(0, 20);
+  return (
+    <SectionCard title="Produits à confirmer">
+      <Text className="text-base leading-6 text-muted">
+        Les références sont regroupées par ITM8. Les nouveaux produits gardent
+        une catégorie, une nature et une unité inconnues jusqu’à leur
+        enrichissement.
+      </Text>
+      {creatable.length > 0 ? (
+        <PrimaryButton
+          label={
+            loading && progress
+              ? `Création ${progress.completed}/${progress.total}`
+              : `Créer ${creatable.length} produit${creatable.length > 1 ? "s" : ""} depuis Mercalys`
+          }
+          loading={loading}
+          onPress={() => onCreate(creatable)}
+        />
+      ) : null}
+      {visibleResolutions.map((resolution) => {
+        const candidates = resolution.candidateProductIds
+          .map((id) => productById.get(id))
+          .filter((product): product is Product => product !== undefined);
+        return (
+          <View
+            key={resolution.key}
+            className="gap-2 border-t border-line pt-4"
+          >
+            <Text className="text-base font-semibold text-ink">
+              {resolution.label}
+            </Text>
+            <Text className="text-sm text-muted">
+              {resolution.identifiers
+                .map(({ type, value }) => `${type} ${value}`)
+                .join(" · ") || "Aucun identifiant exploitable"}
+            </Text>
+            {candidates.slice(0, 3).map((product) => (
+              <SecondaryButton
+                key={product.id}
+                label={`Associer à ${product.label}`}
+                disabled={loading}
+                onPress={() => onConfirm(resolution, product.id)}
+              />
+            ))}
+            {resolution.canCreate ? (
+              <SecondaryButton
+                label="Créer ce produit"
+                disabled={loading}
+                onPress={() => onCreate([resolution])}
+              />
+            ) : candidates.length === 0 ? (
+              <Text className="text-sm text-red-700">
+                Cette ligne doit être examinée individuellement.
+              </Text>
+            ) : null}
+          </View>
+        );
+      })}
+      {resolutions.length > 20 ? (
+        <SecondaryButton
+          label={
+            showAll
+              ? "Afficher seulement les 20 premiers"
+              : `Afficher les ${resolutions.length} produits`
+          }
+          disabled={loading}
+          onPress={() => setShowAll((value) => !value)}
+        />
+      ) : null}
+    </SectionCard>
   );
 }
 

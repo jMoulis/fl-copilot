@@ -93,3 +93,35 @@ export function validateMercalysImport(
     issueCodes: [...new Set(parsed.issues.map((issue) => issue.code))],
   };
 }
+
+export function rematchMercalysImport(
+  summary: MercalysImportValidationSummary,
+  storeId: string,
+  catalog: ProductMatchCatalog,
+): MercalysImportValidationSummary {
+  const lines = summary.lines.map(({ record }) => ({
+    record,
+    match: matchProduct(
+      {
+        storeId,
+        identifiers: [
+          ...(record.itm8
+            ? [{ type: "ITM8" as const, value: record.itm8 }]
+            : []),
+          ...(record.ean ? [{ type: "EAN" as const, value: record.ean }] : []),
+        ],
+        label: record.rawLabel,
+      },
+      catalog,
+    ),
+  }));
+  const readyCount = lines.filter(
+    ({ match }) => match.state === "AUTO_MATCH",
+  ).length;
+  return {
+    ...summary,
+    readyCount,
+    productReviewCount: lines.length - readyCount,
+    lines,
+  };
+}

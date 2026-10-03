@@ -88,7 +88,7 @@ domain-specific conflicts
 
 Fastify remote API
 MongoDB Atlas durable remote data
-Google Cloud Storage source files
+Vercel Blob private source files
 Inngest remote workflows
 
 shared deterministic analytics/substitution rules
@@ -975,9 +975,31 @@ Acceptance:
 
 ---
 
-# 51. M2-T13 — GCS source upload
+# 50A. M2-T12A — Imported product confirmation
 
-Implement signed upload authorization and native file upload queue.
+Resolve Mercalys lines that do not match the local Product Master.
+
+- group repeated rows by exact source identifier;
+- allow an explicit link to a proposed existing product;
+- allow explicit creation from a unique unknown ITM8/EAN;
+- retain unknown category, nature and sales unit as `UNKNOWN`;
+- persist validated source identifiers locally with Outbox commands;
+- rerun deterministic matching without reselecting the workbook.
+
+Acceptance:
+
+- an empty Product Master can be initialized explicitly from a daily Mercalys
+  file without entering every reference manually;
+- ambiguous mappings are never batch-validated;
+- leading-zero identifiers remain strings;
+- resolved lines become ready for local publication immediately.
+
+---
+
+# 51. M2-T13 — Vercel Blob source upload
+
+Implement short-lived client upload authorization through Fastify and a native
+Vercel Blob upload queue. Keep the Blob read-write credential server-side.
 
 Acceptance:
 
