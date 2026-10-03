@@ -216,6 +216,7 @@ export default function MercalysImportsScreen() {
 
   async function createMissingProducts(
     selectedResolutions: readonly MercalysProductResolution[] = productResolutions,
+    allowExplicitDistinct = false,
   ) {
     if (!storeId || !summary) {
       setError(
@@ -237,6 +238,7 @@ export default function MercalysImportsScreen() {
           generateId: randomUUID,
         },
         (completed, total) => setResolutionProgress({ completed, total }),
+        allowExplicitDistinct,
       );
       await refreshProductMatches(summary);
     } catch {
@@ -450,21 +452,29 @@ export default function MercalysImportsScreen() {
 
       {error ? <InlineAlert title="Import impossible" message={error} /> : null}
 
+      {summary && productResolutions.length > 0 ? (
+        <ProductResolutionSummary
+          resolutions={productResolutions}
+          products={productCatalog?.products ?? []}
+          loading={resolvingProducts}
+          progress={resolutionProgress}
+          onCreate={(resolutions) => {
+            void createMissingProducts(resolutions);
+          }}
+          onCreateDistinct={(resolution) => {
+            void createMissingProducts([resolution], true);
+          }}
+          onConfirm={(resolution, productId) => {
+            void confirmProductMapping(resolution, productId);
+          }}
+        />
+      ) : null}
+
       {summary && !reconciliation ? (
         <ValidationSummary
           summary={summary}
           publication={publication}
           publishing={publishing}
-          productResolutions={productResolutions}
-          products={productCatalog?.products ?? []}
-          resolvingProducts={resolvingProducts}
-          resolutionProgress={resolutionProgress}
-          onCreateProducts={(resolutions) => {
-            void createMissingProducts(resolutions);
-          }}
-          onConfirmProduct={(resolution, productId) => {
-            void confirmProductMapping(resolution, productId);
-          }}
           onPublish={() => {
             void publishValidLines();
           }}
@@ -702,27 +712,12 @@ function ValidationSummary({
   summary,
   publication,
   publishing,
-  productResolutions,
-  products,
-  resolvingProducts,
-  resolutionProgress,
-  onCreateProducts,
-  onConfirmProduct,
   onPublish,
   onCancel,
 }: {
   summary: MercalysImportValidationSummary;
   publication?: PublishedMercalysImport;
   publishing: boolean;
-  productResolutions: MercalysProductResolution[];
-  products: readonly Product[];
-  resolvingProducts: boolean;
-  resolutionProgress?: { completed: number; total: number };
-  onCreateProducts(resolutions: readonly MercalysProductResolution[]): void;
-  onConfirmProduct(
-    resolution: MercalysProductResolution,
-    productId: string,
-  ): void;
   onPublish: () => void;
   onCancel: () => void;
 }) {
@@ -757,17 +752,6 @@ function ValidationSummary({
         />
         <CountLine label="Anomalies" value={summary.errorCount} tone="error" />
       </SectionCard>
-
-      {productResolutions.length > 0 ? (
-        <ProductResolutionSummary
-          resolutions={productResolutions}
-          products={products}
-          loading={resolvingProducts}
-          progress={resolutionProgress}
-          onCreate={onCreateProducts}
-          onConfirm={onConfirmProduct}
-        />
-      ) : null}
 
       {summary.issueCodes.length > 0 ? (
         <InlineAlert
@@ -819,6 +803,7 @@ function ProductResolutionSummary({
   loading,
   progress,
   onCreate,
+  onCreateDistinct,
   onConfirm,
 }: {
   resolutions: MercalysProductResolution[];
@@ -826,6 +811,7 @@ function ProductResolutionSummary({
   loading: boolean;
   progress?: { completed: number; total: number };
   onCreate(resolutions: readonly MercalysProductResolution[]): void;
+  onCreateDistinct(resolution: MercalysProductResolution): void;
   onConfirm(resolution: MercalysProductResolution, productId: string): void;
 }) {
   const [showAll, setShowAll] = useState(false);
@@ -880,6 +866,12 @@ function ProductResolutionSummary({
                 label="Créer ce produit"
                 disabled={loading}
                 onPress={() => onCreate([resolution])}
+              />
+            ) : resolution.canCreateAsDistinct ? (
+              <SecondaryButton
+                label="Créer comme nouveau produit"
+                disabled={loading}
+                onPress={() => onCreateDistinct(resolution)}
               />
             ) : candidates.length === 0 ? (
               <Text className="text-sm text-red-700">

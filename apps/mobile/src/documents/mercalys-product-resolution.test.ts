@@ -27,6 +27,7 @@ describe("Mercalys product resolution", () => {
         ],
         sourceIndexes: [8, 9],
         canCreate: true,
+        canCreateAsDistinct: true,
       }),
     ]);
   });
@@ -42,6 +43,7 @@ describe("Mercalys product resolution", () => {
 
     expect(result[0]).toMatchObject({
       canCreate: false,
+      canCreateAsDistinct: false,
       candidateProductIds: [candidateId],
     });
   });
@@ -56,6 +58,30 @@ describe("Mercalys product resolution", () => {
 
     expect(result).toHaveLength(2);
     expect(result.every(({ canCreate }) => !canCreate)).toBe(true);
+    expect(
+      result.every(({ canCreateAsDistinct }) => !canCreateAsDistinct),
+    ).toBe(true);
+  });
+
+  it("allows a human to create a distinct product after a fuzzy proposal", () => {
+    const candidateId = "22222222-2222-4222-8222-222222222222";
+    const result = buildMercalysProductResolutions(
+      summary([
+        line(
+          8,
+          "00000042",
+          "0000000000042",
+          "Tomate cerise duo 250g",
+          match("REVIEW", candidateId),
+        ),
+      ]),
+    );
+
+    expect(result[0]).toMatchObject({
+      canCreate: false,
+      canCreateAsDistinct: true,
+      candidateProductIds: [candidateId],
+    });
   });
 });
 
