@@ -19,7 +19,7 @@ mobile app → Fastify API → Resend → recipient mailbox
 
 Original source files use a private Vercel Blob store. Connect that store to the API project so Vercel provides `BLOB_READ_WRITE_TOKEN`, or `VERCEL_OIDC_TOKEN` plus `BLOB_STORE_ID`. The API issues a ten-minute upload URL scoped to one deterministic pathname, MIME type and exact file size. The mobile app uploads directly to Blob, then asks the API to verify and confirm the object. Never expose a Blob credential through an `EXPO_PUBLIC_*` variable.
 
-`buildApp` does not open a socket; tests use Fastify injection. `runtime.ts` validates environment settings, listens and handles shutdown. The small `server.ts` Vercel entrypoint loads the generated runtime bundle so internal pnpm workspace packages are included in the deployed Function. Build with `pnpm --filter @fl-copilot/api build`; start the resulting bundle with `pnpm --filter @fl-copilot/api start`.
+`buildApp` does not open a socket; tests use Fastify injection. `runtime.ts` validates environment settings, listens and handles shutdown. The build bundles internal pnpm workspace packages, then creates the ignored `src/server.js` entrypoint detected by Vercel. Build with `pnpm --filter @fl-copilot/api build`; start the resulting bundle with `pnpm --filter @fl-copilot/api start`.
 
 Errors follow `ApiErrorDto` from `packages/sync-contracts`. Request IDs are server-generated and returned in the `x-request-id` header and error body. Request bodies, headers, URLs and raw exception messages are not logged by the foundation logger. The health endpoint has no store context and exposes no tenant data; authenticated store-isolation tests must be introduced with business endpoints.
 
