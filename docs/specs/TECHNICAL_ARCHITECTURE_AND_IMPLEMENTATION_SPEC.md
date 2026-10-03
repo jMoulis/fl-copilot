@@ -271,7 +271,7 @@ Analyse IA en attente de connexion
 | Unit tests | Vitest |
 | Native E2E | Maestro |
 | Monorepo | pnpm + Turborepo |
-| Remote deployment | Google Cloud Run |
+| Remote deployment | Vercel Functions with Fluid Compute |
 
 ---
 
@@ -1803,11 +1803,11 @@ If push is disabled, opening/syncing the app retrieves the same state.
 
 # 97. Remote deployment
 
-Fastify API runs in Google Cloud Run.
+Fastify API runs in Vercel Functions with Fluid Compute.
 
-Use European region.
+Use a European region close to MongoDB Atlas.
 
-Background processing may run from separate Cloud Run worker when native dependencies or higher resources are required.
+Background processing is coordinated through Inngest and may run in separate Vercel Functions. Re-evaluate a container worker only when a measured native dependency or execution limit requires one.
 
 ---
 
@@ -2562,9 +2562,9 @@ EAS Update
 
 # 151. Remote deployment
 
-Fastify API and workers deploy as containers to Google Cloud Run.
+Fastify API and Inngest handlers deploy as Vercel Functions with Fluid Compute.
 
-Prefer European regions.
+Prefer European regions close to MongoDB Atlas.
 
 ---
 

@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/runtime.ts",
     "dev:ensure-store": "tsx --env-file-if-exists=.env src/development/ensure-store.ts",
     "build": "tsup",
-    "start": "node --env-file-if-exists=.env dist/server.js",
+    "start": "node --env-file-if-exists=.env dist/runtime.js",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

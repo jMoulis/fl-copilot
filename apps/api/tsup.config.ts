@@ -1,10 +1,14 @@
 import { defineConfig } from "tsup";
 export default defineConfig({
-  entry: ["src/server.ts"],
+  entry: {
+    runtime: "src/runtime.ts",
+    "vercel/index": "src/vercel-handler.ts",
+  },
   format: ["esm"],
   platform: "node",
   target: "node22",
-  noExternal: ["@fl-copilot/sync-contracts"],
+  splitting: false,
+  noExternal: ["@fl-copilot/domain", "@fl-copilot/sync-contracts"],
   clean: true,
   sourcemap: true,
 });

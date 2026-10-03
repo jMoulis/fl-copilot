@@ -10,7 +10,7 @@ import {
   syncPullResponseSchema,
   syncPushResponseSchema,
 } from "@fl-copilot/sync-contracts";
-import { buildApp } from "../src/app.js";
+import { buildApp } from "../src/build-app.js";
 import { parseEnvironment } from "../src/config.js";
 import type { DatabaseService, DatabaseStatus } from "../src/database/types.js";
 import {
