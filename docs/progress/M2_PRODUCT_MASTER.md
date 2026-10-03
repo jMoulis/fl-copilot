@@ -120,10 +120,10 @@ The active increment covers M2-T01 through M2-T12A from `docs/specs/IMPLEMENTATI
 | Reconciliation safety     | Blind overlapping publication and ambiguous bulk application are rejected transactionally                                                   |
 | Reconciliation audit      | Apply-new and keep-existing decisions retain actor, timestamp, incoming values, and previous/new source lineage                             |
 | Product confirmation      | The real 147-line daily sales file yields 147 safe explicit creations; shared identifiers and ambiguous candidates stay manual              |
+| iPhone product flow       | On the target iPhone Air, the 147 unknown references were created, rematched and published locally without an application failure           |
 
 ## Next work
 
-1. Validate M2-T12A on the target iPhone by creating the unknown references from `ventes_day_example.xlsx`, confirming that all resolved lines become ready, and publishing locally.
-2. Validate M2-T12 with a corrected version of that daily file and confirm the summary and explicit decision flow.
-3. Begin M2-T13 private Vercel Blob source upload with short-lived client authorization and an offline retry queue.
-4. Run the same XLSX compatibility, publication, and memory checks on target Android hardware before the Android milestone is accepted.
+1. Validate M2-T12 with a corrected version of the published daily file and confirm the summary and explicit decision flow.
+2. Begin M2-T13 private Vercel Blob source upload with short-lived client authorization and an offline retry queue.
+3. Run the same XLSX compatibility, publication, and memory checks on target Android hardware before the Android milestone is accepted.
