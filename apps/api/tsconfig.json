@@ -2,7 +2,14 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "baseUrl": ".",
+    "paths": {
+      "@fl-copilot/domain": ["../../packages/domain/src/index.ts"],
+      "@fl-copilot/sync-contracts": [
+        "../../packages/sync-contracts/src/index.ts"
+      ]
+    }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }

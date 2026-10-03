@@ -4,7 +4,7 @@ export default defineConfig({
   format: ["esm"],
   platform: "node",
   target: "node22",
-  noExternal: ["@fl-copilot/sync-contracts"],
+  noExternal: ["@fl-copilot/domain", "@fl-copilot/sync-contracts"],
   clean: true,
   sourcemap: true,
 });
