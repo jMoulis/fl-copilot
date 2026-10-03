@@ -181,10 +181,27 @@ export default function MercalysImportsScreen() {
       !filename ||
       !summary ||
       !selectedBytes ||
-      !selectedChecksum ||
-      !actorUserId
-    )
+      !selectedChecksum
+    ) {
+      setError(
+        "Les informations de l’import sont incomplètes. Sélectionnez de nouveau le fichier avant de publier.",
+      );
       return;
+    }
+    const reconciliationApproval = reconciliation
+      ? actorUserId
+        ? {
+            fingerprint: reconciliation.fingerprint,
+            actorUserId,
+          }
+        : null
+      : undefined;
+    if (reconciliationApproval === null) {
+      setError(
+        "Votre session utilisateur ne permet pas d’enregistrer cette décision. Reconnectez-vous puis réessayez.",
+      );
+      return;
+    }
     setPublishing(true);
     setError(undefined);
     let durableFile: ExpoFile | undefined;
@@ -204,12 +221,7 @@ export default function MercalysImportsScreen() {
         sizeBytes: selectedBytes.byteLength,
         checksum: selectedChecksum,
         summary,
-        reconciliationApproval: reconciliation
-          ? {
-              fingerprint: reconciliation.fingerprint,
-              actorUserId,
-            }
-          : undefined,
+        reconciliationApproval,
       });
       setPublication(result);
       setReconciliation(undefined);
@@ -241,10 +253,19 @@ export default function MercalysImportsScreen() {
       !filename ||
       !summary ||
       !selectedChecksum ||
-      !reconciliation ||
-      !actorUserId
-    )
+      !reconciliation
+    ) {
+      setError(
+        "Les informations de réconciliation sont incomplètes. Sélectionnez de nouveau le fichier.",
+      );
       return;
+    }
+    if (!actorUserId) {
+      setError(
+        "Votre session utilisateur ne permet pas d’enregistrer cette décision. Reconnectez-vous puis réessayez.",
+      );
+      return;
+    }
     setPublishing(true);
     setError(undefined);
     try {
@@ -664,6 +685,12 @@ function ValidationSummary({
             corriger et le fichier sera conservé sur cet appareil.
           </Text>
         )}
+        {!publication && summary.readyCount === 0 ? (
+          <InlineAlert
+            title="Aucune ligne prête à publier"
+            message="Confirmez ou ajoutez les produits signalés, puis importez de nouveau le fichier."
+          />
+        ) : null}
         <PrimaryButton
           label={publication ? "Lignes publiées" : "Publier les lignes valides"}
           disabled={summary.readyCount === 0 || publication !== undefined}
