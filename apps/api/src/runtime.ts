@@ -1,5 +1,5 @@
 import "./observability.js";
-import { buildApp } from "./app.js";
+import { buildApp } from "./build-app.js";
 import { parseEnvironment } from "./config.js";
 import { createMongoDatabase } from "./database/mongo.js";
 import { flushObservability, logRemoteEvent } from "./observability.js";
