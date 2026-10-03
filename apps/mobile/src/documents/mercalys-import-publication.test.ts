@@ -11,6 +11,7 @@ import type { MercalysImportValidationSummary } from "./mercalys-import-validati
 import {
   MercalysExactDuplicateError,
   MercalysImportPublicationRepository,
+  MercalysOverlapReconciliationError,
 } from "./mercalys-import-publication";
 
 type SQLiteValue = string | number | null;
@@ -51,6 +52,12 @@ class NodeDatabase implements OutboxDatabase, AtomicMutationDatabase {
 const directories: string[] = [];
 const storeId = "11111111-1111-4111-8111-111111111111";
 const productId = "22222222-2222-4222-8222-222222222222";
+const productIds = [
+  productId,
+  "22222222-2222-4222-8222-222222222223",
+  "22222222-2222-4222-8222-222222222224",
+  "22222222-2222-4222-8222-222222222225",
+] as const;
 const timestamp = "2026-09-28T18:00:00.000Z";
 
 afterEach(() => {
@@ -254,6 +261,165 @@ describe("MercalysImportPublicationRepository", () => {
     },
   );
 
+  it("classifies and atomically applies an overlapping corrected version", async () => {
+    const { adapter, database } = await openDatabase();
+    productIds.forEach((id, index) =>
+      insertProductRecord(database, id, `Produit ${index + 1}`),
+    );
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    const initial = reconciliationSummary([
+      matchedLine(8, productIds[0], 1),
+      matchedLine(9, productIds[1], 2),
+      matchedLine(10, productIds[2], 3),
+    ]);
+    await repository.publish(input(initial, "sha256:initial"));
+    const corrected = reconciliationSummary([
+      matchedLine(8, productIds[0], 1),
+      matchedLine(9, productIds[1], 2.5),
+      matchedLine(11, productIds[3], 4),
+    ]);
+    const reconciliation = await repository.analyzeOverlap(storeId, corrected);
+
+    expect(reconciliation).toMatchObject({
+      counts: {
+        UNCHANGED: 1,
+        MODIFIED: 1,
+        ADDED: 1,
+        REMOVED: 1,
+        AMBIGUOUS: 0,
+      },
+      safeToApply: true,
+    });
+    const result = await repository.publish({
+      ...input(corrected, "sha256:corrected"),
+      reconciliationApproval: {
+        fingerprint: reconciliation!.fingerprint,
+        actorUserId: "99999999-9999-4999-8999-999999999999",
+      },
+    });
+
+    expect(result).toMatchObject({ publishedCount: 3, replacedCount: 3 });
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM sales_observations WHERE deleted_at IS NULL",
+        )
+        .get(),
+    ).toEqual({ count: 3 });
+    expect(
+      database
+        .prepare(
+          "SELECT quantity FROM sales_observations WHERE product_id = ? AND deleted_at IS NULL",
+        )
+        .get(productIds[1]),
+    ).toEqual({ quantity: "2.5" });
+    expect(
+      database
+        .prepare(
+          "SELECT decision, actor_user_id, new_source_document_id FROM import_reconciliations",
+        )
+        .get(),
+    ).toMatchObject({
+      decision: "APPLY_NEW",
+      actor_user_id: "99999999-9999-4999-8999-999999999999",
+      new_source_document_id: result.sourceDocumentId,
+    });
+    database.close();
+  });
+
+  it("blocks blind publication and ambiguous bulk reconciliation", async () => {
+    const { adapter, database } = await openDatabase();
+    insertProduct(database, "BULK");
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    await repository.publish(
+      input(
+        reconciliationSummary([matchedLine(8, productId, 1)]),
+        "sha256:initial",
+      ),
+    );
+    const ambiguous = reconciliationSummary([
+      matchedLine(8, productId, 2),
+      matchedLine(9, productId, 3),
+    ]);
+
+    await expect(
+      repository.publish(input(ambiguous, "sha256:ambiguous")),
+    ).rejects.toBeInstanceOf(MercalysOverlapReconciliationError);
+    const reconciliation = await repository.analyzeOverlap(storeId, ambiguous);
+    expect(reconciliation).toMatchObject({
+      counts: { AMBIGUOUS: 1 },
+      safeToApply: false,
+    });
+    await expect(
+      repository.publish({
+        ...input(ambiguous, "sha256:ambiguous"),
+        reconciliationApproval: {
+          fingerprint: reconciliation!.fingerprint,
+          actorUserId: "99999999-9999-4999-8999-999999999999",
+        },
+      }),
+    ).rejects.toThrow("Ambiguous reconciliation cannot be applied");
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM sales_observations WHERE deleted_at IS NULL",
+        )
+        .get(),
+    ).toEqual({ count: 1 });
+    database.close();
+  });
+
+  it("audits keeping existing observations without mutation", async () => {
+    const { adapter, database } = await openDatabase();
+    insertProduct(database, "BULK");
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    await repository.publish(
+      input(
+        reconciliationSummary([matchedLine(8, productId, 1)]),
+        "sha256:initial",
+      ),
+    );
+    const corrected = reconciliationSummary([matchedLine(8, productId, 5)]);
+    const reconciliation = await repository.analyzeOverlap(storeId, corrected);
+
+    await repository.keepExisting({
+      storeId,
+      filename: "corrected.xlsx",
+      checksum: "sha256:kept",
+      summary: corrected,
+      reconciliation: reconciliation!,
+      actorUserId: "99999999-9999-4999-8999-999999999999",
+    });
+
+    expect(
+      database
+        .prepare(
+          "SELECT decision, new_source_document_id FROM import_reconciliations",
+        )
+        .get(),
+    ).toEqual({ decision: "KEEP_EXISTING", new_source_document_id: null });
+    expect(
+      database
+        .prepare(
+          "SELECT quantity FROM sales_observations WHERE deleted_at IS NULL",
+        )
+        .get(),
+    ).toEqual({ quantity: "1" });
+    database.close();
+  });
+
   it("rolls the whole publication back if the matched product is no longer active", async () => {
     const { adapter, database } = await openDatabase();
     insertProduct(database, "BULK", "INACTIVE");
@@ -296,16 +462,26 @@ function insertProduct(
   nature: "BULK" | "PACKAGED",
   status = "ACTIVE",
 ) {
+  insertProductRecord(database, productId, "Tomate", nature, status);
+}
+
+function insertProductRecord(
+  database: DatabaseSync,
+  id: string,
+  label: string,
+  nature: "BULK" | "PACKAGED" = "BULK",
+  status = "ACTIVE",
+) {
   database
     .prepare(
       `
     INSERT INTO products (
       id, store_id, label, category, nature, sales_unit, status, version,
       created_at, updated_at, sync_state, dirty
-    ) VALUES (?, ?, 'Tomate', 'VEGETABLE', ?, 'KG', ?, 1, ?, ?, 'SYNCED', 0)
+    ) VALUES (?, ?, ?, 'VEGETABLE', ?, 'KG', ?, 1, ?, ?, 'SYNCED', 0)
   `,
     )
-    .run(productId, storeId, nature, status, timestamp, timestamp);
+    .run(id, storeId, label, nature, status, timestamp, timestamp);
 }
 
 function insertFailedSourceDocument(database: DatabaseSync, status: string) {
@@ -328,7 +504,10 @@ function insertFailedSourceDocument(database: DatabaseSync, status: string) {
     );
 }
 
-function input(summaryValue: MercalysImportValidationSummary) {
+function input(
+  summaryValue: MercalysImportValidationSummary,
+  checksum = "sha256:test",
+) {
   return {
     storeId,
     filename: "mercayls.xlsx",
@@ -336,8 +515,42 @@ function input(summaryValue: MercalysImportValidationSummary) {
     mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     sizeBytes: 2048,
-    checksum: "sha256:test",
+    checksum,
     summary: summaryValue,
+  };
+}
+
+function reconciliationSummary(
+  lines: MercalysImportValidationSummary["lines"],
+): MercalysImportValidationSummary {
+  return {
+    sourceType: "MERCALYS_SALES",
+    parserVersion: "mercalys-article-v1",
+    businessPeriodStart: "2026-09-26",
+    businessPeriodEnd: "2026-09-26",
+    detectedLineCount: lines.length,
+    readyCount: lines.length,
+    productReviewCount: 0,
+    errorCount: 0,
+    issueCodes: [],
+    lines,
+  };
+}
+
+function matchedLine(
+  sourceIndex: number,
+  matchedProductId: string,
+  quantity: number,
+) {
+  const nextRecord = record(sourceIndex, `Produit ${sourceIndex}`);
+  nextRecord.quantity = quantity;
+  nextRecord.rawValues.quantity = quantity;
+  return {
+    record: nextRecord,
+    match: {
+      ...match("AUTO_MATCH"),
+      matchedProductId,
+    },
   };
 }
 

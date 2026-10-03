@@ -4,7 +4,7 @@ Date: 2026-09-28.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T11 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, and exact duplicate protection.
+The active increment covers M2-T01 through M2-T12 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, and overlapping-version reconciliation.
 
 ## Implemented
 
@@ -64,6 +64,13 @@ The active increment covers M2-T01 through M2-T11 from `docs/specs/IMPLEMENTATIO
 - The duplicate check is repeated inside the publication transaction, so retries and concurrent publication attempts cannot create a second set of observations or upload jobs.
 - Failed and cancelled prior imports remain reviewable and do not block a clean retry.
 - The French duplicate state shows the prior import date and status, with expandable filename, source, and business-period details.
+- Overlapping Mercalys periods are compared by matched product and business date before publication, with deterministic `UNCHANGED`, `ADDED`, `REMOVED`, `MODIFIED`, and `AMBIGUOUS` classifications.
+- All seven stored sales measures are compared; waste comparison uses its canonical stored quantity, known purchase value, and sales value without inventing unavailable values.
+- Bulk application is disabled whenever products, incoming rows, existing observations, or missing-row identity remain ambiguous.
+- Applying a reviewed correction atomically soft-deletes superseded observations, publishes the new source lineage, and retains the previous observations for audit.
+- Keeping the existing data records the incoming normalized record, prior source-record IDs, classification, decision, user, and timestamp without mutating observations.
+- Migration 9 adds indexed reconciliation audit records, including prior and new source-document lineage.
+- The native French review screen shows summary counts, row-level old/new quantities, and explicit apply, keep, inspect, and cancel actions.
 
 ## Verification evidence
 
@@ -76,7 +83,7 @@ The active increment covers M2-T01 through M2-T11 from `docs/specs/IMPLEMENTATIO
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                                   |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                                    |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot                   |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 118 tests; 10 MongoDB tests skipped locally and enabled in CI                                    |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 121 tests; 10 MongoDB tests skipped locally and enabled in CI                                    |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                                  |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                                             |
 | Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands                                 |
@@ -104,9 +111,12 @@ The active increment covers M2-T01 through M2-T11 from `docs/specs/IMPLEMENTATIO
 | Offline availability      | Published observations survive database restart and do not require a remote request                                                         |
 | Exact duplicate           | Re-selecting or retrying the same store/source/checksum returns the prior import and leaves document, observation, and job counts unchanged |
 | Duplicate scope           | Identical checksums from different Mercalys source types remain distinct; failed/cancelled imports allow a new publication                  |
+| Overlap classification    | One fixture produces one unchanged, modified, added, and removed row; duplicate business keys become ambiguous                              |
+| Reconciliation safety     | Blind overlapping publication and ambiguous bulk application are rejected transactionally                                                   |
+| Reconciliation audit      | Apply-new and keep-existing decisions retain actor, timestamp, incoming values, and previous/new source lineage                             |
 
 ## Next work
 
-1. Validate M2-T11 on the target iPhone by selecting an already published daily file and confirming that publication is blocked.
-2. Begin M2-T12 overlap reconciliation for corrected files whose checksum differs.
+1. Validate M2-T12 on the target iPhone with a corrected daily file and confirm the summary and explicit decision flow.
+2. Begin M2-T13 signed GCS source upload with an offline retry queue.
 3. Run the same XLSX compatibility, publication, and memory checks on target Android hardware before the Android milestone is accepted.
