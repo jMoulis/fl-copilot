@@ -16,6 +16,7 @@ export interface MercalysProductResolution {
   sourceIndexes: number[];
   candidateProductIds: string[];
   canCreate: boolean;
+  canCreateAsDistinct: boolean;
 }
 
 interface ResolutionOptions {
@@ -57,6 +58,8 @@ export function buildMercalysProductResolutions(
           ),
         ),
       ];
+      const hasStableIdentity =
+        identifiers.length > 0 && normalizedLabels.size === 1;
       return {
         key,
         label: first.record.rawLabel,
@@ -64,9 +67,15 @@ export function buildMercalysProductResolutions(
         sourceIndexes: lines.map(({ record }) => record.sourceIndex),
         candidateProductIds,
         canCreate:
-          identifiers.length > 0 &&
-          normalizedLabels.size === 1 &&
+          hasStableIdentity &&
           lines.every(({ match }) => match.state === "NO_MATCH"),
+        canCreateAsDistinct:
+          hasStableIdentity &&
+          lines.every(
+            ({ match }) =>
+              match.state !== "AUTO_MATCH" &&
+              match.method !== "EXACT_IDENTIFIER",
+          ),
       };
     })
     .sort((left, right) =>
@@ -82,16 +91,19 @@ export function buildMercalysProductResolutions(
       );
     }
   }
-  return resolutions.map((resolution) => ({
-    ...resolution,
-    canCreate:
-      resolution.canCreate &&
-      resolution.identifiers.every(
-        (identifier) =>
-          identifierOwners.get(`${identifier.type}:${identifier.value}`)
-            ?.size === 1,
-      ),
-  }));
+  return resolutions.map((resolution) => {
+    const identifiersAreUnique = resolution.identifiers.every(
+      (identifier) =>
+        identifierOwners.get(`${identifier.type}:${identifier.value}`)?.size ===
+        1,
+    );
+    return {
+      ...resolution,
+      canCreate: resolution.canCreate && identifiersAreUnique,
+      canCreateAsDistinct:
+        resolution.canCreateAsDistinct && identifiersAreUnique,
+    };
+  });
 }
 
 export async function createMercalysProducts(
@@ -99,8 +111,12 @@ export async function createMercalysProducts(
   resolutions: readonly MercalysProductResolution[],
   options: ResolutionOptions,
   onProgress?: (completed: number, total: number) => void,
+  allowExplicitDistinct = false,
 ) {
-  const creatable = resolutions.filter(({ canCreate }) => canCreate);
+  const creatable = resolutions.filter(
+    ({ canCreate, canCreateAsDistinct }) =>
+      canCreate || (allowExplicitDistinct && canCreateAsDistinct),
+  );
   let completed = 0;
   for (const resolution of creatable) {
     await saveProductEditor(
