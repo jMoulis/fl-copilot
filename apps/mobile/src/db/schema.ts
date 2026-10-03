@@ -279,6 +279,41 @@ export const wasteObservations = sqliteTable(
   ],
 );
 
+export const importReconciliations = sqliteTable(
+  "import_reconciliations",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    sourceType: text("source_type").notNull(),
+    incomingChecksum: text("incoming_checksum").notNull(),
+    incomingFilename: text("incoming_filename"),
+    businessPeriodStart: text("business_period_start").notNull(),
+    businessPeriodEnd: text("business_period_end").notNull(),
+    priorSourceDocumentIdsJson: text(
+      "prior_source_document_ids_json",
+    ).notNull(),
+    classificationJson: text("classification_json").notNull(),
+    decision: text("decision").notNull(),
+    actorUserId: text("actor_user_id").notNull(),
+    newSourceDocumentId: text("new_source_document_id"),
+    createdAt: text("created_at").notNull(),
+    resolvedAt: text("resolved_at").notNull(),
+  },
+  (table) => [
+    index("idx_import_reconciliations_store_period").on(
+      table.storeId,
+      table.sourceType,
+      table.businessPeriodStart,
+      table.businessPeriodEnd,
+    ),
+    index("idx_import_reconciliations_checksum").on(
+      table.storeId,
+      table.sourceType,
+      table.incomingChecksum,
+    ),
+  ],
+);
+
 export const products = sqliteTable(
   "products",
   {
@@ -376,6 +411,7 @@ export const localSchema = {
   sourceRecords,
   salesObservations,
   wasteObservations,
+  importReconciliations,
   products,
   productIdentifiers,
   productAliases,

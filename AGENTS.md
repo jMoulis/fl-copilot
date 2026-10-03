@@ -521,7 +521,7 @@ Do not use superseded technical documents from outside this repository.
 The active increment is:
 
 ```text
-M2-T01 through M2-T11 — Product master and duplicate-safe offline Mercalys imports
+M2-T01 through M2-T12 — Product master and reconciled offline Mercalys imports
 ```
 
 Read `docs/progress/M0_FOUNDATION.md` and `docs/progress/M1_SYNC_FOUNDATION.md` for completed foundation evidence, and `docs/progress/M2_PRODUCT_MASTER.md` for the active product-master increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`.

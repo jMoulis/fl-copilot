@@ -433,6 +433,36 @@ export const localMigrations: readonly LocalMigration[] = [
         ON waste_observations (store_id, source_record_id);
     `,
   },
+  {
+    version: 9,
+    name: "add-import-reconciliation-audit",
+    sql: `
+      CREATE TABLE import_reconciliations (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        source_type TEXT NOT NULL,
+        incoming_checksum TEXT NOT NULL,
+        incoming_filename TEXT,
+        business_period_start TEXT NOT NULL,
+        business_period_end TEXT NOT NULL,
+        prior_source_document_ids_json TEXT NOT NULL,
+        classification_json TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        actor_user_id TEXT NOT NULL,
+        new_source_document_id TEXT,
+        created_at TEXT NOT NULL,
+        resolved_at TEXT NOT NULL,
+        FOREIGN KEY (new_source_document_id) REFERENCES source_documents(id)
+          ON DELETE RESTRICT
+      );
+      CREATE INDEX idx_import_reconciliations_store_period
+        ON import_reconciliations (
+          store_id, source_type, business_period_start, business_period_end
+        );
+      CREATE INDEX idx_import_reconciliations_checksum
+        ON import_reconciliations (store_id, source_type, incoming_checksum);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

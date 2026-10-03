@@ -21,9 +21,14 @@ import {
 import {
   MercalysExactDuplicateError,
   MercalysImportPublicationRepository,
+  MercalysOverlapReconciliationError,
   type ExactDuplicateImport,
   type PublishedMercalysImport,
 } from "@/documents/mercalys-import-publication";
+import type {
+  MercalysReconciliation,
+  MercalysReconciliationRow,
+} from "@/documents/mercalys-import-reconciliation";
 import { SheetJsSpreadsheetParser } from "@/documents/sheetjs-spreadsheet-parser";
 import { ProductMasterRepository } from "@/products/product-master-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
@@ -65,6 +70,7 @@ export default function MercalysImportsScreen() {
   const { sqlite } = useLocalDatabase();
   const { session } = useAuth();
   const storeId = session?.stores[0]?.storeId;
+  const actorUserId = session?.user.id;
   const repository = useMemo(
     () => new ProductMasterRepository(sqlite),
     [sqlite],
@@ -79,6 +85,9 @@ export default function MercalysImportsScreen() {
   const [selectedBytes, setSelectedBytes] = useState<Uint8Array<ArrayBuffer>>();
   const [selectedChecksum, setSelectedChecksum] = useState<string>();
   const [duplicate, setDuplicate] = useState<ExactDuplicateImport>();
+  const [reconciliation, setReconciliation] =
+    useState<MercalysReconciliation>();
+  const [keptExisting, setKeptExisting] = useState(false);
   const [publication, setPublication] = useState<PublishedMercalysImport>();
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string>();
@@ -91,6 +100,8 @@ export default function MercalysImportsScreen() {
     setSelectedBytes(undefined);
     setSelectedChecksum(undefined);
     setDuplicate(undefined);
+    setReconciliation(undefined);
+    setKeptExisting(false);
     setPublication(undefined);
     setError(undefined);
 
@@ -137,8 +148,13 @@ export default function MercalysImportsScreen() {
         setStage("COMPLETE");
         return;
       }
+      const overlap = await publicationRepository.analyzeOverlap(
+        storeId,
+        nextSummary,
+      );
       setSummary(nextSummary);
       setSelectedBytes(bytes);
+      setReconciliation(overlap ?? undefined);
       setStage("COMPLETE");
     } catch (caught) {
       setError(importErrorMessage(caught));
@@ -153,6 +169,8 @@ export default function MercalysImportsScreen() {
     setSelectedBytes(undefined);
     setSelectedChecksum(undefined);
     setDuplicate(undefined);
+    setReconciliation(undefined);
+    setKeptExisting(false);
     setPublication(undefined);
     setError(undefined);
   }
@@ -163,7 +181,8 @@ export default function MercalysImportsScreen() {
       !filename ||
       !summary ||
       !selectedBytes ||
-      !selectedChecksum
+      !selectedChecksum ||
+      !actorUserId
     )
       return;
     setPublishing(true);
@@ -185,8 +204,15 @@ export default function MercalysImportsScreen() {
         sizeBytes: selectedBytes.byteLength,
         checksum: selectedChecksum,
         summary,
+        reconciliationApproval: reconciliation
+          ? {
+              fingerprint: reconciliation.fingerprint,
+              actorUserId,
+            }
+          : undefined,
       });
       setPublication(result);
+      setReconciliation(undefined);
     } catch (caught) {
       if (durableFile?.exists) durableFile.delete();
       if (caught instanceof MercalysExactDuplicateError) {
@@ -195,10 +221,48 @@ export default function MercalysImportsScreen() {
         setDuplicate(caught.priorImport);
         return;
       }
+      if (caught instanceof MercalysOverlapReconciliationError) {
+        setReconciliation(caught.reconciliation);
+        return;
+      }
       setError(
         caught instanceof Error && caught.message
           ? caught.message
           : "Les lignes valides n’ont pas pu être publiées localement.",
+      );
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function keepExistingObservations() {
+    if (
+      !storeId ||
+      !filename ||
+      !summary ||
+      !selectedChecksum ||
+      !reconciliation ||
+      !actorUserId
+    )
+      return;
+    setPublishing(true);
+    setError(undefined);
+    try {
+      await publicationRepository.keepExisting({
+        storeId,
+        filename,
+        checksum: selectedChecksum,
+        summary,
+        reconciliation,
+        actorUserId,
+      });
+      setKeptExisting(true);
+      setSelectedBytes(undefined);
+    } catch (caught) {
+      setError(
+        caught instanceof Error && caught.message
+          ? caught.message
+          : "La décision de réconciliation n’a pas pu être enregistrée.",
       );
     } finally {
       setPublishing(false);
@@ -262,7 +326,7 @@ export default function MercalysImportsScreen() {
 
       {error ? <InlineAlert title="Import impossible" message={error} /> : null}
 
-      {summary ? (
+      {summary && !reconciliation ? (
         <ValidationSummary
           summary={summary}
           publication={publication}
@@ -274,10 +338,162 @@ export default function MercalysImportsScreen() {
         />
       ) : null}
 
+      {summary && reconciliation ? (
+        <ReconciliationSummary
+          reconciliation={reconciliation}
+          keptExisting={keptExisting}
+          loading={publishing}
+          onApply={() => {
+            void publishValidLines();
+          }}
+          onKeep={() => {
+            void keepExistingObservations();
+          }}
+          onCancel={reset}
+        />
+      ) : null}
+
       {duplicate ? (
         <DuplicateSummary duplicate={duplicate} onCancel={reset} />
       ) : null}
     </AppScreen>
+  );
+}
+
+function ReconciliationSummary({
+  reconciliation,
+  keptExisting,
+  loading,
+  onApply,
+  onKeep,
+  onCancel,
+}: {
+  reconciliation: MercalysReconciliation;
+  keptExisting: boolean;
+  loading: boolean;
+  onApply: () => void;
+  onKeep: () => void;
+  onCancel: () => void;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  const differences = reconciliation.rows.filter(
+    (row) => row.category !== "UNCHANGED",
+  );
+  if (keptExisting) {
+    return (
+      <SectionCard title="Réconciliation enregistrée">
+        <InlineAlert
+          title="Données existantes conservées"
+          message="Le nouveau fichier n’a pas modifié les observations locales. Votre décision a été enregistrée."
+        />
+        <PrimaryButton label="Importer un autre fichier" onPress={onCancel} />
+      </SectionCard>
+    );
+  }
+  return (
+    <>
+      <SectionCard title="Réconciliation nécessaire">
+        <CountLine
+          label="Lignes inchangées"
+          value={reconciliation.counts.UNCHANGED}
+          tone="ready"
+        />
+        <CountLine
+          label="Lignes modifiées"
+          value={reconciliation.counts.MODIFIED}
+          tone="review"
+        />
+        <CountLine
+          label="Nouvelles lignes"
+          value={reconciliation.counts.ADDED}
+          tone="ready"
+        />
+        <CountLine
+          label="Lignes absentes"
+          value={reconciliation.counts.REMOVED}
+          tone="review"
+        />
+        {reconciliation.counts.AMBIGUOUS > 0 ? (
+          <CountLine
+            label="Lignes ambiguës"
+            value={reconciliation.counts.AMBIGUOUS}
+            tone="error"
+          />
+        ) : null}
+      </SectionCard>
+
+      {showDetails ? (
+        <SectionCard title="Différences">
+          {differences.slice(0, 20).map((row) => (
+            <ReconciliationRow key={row.key} row={row} />
+          ))}
+          {differences.length > 20 ? (
+            <Text className="text-sm text-muted">
+              Et {differences.length - 20} autre
+              {differences.length - 20 > 1 ? "s" : ""} différence
+              {differences.length - 20 > 1 ? "s" : ""}.
+            </Text>
+          ) : null}
+        </SectionCard>
+      ) : null}
+
+      {!reconciliation.safeToApply ? (
+        <InlineAlert
+          title="Examen nécessaire"
+          message="La nouvelle version ne peut pas être appliquée globalement tant que des produits ou des lignes restent ambigus."
+        />
+      ) : null}
+
+      <SectionCard title="Décision">
+        <SecondaryButton
+          label={
+            showDetails ? "Masquer les différences" : "Examiner les différences"
+          }
+          onPress={() => setShowDetails((value) => !value)}
+        />
+        <PrimaryButton
+          label="Appliquer la nouvelle version"
+          disabled={!reconciliation.safeToApply}
+          loading={loading}
+          onPress={onApply}
+        />
+        <SecondaryButton
+          label="Conserver l’existant"
+          disabled={loading}
+          onPress={onKeep}
+        />
+        <SecondaryButton
+          label="Annuler"
+          disabled={loading}
+          onPress={onCancel}
+        />
+      </SectionCard>
+    </>
+  );
+}
+
+function ReconciliationRow({ row }: { row: MercalysReconciliationRow }) {
+  return (
+    <View className="gap-1 border-b border-line pb-3">
+      <Text className="text-base font-semibold text-ink">
+        {row.productLabel}
+      </Text>
+      <Text className="text-sm text-muted">
+        {formatIsoDate(row.businessDate)} · {reconciliationCategoryLabel(row)}
+      </Text>
+      {row.existingValues ? (
+        <SummaryLine
+          label="Quantité existante"
+          value={row.existingValues.quantity ?? "Indisponible"}
+        />
+      ) : null}
+      {row.incomingValues ? (
+        <SummaryLine
+          label="Nouvelle quantité"
+          value={row.incomingValues.quantity ?? "Indisponible"}
+        />
+      ) : null}
+    </View>
   );
 }
 
@@ -579,6 +795,15 @@ function duplicateStatusLabel(duplicate: ExactDuplicateImport) {
     return "Publié localement · Synchronisation en attente";
   }
   return "Import déjà enregistré";
+}
+
+function reconciliationCategoryLabel(row: MercalysReconciliationRow) {
+  if (row.category === "UNCHANGED") return "Inchangée";
+  if (row.category === "ADDED") return "Nouvelle ligne";
+  if (row.category === "REMOVED") return "Absente du nouveau fichier";
+  if (row.category === "MODIFIED") return "Modifiée";
+  if (row.reason === "UNRESOLVED_PRODUCT") return "Produit à confirmer";
+  return "Comparaison ambiguë";
 }
 
 function issueLabel(code: string) {

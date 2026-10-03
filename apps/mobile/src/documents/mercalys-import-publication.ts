@@ -10,6 +10,10 @@ import {
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
+import {
+  analyzeMercalysReconciliation,
+  type MercalysReconciliation,
+} from "./mercalys-import-reconciliation";
 import type { MercalysSourceType } from "./mercalys-source-detector";
 
 type PublicationDatabase = AtomicMutationDatabase & OutboxDatabase;
@@ -23,6 +27,10 @@ export interface PublishMercalysImportInput {
   sizeBytes: number;
   checksum: string;
   summary: MercalysImportValidationSummary;
+  reconciliationApproval?: {
+    fingerprint: string;
+    actorUserId: string;
+  };
 }
 
 export interface PublishedMercalysImport {
@@ -30,6 +38,7 @@ export interface PublishedMercalysImport {
   localFileId: string;
   publishedCount: number;
   remainingCount: number;
+  replacedCount: number;
 }
 
 export interface ExactDuplicateImport {
@@ -50,6 +59,13 @@ export class MercalysExactDuplicateError extends Error {
   }
 }
 
+export class MercalysOverlapReconciliationError extends Error {
+  constructor(readonly reconciliation: MercalysReconciliation) {
+    super("MERCALYS_RECONCILIATION_REQUIRED");
+    this.name = "MercalysOverlapReconciliationError";
+  }
+}
+
 export class MercalysImportPublicationRepository {
   constructor(
     private readonly database: PublicationDatabase,
@@ -63,6 +79,45 @@ export class MercalysImportPublicationRepository {
     checksum: string,
   ) {
     return findExactDuplicate(this.database, storeId, sourceType, checksum);
+  }
+
+  async analyzeOverlap(
+    storeId: string,
+    summary: MercalysImportValidationSummary,
+  ) {
+    return analyzeMercalysReconciliation(this.database, storeId, summary);
+  }
+
+  async keepExisting(input: {
+    storeId: string;
+    filename: string;
+    checksum: string;
+    summary: MercalysImportValidationSummary;
+    reconciliation: MercalysReconciliation;
+    actorUserId: string;
+  }) {
+    const reconciliationId = this.generateId();
+    const resolvedAt = this.now();
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const current = await analyzeMercalysReconciliation(
+        transaction,
+        input.storeId,
+        input.summary,
+      );
+      assertCurrentReconciliation(current, input.reconciliation.fingerprint);
+      await insertReconciliationAudit(transaction, {
+        id: reconciliationId,
+        storeId: input.storeId,
+        filename: input.filename,
+        checksum: input.checksum,
+        reconciliation: current,
+        decision: "KEEP_EXISTING",
+        actorUserId: input.actorUserId,
+        newSourceDocumentId: null,
+        resolvedAt,
+      });
+    });
+    return { reconciliationId };
   }
 
   async publish(
@@ -80,7 +135,11 @@ export class MercalysImportPublicationRepository {
     const sourceDocumentId = this.generateId();
     const localFileId = this.generateId();
     const jobId = this.generateId();
+    const reconciliationId = input.reconciliationApproval
+      ? this.generateId()
+      : null;
     let publishedCount = 0;
+    let replacedCount = 0;
 
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
       const duplicate = await findExactDuplicate(
@@ -90,6 +149,35 @@ export class MercalysImportPublicationRepository {
         input.checksum,
       );
       if (duplicate) throw new MercalysExactDuplicateError(duplicate);
+
+      const reconciliation = await analyzeMercalysReconciliation(
+        transaction,
+        input.storeId,
+        input.summary,
+      );
+      if (reconciliation) {
+        if (!input.reconciliationApproval) {
+          throw new MercalysOverlapReconciliationError(reconciliation);
+        }
+        assertCurrentReconciliation(
+          reconciliation,
+          input.reconciliationApproval.fingerprint,
+        );
+        if (!reconciliation.safeToApply) {
+          throw new Error("Ambiguous reconciliation cannot be applied.");
+        }
+        const ids = reconciliation.rows.flatMap(
+          (row) => row.existingObservationIds,
+        );
+        replacedCount = await softDeleteObservations(
+          transaction,
+          input.summary.sourceType,
+          ids,
+          createdAt,
+        );
+      } else if (input.reconciliationApproval) {
+        throw new Error("Reconciliation is no longer required.");
+      }
 
       await insertDocument(transaction, {
         id: sourceDocumentId,
@@ -214,6 +302,20 @@ export class MercalysImportPublicationRepository {
         createdAt,
         createdAt,
       );
+
+      if (reconciliation && reconciliationId && input.reconciliationApproval) {
+        await insertReconciliationAudit(transaction, {
+          id: reconciliationId,
+          storeId: input.storeId,
+          filename: input.filename,
+          checksum: input.checksum,
+          reconciliation,
+          decision: "APPLY_NEW",
+          actorUserId: input.reconciliationApproval.actorUserId,
+          newSourceDocumentId: sourceDocumentId,
+          resolvedAt: createdAt,
+        });
+      }
     });
 
     return {
@@ -222,8 +324,89 @@ export class MercalysImportPublicationRepository {
       publishedCount,
       remainingCount:
         input.summary.productReviewCount + input.summary.errorCount,
+      replacedCount,
     };
   }
+}
+
+function assertCurrentReconciliation(
+  current: MercalysReconciliation | null,
+  expectedFingerprint: string,
+): asserts current is MercalysReconciliation {
+  if (!current || current.fingerprint !== expectedFingerprint) {
+    throw new Error("Reconciliation changed and must be reviewed again.");
+  }
+}
+
+async function softDeleteObservations(
+  database: OutboxDatabase,
+  sourceType: MercalysSourceType,
+  observationIds: string[],
+  updatedAt: string,
+) {
+  const table =
+    sourceType === "MERCALYS_SALES"
+      ? "sales_observations"
+      : "waste_observations";
+  let count = 0;
+  for (const id of [...new Set(observationIds)]) {
+    const result = await database.runAsync(
+      `
+        UPDATE ${table}
+        SET deleted_at = ?, updated_at = ?, version = version + 1,
+            sync_state = 'PENDING', dirty = 1
+        WHERE id = ? AND deleted_at IS NULL
+      `,
+      updatedAt,
+      updatedAt,
+      id,
+    );
+    count += Number(result.changes);
+  }
+  if (count !== new Set(observationIds).size) {
+    throw new Error("Reconciliation observations changed during publication.");
+  }
+  return count;
+}
+
+async function insertReconciliationAudit(
+  database: OutboxDatabase,
+  input: {
+    id: string;
+    storeId: string;
+    filename: string;
+    checksum: string;
+    reconciliation: MercalysReconciliation;
+    decision: "APPLY_NEW" | "KEEP_EXISTING";
+    actorUserId: string;
+    newSourceDocumentId: string | null;
+    resolvedAt: string;
+  },
+) {
+  await database.runAsync(
+    `
+      INSERT INTO import_reconciliations (
+        id, store_id, source_type, incoming_checksum, incoming_filename,
+        business_period_start, business_period_end,
+        prior_source_document_ids_json, classification_json, decision,
+        actor_user_id, new_source_document_id, created_at, resolved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    input.id,
+    input.storeId,
+    input.reconciliation.sourceType,
+    input.checksum,
+    input.filename,
+    input.reconciliation.businessPeriodStart,
+    input.reconciliation.businessPeriodEnd,
+    JSON.stringify(input.reconciliation.priorSourceDocumentIds),
+    JSON.stringify(input.reconciliation),
+    input.decision,
+    input.actorUserId,
+    input.newSourceDocumentId,
+    input.resolvedAt,
+    input.resolvedAt,
+  );
 }
 
 async function findExactDuplicate(
