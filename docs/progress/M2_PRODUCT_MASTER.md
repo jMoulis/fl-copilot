@@ -1,10 +1,10 @@
 # M2 product master
 
-Date: 2026-09-28.
+Date: 2026-10-03.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T12 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, and overlapping-version reconciliation.
+The active increment covers M2-T01 through M2-T12A from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, overlapping-version reconciliation, and imported-product confirmation.
 
 ## Implemented
 
@@ -71,6 +71,11 @@ The active increment covers M2-T01 through M2-T12 from `docs/specs/IMPLEMENTATIO
 - Keeping the existing data records the incoming normalized record, prior source-record IDs, classification, decision, user, and timestamp without mutating observations.
 - Migration 9 adds indexed reconciliation audit records, including prior and new source-document lineage.
 - The native French review screen shows summary counts, row-level old/new quantities, and explicit apply, keep, inspect, and cancel actions.
+- Unresolved Mercalys rows are grouped by exact ITM8 or EAN so a repeated product is confirmed once.
+- A unique unknown reference can explicitly create a local active product with its Mercalys label and validated identifiers; category, nature and sales unit remain `UNKNOWN` rather than being invented.
+- Safe unknown references can be created as a batch, while fuzzy or ambiguous candidates remain individual decisions.
+- Confirming or creating products writes normal Product Master Outbox commands and reruns deterministic matching immediately, without selecting the workbook again.
+- ADR 0003 records private Vercel Blob as the source-file store, with Fastify-issued short-lived client upload authorization and no permanent storage credential in the native application.
 
 ## Verification evidence
 
@@ -83,7 +88,7 @@ The active increment covers M2-T01 through M2-T12 from `docs/specs/IMPLEMENTATIO
 | Push acknowledgement race | A response for version 1 cannot overwrite a newer pending local version 2                                                                   |
 | Bootstrap safety          | Deleted remote aliases are excluded, while dirty local records are never overwritten by snapshot upserts                                    |
 | Two-device replication    | Device A creates, updates and deletes; device B receives the ordered changes and a new device receives the final snapshot                   |
-| `pnpm check`              | Passed locally: 9 workspace typechecks and 121 tests; 10 MongoDB tests skipped locally and enabled in CI                                    |
+| `pnpm check`              | Passed locally: 9 workspace typechecks and 126 tests; 10 MongoDB tests skipped locally and enabled in CI                                    |
 | Build and exports         | Workspace build and Expo iOS, Android and Web exports pass                                                                                  |
 | Formatting                | `pnpm format:check` and `git diff --check` pass                                                                                             |
 | Offline editor            | Creating a product with an EAN and alias persists all three local records and queues three ordered commands                                 |
@@ -114,9 +119,11 @@ The active increment covers M2-T01 through M2-T12 from `docs/specs/IMPLEMENTATIO
 | Overlap classification    | One fixture produces one unchanged, modified, added, and removed row; duplicate business keys become ambiguous                              |
 | Reconciliation safety     | Blind overlapping publication and ambiguous bulk application are rejected transactionally                                                   |
 | Reconciliation audit      | Apply-new and keep-existing decisions retain actor, timestamp, incoming values, and previous/new source lineage                             |
+| Product confirmation      | The real 147-line daily sales file yields 147 safe explicit creations; shared identifiers and ambiguous candidates stay manual              |
 
 ## Next work
 
-1. Validate M2-T12 on the target iPhone with a corrected daily file and confirm the summary and explicit decision flow.
-2. Begin M2-T13 signed GCS source upload with an offline retry queue.
-3. Run the same XLSX compatibility, publication, and memory checks on target Android hardware before the Android milestone is accepted.
+1. Validate M2-T12A on the target iPhone by creating the unknown references from `ventes_day_example.xlsx`, confirming that all resolved lines become ready, and publishing locally.
+2. Validate M2-T12 with a corrected version of that daily file and confirm the summary and explicit decision flow.
+3. Begin M2-T13 private Vercel Blob source upload with short-lived client authorization and an offline retry queue.
+4. Run the same XLSX compatibility, publication, and memory checks on target Android hardware before the Android milestone is accepted.

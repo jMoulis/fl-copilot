@@ -258,7 +258,7 @@ Analyse IA en attente de connexion
 | Remote API framework | Fastify |
 | Remote API validation | Zod |
 | Remote database | MongoDB Atlas native driver |
-| Object storage | Google Cloud Storage |
+| Object storage | Vercel Blob private storage |
 | Background workflows | Inngest |
 | AI abstraction | Provider adapter compatible with AI SDK v6 |
 | Remote Excel parsing | ExcelJS |
@@ -1617,7 +1617,7 @@ Commands with stale expected versions return conflict.
 
 # 82. Object storage
 
-Use Google Cloud Storage.
+Use Vercel Blob private storage.
 
 Source files are private.
 
@@ -1639,8 +1639,8 @@ Only then may normal cleanup remove the local source according to policy.
 
 ```text
 Outbox upload command
-→ request signed URL
-→ upload directly
+→ request a short-lived client upload token from Fastify
+→ upload directly to Vercel Blob
 → confirm upload
 → remote job starts
 → sync extraction result back
@@ -2767,7 +2767,7 @@ ADR-003 Bidirectional Outbox/Change-log sync
 ADR-004 Shared deterministic analytics
 ADR-005 Fastify remote sync/domain API
 ADR-006 MongoDB durable remote store
-ADR-007 Google Cloud Storage source files
+ADR-007 Vercel Blob private source files
 ADR-008 Inngest remote workflows
 ADR-009 Directed substitution graph in MongoDB/SQLite
 ADR-010 AI provider abstraction
