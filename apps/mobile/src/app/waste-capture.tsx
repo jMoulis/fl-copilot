@@ -31,6 +31,7 @@ import { colors } from "@/design/tokens";
 import { persistWasteReceiptCapture } from "@/documents/waste-receipt-capture";
 import { WasteReceiptRepository } from "@/documents/waste-receipt-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
+import { useSync } from "@/sync/sync-provider";
 
 type CaptureStage = "camera" | "review" | "saved";
 
@@ -38,6 +39,7 @@ export default function WasteCaptureScreen() {
   const router = useRouter();
   const { status, session } = useAuth();
   const database = useLocalDatabase();
+  const { syncNow } = useSync();
   const receiptRepository = useMemo(
     () => new WasteReceiptRepository(database.sqlite),
     [database.sqlite],
@@ -147,10 +149,13 @@ export default function WasteCaptureScreen() {
       await receiptRepository.createCapturedDraft({
         receiptId,
         fileId: randomUUID(),
+        sourceDocumentId: randomUUID(),
+        uploadJobId: randomUUID(),
         storeId,
         capturedAt: new Date().toISOString(),
-        file: saved,
+        file: { ...saved, originalFilename: saved.filename },
       });
+      void syncNow(storeId);
       setSavedUri(saved.localUri);
       setPhoto(undefined);
       setStage("saved");
@@ -171,10 +176,10 @@ export default function WasteCaptureScreen() {
           subtitle="La photo est conservée sur cet appareil."
         />
         <View className="gap-4 rounded-3xl border border-line bg-white p-5">
-          <StatusBadge status="local" />
+          <StatusBadge status="pending" />
           <Text className="text-base leading-6 text-ink">
-            Le ticket reste disponible après la fermeture de l’application.
-            L’analyse et la synchronisation viendront ensuite.
+            Le ticket reste disponible après la fermeture de l’application. Son
+            envoi reprendra automatiquement dès que le réseau sera disponible.
           </Text>
           {savedUri ? (
             <Text className="text-sm leading-5 text-muted">

@@ -18,11 +18,13 @@ import {
 } from "@/documents/waste-receipt-capture";
 import { WasteReceiptRepository } from "@/documents/waste-receipt-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
+import { useSync } from "@/sync/sync-provider";
 
 export default function WasteImportScreen() {
   const router = useRouter();
   const { status, session } = useAuth();
   const database = useLocalDatabase();
+  const { syncNow } = useSync();
   const receiptRepository = useMemo(
     () => new WasteReceiptRepository(database.sqlite),
     [database.sqlite],
@@ -63,10 +65,13 @@ export default function WasteImportScreen() {
       await receiptRepository.createCapturedDraft({
         receiptId,
         fileId: randomUUID(),
+        sourceDocumentId: randomUUID(),
+        uploadJobId: randomUUID(),
         storeId,
         capturedAt: new Date().toISOString(),
-        file: saved,
+        file: { ...saved, originalFilename: saved.filename },
       });
+      void syncNow(storeId);
       setSaved(true);
     } catch (caught) {
       setError(
@@ -87,10 +92,10 @@ export default function WasteImportScreen() {
           subtitle="Le ticket est conservé dans l’espace privé de l’application."
         />
         <View className="gap-4 rounded-3xl border border-line bg-white p-5">
-          <StatusBadge status="local" />
+          <StatusBadge status="pending" />
           <Text className="text-base leading-6 text-ink">
-            Le ticket reste disponible après la fermeture de l’application.
-            L’analyse et la synchronisation viendront ensuite.
+            Le ticket reste disponible après la fermeture de l’application. Son
+            envoi reprendra automatiquement dès que le réseau sera disponible.
           </Text>
         </View>
         <PrimaryButton label="Terminer" onPress={() => router.back()} />

@@ -53,6 +53,8 @@ const storeId = "11111111-1111-4111-8111-111111111111";
 const receiptId = "22222222-2222-4222-8222-222222222222";
 const fileId = "33333333-3333-4333-8333-333333333333";
 const lineId = "44444444-4444-4444-8444-444444444444";
+const sourceDocumentId = "55555555-5555-4555-8555-555555555555";
+const uploadJobId = "66666666-6666-4666-8666-666666666666";
 const timestamp = "2026-10-04T16:00:00.000Z";
 
 function receipt(overrides: Partial<WasteReceipt> = {}): WasteReceipt {
@@ -133,6 +135,68 @@ afterEach(() => {
 });
 
 describe("WasteReceiptRepository", () => {
+  it("atomically queues a captured receipt source for upload", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "fl-copilot-receipts-"));
+    directories.push(directory);
+    const database = new DatabaseSync(join(directory, "local.db"));
+    const adapter = new NodeDatabase(database);
+    await runLocalMigrations(adapter);
+
+    await new WasteReceiptRepository(adapter).createCapturedDraft({
+      receiptId,
+      fileId,
+      sourceDocumentId,
+      uploadJobId,
+      storeId,
+      capturedAt: timestamp,
+      file: {
+        originalFilename: "ticket.heic",
+        localUri: "file:///documents/waste-receipts/ticket.heic",
+        mimeType: "image/heic",
+        sizeBytes: 4096,
+        checksum: "sha256:receipt",
+      },
+    });
+
+    expect(
+      database
+        .prepare(
+          `SELECT source_document_id, processing_status, ai_status
+           FROM waste_receipts WHERE id = ?`,
+        )
+        .get(receiptId),
+    ).toEqual({
+      source_document_id: sourceDocumentId,
+      processing_status: "UPLOAD_PENDING",
+      ai_status: "PENDING",
+    });
+    expect(
+      database
+        .prepare(
+          `SELECT source_type, remote_upload_status, sync_state
+           FROM source_documents WHERE id = ?`,
+        )
+        .get(sourceDocumentId),
+    ).toEqual({
+      source_type: "WASTE_RECEIPT",
+      remote_upload_status: "PENDING",
+      sync_state: "PENDING",
+    });
+    expect(
+      database
+        .prepare(`SELECT status, payload_json FROM local_jobs WHERE id = ?`)
+        .get(uploadJobId),
+    ).toEqual({
+      status: "PENDING",
+      payload_json: JSON.stringify({
+        storeId,
+        sourceDocumentId,
+        localFileId: fileId,
+      }),
+    });
+    database.close();
+  });
+
   it("preserves the receipt, source file, and lines across a database restart", async () => {
     const directory = mkdtempSync(join(tmpdir(), "fl-copilot-receipts-"));
     directories.push(directory);
