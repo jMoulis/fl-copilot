@@ -147,6 +147,7 @@ describe("source upload service", () => {
     let normalizationAttempts = 0;
     let extractionAttempts = 0;
     let arithmeticAttempts = 0;
+    let productMatchingAttempts = 0;
     const storage: SourceBlobStorage = {
       createUploadUrl: async ({ pathname }) =>
         `https://blob.example.test/upload?pathname=${encodeURIComponent(pathname)}`,
@@ -174,6 +175,12 @@ describe("source upload service", () => {
         validate: async (input) => {
           expect(input).toEqual({ storeId, sourceDocumentId });
           arithmeticAttempts += 1;
+        },
+      },
+      {
+        match: async (input) => {
+          expect(input).toEqual({ storeId, sourceDocumentId });
+          productMatchingAttempts += 1;
         },
       },
     );
@@ -209,6 +216,7 @@ describe("source upload service", () => {
     expect(normalizationAttempts).toBe(2);
     expect(extractionAttempts).toBe(1);
     expect(arithmeticAttempts).toBe(1);
+    expect(productMatchingAttempts).toBe(1);
   });
 });
 

@@ -18,6 +18,7 @@ import {
   type WasteReceiptImageNormalizationService,
 } from "./waste-receipt-image-normalization.js";
 import type { WasteReceiptArithmeticValidationService } from "./waste-receipt-arithmetic-validation.js";
+import type { WasteReceiptProductMatchingService } from "./waste-receipt-product-matching.js";
 import type { WasteReceiptVisionExtractionService } from "./waste-receipt-vision-extraction.js";
 
 const UPLOAD_URL_TTL_MS = 10 * 60 * 1000;
@@ -136,6 +137,7 @@ export function createMongoSourceUploadService(
   ),
   receiptVision?: WasteReceiptVisionExtractionService,
   receiptArithmetic?: WasteReceiptArithmeticValidationService,
+  receiptProductMatching?: WasteReceiptProductMatchingService,
 ): SourceUploadService {
   return {
     async init(storeId, userId, input) {
@@ -253,6 +255,7 @@ export function createMongoSourceUploadService(
           receiptImages,
           receiptVision,
           receiptArithmetic,
+          receiptProductMatching,
           upload,
         );
         return confirmed(upload);
@@ -298,6 +301,7 @@ export function createMongoSourceUploadService(
         receiptImages,
         receiptVision,
         receiptArithmetic,
+        receiptProductMatching,
         upload,
       );
       return confirmed(upload);
@@ -309,6 +313,7 @@ async function processReceiptIfNeeded(
   receiptImages: WasteReceiptImageNormalizationService,
   receiptVision: WasteReceiptVisionExtractionService | undefined,
   receiptArithmetic: WasteReceiptArithmeticValidationService | undefined,
+  receiptProductMatching: WasteReceiptProductMatchingService | undefined,
   upload: UploadRecord,
 ) {
   if (upload.sourceType !== "WASTE_RECEIPT") return;
@@ -322,6 +327,10 @@ async function processReceiptIfNeeded(
     sourceDocumentId: upload.sourceDocumentId,
   });
   await receiptArithmetic?.validate({
+    storeId: upload.storeId,
+    sourceDocumentId: upload.sourceDocumentId,
+  });
+  await receiptProductMatching?.match({
     storeId: upload.storeId,
     sourceDocumentId: upload.sourceDocumentId,
   });
