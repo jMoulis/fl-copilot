@@ -9,6 +9,7 @@
       "developmentClient": true,
       "distribution": "internal",
       "environment": "development",
+      "pnpm": "9.15.9",
       "env": {
         "EXPO_PUBLIC_APP_ENV": "development"
       }
@@ -16,6 +17,7 @@
     "staging": {
       "distribution": "internal",
       "environment": "preview",
+      "pnpm": "9.15.9",
       "env": {
         "EXPO_PUBLIC_APP_ENV": "staging"
       }
@@ -23,6 +25,7 @@
     "production": {
       "autoIncrement": true,
       "environment": "production",
+      "pnpm": "9.15.9",
       "env": {
         "EXPO_PUBLIC_APP_ENV": "production"
       }
