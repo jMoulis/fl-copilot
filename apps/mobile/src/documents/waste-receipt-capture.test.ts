@@ -9,9 +9,12 @@ import {
 
 describe("waste receipt capture", () => {
   it("persists the temporary camera image under a stable capture name", async () => {
-    const persist = vi.fn(async ({ filename }: { filename: string }) =>
-      Promise.resolve(`file:///documents/waste-receipts/${filename}`),
-    );
+    const persist = vi.fn(async ({ filename }: { filename: string }) => ({
+      localUri: `file:///documents/waste-receipts/${filename}`,
+      mimeType: "image/jpeg",
+      sizeBytes: 2048,
+      checksum: "sha256:camera",
+    }));
     const storage: WasteReceiptCaptureStorage = { persist };
 
     await expect(
@@ -26,10 +29,14 @@ describe("waste receipt capture", () => {
       localUri:
         "file:///documents/waste-receipts/11111111-1111-4111-8111-111111111111.jpg",
       filename: "11111111-1111-4111-8111-111111111111.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 2048,
+      checksum: "sha256:camera",
     });
     expect(persist).toHaveBeenCalledWith({
       temporaryUri: "file:///cache/camera.jpg",
       filename: "11111111-1111-4111-8111-111111111111.jpg",
+      mimeType: "image/jpeg",
       removeSourceAfterCopy: true,
     });
   });
@@ -79,9 +86,12 @@ describe("waste receipt capture", () => {
   });
 
   it("copies an imported photo without deleting the picker source", async () => {
-    const persist = vi.fn(async ({ filename }: { filename: string }) =>
-      Promise.resolve(`file:///documents/waste-receipts/${filename}`),
-    );
+    const persist = vi.fn(async ({ filename }: { filename: string }) => ({
+      localUri: `file:///documents/waste-receipts/${filename}`,
+      mimeType: "image/heic",
+      sizeBytes: 4096,
+      checksum: "sha256:import",
+    }));
     const storage: WasteReceiptCaptureStorage = { persist };
 
     await expect(
@@ -99,10 +109,14 @@ describe("waste receipt capture", () => {
         "file:///documents/waste-receipts/11111111-1111-4111-8111-111111111111.heic",
       filename: "11111111-1111-4111-8111-111111111111.heic",
       extension: "heic",
+      mimeType: "image/heic",
+      sizeBytes: 4096,
+      checksum: "sha256:import",
     });
     expect(persist).toHaveBeenCalledWith({
       temporaryUri: "file:///picker/ticket.heic",
       filename: "11111111-1111-4111-8111-111111111111.heic",
+      mimeType: "image/heic",
       removeSourceAfterCopy: false,
     });
   });

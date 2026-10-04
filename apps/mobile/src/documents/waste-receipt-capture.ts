@@ -1,11 +1,19 @@
 export const WASTE_RECEIPT_CAPTURE_DIRECTORY = "waste-receipts";
 
+export interface PersistedWasteReceiptFile {
+  localUri: string;
+  mimeType: string;
+  sizeBytes: number;
+  checksum: string;
+}
+
 export interface WasteReceiptCaptureStorage {
   persist(input: {
     temporaryUri: string;
     filename: string;
+    mimeType: string;
     removeSourceAfterCopy: boolean;
-  }): Promise<string>;
+  }): Promise<PersistedWasteReceiptFile>;
 }
 
 export class UnsupportedWasteReceiptImageError extends Error {
@@ -20,12 +28,13 @@ export async function persistWasteReceiptCapture(
   storage: WasteReceiptCaptureStorage = nativeWasteReceiptCaptureStorage,
 ) {
   const filename = `${input.captureId}.jpg`;
-  const localUri = await storage.persist({
+  const persisted = await storage.persist({
     temporaryUri: input.temporaryUri,
     filename,
+    mimeType: "image/jpeg",
     removeSourceAfterCopy: true,
   });
-  return { localUri, filename };
+  return { ...persisted, filename };
 }
 
 export async function persistWasteReceiptImport(
@@ -39,12 +48,13 @@ export async function persistWasteReceiptImport(
 ) {
   const extension = resolveWasteReceiptImageExtension(input);
   const filename = `${input.captureId}.${extension}`;
-  const localUri = await storage.persist({
+  const persisted = await storage.persist({
     temporaryUri: input.temporaryUri,
     filename,
+    mimeType: mimeTypeForExtension(extension),
     removeSourceAfterCopy: false,
   });
-  return { localUri, filename, extension };
+  return { ...persisted, filename, extension };
 }
 
 export function resolveWasteReceiptImageExtension(input: {
@@ -68,9 +78,15 @@ export function resolveWasteReceiptImageExtension(input: {
   throw new UnsupportedWasteReceiptImageError();
 }
 
+function mimeTypeForExtension(extension: string) {
+  if (extension === "jpg") return "image/jpeg";
+  return `image/${extension}`;
+}
+
 const nativeWasteReceiptCaptureStorage: WasteReceiptCaptureStorage = {
-  async persist({ temporaryUri, filename, removeSourceAfterCopy }) {
+  async persist({ temporaryUri, filename, mimeType, removeSourceAfterCopy }) {
     const { Directory, File, Paths } = await import("expo-file-system");
+    const { CryptoDigestAlgorithm, digest } = await import("expo-crypto");
     const directory = new Directory(
       Paths.document,
       WASTE_RECEIPT_CAPTURE_DIRECTORY,
@@ -83,7 +99,17 @@ const nativeWasteReceiptCaptureStorage: WasteReceiptCaptureStorage = {
     const destination = new File(directory, filename);
     await source.copy(destination);
     if (!destination.exists) throw new Error("WASTE_CAPTURE_COPY_FAILED");
+    const bytes = await destination.bytes();
+    const hash = await digest(CryptoDigestAlgorithm.SHA256, bytes);
+    const checksum = `sha256:${Array.from(new Uint8Array(hash), (byte) =>
+      byte.toString(16).padStart(2, "0"),
+    ).join("")}`;
     if (removeSourceAfterCopy && source.exists) source.delete();
-    return destination.uri;
+    return {
+      localUri: destination.uri,
+      mimeType,
+      sizeBytes: destination.size,
+      checksum,
+    };
   },
 };

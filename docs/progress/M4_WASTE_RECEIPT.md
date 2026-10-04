@@ -32,13 +32,25 @@ The complete camera flow was validated on the target iPhone Air with the M4-T01 
 - Cancellation leaves no local success state. Copy failures remain visible and retryable on the import screen.
 - The browser route explains that image import and private native storage require the mobile application.
 
+The photo-library import, cancellation and source preservation flow was validated on the target iPhone Air with the M4-T02 staging build.
+
+### M4-T03 — Offline receipt domain model
+
+- SQLite schema version 12 adds the canonical `waste_receipts` and `waste_lines` tables, store/status indexes, stable local IDs, source lineage, validation state and sync metadata.
+- Shared runtime-neutral schemas define receipt, line, AI, duplicate, matching, validation and synchronization states without treating pending values as completed work.
+- Camera capture and image import now calculate the durable file size and SHA-256 checksum before creating a local receipt draft.
+- The local file metadata and its receipt are inserted in one SQLite transaction with `CAPTURED`, `PENDING`, `UNCHECKED` and `LOCAL_ONLY` initial states.
+- Receipt lines share the receipt and store identity, preserve raw labels, decimal strings, extraction evidence and independent product nature.
+- The `Casse` tab reads its ticket list from SQLite, exposes local/analyse-pending state and reloads on focus or pull-to-refresh.
+- Repository acceptance coverage closes and reopens a file-backed SQLite database, then verifies that the receipt, image reference and lines remain available.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Persistent filename  | One UUID capture produces a stable `.jpg` destination under `waste-receipts`                 |
 | Failed persistence   | A copy failure never returns a durable capture result                                        |
-| Repository checks    | Structure, lint, strict TypeScript and the full test suite pass                              |
+| Repository checks    | Structure, lint, strict TypeScript and 230 tests pass                                        |
 | Expo compatibility   | Expo Doctor passes all 21 checks with SDK-compatible camera and image-picker packages        |
 | Native configuration | Expo public config resolves the French camera and photo-library permissions                  |
 | Bundle acceptance    | Expo export completes for both iOS and Android                                               |
@@ -46,5 +58,5 @@ The complete camera flow was validated on the target iPhone Air with the M4-T01 
 
 ## Next work
 
-1. Merge M4-T02 and validate photo-library selection, cancellation, import success and source preservation on the target iPhone Air through a new native staging build.
-2. Implement the restart-safe `waste_receipts` and `waste_lines` local model in M4-T03 before upload or AI extraction begins.
+1. Merge M4-T03 and validate that a newly captured or imported ticket remains listed after force-closing and reopening the target iPhone Air app.
+2. Implement the M4-T04 offline upload queue without blocking local capture or deleting an unsynchronized source image.

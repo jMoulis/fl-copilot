@@ -343,6 +343,75 @@ export const departmentDailyPerformance = sqliteTable(
   ],
 );
 
+export const wasteReceipts = sqliteTable(
+  "waste_receipts",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    sourceDocumentId: text("source_document_id"),
+    localFileId: text("local_file_id"),
+    captureDate: text("capture_date"),
+    detectedReceiptDate: text("detected_receipt_date"),
+    confirmedWasteDate: text("confirmed_waste_date"),
+    processingStatus: text("processing_status").notNull(),
+    aiStatus: text("ai_status").notNull(),
+    duplicateStatus: text("duplicate_status").notNull(),
+    note: text("note"),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("LOCAL_ONLY"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(1),
+  },
+  (table) => [
+    index("idx_waste_receipts_store_status").on(
+      table.storeId,
+      table.processingStatus,
+      table.captureDate,
+    ),
+    index("idx_waste_receipts_local_file").on(table.localFileId),
+  ],
+);
+
+export const wasteLines = sqliteTable(
+  "waste_lines",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    receiptId: text("receipt_id").notNull(),
+    sourceLineIndex: integer("source_line_index").notNull(),
+    rawLabel: text("raw_label").notNull(),
+    quantity: text("quantity"),
+    weight: text("weight"),
+    quantityUnit: text("quantity_unit"),
+    unitPrice: text("unit_price"),
+    totalPrice: text("total_price"),
+    matchedProductId: text("matched_product_id"),
+    matchStatus: text("match_status").notNull(),
+    matchConfidence: real("match_confidence"),
+    productNature: text("product_nature").notNull(),
+    extractionConfidenceJson: text("extraction_confidence_json"),
+    sourceRegionJson: text("source_region_json"),
+    validationStatus: text("validation_status").notNull(),
+    version: integer("version").notNull(),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+    deletedAt: text("deleted_at"),
+    syncState: text("sync_state").notNull().default("LOCAL_ONLY"),
+    remoteVersion: integer("remote_version"),
+    dirty: integer("dirty").notNull().default(1),
+  },
+  (table) => [
+    uniqueIndex("idx_waste_lines_receipt_index").on(
+      table.receiptId,
+      table.sourceLineIndex,
+    ),
+    index("idx_waste_lines_store_match").on(table.storeId, table.matchStatus),
+  ],
+);
+
 export const importReconciliations = sqliteTable(
   "import_reconciliations",
   {
@@ -478,6 +547,8 @@ export const localSchema = {
   wasteObservations,
   productDailyPerformance,
   departmentDailyPerformance,
+  wasteReceipts,
+  wasteLines,
   importReconciliations,
   products,
   productIdentifiers,
