@@ -110,6 +110,7 @@ export default function Screen() {
             {receipts.map(({ receipt, lineCount }) => {
               const presentation = receiptPresentation(
                 receipt.processingStatus,
+                receipt.duplicateStatus,
                 lineCount,
               );
               return (
@@ -143,8 +144,21 @@ export default function Screen() {
 
 function receiptPresentation(
   processingStatus: LocalWasteReceiptSummary["receipt"]["processingStatus"],
+  duplicateStatus: LocalWasteReceiptSummary["receipt"]["duplicateStatus"],
   lineCount: number,
-): { status: "local" | "pending" | "error"; description: string } {
+): {
+  status: "local" | "pending" | "error" | "incomplete";
+  description: string;
+} {
+  if (duplicateStatus === "POSSIBLE_DUPLICATE") {
+    return { status: "incomplete", description: "Doublon possible à examiner" };
+  }
+  if (duplicateStatus === "CONFIRMED_DUPLICATE") {
+    return {
+      status: "local",
+      description: "Doublon confirmé · source conservée",
+    };
+  }
   if (processingStatus === "FAILED") {
     return { status: "error", description: "Envoi à reprendre" };
   }

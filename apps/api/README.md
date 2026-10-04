@@ -27,6 +27,8 @@ Receipt lines are then matched against the store's active Product Master by the 
 
 When all three evidence stages are ready, source-upload completion returns a review draft for the mobile SQLite database. It contains stable line IDs, the detected date, extracted values, arithmetic warnings and product candidates; it does not publish waste. The mobile user must confirm and correct this draft before the later publication endpoint creates business events.
 
+Waste-receipt completion also verifies exact SHA-256 evidence against other confirmed receipts in the same store. A match returns a review candidate and never deletes a source or decides from product/date similarity. The mobile application retains the user’s explicit `Conserver les deux` decision when the same remote candidate is returned during upload.
+
 `buildApp` does not open a socket; tests use Fastify injection. `runtime.ts` validates environment settings, listens and handles shutdown for the local process. `api/index.ts` loads the bundled Vercel handler, which forwards Node requests to the same Fastify instance without opening a port. Build with `pnpm --filter @fl-copilot/api build`; start the local-process bundle with `pnpm --filter @fl-copilot/api start`.
 
 Errors follow `ApiErrorDto` from `packages/sync-contracts`. Request IDs are server-generated and returned in the `x-request-id` header and error body. Request bodies, headers, URLs and raw exception messages are not logged by the foundation logger. The health endpoint has no store context and exposes no tenant data; authenticated store-isolation tests must be introduced with business endpoints.

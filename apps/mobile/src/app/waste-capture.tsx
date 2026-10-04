@@ -51,6 +51,8 @@ export default function WasteCaptureScreen() {
   const [stage, setStage] = useState<CaptureStage>("camera");
   const [photo, setPhoto] = useState<CameraCapturedPicture>();
   const [savedUri, setSavedUri] = useState<string>();
+  const [savedReceiptId, setSavedReceiptId] = useState<string>();
+  const [possibleDuplicate, setPossibleDuplicate] = useState(false);
   const [focused, setFocused] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [flashEnabled, setFlashEnabled] = useState(false);
@@ -146,7 +148,7 @@ export default function WasteCaptureScreen() {
         temporaryUri: photo.uri,
         captureId: receiptId,
       });
-      await receiptRepository.createCapturedDraft({
+      const created = await receiptRepository.createCapturedDraft({
         receiptId,
         fileId: randomUUID(),
         sourceDocumentId: randomUUID(),
@@ -155,8 +157,10 @@ export default function WasteCaptureScreen() {
         capturedAt: new Date().toISOString(),
         file: { ...saved, originalFilename: saved.filename },
       });
-      void syncNow(storeId);
+      if (created.uploadQueued) void syncNow(storeId);
       setSavedUri(saved.localUri);
+      setSavedReceiptId(receiptId);
+      setPossibleDuplicate(Boolean(created.duplicateCandidate));
       setPhoto(undefined);
       setStage("saved");
     } catch {
@@ -176,10 +180,11 @@ export default function WasteCaptureScreen() {
           subtitle="La photo est conservée sur cet appareil."
         />
         <View className="gap-4 rounded-3xl border border-line bg-white p-5">
-          <StatusBadge status="pending" />
+          <StatusBadge status={possibleDuplicate ? "incomplete" : "pending"} />
           <Text className="text-base leading-6 text-ink">
-            Le ticket reste disponible après la fermeture de l’application. Son
-            envoi reprendra automatiquement dès que le réseau sera disponible.
+            {possibleDuplicate
+              ? "La même image existe déjà. Comparez les deux tickets avant tout envoi."
+              : "Le ticket reste disponible après la fermeture de l’application. Son envoi reprendra automatiquement dès que le réseau sera disponible."}
           </Text>
           {savedUri ? (
             <Text className="text-sm leading-5 text-muted">
@@ -188,7 +193,14 @@ export default function WasteCaptureScreen() {
             </Text>
           ) : null}
         </View>
-        <PrimaryButton label="Terminer" onPress={() => router.back()} />
+        <PrimaryButton
+          label={possibleDuplicate ? "Examiner le doublon" : "Terminer"}
+          onPress={() =>
+            possibleDuplicate && savedReceiptId
+              ? router.replace(`/waste-receipt/${savedReceiptId}`)
+              : router.back()
+          }
+        />
       </AppScreen>
     );
   }

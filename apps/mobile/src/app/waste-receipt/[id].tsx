@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Pressable, Text, TextInput, View } from "react-native";
+import { randomUUID } from "expo-crypto";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AppHeader,
@@ -16,11 +17,13 @@ import {
   type LocalWasteReceiptDetail,
 } from "@/documents/waste-receipt-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
+import { useSync } from "@/sync/sync-provider";
 
 export default function WasteReceiptValidationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const database = useLocalDatabase();
+  const { syncNow } = useSync();
   const repository = useMemo(
     () => new WasteReceiptRepository(database.sqlite),
     [database.sqlite],
@@ -29,6 +32,8 @@ export default function WasteReceiptValidationScreen() {
   const [date, setDate] = useState("");
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const [comparingDuplicate, setComparingDuplicate] = useState(false);
+  const [resolvingDuplicate, setResolvingDuplicate] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -93,6 +98,96 @@ export default function WasteReceiptValidationScreen() {
 
       {message ? <InlineAlert title="Enregistré" message={message} /> : null}
       {error ? <InlineAlert title="Action impossible" message={error} /> : null}
+
+      {detail.receipt.duplicateStatus === "POSSIBLE_DUPLICATE" ? (
+        <SectionCard
+          title="Doublon possible"
+          description="Un ticket avec exactement la même image existe déjà. Aucun rapprochement n’est décidé à partir des seuls produits ou de la date."
+        >
+          <InlineAlert
+            title="Examen nécessaire"
+            message="Comparez les deux sources, puis conservez les deux tickets ou marquez cette nouvelle capture comme doublon."
+          />
+          {detail.duplicateCandidate ? (
+            <Text className="text-sm leading-5 text-muted">
+              Ticket existant du{" "}
+              {formatDateTime(detail.duplicateCandidate.captureDate)}
+            </Text>
+          ) : (
+            <Text className="text-sm leading-5 text-muted">
+              Le ticket existant a été détecté sur le serveur et sa photo n’est
+              pas stockée sur cet appareil.
+            </Text>
+          )}
+          <SecondaryButton
+            label={comparingDuplicate ? "Masquer la comparaison" : "Comparer"}
+            onPress={() => setComparingDuplicate((value) => !value)}
+          />
+          {comparingDuplicate ? (
+            <View className="gap-3 rounded-2xl border border-line bg-canvas p-4">
+              <Text className="font-semibold text-ink">Ticket existant</Text>
+              {detail.duplicateCandidate?.localFileUri ? (
+                <Image
+                  source={{ uri: detail.duplicateCandidate.localFileUri }}
+                  resizeMode="contain"
+                  className="h-64 w-full rounded-2xl bg-surface-muted"
+                  accessibilityLabel="Photo du ticket existant"
+                />
+              ) : (
+                <Text className="text-sm text-muted">
+                  Photo existante indisponible sur cet appareil.
+                </Text>
+              )}
+            </View>
+          ) : null}
+          <PrimaryButton
+            label="Conserver les deux"
+            loading={resolvingDuplicate}
+            onPress={() => {
+              setResolvingDuplicate(true);
+              setError(undefined);
+              void repository
+                .resolveExactDuplicate(
+                  detail.receipt.id,
+                  "KEEP_BOTH",
+                  randomUUID(),
+                )
+                .then(async () => {
+                  setMessage(
+                    "Les deux tickets sont conservés. L’envoi démarre.",
+                  );
+                  await load();
+                  void syncNow(detail.receipt.storeId);
+                })
+                .catch(() => setError("Le choix n’a pas pu être enregistré."))
+                .finally(() => setResolvingDuplicate(false));
+            }}
+          />
+          <SecondaryButton
+            label="Marquer comme doublon"
+            disabled={resolvingDuplicate}
+            onPress={() => {
+              setResolvingDuplicate(true);
+              setError(undefined);
+              void repository
+                .resolveExactDuplicate(detail.receipt.id, "CONFIRM_DUPLICATE")
+                .then(async () => {
+                  setMessage("Ce ticket est conservé et marqué comme doublon.");
+                  await load();
+                })
+                .catch(() => setError("Le choix n’a pas pu être enregistré."))
+                .finally(() => setResolvingDuplicate(false));
+            }}
+          />
+        </SectionCard>
+      ) : null}
+
+      {detail.receipt.duplicateStatus === "CONFIRMED_DUPLICATE" ? (
+        <InlineAlert
+          title="Doublon confirmé"
+          message="La nouvelle source reste conservée sur cet appareil et ne sera pas publiée."
+        />
+      ) : null}
 
       <SectionCard
         title="Photo source"
@@ -419,6 +514,17 @@ function natureLabel(value: "BULK" | "PACKAGED" | "UNKNOWN") {
 function formatDate(value: string) {
   const [year, month, day] = value.split("-");
   return year && month && day ? `${day}/${month}/${year}` : value;
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "date inconnue";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? "date inconnue"
+    : new Intl.DateTimeFormat("fr-FR", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
 }
 
 function formatMoney(value: number) {

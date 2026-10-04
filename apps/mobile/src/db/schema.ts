@@ -356,6 +356,10 @@ export const wasteReceipts = sqliteTable(
     processingStatus: text("processing_status").notNull(),
     aiStatus: text("ai_status").notNull(),
     duplicateStatus: text("duplicate_status").notNull(),
+    duplicateCandidateSourceDocumentId: text(
+      "duplicate_candidate_source_document_id",
+    ),
+    duplicateReason: text("duplicate_reason"),
     note: text("note"),
     version: integer("version").notNull(),
     createdAt: text("created_at").notNull(),
@@ -372,6 +376,9 @@ export const wasteReceipts = sqliteTable(
       table.captureDate,
     ),
     index("idx_waste_receipts_local_file").on(table.localFileId),
+    index("idx_waste_receipts_duplicate_candidate").on(
+      table.duplicateCandidateSourceDocumentId,
+    ),
   ],
 );
 

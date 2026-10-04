@@ -600,6 +600,16 @@ export const localMigrations: readonly LocalMigration[] = [
       ALTER TABLE waste_lines ADD COLUMN match_candidates_json TEXT NOT NULL DEFAULT '[]';
     `,
   },
+  {
+    version: 14,
+    name: "add-waste-receipt-duplicate-evidence",
+    sql: `
+      ALTER TABLE waste_receipts ADD COLUMN duplicate_candidate_source_document_id TEXT;
+      ALTER TABLE waste_receipts ADD COLUMN duplicate_reason TEXT;
+      CREATE INDEX idx_waste_receipts_duplicate_candidate
+        ON waste_receipts (duplicate_candidate_source_document_id);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -39,6 +39,10 @@ export const wasteReceiptDuplicateStatusSchema = z.enum([
   "NOT_DUPLICATE",
 ]);
 
+export const wasteReceiptDuplicateReasonSchema = z.enum([
+  "EXACT_IMAGE_CHECKSUM",
+]);
+
 export const wasteReceiptSyncStateSchema = z.enum([
   "LOCAL_ONLY",
   "PENDING",
@@ -78,6 +82,8 @@ export const wasteReceiptSchema = z.object({
   processingStatus: wasteReceiptProcessingStatusSchema,
   aiStatus: wasteReceiptAiStatusSchema,
   duplicateStatus: wasteReceiptDuplicateStatusSchema,
+  duplicateCandidateSourceDocumentId: nullableIdSchema,
+  duplicateReason: wasteReceiptDuplicateReasonSchema.nullable().optional(),
   note: z.string().trim().min(1).nullable().optional(),
   version: z.number().int().positive(),
   createdAt: timestampSchema,
