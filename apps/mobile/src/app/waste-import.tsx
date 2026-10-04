@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { Redirect, useRouter, type Href } from "expo-router";
@@ -16,10 +16,18 @@ import {
   persistWasteReceiptImport,
   UnsupportedWasteReceiptImageError,
 } from "@/documents/waste-receipt-capture";
+import { WasteReceiptRepository } from "@/documents/waste-receipt-repository";
+import { useLocalDatabase } from "@/providers/database-provider";
 
 export default function WasteImportScreen() {
   const router = useRouter();
-  const { status } = useAuth();
+  const { status, session } = useAuth();
+  const database = useLocalDatabase();
+  const receiptRepository = useMemo(
+    () => new WasteReceiptRepository(database.sqlite),
+    [database.sqlite],
+  );
+  const storeId = session?.stores[0]?.storeId;
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -42,13 +50,22 @@ export default function WasteImportScreen() {
         exif: false,
       });
       if (result.canceled) return;
+      if (!storeId) throw new Error("WASTE_RECEIPT_STORE_MISSING");
       const asset = result.assets[0];
       if (!asset) throw new Error("WASTE_RECEIPT_IMAGE_MISSING");
-      await persistWasteReceiptImport({
+      const receiptId = randomUUID();
+      const saved = await persistWasteReceiptImport({
         temporaryUri: asset.uri,
-        captureId: randomUUID(),
+        captureId: receiptId,
         mimeType: asset.mimeType,
         originalFilename: asset.fileName,
+      });
+      await receiptRepository.createCapturedDraft({
+        receiptId,
+        fileId: randomUUID(),
+        storeId,
+        capturedAt: new Date().toISOString(),
+        file: saved,
       });
       setSaved(true);
     } catch (caught) {
@@ -72,8 +89,8 @@ export default function WasteImportScreen() {
         <View className="gap-4 rounded-3xl border border-line bg-white p-5">
           <StatusBadge status="local" />
           <Text className="text-base leading-6 text-ink">
-            L’analyse et la synchronisation seront ajoutées dans les prochaines
-            étapes du parcours Casse.
+            Le ticket reste disponible après la fermeture de l’application.
+            L’analyse et la synchronisation viendront ensuite.
           </Text>
         </View>
         <PrimaryButton label="Terminer" onPress={() => router.back()} />

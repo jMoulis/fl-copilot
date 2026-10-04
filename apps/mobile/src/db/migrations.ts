@@ -518,6 +518,75 @@ export const localMigrations: readonly LocalMigration[] = [
         ON department_daily_performance (store_id, business_date);
     `,
   },
+  {
+    version: 12,
+    name: "add-offline-waste-receipts",
+    sql: `
+      CREATE TABLE waste_receipts (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        source_document_id TEXT,
+        local_file_id TEXT,
+        capture_date TEXT,
+        detected_receipt_date TEXT,
+        confirmed_waste_date TEXT,
+        processing_status TEXT NOT NULL,
+        ai_status TEXT NOT NULL,
+        duplicate_status TEXT NOT NULL,
+        note TEXT,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'LOCAL_ONLY',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (source_document_id) REFERENCES source_documents(id)
+          ON DELETE RESTRICT,
+        FOREIGN KEY (local_file_id) REFERENCES local_files(id)
+          ON DELETE RESTRICT
+      );
+      CREATE INDEX idx_waste_receipts_store_status
+        ON waste_receipts (store_id, processing_status, capture_date);
+      CREATE INDEX idx_waste_receipts_local_file
+        ON waste_receipts (local_file_id);
+
+      CREATE TABLE waste_lines (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        receipt_id TEXT NOT NULL,
+        source_line_index INTEGER NOT NULL,
+        raw_label TEXT NOT NULL,
+        quantity TEXT,
+        weight TEXT,
+        quantity_unit TEXT,
+        unit_price TEXT,
+        total_price TEXT,
+        matched_product_id TEXT,
+        match_status TEXT NOT NULL,
+        match_confidence REAL,
+        product_nature TEXT NOT NULL,
+        extraction_confidence_json TEXT,
+        source_region_json TEXT,
+        validation_status TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        deleted_at TEXT,
+        sync_state TEXT NOT NULL DEFAULT 'LOCAL_ONLY',
+        remote_version INTEGER,
+        dirty INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (receipt_id) REFERENCES waste_receipts(id)
+          ON DELETE RESTRICT,
+        FOREIGN KEY (matched_product_id) REFERENCES products(id)
+          ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX idx_waste_lines_receipt_index
+        ON waste_lines (receipt_id, source_line_index);
+      CREATE INDEX idx_waste_lines_store_match
+        ON waste_lines (store_id, match_status);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

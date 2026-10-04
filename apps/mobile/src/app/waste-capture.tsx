@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -29,12 +29,20 @@ import {
 } from "@/components/ui";
 import { colors } from "@/design/tokens";
 import { persistWasteReceiptCapture } from "@/documents/waste-receipt-capture";
+import { WasteReceiptRepository } from "@/documents/waste-receipt-repository";
+import { useLocalDatabase } from "@/providers/database-provider";
 
 type CaptureStage = "camera" | "review" | "saved";
 
 export default function WasteCaptureScreen() {
   const router = useRouter();
-  const { status } = useAuth();
+  const { status, session } = useAuth();
+  const database = useLocalDatabase();
+  const receiptRepository = useMemo(
+    () => new WasteReceiptRepository(database.sqlite),
+    [database.sqlite],
+  );
+  const storeId = session?.stores[0]?.storeId;
   const camera = useRef<CameraView>(null);
   const [permission, requestPermission, refreshPermission] =
     useCameraPermissions();
@@ -130,9 +138,18 @@ export default function WasteCaptureScreen() {
     setBusy(true);
     setError(undefined);
     try {
+      if (!storeId) throw new Error("WASTE_RECEIPT_STORE_MISSING");
+      const receiptId = randomUUID();
       const saved = await persistWasteReceiptCapture({
         temporaryUri: photo.uri,
-        captureId: randomUUID(),
+        captureId: receiptId,
+      });
+      await receiptRepository.createCapturedDraft({
+        receiptId,
+        fileId: randomUUID(),
+        storeId,
+        capturedAt: new Date().toISOString(),
+        file: saved,
       });
       setSavedUri(saved.localUri);
       setPhoto(undefined);
@@ -156,8 +173,8 @@ export default function WasteCaptureScreen() {
         <View className="gap-4 rounded-3xl border border-line bg-white p-5">
           <StatusBadge status="local" />
           <Text className="text-base leading-6 text-ink">
-            L’analyse et la synchronisation seront ajoutées dans les prochaines
-            étapes du parcours Casse.
+            Le ticket reste disponible après la fermeture de l’application.
+            L’analyse et la synchronisation viendront ensuite.
           </Text>
           {savedUri ? (
             <Text className="text-sm leading-5 text-muted">
