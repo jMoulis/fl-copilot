@@ -22,11 +22,17 @@ import type {
 import { useTodaySummary } from "@/today/use-today-summary";
 
 export default function TodayScreen() {
-  const { loading, storeMissing, summary, error } = useTodaySummary();
+  const { loading, refreshing, storeMissing, summary, error, refresh } =
+    useTodaySummary();
   const sync = useSync();
 
   return (
-    <AppScreen>
+    <AppScreen
+      refreshing={refreshing}
+      onRefresh={() => {
+        void refresh();
+      }}
+    >
       <AppHeader
         title="Aujourd’hui"
         subtitle={
@@ -45,17 +51,19 @@ export default function TodayScreen() {
 
       {error ? (
         <InlineAlert title="Lecture impossible" message={error} />
-      ) : storeMissing ? (
+      ) : null}
+
+      {storeMissing ? (
         <InlineAlert
           title="Aucun magasin actif"
           message="Reconnectez-vous après l’ajout de votre magasin."
         />
       ) : loading ? (
         <Text className="text-base text-muted">Préparation de la journée…</Text>
-      ) : !summary ? (
-        <EmptyToday />
-      ) : (
+      ) : summary ? (
         <TodayContent summary={summary} />
+      ) : error ? null : (
+        <EmptyToday />
       )}
     </AppScreen>
   );
