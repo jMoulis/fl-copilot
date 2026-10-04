@@ -6,3 +6,4 @@ export * from "./department-daily";
 export * from "./formulas";
 export * from "./product-daily";
 export * from "./registry";
+export * from "./waste-receipt-arithmetic";

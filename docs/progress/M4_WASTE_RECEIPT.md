@@ -82,13 +82,23 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 - ADR 0005 records the provider, minimized payload, current retention limits and privacy follow-ups before wider rollout.
 - The real pilot HEIC fixture produced a schema-valid result with 31 distinct readable lines after normalization; logs exposed only dimensions and aggregate counts.
 
+### M4-T07 — Deterministic arithmetic validator
+
+- Shared runtime-neutral code checks complete `weight × unit price ≈ total price` lines with exact decimal arithmetic and a configurable EUR tolerance, defaulting to `0.01`.
+- The expected amount is rounded half-up to euro cents before comparison, so `0.580 × 4.99 ≈ 2.89` is accepted.
+- A mismatch produces the explicit `AMOUNT_TO_REVIEW` warning with expected amount, observed amount, absolute difference and tolerance.
+- Missing weight, unit price or total leaves the line `NOT_CHECKED` and records the missing fields; no value is inferred.
+- Arithmetic validation never rewrites Vision evidence. MongoDB stores separate immutable, versioned and idempotent validation evidence linked to the extraction.
+- The source document exposes warning and unchecked-line counts while remaining `TO_VALIDATE` for product matching and human review.
+- Upload completion and retry run normalization, Vision extraction and arithmetic validation in order.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Persistent filename  | One UUID capture produces a stable `.jpg` destination under `waste-receipts`                 |
 | Failed persistence   | A copy failure never returns a durable capture result                                        |
-| Repository checks    | Structure, lint, strict TypeScript 6 and 243 tests pass                                      |
+| Repository checks    | Structure, lint, strict TypeScript 6 and 249 tests pass                                      |
 | Expo compatibility   | Expo Doctor passes all 21 checks with SDK-compatible packages                                |
 | Native configuration | Expo public config resolves the French camera and photo-library permissions                  |
 | Bundle acceptance    | Expo export completes for both iOS and Android                                               |
@@ -96,5 +106,5 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 ## Next work
 
-1. Merge M4-T06, deploy its server-side OpenAI credential and validate a newly uploaded ticket against production.
-2. Implement M4-T07 deterministic arithmetic validation without silently correcting extracted values.
+1. Merge M4-T07 and validate a newly uploaded ticket through the production server pipeline.
+2. Implement M4-T08 receipt product matching by reusing the canonical ProductMatcher.

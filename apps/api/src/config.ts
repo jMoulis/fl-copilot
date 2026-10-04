@@ -35,6 +35,10 @@ const environmentSchema = z.object({
   AI_GATEWAY_API_KEY: z.string().trim().min(20).optional(),
   VERCEL_OIDC_TOKEN: z.string().trim().min(20).optional(),
   WASTE_RECEIPT_VISION_MODEL: z.string().trim().min(1).default("gpt-5.6-luna"),
+  WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR: z
+    .string()
+    .regex(/^\d+(?:\.\d{1,2})?$/)
+    .default("0.01"),
   AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce
     .number()
     .int()

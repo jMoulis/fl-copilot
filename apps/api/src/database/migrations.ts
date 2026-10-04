@@ -159,6 +159,29 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 9,
+    name: "initialize-waste-receipt-arithmetic-validation-indexes",
+    async up(database) {
+      await Promise.all([
+        database.collection("wasteReceiptArithmeticValidations").createIndex(
+          {
+            storeId: 1,
+            sourceDocumentId: 1,
+            extractionId: 1,
+            validatorVersion: 1,
+            tolerance: 1,
+          },
+          { unique: true },
+        ),
+        database.collection("sourceDocuments").createIndex({
+          storeId: 1,
+          sourceType: 1,
+          arithmeticValidationStatus: 1,
+        }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(

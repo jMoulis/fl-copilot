@@ -102,6 +102,10 @@ describeWithMongo("MongoDB infrastructure", () => {
       _id: 8,
       name: "initialize-waste-receipt-extraction-indexes",
     });
+    await expect(migrations.findOne({ _id: 9 })).resolves.toMatchObject({
+      _id: 9,
+      name: "initialize-waste-receipt-arithmetic-validation-indexes",
+    });
   });
 
   itWithMongoTransactions(
