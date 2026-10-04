@@ -5,6 +5,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   View,
@@ -14,12 +15,29 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "@/design/tokens";
 
-export function AppScreen({ children }: PropsWithChildren) {
+export function AppScreen({
+  children,
+  refreshing = false,
+  onRefresh,
+}: PropsWithChildren<{
+  refreshing?: boolean;
+  onRefresh?: () => void;
+}>) {
   return (
     <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-canvas">
       <ScrollView
         contentContainerStyle={{ padding: 24, gap: 24, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.forest}
+              colors={[colors.forest]}
+            />
+          ) : undefined
+        }
       >
         {children}
       </ScrollView>

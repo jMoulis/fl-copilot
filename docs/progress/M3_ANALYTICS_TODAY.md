@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T10 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection, scoped local recomputation, remote confirmation parity and the native `Aujourd’hui` screen.
+The completed increment covers M3-T01 through M3-T11 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection, scoped local recomputation, remote confirmation parity, the native `Aujourd’hui` screen and its offline acceptance behavior.
 
 ## Implemented
 
@@ -50,6 +50,9 @@ The active increment covers M3-T01 through M3-T10 from `docs/specs/IMPLEMENTATIO
 - Product-level J-7 comparisons feed the shared deterministic candidate engine; the screen ranks by economic impact and displays at most three priorities with evidence and a proposed operational check.
 - Main movements are ordered by absolute economic change, while unresolved products and incomplete core KPI inputs produce an actionable data-quality alert.
 - The screen distinguishes a local analytical projection from the global synchronization state and keeps its browser preview separate from the native SQLite path.
+- Native pull-to-refresh rereads SQLite only and keeps the current same-store summary rendered while the refresh is running.
+- A failed local refresh shows an explicit alert without blanking the cached KPI, priority and movement content.
+- Cached summaries are scoped by store so a session change cannot briefly reveal another store's data.
 
 ## Verification evidence
 
@@ -89,8 +92,11 @@ The active increment covers M3-T01 through M3-T10 from `docs/specs/IMPLEMENTATIO
 | Today priorities      | A fixture producing four eligible signals is capped and ranked to three visible deterministic priorities                                                         |
 | Missing J-7           | KPI values remain visible while comparison percentages and movements remain unavailable                                                                          |
 | SQLite-only read      | The Today repository builds KPI, priority, movement and quality presentation without a network dependency                                                        |
+| Offline refresh       | Pull-to-refresh rereads SQLite and retains the current same-store summary during a pending or failed refresh                                                     |
+| Store isolation       | A cached Today snapshot is visible only for the active store                                                                                                     |
 
 ## Next work
 
-1. Merge M3-T10 after repository-wide validation and iPhone visual review.
-2. Complete M3-T11: offline Today acceptance, including refresh behavior that never clears cached content.
+1. Merge M3-T11 after repository-wide validation.
+2. Complete the iPhone visual and offline acceptance pass, then record any layout or accessibility findings.
+3. Close the M3 exit gate and review the global product roadmap before starting the next milestone.
