@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T09 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection, scoped local recomputation and remote confirmation parity.
+The active increment covers M3-T01 through M3-T10 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection, scoped local recomputation, remote confirmation parity and the native `Aujourd’hui` screen.
 
 ## Implemented
 
@@ -45,6 +45,11 @@ The active increment covers M3-T01 through M3-T09 from `docs/specs/IMPLEMENTATIO
 - The API imports the same `analytics-core` builders through a remote confirmation service, reads canonical MongoDB observations, and upserts rebuildable product/day and department/day projections with deterministic identifiers.
 - Remote scopes are deduplicated and sorted before calculation; department projections are rebuilt once per affected date after all product projections are persisted.
 - MongoDB migration 7 adds the observation lookup and unique analytical read-model indexes required by remote confirmation.
+- `Aujourd’hui` selects the latest analytical business date from SQLite and labels that exact date instead of assuming that it is yesterday.
+- The daily view displays sales, margin and waste at purchase cost with an explicit unavailable state when the exact J-7 reference is absent.
+- Product-level J-7 comparisons feed the shared deterministic candidate engine; the screen ranks by economic impact and displays at most three priorities with evidence and a proposed operational check.
+- Main movements are ordered by absolute economic change, while unresolved products and incomplete core KPI inputs produce an actionable data-quality alert.
+- The screen distinguishes a local analytical projection from the global synchronization state and keeps its browser preview separate from the native SQLite path.
 
 ## Verification evidence
 
@@ -80,8 +85,12 @@ The active increment covers M3-T01 through M3-T09 from `docs/specs/IMPLEMENTATIO
 | SQLite integration    | One validated sales/waste fixture rebuilds and caches the exact product day and department day                                                                   |
 | Import trigger        | Local publication creates both remote-upload and analytics-recomputation jobs in the same transaction                                                            |
 | Local/remote parity   | The golden product-day and department-day fixture serializes byte-for-byte identically through the mobile-compatible builder and the remote confirmation service |
+| Today latest date     | The repository chooses the newest cached business date and never derives a false “yesterday” label                                                               |
+| Today priorities      | A fixture producing four eligible signals is capped and ranked to three visible deterministic priorities                                                         |
+| Missing J-7           | KPI values remain visible while comparison percentages and movements remain unavailable                                                                          |
+| SQLite-only read      | The Today repository builds KPI, priority, movement and quality presentation without a network dependency                                                        |
 
 ## Next work
 
-1. Merge M3-T09 after repository-wide validation.
-2. Implement M3-T10: the offline-first `Aujourd’hui` screen backed only by SQLite analytical projections.
+1. Merge M3-T10 after repository-wide validation and iPhone visual review.
+2. Complete M3-T11: offline Today acceptance, including refresh behavior that never clears cached content.
