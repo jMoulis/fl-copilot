@@ -507,6 +507,7 @@ describe("environment validation", () => {
       AUTH_EMAIL_FROM: "connexion@auth.example.com",
       OPENAI_API_KEY: `sk-${"a".repeat(40)}`,
       WASTE_RECEIPT_VISION_MODEL: "gpt-5.6-luna",
+      WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR: "0.01",
     });
   });
   it("requires OpenAI or Vercel AI Gateway credentials in production", () => {

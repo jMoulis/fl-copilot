@@ -63,6 +63,7 @@ import {
   createMongoWasteReceiptVisionExtractionService,
   createOpenAIReceiptVisionProvider,
 } from "./uploads/waste-receipt-vision-extraction.js";
+import { createMongoWasteReceiptArithmeticValidationService } from "./uploads/waste-receipt-arithmetic-validation.js";
 
 type AppDependencies = {
   database: DatabaseService;
@@ -105,6 +106,10 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           vercelOidcToken: config.VERCEL_OIDC_TOKEN,
           model: config.WASTE_RECEIPT_VISION_MODEL,
         }),
+      ),
+      createMongoWasteReceiptArithmeticValidationService(
+        dependencies.database,
+        config.WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR,
       ),
     );
   const importVerification =

@@ -5,6 +5,7 @@ Shared deterministic KPI, comparison and candidate logic for both the mobile and
 The package currently provides:
 
 - canonical decimal and EUR arithmetic;
+- versioned waste-receipt arithmetic checks with explicit tolerance, missing inputs and review warnings;
 - a central KPI registry with explicit inputs, units, aggregation and missing-data policies;
 - missing-versus-zero aware sums;
 - quantity aggregation guarded by compatible product sales units;

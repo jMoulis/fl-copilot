@@ -17,6 +17,7 @@ import {
   createMongoWasteReceiptImageNormalizationService,
   type WasteReceiptImageNormalizationService,
 } from "./waste-receipt-image-normalization.js";
+import type { WasteReceiptArithmeticValidationService } from "./waste-receipt-arithmetic-validation.js";
 import type { WasteReceiptVisionExtractionService } from "./waste-receipt-vision-extraction.js";
 
 const UPLOAD_URL_TTL_MS = 10 * 60 * 1000;
@@ -134,6 +135,7 @@ export function createMongoSourceUploadService(
     database,
   ),
   receiptVision?: WasteReceiptVisionExtractionService,
+  receiptArithmetic?: WasteReceiptArithmeticValidationService,
 ): SourceUploadService {
   return {
     async init(storeId, userId, input) {
@@ -247,7 +249,12 @@ export function createMongoSourceUploadService(
         );
       }
       if (upload.status === "CONFIRMED") {
-        await processReceiptIfNeeded(receiptImages, receiptVision, upload);
+        await processReceiptIfNeeded(
+          receiptImages,
+          receiptVision,
+          receiptArithmetic,
+          upload,
+        );
         return confirmed(upload);
       }
 
@@ -287,7 +294,12 @@ export function createMongoSourceUploadService(
       }
 
       await confirmUpload(database, upload, blob, now());
-      await processReceiptIfNeeded(receiptImages, receiptVision, upload);
+      await processReceiptIfNeeded(
+        receiptImages,
+        receiptVision,
+        receiptArithmetic,
+        upload,
+      );
       return confirmed(upload);
     },
   };
@@ -296,6 +308,7 @@ export function createMongoSourceUploadService(
 async function processReceiptIfNeeded(
   receiptImages: WasteReceiptImageNormalizationService,
   receiptVision: WasteReceiptVisionExtractionService | undefined,
+  receiptArithmetic: WasteReceiptArithmeticValidationService | undefined,
   upload: UploadRecord,
 ) {
   if (upload.sourceType !== "WASTE_RECEIPT") return;
@@ -305,6 +318,10 @@ async function processReceiptIfNeeded(
     sourceObjectKey: upload.objectKey,
   });
   await receiptVision?.extract({
+    storeId: upload.storeId,
+    sourceDocumentId: upload.sourceDocumentId,
+  });
+  await receiptArithmetic?.validate({
     storeId: upload.storeId,
     sourceDocumentId: upload.sourceDocumentId,
   });
