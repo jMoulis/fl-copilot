@@ -38,7 +38,14 @@ export interface SourceBinaryUploader {
     localUri: string;
     uploadUrl: string;
     headers: Record<string, string>;
-  }): Promise<void>;
+  }): Promise<{ localUri: string } | void>;
+}
+
+export class SourceUploadLocalFileMissingError extends Error {
+  constructor() {
+    super("SOURCE_UPLOAD_LOCAL_FILE_MISSING");
+    this.name = "SourceUploadLocalFileMissingError";
+  }
 }
 
 type UploadJobPayload = {
@@ -137,11 +144,18 @@ export class SourceUploadQueue {
       });
       if (init.status === "UPLOAD_REQUIRED") {
         if (!init.uploadUrl) throw new Error("SOURCE_UPLOAD_URL_MISSING");
-        await this.uploader.upload({
+        const uploadedFile = await this.uploader.upload({
           localUri: row.local_uri,
           uploadUrl: init.uploadUrl,
           headers: init.headers,
         });
+        if (uploadedFile && uploadedFile.localUri !== row.local_uri) {
+          await this.updateLocalFileUri(
+            payload,
+            storeId,
+            uploadedFile.localUri,
+          );
+        }
       }
       const result = await this.transport.complete(storeId, init.uploadId, {
         checksum: row.checksum,
@@ -237,6 +251,10 @@ export class SourceUploadQueue {
       });
       return true;
     } catch (error) {
+      if (error instanceof SourceUploadLocalFileMissingError) {
+        await this.markLocalFileMissing(row.job_id, payload, storeId);
+        return false;
+      }
       if (
         error instanceof ApiClientError &&
         [
@@ -256,6 +274,34 @@ export class SourceUploadQueue {
       );
       return false;
     }
+  }
+
+  private async updateLocalFileUri(
+    payload: UploadJobPayload,
+    storeId: string,
+    localUri: string,
+  ) {
+    const timestamp = this.now().toISOString();
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.runAsync(
+        `UPDATE source_documents
+         SET local_file_uri = ?, updated_at = ?
+         WHERE id = ? AND store_id = ?`,
+        localUri,
+        timestamp,
+        payload.sourceDocumentId,
+        storeId,
+      );
+      await transaction.runAsync(
+        `UPDATE local_files
+         SET local_uri = ?, updated_at = ?
+         WHERE id = ? AND store_id = ?`,
+        localUri,
+        timestamp,
+        payload.localFileId,
+        storeId,
+      );
+    });
   }
 
   private async verificationInput(
@@ -374,18 +420,60 @@ export class SourceUploadQueue {
       );
     });
   }
+
+  private async markLocalFileMissing(
+    jobId: string,
+    payload: UploadJobPayload,
+    storeId: string,
+  ) {
+    const timestamp = this.now().toISOString();
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.runAsync(
+        `UPDATE local_jobs
+         SET status = 'FAILED', next_attempt_at = NULL,
+             last_error = 'SOURCE_UPLOAD_LOCAL_FILE_MISSING', updated_at = ?
+         WHERE id = ?`,
+        timestamp,
+        jobId,
+      );
+      await transaction.runAsync(
+        `UPDATE source_documents
+         SET remote_upload_status = 'FAILED', sync_state = 'ERROR', updated_at = ?
+         WHERE id = ? AND store_id = ?`,
+        timestamp,
+        payload.sourceDocumentId,
+        storeId,
+      );
+      await transaction.runAsync(
+        `UPDATE local_files
+         SET upload_status = 'FAILED', updated_at = ?
+         WHERE id = ? AND store_id = ?`,
+        timestamp,
+        payload.localFileId,
+        storeId,
+      );
+    });
+  }
 }
 
 const nativeBinaryUploader: SourceBinaryUploader = {
   async upload(input) {
-    const { File } = await import("expo-file-system");
-    const response = await new File(input.localUri).upload(input.uploadUrl, {
+    const { File, Paths } = await import("expo-file-system");
+    let file = new File(input.localUri);
+    if (!file.exists) {
+      const filename = Paths.parse(input.localUri).base;
+      file = new File(Paths.document, "mercalys-imports", filename);
+    }
+    if (!file.exists) throw new SourceUploadLocalFileMissingError();
+
+    const response = await file.upload(input.uploadUrl, {
       httpMethod: "PUT",
       headers: input.headers,
     });
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`SOURCE_BLOB_HTTP_${response.status}`);
     }
+    return { localUri: file.uri };
   },
 };
 
