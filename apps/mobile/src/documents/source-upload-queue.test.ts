@@ -12,6 +12,7 @@ import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import {
   SourceUploadQueue,
+  SourceUploadLocalFileMissingError,
   type SourceBinaryUploader,
   type SourceUploadTransport,
 } from "./source-upload-queue";
@@ -296,6 +297,112 @@ describe("source upload queue", () => {
         )
         .get(localFileId),
     ).toEqual({ upload_status: "PENDING", retention_status: "RETAINED" });
+    database.close();
+  });
+
+  it("stops retrying without crashing when the local source file is gone", async () => {
+    const { adapter, database } = await fixture();
+    const queue = new SourceUploadQueue(
+      adapter,
+      {
+        init: async () => ({
+          uploadId,
+          objectKey: `sources/${storeId}/${sourceDocumentId}/ventes.xlsx`,
+          status: "UPLOAD_REQUIRED",
+          uploadUrl: "https://blob.example.test/presigned",
+          expiresAt: "2026-10-03T12:10:00.000Z",
+          headers: { "content-type": mimeType },
+        }),
+        complete: async () => {
+          throw new Error("must not complete");
+        },
+        verify: async () => {
+          throw new Error("must not verify");
+        },
+      },
+      {
+        upload: async () => {
+          throw new SourceUploadLocalFileMissingError();
+        },
+      },
+      () => new Date("2026-10-03T12:05:00.000Z"),
+    );
+
+    await expect(queue.process(storeId)).resolves.toEqual({
+      attempted: 1,
+      confirmed: 0,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT status, last_error, next_attempt_at FROM local_jobs WHERE id = ?",
+        )
+        .get(jobId),
+    ).toEqual({
+      status: "FAILED",
+      last_error: "SOURCE_UPLOAD_LOCAL_FILE_MISSING",
+      next_attempt_at: null,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT remote_upload_status, sync_state FROM source_documents WHERE id = ?",
+        )
+        .get(sourceDocumentId),
+    ).toEqual({ remote_upload_status: "FAILED", sync_state: "ERROR" });
+    expect(
+      database
+        .prepare("SELECT upload_status FROM local_files WHERE id = ?")
+        .get(localFileId),
+    ).toEqual({ upload_status: "FAILED" });
+    database.close();
+  });
+
+  it("persists a repaired URI when iOS moves the app data container", async () => {
+    const { adapter, database } = await fixture();
+    const repairedUri =
+      "file:///current-container/mercalys-imports/ventes.xlsx";
+    const queue = new SourceUploadQueue(
+      adapter,
+      {
+        init: async () => ({
+          uploadId,
+          objectKey: `sources/${storeId}/${sourceDocumentId}/ventes.xlsx`,
+          status: "UPLOAD_REQUIRED",
+          uploadUrl: "https://blob.example.test/presigned",
+          expiresAt: "2026-10-03T12:10:00.000Z",
+          headers: { "content-type": mimeType },
+        }),
+        complete: async () => ({
+          sourceDocumentId,
+          remoteUploadStatus: "CONFIRMED",
+          jobId: null,
+        }),
+        verify: async (_storeId, requestedSourceDocumentId, input) => ({
+          sourceDocumentId: requestedSourceDocumentId,
+          status: "MATCH",
+          localFingerprint: input.localNormalizedFingerprint,
+          remoteFingerprint: input.localNormalizedFingerprint,
+        }),
+      },
+      { upload: async () => ({ localUri: repairedUri }) },
+      () => new Date("2026-10-03T12:05:00.000Z"),
+    );
+
+    await expect(queue.process(storeId)).resolves.toEqual({
+      attempted: 1,
+      confirmed: 1,
+    });
+    expect(
+      database
+        .prepare("SELECT local_file_uri FROM source_documents WHERE id = ?")
+        .get(sourceDocumentId),
+    ).toEqual({ local_file_uri: repairedUri });
+    expect(
+      database
+        .prepare("SELECT local_uri FROM local_files WHERE id = ?")
+        .get(localFileId),
+    ).toEqual({ local_uri: repairedUri });
     database.close();
   });
 
