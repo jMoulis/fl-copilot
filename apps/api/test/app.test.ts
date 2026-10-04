@@ -491,7 +491,7 @@ describe("environment validation", () => {
     ).toThrow("RESEND_API_KEY");
   });
 
-  it("accepts a complete production Resend configuration", () => {
+  it("accepts complete production delivery and Vision settings", () => {
     expect(
       parseEnvironment({
         NODE_ENV: "production",
@@ -500,11 +500,26 @@ describe("environment validation", () => {
         AUTH_CODE_PEPPER: "p".repeat(32),
         RESEND_API_KEY: "re_production_key",
         AUTH_EMAIL_FROM: "connexion@auth.example.com",
+        OPENAI_API_KEY: `sk-${"a".repeat(40)}`,
       }),
     ).toMatchObject({
       RESEND_API_KEY: "re_production_key",
       AUTH_EMAIL_FROM: "connexion@auth.example.com",
+      OPENAI_API_KEY: `sk-${"a".repeat(40)}`,
+      WASTE_RECEIPT_VISION_MODEL: "gpt-5.6-luna",
     });
+  });
+  it("requires OpenAI or Vercel AI Gateway credentials in production", () => {
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: "production",
+        MONGODB_URI: "mongodb://localhost:27017",
+        AUTH_TOKEN_SECRET: "t".repeat(32),
+        AUTH_CODE_PEPPER: "p".repeat(32),
+        RESEND_API_KEY: "re_production_key",
+        AUTH_EMAIL_FROM: "connexion@auth.example.com",
+      }),
+    ).toThrow("VERCEL_OIDC_TOKEN");
   });
   it("forbids the deliberate monitoring route in production", () => {
     expect(() =>
@@ -515,6 +530,7 @@ describe("environment validation", () => {
         AUTH_CODE_PEPPER: "p".repeat(32),
         RESEND_API_KEY: "re_production_key",
         AUTH_EMAIL_FROM: "connexion@auth.example.com",
+        OPENAI_API_KEY: `sk-${"a".repeat(40)}`,
         SENTRY_TEST_ROUTE_ENABLED: "true",
       }),
     ).toThrow("SENTRY_TEST_ROUTE_ENABLED");

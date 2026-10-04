@@ -21,6 +21,7 @@
     "fastify-type-provider-zod": "^7.0.0",
     "heic-convert": "^2.1.0",
     "mongodb": "^6.20.0",
+    "openai": "^7.27.0",
     "resend": "6.30.0",
     "sharp": "^0.34.4",
     "zod": "^4.1.0"

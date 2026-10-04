@@ -68,13 +68,27 @@ The offline queue and automatic reconnect upload were validated on the target iP
 - Completed normalization is idempotent. A failure records a bounded code, retains the original and is retried when the mobile upload queue calls the idempotent completion endpoint again.
 - Automated coverage verifies EXIF rotation, the extraction-size bound, durable derivative evidence, idempotency and recovery after a post-upload normalization failure.
 
+The JPEG and HEIC normalization path was validated from the target iPhone Air against the production API.
+
+### M4-T06 — Receipt Vision AI
+
+- A provider-neutral receipt Vision service sends only the normalized private JPEG to the OpenAI Responses API with `store: false`.
+- The model is configurable through `WASTE_RECEIPT_VISION_MODEL`; the pilot default is `gpt-5.6-luna`. Vercel uses its short-lived OIDC token with AI Gateway, while local development uses the dedicated server-side OpenAI key.
+- Strict Structured Outputs cover detected receipt date, raw label, quantity, weight, unit, unit price, total price, per-field confidence and optional normalized source region.
+- The same Zod schema is applied again after the provider returns. Invalid values, extra fields and duplicate source-line indexes never enter extraction evidence.
+- Image text is explicitly treated as untrusted document data and cannot replace the system extraction instructions.
+- MongoDB stores one idempotent extraction per source/provider/model/schema version with response ID, resolved model and timestamp.
+- Valid evidence moves remote processing to `TO_VALIDATE`; provider, blob, incomplete and schema failures remain explicit and retryable without discarding the original or derivative.
+- ADR 0005 records the provider, minimized payload, current retention limits and privacy follow-ups before wider rollout.
+- The real pilot HEIC fixture produced a schema-valid result with 31 distinct readable lines after normalization; logs exposed only dimensions and aggregate counts.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Persistent filename  | One UUID capture produces a stable `.jpg` destination under `waste-receipts`                 |
 | Failed persistence   | A copy failure never returns a durable capture result                                        |
-| Repository checks    | Structure, lint, strict TypeScript 6 and 232 tests pass                                      |
+| Repository checks    | Structure, lint, strict TypeScript 6 and 243 tests pass                                      |
 | Expo compatibility   | Expo Doctor passes all 21 checks with SDK-compatible packages                                |
 | Native configuration | Expo public config resolves the French camera and photo-library permissions                  |
 | Bundle acceptance    | Expo export completes for both iOS and Android                                               |
@@ -82,5 +96,5 @@ The offline queue and automatic reconnect upload were validated on the target iP
 
 ## Next work
 
-1. Merge M4-T05 and validate a real JPEG/HEIC receipt against the preview API deployment.
-2. Implement M4-T06 structured Vision AI extraction from the normalized private derivative.
+1. Merge M4-T06, deploy its server-side OpenAI credential and validate a newly uploaded ticket against production.
+2. Implement M4-T07 deterministic arithmetic validation without silently correcting extracted values.

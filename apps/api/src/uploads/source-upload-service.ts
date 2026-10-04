@@ -17,6 +17,7 @@ import {
   createMongoWasteReceiptImageNormalizationService,
   type WasteReceiptImageNormalizationService,
 } from "./waste-receipt-image-normalization.js";
+import type { WasteReceiptVisionExtractionService } from "./waste-receipt-vision-extraction.js";
 
 const UPLOAD_URL_TTL_MS = 10 * 60 * 1000;
 
@@ -132,6 +133,7 @@ export function createMongoSourceUploadService(
   receiptImages: WasteReceiptImageNormalizationService = createMongoWasteReceiptImageNormalizationService(
     database,
   ),
+  receiptVision?: WasteReceiptVisionExtractionService,
 ): SourceUploadService {
   return {
     async init(storeId, userId, input) {
@@ -245,7 +247,7 @@ export function createMongoSourceUploadService(
         );
       }
       if (upload.status === "CONFIRMED") {
-        await normalizeReceiptIfNeeded(receiptImages, upload);
+        await processReceiptIfNeeded(receiptImages, receiptVision, upload);
         return confirmed(upload);
       }
 
@@ -285,14 +287,15 @@ export function createMongoSourceUploadService(
       }
 
       await confirmUpload(database, upload, blob, now());
-      await normalizeReceiptIfNeeded(receiptImages, upload);
+      await processReceiptIfNeeded(receiptImages, receiptVision, upload);
       return confirmed(upload);
     },
   };
 }
 
-async function normalizeReceiptIfNeeded(
+async function processReceiptIfNeeded(
   receiptImages: WasteReceiptImageNormalizationService,
+  receiptVision: WasteReceiptVisionExtractionService | undefined,
   upload: UploadRecord,
 ) {
   if (upload.sourceType !== "WASTE_RECEIPT") return;
@@ -300,6 +303,10 @@ async function normalizeReceiptIfNeeded(
     storeId: upload.storeId,
     sourceDocumentId: upload.sourceDocumentId,
     sourceObjectKey: upload.objectKey,
+  });
+  await receiptVision?.extract({
+    storeId: upload.storeId,
+    sourceDocumentId: upload.sourceDocumentId,
   });
 }
 
