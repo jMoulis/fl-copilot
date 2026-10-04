@@ -223,6 +223,10 @@ importers:
       decimal.js:
         specifier: ^10.6.0
         version: 10.6.0
+    devDependencies:
+      '@fl-copilot/test-fixtures':
+        specifier: workspace:*
+        version: link:../test-fixtures
 
   packages/api-client:
     dependencies:

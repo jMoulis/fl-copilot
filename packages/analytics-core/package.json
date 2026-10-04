@@ -12,5 +12,8 @@
   "dependencies": {
     "@fl-copilot/domain": "workspace:*",
     "decimal.js": "^10.6.0"
+  },
+  "devDependencies": {
+    "@fl-copilot/test-fixtures": "workspace:*"
   }
 }
