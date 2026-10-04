@@ -298,4 +298,73 @@ describe("source upload queue", () => {
     ).toEqual({ upload_status: "PENDING", retention_status: "RETAINED" });
     database.close();
   });
+
+  it("persists a non-destructive conflict when remote verification differs", async () => {
+    const { adapter, database } = await fixture();
+    const queue = new SourceUploadQueue(
+      adapter,
+      {
+        init: async () => ({
+          uploadId,
+          objectKey: `sources/${storeId}/${sourceDocumentId}/ventes.xlsx`,
+          status: "ALREADY_UPLOADED",
+          uploadUrl: null,
+          expiresAt: null,
+          headers: {} as Record<string, string>,
+        }),
+        complete: async () => ({
+          sourceDocumentId,
+          remoteUploadStatus: "CONFIRMED",
+          jobId: null,
+        }),
+        verify: async (_storeId, requestedSourceDocumentId, input) => ({
+          sourceDocumentId: requestedSourceDocumentId,
+          status: "DIFFERENCE",
+          localFingerprint: input.localNormalizedFingerprint,
+          remoteFingerprint: `sha256:${"b".repeat(64)}`,
+          differenceSummary: { added: 1, removed: 0, modified: 1 },
+        }),
+      },
+      { upload: async () => undefined },
+      () => new Date("2026-10-03T12:05:00.000Z"),
+    );
+
+    await expect(queue.process(storeId)).resolves.toEqual({
+      attempted: 1,
+      confirmed: 1,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT remote_processing_status, sync_state FROM source_documents WHERE id = ?",
+        )
+        .get(sourceDocumentId),
+    ).toEqual({
+      remote_processing_status: "RECONCILING",
+      sync_state: "CONFLICT",
+    });
+    expect(
+      database
+        .prepare("SELECT retention_status FROM local_files WHERE id = ?")
+        .get(localFileId),
+    ).toEqual({ retention_status: "RETAINED" });
+    expect(
+      database
+        .prepare(
+          `SELECT remote_fingerprint, difference_summary_json, status
+           FROM import_verification_conflicts
+           WHERE source_document_id = ?`,
+        )
+        .get(sourceDocumentId),
+    ).toEqual({
+      remote_fingerprint: `sha256:${"b".repeat(64)}`,
+      difference_summary_json: JSON.stringify({
+        added: 1,
+        removed: 0,
+        modified: 1,
+      }),
+      status: "OPEN",
+    });
+    database.close();
+  });
 });

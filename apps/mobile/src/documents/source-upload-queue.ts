@@ -151,13 +151,51 @@ export class SourceUploadQueue {
         await this.markInvalid(row.job_id, payload, storeId);
         return false;
       }
+      const verificationInput = await this.verificationInput(
+        row,
+        payload.sourceDocumentId,
+        storeId,
+      );
       const verification = await this.transport.verify(
         storeId,
         payload.sourceDocumentId,
-        await this.verificationInput(row, payload.sourceDocumentId, storeId),
+        verificationInput,
       );
       const completedAt = this.now().toISOString();
       await this.database.withExclusiveTransactionAsync(async (transaction) => {
+        if (verification.status === "DIFFERENCE") {
+          await transaction.runAsync(
+            `INSERT INTO import_verification_conflicts (
+               source_document_id, store_id, local_fingerprint,
+               remote_fingerprint, difference_summary_json, status,
+               detected_at, acknowledged_at
+             ) VALUES (?, ?, ?, ?, ?, 'OPEN', ?, NULL)
+             ON CONFLICT(source_document_id) DO UPDATE SET
+               local_fingerprint = excluded.local_fingerprint,
+               remote_fingerprint = excluded.remote_fingerprint,
+               difference_summary_json = excluded.difference_summary_json,
+               status = 'OPEN', detected_at = excluded.detected_at,
+               acknowledged_at = NULL`,
+            payload.sourceDocumentId,
+            storeId,
+            verification.localFingerprint ??
+              verificationInput.localNormalizedFingerprint,
+            verification.remoteFingerprint ?? null,
+            verification.differenceSummary
+              ? JSON.stringify(verification.differenceSummary)
+              : null,
+            completedAt,
+          );
+        } else if (verification.status === "MATCH") {
+          await transaction.runAsync(
+            `UPDATE import_verification_conflicts
+             SET status = 'RESOLVED', acknowledged_at = ?
+             WHERE source_document_id = ? AND store_id = ? AND status = 'OPEN'`,
+            completedAt,
+            payload.sourceDocumentId,
+            storeId,
+          );
+        }
         await transaction.runAsync(
           `UPDATE source_documents
            SET remote_upload_status = 'CONFIRMED',

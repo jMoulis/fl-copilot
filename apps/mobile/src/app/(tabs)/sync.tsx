@@ -13,6 +13,7 @@ import { useAuth } from "@/auth/auth-provider";
 import { useSync } from "@/sync/sync-provider";
 import { useOpenSyncConflicts } from "@/sync/use-sync-conflicts";
 import { conflictEntityLabel } from "@/sync/conflict-presentation";
+import { useOpenImportVerificationConflicts } from "@/documents/use-import-verification-conflicts";
 
 export default function SynchronizationScreen() {
   const { session } = useAuth();
@@ -26,6 +27,10 @@ export default function SynchronizationScreen() {
   } = useSync();
   const store = session?.stores[0];
   const conflicts = useOpenSyncConflicts(store?.storeId, conflictCount);
+  const importVerificationConflicts = useOpenImportVerificationConflicts(
+    store?.storeId,
+    conflictCount,
+  );
 
   return (
     <AppScreen>
@@ -81,6 +86,33 @@ export default function SynchronizationScreen() {
         />
       ) : null}
 
+      {importVerificationConflicts.length > 0 ? (
+        <SectionCard title="Vérifications d’import à examiner">
+          {importVerificationConflicts.map((conflict) => (
+            <View
+              key={conflict.sourceDocumentId}
+              className="gap-3 border-t border-line pt-4 first:border-t-0 first:pt-0"
+            >
+              <Text className="text-base font-semibold text-ink">
+                {conflict.filename ?? sourceTypeLabel(conflict.sourceType)}
+              </Text>
+              <Text className="text-sm leading-5 text-muted">
+                Les données locales et la vérification distante ne correspondent
+                pas exactement.
+              </Text>
+              <SecondaryButton
+                label="Examiner"
+                onPress={() =>
+                  router.push(
+                    `/(tabs)/import-verification/${conflict.sourceDocumentId}` as Href,
+                  )
+                }
+              />
+            </View>
+          ))}
+        </SectionCard>
+      ) : null}
+
       {conflicts.length > 0 ? (
         <SectionCard title="Conflits à examiner">
           {conflicts.map((conflict) => (
@@ -108,6 +140,10 @@ export default function SynchronizationScreen() {
       <SecondaryButton label="Retour" onPress={() => router.back()} />
     </AppScreen>
   );
+}
+
+function sourceTypeLabel(sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE") {
+  return sourceType === "MERCALYS_SALES" ? "Ventes Mercalys" : "Casse Mercalys";
 }
 
 function StatusLine({ label, value }: { label: string; value: string }) {

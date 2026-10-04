@@ -463,6 +463,26 @@ export const localMigrations: readonly LocalMigration[] = [
         ON import_reconciliations (store_id, source_type, incoming_checksum);
     `,
   },
+  {
+    version: 10,
+    name: "add-import-verification-conflicts",
+    sql: `
+      CREATE TABLE import_verification_conflicts (
+        source_document_id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        local_fingerprint TEXT NOT NULL,
+        remote_fingerprint TEXT,
+        difference_summary_json TEXT,
+        status TEXT NOT NULL,
+        detected_at TEXT NOT NULL,
+        acknowledged_at TEXT,
+        FOREIGN KEY (source_document_id) REFERENCES source_documents(id)
+          ON DELETE RESTRICT
+      );
+      CREATE INDEX idx_import_verification_conflicts_store_status
+        ON import_verification_conflicts (store_id, status, detected_at);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

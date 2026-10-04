@@ -193,6 +193,27 @@ export const sourceRecords = sqliteTable(
   ],
 );
 
+export const importVerificationConflicts = sqliteTable(
+  "import_verification_conflicts",
+  {
+    sourceDocumentId: text("source_document_id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    localFingerprint: text("local_fingerprint").notNull(),
+    remoteFingerprint: text("remote_fingerprint"),
+    differenceSummaryJson: text("difference_summary_json"),
+    status: text("status").notNull(),
+    detectedAt: text("detected_at").notNull(),
+    acknowledgedAt: text("acknowledged_at"),
+  },
+  (table) => [
+    index("idx_import_verification_conflicts_store_status").on(
+      table.storeId,
+      table.status,
+      table.detectedAt,
+    ),
+  ],
+);
+
 export const salesObservations = sqliteTable(
   "sales_observations",
   {
@@ -409,6 +430,7 @@ export const localSchema = {
   localFiles,
   sourceDocuments,
   sourceRecords,
+  importVerificationConflicts,
   salesObservations,
   wasteObservations,
   importReconciliations,
