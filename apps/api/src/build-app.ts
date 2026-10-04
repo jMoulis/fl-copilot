@@ -18,6 +18,7 @@ import {
   completeSourceUploadResponseSchema,
   initSourceUploadRequestSchema,
   initSourceUploadResponseSchema,
+  importVerificationResultSchema,
   logoutResponseSchema,
   refreshSessionRequestSchema,
   SYNC_PROTOCOL_VERSION,
@@ -25,6 +26,7 @@ import {
   syncPullResponseSchema,
   syncPushRequestSchema,
   syncPushResponseSchema,
+  verifyImportRequestSchema,
   type ApiErrorDto,
 } from "@fl-copilot/sync-contracts";
 import type { ApiConfig } from "./config.js";
@@ -35,6 +37,10 @@ import {
   type AuthService,
 } from "./auth/service.js";
 import type { DatabaseService } from "./database/types.js";
+import {
+  createMongoImportVerificationService,
+  type ImportVerificationService,
+} from "./imports/import-verification-service.js";
 import { captureApiError, logRemoteEvent } from "./observability.js";
 import {
   createMongoSyncBootstrapService,
@@ -62,6 +68,7 @@ type AppDependencies = {
   syncPull?: SyncPullService;
   syncPush?: SyncPushService;
   sourceUploads?: SourceUploadService;
+  importVerification?: ImportVerificationService;
 };
 
 export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
@@ -82,6 +89,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
   const sourceUploads =
     dependencies.sourceUploads ??
     createMongoSourceUploadService(dependencies.database);
+  const importVerification =
+    dependencies.importVerification ??
+    createMongoImportVerificationService(dependencies.database);
   const app = Fastify({
     logger:
       config.NODE_ENV === "test"
@@ -424,6 +434,36 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       return sourceUploads.complete(
         storeId,
         request.params.uploadId,
+        request.body,
+      );
+    },
+  );
+  app.post(
+    "/api/v1/imports/:sourceDocumentId/verify",
+    {
+      schema: {
+        params: z.object({ sourceDocumentId: z.string().uuid() }),
+        body: verifyImportRequestSchema,
+        response: { 200: importVerificationResultSchema },
+      },
+    },
+    async (request) => {
+      const authorization = request.headers.authorization;
+      if (!authorization?.startsWith("Bearer ")) {
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      }
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string") {
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué pour vérifier l’import.",
+        );
+      }
+      await auth.authorizeStore(authorization.slice("Bearer ".length), storeId);
+      return importVerification.verify(
+        storeId,
+        request.params.sourceDocumentId,
         request.body,
       );
     },

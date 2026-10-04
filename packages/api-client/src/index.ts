@@ -5,6 +5,7 @@ import {
   bootstrapResponseSchema,
   completeSourceUploadResponseSchema,
   initSourceUploadResponseSchema,
+  importVerificationResultSchema,
   logoutResponseSchema,
   syncPullResponseSchema,
   syncPushResponseSchema,
@@ -17,9 +18,11 @@ import {
   type CompleteSourceUploadResponse,
   type InitSourceUploadRequest,
   type InitSourceUploadResponse,
+  type ImportVerificationResult,
   type SyncPullResponse,
   type SyncPushRequest,
   type SyncPushResponse,
+  type VerifyImportRequest,
 } from "@fl-copilot/sync-contracts";
 import type { z } from "zod";
 
@@ -144,6 +147,23 @@ export class ApiClient {
       },
       completeSourceUploadResponseSchema,
     ) as Promise<CompleteSourceUploadResponse>;
+  }
+
+  verifyImport(
+    accessToken: string,
+    storeId: string,
+    sourceDocumentId: string,
+    input: VerifyImportRequest,
+  ) {
+    return this.request(
+      `/api/v1/imports/${encodeURIComponent(sourceDocumentId)}/verify`,
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      importVerificationResultSchema,
+    ) as Promise<ImportVerificationResult>;
   }
 
   private async request<T extends z.ZodType>(

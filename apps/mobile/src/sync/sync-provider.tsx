@@ -69,6 +69,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
         api.initSourceUpload(accessToken, storeId, input),
       complete: (storeId, uploadId, input) =>
         api.completeSourceUpload(accessToken, storeId, uploadId, input),
+      verify: (storeId, sourceDocumentId, input) =>
+        api.verifyImport(accessToken, storeId, sourceDocumentId, input),
     });
   }, [database.sqlite, session?.accessToken]);
   const defaultStoreId = session?.stores[0]?.storeId;

@@ -4,7 +4,7 @@ Date: 2026-10-03.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T13 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, overlapping-version reconciliation, imported-product confirmation, and private source upload.
+The active increment covers M2-T01 through M2-T14 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, overlapping-version reconciliation, imported-product confirmation, private source upload, and remote import verification.
 
 ## Implemented
 
@@ -85,6 +85,11 @@ The active increment covers M2-T01 through M2-T13 from `docs/specs/IMPLEMENTATIO
 - ADR 0004 records Vercel Functions with Fluid Compute as the approved Fastify deployment target, replacing the unprovisioned Google Cloud Run target for the pilot.
 - The Vercel Function uses an explicit bundled handler so runtime-neutral pnpm workspace packages are present at invocation time; the local process keeps its normal listening entrypoint.
 - Preview deployment validation returns a connected `200` health response from Paris and rejects a structurally valid unauthenticated source-upload request with `401 AUTH_REQUIRED`.
+- Mercalys workbook parsing and normalized-record fingerprinting now live in the runtime-neutral `@fl-copilot/import-core` package used by both the native application and API.
+- After a private Blob upload is confirmed, the mobile queue sends the local business period, normalized record count, and deterministic fingerprint to the authenticated import-verification endpoint.
+- The API retrieves the private object through the server-side Vercel Blob `get()` API, verifies its binary SHA-256 checksum, reparses it, and records `MATCH`, `DIFFERENCE`, or `FAILED` evidence on the remote source document.
+- Exact parity marks the source remotely published and makes the retained local file cleanup-eligible; a difference keeps local observations unchanged, retains the source file, and marks reconciliation required.
+- Network failures still use the existing bounded upload-queue retry, while deterministic remote parse failures remain visible instead of causing an upload loop.
 
 ## Verification evidence
 
@@ -135,9 +140,13 @@ The active increment covers M2-T01 through M2-T13 from `docs/specs/IMPLEMENTATIO
 | Upload idempotence        | API service and SQLite queue tests prove one Blob write when confirmation fails, followed by confirmation of the existing object            |
 | Offline upload durability | An unavailable authorization endpoint leaves the source file retained and the job pending for a later retry                                 |
 | Vercel API runtime        | Protected Preview returns `200` with connected MongoDB health from `cdg1`; a valid upload request without a session returns `401`           |
+| Shared parser parity      | Existing sales/waste golden and characterization tests execute through the shared import package on the native side                         |
+| Normalized fingerprint    | Workbook row order and raw cell formatting do not change the fingerprint; a normalized quantity change does                                 |
+| Remote verification       | Unit coverage proves persisted `MATCH`, non-destructive `DIFFERENCE`, and explicit `FAILED` results                                         |
+| Upload verification flow  | Queue coverage proves upload confirmation is followed by verification before local cleanup eligibility                                      |
 
 ## Next work
 
-1. Merge the Vercel runtime correction, let `master` deploy production, and validate M2-T13 end to end on the target iPhone against `fl-copilot-blob`.
-2. Begin M2-T14 remote import verification after the real Blob upload is confirmed.
-3. Run the same XLSX compatibility, publication, upload, and memory checks on target Android hardware before the Android milestone is accepted.
+1. Deploy M2-T14 and validate a real `MATCH` result on the target iPhone against `fl-copilot-blob`.
+2. Implement M2-T15 so a real `DIFFERENCE` exposes the dedicated non-destructive verification-conflict screen.
+3. Run the same XLSX compatibility, publication, upload, verification, and memory checks on target Android hardware before the Android milestone is accepted.

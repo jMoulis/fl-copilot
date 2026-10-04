@@ -74,9 +74,11 @@ async function fixture() {
     .prepare(
       `INSERT INTO source_documents (
         id, store_id, source_type, original_filename, local_file_uri, checksum,
+        business_period_start, business_period_end,
         local_processing_status, remote_upload_status, version, created_at,
         updated_at, sync_state, dirty
       ) VALUES (?, ?, 'MERCALYS_SALES', 'ventes.xlsx', 'file:///ventes.xlsx', ?,
+        '2026-09-26', '2026-09-26',
         'PUBLISHED', 'PENDING', 1, ?, ?, 'PENDING', 1)`,
     )
     .run(sourceDocumentId, storeId, checksum, createdAt, createdAt);
@@ -94,6 +96,37 @@ async function fixture() {
       sourceDocumentId,
       mimeType,
       checksum,
+      createdAt,
+      createdAt,
+    );
+  database
+    .prepare(
+      `INSERT INTO source_records (
+        id, store_id, source_document_id, source_index, raw_payload_json,
+        normalized_payload_json, status, error_codes_json, warning_codes_json,
+        version, created_at, updated_at
+      ) VALUES ('66666666-6666-4666-8666-666666666666', ?, ?, 4, '{}', ?,
+        'PUBLISHED', '[]', '[]', 1, ?, ?)`,
+    )
+    .run(
+      storeId,
+      sourceDocumentId,
+      JSON.stringify({
+        sourceIndex: 4,
+        itm8: "00001234",
+        ean: null,
+        rawLabel: "POIRE CONFERENCE VRAC",
+        businessDate: "2026-09-26",
+        quantity: 1.82,
+        purchaseValue: null,
+        rceValue: null,
+        salesValue: null,
+        vatValue: null,
+        marginValue: null,
+        marginRate: null,
+        rawValues: {},
+        match: { state: "AUTO_MATCH" },
+      }),
       createdAt,
       createdAt,
     );
@@ -161,6 +194,12 @@ describe("source upload queue", () => {
           jobId: null,
         };
       },
+      verify: async (_storeId, requestedSourceDocumentId, input) => ({
+        sourceDocumentId: requestedSourceDocumentId,
+        status: "MATCH",
+        localFingerprint: input.localNormalizedFingerprint,
+        remoteFingerprint: input.localNormalizedFingerprint,
+      }),
     };
     const uploader: SourceBinaryUploader = {
       upload: async () => {
@@ -197,11 +236,12 @@ describe("source upload queue", () => {
     expect(
       database
         .prepare(
-          "SELECT remote_upload_status, sync_state, dirty FROM source_documents WHERE id = ?",
+          "SELECT remote_upload_status, remote_processing_status, sync_state, dirty FROM source_documents WHERE id = ?",
         )
         .get(sourceDocumentId),
     ).toEqual({
       remote_upload_status: "CONFIRMED",
+      remote_processing_status: "PUBLISHED",
       sync_state: "SYNCED",
       dirty: 0,
     });
@@ -232,6 +272,9 @@ describe("source upload queue", () => {
         },
         complete: async () => {
           throw new Error("must not complete");
+        },
+        verify: async () => {
+          throw new Error("must not verify");
         },
       },
       {

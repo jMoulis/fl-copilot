@@ -8,7 +8,11 @@ export default defineConfig({
   platform: "node",
   target: "node22",
   splitting: false,
-  noExternal: ["@fl-copilot/domain", "@fl-copilot/sync-contracts"],
+  noExternal: [
+    "@fl-copilot/domain",
+    "@fl-copilot/import-core",
+    "@fl-copilot/sync-contracts",
+  ],
   clean: true,
   sourcemap: true,
 });
