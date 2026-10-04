@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The completed increment covers M3-T01 through M3-T11 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection, scoped local recomputation, remote confirmation parity, the native `Aujourd’hui` screen and its offline acceptance behavior.
+The closing increment covers M3-T01 through M3-T12 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection, scoped local recomputation, remote confirmation parity, the native `Aujourd’hui` screen, its offline acceptance behavior and a read-only deterministic signal detail.
 
 ## Implemented
 
@@ -53,6 +53,9 @@ The completed increment covers M3-T01 through M3-T11 from `docs/specs/IMPLEMENTA
 - Native pull-to-refresh rereads SQLite only and keeps the current same-store summary rendered while the refresh is running.
 - A failed local refresh shows an explicit alert without blanking the cached KPI, priority and movement content.
 - Cached summaries are scoped by store so a session change cannot briefly reveal another store's data.
+- A priority now opens a dedicated local detail instead of implying that its proposed control exists in the product editor.
+- Signal detail labels the current and exact J-7 values, absolute and percentage differences, analytical quality and incomplete core metrics.
+- The proposed action is explicitly informational; product editing is secondary and M7 decision states are not simulated.
 
 ## Verification evidence
 
@@ -94,9 +97,10 @@ The completed increment covers M3-T01 through M3-T11 from `docs/specs/IMPLEMENTA
 | SQLite-only read      | The Today repository builds KPI, priority, movement and quality presentation without a network dependency                                                        |
 | Offline refresh       | Pull-to-refresh rereads SQLite and retains the current same-store summary during a pending or failed refresh                                                     |
 | Store isolation       | A cached Today snapshot is visible only for the active store                                                                                                     |
+| Signal evidence       | Priority detail exposes current, reference, absolute and percentage values from the same deterministic candidate evidence                                        |
+| Action boundary       | The screen states that a proposed control records no decision and changes no product; decision workflows remain deferred to M7                                   |
 
 ## Next work
 
-1. Merge M3-T11 after repository-wide validation.
-2. Complete the iPhone visual and offline acceptance pass, then record any layout or accessibility findings.
-3. Close the M3 exit gate and review the global product roadmap before starting the next milestone.
+1. Merge M3-T12 after repository-wide validation and iPhone review of one complete and one incomplete signal.
+2. Close the M3 exit gate and review the global product roadmap before starting the next milestone.

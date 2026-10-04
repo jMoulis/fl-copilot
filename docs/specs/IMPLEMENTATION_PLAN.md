@@ -1216,6 +1216,19 @@ Expected:
 - local-only KPI marker when relevant;
 - pull-to-refresh does not clear content.
 
+## M3-T12 — Deterministic signal detail
+
+Open a read-only explanation from each Today priority.
+
+Expected:
+
+- exact current and J-7 values remain visible offline for comparison signals;
+- absolute and percentage differences are labelled;
+- incomplete inputs and the analytical quality score are explicit;
+- the proposed action is clearly separated from a recorded decision;
+- product editing remains a secondary destination;
+- no M7 decision or execution behavior is simulated.
+
 ---
 
 # 67. M3 exit gate

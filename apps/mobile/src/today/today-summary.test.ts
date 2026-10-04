@@ -127,6 +127,18 @@ describe("Today summary", () => {
       "MARGIN_DROP",
     ]);
     expect(summary?.priorities).toHaveLength(3);
+    expect(
+      summary?.priorities.find(
+        (priority) =>
+          priority.productId === productId && priority.type === "MARGIN_DROP",
+      ),
+    ).toMatchObject({
+      currentValue: "180",
+      referenceValue: "240",
+      absoluteDifference: "-60",
+      percentageDifference: "-25.00",
+      incompleteMetricLabels: [],
+    });
     expect(summary?.movements.map((movement) => movement.metric)).toEqual([
       "SALES",
       "WASTE",
@@ -165,6 +177,41 @@ describe("Today summary", () => {
       "Casse au PA",
     ]);
     expect(summary?.dataQuality.alertMessage).toContain("données incomplètes");
+    database.close();
+  });
+
+  it("attaches incomplete product metrics to a deterministic signal", async () => {
+    const { adapter, database } = await openDatabase();
+    insertProduct(database, productId, "Banane vrac");
+    insertPerformance(
+      database,
+      productPerformance("2026-09-26", {
+        sales: "800.00",
+        margin: "240.00",
+        waste: null,
+      }),
+    );
+    insertPerformance(
+      database,
+      productPerformance("2026-10-03", {
+        sales: "700.00",
+        margin: "180.00",
+        waste: null,
+      }),
+    );
+
+    const summary = await new TodaySummaryRepository(adapter).load(storeId);
+    const marginPriority = summary?.priorities.find(
+      (priority) => priority.type === "MARGIN_DROP",
+    );
+
+    expect(marginPriority).toMatchObject({
+      productLabel: "Banane vrac",
+      status: "LOW_QUALITY",
+      currentValue: "180",
+      referenceValue: "240",
+      incompleteMetricLabels: ["Casse au PA"],
+    });
     database.close();
   });
 });
