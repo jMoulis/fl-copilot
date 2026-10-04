@@ -149,10 +149,10 @@ The active increment covers M2-T01 through M2-T15 from `docs/specs/IMPLEMENTATIO
 | Remote verification       | Unit coverage proves persisted `MATCH`, non-destructive `DIFFERENCE`, and explicit `FAILED` results                                         |
 | Upload verification flow  | Queue coverage proves upload confirmation is followed by verification before local cleanup eligibility                                      |
 | Verification conflict UX  | A remote difference creates a durable open conflict, retains the XLSX and local observations, and requires an explicit local-data decision  |
+| iPhone M2 exit gate       | Staging build passed the offline, restart, reconnect, upload and remote-sync gate on the target iPhone Air                                  |
 
 ## Next work
 
-1. Run the M2 exit gate on the target iPhone: publish while offline, restart, verify retained local data, reconnect, upload, and observe the remote result.
-2. Exercise one real `DIFFERENCE` on the target iPhone and confirm that acknowledging it never changes published observations.
-3. Run the same XLSX compatibility, publication, upload, verification, and memory checks on target Android hardware before the Android milestone is accepted.
-4. Begin M3-T01 only after the M2 exit evidence is recorded.
+1. Exercise one controlled real `DIFFERENCE` on the target iPhone and confirm that acknowledging it never changes published observations.
+2. Run the same XLSX compatibility, publication, upload, verification, and memory checks on target Android hardware before the Android milestone is accepted.
+3. Continue M3 shared analytics and `Aujourd’hui` according to the implementation plan.
