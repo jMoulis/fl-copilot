@@ -12,5 +12,6 @@ The package currently provides:
 - comparison availability without implicit zero references;
 - deterministic `ProductDailyPerformance` building with metric availability, source lineage, formula version and input revision;
 - deterministic `DepartmentDailyPerformance` aggregation that propagates partial coverage, excludes incompatible global quantities and withholds unvalidated aggregate margin rates.
+- deterministic comparison modes for J-7, comparable weeks, same-weekday averages, year-over-year, pre-operation and custom reference periods, with explicit sample sizes and reference methods.
 
-Official KPI builders must reuse these functions. They must keep known and estimated waste costs separate and must not derive an aggregate margin rate until its business formula is validated.
+Comparison results preserve missing references, zero references and partial source coverage instead of converting them into misleading percentages. Official KPI builders must reuse these functions. They must keep known and estimated waste costs separate and must not derive an aggregate margin rate until its business formula is validated.
