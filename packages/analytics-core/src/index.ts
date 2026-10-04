@@ -1,4 +1,5 @@
 export * from "./comparison";
+export * from "./data-quality";
 export * from "./decimal";
 export * from "./department-daily";
 export * from "./formulas";

@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T05 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders and explicit comparison modes.
+The active increment covers M3-T01 through M3-T06 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparison modes and analytical data quality.
 
 ## Implemented
 
@@ -28,6 +28,10 @@ The active increment covers M3-T01 through M3-T05 from `docs/specs/IMPLEMENTATIO
 - Every comparison records its exact reference method, requested and actual sample sizes, current/reference periods, warnings, lineage and a deterministic quality score.
 - Missing references remain unavailable, zero references expose only the absolute difference, and partial source coverage lowers the quality score without being silently discarded.
 - Comparable-week comparisons align each current date to its exact J-7 business date; year-over-year uses the actual prior calendar date instead of synthesizing history.
+- The shared data-quality engine evaluates source completeness, product matching, waste cost coverage, reference quality, period completeness, unit compatibility, execution data and context without treating omitted dimensions as zero.
+- Coverage components preserve complete, partial and missing states; a partial local import therefore lowers both its source score and the overall analytical quality score.
+- Period completeness uses explicit configured store opening dates, deduplicates observations and exposes missing and unexpected dates instead of inferring completeness from calendar days.
+- Waste cost quality exposes known, estimated and unknown value shares independently; only the known share contributes to the known-cost coverage score.
 
 ## Verification evidence
 
@@ -49,8 +53,12 @@ The active increment covers M3-T01 through M3-T05 from `docs/specs/IMPLEMENTATIO
 | Reference samples     | Same-weekday averages expose the actual sample size; comparable periods reject missing equivalent days                    |
 | Extended modes        | Year-over-year, before-operation and custom references retain their explicit periods and methods                          |
 | Comparison stability  | Input ordering does not change serialized output, warnings, lineage or quality score                                      |
+| Partial local import  | 75 observed records out of 100 produce source quality `0.75`, `PARTIAL` and an explicit warning                           |
+| Opening calendar      | Five observed configured business days out of six produce `0.8333` and identify the missing date                          |
+| Waste cost coverage   | 80% known, 10% estimated and 10% unknown remain separate; known-cost quality is `0.8`                                     |
+| Quality stability     | Component and lineage input order does not change the serialized quality result                                           |
 
 ## Next work
 
-1. Merge M3-T05 after repository-wide validation.
-2. Implement M3-T06: deterministic data-quality evaluation for analytical inputs and outputs.
+1. Merge M3-T06 after repository-wide validation.
+2. Implement M3-T07: deterministic analytical candidates for waste spikes, sales drops, margin drops and data-quality alerts.
