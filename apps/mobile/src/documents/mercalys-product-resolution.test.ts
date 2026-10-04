@@ -1,11 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ProductMatchResult } from "@fl-copilot/domain";
 import type { ParsedMercalysArticleRecord } from "./mercalys-article-parser";
 import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
 import { validateMercalysImport } from "./mercalys-import-validation";
-import { buildMercalysProductResolutions } from "./mercalys-product-resolution";
+import type { ProductMasterRepository } from "../products/product-master-repository";
+import {
+  buildMercalysProductResolutions,
+  confirmMercalysProductMapping,
+  type MercalysProductResolution,
+} from "./mercalys-product-resolution";
 import { SheetJsSpreadsheetParser } from "./sheetjs-spreadsheet-parser";
 
 describe("Mercalys product resolution", () => {
@@ -83,7 +88,159 @@ describe("Mercalys product resolution", () => {
       candidateProductIds: [candidateId],
     });
   });
+
+  it("removes competing identifiers when a human confirms one product", async () => {
+    const chosenProductId = "22222222-2222-4222-8222-222222222222";
+    const competingProductId = "33333333-3333-4333-8333-333333333333";
+    const repository = productRepository({
+      identifiers: [
+        identifierRecord("identifier-chosen", chosenProductId, "ITM8", "42", 7),
+        identifierRecord(
+          "identifier-competing",
+          competingProductId,
+          "ITM8",
+          "42",
+          9,
+        ),
+        identifierRecord(
+          "ean-competing",
+          competingProductId,
+          "EAN",
+          "0000000000042",
+          4,
+        ),
+      ],
+    });
+
+    await confirmMercalysProductMapping(
+      repository.value,
+      resolution([
+        { type: "ITM8", value: "42" },
+        { type: "EAN", value: "0000000000042" },
+      ]),
+      chosenProductId,
+      resolutionOptions(),
+    );
+
+    expect(repository.delete).toHaveBeenCalledWith(
+      "product_identifier",
+      "identifier-competing",
+      storeId,
+      timestamp,
+      expect.objectContaining({ expectedRemoteVersion: 9 }),
+    );
+    expect(repository.delete).toHaveBeenCalledWith(
+      "product_identifier",
+      "ean-competing",
+      storeId,
+      timestamp,
+      expect.objectContaining({ expectedRemoteVersion: 4 }),
+    );
+    expect(repository.upsertIdentifier).toHaveBeenCalledTimes(1);
+    expect(repository.upsertIdentifier).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: chosenProductId,
+        type: "EAN",
+        value: "0000000000042",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("records a validated alias when a row has no stable identifier", async () => {
+    const chosenProductId = "22222222-2222-4222-8222-222222222222";
+    const repository = productRepository();
+
+    await confirmMercalysProductMapping(
+      repository.value,
+      resolution([], "Poire Conférence"),
+      chosenProductId,
+      resolutionOptions(),
+    );
+
+    expect(repository.upsertAlias).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: chosenProductId,
+        alias: "Poire Conférence",
+        normalizedAlias: "POIRE CONFERENCE",
+        source: "MERCALYS",
+        status: "VALIDATED",
+      }),
+      expect.anything(),
+    );
+  });
 });
+
+const storeId = "11111111-1111-4111-8111-111111111111";
+const timestamp = "2026-10-04T20:00:00.000Z";
+
+function resolution(
+  identifiers: MercalysProductResolution["identifiers"],
+  label = "Poire conférence",
+): MercalysProductResolution {
+  return {
+    key: "resolution",
+    label,
+    identifiers,
+    sourceIndexes: [8],
+    candidateProductIds: [],
+    canCreate: false,
+    canCreateAsDistinct: false,
+  };
+}
+
+function resolutionOptions() {
+  let sequence = 0;
+  return {
+    storeId,
+    deviceId: "44444444-4444-4444-8444-444444444444",
+    now: () => timestamp,
+    generateId: () => `generated-${++sequence}`,
+  };
+}
+
+function identifierRecord(
+  id: string,
+  productId: string,
+  type: "ITM8" | "EAN",
+  value: string,
+  remoteVersion: number,
+) {
+  return {
+    entity: {
+      id,
+      storeId,
+      productId,
+      type,
+      value,
+      source: "MERCALYS" as const,
+      status: "VALIDATED" as const,
+      version: remoteVersion,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      deletedAt: null,
+    },
+    syncState: "SYNCED" as const,
+    remoteVersion,
+    dirty: false,
+  };
+}
+
+function productRepository(
+  input: { identifiers?: ReturnType<typeof identifierRecord>[] } = {},
+) {
+  const methods = {
+    listIdentifiersByStore: vi.fn(async () => input.identifiers ?? []),
+    listAliasesByStore: vi.fn(async () => []),
+    delete: vi.fn(async () => true),
+    upsertIdentifier: vi.fn(async (entity) => entity),
+    upsertAlias: vi.fn(async (entity) => entity),
+  };
+  return {
+    ...methods,
+    value: methods as unknown as ProductMasterRepository,
+  };
+}
 
 const dailySalesFixture = resolve(
   process.cwd(),
