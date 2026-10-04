@@ -2,6 +2,7 @@ import { Redirect, Tabs, type Href } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useWindowDimensions } from "react-native";
 import { useAuth } from "@/auth/auth-provider";
+import { colors } from "@/design/tokens";
 export default function TabLayout() {
   const { status } = useAuth();
   const { fontScale } = useWindowDimensions();
@@ -11,13 +12,13 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: "#235C3D",
-        tabBarInactiveTintColor: "#59685F",
+        tabBarActiveTintColor: colors.forest,
+        tabBarInactiveTintColor: colors.muted,
         tabBarShowLabel: true,
         tabBarLabelPosition: "below-icon",
         tabBarStyle: {
-          backgroundColor: "#FFFFFF",
-          borderTopColor: "#DFE6DD",
+          backgroundColor: colors.surface,
+          borderTopColor: colors.line,
           minHeight: 64 + Math.max(0, fontScale - 1) * 32,
         },
         tabBarLabelStyle: { fontSize: 11 },
@@ -28,8 +29,12 @@ export default function TabLayout() {
         options={{
           title: "Aujourd’hui",
           tabBarAccessibilityLabel: "Aujourd’hui",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" color={color} size={size} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "home" : "home-outline"}
+              color={color}
+              size={size}
+            />
           ),
         }}
       />
@@ -37,8 +42,12 @@ export default function TabLayout() {
         name="week"
         options={{
           title: "Ma semaine",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="calendar-outline" color={color} size={size} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "calendar" : "calendar-outline"}
+              color={color}
+              size={size}
+            />
           ),
         }}
       />
@@ -46,8 +55,12 @@ export default function TabLayout() {
         name="analytics"
         options={{
           title: "Analyses",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bar-chart-outline" color={color} size={size} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "bar-chart" : "bar-chart-outline"}
+              color={color}
+              size={size}
+            />
           ),
         }}
       />
@@ -55,8 +68,12 @@ export default function TabLayout() {
         name="waste"
         options={{
           title: "Casse",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="camera-outline" color={color} size={size} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "camera" : "camera-outline"}
+              color={color}
+              size={size}
+            />
           ),
         }}
       />
@@ -64,8 +81,12 @@ export default function TabLayout() {
         name="more"
         options={{
           title: "Plus",
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="menu-outline" color={color} size={size} />
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "menu" : "menu-outline"}
+              color={color}
+              size={size}
+            />
           ),
         }}
       />
