@@ -1,3 +1,4 @@
+export * from "./comparison";
 export * from "./decimal";
 export * from "./department-daily";
 export * from "./formulas";

@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T04 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic plus the initial shared KPI registry, availability rules, unit compatibility and deterministic formulas.
+The active increment covers M3-T01 through M3-T05 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders and explicit comparison modes.
 
 ## Implemented
 
@@ -24,6 +24,10 @@ The active increment covers M3-T01 through M3-T04 from `docs/specs/IMPLEMENTATIO
 - The `DepartmentDailyPerformance` builder aggregates product money metrics with deterministic ordering and propagates partial availability from product results.
 - Department results deliberately omit global quantity totals across incompatible product sales units and keep aggregate margin rate unavailable instead of averaging source rates.
 - Duplicate products and product-day results outside the requested store/date perimeter fail closed.
+- The shared comparison engine supports J-7, previous comparable week, an average of previous matching weekdays, year-over-year, before-operation and custom reference periods.
+- Every comparison records its exact reference method, requested and actual sample sizes, current/reference periods, warnings, lineage and a deterministic quality score.
+- Missing references remain unavailable, zero references expose only the absolute difference, and partial source coverage lowers the quality score without being silently discarded.
+- Comparable-week comparisons align each current date to its exact J-7 business date; year-over-year uses the actual prior calendar date instead of synthesizing history.
 
 ## Verification evidence
 
@@ -41,8 +45,12 @@ The active increment covers M3-T01 through M3-T04 from `docs/specs/IMPLEMENTATIO
 | Registry              | KPI identifiers are unique and unvalidated aggregate margin rate remains disabled                                         |
 | Product-day parity    | The same golden inputs serialize identically for local and remote runtimes, independent of input ordering                 |
 | Product-day lineage   | Source record IDs, formula version and deterministic input revision remain attached to the calculated result              |
+| J-7 comparison        | Exact prior-week date is selected; a missing date remains unavailable and a zero reference has no percentage              |
+| Reference samples     | Same-weekday averages expose the actual sample size; comparable periods reject missing equivalent days                    |
+| Extended modes        | Year-over-year, before-operation and custom references retain their explicit periods and methods                          |
+| Comparison stability  | Input ordering does not change serialized output, warnings, lineage or quality score                                      |
 
 ## Next work
 
-1. Merge M3-T04 after repository-wide validation.
-2. Implement M3-T05: comparison modes and availability, starting with J-7 and explicit missing-reference/sample-size behavior.
+1. Merge M3-T05 after repository-wide validation.
+2. Implement M3-T06: deterministic data-quality evaluation for analytical inputs and outputs.
