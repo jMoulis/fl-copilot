@@ -71,6 +71,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen name="sync" options={{ href: null }} />
       <Tabs.Screen name="sync-conflict" options={{ href: null }} />
+      <Tabs.Screen name="import-verification" options={{ href: null }} />
       <Tabs.Screen name="products" options={{ href: null }} />
       <Tabs.Screen name="imports" options={{ href: null }} />
       <Tabs.Screen name="xlsx-diagnostic" options={{ href: null }} />

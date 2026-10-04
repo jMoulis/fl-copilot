@@ -1,10 +1,10 @@
 # M2 product master
 
-Date: 2026-10-03.
+Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M2-T01 through M2-T14 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, overlapping-version reconciliation, imported-product confirmation, private source upload, and remote import verification.
+The active increment covers M2-T01 through M2-T15 from `docs/specs/IMPLEMENTATION_PLAN.md`: the synchronized product master, local-first product editing, deterministic product matching, durable local source-document metadata, native Mercalys parsing, atomic publication, duplicate protection, overlapping-version reconciliation, imported-product confirmation, private source upload, remote import verification, and non-destructive verification-conflict handling.
 
 ## Implemented
 
@@ -90,6 +90,10 @@ The active increment covers M2-T01 through M2-T14 from `docs/specs/IMPLEMENTATIO
 - The API retrieves the private object through the server-side Vercel Blob `get()` API, verifies its binary SHA-256 checksum, reparses it, and records `MATCH`, `DIFFERENCE`, or `FAILED` evidence on the remote source document.
 - Exact parity marks the source remotely published and makes the retained local file cleanup-eligible; a difference keeps local observations unchanged, retains the source file, and marks reconciliation required.
 - Network failures still use the existing bounded upload-queue retry, while deterministic remote parse failures remain visible instead of causing an upload loop.
+- SQLite migration 10 stores remote-verification differences with both fingerprints, optional difference counts, source-document lineage, and explicit `OPEN`, `KEPT_LOCAL`, or `RESOLVED` state.
+- The synchronization screen counts and lists open import-verification conflicts separately from ordinary entity-version conflicts and links each import to a dedicated French review screen.
+- The review screen states that local observations were retained, shows the source, filename, business period and local line count, and never replaces already-published data.
+- `Conserver temporairement les données locales` acknowledges the conflict transactionally while leaving the remote source in reconciliation for audit.
 
 ## Verification evidence
 
@@ -144,9 +148,11 @@ The active increment covers M2-T01 through M2-T14 from `docs/specs/IMPLEMENTATIO
 | Normalized fingerprint    | Workbook row order and raw cell formatting do not change the fingerprint; a normalized quantity change does                                 |
 | Remote verification       | Unit coverage proves persisted `MATCH`, non-destructive `DIFFERENCE`, and explicit `FAILED` results                                         |
 | Upload verification flow  | Queue coverage proves upload confirmation is followed by verification before local cleanup eligibility                                      |
+| Verification conflict UX  | A remote difference creates a durable open conflict, retains the XLSX and local observations, and requires an explicit local-data decision  |
 
 ## Next work
 
-1. Deploy M2-T14 and validate a real `MATCH` result on the target iPhone against `fl-copilot-blob`.
-2. Implement M2-T15 so a real `DIFFERENCE` exposes the dedicated non-destructive verification-conflict screen.
+1. Run the M2 exit gate on the target iPhone: publish while offline, restart, verify retained local data, reconnect, upload, and observe the remote result.
+2. Exercise one real `DIFFERENCE` on the target iPhone and confirm that acknowledging it never changes published observations.
 3. Run the same XLSX compatibility, publication, upload, verification, and memory checks on target Android hardware before the Android milestone is accepted.
+4. Begin M3-T01 only after the M2 exit evidence is recorded.

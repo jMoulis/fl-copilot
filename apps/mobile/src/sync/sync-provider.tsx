@@ -198,6 +198,23 @@ async function readLocalSyncSnapshot(
       `,
     storeId,
   );
+  const importVerificationCounts = await database.getFirstAsync<{
+    conflict_count: number;
+    failed_count: number;
+  }>(
+    `
+      SELECT
+        (SELECT COUNT(*)
+         FROM import_verification_conflicts
+         WHERE store_id = ? AND status = 'OPEN') AS conflict_count,
+        (SELECT COUNT(*)
+         FROM source_documents
+         WHERE store_id = ? AND sync_state = 'ERROR'
+           AND remote_processing_status = 'FAILED') AS failed_count
+    `,
+    storeId,
+    storeId,
+  );
   const jobCounts = await database.getFirstAsync<{
     pending_count: number;
     failed_count: number;
@@ -227,10 +244,13 @@ async function readLocalSyncSnapshot(
     pendingCount:
       Number(outboxCounts?.pending_count ?? 0) +
       Number(jobCounts?.pending_count ?? 0),
-    conflictCount: Number(conflictCounts?.conflict_count ?? 0),
+    conflictCount:
+      Number(conflictCounts?.conflict_count ?? 0) +
+      Number(importVerificationCounts?.conflict_count ?? 0),
     failedCount:
       Number(outboxCounts?.failed_count ?? 0) +
-      Number(jobCounts?.failed_count ?? 0),
+      Number(jobCounts?.failed_count ?? 0) +
+      Number(importVerificationCounts?.failed_count ?? 0),
     ...(inbox?.last_successful_sync_at
       ? { lastSyncedAt: inbox.last_successful_sync_at }
       : {}),
