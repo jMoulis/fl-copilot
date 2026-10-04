@@ -9,6 +9,7 @@ The package currently provides:
 - missing-versus-zero aware sums;
 - quantity aggregation guarded by compatible product sales units;
 - ratio, average realized price and known-output waste-share formulas;
-- comparison availability without implicit zero references.
+- comparison availability without implicit zero references;
+- deterministic `ProductDailyPerformance` building with metric availability, source lineage, formula version and input revision.
 
 Official KPI builders must reuse these functions. They must keep known and estimated waste costs separate and must not derive an aggregate margin rate until its business formula is validated.
