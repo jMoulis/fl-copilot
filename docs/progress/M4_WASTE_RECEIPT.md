@@ -92,13 +92,23 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 - The source document exposes warning and unchecked-line counts while remaining `TO_VALIDATE` for product matching and human review.
 - Upload completion and retry run normalization, Vision extraction and arithmetic validation in order.
 
+### M4-T08 — Receipt product matching
+
+- The server reuses the canonical shared ProductMatcher against the active products, validated identifiers and validated aliases belonging to the receipt's store.
+- Exact canonical labels and unique validated aliases can produce an `AUTO_MATCH`; fuzzy candidates remain `REVIEW`, collisions remain `AMBIGUOUS` and absent candidates remain `NO_MATCH`.
+- Every line retains the complete matcher result and enriched candidate snapshots with product label, nature and sales unit for the later validation UI.
+- The matched product supplies line-level nature. One receipt can therefore preserve both `BULK` and `PACKAGED` lines without applying a document-wide classification.
+- Matching evidence is immutable and idempotent for an extraction, matcher version and deterministic catalog fingerprint. A changed product catalog produces new evidence and updates the source-document pointer.
+- MongoDB exposes matched, review and unmatched counts while keeping the receipt `TO_VALIDATE`; ambiguous identity is never silently accepted.
+- Upload completion and retry now run normalization, Vision extraction, arithmetic validation and Product Master matching in order.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Persistent filename  | One UUID capture produces a stable `.jpg` destination under `waste-receipts`                 |
 | Failed persistence   | A copy failure never returns a durable capture result                                        |
-| Repository checks    | Structure, lint, strict TypeScript 6 and 249 tests pass                                      |
+| Repository checks    | Structure, lint, strict TypeScript 6 and 252 tests pass                                      |
 | Expo compatibility   | Expo Doctor passes all 21 checks with SDK-compatible packages                                |
 | Native configuration | Expo public config resolves the French camera and photo-library permissions                  |
 | Bundle acceptance    | Expo export completes for both iOS and Android                                               |
@@ -106,5 +116,5 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 ## Next work
 
-1. Merge M4-T07 and validate a newly uploaded ticket through the production server pipeline.
-2. Implement M4-T08 receipt product matching by reusing the canonical ProductMatcher.
+1. Merge M4-T08 and validate a newly uploaded ticket through the production server pipeline.
+2. Implement M4-T09 receipt validation UI with image preview, date confirmation, grouped repeated lines, line correction and ambiguous-product resolution.

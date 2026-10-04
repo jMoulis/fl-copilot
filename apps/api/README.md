@@ -23,6 +23,8 @@ Waste-receipt Vision extraction runs server-side through OpenAI after private up
 
 After extraction, the API applies the shared deterministic receipt arithmetic validator. `WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR` defaults to `0.01`: complete `weight × unit price` lines are classified as consistent or `AMOUNT_TO_REVIEW`, while incomplete lines remain explicitly unchecked. The extracted values are never rewritten. Results are stored as separate, versioned and idempotent evidence.
 
+Receipt lines are then matched against the store's active Product Master by the canonical shared `ProductMatcher`. Only safe exact canonical-label or validated-alias matches are auto-associated; fuzzy, ambiguous and unmatched results remain reviewable. Candidate snapshots include product label, nature and sales unit, so bulk and packaged products can coexist on one receipt. Matching evidence is versioned by the matcher and a deterministic catalog fingerprint.
+
 `buildApp` does not open a socket; tests use Fastify injection. `runtime.ts` validates environment settings, listens and handles shutdown for the local process. `api/index.ts` loads the bundled Vercel handler, which forwards Node requests to the same Fastify instance without opening a port. Build with `pnpm --filter @fl-copilot/api build`; start the local-process bundle with `pnpm --filter @fl-copilot/api start`.
 
 Errors follow `ApiErrorDto` from `packages/sync-contracts`. Request IDs are server-generated and returned in the `x-request-id` header and error body. Request bodies, headers, URLs and raw exception messages are not logged by the foundation logger. The health endpoint has no store context and exposes no tenant data; authenticated store-isolation tests must be introduced with business endpoints.

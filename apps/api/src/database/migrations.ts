@@ -182,6 +182,29 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 10,
+    name: "initialize-waste-receipt-product-matching-indexes",
+    async up(database) {
+      await Promise.all([
+        database.collection("wasteReceiptProductMatches").createIndex(
+          {
+            storeId: 1,
+            sourceDocumentId: 1,
+            extractionId: 1,
+            engineVersion: 1,
+            catalogFingerprint: 1,
+          },
+          { unique: true },
+        ),
+        database.collection("sourceDocuments").createIndex({
+          storeId: 1,
+          sourceType: 1,
+          productMatchingStatus: 1,
+        }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(
