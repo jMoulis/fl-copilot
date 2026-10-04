@@ -145,6 +145,7 @@ describe("source upload service", () => {
     const database = new MemoryDatabase();
     let uploaded: SourceBlobMetadata | null = null;
     let normalizationAttempts = 0;
+    let extractionAttempts = 0;
     const storage: SourceBlobStorage = {
       createUploadUrl: async ({ pathname }) =>
         `https://blob.example.test/upload?pathname=${encodeURIComponent(pathname)}`,
@@ -160,6 +161,12 @@ describe("source upload service", () => {
           if (normalizationAttempts === 1) {
             throw new Error("NORMALIZATION_TEMPORARILY_UNAVAILABLE");
           }
+        },
+      },
+      {
+        extract: async (input) => {
+          expect(input).toEqual({ storeId, sourceDocumentId });
+          extractionAttempts += 1;
         },
       },
     );
@@ -193,6 +200,7 @@ describe("source upload service", () => {
       }),
     ).resolves.toMatchObject({ remoteUploadStatus: "CONFIRMED" });
     expect(normalizationAttempts).toBe(2);
+    expect(extractionAttempts).toBe(1);
   });
 });
 

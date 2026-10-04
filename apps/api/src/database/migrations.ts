@@ -136,6 +136,29 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 8,
+    name: "initialize-waste-receipt-extraction-indexes",
+    async up(database) {
+      await Promise.all([
+        database.collection("wasteReceiptExtractions").createIndex(
+          {
+            storeId: 1,
+            sourceDocumentId: 1,
+            provider: 1,
+            model: 1,
+            schemaVersion: 1,
+          },
+          { unique: true },
+        ),
+        database.collection("sourceDocuments").createIndex({
+          storeId: 1,
+          sourceType: 1,
+          extractionStatus: 1,
+        }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(

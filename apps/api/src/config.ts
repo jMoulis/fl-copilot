@@ -31,6 +31,10 @@ const environmentSchema = z.object({
     .optional(),
   RESEND_API_KEY: z.string().trim().startsWith("re_").min(11).optional(),
   AUTH_EMAIL_FROM: z.string().trim().email().optional(),
+  OPENAI_API_KEY: z.string().trim().startsWith("sk-").min(20).optional(),
+  AI_GATEWAY_API_KEY: z.string().trim().min(20).optional(),
+  VERCEL_OIDC_TOKEN: z.string().trim().min(20).optional(),
+  WASTE_RECEIPT_VISION_MODEL: z.string().trim().min(1).default("gpt-5.6-luna"),
   AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce
     .number()
     .int()
@@ -82,6 +86,16 @@ export function parseEnvironment(
     (!result.data.RESEND_API_KEY || !result.data.AUTH_EMAIL_FROM)
   ) {
     throw new Error("Invalid environment: RESEND_API_KEY, AUTH_EMAIL_FROM");
+  }
+  if (
+    result.data.NODE_ENV === "production" &&
+    !result.data.OPENAI_API_KEY &&
+    !result.data.AI_GATEWAY_API_KEY &&
+    !result.data.VERCEL_OIDC_TOKEN
+  ) {
+    throw new Error(
+      "Invalid environment: OPENAI_API_KEY, AI_GATEWAY_API_KEY, VERCEL_OIDC_TOKEN",
+    );
   }
   if (
     result.data.NODE_ENV === "production" &&

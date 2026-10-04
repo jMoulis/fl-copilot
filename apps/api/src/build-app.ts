@@ -59,6 +59,10 @@ import {
   createMongoSourceUploadService,
   type SourceUploadService,
 } from "./uploads/source-upload-service.js";
+import {
+  createMongoWasteReceiptVisionExtractionService,
+  createOpenAIReceiptVisionProvider,
+} from "./uploads/waste-receipt-vision-extraction.js";
 
 type AppDependencies = {
   database: DatabaseService;
@@ -88,7 +92,21 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     createMongoSyncBootstrapService(dependencies.database);
   const sourceUploads =
     dependencies.sourceUploads ??
-    createMongoSourceUploadService(dependencies.database);
+    createMongoSourceUploadService(
+      dependencies.database,
+      undefined,
+      undefined,
+      undefined,
+      createMongoWasteReceiptVisionExtractionService(
+        dependencies.database,
+        createOpenAIReceiptVisionProvider({
+          apiKey: config.OPENAI_API_KEY,
+          gatewayApiKey: config.AI_GATEWAY_API_KEY,
+          vercelOidcToken: config.VERCEL_OIDC_TOKEN,
+          model: config.WASTE_RECEIPT_VISION_MODEL,
+        }),
+      ),
+    );
   const importVerification =
     dependencies.importVerification ??
     createMongoImportVerificationService(dependencies.database);

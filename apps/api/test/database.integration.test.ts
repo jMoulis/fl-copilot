@@ -98,6 +98,10 @@ describeWithMongo("MongoDB infrastructure", () => {
       _id: 7,
       name: "initialize-analytics-read-model-indexes",
     });
+    await expect(migrations.findOne({ _id: 8 })).resolves.toMatchObject({
+      _id: 8,
+      name: "initialize-waste-receipt-extraction-indexes",
+    });
   });
 
   itWithMongoTransactions(
