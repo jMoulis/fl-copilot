@@ -587,6 +587,19 @@ export const localMigrations: readonly LocalMigration[] = [
         ON waste_lines (store_id, match_status);
     `,
   },
+  {
+    version: 13,
+    name: "add-waste-receipt-validation-evidence",
+    sql: `
+      ALTER TABLE waste_lines ADD COLUMN arithmetic_status TEXT NOT NULL DEFAULT 'NOT_CHECKED';
+      ALTER TABLE waste_lines ADD COLUMN arithmetic_expected_total TEXT;
+      ALTER TABLE waste_lines ADD COLUMN arithmetic_difference TEXT;
+      ALTER TABLE waste_lines ADD COLUMN arithmetic_warning_code TEXT;
+      ALTER TABLE waste_lines ADD COLUMN match_state TEXT NOT NULL DEFAULT 'NO_MATCH';
+      ALTER TABLE waste_lines ADD COLUMN matched_product_label TEXT;
+      ALTER TABLE waste_lines ADD COLUMN match_candidates_json TEXT NOT NULL DEFAULT '[]';
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -51,6 +51,7 @@ function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="waste-capture" />
         <Stack.Screen name="waste-import" />
+        <Stack.Screen name="waste-receipt/[id]" />
       </Stack>
     </AppProviders>
   );

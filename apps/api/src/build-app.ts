@@ -64,6 +64,7 @@ import {
   createOpenAIReceiptVisionProvider,
 } from "./uploads/waste-receipt-vision-extraction.js";
 import { createMongoWasteReceiptArithmeticValidationService } from "./uploads/waste-receipt-arithmetic-validation.js";
+import { createMongoWasteReceiptDraftReader } from "./uploads/waste-receipt-draft.js";
 import { createMongoWasteReceiptProductMatchingService } from "./uploads/waste-receipt-product-matching.js";
 
 type AppDependencies = {
@@ -113,6 +114,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         config.WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR,
       ),
       createMongoWasteReceiptProductMatchingService(dependencies.database),
+      createMongoWasteReceiptDraftReader(dependencies.database),
     );
   const importVerification =
     dependencies.importVerification ??

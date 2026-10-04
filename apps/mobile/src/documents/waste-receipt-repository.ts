@@ -8,6 +8,11 @@ import {
   type WasteLine,
   type WasteReceipt,
 } from "@fl-copilot/domain";
+import { validateWasteReceiptArithmetic } from "@fl-copilot/analytics-core";
+import type {
+  WasteReceiptDraft,
+  WasteReceiptDraftCandidate,
+} from "@fl-copilot/sync-contracts";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 
@@ -21,6 +26,23 @@ export interface LocalWasteReceiptSummary {
   receipt: WasteReceipt;
   localFileUri: string | null;
   lineCount: number;
+}
+
+export interface LocalWasteLineDraft {
+  line: WasteLine;
+  arithmeticStatus: "NOT_CHECKED" | "CONSISTENT" | "MISMATCH";
+  arithmeticExpectedTotal: string | null;
+  arithmeticDifference: string | null;
+  arithmeticWarningCode: "AMOUNT_TO_REVIEW" | null;
+  matchState: "AUTO_MATCH" | "REVIEW" | "AMBIGUOUS" | "NO_MATCH";
+  matchedProductLabel: string | null;
+  candidates: WasteReceiptDraftCandidate[];
+}
+
+export interface LocalWasteReceiptDetail {
+  receipt: WasteReceipt;
+  localFileUri: string | null;
+  lines: LocalWasteLineDraft[];
 }
 
 export interface CreateCapturedWasteReceiptInput {
@@ -184,6 +206,238 @@ export class WasteReceiptRepository {
       receiptId,
     );
     return rows.map(mapLine);
+  }
+
+  async getReceiptDetail(id: string): Promise<LocalWasteReceiptDetail | null> {
+    const row = await this.database.getFirstAsync<
+      WasteReceiptRow & { local_uri: string | null }
+    >(
+      `SELECT r.*, f.local_uri
+       FROM waste_receipts r
+       LEFT JOIN local_files f ON f.id = r.local_file_id
+       WHERE r.id = ? AND r.deleted_at IS NULL`,
+      id,
+    );
+    if (!row) return null;
+    const lines = await this.database.getAllAsync<WasteLineRow>(
+      `SELECT * FROM waste_lines
+       WHERE receipt_id = ? AND deleted_at IS NULL
+       ORDER BY source_line_index, id`,
+      id,
+    );
+    return {
+      receipt: mapReceipt(row),
+      localFileUri: row.local_uri,
+      lines: lines.map(mapLineDraft),
+    };
+  }
+
+  async applyRemoteDraft(
+    sourceDocumentId: string,
+    draft: WasteReceiptDraft,
+    timestamp = new Date().toISOString(),
+  ) {
+    const receipt = await this.database.getFirstAsync<{
+      id: string;
+      store_id: string;
+    }>(
+      `SELECT id, store_id FROM waste_receipts
+       WHERE source_document_id = ? AND deleted_at IS NULL`,
+      sourceDocumentId,
+    );
+    if (!receipt) throw new Error("WASTE_RECEIPT_LOCAL_DRAFT_NOT_FOUND");
+
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      for (const line of draft.lines) {
+        await transaction.runAsync(
+          `INSERT INTO waste_lines (
+             id, store_id, receipt_id, source_line_index, raw_label, quantity,
+             weight, quantity_unit, unit_price, total_price, matched_product_id,
+             match_status, match_confidence, product_nature,
+             extraction_confidence_json, source_region_json, validation_status,
+             version, created_at, updated_at, deleted_at, sync_state,
+             remote_version, dirty, arithmetic_status,
+             arithmetic_expected_total, arithmetic_difference,
+             arithmetic_warning_code, match_state, matched_product_label,
+             match_candidates_json
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, 'SYNCED', NULL, 0, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(receipt_id, source_line_index) DO UPDATE SET
+             raw_label = excluded.raw_label,
+             quantity = excluded.quantity,
+             weight = excluded.weight,
+             quantity_unit = excluded.quantity_unit,
+             unit_price = excluded.unit_price,
+             total_price = excluded.total_price,
+             matched_product_id = excluded.matched_product_id,
+             match_status = excluded.match_status,
+             match_confidence = excluded.match_confidence,
+             product_nature = excluded.product_nature,
+             extraction_confidence_json = excluded.extraction_confidence_json,
+             source_region_json = excluded.source_region_json,
+             validation_status = excluded.validation_status,
+             updated_at = excluded.updated_at,
+             arithmetic_status = excluded.arithmetic_status,
+             arithmetic_expected_total = excluded.arithmetic_expected_total,
+             arithmetic_difference = excluded.arithmetic_difference,
+             arithmetic_warning_code = excluded.arithmetic_warning_code,
+             match_state = excluded.match_state,
+             matched_product_label = excluded.matched_product_label,
+             match_candidates_json = excluded.match_candidates_json`,
+          line.lineId,
+          receipt.store_id,
+          receipt.id,
+          line.sourceLineIndex,
+          line.rawLabel,
+          line.quantity,
+          line.weight,
+          line.quantityUnit,
+          line.unitPrice,
+          line.totalPrice,
+          line.matchedProductId,
+          localMatchStatus(line.matchState),
+          line.matchConfidence,
+          line.productNature,
+          line.extractionConfidence === null
+            ? null
+            : JSON.stringify(line.extractionConfidence),
+          line.sourceRegion === null ? null : JSON.stringify(line.sourceRegion),
+          line.validationStatus,
+          timestamp,
+          timestamp,
+          line.arithmeticStatus,
+          line.arithmeticExpectedTotal,
+          line.arithmeticDifference,
+          line.arithmeticWarningCode,
+          line.matchState,
+          line.matchedProductLabel,
+          JSON.stringify(line.candidates),
+        );
+      }
+      await transaction.runAsync(
+        `UPDATE waste_receipts
+         SET detected_receipt_date = ?, processing_status = 'TO_VALIDATE',
+             ai_status = 'COMPLETED', updated_at = ?, version = version + 1
+         WHERE id = ? AND store_id = ?`,
+        draft.detectedReceiptDate,
+        timestamp,
+        receipt.id,
+        receipt.store_id,
+      );
+      await transaction.runAsync(
+        `UPDATE source_documents
+         SET remote_processing_status = 'TO_VALIDATE',
+             extraction_model_version = ?, updated_at = ?
+         WHERE id = ? AND store_id = ?`,
+        draft.extractionModelVersion,
+        timestamp,
+        sourceDocumentId,
+        receipt.store_id,
+      );
+    });
+  }
+
+  async confirmWasteDate(receiptId: string, date: string) {
+    const parsedDate =
+      wasteReceiptSchema.shape.confirmedWasteDate.safeParse(date);
+    if (!parsedDate.success || parsedDate.data == null) {
+      throw new Error("WASTE_RECEIPT_DATE_INVALID");
+    }
+    await this.database.runAsync(
+      `UPDATE waste_receipts
+       SET confirmed_waste_date = ?, updated_at = ?, version = version + 1,
+           dirty = 1, sync_state = 'LOCAL_ONLY'
+       WHERE id = ?`,
+      parsedDate.data,
+      new Date().toISOString(),
+      receiptId,
+    );
+  }
+
+  async updateLineValues(
+    receiptId: string,
+    lineId: string,
+    input: {
+      rawLabel: string;
+      weight: string | null;
+      unitPrice: string | null;
+      totalPrice: string | null;
+    },
+  ) {
+    const current = await this.database.getFirstAsync<WasteLineRow>(
+      `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
+      lineId,
+      receiptId,
+    );
+    if (!current) throw new Error("WASTE_RECEIPT_LINE_NOT_FOUND");
+    const rawLabel = input.rawLabel.trim();
+    if (!rawLabel) throw new Error("WASTE_RECEIPT_LABEL_REQUIRED");
+    const arithmetic = validateWasteReceiptArithmetic([
+      {
+        sourceLineIndex: current.source_line_index,
+        weight: nullableDecimal(input.weight),
+        unitPrice: nullableDecimal(input.unitPrice),
+        totalPrice: nullableDecimal(input.totalPrice),
+      },
+    ]).lines[0]!;
+    const validationStatus =
+      arithmetic.status === "MISMATCH" || current.match_status !== "MATCHED"
+        ? "TO_REVIEW"
+        : "PENDING";
+    await this.database.runAsync(
+      `UPDATE waste_lines
+       SET raw_label = ?, weight = ?, unit_price = ?, total_price = ?,
+           arithmetic_status = ?, arithmetic_expected_total = ?,
+           arithmetic_difference = ?, arithmetic_warning_code = ?,
+           validation_status = ?, updated_at = ?, version = version + 1,
+           dirty = 1, sync_state = 'LOCAL_ONLY'
+       WHERE id = ? AND receipt_id = ?`,
+      rawLabel,
+      input.weight,
+      input.unitPrice,
+      input.totalPrice,
+      arithmetic.status,
+      arithmetic.expectedTotal,
+      arithmetic.absoluteDifference,
+      arithmetic.warningCode,
+      validationStatus,
+      new Date().toISOString(),
+      lineId,
+      receiptId,
+    );
+  }
+
+  async selectProductCandidate(
+    receiptId: string,
+    lineId: string,
+    productId: string,
+  ) {
+    const row = await this.database.getFirstAsync<WasteLineRow>(
+      `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
+      lineId,
+      receiptId,
+    );
+    if (!row) throw new Error("WASTE_RECEIPT_LINE_NOT_FOUND");
+    const candidate = parseCandidates(row.match_candidates_json).find(
+      (item) => item.productId === productId,
+    );
+    if (!candidate) throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+    await this.database.runAsync(
+      `UPDATE waste_lines
+       SET matched_product_id = ?, matched_product_label = ?,
+           match_status = 'MATCHED', match_state = 'AUTO_MATCH',
+           match_confidence = ?, product_nature = ?,
+           validation_status = ?, updated_at = ?, version = version + 1,
+           dirty = 1, sync_state = 'LOCAL_ONLY'
+       WHERE id = ? AND receipt_id = ?`,
+      candidate.productId,
+      candidate.label,
+      candidate.score,
+      candidate.nature,
+      row.arithmetic_status === "MISMATCH" ? "TO_REVIEW" : "PENDING",
+      new Date().toISOString(),
+      lineId,
+      receiptId,
+    );
   }
 }
 
@@ -429,6 +683,42 @@ function mapLine(row: WasteLineRow) {
   });
 }
 
+function mapLineDraft(row: WasteLineRow): LocalWasteLineDraft {
+  return {
+    line: mapLine(row),
+    arithmeticStatus: row.arithmetic_status,
+    arithmeticExpectedTotal: row.arithmetic_expected_total,
+    arithmeticDifference: row.arithmetic_difference,
+    arithmeticWarningCode: row.arithmetic_warning_code,
+    matchState: row.match_state,
+    matchedProductLabel: row.matched_product_label,
+    candidates: parseCandidates(row.match_candidates_json),
+  };
+}
+
+function localMatchStatus(
+  state: WasteReceiptDraft["lines"][number]["matchState"],
+) {
+  if (state === "AUTO_MATCH") return "MATCHED";
+  if (state === "NO_MATCH") return "UNMATCHED";
+  return "AMBIGUOUS";
+}
+
+function nullableDecimal(value: string | null) {
+  if (value === null || value.trim() === "") return null;
+  const normalized = value.trim().replace(",", ".");
+  if (!/^\d+(?:\.\d+)?$/.test(normalized)) {
+    throw new Error("WASTE_RECEIPT_DECIMAL_INVALID");
+  }
+  return normalized;
+}
+
+function parseCandidates(value: string | null): WasteReceiptDraftCandidate[] {
+  if (!value) return [];
+  const parsed = JSON.parse(value) as WasteReceiptDraftCandidate[];
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 function parseNullableJson(value: string | null) {
   return value === null ? null : (JSON.parse(value) as unknown);
 }
@@ -477,6 +767,13 @@ interface WasteLineRow {
   extraction_confidence_json: string | null;
   source_region_json: string | null;
   validation_status: string;
+  arithmetic_status: "NOT_CHECKED" | "CONSISTENT" | "MISMATCH";
+  arithmetic_expected_total: string | null;
+  arithmetic_difference: string | null;
+  arithmetic_warning_code: "AMOUNT_TO_REVIEW" | null;
+  match_state: "AUTO_MATCH" | "REVIEW" | "AMBIGUOUS" | "NO_MATCH";
+  matched_product_label: string | null;
+  match_candidates_json: string | null;
   version: number;
   created_at: string;
   updated_at: string;
