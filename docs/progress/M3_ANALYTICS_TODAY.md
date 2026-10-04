@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection and scoped local recomputation.
+The active increment covers M3-T01 through M3-T09 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection, scoped local recomputation and remote confirmation parity.
 
 ## Implemented
 
@@ -42,42 +42,46 @@ The active increment covers M3-T01 through M3-T08 from `docs/specs/IMPLEMENTATIO
 - Each scope rebuilds its `ProductDailyPerformance` from normalized validated SQLite observations and upserts a rebuildable local read model with formula version, input revision and source lineage.
 - `DepartmentDailyPerformance` is rebuilt once per affected business date after all product scopes in the job, avoiding repeated quadratic aggregation during large imports.
 - Pending analytics work resumes when the Imports screen opens; completed product and department results remain available in SQLite for future offline screens.
+- The API imports the same `analytics-core` builders through a remote confirmation service, reads canonical MongoDB observations, and upserts rebuildable product/day and department/day projections with deterministic identifiers.
+- Remote scopes are deduplicated and sorted before calculation; department projections are rebuilt once per affected date after all product projections are persisted.
+- MongoDB migration 7 adds the observation lookup and unique analytical read-model indexes required by remote confirmation.
 
 ## Verification evidence
 
-| Check                 | Result                                                                                                                    |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Decimal round-trip    | `0.580`, `4.88`, `172.45`, zero and signed values retain their exact serialized scale                                     |
-| Floating-point safety | `0.1 + 0.2` serializes as `0.3`                                                                                           |
-| Exact arithmetic      | Addition, subtraction, multiplication and scale-bounded division pass unit coverage                                       |
-| Money                 | EUR conversion, addition and quantity-by-unit-price multiplication serialize with two decimal places and half-up rounding |
-| Invalid values        | Exponents, partial decimals, leading zeroes, non-finite values and negative zero fail closed                              |
-| Missing vs zero       | Known zero remains available; fully missing inputs remain unavailable                                                     |
-| Unit compatibility    | Compatible quantities retain scale; mixed and unknown units are unavailable                                               |
-| Waste bases           | Known cost, estimated cost and selling-value waste remain separate                                                        |
-| Ratios                | Missing or non-positive denominators are unavailable; compatible valid inputs calculate deterministically                 |
-| Registry              | KPI identifiers are unique and unvalidated aggregate margin rate remains disabled                                         |
-| Product-day parity    | The same golden inputs serialize identically for local and remote runtimes, independent of input ordering                 |
-| Product-day lineage   | Source record IDs, formula version and deterministic input revision remain attached to the calculated result              |
-| J-7 comparison        | Exact prior-week date is selected; a missing date remains unavailable and a zero reference has no percentage              |
-| Reference samples     | Same-weekday averages expose the actual sample size; comparable periods reject missing equivalent days                    |
-| Extended modes        | Year-over-year, before-operation and custom references retain their explicit periods and methods                          |
-| Comparison stability  | Input ordering does not change serialized output, warnings, lineage or quality score                                      |
-| Partial local import  | 75 observed records out of 100 produce source quality `0.75`, `PARTIAL` and an explicit warning                           |
-| Opening calendar      | Five observed configured business days out of six produce `0.8333` and identify the missing date                          |
-| Waste cost coverage   | 80% known, 10% estimated and 10% unknown remain separate; known-cost quality is `0.8`                                     |
-| Quality stability     | Component and lineage input order does not change the serialized quality result                                           |
-| Candidate direction   | Waste requires an increase; sales and margin require decreases; opposite movements do not create candidates               |
-| Configured thresholds | Both absolute economic impact and percentage deviation must pass configured thresholds                                    |
-| Candidate quality     | Extreme signals with incomplete data remain present as `LOW_QUALITY` with explicit warnings                               |
-| Candidate evidence    | Current, reference, absolute change, percentage change and quality remain structured and traceable                        |
-| Scoped scheduling     | Duplicate product/date scopes collapse to one calculation and concurrent runs for one store coalesce                      |
-| UI responsiveness     | Five scopes processed in chunks of two yield twice before completion; chunk size is configurable                          |
-| Retry safety          | Failed idempotent jobs move through bounded `RETRY` to `FAILED` with a retained diagnostic                                |
-| SQLite integration    | One validated sales/waste fixture rebuilds and caches the exact product day and department day                            |
-| Import trigger        | Local publication creates both remote-upload and analytics-recomputation jobs in the same transaction                     |
+| Check                 | Result                                                                                                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Decimal round-trip    | `0.580`, `4.88`, `172.45`, zero and signed values retain their exact serialized scale                                                                            |
+| Floating-point safety | `0.1 + 0.2` serializes as `0.3`                                                                                                                                  |
+| Exact arithmetic      | Addition, subtraction, multiplication and scale-bounded division pass unit coverage                                                                              |
+| Money                 | EUR conversion, addition and quantity-by-unit-price multiplication serialize with two decimal places and half-up rounding                                        |
+| Invalid values        | Exponents, partial decimals, leading zeroes, non-finite values and negative zero fail closed                                                                     |
+| Missing vs zero       | Known zero remains available; fully missing inputs remain unavailable                                                                                            |
+| Unit compatibility    | Compatible quantities retain scale; mixed and unknown units are unavailable                                                                                      |
+| Waste bases           | Known cost, estimated cost and selling-value waste remain separate                                                                                               |
+| Ratios                | Missing or non-positive denominators are unavailable; compatible valid inputs calculate deterministically                                                        |
+| Registry              | KPI identifiers are unique and unvalidated aggregate margin rate remains disabled                                                                                |
+| Product-day parity    | The same golden inputs serialize identically for local and remote runtimes, independent of input ordering                                                        |
+| Product-day lineage   | Source record IDs, formula version and deterministic input revision remain attached to the calculated result                                                     |
+| J-7 comparison        | Exact prior-week date is selected; a missing date remains unavailable and a zero reference has no percentage                                                     |
+| Reference samples     | Same-weekday averages expose the actual sample size; comparable periods reject missing equivalent days                                                           |
+| Extended modes        | Year-over-year, before-operation and custom references retain their explicit periods and methods                                                                 |
+| Comparison stability  | Input ordering does not change serialized output, warnings, lineage or quality score                                                                             |
+| Partial local import  | 75 observed records out of 100 produce source quality `0.75`, `PARTIAL` and an explicit warning                                                                  |
+| Opening calendar      | Five observed configured business days out of six produce `0.8333` and identify the missing date                                                                 |
+| Waste cost coverage   | 80% known, 10% estimated and 10% unknown remain separate; known-cost quality is `0.8`                                                                            |
+| Quality stability     | Component and lineage input order does not change the serialized quality result                                                                                  |
+| Candidate direction   | Waste requires an increase; sales and margin require decreases; opposite movements do not create candidates                                                      |
+| Configured thresholds | Both absolute economic impact and percentage deviation must pass configured thresholds                                                                           |
+| Candidate quality     | Extreme signals with incomplete data remain present as `LOW_QUALITY` with explicit warnings                                                                      |
+| Candidate evidence    | Current, reference, absolute change, percentage change and quality remain structured and traceable                                                               |
+| Scoped scheduling     | Duplicate product/date scopes collapse to one calculation and concurrent runs for one store coalesce                                                             |
+| UI responsiveness     | Five scopes processed in chunks of two yield twice before completion; chunk size is configurable                                                                 |
+| Retry safety          | Failed idempotent jobs move through bounded `RETRY` to `FAILED` with a retained diagnostic                                                                       |
+| SQLite integration    | One validated sales/waste fixture rebuilds and caches the exact product day and department day                                                                   |
+| Import trigger        | Local publication creates both remote-upload and analytics-recomputation jobs in the same transaction                                                            |
+| Local/remote parity   | The golden product-day and department-day fixture serializes byte-for-byte identically through the mobile-compatible builder and the remote confirmation service |
 
 ## Next work
 
-1. Merge M3-T08 after repository-wide validation.
-2. Implement M3-T09: remote analytics confirmation using the same `analytics-core` builders and a local/remote parity suite.
+1. Merge M3-T09 after repository-wide validation.
+2. Implement M3-T10: the offline-first `Aujourd’hui` screen backed only by SQLite analytical projections.

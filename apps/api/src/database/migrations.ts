@@ -110,6 +110,32 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 7,
+    name: "initialize-analytics-read-model-indexes",
+    async up(database) {
+      await Promise.all([
+        database.collection("salesObservations").createIndex({
+          storeId: 1,
+          productId: 1,
+          date: 1,
+          validationStatus: 1,
+        }),
+        database.collection("wasteObservations").createIndex({
+          storeId: 1,
+          productId: 1,
+          date: 1,
+          validationStatus: 1,
+        }),
+        database
+          .collection("productDailyPerformance")
+          .createIndex({ storeId: 1, productId: 1, date: 1 }, { unique: true }),
+        database
+          .collection("departmentDailyPerformance")
+          .createIndex({ storeId: 1, date: 1 }, { unique: true }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(
