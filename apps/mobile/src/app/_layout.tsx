@@ -49,6 +49,7 @@ function RootLayout() {
         <Stack.Screen name="login" />
         <Stack.Screen name="verify" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="waste-capture" />
       </Stack>
     </AppProviders>
   );
