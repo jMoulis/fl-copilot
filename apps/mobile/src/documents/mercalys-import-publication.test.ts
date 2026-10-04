@@ -129,10 +129,29 @@ describe("MercalysImportPublicationRepository", () => {
       sync_state: "PENDING",
     });
     expect(
-      reopened.prepare("SELECT type, status FROM local_jobs").get(),
-    ).toEqual({
-      type: "SOURCE_UPLOAD_AND_REGISTER",
-      status: "PENDING",
+      reopened
+        .prepare("SELECT type, status FROM local_jobs ORDER BY type")
+        .all(),
+    ).toEqual([
+      {
+        type: "ANALYTICS_RECOMPUTE_PRODUCT_DATES",
+        status: "PENDING",
+      },
+      { type: "SOURCE_UPLOAD_AND_REGISTER", status: "PENDING" },
+    ]);
+    expect(
+      JSON.parse(
+        (
+          reopened
+            .prepare(
+              "SELECT payload_json FROM local_jobs WHERE type = 'ANALYTICS_RECOMPUTE_PRODUCT_DATES'",
+            )
+            .get() as { payload_json: string }
+        ).payload_json,
+      ),
+    ).toMatchObject({
+      storeId,
+      scopes: [{ productId, businessDate: "2026-09-26" }],
     });
     reopened.close();
   });
@@ -205,7 +224,7 @@ describe("MercalysImportPublicationRepository", () => {
     ).toEqual({ count: 1 });
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM local_jobs").get(),
-    ).toEqual({ count: 1 });
+    ).toEqual({ count: 2 });
     database.close();
   });
 

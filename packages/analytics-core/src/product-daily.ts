@@ -16,11 +16,47 @@ import type { DecimalString } from "./decimal";
 
 export const PRODUCT_DAILY_FORMULA_VERSION = "product-daily-v1";
 
+export type ProductDailySalesObservation = Pick<
+  SalesObservation,
+  | "id"
+  | "storeId"
+  | "productId"
+  | "businessDate"
+  | "quantity"
+  | "purchaseValue"
+  | "salesValue"
+  | "marginValue"
+  | "marginRate"
+  | "sourceRecordId"
+  | "validationStatus"
+  | "version"
+  | "updatedAt"
+  | "deletedAt"
+>;
+
+export type ProductDailyWasteObservation = Pick<
+  WasteObservation,
+  | "id"
+  | "storeId"
+  | "productId"
+  | "businessDate"
+  | "quantity"
+  | "purchaseValueKnown"
+  | "purchaseValueEstimated"
+  | "salesValue"
+  | "costQuality"
+  | "sourceRecordId"
+  | "validationStatus"
+  | "version"
+  | "updatedAt"
+  | "deletedAt"
+>;
+
 export interface ProductDailyPerformanceInput {
   readonly product: Product;
   readonly businessDate: string;
-  readonly salesObservations: readonly SalesObservation[];
-  readonly wasteObservations: readonly WasteObservation[];
+  readonly salesObservations: readonly ProductDailySalesObservation[];
+  readonly wasteObservations: readonly ProductDailyWasteObservation[];
   readonly commercialOperationIds?: readonly string[];
   readonly merchandisingPlanIds?: readonly string[];
   readonly contextEventIds?: readonly string[];
@@ -179,7 +215,7 @@ export function serializeProductDailyPerformance(
 
 function activeSalesObservations(
   input: ProductDailyPerformanceInput,
-): readonly SalesObservation[] {
+): readonly ProductDailySalesObservation[] {
   validatePerimeter(input.product, input.businessDate, input.salesObservations);
   return input.salesObservations.filter(
     (observation) => observation.deletedAt === null,
@@ -188,7 +224,7 @@ function activeSalesObservations(
 
 function activeWasteObservations(
   input: ProductDailyPerformanceInput,
-): readonly WasteObservation[] {
+): readonly ProductDailyWasteObservation[] {
   validatePerimeter(input.product, input.businessDate, input.wasteObservations);
   return input.wasteObservations.filter(
     (observation) => observation.deletedAt === null,
@@ -198,7 +234,9 @@ function activeWasteObservations(
 function validatePerimeter(
   product: Product,
   businessDate: string,
-  observations: readonly (SalesObservation | WasteObservation)[],
+  observations: readonly (
+    ProductDailySalesObservation | ProductDailyWasteObservation
+  )[],
 ) {
   for (const observation of observations) {
     if (
@@ -221,7 +259,7 @@ type BuilderFormulaResult = Omit<DecimalFormulaResult, "reason"> & {
 };
 
 function sourceMarginRate(
-  observations: readonly SalesObservation[],
+  observations: readonly ProductDailySalesObservation[],
 ): BuilderFormulaResult {
   if (observations.length !== 1) {
     return {
@@ -280,8 +318,8 @@ function sortedUnique(
 
 function buildInputRevision(
   product: Product,
-  sales: readonly SalesObservation[],
-  waste: readonly WasteObservation[],
+  sales: readonly ProductDailySalesObservation[],
+  waste: readonly ProductDailyWasteObservation[],
 ): string {
   return [
     `product:${product.id}:${product.version}`,

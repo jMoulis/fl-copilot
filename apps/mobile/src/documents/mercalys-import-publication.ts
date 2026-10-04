@@ -9,6 +9,7 @@ import {
 } from "@fl-copilot/domain";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
+import { enqueueAnalyticsRecomputationJob } from "../analytics/local-recomputation";
 import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
 import {
   analyzeMercalysReconciliation,
@@ -36,6 +37,7 @@ export interface PublishMercalysImportInput {
 export interface PublishedMercalysImport {
   sourceDocumentId: string;
   localFileId: string;
+  analyticsJobId: string;
   publishedCount: number;
   remainingCount: number;
   replacedCount: number;
@@ -135,6 +137,7 @@ export class MercalysImportPublicationRepository {
     const sourceDocumentId = this.generateId();
     const localFileId = this.generateId();
     const jobId = this.generateId();
+    const analyticsJobId = this.generateId();
     const reconciliationId = input.reconciliationApproval
       ? this.generateId()
       : null;
@@ -303,6 +306,17 @@ export class MercalysImportPublicationRepository {
         createdAt,
       );
 
+      await enqueueAnalyticsRecomputationJob(transaction, {
+        jobId: analyticsJobId,
+        storeId: input.storeId,
+        sourceDocumentId,
+        scopes: readyLines.map((line) => ({
+          productId: line.match.matchedProductId!,
+          businessDate: line.record.businessDate,
+        })),
+        createdAt,
+      });
+
       if (reconciliation && reconciliationId && input.reconciliationApproval) {
         await insertReconciliationAudit(transaction, {
           id: reconciliationId,
@@ -321,6 +335,7 @@ export class MercalysImportPublicationRepository {
     return {
       sourceDocumentId,
       localFileId,
+      analyticsJobId,
       publishedCount,
       remainingCount:
         input.summary.productReviewCount + input.summary.errorCount,

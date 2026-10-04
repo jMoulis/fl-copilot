@@ -21,6 +21,8 @@ No operational state is stored in Zustand or TanStack Query. M0-T06 opens native
 
 The web build bypasses native SQLite because it is a visual preview. Native iOS/Android builds use `fl-copilot.db`; repositories added by later tickets must consume the provider rather than issuing ad hoc SQL from screens.
 
+M3-T08 adds rebuildable `product_daily_performance` and `department_daily_performance` caches. A validated Mercalys publication queues deduplicated product/date recomputation in the same SQLite transaction. The scheduler processes configurable chunks, yields between them, retries idempotently and aggregates the department only once per affected date. These read models are local caches; normalized observations remain the source of truth.
+
 M0-T07 generates `deviceId` with Expo Crypto and persists it in local metadata. It survives ordinary restarts and is regenerated after a clean installation. The initialized database context exposes it for authentication and synchronization envelopes. M0-T08 adds the email-code flow and secure session persistence. M0-T09 separates development, staging and production configuration; staging and production require their own EAS-managed API URL.
 
 M0-T10 initializes Sentry when `EXPO_PUBLIC_SENTRY_DSN` is configured. Error events omit user identity, request data, attachments and breadcrumb payloads. In development and staging, **Plus → Diagnostic de développement** sends one deliberate test error. The public organization and project slugs are part of the Expo plugin configuration. Source-map upload during EAS builds additionally requires a sensitive `SENTRY_AUTH_TOKEN`, which must stay out of Git.

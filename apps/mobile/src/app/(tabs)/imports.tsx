@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { CryptoDigestAlgorithm, digest, randomUUID } from "expo-crypto";
@@ -40,6 +40,10 @@ import { SheetJsSpreadsheetParser } from "@/documents/sheetjs-spreadsheet-parser
 import { ProductMasterRepository } from "@/products/product-master-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { useSync } from "@/sync/sync-provider";
+import {
+  LocalAnalyticsRecomputationScheduler,
+  SQLiteProductDateRecomputer,
+} from "@/analytics/local-recomputation";
 
 type ImportStage =
   "IDLE" | "READING" | "MATCHING" | "VALIDATING" | "COMPLETE" | "ERROR";
@@ -88,6 +92,14 @@ export default function MercalysImportsScreen() {
     () => new MercalysImportPublicationRepository(sqlite, randomUUID),
     [sqlite],
   );
+  const analyticsScheduler = useMemo(
+    () =>
+      new LocalAnalyticsRecomputationScheduler(
+        sqlite,
+        new SQLiteProductDateRecomputer(sqlite),
+      ),
+    [sqlite],
+  );
   const [stage, setStage] = useState<ImportStage>("IDLE");
   const [filename, setFilename] = useState<string>();
   const [summary, setSummary] = useState<MercalysImportValidationSummary>();
@@ -111,6 +123,10 @@ export default function MercalysImportsScreen() {
     [summary],
   );
   const loading = ["READING", "MATCHING", "VALIDATING"].includes(stage);
+
+  useEffect(() => {
+    if (storeId) void analyticsScheduler.process(storeId);
+  }, [analyticsScheduler, storeId]);
 
   async function chooseWorkbook() {
     if (!hasNativeFilePicker || !storeId) return;
@@ -329,6 +345,12 @@ export default function MercalysImportsScreen() {
       });
       setPublication(result);
       setReconciliation(undefined);
+      const analyticsRun = await analyticsScheduler.process(storeId);
+      if (analyticsRun.failedJobs > 0) {
+        setError(
+          "Les données sont publiées, mais certains indicateurs restent à recalculer.",
+        );
+      }
       void syncNow(storeId);
     } catch (caught) {
       if (durableFile?.exists) durableFile.delete();
