@@ -300,6 +300,49 @@ export const wasteObservations = sqliteTable(
   ],
 );
 
+export const productDailyPerformance = sqliteTable(
+  "product_daily_performance",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    businessDate: text("business_date").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    origin: text("origin").notNull(),
+    formulaVersion: text("formula_version").notNull(),
+    inputRevision: text("input_revision").notNull(),
+    computedAt: text("computed_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_product_daily_unique").on(
+      table.storeId,
+      table.productId,
+      table.businessDate,
+    ),
+    index("idx_product_daily_store_date").on(table.storeId, table.businessDate),
+  ],
+);
+
+export const departmentDailyPerformance = sqliteTable(
+  "department_daily_performance",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    businessDate: text("business_date").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    origin: text("origin").notNull(),
+    formulaVersion: text("formula_version").notNull(),
+    inputRevision: text("input_revision").notNull(),
+    computedAt: text("computed_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_department_daily_unique").on(
+      table.storeId,
+      table.businessDate,
+    ),
+  ],
+);
+
 export const importReconciliations = sqliteTable(
   "import_reconciliations",
   {
@@ -433,6 +476,8 @@ export const localSchema = {
   importVerificationConflicts,
   salesObservations,
   wasteObservations,
+  productDailyPerformance,
+  departmentDailyPerformance,
   importReconciliations,
   products,
   productIdentifiers,

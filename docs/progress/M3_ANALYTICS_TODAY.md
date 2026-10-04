@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T07 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality and structured candidate detection.
+The active increment covers M3-T01 through M3-T08 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality, structured candidate detection and scoped local recomputation.
 
 ## Implemented
 
@@ -37,6 +37,11 @@ The active increment covers M3-T01 through M3-T07 from `docs/specs/IMPLEMENTATIO
 - Missing references suppress business-change candidates; a valid zero reference may still produce a waste spike with a null percentage and an explicit warning.
 - Extreme signals backed by incomplete inputs remain visible as `LOW_QUALITY`; structured evidence and lineage let downstream layers explain the limitation without recalculating facts.
 - Multiple signals for the same entity remain separate analytical candidates so a later ranking or AI layer can combine them without losing evidence.
+- Publishing validated Mercalys lines atomically queues a local analytics job containing deduplicated product/date scopes alongside the existing remote-upload job.
+- The local scheduler claims jobs idempotently, retries bounded failures and yields to the native interface between configurable chunks so pilot-sized imports do not monopolize the JavaScript event loop.
+- Each scope rebuilds its `ProductDailyPerformance` from normalized validated SQLite observations and upserts a rebuildable local read model with formula version, input revision and source lineage.
+- `DepartmentDailyPerformance` is rebuilt once per affected business date after all product scopes in the job, avoiding repeated quadratic aggregation during large imports.
+- Pending analytics work resumes when the Imports screen opens; completed product and department results remain available in SQLite for future offline screens.
 
 ## Verification evidence
 
@@ -66,8 +71,13 @@ The active increment covers M3-T01 through M3-T07 from `docs/specs/IMPLEMENTATIO
 | Configured thresholds | Both absolute economic impact and percentage deviation must pass configured thresholds                                    |
 | Candidate quality     | Extreme signals with incomplete data remain present as `LOW_QUALITY` with explicit warnings                               |
 | Candidate evidence    | Current, reference, absolute change, percentage change and quality remain structured and traceable                        |
+| Scoped scheduling     | Duplicate product/date scopes collapse to one calculation and concurrent runs for one store coalesce                      |
+| UI responsiveness     | Five scopes processed in chunks of two yield twice before completion; chunk size is configurable                          |
+| Retry safety          | Failed idempotent jobs move through bounded `RETRY` to `FAILED` with a retained diagnostic                                |
+| SQLite integration    | One validated sales/waste fixture rebuilds and caches the exact product day and department day                            |
+| Import trigger        | Local publication creates both remote-upload and analytics-recomputation jobs in the same transaction                     |
 
 ## Next work
 
-1. Merge M3-T07 after repository-wide validation.
-2. Implement M3-T08: scoped local recomputation by product and business date without blocking the UI.
+1. Merge M3-T08 after repository-wide validation.
+2. Implement M3-T09: remote analytics confirmation using the same `analytics-core` builders and a local/remote parity suite.

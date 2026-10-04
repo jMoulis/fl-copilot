@@ -483,6 +483,41 @@ export const localMigrations: readonly LocalMigration[] = [
         ON import_verification_conflicts (store_id, status, detected_at);
     `,
   },
+  {
+    version: 11,
+    name: "add-local-analytics-read-models",
+    sql: `
+      CREATE TABLE product_daily_performance (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        product_id TEXT NOT NULL,
+        business_date TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        formula_version TEXT NOT NULL,
+        input_revision TEXT NOT NULL,
+        computed_at TEXT NOT NULL,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE RESTRICT
+      );
+      CREATE UNIQUE INDEX idx_product_daily_unique
+        ON product_daily_performance (store_id, product_id, business_date);
+      CREATE INDEX idx_product_daily_store_date
+        ON product_daily_performance (store_id, business_date);
+
+      CREATE TABLE department_daily_performance (
+        id TEXT PRIMARY KEY NOT NULL,
+        store_id TEXT NOT NULL,
+        business_date TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        formula_version TEXT NOT NULL,
+        input_revision TEXT NOT NULL,
+        computed_at TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX idx_department_daily_unique
+        ON department_daily_performance (store_id, business_date);
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {
