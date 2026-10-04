@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fl-copilot/domain": "workspace:*",
     "decimal.js": "^10.6.0"
   }
 }
