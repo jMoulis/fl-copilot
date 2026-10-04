@@ -69,18 +69,53 @@ The complete experience is tested on representative iOS and Android devices and 
 ### M3 — Shared analytics and Aujourd’hui
 
 1. Canonical decimal utilities — complete.
-2. KPI registry and formulas, including missing-versus-zero and unit compatibility.
-3. Product daily performance builder.
-4. Department daily performance builder.
-5. Comparison engine for J-7 and available comparable periods.
-6. Data-quality engine.
-7. Deterministic analytical candidates.
-8. Scoped local recomputation.
-9. Remote analytics confirmation with the same shared implementation.
-10. Native `Aujourd’hui` screen backed only by SQLite.
-11. Offline Today acceptance and local/remote golden parity.
+2. Product UX/UI foundations for navigation, typography, semantic colors, spacing and reusable KPI/state components.
+3. KPI registry and formulas, including missing-versus-zero and unit compatibility.
+4. Product daily performance builder.
+5. Department daily performance builder.
+6. Comparison engine for J-7 and available comparable periods.
+7. Data-quality engine.
+8. Deterministic analytical candidates.
+9. Scoped local recomputation.
+10. Remote analytics confirmation with the same shared implementation.
+11. Native `Aujourd’hui` screen backed only by SQLite.
+12. Offline Today acceptance, visual acceptance on iPhone and local/remote golden parity.
 
 M3 is the immediate priority because it converts the trusted M2 data into a useful daily product before AI or additional document workflows increase scope.
+
+## Cross-cutting UX/UI track
+
+UX/UI is a continuous product track rather than a separate milestone that postpones functional delivery. Its first structured pass happens now, before `Aujourd’hui` defines the visual reference for M3 and the later field workflows.
+
+### UX-1 — Product foundations before the M3 Today screen
+
+Define and apply a small, reusable native design system:
+
+- product personality and visual direction appropriate for fast use in a store;
+- accessible core and semantic color tokens for success, attention, conflict, offline and incomplete data;
+- typography hierarchy, spacing scale, corner radii, icons and touch-target rules;
+- navigation and information architecture, especially the separation of daily work, data administration, settings and diagnostics;
+- reusable cards, KPI blocks, charts, lists, empty states, loading states, errors and synchronization indicators;
+- representative `Aujourd’hui` states covering complete data, stale data, missing data, offline operation and actionable priorities.
+
+The M3 implementation should use these foundations instead of introducing screen-specific colors and component styles. The visual direction should be reviewed on the target iPhone before the full Today screen is considered complete.
+
+### UX gates during product milestones
+
+Each milestone keeps its functional acceptance criteria and adds a focused usability review:
+
+| Milestone | UX focus                                                                              | Evidence                                                                                                       |
+| --------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| M3        | Readable daily hierarchy, trusted KPI presentation and at most three clear priorities | Today states reviewed on iPhone, including offline and incomplete-data cases                                   |
+| M4        | Fast camera/import flow, correction of extracted lines and clear pending states       | A receipt can be captured and corrected one-handed without losing work                                         |
+| M5        | Weekly overview, operation detail and execution checklist                             | A manager can identify the week’s required actions without opening technical screens                           |
+| M6        | Product search, substitute comparison and field-event capture                         | Need and substitution choices remain understandable under time pressure                                        |
+| M7        | Separation of facts, interpretation, recommendation, decision and execution           | Pilot users can explain what the Copilot knows and what action remains theirs                                  |
+| M8        | Cross-platform polish, accessibility and recovery                                     | iOS/Android audit covers contrast, Dynamic Type, touch targets, screen readers, performance and error recovery |
+
+### UX-2 — Pilot refinement in M8
+
+Use pilot observation and product analytics to correct friction, wording and visual priority. M8 includes final accessibility and consistency work, but it must not be the first time the main workflows receive design review.
 
 ## Navigation maturity
 
