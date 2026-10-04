@@ -8,12 +8,14 @@ import {
   SecondaryButton,
   BottomSheet,
   SyncState,
+  MenuRow,
 } from "@/components/ui";
 import { useUiStore } from "@/store/ui";
 import { useAuth } from "@/auth/auth-provider";
 import { getAppEnvironment } from "@/config/environment";
 import { sendMobileObservabilityTest } from "@/observability/sentry";
 import { useSync } from "@/sync/sync-provider";
+
 export default function MoreScreen() {
   const visible = useUiStore((state) => state.aboutVisible);
   const setVisible = useUiStore((state) => state.setAboutVisible);
@@ -21,51 +23,36 @@ export default function MoreScreen() {
   const { status: syncStatus, pendingCount } = useSync();
   const [monitoringStatus, setMonitoringStatus] = useState<string>();
   const canTestMonitoring = getAppEnvironment() !== "production";
+
   return (
     <AppScreen>
-      <AppHeader title="Plus" subtitle="Votre espace Fruits & Légumes." />
-      <SectionCard title="Votre application">
-        <Text className="text-base leading-6 text-muted">
-          Retrouvez ici les informations et, prochainement, les réglages de
-          votre rayon.
-        </Text>
-        <SecondaryButton
-          label="À propos de l’application"
-          onPress={() => setVisible(true)}
-        />
-      </SectionCard>
-      <SectionCard title="Référentiel produit">
-        <Text className="text-base leading-6 text-muted">
-          Créez et corrigez les produits, identifiants et alias du rayon, même
-          hors connexion.
-        </Text>
-        <SecondaryButton
-          label="Voir les produits"
+      <AppHeader
+        title="Plus"
+        subtitle="Données du rayon, synchronisation et réglages."
+      />
+
+      <SectionCard
+        title="Données du rayon"
+        description="Gérez les sources qui alimentent vos analyses."
+      >
+        <MenuRow
+          title="Produits"
+          description="Référentiel, identifiants et alias"
+          icon="leaf-outline"
           onPress={() => router.push("/(tabs)/products" as Href)}
         />
-      </SectionCard>
-      <SectionCard title="Imports Mercalys">
-        <Text className="text-base leading-6 text-muted">
-          Vérifiez localement un export de ventes ou de casse avant sa
-          publication.
-        </Text>
-        <SecondaryButton
-          label="Importer un fichier Mercalys"
+        <MenuRow
+          title="Imports Mercalys"
+          description="Ventes et casse à vérifier puis publier"
+          icon="document-text-outline"
           onPress={() => router.push("/(tabs)/imports" as Href)}
         />
       </SectionCard>
-      <SectionCard title="Votre session">
-        <Text className="text-base leading-6 text-muted">
-          {session?.user.email ?? "Session locale"}
-        </Text>
-        <SecondaryButton
-          label="Se déconnecter"
-          onPress={() => {
-            void logout();
-          }}
-        />
-      </SectionCard>
-      <SectionCard title="Synchronisation">
+
+      <SectionCard
+        title="Synchronisation"
+        description="Vos données restent disponibles hors connexion."
+      >
         <SyncState
           status={syncStatus}
           onPress={() => router.push("/(tabs)/sync" as Href)}
@@ -75,18 +62,42 @@ export default function MoreScreen() {
             ? "Toutes les modifications locales ont été traitées."
             : `${pendingCount} modification${pendingCount > 1 ? "s" : ""} à synchroniser.`}
         </Text>
-        <SecondaryButton
-          label="Voir la synchronisation"
+        <MenuRow
+          title="Voir la synchronisation"
+          description="Activité, éléments en attente et conflits"
+          icon="sync-outline"
           onPress={() => router.push("/(tabs)/sync" as Href)}
         />
       </SectionCard>
+
+      <SectionCard title="Compte et application">
+        <Text className="text-sm leading-5 text-muted">Compte connecté</Text>
+        <Text className="text-base font-semibold text-ink">
+          {session?.user.email ?? "Session locale"}
+        </Text>
+        <MenuRow
+          title="À propos"
+          description="Version et rôle de l’application"
+          icon="information-circle-outline"
+          onPress={() => setVisible(true)}
+        />
+        <SecondaryButton
+          label="Se déconnecter"
+          onPress={() => {
+            void logout();
+          }}
+        />
+      </SectionCard>
+
       {canTestMonitoring ? (
-        <SectionCard title="Diagnostic de développement">
-          <Text className="text-base leading-6 text-muted">
-            Envoyez une erreur volontaire pour vérifier le projet Sentry mobile.
-          </Text>
-          <SecondaryButton
-            label="Tester le suivi des erreurs"
+        <SectionCard
+          title="Outils de développement"
+          description="Ces outils sont masqués dans l’application de production."
+        >
+          <MenuRow
+            title="Tester le suivi des erreurs"
+            description="Envoyer un événement volontaire à Sentry"
+            icon="bug-outline"
             onPress={() => {
               setMonitoringStatus("Envoi en cours…");
               void sendMobileObservabilityTest().then((sent) => {
@@ -106,16 +117,15 @@ export default function MoreScreen() {
               {monitoringStatus}
             </Text>
           ) : null}
-          <Text className="text-base leading-6 text-muted">
-            Vérifiez la lecture locale d’un fichier XLSX et relevez ses
-            caractéristiques sur cet appareil.
-          </Text>
-          <SecondaryButton
-            label="Tester un fichier XLSX"
+          <MenuRow
+            title="Diagnostic XLSX"
+            description="Vérifier la lecture d’un fichier sur cet appareil"
+            icon="grid-outline"
             onPress={() => router.push("/(tabs)/xlsx-diagnostic" as Href)}
           />
         </SectionCard>
       ) : null}
+
       <BottomSheet
         visible={visible}
         title="Fruits & Légumes"

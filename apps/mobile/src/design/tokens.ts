@@ -1,0 +1,23 @@
+/** Shared native visual tokens. Keep Tailwind color names aligned with tailwind.config.cjs. */
+export const colors = {
+  canvas: "#F5F6F0",
+  surface: "#FFFFFF",
+  surfaceMuted: "#EEF2EC",
+  ink: "#192D25",
+  muted: "#59685F",
+  forest: "#235C3D",
+  forestStrong: "#17442F",
+  forestSoft: "#E7F1EA",
+  line: "#DFE6DD",
+  positive: "#257A4E",
+  positiveSoft: "#E9F5ED",
+  warning: "#8A5600",
+  warningSoft: "#FFF2D8",
+  critical: "#A63A33",
+  criticalSoft: "#FDE9E7",
+  info: "#2C6280",
+  infoSoft: "#E8F2F8",
+  pending: "#67578A",
+  pendingSoft: "#F0ECF8",
+  overlay: "#00000066",
+} as const;

@@ -1,4 +1,12 @@
-import { AppScreen, AppHeader, EmptyState } from "@/components/ui";
+import { router, type Href } from "expo-router";
+import {
+  AppScreen,
+  AppHeader,
+  EmptyState,
+  PrimaryButton,
+  SecondaryButton,
+} from "@/components/ui";
+
 export default function Screen() {
   return (
     <AppScreen>
@@ -7,10 +15,19 @@ export default function Screen() {
         subtitle="Un regard clair sur votre rayon."
       />
       <EmptyState
-        title="Votre rayon prend ses repères"
-        message="Vos ventes, votre marge et vos priorités apparaîtront ici lorsque vos premières données seront disponibles."
-        icon="leaf-outline"
-      />
+        title="Aucune journée analysable"
+        message="Importez les ventes Mercalys pour afficher vos indicateurs et vos premières priorités."
+        icon="analytics-outline"
+      >
+        <PrimaryButton
+          label="Importer les ventes"
+          onPress={() => router.push("/(tabs)/imports" as Href)}
+        />
+        <SecondaryButton
+          label="Voir les produits"
+          onPress={() => router.push("/(tabs)/products" as Href)}
+        />
+      </EmptyState>
     </AppScreen>
   );
 }
