@@ -395,6 +395,15 @@ export const wasteLines = sqliteTable(
     extractionConfidenceJson: text("extraction_confidence_json"),
     sourceRegionJson: text("source_region_json"),
     validationStatus: text("validation_status").notNull(),
+    arithmeticStatus: text("arithmetic_status")
+      .notNull()
+      .default("NOT_CHECKED"),
+    arithmeticExpectedTotal: text("arithmetic_expected_total"),
+    arithmeticDifference: text("arithmetic_difference"),
+    arithmeticWarningCode: text("arithmetic_warning_code"),
+    matchState: text("match_state").notNull().default("NO_MATCH"),
+    matchedProductLabel: text("matched_product_label"),
+    matchCandidatesJson: text("match_candidates_json").notNull().default("[]"),
     version: integer("version").notNull(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),

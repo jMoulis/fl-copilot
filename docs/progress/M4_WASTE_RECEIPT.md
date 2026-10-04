@@ -102,13 +102,24 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 - MongoDB exposes matched, review and unmatched counts while keeping the receipt `TO_VALIDATE`; ambiguous identity is never silently accepted.
 - Upload completion and retry now run normalization, Vision extraction, arithmetic validation and Product Master matching in order.
 
+### M4-T09 — Receipt validation UI
+
+- Upload completion now returns one validated review draft assembled from the immutable Vision, arithmetic and product-matching evidence. Stable line IDs make retries idempotent.
+- The mobile upload queue saves that draft to SQLite before completing its job and moves the receipt to `TO_VALIDATE`; a network retry never depends on volatile screen state.
+- Opening a processed ticket from `Casse` displays the locally retained source image, the detected date and a date-confirmation field.
+- Repeated labels are grouped for readability while every source occurrence keeps its own index, values, evidence and edit action.
+- Weight, unit price, total and raw label can be corrected locally. Exact shared decimal arithmetic is rerun after every edit and keeps mismatches visible as `Montant à vérifier`.
+- Safe matches show the associated Product Master entry. Ambiguous candidates remain explicit choices with their nature and confidence; selection is stored locally without silently accepting an AI suggestion.
+- SQLite schema version 13 preserves arithmetic and product-match evidence alongside each draft line. Existing unsynchronized lines are never deleted when a remote draft is applied.
+- Draft corrections remain local review decisions until M4-T11 publishes a confirmed waste event and its outbox mutation.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Persistent filename  | One UUID capture produces a stable `.jpg` destination under `waste-receipts`                 |
 | Failed persistence   | A copy failure never returns a durable capture result                                        |
-| Repository checks    | Structure, lint, strict TypeScript 6 and 252 tests pass                                      |
+| Repository checks    | Structure, lint, strict TypeScript 6 and 254 tests pass                                      |
 | Expo compatibility   | Expo Doctor passes all 21 checks with SDK-compatible packages                                |
 | Native configuration | Expo public config resolves the French camera and photo-library permissions                  |
 | Bundle acceptance    | Expo export completes for both iOS and Android                                               |
@@ -116,5 +127,6 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 ## Next work
 
-1. Merge M4-T08 and validate a newly uploaded ticket through the production server pipeline.
-2. Implement M4-T09 receipt validation UI with image preview, date confirmation, grouped repeated lines, line correction and ambiguous-product resolution.
+1. Validate M4-T09 on the target iPhone with a newly uploaded ticket, including a repeated line, one arithmetic correction and one ambiguous product choice.
+2. Implement M4-T10 duplicate detection without deleting the newly captured source or hiding review evidence.
+3. Implement M4-T11 atomic publication of confirmed waste lines and their outbox mutations.

@@ -13,6 +13,7 @@ import {
 } from "@fl-copilot/import-core";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
+import { WasteReceiptRepository } from "./waste-receipt-repository";
 
 type UploadQueueDatabase = OutboxDatabase & AtomicMutationDatabase;
 
@@ -168,7 +169,20 @@ export class SourceUploadQueue {
         return false;
       }
       if (!isMercalysImport(row.source_type)) {
-        await this.markSourceUploaded(row.job_id, payload, storeId);
+        const draft = result.wasteReceiptDraft;
+        if (row.source_type === "WASTE_RECEIPT" && draft) {
+          await new WasteReceiptRepository(this.database).applyRemoteDraft(
+            payload.sourceDocumentId,
+            draft,
+            this.now().toISOString(),
+          );
+        }
+        await this.markSourceUploaded(
+          row.job_id,
+          payload,
+          storeId,
+          Boolean(draft),
+        );
         return true;
       }
       const verificationInput = await this.verificationInput(
@@ -491,15 +505,17 @@ export class SourceUploadQueue {
     jobId: string,
     payload: UploadJobPayload,
     storeId: string,
+    draftReady: boolean,
   ) {
     const timestamp = this.now().toISOString();
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
       await transaction.runAsync(
         `UPDATE source_documents
          SET remote_upload_status = 'CONFIRMED',
-             remote_processing_status = 'UPLOADED', sync_state = 'SYNCED',
+             remote_processing_status = ?, sync_state = 'SYNCED',
              dirty = 0, updated_at = ?
          WHERE id = ? AND store_id = ?`,
+        draftReady ? "TO_VALIDATE" : "UPLOADED",
         timestamp,
         payload.sourceDocumentId,
         storeId,
@@ -515,8 +531,10 @@ export class SourceUploadQueue {
       );
       await transaction.runAsync(
         `UPDATE waste_receipts
-         SET processing_status = 'UPLOADED', updated_at = ?
+         SET processing_status = ?, ai_status = ?, updated_at = ?
          WHERE source_document_id = ? AND store_id = ?`,
+        draftReady ? "TO_VALIDATE" : "UPLOADED",
+        draftReady ? "COMPLETED" : "PENDING",
         timestamp,
         payload.sourceDocumentId,
         storeId,

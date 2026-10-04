@@ -243,6 +243,122 @@ describe("WasteReceiptRepository", () => {
     reopenedDatabase.close();
   });
 
+  it("hydrates a remote draft and keeps date, corrections, and product choice local", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "fl-copilot-receipts-"));
+    directories.push(directory);
+    const database = new DatabaseSync(join(directory, "local.db"));
+    const adapter = new NodeDatabase(database);
+    await runLocalMigrations(adapter);
+    const repository = new WasteReceiptRepository(adapter);
+    await repository.createCapturedDraft({
+      receiptId,
+      fileId,
+      sourceDocumentId,
+      uploadJobId,
+      storeId,
+      capturedAt: timestamp,
+      file: {
+        originalFilename: "ticket.jpg",
+        localUri: "file:///documents/waste-receipts/ticket.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: 4096,
+        checksum: "sha256:receipt",
+      },
+    });
+    const productId = "77777777-7777-4777-8777-777777777777";
+    database
+      .prepare(
+        `INSERT INTO products (
+           id, store_id, label, category, nature, sales_unit, status,
+           version, created_at, updated_at, sync_state, dirty
+         ) VALUES (?, ?, 'BANANE VRAC', 'FRUIT', 'BULK', 'KG', 'ACTIVE',
+           1, ?, ?, 'SYNCED', 0)`,
+      )
+      .run(productId, storeId, timestamp, timestamp);
+
+    await repository.applyRemoteDraft(
+      sourceDocumentId,
+      {
+        detectedReceiptDate: "2026-10-03",
+        extractionModelVersion: "gpt-test",
+        arithmeticValidatorVersion: "waste-receipt.arithmetic.v1",
+        productMatcherVersion: "product-matcher-v1",
+        lines: [
+          {
+            lineId,
+            sourceLineIndex: 0,
+            rawLabel: "BANANE VRAC",
+            quantity: null,
+            weight: "0.58",
+            quantityUnit: "KG",
+            unitPrice: "4.99",
+            totalPrice: "2.89",
+            extractionConfidence: { label: 0.99 },
+            sourceRegion: null,
+            arithmeticStatus: "CONSISTENT",
+            arithmeticExpectedTotal: "2.89",
+            arithmeticDifference: "0.00",
+            arithmeticWarningCode: null,
+            matchState: "REVIEW",
+            matchedProductId: null,
+            matchedProductLabel: null,
+            matchConfidence: 0.78,
+            productNature: "UNKNOWN",
+            candidates: [
+              {
+                productId,
+                label: "BANANE VRAC",
+                nature: "BULK",
+                salesUnit: "KG",
+                score: 0.78,
+              },
+            ],
+            validationStatus: "TO_REVIEW",
+          },
+        ],
+      },
+      timestamp,
+    );
+    await repository.confirmWasteDate(receiptId, "2026-10-02");
+    await expect(
+      repository.confirmWasteDate(receiptId, "2026-99-99"),
+    ).rejects.toThrow("WASTE_RECEIPT_DATE_INVALID");
+    await repository.selectProductCandidate(receiptId, lineId, productId);
+    await repository.updateLineValues(receiptId, lineId, {
+      rawLabel: "Banane vrac corrigée",
+      weight: "0.58",
+      unitPrice: "4.99",
+      totalPrice: "3.20",
+    });
+
+    await expect(repository.getReceiptDetail(receiptId)).resolves.toMatchObject(
+      {
+        receipt: {
+          detectedReceiptDate: "2026-10-03",
+          confirmedWasteDate: "2026-10-02",
+          processingStatus: "TO_VALIDATE",
+          aiStatus: "COMPLETED",
+        },
+        lines: [
+          {
+            line: {
+              rawLabel: "Banane vrac corrigée",
+              matchedProductId: productId,
+              matchStatus: "MATCHED",
+              productNature: "BULK",
+              validationStatus: "TO_REVIEW",
+            },
+            arithmeticStatus: "MISMATCH",
+            arithmeticExpectedTotal: "2.89",
+            arithmeticDifference: "0.31",
+            matchedProductLabel: "BANANE VRAC",
+          },
+        ],
+      },
+    );
+    database.close();
+  });
+
   it("rolls back the whole draft when its lines cannot be inserted", async () => {
     const directory = mkdtempSync(join(tmpdir(), "fl-copilot-receipts-"));
     directories.push(directory);

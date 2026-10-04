@@ -224,6 +224,37 @@ describe("source upload queue", () => {
           sourceDocumentId,
           remoteUploadStatus: "CONFIRMED",
           jobId: null,
+          wasteReceiptDraft: {
+            detectedReceiptDate: "2026-10-02",
+            extractionModelVersion: "gpt-test",
+            arithmeticValidatorVersion: "waste-receipt.arithmetic.v1",
+            productMatcherVersion: "product-matcher-v1",
+            lines: [
+              {
+                lineId: "88888888-8888-4888-8888-888888888888",
+                sourceLineIndex: 0,
+                rawLabel: "BANANE VRAC",
+                quantity: null,
+                weight: "1.2",
+                quantityUnit: "KG",
+                unitPrice: "1.99",
+                totalPrice: "2.39",
+                extractionConfidence: { label: 0.99 },
+                sourceRegion: null,
+                arithmeticStatus: "CONSISTENT",
+                arithmeticExpectedTotal: "2.39",
+                arithmeticDifference: "0.00",
+                arithmeticWarningCode: null,
+                matchState: "NO_MATCH",
+                matchedProductId: null,
+                matchedProductLabel: null,
+                matchConfidence: null,
+                productNature: "UNKNOWN",
+                candidates: [],
+                validationStatus: "TO_REVIEW",
+              },
+            ],
+          },
         }),
         verify: async () => {
           throw new Error("waste receipt must not use Mercalys verification");
@@ -263,7 +294,7 @@ describe("source upload queue", () => {
         .get(sourceDocumentId),
     ).toEqual({
       remote_upload_status: "CONFIRMED",
-      remote_processing_status: "UPLOADED",
+      remote_processing_status: "TO_VALIDATE",
       sync_state: "SYNCED",
       dirty: 0,
     });
@@ -275,8 +306,28 @@ describe("source upload queue", () => {
         .get(localFileId),
     ).toEqual({ upload_status: "CONFIRMED", retention_status: "RETAINED" });
     expect(
-      database.prepare("SELECT processing_status FROM waste_receipts").get(),
-    ).toEqual({ processing_status: "UPLOADED" });
+      database
+        .prepare(
+          "SELECT processing_status, ai_status, detected_receipt_date FROM waste_receipts",
+        )
+        .get(),
+    ).toEqual({
+      processing_status: "TO_VALIDATE",
+      ai_status: "COMPLETED",
+      detected_receipt_date: "2026-10-02",
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT raw_label, weight, match_status, arithmetic_status FROM waste_lines",
+        )
+        .get(),
+    ).toEqual({
+      raw_label: "BANANE VRAC",
+      weight: "1.2",
+      match_status: "UNMATCHED",
+      arithmetic_status: "CONSISTENT",
+    });
     database.close();
   });
 

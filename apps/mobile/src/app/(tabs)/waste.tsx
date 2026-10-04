@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useAuth } from "@/auth/auth-provider";
 import {
@@ -113,8 +113,11 @@ export default function Screen() {
                 lineCount,
               );
               return (
-                <View
+                <Pressable
                   key={receipt.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Ouvrir le ticket du ${formatReceiptDate(receipt.captureDate)}`}
+                  onPress={() => router.push(`/waste-receipt/${receipt.id}`)}
                   className="gap-3 rounded-2xl border border-line bg-canvas p-4"
                 >
                   <View className="flex-row items-start justify-between gap-3">
@@ -128,7 +131,7 @@ export default function Screen() {
                     </View>
                     <StatusBadge status={presentation.status} />
                   </View>
-                </View>
+                </Pressable>
               );
             })}
           </SectionCard>

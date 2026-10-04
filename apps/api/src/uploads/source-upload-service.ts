@@ -10,6 +10,7 @@ import type {
   CompleteSourceUploadResponse,
   InitSourceUploadRequest,
   InitSourceUploadResponse,
+  WasteReceiptDraft,
 } from "@fl-copilot/sync-contracts";
 import { AuthError } from "../auth/service.js";
 import type { DatabaseService } from "../database/types.js";
@@ -18,6 +19,7 @@ import {
   type WasteReceiptImageNormalizationService,
 } from "./waste-receipt-image-normalization.js";
 import type { WasteReceiptArithmeticValidationService } from "./waste-receipt-arithmetic-validation.js";
+import type { WasteReceiptDraftReader } from "./waste-receipt-draft.js";
 import type { WasteReceiptProductMatchingService } from "./waste-receipt-product-matching.js";
 import type { WasteReceiptVisionExtractionService } from "./waste-receipt-vision-extraction.js";
 
@@ -138,6 +140,7 @@ export function createMongoSourceUploadService(
   receiptVision?: WasteReceiptVisionExtractionService,
   receiptArithmetic?: WasteReceiptArithmeticValidationService,
   receiptProductMatching?: WasteReceiptProductMatchingService,
+  receiptDrafts?: WasteReceiptDraftReader,
 ): SourceUploadService {
   return {
     async init(storeId, userId, input) {
@@ -251,14 +254,15 @@ export function createMongoSourceUploadService(
         );
       }
       if (upload.status === "CONFIRMED") {
-        await processReceiptIfNeeded(
+        const draft = await processReceiptIfNeeded(
           receiptImages,
           receiptVision,
           receiptArithmetic,
           receiptProductMatching,
+          receiptDrafts,
           upload,
         );
-        return confirmed(upload);
+        return confirmed(upload, draft);
       }
 
       const blob = await storage.head(upload.objectKey);
@@ -297,14 +301,15 @@ export function createMongoSourceUploadService(
       }
 
       await confirmUpload(database, upload, blob, now());
-      await processReceiptIfNeeded(
+      const draft = await processReceiptIfNeeded(
         receiptImages,
         receiptVision,
         receiptArithmetic,
         receiptProductMatching,
+        receiptDrafts,
         upload,
       );
-      return confirmed(upload);
+      return confirmed(upload, draft);
     },
   };
 }
@@ -314,6 +319,7 @@ async function processReceiptIfNeeded(
   receiptVision: WasteReceiptVisionExtractionService | undefined,
   receiptArithmetic: WasteReceiptArithmeticValidationService | undefined,
   receiptProductMatching: WasteReceiptProductMatchingService | undefined,
+  receiptDrafts: WasteReceiptDraftReader | undefined,
   upload: UploadRecord,
 ) {
   if (upload.sourceType !== "WASTE_RECEIPT") return;
@@ -331,6 +337,10 @@ async function processReceiptIfNeeded(
     sourceDocumentId: upload.sourceDocumentId,
   });
   await receiptProductMatching?.match({
+    storeId: upload.storeId,
+    sourceDocumentId: upload.sourceDocumentId,
+  });
+  return receiptDrafts?.read({
     storeId: upload.storeId,
     sourceDocumentId: upload.sourceDocumentId,
   });
@@ -425,11 +435,15 @@ function alreadyUploaded(upload: UploadRecord): InitSourceUploadResponse {
   };
 }
 
-function confirmed(upload: UploadRecord): CompleteSourceUploadResponse {
+function confirmed(
+  upload: UploadRecord,
+  wasteReceiptDraft?: WasteReceiptDraft,
+): CompleteSourceUploadResponse {
   return {
     sourceDocumentId: upload.sourceDocumentId,
     remoteUploadStatus: "CONFIRMED",
     jobId: null,
+    wasteReceiptDraft,
   };
 }
 
