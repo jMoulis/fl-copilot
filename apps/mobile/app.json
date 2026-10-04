@@ -28,6 +28,13 @@
       "expo-sqlite",
       "expo-status-bar",
       [
+        "expo-camera",
+        {
+          "cameraPermission": "Autoriser Fruits & Légumes à photographier les tickets de casse.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

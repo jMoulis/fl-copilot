@@ -1,5 +1,13 @@
-import { AppScreen, AppHeader, EmptyState } from "@/components/ui";
+import { useRouter } from "expo-router";
+import {
+  AppScreen,
+  AppHeader,
+  EmptyState,
+  PrimaryButton,
+} from "@/components/ui";
+
 export default function Screen() {
+  const router = useRouter();
   return (
     <AppScreen>
       <AppHeader
@@ -8,9 +16,14 @@ export default function Screen() {
       />
       <EmptyState
         title="Aucun ticket enregistré"
-        message="Vos tickets et leur état de validation apparaîtront ici. La capture sera disponible dans une prochaine étape."
+        message="Photographiez un ticket de casse. La photo est conservée sur cet appareil, même sans connexion."
         icon="camera-outline"
-      />
+      >
+        <PrimaryButton
+          label="Prendre un ticket en photo"
+          onPress={() => router.push("/waste-capture")}
+        />
+      </EmptyState>
     </AppScreen>
   );
 }
