@@ -98,6 +98,10 @@ export default function WasteCaptureScreen() {
             }}
           />
         )}
+        <SecondaryButton
+          label="Importer une photo"
+          onPress={() => router.replace("/waste-import")}
+        />
         <SecondaryButton label="Annuler" onPress={() => router.back()} />
       </AppScreen>
     );

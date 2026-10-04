@@ -4,6 +4,7 @@ import {
   AppHeader,
   EmptyState,
   PrimaryButton,
+  SecondaryButton,
 } from "@/components/ui";
 
 export default function Screen() {
@@ -22,6 +23,10 @@ export default function Screen() {
         <PrimaryButton
           label="Prendre un ticket en photo"
           onPress={() => router.push("/waste-capture")}
+        />
+        <SecondaryButton
+          label="Importer une photo"
+          onPress={() => router.push("/waste-import")}
         />
       </EmptyState>
     </AppScreen>

@@ -35,6 +35,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Autoriser Fruits & Légumes à choisir une photo de ticket de casse.",
+          "cameraPermission": "Autoriser Fruits & Légumes à photographier les tickets de casse.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {
