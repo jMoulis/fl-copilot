@@ -100,7 +100,18 @@ The closing increment covers M3-T01 through M3-T12 from `docs/specs/IMPLEMENTATI
 | Signal evidence       | Priority detail exposes current, reference, absolute and percentage values from the same deterministic candidate evidence                                        |
 | Action boundary       | The screen states that a proposed control records no decision and changes no product; decision workflows remain deferred to M7                                   |
 
+## Exit gate
+
+M3 is complete on the target iPhone Air.
+
+- The shared golden fixture produces byte-for-byte identical product-day and department-day results through the local and remote adapters.
+- `Aujourd’hui` reads its persisted analytical state from SQLite and remains usable without a synchronous network request.
+- Complete, incomplete and offline analytical states keep their provenance, quality and unavailable values explicit.
+- A priority opens a read-only deterministic explanation without simulating the M7 decision or execution workflow.
+- The staging build from merge commit `16be89d` starts and remains stable on the target iPhone after recovery of a moved Mercalys source path.
+
 ## Next work
 
-1. Merge M3-T12 after repository-wide validation and iPhone review of one complete and one incomplete signal.
-2. Close the M3 exit gate and review the global product roadmap before starting the next milestone.
+1. Start M4 with the native waste-receipt capture and persistent offline source file.
+2. Use representative real receipt images, including the existing bulk-waste ticket example, as acceptance fixtures without committing operational personal data.
+3. Retain Android parity, a controlled remote verification difference and pilot timing measures as cross-platform/product follow-ups.
