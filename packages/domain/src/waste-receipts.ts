@@ -16,6 +16,7 @@ const nullableDecimalSchema = z
 export const wasteReceiptProcessingStatusSchema = z.enum([
   "CAPTURED",
   "UPLOAD_PENDING",
+  "UPLOADED",
   "EXTRACTING",
   "TO_VALIDATE",
   "VALIDATED",

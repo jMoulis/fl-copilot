@@ -146,6 +146,46 @@ async function fixture() {
   return { adapter, database };
 }
 
+async function wasteReceiptFixture() {
+  const result = await fixture();
+  result.database
+    .prepare(
+      `UPDATE source_documents
+       SET source_type = 'WASTE_RECEIPT', original_filename = 'ticket.jpg',
+           local_file_uri = 'file:///waste-receipts/ticket.jpg',
+           business_period_start = NULL, business_period_end = NULL,
+           local_processing_status = 'PENDING'
+       WHERE id = ?`,
+    )
+    .run(sourceDocumentId);
+  result.database
+    .prepare(
+      `UPDATE local_files
+       SET local_uri = 'file:///waste-receipts/ticket.jpg',
+           mime_type = 'image/jpeg'
+       WHERE id = ?`,
+    )
+    .run(localFileId);
+  result.database
+    .prepare(
+      `INSERT INTO waste_receipts (
+        id, store_id, source_document_id, local_file_id, capture_date,
+        processing_status, ai_status, duplicate_status, version, created_at,
+        updated_at, sync_state, dirty
+       ) VALUES ('77777777-7777-4777-8777-777777777777', ?, ?, ?, ?,
+         'UPLOAD_PENDING', 'PENDING', 'UNCHECKED', 1, ?, ?, 'LOCAL_ONLY', 1)`,
+    )
+    .run(
+      storeId,
+      sourceDocumentId,
+      localFileId,
+      "2026-10-03T12:00:00.000Z",
+      "2026-10-03T12:00:00.000Z",
+      "2026-10-03T12:00:00.000Z",
+    );
+  return result;
+}
+
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { force: true, recursive: true });
@@ -153,6 +193,93 @@ afterEach(() => {
 });
 
 describe("source upload queue", () => {
+  it("resumes a waste receipt upload after reconnect without Mercalys verification", async () => {
+    const { adapter, database } = await wasteReceiptFixture();
+    let currentTime = new Date("2026-10-03T12:00:00.000Z");
+    let initCalls = 0;
+    let binaryUploads = 0;
+    const queue = new SourceUploadQueue(
+      adapter,
+      {
+        init: async (_storeId, input) => {
+          initCalls += 1;
+          expect(input.sourceType).toBe("WASTE_RECEIPT");
+          if (initCalls === 1) {
+            throw new ApiClientError(0, {
+              code: "NETWORK_UNAVAILABLE",
+              messageFr: "Réseau indisponible.",
+              retryable: true,
+            });
+          }
+          return {
+            uploadId,
+            objectKey: `sources/${storeId}/${sourceDocumentId}/ticket.jpg`,
+            status: "UPLOAD_REQUIRED",
+            uploadUrl: "https://blob.example.test/presigned",
+            expiresAt: "2026-10-03T12:10:00.000Z",
+            headers: { "content-type": "image/jpeg" },
+          };
+        },
+        complete: async () => ({
+          sourceDocumentId,
+          remoteUploadStatus: "CONFIRMED",
+          jobId: null,
+        }),
+        verify: async () => {
+          throw new Error("waste receipt must not use Mercalys verification");
+        },
+      },
+      {
+        upload: async (input) => {
+          expect(input.sourceType).toBe("WASTE_RECEIPT");
+          binaryUploads += 1;
+        },
+      },
+      () => currentTime,
+    );
+
+    await expect(queue.process(storeId)).resolves.toEqual({
+      attempted: 1,
+      confirmed: 0,
+    });
+    expect(
+      database.prepare("SELECT status FROM local_jobs WHERE id = ?").get(jobId),
+    ).toEqual({ status: "RETRY" });
+    expect(
+      database.prepare("SELECT processing_status FROM waste_receipts").get(),
+    ).toEqual({ processing_status: "UPLOAD_PENDING" });
+
+    currentTime = new Date("2026-10-03T12:00:06.000Z");
+    await expect(queue.process(storeId)).resolves.toEqual({
+      attempted: 1,
+      confirmed: 1,
+    });
+    expect(binaryUploads).toBe(1);
+    expect(
+      database
+        .prepare(
+          "SELECT remote_upload_status, remote_processing_status, sync_state, dirty FROM source_documents WHERE id = ?",
+        )
+        .get(sourceDocumentId),
+    ).toEqual({
+      remote_upload_status: "CONFIRMED",
+      remote_processing_status: "UPLOADED",
+      sync_state: "SYNCED",
+      dirty: 0,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT upload_status, retention_status FROM local_files WHERE id = ?",
+        )
+        .get(localFileId),
+    ).toEqual({ upload_status: "CONFIRMED", retention_status: "RETAINED" });
+    expect(
+      database.prepare("SELECT processing_status FROM waste_receipts").get(),
+    ).toEqual({ processing_status: "UPLOADED" });
+    database.close();
+  });
+
   it("uploads the binary once when confirmation is retried after reconnect", async () => {
     const { adapter, database } = await fixture();
     let currentTime = new Date("2026-10-03T12:00:00.000Z");

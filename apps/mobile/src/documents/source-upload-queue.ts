@@ -36,6 +36,7 @@ export interface SourceUploadTransport {
 export interface SourceBinaryUploader {
   upload(input: {
     localUri: string;
+    sourceType: InitSourceUploadRequest["sourceType"];
     uploadUrl: string;
     headers: Record<string, string>;
   }): Promise<{ localUri: string } | void>;
@@ -58,14 +59,14 @@ type PendingUploadRow = {
   job_id: string;
   payload_json: string;
   attempt_count: number;
-  source_type: VerifyImportRequest["sourceType"];
+  source_type: InitSourceUploadRequest["sourceType"];
   original_filename: string;
   checksum: string;
   local_uri: string;
   mime_type: InitSourceUploadRequest["mimeType"];
   size_bytes: number;
-  business_period_start: string;
-  business_period_end: string;
+  business_period_start: string | null;
+  business_period_end: string | null;
 };
 
 export class SourceUploadQueue {
@@ -146,6 +147,7 @@ export class SourceUploadQueue {
         if (!init.uploadUrl) throw new Error("SOURCE_UPLOAD_URL_MISSING");
         const uploadedFile = await this.uploader.upload({
           localUri: row.local_uri,
+          sourceType: row.source_type,
           uploadUrl: init.uploadUrl,
           headers: init.headers,
         });
@@ -165,8 +167,13 @@ export class SourceUploadQueue {
         await this.markInvalid(row.job_id, payload, storeId);
         return false;
       }
+      if (!isMercalysImport(row.source_type)) {
+        await this.markSourceUploaded(row.job_id, payload, storeId);
+        return true;
+      }
       const verificationInput = await this.verificationInput(
         row,
+        row.source_type,
         payload.sourceDocumentId,
         storeId,
       );
@@ -306,6 +313,7 @@ export class SourceUploadQueue {
 
   private async verificationInput(
     row: PendingUploadRow,
+    sourceType: VerifyImportRequest["sourceType"],
     sourceDocumentId: string,
     storeId: string,
   ): Promise<VerifyImportRequest> {
@@ -332,7 +340,7 @@ export class SourceUploadQueue {
       return record;
     });
     return {
-      sourceType: row.source_type,
+      sourceType,
       checksum: row.checksum,
       businessPeriodStart: row.business_period_start,
       businessPeriodEnd: row.business_period_end,
@@ -385,6 +393,14 @@ export class SourceUploadQueue {
         payload.localFileId,
         storeId,
       );
+      await transaction.runAsync(
+        `UPDATE waste_receipts
+         SET processing_status = 'UPLOAD_PENDING', updated_at = ?
+         WHERE source_document_id = ? AND store_id = ?`,
+        attemptedAt.toISOString(),
+        payload.sourceDocumentId,
+        storeId,
+      );
     });
   }
 
@@ -416,6 +432,14 @@ export class SourceUploadQueue {
          WHERE id = ? AND store_id = ?`,
         timestamp,
         payload.localFileId,
+        storeId,
+      );
+      await transaction.runAsync(
+        `UPDATE waste_receipts
+         SET processing_status = 'FAILED', updated_at = ?
+         WHERE source_document_id = ? AND store_id = ?`,
+        timestamp,
+        payload.sourceDocumentId,
         storeId,
       );
     });
@@ -452,6 +476,59 @@ export class SourceUploadQueue {
         payload.localFileId,
         storeId,
       );
+      await transaction.runAsync(
+        `UPDATE waste_receipts
+         SET processing_status = 'FAILED', updated_at = ?
+         WHERE source_document_id = ? AND store_id = ?`,
+        timestamp,
+        payload.sourceDocumentId,
+        storeId,
+      );
+    });
+  }
+
+  private async markSourceUploaded(
+    jobId: string,
+    payload: UploadJobPayload,
+    storeId: string,
+  ) {
+    const timestamp = this.now().toISOString();
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      await transaction.runAsync(
+        `UPDATE source_documents
+         SET remote_upload_status = 'CONFIRMED',
+             remote_processing_status = 'UPLOADED', sync_state = 'SYNCED',
+             dirty = 0, updated_at = ?
+         WHERE id = ? AND store_id = ?`,
+        timestamp,
+        payload.sourceDocumentId,
+        storeId,
+      );
+      await transaction.runAsync(
+        `UPDATE local_files
+         SET upload_status = 'CONFIRMED', retention_status = 'RETAINED',
+             updated_at = ?
+         WHERE id = ? AND store_id = ?`,
+        timestamp,
+        payload.localFileId,
+        storeId,
+      );
+      await transaction.runAsync(
+        `UPDATE waste_receipts
+         SET processing_status = 'UPLOADED', updated_at = ?
+         WHERE source_document_id = ? AND store_id = ?`,
+        timestamp,
+        payload.sourceDocumentId,
+        storeId,
+      );
+      await transaction.runAsync(
+        `UPDATE local_jobs
+         SET status = 'COMPLETED', next_attempt_at = NULL,
+             last_error = NULL, updated_at = ?
+         WHERE id = ?`,
+        timestamp,
+        jobId,
+      );
     });
   }
 }
@@ -462,7 +539,13 @@ const nativeBinaryUploader: SourceBinaryUploader = {
     let file = new File(input.localUri);
     if (!file.exists) {
       const filename = Paths.parse(input.localUri).base;
-      file = new File(Paths.document, "mercalys-imports", filename);
+      file = new File(
+        Paths.document,
+        input.sourceType === "WASTE_RECEIPT"
+          ? "waste-receipts"
+          : "mercalys-imports",
+        filename,
+      );
     }
     if (!file.exists) throw new SourceUploadLocalFileMissingError();
 
@@ -476,6 +559,12 @@ const nativeBinaryUploader: SourceBinaryUploader = {
     return { localUri: file.uri };
   },
 };
+
+function isMercalysImport(
+  sourceType: InitSourceUploadRequest["sourceType"],
+): sourceType is VerifyImportRequest["sourceType"] {
+  return sourceType === "MERCALYS_SALES" || sourceType === "MERCALYS_WASTE";
+}
 
 function parseJobPayload(
   raw: string,

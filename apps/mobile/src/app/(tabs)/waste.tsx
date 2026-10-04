@@ -107,31 +107,63 @@ export default function Screen() {
             title="Tickets enregistrés"
             description={`${receipts.length} brouillon${receipts.length > 1 ? "s" : ""} conservé${receipts.length > 1 ? "s" : ""} sur cet appareil.`}
           >
-            {receipts.map(({ receipt, lineCount }) => (
-              <View
-                key={receipt.id}
-                className="gap-3 rounded-2xl border border-line bg-canvas p-4"
-              >
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1 gap-1">
-                    <Text className="text-base font-semibold text-ink">
-                      Ticket du {formatReceiptDate(receipt.captureDate)}
-                    </Text>
-                    <Text className="text-sm leading-5 text-muted">
-                      {lineCount === 0
-                        ? "Analyse en attente"
-                        : `${lineCount} ligne${lineCount > 1 ? "s" : ""}`}
-                    </Text>
+            {receipts.map(({ receipt, lineCount }) => {
+              const presentation = receiptPresentation(
+                receipt.processingStatus,
+                lineCount,
+              );
+              return (
+                <View
+                  key={receipt.id}
+                  className="gap-3 rounded-2xl border border-line bg-canvas p-4"
+                >
+                  <View className="flex-row items-start justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <Text className="text-base font-semibold text-ink">
+                        Ticket du {formatReceiptDate(receipt.captureDate)}
+                      </Text>
+                      <Text className="text-sm leading-5 text-muted">
+                        {presentation.description}
+                      </Text>
+                    </View>
+                    <StatusBadge status={presentation.status} />
                   </View>
-                  <StatusBadge status="local" />
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </SectionCard>
         </>
       )}
     </AppScreen>
   );
+}
+
+function receiptPresentation(
+  processingStatus: LocalWasteReceiptSummary["receipt"]["processingStatus"],
+  lineCount: number,
+): { status: "local" | "pending" | "error"; description: string } {
+  if (processingStatus === "FAILED") {
+    return { status: "error", description: "Envoi à reprendre" };
+  }
+  if (processingStatus === "UPLOAD_PENDING") {
+    return {
+      status: "pending",
+      description: "Envoi en attente · analyse en attente",
+    };
+  }
+  if (processingStatus === "UPLOADED") {
+    return {
+      status: "pending",
+      description: "Image envoyée · analyse en attente",
+    };
+  }
+  return {
+    status: "local",
+    description:
+      lineCount === 0
+        ? "Analyse en attente"
+        : `${lineCount} ligne${lineCount > 1 ? "s" : ""}`,
+  };
 }
 
 function formatReceiptDate(value: string | null | undefined) {

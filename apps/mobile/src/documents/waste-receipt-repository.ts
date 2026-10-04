@@ -1,8 +1,10 @@
 import {
   localFileMetadataSchema,
+  localSourceDocumentSchema,
   wasteLineSchema,
   wasteReceiptSchema,
   type LocalFileMetadata,
+  type LocalSourceDocument,
   type WasteLine,
   type WasteReceipt,
 } from "@fl-copilot/domain";
@@ -24,9 +26,12 @@ export interface LocalWasteReceiptSummary {
 export interface CreateCapturedWasteReceiptInput {
   receiptId: string;
   fileId: string;
+  sourceDocumentId: string;
+  uploadJobId: string;
   storeId: string;
   capturedAt: string;
   file: {
+    originalFilename: string;
     localUri: string;
     mimeType: string;
     sizeBytes: number;
@@ -39,17 +44,40 @@ export class WasteReceiptRepository {
     private readonly database: AtomicMutationDatabase & OutboxDatabase,
   ) {}
 
-  createCapturedDraft(input: CreateCapturedWasteReceiptInput) {
-    return this.createDraft({
+  async createCapturedDraft(input: CreateCapturedWasteReceiptInput) {
+    const document = localSourceDocumentSchema.parse({
+      id: input.sourceDocumentId,
+      storeId: input.storeId,
+      sourceType: "WASTE_RECEIPT",
+      originalFilename: input.file.originalFilename,
+      localFileUri: input.file.localUri,
+      checksum: input.file.checksum,
+      sourceGeneratedAt: input.capturedAt,
+      businessPeriodStart: null,
+      businessPeriodEnd: null,
+      localProcessingStatus: "PENDING",
+      remoteUploadStatus: "PENDING",
+      remoteProcessingStatus: null,
+      parserVersion: null,
+      extractionModelVersion: null,
+      version: 1,
+      createdAt: input.capturedAt,
+      updatedAt: input.capturedAt,
+      deletedAt: null,
+      syncState: "PENDING",
+      remoteVersion: null,
+      dirty: true,
+    });
+    const aggregate: LocalWasteReceiptAggregate = {
       receipt: {
         id: input.receiptId,
         storeId: input.storeId,
-        sourceDocumentId: null,
+        sourceDocumentId: input.sourceDocumentId,
         localFileId: input.fileId,
         captureDate: input.capturedAt,
         detectedReceiptDate: null,
         confirmedWasteDate: null,
-        processingStatus: "CAPTURED",
+        processingStatus: "UPLOAD_PENDING",
         aiStatus: "PENDING",
         duplicateStatus: "UNCHECKED",
         note: null,
@@ -64,17 +92,38 @@ export class WasteReceiptRepository {
       file: {
         id: input.fileId,
         storeId: input.storeId,
-        sourceDocumentId: null,
+        sourceDocumentId: input.sourceDocumentId,
         localUri: input.file.localUri,
         mimeType: input.file.mimeType,
         sizeBytes: input.file.sizeBytes,
         checksum: input.file.checksum,
         retentionStatus: "RETAINED",
-        uploadStatus: "LOCAL_ONLY",
+        uploadStatus: "PENDING",
         createdAt: input.capturedAt,
         updatedAt: input.capturedAt,
       },
+    };
+    const receipt = wasteReceiptSchema.parse(aggregate.receipt);
+    const file = localFileMetadataSchema.parse(aggregate.file);
+    assertAggregate(receipt, file, [], document);
+
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      await insertSourceDocument(transaction, document);
+      await insertLocalFile(transaction, file);
+      await insertReceipt(transaction, receipt);
+      await insertUploadJob(
+        transaction,
+        input.uploadJobId,
+        {
+          storeId: input.storeId,
+          sourceDocumentId: input.sourceDocumentId,
+          localFileId: input.fileId,
+        },
+        input.capturedAt,
+      );
     });
+
+    return { document, receipt, file, lines: [] };
   }
 
   async createDraft(input: LocalWasteReceiptAggregate) {
@@ -142,6 +191,7 @@ function assertAggregate(
   receipt: WasteReceipt,
   file: LocalFileMetadata,
   lines: readonly WasteLine[],
+  document?: LocalSourceDocument,
 ) {
   if (receipt.localFileId !== file.id) {
     throw new Error("Waste receipt must reference its local source file.");
@@ -152,11 +202,79 @@ function assertAggregate(
   if (receipt.sourceDocumentId !== file.sourceDocumentId) {
     throw new Error("Waste receipt and local source file lineage must match.");
   }
+  if (
+    document &&
+    (document.id !== receipt.sourceDocumentId ||
+      document.storeId !== receipt.storeId ||
+      document.localFileUri !== file.localUri ||
+      document.checksum !== file.checksum)
+  ) {
+    throw new Error("Waste receipt source document lineage must match.");
+  }
   for (const line of lines) {
     if (line.receiptId !== receipt.id || line.storeId !== receipt.storeId) {
       throw new Error("Waste line must belong to its receipt and store.");
     }
   }
+}
+
+async function insertSourceDocument(
+  database: OutboxDatabase,
+  document: LocalSourceDocument,
+) {
+  await database.runAsync(
+    `
+      INSERT INTO source_documents (
+        id, store_id, source_type, original_filename, local_file_uri, checksum,
+        source_generated_at, business_period_start, business_period_end,
+        local_processing_status, remote_upload_status,
+        remote_processing_status, parser_version, extraction_model_version,
+        version, created_at, updated_at, deleted_at, sync_state,
+        remote_version, dirty
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    document.id,
+    document.storeId,
+    document.sourceType,
+    document.originalFilename ?? null,
+    document.localFileUri ?? null,
+    document.checksum ?? null,
+    document.sourceGeneratedAt ?? null,
+    document.businessPeriodStart ?? null,
+    document.businessPeriodEnd ?? null,
+    document.localProcessingStatus,
+    document.remoteUploadStatus,
+    document.remoteProcessingStatus ?? null,
+    document.parserVersion ?? null,
+    document.extractionModelVersion ?? null,
+    document.version,
+    document.createdAt,
+    document.updatedAt,
+    document.deletedAt ?? null,
+    document.syncState,
+    document.remoteVersion ?? null,
+    document.dirty ? 1 : 0,
+  );
+}
+
+async function insertUploadJob(
+  database: OutboxDatabase,
+  jobId: string,
+  payload: { storeId: string; sourceDocumentId: string; localFileId: string },
+  timestamp: string,
+) {
+  await database.runAsync(
+    `
+      INSERT INTO local_jobs (
+        id, type, payload_json, status, attempt_count, next_attempt_at,
+        last_error, created_at, updated_at
+      ) VALUES (?, 'SOURCE_UPLOAD_AND_REGISTER', ?, 'PENDING', 0, NULL, NULL, ?, ?)
+    `,
+    jobId,
+    JSON.stringify(payload),
+    timestamp,
+    timestamp,
+  );
 }
 
 async function insertLocalFile(
