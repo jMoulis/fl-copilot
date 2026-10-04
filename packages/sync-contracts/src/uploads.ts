@@ -58,6 +58,33 @@ export const completeSourceUploadResponseSchema = z.object({
   jobId: z.string().uuid().nullable().optional(),
 });
 
+export const verifyImportRequestSchema = z.object({
+  sourceType: uploadSourceTypeSchema.extract([
+    "MERCALYS_SALES",
+    "MERCALYS_WASTE",
+  ]),
+  checksum: sourceUploadChecksumSchema,
+  businessPeriodStart: z.string().date(),
+  businessPeriodEnd: z.string().date(),
+  localNormalizedFingerprint: z.string().trim().min(1).max(200),
+  localRecordCount: z.number().int().nonnegative(),
+});
+
+export const importVerificationResultSchema = z.object({
+  sourceDocumentId: z.string().uuid(),
+  status: z.enum(["MATCH", "DIFFERENCE", "FAILED"]),
+  localFingerprint: z.string().nullable().optional(),
+  remoteFingerprint: z.string().nullable().optional(),
+  differenceSummary: z
+    .object({
+      added: z.number().int().nonnegative(),
+      removed: z.number().int().nonnegative(),
+      modified: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .optional(),
+});
+
 export type InitSourceUploadRequest = z.infer<
   typeof initSourceUploadRequestSchema
 >;
@@ -69,4 +96,8 @@ export type CompleteSourceUploadRequest = z.infer<
 >;
 export type CompleteSourceUploadResponse = z.infer<
   typeof completeSourceUploadResponseSchema
+>;
+export type VerifyImportRequest = z.infer<typeof verifyImportRequestSchema>;
+export type ImportVerificationResult = z.infer<
+  typeof importVerificationResultSchema
 >;

@@ -47,6 +47,9 @@ importers:
       '@fl-copilot/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@fl-copilot/import-core':
+        specifier: workspace:*
+        version: link:../../packages/import-core
       '@fl-copilot/sync-contracts':
         specifier: workspace:*
         version: link:../../packages/sync-contracts
@@ -93,6 +96,9 @@ importers:
       '@fl-copilot/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@fl-copilot/import-core':
+        specifier: workspace:*
+        version: link:../../packages/import-core
       '@fl-copilot/sync-contracts':
         specifier: workspace:*
         version: link:../../packages/sync-contracts
@@ -227,6 +233,15 @@ importers:
       zod:
         specifier: ^4.1.0
         version: 4.6.5
+
+  packages/import-core:
+    dependencies:
+      '@fl-copilot/domain':
+        specifier: workspace:*
+        version: link:../domain
+      xlsx:
+        specifier: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+        version: https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
 
   packages/substitution-core: {}
 

@@ -25,6 +25,7 @@
     "@expo/vector-icons": "^15.0.2",
     "@fl-copilot/api-client": "workspace:*",
     "@fl-copilot/domain": "workspace:*",
+    "@fl-copilot/import-core": "workspace:*",
     "@fl-copilot/sync-contracts": "workspace:*",
     "@hookform/resolvers": "^5.2.0",
     "@sentry/react-native": "~7.11.0",

@@ -6,6 +6,7 @@ import {
   authSessionResponseSchema,
   bootstrapResponseSchema,
   healthResponseSchema,
+  importVerificationResultSchema,
   initSourceUploadResponseSchema,
   syncPullResponseSchema,
   syncPushResponseSchema,
@@ -22,6 +23,7 @@ import type { SyncPushService } from "../src/sync/push-service.js";
 import type { SyncPullService } from "../src/sync/pull-service.js";
 import type { SyncBootstrapService } from "../src/sync/bootstrap-service.js";
 import type { SourceUploadService } from "../src/uploads/source-upload-service.js";
+import type { ImportVerificationService } from "../src/imports/import-verification-service.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function createDatabase(status: DatabaseStatus = "connected"): DatabaseService {
   return {
@@ -48,6 +50,7 @@ function createAuthApp(
   syncPull?: SyncPullService,
   syncBootstrap?: SyncBootstrapService,
   sourceUploads?: SourceUploadService,
+  importVerification?: ImportVerificationService,
 ) {
   const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
     database: createDatabase(),
@@ -56,6 +59,7 @@ function createAuthApp(
     syncPull,
     syncPush,
     sourceUploads,
+    importVerification,
   });
   apps.push(app);
   return app;
@@ -211,6 +215,105 @@ describe("source upload routes", () => {
       },
     });
     expect(invalid.statusCode).toBe(400);
+  });
+});
+
+describe("import verification route", () => {
+  const storeId = "44444444-4444-4444-8444-444444444444";
+  const sourceDocumentId = "55555555-5555-4555-8555-555555555555";
+  const checksum = `sha256:${"a".repeat(64)}`;
+
+  const auth: AuthService = {
+    requestChallenge: async () => {
+      throw new Error("not used");
+    },
+    verifyChallenge: async () => {
+      throw new Error("not used");
+    },
+    refreshSession: async () => {
+      throw new Error("not used");
+    },
+    authorizeStore: async (_token, authorizedStoreId) => ({
+      userId: "77777777-7777-4777-8777-777777777777",
+      sessionId: "88888888-8888-4888-8888-888888888888",
+      deviceId: "99999999-9999-4999-8999-999999999999",
+      storeId: authorizedStoreId,
+      storeName: "Magasin test",
+      role: "MANAGER",
+    }),
+    logout: async () => undefined,
+  };
+
+  it("authorizes the store and returns the shared verification result", async () => {
+    let verifiedStoreId: string | undefined;
+    const verification: ImportVerificationService = {
+      verify: async (authorizedStoreId, verifiedDocumentId, input) => {
+        verifiedStoreId = authorizedStoreId;
+        return {
+          sourceDocumentId: verifiedDocumentId,
+          status: "MATCH",
+          localFingerprint: input.localNormalizedFingerprint,
+          remoteFingerprint: input.localNormalizedFingerprint,
+        };
+      },
+    };
+    const app = createAuthApp(
+      auth,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      verification,
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/imports/${sourceDocumentId}/verify`,
+      headers: {
+        authorization: "Bearer access-token",
+        "x-store-id": storeId,
+      },
+      payload: {
+        sourceType: "MERCALYS_SALES",
+        checksum,
+        businessPeriodStart: "2026-09-26",
+        businessPeriodEnd: "2026-09-26",
+        localNormalizedFingerprint: "fnv1a64:0123456789abcdef",
+        localRecordCount: 147,
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(verifiedStoreId).toBe(storeId);
+    expect(importVerificationResultSchema.parse(response.json())).toMatchObject(
+      { sourceDocumentId, status: "MATCH" },
+    );
+  });
+
+  it("rejects an anonymous verification before reading the source", async () => {
+    const app = createAuthApp(
+      auth,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        verify: async () => {
+          throw new Error("must not verify");
+        },
+      },
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/imports/${sourceDocumentId}/verify`,
+      payload: {
+        sourceType: "MERCALYS_SALES",
+        checksum,
+        businessPeriodStart: "2026-09-26",
+        businessPeriodEnd: "2026-09-26",
+        localNormalizedFingerprint: "fnv1a64:0123456789abcdef",
+        localRecordCount: 147,
+      },
+    });
+    expect(response.statusCode).toBe(401);
   });
 });
 describe("API foundation", () => {

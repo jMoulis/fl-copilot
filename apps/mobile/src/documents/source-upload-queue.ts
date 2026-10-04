@@ -4,7 +4,13 @@ import type {
   CompleteSourceUploadResponse,
   InitSourceUploadRequest,
   InitSourceUploadResponse,
+  ImportVerificationResult,
+  VerifyImportRequest,
 } from "@fl-copilot/sync-contracts";
+import {
+  fingerprintMercalysRecords,
+  type ParsedMercalysArticleRecord,
+} from "@fl-copilot/import-core";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 
@@ -20,6 +26,11 @@ export interface SourceUploadTransport {
     uploadId: string,
     input: CompleteSourceUploadRequest,
   ): Promise<CompleteSourceUploadResponse>;
+  verify(
+    storeId: string,
+    sourceDocumentId: string,
+    input: VerifyImportRequest,
+  ): Promise<ImportVerificationResult>;
 }
 
 export interface SourceBinaryUploader {
@@ -40,12 +51,14 @@ type PendingUploadRow = {
   job_id: string;
   payload_json: string;
   attempt_count: number;
-  source_type: InitSourceUploadRequest["sourceType"];
+  source_type: VerifyImportRequest["sourceType"];
   original_filename: string;
   checksum: string;
   local_uri: string;
   mime_type: InitSourceUploadRequest["mimeType"];
   size_bytes: number;
+  business_period_start: string;
+  business_period_end: string;
 };
 
 export class SourceUploadQueue {
@@ -61,6 +74,7 @@ export class SourceUploadQueue {
       `
         SELECT j.id AS job_id, j.payload_json, j.attempt_count,
                d.source_type, d.original_filename, d.checksum,
+               d.business_period_start, d.business_period_end,
                f.local_uri, f.mime_type, f.size_bytes
         FROM local_jobs j
         JOIN source_documents d
@@ -137,13 +151,29 @@ export class SourceUploadQueue {
         await this.markInvalid(row.job_id, payload, storeId);
         return false;
       }
+      const verification = await this.transport.verify(
+        storeId,
+        payload.sourceDocumentId,
+        await this.verificationInput(row, payload.sourceDocumentId, storeId),
+      );
       const completedAt = this.now().toISOString();
       await this.database.withExclusiveTransactionAsync(async (transaction) => {
         await transaction.runAsync(
           `UPDATE source_documents
-           SET remote_upload_status = 'CONFIRMED', sync_state = 'SYNCED',
+           SET remote_upload_status = 'CONFIRMED',
+               remote_processing_status = ?, sync_state = ?,
                dirty = 0, updated_at = ?
            WHERE id = ? AND store_id = ?`,
+          verification.status === "MATCH"
+            ? "PUBLISHED"
+            : verification.status === "DIFFERENCE"
+              ? "RECONCILING"
+              : "FAILED",
+          verification.status === "MATCH"
+            ? "SYNCED"
+            : verification.status === "DIFFERENCE"
+              ? "CONFLICT"
+              : "ERROR",
           completedAt,
           payload.sourceDocumentId,
           storeId,
@@ -151,8 +181,9 @@ export class SourceUploadQueue {
         await transaction.runAsync(
           `UPDATE local_files
            SET upload_status = 'CONFIRMED',
-               retention_status = 'CLEANUP_ELIGIBLE', updated_at = ?
+               retention_status = ?, updated_at = ?
            WHERE id = ? AND store_id = ?`,
+          verification.status === "MATCH" ? "CLEANUP_ELIGIBLE" : "RETAINED",
           completedAt,
           payload.localFileId,
           storeId,
@@ -187,6 +218,43 @@ export class SourceUploadQueue {
       );
       return false;
     }
+  }
+
+  private async verificationInput(
+    row: PendingUploadRow,
+    sourceDocumentId: string,
+    storeId: string,
+  ): Promise<VerifyImportRequest> {
+    if (!row.business_period_start || !row.business_period_end) {
+      throw new Error("IMPORT_VERIFICATION_PERIOD_MISSING");
+    }
+    const records = await this.database.getAllAsync<{
+      normalized_payload_json: string;
+    }>(
+      `SELECT normalized_payload_json
+       FROM source_records
+       WHERE store_id = ? AND source_document_id = ?
+         AND normalized_payload_json IS NOT NULL AND deleted_at IS NULL
+       ORDER BY source_index, id`,
+      storeId,
+      sourceDocumentId,
+    );
+    const normalized = records.map(({ normalized_payload_json }) => {
+      const payload = JSON.parse(normalized_payload_json) as {
+        match?: unknown;
+      } & ParsedMercalysArticleRecord;
+      const record = { ...payload };
+      delete record.match;
+      return record;
+    });
+    return {
+      sourceType: row.source_type,
+      checksum: row.checksum,
+      businessPeriodStart: row.business_period_start,
+      businessPeriodEnd: row.business_period_end,
+      localNormalizedFingerprint: fingerprintMercalysRecords(normalized),
+      localRecordCount: normalized.length,
+    };
   }
 
   private async scheduleRetry(
