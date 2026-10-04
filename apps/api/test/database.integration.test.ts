@@ -90,6 +90,14 @@ describeWithMongo("MongoDB infrastructure", () => {
       _id: 5,
       name: "initialize-product-master-indexes",
     });
+    await expect(migrations.findOne({ _id: 6 })).resolves.toMatchObject({
+      _id: 6,
+      name: "initialize-source-upload-indexes",
+    });
+    await expect(migrations.findOne({ _id: 7 })).resolves.toMatchObject({
+      _id: 7,
+      name: "initialize-analytics-read-model-indexes",
+    });
   });
 
   itWithMongoTransactions(
