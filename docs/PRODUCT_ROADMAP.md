@@ -19,14 +19,14 @@ reliable local data
 
 ## Current position
 
-The data foundation is complete through M2 on the target iPhone Air. The application can authenticate, work offline, synchronize incrementally, manage the Product Master, ingest real Mercalys workbooks, reconcile corrected imports, retain private source files and verify imports remotely.
+The operational alpha is complete through M3 on the target iPhone Air. The application can authenticate, work offline, synchronize incrementally, manage the Product Master, ingest real Mercalys workbooks, reconcile corrected imports, retain private source files, verify imports remotely and present deterministic daily KPI and priorities from SQLite.
 
 M2 still has two cross-platform follow-ups:
 
 - exercise one controlled real `DIFFERENCE` on the target iPhone and verify that acknowledging it never mutates published observations;
 - repeat the XLSX, publication, upload, verification and memory acceptance on representative Android hardware.
 
-M3 has started with the merged canonical decimal utilities from M3-T01.
+M3 local/remote parity, offline Today behavior and the deterministic signal detail are complete. The next product milestone is M4, which turns `Casse` into an offline receipt-capture, assisted-extraction and validation workflow.
 
 ## Milestones
 
@@ -35,7 +35,7 @@ M3 has started with the merged canonical decimal utilities from M3-T01.
 | M0 — Foundation                      | Complete        | Runnable Expo application, Fastify API, authentication, environments and observability               | Native authentication and deliberate mobile/API errors validated on a physical device                            |
 | M1 — Offline-first sync              | Complete        | SQLite remains usable offline and synchronizes durable, idempotent changes across devices            | Offline create, restart, exactly-once sync and second-device observation                                         |
 | M2 — Product Master and Mercalys     | Complete on iOS | Trusted products and daily Mercalys sales/waste observations with source lineage and reconciliation  | Offline publication, restart persistence, reconnect, private upload and remote verification on iPhone Air        |
-| M3 — Analytics and Aujourd’hui       | Active          | Deterministic daily KPI, comparisons, quality signals and at most three priorities from SQLite       | One golden fixture produces the same serialized local and remote result; Aujourd’hui remains usable offline      |
+| M3 — Analytics and Aujourd’hui       | Complete on iOS | Deterministic daily KPI, comparisons, quality signals and at most three priorities from SQLite       | Golden local/remote parity, offline Aujourd’hui and deterministic signal detail validated on iPhone Air          |
 | M4 — Waste receipt workflow          | Planned         | Photograph or import a waste receipt offline, validate assisted extraction and publish trusted waste | Offline capture survives restart; upload, extraction, validation and KPI update complete after reconnect         |
 | M5 — Commercial planning             | Planned         | Import weekly commercial PDFs, validate operations and use Ma semaine offline                        | Validated plan, operation detail and execution checklist remain usable offline and synchronize later             |
 | M6 — Need Units and substitution     | Planned         | Record customer needs, directed substitutes and field events such as tension or stockout             | Offline event and substitute lookup later produce an auditable remote evidence update                            |
@@ -48,7 +48,7 @@ M3 has started with the merged canonical decimal utilities from M3-T01.
 
 The application has trustworthy local and synchronized inputs. It is suitable for validating data capture, import reliability and Product Master quality, but it does not yet deliver the main daily decision experience.
 
-### Operational alpha — target after M3
+### Operational alpha — reached after M3
 
 The manager can open `Aujourd’hui` and understand the latest complete business day through sales, margin, waste, comparison and data-quality information. This is the first point where routine product value should be tested with pilot users.
 
@@ -66,22 +66,20 @@ The complete experience is tested on representative iOS and Android devices and 
 
 ## Near-term sequence
 
-### M3 — Shared analytics and Aujourd’hui
+### M4 — Native waste receipt workflow
 
-1. Canonical decimal utilities — complete.
-2. Product UX/UI foundations for navigation, typography, semantic colors, spacing and reusable KPI/state components.
-3. KPI registry and formulas, including missing-versus-zero and unit compatibility.
-4. Product daily performance builder.
-5. Department daily performance builder.
-6. Comparison engine for J-7 and available comparable periods.
-7. Data-quality engine.
-8. Deterministic analytical candidates.
-9. Scoped local recomputation.
-10. Remote analytics confirmation with the same shared implementation.
-11. Native `Aujourd’hui` screen backed only by SQLite.
-12. Offline Today acceptance, visual acceptance on iPhone and local/remote golden parity.
+1. Capture a receipt with the native camera and persist the original file locally before any network request.
+2. Import an existing receipt image through the same local source-document path.
+3. Model draft receipts, extracted lines and validation state for restart-safe offline work.
+4. Reuse the idempotent private-blob upload pattern without exposing storage credentials to the device.
+5. Normalize images remotely before structured Vision extraction.
+6. Validate arithmetic and match products without silently accepting ambiguity.
+7. Let the manager correct and explicitly validate extracted lines.
+8. Detect duplicate receipts before publishing waste observations.
+9. Recompute affected analytics after publication and keep AI pending/failure states recoverable.
+10. Pass the offline capture, restart, reconnect, extraction, validation and KPI end-to-end gate.
 
-M3 is the immediate priority because it converts the trusted M2 data into a useful daily product before AI or additional document workflows increase scope.
+M4 is the immediate priority because `Casse` is the next missing daily field workflow and supplies more reliable waste evidence to the deterministic analytics already delivered by M3.
 
 ## Cross-cutting UX/UI track
 
@@ -163,14 +161,14 @@ Before the M3 Today screen is treated as product-ready, the `Plus` screen should
 - Select and configure the AI provider only when a milestone requires structured extraction or recommendation generation.
 - Verify the Resend sending domain before external production use, while retaining the current development sender during implementation.
 
-## Pilot success questions
+## End-of-M3 product review
 
-The roadmap should be reassessed at the end of M3 using observed answers to these questions:
+The technical and product foundations required for an operational alpha are present:
 
-- Does `Aujourd’hui` reduce the time needed to understand the department state?
-- Are the displayed numbers trusted and traceable to imported sources?
-- Are the three priorities understandable and operationally relevant?
-- Is the manual import routine acceptable in daily use?
-- Which missing workflow creates the most friction: waste capture, weekly planning or field-event reporting?
+- `Aujourd’hui` opens from local data, identifies its exact business date and remains stable offline.
+- KPI, movements and priorities are deterministic and traceable to the imported observations.
+- Priorities expose their evidence and a proposed check, while keeping user decisions and execution outside M3.
+- Manual Mercalys import is operational, including product confirmation, corrected-period reconciliation, private upload and remote verification.
+- Waste capture is now the clearest missing daily workflow: the `Casse` tab is still a placeholder and the current source material already includes a representative bulk-waste receipt.
 
-These answers may refine scope within later milestones, while preserving the agreed offline-first architecture and the dependency order required for trustworthy recommendations.
+Pilot observation is still required to measure time saved, trust after repeated daily use and acceptable manual-import effort. These measures remain product follow-ups and do not block M4. The offline-first architecture and the dependency order for later recommendations remain unchanged.
