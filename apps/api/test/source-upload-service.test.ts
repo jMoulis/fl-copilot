@@ -140,6 +140,60 @@ describe("source upload service", () => {
       blobEtag: '"etag-1"',
     });
   });
+
+  it("normalizes confirmed waste receipt images and retries idempotently", async () => {
+    const database = new MemoryDatabase();
+    let uploaded: SourceBlobMetadata | null = null;
+    let normalizationAttempts = 0;
+    const storage: SourceBlobStorage = {
+      createUploadUrl: async ({ pathname }) =>
+        `https://blob.example.test/upload?pathname=${encodeURIComponent(pathname)}`,
+      head: async () => uploaded,
+    };
+    const service = createMongoSourceUploadService(
+      database,
+      storage,
+      () => new Date("2026-10-04T17:00:00.000Z"),
+      {
+        normalize: async () => {
+          normalizationAttempts += 1;
+          if (normalizationAttempts === 1) {
+            throw new Error("NORMALIZATION_TEMPORARILY_UNAVAILABLE");
+          }
+        },
+      },
+    );
+    const input = {
+      sourceDocumentId,
+      sourceType: "WASTE_RECEIPT" as const,
+      filename: "ticket.heic",
+      mimeType: "image/heic" as const,
+      sizeBytes: 4096,
+      checksum,
+    };
+    const initialized = await service.init(storeId, userId, input);
+    uploaded = {
+      pathname: initialized.objectKey,
+      size: input.sizeBytes,
+      contentType: input.mimeType,
+      url: `https://store.private.blob.vercel-storage.com/${initialized.objectKey}`,
+      etag: '"etag-receipt"',
+    };
+
+    await expect(
+      service.complete(storeId, initialized.uploadId, {
+        checksum,
+        sizeBytes: input.sizeBytes,
+      }),
+    ).rejects.toThrow("NORMALIZATION_TEMPORARILY_UNAVAILABLE");
+    await expect(
+      service.complete(storeId, initialized.uploadId, {
+        checksum,
+        sizeBytes: input.sizeBytes,
+      }),
+    ).resolves.toMatchObject({ remoteUploadStatus: "CONFIRMED" });
+    expect(normalizationAttempts).toBe(2);
+  });
 });
 
 function matches(

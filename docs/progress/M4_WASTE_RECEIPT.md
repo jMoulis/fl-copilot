@@ -56,6 +56,18 @@ The local receipt and restart-persistence flow was validated on the target iPhon
 - The Casse list distinguishes `Envoi en attente`, `Image envoyée · analyse en attente` and terminal upload failure states in French.
 - iOS container-path repair now searches the correct `waste-receipts` directory for receipt sources.
 
+The offline queue and automatic reconnect upload were validated on the target iPhone Air with the M4-T04 staging build.
+
+### M4-T05 — Remote image normalization
+
+- The API invokes a dedicated Sharp adapter after a private `WASTE_RECEIPT` source upload is confirmed.
+- EXIF orientation is applied before resizing, so portrait tickets remain portrait even when their encoded pixels use camera orientation metadata.
+- The extraction derivative is a metadata-free JPEG at quality 85 with a maximum edge of 2048 pixels and no enlargement of smaller sources.
+- The immutable original remains in private Blob storage; the derivative is written to a deterministic private `derivatives/{storeId}/{sourceDocumentId}/extraction-v1.jpg` key.
+- MongoDB stores the normalizer version, derivative location, ETag, MIME type, byte size, dimensions and completion timestamp for traceability.
+- Completed normalization is idempotent. A failure records a bounded code, retains the original and is retried when the mobile upload queue calls the idempotent completion endpoint again.
+- Automated coverage verifies EXIF rotation, the extraction-size bound, durable derivative evidence, idempotency and recovery after a post-upload normalization failure.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
@@ -70,5 +82,5 @@ The local receipt and restart-persistence flow was validated on the target iPhon
 
 ## Next work
 
-1. Merge M4-T04 and validate online upload plus offline capture/reconnect on the target iPhone Air app.
-2. Implement M4-T05 remote image normalization while preserving the original private source.
+1. Merge M4-T05 and validate a real JPEG/HEIC receipt against the preview API deployment.
+2. Implement M4-T06 structured Vision AI extraction from the normalized private derivative.
