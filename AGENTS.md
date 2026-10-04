@@ -519,10 +519,16 @@ Do not use superseded technical documents from outside this repository.
 
 ## 17. Current implementation scope
 
+The completed milestone is:
+
+```text
+M2-T01 through M2-T15 — Product master and local Mercalys
+```
+
 The active increment is:
 
 ```text
-M2-T01 through M2-T12A — Product master, reconciled imports and product confirmation
+M3-T01 onward — Shared analytics and Aujourd’hui
 ```
 
-Read `docs/progress/M0_FOUNDATION.md` and `docs/progress/M1_SYNC_FOUNDATION.md` for completed foundation evidence, and `docs/progress/M2_PRODUCT_MASTER.md` for the active product-master increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`.
+Read `docs/progress/M0_FOUNDATION.md`, `docs/progress/M1_SYNC_FOUNDATION.md`, and `docs/progress/M2_PRODUCT_MASTER.md` for completed evidence, and `docs/progress/M3_ANALYTICS_TODAY.md` for the active analytics increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`.
