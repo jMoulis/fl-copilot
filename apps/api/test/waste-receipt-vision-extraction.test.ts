@@ -224,6 +224,40 @@ describe("waste receipt Vision extraction", () => {
     expect(provider.provider).toBe("vercel-ai-gateway/openai");
     expect(provider.model).toBe("openai/gpt-5.6-luna");
   });
+
+  it("resolves the Vercel OIDC token when extraction runs", async () => {
+    let tokenAvailable = false;
+    let tokenReadCount = 0;
+    const provider = createOpenAIReceiptVisionProvider(
+      {
+        model: "gpt-5.6-luna",
+        getVercelOidcToken: () => {
+          tokenReadCount += 1;
+          return tokenAvailable ? "request-scoped-oidc-token" : undefined;
+        },
+      },
+      {
+        responses: {
+          parse: async () => ({
+            status: "completed",
+            output_parsed: validOutput,
+            id: "resp_oidc",
+            model: "openai/gpt-5.6-luna",
+          }),
+        },
+      } as never,
+    );
+
+    expect(tokenReadCount).toBe(0);
+    tokenAvailable = true;
+
+    await expect(provider.extract(image)).resolves.toMatchObject({
+      responseId: "resp_oidc",
+      model: "openai/gpt-5.6-luna",
+    });
+    expect(tokenReadCount).toBe(1);
+    expect(provider.provider).toBe("vercel-ai-gateway/openai");
+  });
 });
 
 function readyDatabase() {

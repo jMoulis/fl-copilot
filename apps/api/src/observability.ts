@@ -6,7 +6,10 @@ const enabled = Boolean(dsn);
 if (enabled) {
   Sentry.init({
     dsn,
-    environment: process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV,
+    environment:
+      process.env.VERCEL_ENV ??
+      process.env.SENTRY_ENVIRONMENT ??
+      process.env.NODE_ENV,
     tracesSampleRate: 0,
     enableRuntimeChannelInjection: false,
     dataCollection: {

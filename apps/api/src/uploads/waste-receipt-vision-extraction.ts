@@ -111,18 +111,25 @@ export function createOpenAIReceiptVisionProvider(
     apiKey?: string;
     gatewayApiKey?: string;
     vercelOidcToken?: string;
+    getVercelOidcToken?: () => string | undefined;
     model: string;
   },
   client?: OpenAIResponsesClient,
 ): ReceiptVisionProvider {
-  const gatewayCredential = input.gatewayApiKey ?? input.vercelOidcToken;
-  const model = gatewayCredential
+  const usesGateway = Boolean(
+    input.gatewayApiKey ?? input.vercelOidcToken ?? input.getVercelOidcToken,
+  );
+  const model = usesGateway
     ? `openai/${input.model.replace(/^openai\//, "")}`
     : input.model;
   return {
-    provider: gatewayCredential ? "vercel-ai-gateway/openai" : "openai",
+    provider: usesGateway ? "vercel-ai-gateway/openai" : "openai",
     model,
     async extract(image) {
+      const gatewayCredential =
+        input.gatewayApiKey ??
+        input.vercelOidcToken ??
+        input.getVercelOidcToken?.();
       if (!input.apiKey && !gatewayCredential && !client) {
         throw new Error("WASTE_RECEIPT_VISION_NOT_CONFIGURED");
       }
