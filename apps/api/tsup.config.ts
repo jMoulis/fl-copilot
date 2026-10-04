@@ -9,6 +9,7 @@ export default defineConfig({
   target: "node22",
   splitting: false,
   noExternal: [
+    "@fl-copilot/analytics-core",
     "@fl-copilot/domain",
     "@fl-copilot/import-core",
     "@fl-copilot/sync-contracts",
