@@ -218,11 +218,84 @@ describe("source upload service", () => {
     expect(arithmeticAttempts).toBe(1);
     expect(productMatchingAttempts).toBe(1);
   });
+
+  it("independently flags an exact receipt checksum without deleting either source", async () => {
+    const database = new MemoryDatabase();
+    const blobs = new Map<string, SourceBlobMetadata>();
+    const storage: SourceBlobStorage = {
+      createUploadUrl: async ({ pathname }) =>
+        `https://blob.example.test/upload?pathname=${encodeURIComponent(pathname)}`,
+      head: async (pathname) => blobs.get(pathname) ?? null,
+    };
+    const service = createMongoSourceUploadService(
+      database,
+      storage,
+      () => new Date("2026-10-04T18:00:00.000Z"),
+      { normalize: async () => undefined },
+    );
+    const first = await service.init(storeId, userId, {
+      sourceDocumentId,
+      sourceType: "WASTE_RECEIPT",
+      filename: "ticket-1.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 4096,
+      checksum,
+    });
+    blobs.set(first.objectKey, {
+      pathname: first.objectKey,
+      size: 4096,
+      contentType: "image/jpeg",
+      url: `https://blob.test/${first.objectKey}`,
+      etag: '"first"',
+    });
+    await expect(
+      service.complete(storeId, first.uploadId, { checksum, sizeBytes: 4096 }),
+    ).resolves.toMatchObject({ wasteReceiptDuplicate: undefined });
+
+    const secondSourceDocumentId = "88888888-8888-4888-8888-888888888888";
+    const second = await service.init(storeId, userId, {
+      sourceDocumentId: secondSourceDocumentId,
+      sourceType: "WASTE_RECEIPT",
+      filename: "ticket-2.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 4096,
+      checksum,
+    });
+    blobs.set(second.objectKey, {
+      pathname: second.objectKey,
+      size: 4096,
+      contentType: "image/jpeg",
+      url: `https://blob.test/${second.objectKey}`,
+      etag: '"second"',
+    });
+
+    await expect(
+      service.complete(storeId, second.uploadId, {
+        checksum,
+        sizeBytes: 4096,
+      }),
+    ).resolves.toMatchObject({
+      sourceDocumentId: secondSourceDocumentId,
+      wasteReceiptDuplicate: {
+        status: "POSSIBLE_DUPLICATE",
+        reason: "EXACT_IMAGE_CHECKSUM",
+        candidateSourceDocumentId: sourceDocumentId,
+      },
+    });
+    expect(database.collections.get("sourceDocuments")?.documents).toHaveLength(
+      2,
+    );
+  });
 });
 
 function matches(
   document: Record<string, unknown>,
   query: Record<string, unknown>,
 ) {
-  return Object.entries(query).every(([key, value]) => document[key] === value);
+  return Object.entries(query).every(([key, value]) => {
+    if (typeof value === "object" && value !== null && "$ne" in value) {
+      return document[key] !== (value as { $ne: unknown }).$ne;
+    }
+    return document[key] === value;
+  });
 }

@@ -113,13 +113,23 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 - SQLite schema version 13 preserves arithmetic and product-match evidence alongside each draft line. Existing unsynchronized lines are never deleted when a remote draft is applied.
 - Draft corrections remain local review decisions until M4-T11 publishes a confirmed waste event and its outbox mutation.
 
+### M4-T10 — Exact receipt duplicate detection
+
+- A captured or imported image is checked locally by store, `WASTE_RECEIPT` source type and SHA-256 checksum inside the same SQLite transaction that preserves its source, file and receipt.
+- An exact match creates a `POSSIBLE_DUPLICATE` receipt, links the prior source and deliberately withholds the upload job until the user decides. Failed, cancelled and already confirmed-duplicate receipts are not reused as candidates.
+- The validation screen exposes the required `Comparer`, `Conserver les deux` and `Marquer comme doublon` actions. When available on the device, the prior retained image and capture date are shown for comparison.
+- `Conserver les deux` atomically records the decision and queues the retained new source for upload. `Marquer comme doublon` keeps the newly captured source locally and prevents publication without deleting either file.
+- The API independently compares confirmed receipt checksum evidence within the same store and returns a possible-duplicate candidate for receipts first seen on another device.
+- A server result cannot undo an explicit local `Conserver les deux` decision. Product/day similarity alone is never used as duplicate evidence.
+- SQLite schema version 14 records the candidate source and exact-checksum reason for recoverable review.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
 | -------------------- | -------------------------------------------------------------------------------------------- |
 | Persistent filename  | One UUID capture produces a stable `.jpg` destination under `waste-receipts`                 |
 | Failed persistence   | A copy failure never returns a durable capture result                                        |
-| Repository checks    | Structure, lint, strict TypeScript 6 and 254 tests pass                                      |
+| Repository checks    | Structure, lint, strict TypeScript 6 and 256 tests pass                                      |
 | Expo compatibility   | Expo Doctor passes all 21 checks with SDK-compatible packages                                |
 | Native configuration | Expo public config resolves the French camera and photo-library permissions                  |
 | Bundle acceptance    | Expo export completes for both iOS and Android                                               |
@@ -127,6 +137,5 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 ## Next work
 
-1. Validate M4-T09 on the target iPhone with a newly uploaded ticket, including a repeated line, one arithmetic correction and one ambiguous product choice.
-2. Implement M4-T10 duplicate detection without deleting the newly captured source or hiding review evidence.
-3. Implement M4-T11 atomic publication of confirmed waste lines and their outbox mutations.
+1. Validate M4-T10 on the target iPhone by importing the same image twice and exercising both resolution choices.
+2. Implement M4-T11 atomic publication of confirmed waste lines and their outbox mutations.

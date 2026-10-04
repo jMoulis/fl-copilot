@@ -177,6 +177,16 @@ export class SourceUploadQueue {
             this.now().toISOString(),
           );
         }
+        if (
+          row.source_type === "WASTE_RECEIPT" &&
+          result.wasteReceiptDuplicate
+        ) {
+          await new WasteReceiptRepository(this.database).applyRemoteDuplicate(
+            payload.sourceDocumentId,
+            result.wasteReceiptDuplicate.candidateSourceDocumentId,
+            this.now().toISOString(),
+          );
+        }
         await this.markSourceUploaded(
           row.job_id,
           payload,

@@ -94,11 +94,18 @@ export const wasteReceiptDraftSchema = z.object({
   lines: z.array(wasteReceiptDraftLineSchema),
 });
 
+export const wasteReceiptDuplicateSchema = z.object({
+  status: z.literal("POSSIBLE_DUPLICATE"),
+  reason: z.literal("EXACT_IMAGE_CHECKSUM"),
+  candidateSourceDocumentId: z.string().uuid(),
+});
+
 export const completeSourceUploadResponseSchema = z.object({
   sourceDocumentId: z.string().uuid(),
   remoteUploadStatus: z.enum(["CONFIRMED", "DUPLICATE", "INVALID"]),
   jobId: z.string().uuid().nullable().optional(),
   wasteReceiptDraft: wasteReceiptDraftSchema.nullable().optional(),
+  wasteReceiptDuplicate: wasteReceiptDuplicateSchema.nullable().optional(),
 });
 
 export const verifyImportRequestSchema = z.object({
@@ -145,6 +152,7 @@ export type WasteReceiptDraftLine = z.infer<typeof wasteReceiptDraftLineSchema>;
 export type WasteReceiptDraftCandidate = z.infer<
   typeof wasteReceiptDraftCandidateSchema
 >;
+export type WasteReceiptDuplicate = z.infer<typeof wasteReceiptDuplicateSchema>;
 export type VerifyImportRequest = z.infer<typeof verifyImportRequestSchema>;
 export type ImportVerificationResult = z.infer<
   typeof importVerificationResultSchema

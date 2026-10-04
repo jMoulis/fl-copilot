@@ -11,6 +11,7 @@ import type {
   InitSourceUploadRequest,
   InitSourceUploadResponse,
   WasteReceiptDraft,
+  WasteReceiptDuplicate,
 } from "@fl-copilot/sync-contracts";
 import { AuthError } from "../auth/service.js";
 import type { DatabaseService } from "../database/types.js";
@@ -262,7 +263,11 @@ export function createMongoSourceUploadService(
           receiptDrafts,
           upload,
         );
-        return confirmed(upload, draft);
+        const duplicate = await findExactWasteReceiptDuplicate(
+          database,
+          upload,
+        );
+        return confirmed(upload, draft, duplicate);
       }
 
       const blob = await storage.head(upload.objectKey);
@@ -309,7 +314,8 @@ export function createMongoSourceUploadService(
         receiptDrafts,
         upload,
       );
-      return confirmed(upload, draft);
+      const duplicate = await findExactWasteReceiptDuplicate(database, upload);
+      return confirmed(upload, draft, duplicate);
     },
   };
 }
@@ -438,13 +444,39 @@ function alreadyUploaded(upload: UploadRecord): InitSourceUploadResponse {
 function confirmed(
   upload: UploadRecord,
   wasteReceiptDraft?: WasteReceiptDraft,
+  wasteReceiptDuplicate?: WasteReceiptDuplicate,
 ): CompleteSourceUploadResponse {
   return {
     sourceDocumentId: upload.sourceDocumentId,
     remoteUploadStatus: "CONFIRMED",
     jobId: null,
     wasteReceiptDraft,
+    wasteReceiptDuplicate,
   };
+}
+
+async function findExactWasteReceiptDuplicate(
+  database: DatabaseService,
+  upload: UploadRecord,
+): Promise<WasteReceiptDuplicate | undefined> {
+  if (upload.sourceType !== "WASTE_RECEIPT") return;
+  const db = await database.getDb();
+  const candidate = await db
+    .collection<RemoteSourceDocumentRecord>("sourceDocuments")
+    .findOne({
+      _id: { $ne: upload.sourceDocumentId },
+      storeId: upload.storeId,
+      sourceType: "WASTE_RECEIPT",
+      checksum: upload.checksum,
+      remoteUploadStatus: "CONFIRMED",
+    });
+  return candidate
+    ? {
+        status: "POSSIBLE_DUPLICATE",
+        reason: "EXACT_IMAGE_CHECKSUM",
+        candidateSourceDocumentId: candidate._id,
+      }
+    : undefined;
 }
 
 function isDuplicateKeyError(error: unknown): error is { code: number } {

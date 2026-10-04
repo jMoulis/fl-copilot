@@ -255,6 +255,11 @@ describe("source upload queue", () => {
               },
             ],
           },
+          wasteReceiptDuplicate: {
+            status: "POSSIBLE_DUPLICATE",
+            reason: "EXACT_IMAGE_CHECKSUM",
+            candidateSourceDocumentId: "99999999-9999-4999-8999-999999999999",
+          },
         }),
         verify: async () => {
           throw new Error("waste receipt must not use Mercalys verification");
@@ -308,13 +313,18 @@ describe("source upload queue", () => {
     expect(
       database
         .prepare(
-          "SELECT processing_status, ai_status, detected_receipt_date FROM waste_receipts",
+          `SELECT processing_status, ai_status, detected_receipt_date,
+                  duplicate_status, duplicate_candidate_source_document_id
+           FROM waste_receipts`,
         )
         .get(),
     ).toEqual({
       processing_status: "TO_VALIDATE",
       ai_status: "COMPLETED",
       detected_receipt_date: "2026-10-02",
+      duplicate_status: "POSSIBLE_DUPLICATE",
+      duplicate_candidate_source_document_id:
+        "99999999-9999-4999-8999-999999999999",
     });
     expect(
       database

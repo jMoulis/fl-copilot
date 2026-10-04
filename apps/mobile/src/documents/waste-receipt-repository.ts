@@ -43,6 +43,21 @@ export interface LocalWasteReceiptDetail {
   receipt: WasteReceipt;
   localFileUri: string | null;
   lines: LocalWasteLineDraft[];
+  duplicateCandidate: LocalWasteDuplicateCandidate | null;
+}
+
+export interface LocalWasteDuplicateCandidate {
+  receiptId: string;
+  sourceDocumentId: string;
+  captureDate: string | null;
+  processingStatus: WasteReceipt["processingStatus"];
+  localFileUri: string | null;
+}
+
+export interface CreateCapturedWasteReceiptResult extends LocalWasteReceiptAggregate {
+  document: LocalSourceDocument;
+  duplicateCandidate: LocalWasteDuplicateCandidate | null;
+  uploadQueued: boolean;
 }
 
 export interface CreateCapturedWasteReceiptInput {
@@ -90,8 +105,27 @@ export class WasteReceiptRepository {
       remoteVersion: null,
       dirty: true,
     });
-    const aggregate: LocalWasteReceiptAggregate = {
-      receipt: {
+    const file = localFileMetadataSchema.parse({
+      id: input.fileId,
+      storeId: input.storeId,
+      sourceDocumentId: input.sourceDocumentId,
+      localUri: input.file.localUri,
+      mimeType: input.file.mimeType,
+      sizeBytes: input.file.sizeBytes,
+      checksum: input.file.checksum,
+      retentionStatus: "RETAINED",
+      uploadStatus: "PENDING",
+      createdAt: input.capturedAt,
+      updatedAt: input.capturedAt,
+    });
+    let result: CreateCapturedWasteReceiptResult | undefined;
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const duplicateCandidate = await findExactReceiptDuplicate(
+        transaction,
+        input.storeId,
+        input.file.checksum,
+      );
+      const receipt = wasteReceiptSchema.parse({
         id: input.receiptId,
         storeId: input.storeId,
         sourceDocumentId: input.sourceDocumentId,
@@ -99,9 +133,14 @@ export class WasteReceiptRepository {
         captureDate: input.capturedAt,
         detectedReceiptDate: null,
         confirmedWasteDate: null,
-        processingStatus: "UPLOAD_PENDING",
+        processingStatus: duplicateCandidate ? "CAPTURED" : "UPLOAD_PENDING",
         aiStatus: "PENDING",
-        duplicateStatus: "UNCHECKED",
+        duplicateStatus: duplicateCandidate
+          ? "POSSIBLE_DUPLICATE"
+          : "NOT_DUPLICATE",
+        duplicateCandidateSourceDocumentId:
+          duplicateCandidate?.sourceDocumentId ?? null,
+        duplicateReason: duplicateCandidate ? "EXACT_IMAGE_CHECKSUM" : null,
         note: null,
         version: 1,
         createdAt: input.capturedAt,
@@ -110,42 +149,34 @@ export class WasteReceiptRepository {
         syncState: "LOCAL_ONLY",
         remoteVersion: null,
         dirty: true,
-      },
-      file: {
-        id: input.fileId,
-        storeId: input.storeId,
-        sourceDocumentId: input.sourceDocumentId,
-        localUri: input.file.localUri,
-        mimeType: input.file.mimeType,
-        sizeBytes: input.file.sizeBytes,
-        checksum: input.file.checksum,
-        retentionStatus: "RETAINED",
-        uploadStatus: "PENDING",
-        createdAt: input.capturedAt,
-        updatedAt: input.capturedAt,
-      },
-    };
-    const receipt = wasteReceiptSchema.parse(aggregate.receipt);
-    const file = localFileMetadataSchema.parse(aggregate.file);
-    assertAggregate(receipt, file, [], document);
-
-    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      });
+      assertAggregate(receipt, file, [], document);
       await insertSourceDocument(transaction, document);
       await insertLocalFile(transaction, file);
       await insertReceipt(transaction, receipt);
-      await insertUploadJob(
-        transaction,
-        input.uploadJobId,
-        {
-          storeId: input.storeId,
-          sourceDocumentId: input.sourceDocumentId,
-          localFileId: input.fileId,
-        },
-        input.capturedAt,
-      );
+      if (!duplicateCandidate) {
+        await insertUploadJob(
+          transaction,
+          input.uploadJobId,
+          {
+            storeId: input.storeId,
+            sourceDocumentId: input.sourceDocumentId,
+            localFileId: input.fileId,
+          },
+          input.capturedAt,
+        );
+      }
+      result = {
+        document,
+        receipt,
+        file,
+        lines: [],
+        duplicateCandidate,
+        uploadQueued: !duplicateCandidate,
+      };
     });
-
-    return { document, receipt, file, lines: [] };
+    if (!result) throw new Error("WASTE_RECEIPT_DRAFT_NOT_CREATED");
+    return result;
   }
 
   async createDraft(input: LocalWasteReceiptAggregate) {
@@ -225,11 +256,122 @@ export class WasteReceiptRepository {
        ORDER BY source_line_index, id`,
       id,
     );
+    const duplicateCandidate = row.duplicate_candidate_source_document_id
+      ? await findDuplicateCandidateBySourceDocument(
+          this.database,
+          row.duplicate_candidate_source_document_id,
+        )
+      : null;
     return {
       receipt: mapReceipt(row),
       localFileUri: row.local_uri,
       lines: lines.map(mapLineDraft),
+      duplicateCandidate,
     };
+  }
+
+  async resolveExactDuplicate(
+    receiptId: string,
+    resolution: "KEEP_BOTH" | "CONFIRM_DUPLICATE",
+    uploadJobId?: string,
+    timestamp = new Date().toISOString(),
+  ) {
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const receipt = await transaction.getFirstAsync<{
+        store_id: string;
+        source_document_id: string | null;
+        local_file_id: string | null;
+        duplicate_status: string;
+        remote_upload_status: string;
+      }>(
+        `SELECT r.store_id, r.source_document_id, r.local_file_id,
+                r.duplicate_status, d.remote_upload_status
+         FROM waste_receipts r
+         JOIN source_documents d ON d.id = r.source_document_id
+         WHERE r.id = ? AND r.deleted_at IS NULL`,
+        receiptId,
+      );
+      if (
+        !receipt ||
+        receipt.duplicate_status !== "POSSIBLE_DUPLICATE" ||
+        !receipt.source_document_id ||
+        !receipt.local_file_id
+      ) {
+        throw new Error("WASTE_RECEIPT_DUPLICATE_NOT_REVIEWABLE");
+      }
+      if (resolution === "KEEP_BOTH") {
+        const uploadAlreadyConfirmed =
+          receipt.remote_upload_status === "CONFIRMED";
+        if (!uploadAlreadyConfirmed) {
+          if (!uploadJobId)
+            throw new Error("WASTE_RECEIPT_UPLOAD_JOB_REQUIRED");
+          await insertUploadJob(
+            transaction,
+            uploadJobId,
+            {
+              storeId: receipt.store_id,
+              sourceDocumentId: receipt.source_document_id,
+              localFileId: receipt.local_file_id,
+            },
+            timestamp,
+          );
+        }
+        await transaction.runAsync(
+          `UPDATE waste_receipts
+           SET duplicate_status = 'NOT_DUPLICATE',
+               processing_status = CASE WHEN ? = 1 THEN processing_status ELSE 'UPLOAD_PENDING' END,
+               version = version + 1, updated_at = ?, dirty = 1,
+               sync_state = 'LOCAL_ONLY'
+           WHERE id = ?`,
+          uploadAlreadyConfirmed ? 1 : 0,
+          timestamp,
+          receiptId,
+        );
+      } else {
+        await transaction.runAsync(
+          `UPDATE waste_receipts
+           SET duplicate_status = 'CONFIRMED_DUPLICATE', processing_status = 'CAPTURED',
+               version = version + 1, updated_at = ?, dirty = 1,
+               sync_state = 'LOCAL_ONLY'
+           WHERE id = ?`,
+          timestamp,
+          receiptId,
+        );
+        await transaction.runAsync(
+          `UPDATE source_documents
+           SET local_processing_status = 'COMPLETED', updated_at = ?,
+               version = version + 1, dirty = 1, sync_state = 'LOCAL_ONLY'
+           WHERE id = ? AND store_id = ?`,
+          timestamp,
+          receipt.source_document_id,
+          receipt.store_id,
+        );
+      }
+    });
+  }
+
+  async applyRemoteDuplicate(
+    sourceDocumentId: string,
+    candidateSourceDocumentId: string,
+    timestamp = new Date().toISOString(),
+  ) {
+    await this.database.runAsync(
+      `UPDATE waste_receipts
+       SET duplicate_status = 'POSSIBLE_DUPLICATE',
+           duplicate_candidate_source_document_id = ?,
+           duplicate_reason = 'EXACT_IMAGE_CHECKSUM',
+           version = version + 1, updated_at = ?, dirty = 1,
+           sync_state = 'LOCAL_ONLY'
+       WHERE source_document_id = ? AND deleted_at IS NULL
+         AND (
+           duplicate_status != 'NOT_DUPLICATE'
+           OR duplicate_reason IS NULL
+           OR duplicate_reason != 'EXACT_IMAGE_CHECKSUM'
+         )`,
+      candidateSourceDocumentId,
+      timestamp,
+      sourceDocumentId,
+    );
   }
 
   async applyRemoteDraft(
@@ -441,6 +583,60 @@ export class WasteReceiptRepository {
   }
 }
 
+async function findExactReceiptDuplicate(
+  database: OutboxDatabase,
+  storeId: string,
+  checksum: string,
+): Promise<LocalWasteDuplicateCandidate | null> {
+  const row = await database.getFirstAsync<DuplicateCandidateRow>(
+    `SELECT r.id AS receipt_id, d.id AS source_document_id, r.capture_date,
+            r.processing_status, f.local_uri
+     FROM source_documents d
+     JOIN waste_receipts r ON r.source_document_id = d.id
+     LEFT JOIN local_files f ON f.id = r.local_file_id
+     WHERE d.store_id = ? AND d.source_type = 'WASTE_RECEIPT'
+       AND d.checksum = ?
+       AND d.local_processing_status NOT IN ('FAILED', 'CANCELLED')
+       AND d.deleted_at IS NULL AND r.deleted_at IS NULL
+       AND r.duplicate_status != 'CONFIRMED_DUPLICATE'
+     ORDER BY COALESCE(r.capture_date, r.created_at) DESC, r.id DESC
+     LIMIT 1`,
+    storeId,
+    checksum,
+  );
+  return row ? mapDuplicateCandidate(row) : null;
+}
+
+async function findDuplicateCandidateBySourceDocument(
+  database: OutboxDatabase,
+  sourceDocumentId: string,
+): Promise<LocalWasteDuplicateCandidate | null> {
+  const row = await database.getFirstAsync<DuplicateCandidateRow>(
+    `SELECT r.id AS receipt_id, d.id AS source_document_id, r.capture_date,
+            r.processing_status, f.local_uri
+     FROM source_documents d
+     JOIN waste_receipts r ON r.source_document_id = d.id
+     LEFT JOIN local_files f ON f.id = r.local_file_id
+     WHERE d.id = ? AND d.deleted_at IS NULL AND r.deleted_at IS NULL
+     ORDER BY COALESCE(r.capture_date, r.created_at) DESC, r.id DESC
+     LIMIT 1`,
+    sourceDocumentId,
+  );
+  return row ? mapDuplicateCandidate(row) : null;
+}
+
+function mapDuplicateCandidate(
+  row: DuplicateCandidateRow,
+): LocalWasteDuplicateCandidate {
+  return {
+    receiptId: row.receipt_id,
+    sourceDocumentId: row.source_document_id,
+    captureDate: row.capture_date,
+    processingStatus: row.processing_status,
+    localFileUri: row.local_uri,
+  };
+}
+
 function assertAggregate(
   receipt: WasteReceipt,
   file: LocalFileMetadata,
@@ -562,9 +758,10 @@ async function insertReceipt(database: OutboxDatabase, receipt: WasteReceipt) {
       INSERT INTO waste_receipts (
         id, store_id, source_document_id, local_file_id, capture_date,
         detected_receipt_date, confirmed_waste_date, processing_status,
-        ai_status, duplicate_status, note, version, created_at, updated_at,
-        deleted_at, sync_state, remote_version, dirty
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ai_status, duplicate_status, duplicate_candidate_source_document_id,
+        duplicate_reason, note, version, created_at, updated_at, deleted_at,
+        sync_state, remote_version, dirty
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     receipt.id,
     receipt.storeId,
@@ -576,6 +773,8 @@ async function insertReceipt(database: OutboxDatabase, receipt: WasteReceipt) {
     receipt.processingStatus,
     receipt.aiStatus,
     receipt.duplicateStatus,
+    receipt.duplicateCandidateSourceDocumentId ?? null,
+    receipt.duplicateReason ?? null,
     receipt.note ?? null,
     receipt.version,
     receipt.createdAt,
@@ -643,6 +842,9 @@ function mapReceipt(row: WasteReceiptRow) {
     processingStatus: row.processing_status,
     aiStatus: row.ai_status,
     duplicateStatus: row.duplicate_status,
+    duplicateCandidateSourceDocumentId:
+      row.duplicate_candidate_source_document_id,
+    duplicateReason: row.duplicate_reason,
     note: row.note,
     version: row.version,
     createdAt: row.created_at,
@@ -734,6 +936,8 @@ interface WasteReceiptRow {
   processing_status: string;
   ai_status: string;
   duplicate_status: string;
+  duplicate_candidate_source_document_id: string | null;
+  duplicate_reason: string | null;
   note: string | null;
   version: number;
   created_at: string;
@@ -742,6 +946,14 @@ interface WasteReceiptRow {
   sync_state: string;
   remote_version: number | null;
   dirty: number;
+}
+
+interface DuplicateCandidateRow {
+  receipt_id: string;
+  source_document_id: string;
+  capture_date: string | null;
+  processing_status: WasteReceipt["processingStatus"];
+  local_uri: string | null;
 }
 
 interface WasteReceiptSummaryRow extends WasteReceiptRow {

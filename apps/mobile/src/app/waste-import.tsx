@@ -30,7 +30,8 @@ export default function WasteImportScreen() {
     [database.sqlite],
   );
   const storeId = session?.stores[0]?.storeId;
-  const [saved, setSaved] = useState(false);
+  const [savedReceiptId, setSavedReceiptId] = useState<string>();
+  const [possibleDuplicate, setPossibleDuplicate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -62,7 +63,7 @@ export default function WasteImportScreen() {
         mimeType: asset.mimeType,
         originalFilename: asset.fileName,
       });
-      await receiptRepository.createCapturedDraft({
+      const created = await receiptRepository.createCapturedDraft({
         receiptId,
         fileId: randomUUID(),
         sourceDocumentId: randomUUID(),
@@ -71,8 +72,9 @@ export default function WasteImportScreen() {
         capturedAt: new Date().toISOString(),
         file: { ...saved, originalFilename: saved.filename },
       });
-      void syncNow(storeId);
-      setSaved(true);
+      if (created.uploadQueued) void syncNow(storeId);
+      setPossibleDuplicate(Boolean(created.duplicateCandidate));
+      setSavedReceiptId(receiptId);
     } catch (caught) {
       setError(
         caught instanceof UnsupportedWasteReceiptImageError
@@ -84,7 +86,7 @@ export default function WasteImportScreen() {
     }
   }
 
-  if (saved) {
+  if (savedReceiptId) {
     return (
       <AppScreen>
         <AppHeader
@@ -92,13 +94,21 @@ export default function WasteImportScreen() {
           subtitle="Le ticket est conservé dans l’espace privé de l’application."
         />
         <View className="gap-4 rounded-3xl border border-line bg-white p-5">
-          <StatusBadge status="pending" />
+          <StatusBadge status={possibleDuplicate ? "incomplete" : "pending"} />
           <Text className="text-base leading-6 text-ink">
-            Le ticket reste disponible après la fermeture de l’application. Son
-            envoi reprendra automatiquement dès que le réseau sera disponible.
+            {possibleDuplicate
+              ? "La même image existe déjà. Comparez les deux tickets avant tout envoi."
+              : "Le ticket reste disponible après la fermeture de l’application. Son envoi reprendra automatiquement dès que le réseau sera disponible."}
           </Text>
         </View>
-        <PrimaryButton label="Terminer" onPress={() => router.back()} />
+        <PrimaryButton
+          label={possibleDuplicate ? "Examiner le doublon" : "Terminer"}
+          onPress={() =>
+            possibleDuplicate
+              ? router.replace(`/waste-receipt/${savedReceiptId}`)
+              : router.back()
+          }
+        />
       </AppScreen>
     );
   }
