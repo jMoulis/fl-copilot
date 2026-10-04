@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T03 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic plus the initial shared KPI registry, availability rules, unit compatibility and deterministic formulas.
+The active increment covers M3-T01 through M3-T04 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic plus the initial shared KPI registry, availability rules, unit compatibility and deterministic formulas.
 
 ## Implemented
 
@@ -21,6 +21,9 @@ The active increment covers M3-T01 through M3-T03 from `docs/specs/IMPLEMENTATIO
 - The shared `ProductDailyPerformance` builder aggregates one validated product-day with deterministic field order, source lineage, formula version and input revision.
 - The product-day result keeps sales and waste independent, preserves known and estimated waste costs, ignores reconciled deleted observations and never averages multiple source margin rates.
 - A shared golden fixture proves identical serialized output when local and remote adapters provide the same inputs in different orders.
+- The `DepartmentDailyPerformance` builder aggregates product money metrics with deterministic ordering and propagates partial availability from product results.
+- Department results deliberately omit global quantity totals across incompatible product sales units and keep aggregate margin rate unavailable instead of averaging source rates.
+- Duplicate products and product-day results outside the requested store/date perimeter fail closed.
 
 ## Verification evidence
 
@@ -41,5 +44,5 @@ The active increment covers M3-T01 through M3-T03 from `docs/specs/IMPLEMENTATIO
 
 ## Next work
 
-1. Merge M3-T03 after repository-wide validation.
-2. Implement M3-T04: aggregate product-day results into `DepartmentDailyPerformance` without averaging line margin rates or mixing incompatible quantities.
+1. Merge M3-T04 after repository-wide validation.
+2. Implement M3-T05: comparison modes and availability, starting with J-7 and explicit missing-reference/sample-size behavior.
