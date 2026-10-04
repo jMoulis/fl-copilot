@@ -217,6 +217,9 @@ importers:
 
   packages/analytics-core:
     dependencies:
+      '@fl-copilot/domain':
+        specifier: workspace:*
+        version: link:../domain
       decimal.js:
         specifier: ^10.6.0
         version: 10.6.0
@@ -6928,7 +6931,9 @@ snapshots:
       '@react-native/codegen': 0.86.3(@babel/core@7.29.7)
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/babel-preset@0.86.3(@babel/core@7.29.7)':
     dependencies:
@@ -7044,9 +7049,7 @@ snapshots:
       metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
