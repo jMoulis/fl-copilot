@@ -4,7 +4,7 @@ Date: 2026-10-04.
 
 ## Scope
 
-The active increment covers M3-T01 through M3-T06 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparison modes and analytical data quality.
+The active increment covers M3-T01 through M3-T07 from `docs/specs/IMPLEMENTATION_PLAN.md`: canonical decimal arithmetic, the initial shared KPI registry, deterministic daily performance builders, explicit comparisons, analytical data quality and structured candidate detection.
 
 ## Implemented
 
@@ -32,6 +32,11 @@ The active increment covers M3-T01 through M3-T06 from `docs/specs/IMPLEMENTATIO
 - Coverage components preserve complete, partial and missing states; a partial local import therefore lowers both its source score and the overall analytical quality score.
 - Period completeness uses explicit configured store opening dates, deduplicates observations and exposes missing and unexpected dates instead of inferring completeness from calendar days.
 - Waste cost quality exposes known, estimated and unknown value shares independently; only the known share contributes to the known-cost coverage score.
+- The initial candidate engine detects configurable waste spikes, sales drops, margin drops and data-quality alerts from comparison and quality outputs.
+- Candidate thresholds define minimum and full-scale absolute impact, percentage deviation, urgency and minimum acceptable quality outside UI code.
+- Missing references suppress business-change candidates; a valid zero reference may still produce a waste spike with a null percentage and an explicit warning.
+- Extreme signals backed by incomplete inputs remain visible as `LOW_QUALITY`; structured evidence and lineage let downstream layers explain the limitation without recalculating facts.
+- Multiple signals for the same entity remain separate analytical candidates so a later ranking or AI layer can combine them without losing evidence.
 
 ## Verification evidence
 
@@ -57,8 +62,12 @@ The active increment covers M3-T01 through M3-T06 from `docs/specs/IMPLEMENTATIO
 | Opening calendar      | Five observed configured business days out of six produce `0.8333` and identify the missing date                          |
 | Waste cost coverage   | 80% known, 10% estimated and 10% unknown remain separate; known-cost quality is `0.8`                                     |
 | Quality stability     | Component and lineage input order does not change the serialized quality result                                           |
+| Candidate direction   | Waste requires an increase; sales and margin require decreases; opposite movements do not create candidates               |
+| Configured thresholds | Both absolute economic impact and percentage deviation must pass configured thresholds                                    |
+| Candidate quality     | Extreme signals with incomplete data remain present as `LOW_QUALITY` with explicit warnings                               |
+| Candidate evidence    | Current, reference, absolute change, percentage change and quality remain structured and traceable                        |
 
 ## Next work
 
-1. Merge M3-T06 after repository-wide validation.
-2. Implement M3-T07: deterministic analytical candidates for waste spikes, sales drops, margin drops and data-quality alerts.
+1. Merge M3-T07 after repository-wide validation.
+2. Implement M3-T08: scoped local recomputation by product and business date without blocking the UI.
