@@ -19,6 +19,14 @@ import type {
   TodayPriority,
   TodaySummary,
 } from "@/today/today-summary";
+import {
+  formatBusinessDate,
+  formatCurrency,
+  formatSignedCurrency,
+  formatSignedPercentage,
+  priorityFact,
+  priorityPresentation,
+} from "@/today/today-priority-presentation";
 import { useTodaySummary } from "@/today/use-today-summary";
 
 export default function TodayScreen() {
@@ -182,7 +190,10 @@ function PriorityCard({ priority }: { priority: TodayPriority }) {
       accessibilityRole="button"
       accessibilityLabel={`${priority.rank}. ${presentation.title}. ${presentation.reason}`}
       onPress={() =>
-        router.push(`/(tabs)/products/${priority.productId}` as Href)
+        router.push({
+          pathname: "/(tabs)/priority/[id]",
+          params: { id: priority.id },
+        } as Href)
       }
       className="gap-3 rounded-2xl bg-surface-muted p-4"
       style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
@@ -271,44 +282,6 @@ function MovementRow({ movement }: { movement: TodayMovement }) {
   );
 }
 
-function priorityPresentation(priority: TodayPriority) {
-  if (priority.type === "WASTE_SPIKE") {
-    return {
-      title: `Contrôler la casse — ${priority.productLabel}`,
-      reason: "La casse augmente par rapport à J-7.",
-      action: "Vérifier le stock, la maturité et la rotation aujourd’hui.",
-    };
-  }
-  if (priority.type === "SALES_DROP") {
-    return {
-      title: `Vérifier les ventes — ${priority.productLabel}`,
-      reason: "Les ventes reculent par rapport à J-7.",
-      action: "Contrôler la disponibilité, le prix et la mise en avant.",
-    };
-  }
-  if (priority.type === "MARGIN_DROP") {
-    return {
-      title: `Examiner la marge — ${priority.productLabel}`,
-      reason: "La marge baisse par rapport à J-7.",
-      action: "Vérifier le prix de vente et le coût d’achat.",
-    };
-  }
-  return {
-    title: `Vérifier les données — ${priority.productLabel}`,
-    reason:
-      "Les données disponibles sont insuffisantes pour une lecture fiable.",
-    action: "Contrôler les imports et l’association du produit.",
-  };
-}
-
-function priorityFact(priority: TodayPriority) {
-  const current = formatCurrency(priority.currentValue);
-  const variation = formatSignedPercentage(priority.percentageDifference);
-  if (current && variation) return `${current} · ${variation} vs J-7`;
-  if (current) return current;
-  return `Qualité des données : ${Math.round(priority.dataQualityScore * 100)} %`;
-}
-
 function movementLabel(movement: TodayMovement) {
   const metric =
     movement.metric === "SALES"
@@ -339,36 +312,6 @@ function comparisonLabel(
 function isPositiveMovement(movement: TodayMovement) {
   const positive = Number(movement.absoluteDifference) >= 0;
   return movement.metric === "WASTE" ? !positive : positive;
-}
-
-function formatCurrency(value: string | null) {
-  if (value === null) return null;
-  return new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "EUR",
-    maximumFractionDigits: 2,
-  }).format(Number(value));
-}
-
-function formatSignedCurrency(value: string) {
-  const amount = Number(value);
-  const formatted = formatCurrency(String(Math.abs(amount))) ?? "";
-  return `${amount >= 0 ? "+" : "−"}${formatted}`;
-}
-
-function formatSignedPercentage(value: string | null) {
-  if (value === null) return null;
-  const percentage = Number(value);
-  return `${percentage >= 0 ? "+" : "−"}${Math.abs(percentage).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`;
-}
-
-function formatBusinessDate(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
 function formatFreshness(value: string) {

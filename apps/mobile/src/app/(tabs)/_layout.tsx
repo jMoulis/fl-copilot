@@ -95,6 +95,7 @@ export default function TabLayout() {
       <Tabs.Screen name="xlsx-diagnostic" options={{ href: null }} />
       <Tabs.Screen name="products/index" options={{ href: null }} />
       <Tabs.Screen name="products/[id]" options={{ href: null }} />
+      <Tabs.Screen name="priority/[id]" options={{ href: null }} />
       <Tabs.Screen name="sync-conflict/[id]" options={{ href: null }} />
       <Tabs.Screen name="import-verification/[id]" options={{ href: null }} />
     </Tabs>

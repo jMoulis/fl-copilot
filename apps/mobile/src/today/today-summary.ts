@@ -34,10 +34,12 @@ export interface TodayPriority {
   readonly productId: string;
   readonly productLabel: string;
   readonly currentValue: string | null;
+  readonly referenceValue: string | null;
   readonly absoluteDifference: string | null;
   readonly percentageDifference: string | null;
   readonly dataQualityScore: number;
   readonly status: AnalyticalCandidate["status"];
+  readonly incompleteMetricLabels: readonly string[];
 }
 
 export interface TodayMovement {
@@ -281,6 +283,7 @@ function buildProductSignals(
   const candidates: {
     candidate: AnalyticalCandidate;
     productLabel: string;
+    incompleteMetricLabels: readonly string[];
   }[] = [];
   const movements: TodayMovement[] = [];
 
@@ -328,7 +331,13 @@ function buildProductSignals(
       thresholds,
       generatedAt,
     })) {
-      candidates.push({ candidate, productLabel: current.label });
+      candidates.push({
+        candidate,
+        productLabel: current.label,
+        incompleteMetricLabels: incompleteProductMetricLabels(
+          current.performance,
+        ),
+      });
     }
     movements.push(
       ...movementFromComparison(current, "SALES", comparisons.sales),
@@ -340,18 +349,25 @@ function buildProductSignals(
   const priorities = candidates
     .sort(compareRankedCandidates)
     .slice(0, 3)
-    .map(({ candidate, productLabel }, index): TodayPriority => ({
-      id: candidate.id,
-      rank: index + 1,
-      type: candidate.type,
-      productId: candidate.entityId,
-      productLabel,
-      currentValue: evidenceValue(candidate, "CURRENT_VALUE"),
-      absoluteDifference: evidenceValue(candidate, "ABSOLUTE_DIFFERENCE"),
-      percentageDifference: evidenceValue(candidate, "PERCENTAGE_DIFFERENCE"),
-      dataQualityScore: candidate.dataQualityScore,
-      status: candidate.status,
-    }));
+    .map(
+      (
+        { candidate, productLabel, incompleteMetricLabels },
+        index,
+      ): TodayPriority => ({
+        id: candidate.id,
+        rank: index + 1,
+        type: candidate.type,
+        productId: candidate.entityId,
+        productLabel,
+        currentValue: evidenceValue(candidate, "CURRENT_VALUE"),
+        referenceValue: evidenceValue(candidate, "REFERENCE_VALUE"),
+        absoluteDifference: evidenceValue(candidate, "ABSOLUTE_DIFFERENCE"),
+        percentageDifference: evidenceValue(candidate, "PERCENTAGE_DIFFERENCE"),
+        dataQualityScore: candidate.dataQualityScore,
+        status: candidate.status,
+        incompleteMetricLabels,
+      }),
+    );
   return {
     priorities,
     movements: movements.sort(compareMovements).slice(0, 5),
@@ -539,6 +555,18 @@ function productQualityScore(performance: ProductDailyPerformance) {
       0,
     ) / statuses.length;
   return score.toFixed(4);
+}
+
+function incompleteProductMetricLabels(
+  performance: ProductDailyPerformance,
+): readonly string[] {
+  return [
+    ["Ventes", performance.availability.salesValue.status],
+    ["Marge", performance.availability.salesMarginValue.status],
+    ["Casse au PA", productWasteStatus(performance)],
+  ]
+    .filter(([, status]) => status !== "AVAILABLE")
+    .map(([label]) => label);
 }
 
 function evidenceValue(candidate: AnalyticalCandidate, label: string) {
