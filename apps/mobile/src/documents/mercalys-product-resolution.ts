@@ -144,7 +144,32 @@ export async function confirmMercalysProductMapping(
   options: ResolutionOptions,
 ) {
   const timestamp = options.now();
+  const existingIdentifiers = await repository.listIdentifiersByStore(
+    options.storeId,
+  );
   for (const identifier of resolution.identifiers) {
+    const matching = existingIdentifiers.filter(
+      ({ entity }) =>
+        entity.type === identifier.type && entity.value === identifier.value,
+    );
+    const retained = matching.find(
+      ({ entity }) => entity.productId === productId,
+    );
+    for (const conflicting of matching) {
+      if (conflicting.entity.id === retained?.entity.id) continue;
+      await repository.delete(
+        "product_identifier",
+        conflicting.entity.id,
+        options.storeId,
+        timestamp,
+        {
+          commandId: options.generateId(),
+          deviceId: options.deviceId,
+          expectedRemoteVersion: conflicting.remoteVersion,
+        },
+      );
+    }
+    if (retained) continue;
     await repository.upsertIdentifier(
       {
         id: options.generateId(),
@@ -165,6 +190,53 @@ export async function confirmMercalysProductMapping(
       },
     );
   }
+
+  if (resolution.identifiers.length > 0) return;
+
+  const normalizedAlias = normalizeProductLabel(resolution.label);
+  const existingAliases = await repository.listAliasesByStore(options.storeId);
+  const matchingAliases = existingAliases.filter(
+    ({ entity }) => entity.normalizedAlias === normalizedAlias,
+  );
+  const retainedAlias = matchingAliases.find(
+    ({ entity }) => entity.productId === productId,
+  );
+  for (const conflicting of matchingAliases) {
+    if (conflicting.entity.id === retainedAlias?.entity.id) continue;
+    await repository.delete(
+      "product_alias",
+      conflicting.entity.id,
+      options.storeId,
+      timestamp,
+      {
+        commandId: options.generateId(),
+        deviceId: options.deviceId,
+        expectedRemoteVersion: conflicting.remoteVersion,
+      },
+    );
+  }
+  if (retainedAlias) return;
+  await repository.upsertAlias(
+    {
+      id: options.generateId(),
+      storeId: options.storeId,
+      productId,
+      alias: resolution.label,
+      normalizedAlias,
+      source: "MERCALYS",
+      status: "VALIDATED",
+      confidence: 1,
+      version: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      deletedAt: null,
+    },
+    {
+      commandId: options.generateId(),
+      deviceId: options.deviceId,
+      expectedRemoteVersion: null,
+    },
+  );
 }
 
 function resolutionKey(record: {
