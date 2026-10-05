@@ -69,7 +69,10 @@ export type ApiConfig = Omit<
 export function parseEnvironment(
   env: Record<string, string | undefined>,
 ): ApiConfig {
-  const result = environmentSchema.safeParse(env);
+  const result = environmentSchema.safeParse({
+    ...env,
+    NODE_ENV: env.VERCEL_ENV === "production" ? "production" : env.NODE_ENV,
+  });
   if (!result.success) {
     // Report names only: never print configuration values or credentials.
     throw new Error(
@@ -95,7 +98,8 @@ export function parseEnvironment(
     result.data.NODE_ENV === "production" &&
     !result.data.OPENAI_API_KEY &&
     !result.data.AI_GATEWAY_API_KEY &&
-    !result.data.VERCEL_OIDC_TOKEN
+    !result.data.VERCEL_OIDC_TOKEN &&
+    env.VERCEL !== "1"
   ) {
     throw new Error(
       "Invalid environment: OPENAI_API_KEY, AI_GATEWAY_API_KEY, VERCEL_OIDC_TOKEN",

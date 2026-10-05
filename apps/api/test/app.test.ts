@@ -522,6 +522,23 @@ describe("environment validation", () => {
       }),
     ).toThrow("VERCEL_OIDC_TOKEN");
   });
+  it("accepts request-scoped OIDC credentials on a production Vercel deployment", () => {
+    expect(
+      parseEnvironment({
+        VERCEL: "1",
+        VERCEL_ENV: "production",
+        NODE_ENV: "development",
+        MONGODB_URI: "mongodb://localhost:27017",
+        AUTH_TOKEN_SECRET: "t".repeat(32),
+        AUTH_CODE_PEPPER: "p".repeat(32),
+        RESEND_API_KEY: "re_production_key",
+        AUTH_EMAIL_FROM: "connexion@auth.example.com",
+      }),
+    ).toMatchObject({
+      NODE_ENV: "production",
+      WASTE_RECEIPT_VISION_MODEL: "gpt-5.6-luna",
+    });
+  });
   it("forbids the deliberate monitoring route in production", () => {
     expect(() =>
       parseEnvironment({

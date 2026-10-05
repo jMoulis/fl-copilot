@@ -63,6 +63,7 @@ import {
   createMongoWasteReceiptVisionExtractionService,
   createOpenAIReceiptVisionProvider,
 } from "./uploads/waste-receipt-vision-extraction.js";
+import { getVercelOidcToken } from "./vercel-request-context.js";
 import { createMongoWasteReceiptArithmeticValidationService } from "./uploads/waste-receipt-arithmetic-validation.js";
 import { createMongoWasteReceiptDraftReader } from "./uploads/waste-receipt-draft.js";
 import { createMongoWasteReceiptProductMatchingService } from "./uploads/waste-receipt-product-matching.js";
@@ -106,6 +107,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           apiKey: config.OPENAI_API_KEY,
           gatewayApiKey: config.AI_GATEWAY_API_KEY,
           vercelOidcToken: config.VERCEL_OIDC_TOKEN,
+          getVercelOidcToken,
           model: config.WASTE_RECEIPT_VISION_MODEL,
         }),
       ),
