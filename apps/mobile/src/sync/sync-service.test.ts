@@ -176,6 +176,102 @@ describe("mobile sync service", () => {
     database.close();
   });
 
+  it("renews a rejected token and acknowledges the same offline command exactly once", async () => {
+    const { NativeSessionManager } = await import("../auth/session-manager");
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    await createSyncTestEntity(adapter, {
+      id: entityId,
+      commandId,
+      storeId,
+      deviceId,
+      label: "Créée hors connexion",
+      createdAt: "2026-09-26T08:00:00.000Z",
+    });
+    const marker = {
+      user: { id: deviceId, email: "test@example.test", displayName: "Test" },
+      stores: [{ storeId, name: "Test", role: "MANAGER" }],
+    };
+    let renewals = 0;
+    const manager = new NativeSessionManager(
+      { load: async () => null, save: async () => {}, clear: async () => {} },
+      async () => {
+        renewals++;
+        return {
+          ...marker,
+          accessToken: "new",
+          accessTokenExpiresAt: "2026-10-06T08:15:00Z",
+          refreshToken: "rotated",
+        };
+      },
+      () => Date.parse("2026-10-06T08:00:00Z"),
+    );
+    await manager.establish({
+      ...marker,
+      accessToken: "old",
+      accessTokenExpiresAt: "2026-10-06T08:15:00Z",
+      refreshToken: "initial",
+    });
+    const attempted: string[] = [];
+    const applied = new Set<string>();
+    const service = new MobileSyncService(
+      adapter,
+      {
+        push: (request) =>
+          manager.request(async (token) => {
+            attempted.push(request.commands[0]!.commandId);
+            if (token === "old")
+              throw new ApiClientError(401, {
+                code: "AUTH_SESSION_EXPIRED",
+                messageFr: "Session expirée",
+                retryable: false,
+              });
+            return {
+              serverTime: "2026-10-06T08:00:00Z",
+              results: request.commands.map((command) => {
+                const duplicate = applied.has(command.commandId);
+                applied.add(command.commandId);
+                return {
+                  commandId: command.commandId,
+                  entityType: command.entityType,
+                  entityId: command.entityId,
+                  status: duplicate
+                    ? ("ALREADY_APPLIED" as const)
+                    : ("APPLIED" as const),
+                  remoteVersion: 1,
+                };
+              }),
+            };
+          }),
+        bootstrap: () => manager.request(async () => bootstrapResponse()),
+        pull: () =>
+          manager.request(async () => ({
+            changes: [],
+            nextCursor: "cursor-1",
+            hasMore: false,
+            serverTime: "2026-10-06T08:00:00Z",
+          })),
+      },
+      { appVersion: "test", deviceId },
+    );
+    expect(await service.sync(storeId)).toMatchObject({ pushed: 1, failed: 0 });
+    expect(await service.sync(storeId)).toMatchObject({ pushed: 0 });
+    expect(renewals).toBe(1);
+    expect(attempted).toEqual([commandId, commandId]);
+    expect(applied.size).toBe(1);
+    expect(
+      database
+        .prepare("SELECT status FROM sync_outbox WHERE command_id = ?")
+        .get(commandId),
+    ).toEqual({ status: "ACKNOWLEDGED" });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS count FROM sync_test_entities")
+        .get(),
+    ).toEqual({ count: 1 });
+    database.close();
+  });
+
   it("retries the same command safely before bootstrap and pull", async () => {
     const { adapter, database } = temporaryDatabase();
     await runLocalMigrations(adapter);

@@ -82,3 +82,16 @@ References: [Expo SDK compatibility](https://docs.expo.dev/versions/latest/), [E
 2. Replace the preview LAN API URL with a hosted staging endpoint and set the production API URL when those remote environments exist. The profiles already isolate their values. Resend domain verification remains deferred until production preparation.
 
 The foundation and authentication changes were committed and merged into `master` through PRs #1 through #7. M0-T08 passed its physical-iPhone acceptance with Resend sandbox delivery, and M0-T10 passed its API and physical-iPhone Sentry acceptance. No release or production deployment has been performed.
+
+## Pilot fix — Session renewal during prolonged use
+
+The native client previously refreshed credentials only during authentication restoration. Sync and upload transports captured the initial access token, so a later foreground activation could reuse an expired credential even though the device still had a valid rotating refresh token.
+
+- A shared native session manager checks access-token expiry before protected calls, with a one-minute renewal margin. Foreground synchronization uses that same path.
+- Concurrent requests share one renewal and receive the persisted rotated credential. A late 401 for the prior token reuses a newer valid token rather than rotating again.
+- A protected operation rejected with 401 is replayed once after renewal. A second 401 or a rejected refresh credential requires explicit sign-in; network, permission and server failures do not silently log the user out.
+- SecureStore writes are serialized and generation guards prevent stale renewal responses from restoring a logged-out or replaced session.
+- Offline restoration retains the existing local session marker. Reauthentication clears credentials only; SQLite business records, source photos and pending Outbox commands are preserved.
+- The login screen explains an expired session. Sync/upload transport instances remain stable across credential rotation and resolve a current token for every API request.
+
+Verification covers expiry, background intervals, concurrent refresh, late 401, bounded replay, offline restoration, revoked sessions and logout races. A file-backed SQLite sync test verifies that retrying a rejected push uses the same command UUID and acknowledges it once. Native acceptance requires the updated staging build: leave the app open or backgrounded beyond the access-token lifetime, resume sync and verify a successful refresh followed by sync, without recreating local actions.

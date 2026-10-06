@@ -9,8 +9,8 @@ import {
 } from "react";
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import { ApiClient, ApiClientError } from "@fl-copilot/api-client";
-import type { AuthSessionResponse } from "@fl-copilot/sync-contracts";
+import { ApiClient } from "@fl-copilot/api-client";
+import { NativeSessionManager, type SessionSnapshot } from "./session-manager";
 import { getApiBaseUrl } from "@/config/environment";
 import { useDeviceIdentity } from "@/providers/database-provider";
 import {
@@ -19,16 +19,13 @@ import {
   saveStoredSession,
 } from "./auth-storage";
 
-type SessionView = Pick<AuthSessionResponse, "user" | "stores"> & {
-  accessToken?: string;
-  accessTokenExpiresAt?: string;
-};
-
 type PendingChallenge = { challengeId: string; email: string };
 
 type AuthContextValue = {
   status: "loading" | "anonymous" | "authenticated";
-  session: SessionView | null;
+  session: SessionSnapshot["session"];
+  sessionExpired: boolean;
+  withAccessToken<T>(operation: (token: string) => Promise<T>): Promise<T>;
   pendingChallenge: PendingChallenge | null;
   requestCode(email: string): Promise<void>;
   verifyCode(code: string): Promise<void>;
@@ -41,64 +38,40 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const deviceId = useDeviceIdentity();
-  const [status, setStatus] = useState<AuthContextValue["status"]>("loading");
-  const [session, setSession] = useState<SessionView | null>(null);
+
   const [pendingChallenge, setPendingChallenge] =
     useState<PendingChallenge | null>(null);
   const api = useMemo(() => new ApiClient(getApiBaseUrl()), []);
 
-  const applySession = useCallback(async (next: AuthSessionResponse) => {
-    await saveStoredSession(next);
-    setSession({
-      user: next.user,
-      stores: next.stores,
-      accessToken: next.accessToken,
-      accessTokenExpiresAt: next.accessTokenExpiresAt,
-    });
-    setPendingChallenge(null);
-    setStatus("authenticated");
-  }, []);
-
+  const manager = useMemo(
+    () =>
+      new NativeSessionManager(
+        {
+          load: loadStoredSession,
+          save: saveStoredSession,
+          clear: clearStoredSession,
+        },
+        (token) => api.refreshSession(deviceId, token),
+      ),
+    [api, deviceId],
+  );
+  const [snapshot, setSnapshot] = useState<SessionSnapshot>(() =>
+    manager.getSnapshot(),
+  );
+  const { status, session, sessionExpired } = snapshot;
   useEffect(() => {
-    let active = true;
-
-    void loadStoredSession()
-      .then(async (stored) => {
-        if (!active) return;
-        if (!stored) {
-          setStatus("anonymous");
-          return;
-        }
-        setSession(stored.marker);
-        setStatus("authenticated");
-        try {
-          const refreshed = await api.refreshSession(
-            deviceId,
-            stored.refreshToken,
-          );
-          if (active) await applySession(refreshed);
-        } catch (error) {
-          if (
-            active &&
-            error instanceof ApiClientError &&
-            error.status === 401
-          ) {
-            await clearStoredSession();
-            setSession(null);
-            setStatus("anonymous");
-          }
-          // A network failure keeps the local authenticated marker usable offline.
-        }
-      })
-      .catch(() => {
-        if (!active) return;
-        setSession(null);
-        setStatus("anonymous");
-      });
-    return () => {
-      active = false;
-    };
-  }, [api, applySession, deviceId]);
+    setSnapshot(manager.getSnapshot());
+    const unsubscribe = manager.subscribe(setSnapshot);
+    void manager.restore().catch(() => {
+      void manager.logout();
+    });
+    return unsubscribe;
+  }, [manager]);
+  const withAccessToken = useCallback(
+    <T,>(operation: (token: string) => Promise<T>) =>
+      manager.request(operation),
+    [manager],
+  );
 
   const requestCode = useCallback(
     async (email: string) => {
@@ -119,11 +92,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const verifyCode = useCallback(
     async (code: string) => {
       if (!pendingChallenge) throw new Error("Aucun code n’a été demandé.");
-      await applySession(
+      await manager.establish(
         await api.verifyLoginCode(pendingChallenge.challengeId, code),
       );
+      setPendingChallenge(null);
     },
-    [api, applySession, pendingChallenge],
+    [api, manager, pendingChallenge],
   );
 
   const resendCode = useCallback(async () => {
@@ -134,25 +108,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const changeEmail = useCallback(() => setPendingChallenge(null), []);
 
   const logout = useCallback(async () => {
-    const accessToken = session?.accessToken;
+    const accessToken = manager.getSnapshot().session?.accessToken;
+    await manager.logout();
+    setPendingChallenge(null);
     if (accessToken) {
       try {
         await api.logout(accessToken);
       } catch {
-        // Local access is cleared even when remote revocation must be retried later.
+        /* Local access is already cleared. */
       }
     }
-    await clearStoredSession();
-    setSession(null);
-    setPendingChallenge(null);
-    setStatus("anonymous");
-  }, [api, session?.accessToken]);
+  }, [api, manager]);
 
   return (
     <AuthContext.Provider
       value={{
         status,
         session,
+        sessionExpired,
+        withAccessToken,
         pendingChallenge,
         requestCode,
         verifyCode,
