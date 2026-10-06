@@ -81,6 +81,27 @@ The complete experience is tested on representative iOS and Android devices and 
 
 M4 is the immediate priority because `Casse` is the next missing daily field workflow and supplies more reliable waste evidence to the deterministic analytics already delivered by M3.
 
+### M4 pilot UX and product-mapping follow-up
+
+The first real receipt-validation sessions identified two refinements to complete before the M4 UX gate:
+
+- after the manager selects or confirms the associated product, collapse the selection form into a compact confirmed state and keep a clear `Modifier le produit` action;
+- retain the confirmed raw-label-to-product association as auditable matching evidence. After repeated consistent confirmations, propose a store- and source-specific validated alias or mapping that can improve later deterministic matches.
+
+This learning remains explicit and reversible. One correction must not silently retrain the Vision model, change matcher weights or create a trusted alias. Conflicting confirmations and explicit rejections prevent automatic reuse and require another human decision.
+
+### Batch source-ingestion follow-up
+
+A later usability increment should support selecting several Mercalys workbooks and several waste-receipt photos in one action. Every selected source must keep its own checksum, lineage, duplicate/reconciliation decision, processing state, error and retry action; one failed item must not roll back the successful items.
+
+Before implementing multi-photo receipt import, validate the intended semantics with pilot users:
+
+- a batch of independent ticket photos, producing one receipt per image;
+- several photos or pages belonging to one receipt, producing one grouped receipt;
+- or both modes through an explicit choice that never guesses the grouping silently.
+
+Batch processing must remain local-first, use bounded upload/extraction concurrency and expose item-level progress rather than one opaque global loader.
+
 ## Cross-cutting UX/UI track
 
 UX/UI is a continuous product track rather than a separate milestone that postpones functional delivery. Its first structured pass happens now, before `Aujourd’hui` defines the visual reference for M3 and the later field workflows.

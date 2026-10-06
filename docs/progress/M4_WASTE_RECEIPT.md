@@ -153,3 +153,6 @@ Verification: structure, lint, strict TypeScript, full unit suite, transaction r
 
 1. Validate M4-T11 on the target iPhone: review and publish a ticket, inspect local KPI, restart offline, reconnect and confirm synchronization without duplicate observations.
 2. Implement M4-T12 explicit AI pending/failure recovery UX, then pass the complete M4 offline end-to-end gate.
+3. Collapse the product-selection form after confirmation and expose a compact association with `Modifier le produit`.
+4. Persist confirmation evidence and, after repeated consistent choices, propose an explicit source-specific alias or mapping without silently retraining the Vision model.
+5. Design multi-photo import with per-image persistence, progress, duplicate handling and retry, after deciding whether images represent independent tickets, pages of one ticket or an explicit choice between both.
