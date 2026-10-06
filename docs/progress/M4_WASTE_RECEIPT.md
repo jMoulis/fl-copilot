@@ -139,3 +139,6 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 1. Validate M4-T10 on the target iPhone by importing the same image twice and exercising both resolution choices.
 2. Implement M4-T11 atomic publication of confirmed waste lines and their outbox mutations.
+3. Collapse the product-selection form after confirmation and expose a compact association with `Modifier le produit`.
+4. Persist confirmation evidence and, after repeated consistent choices, propose an explicit source-specific alias or mapping without silently retraining the Vision model.
+5. Design multi-photo import with per-image persistence, progress, duplicate handling and retry, after deciding whether images represent independent tickets, pages of one ticket or an explicit choice between both.
