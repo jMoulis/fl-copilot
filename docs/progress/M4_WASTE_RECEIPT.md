@@ -137,6 +137,19 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 Verification: structure, lint, strict TypeScript, full unit suite, transaction rollback/idempotency/restart/unit/exclusion tests, and real Atlas transaction/pull/bootstrap integration in isolated temporary databases. Native iPhone acceptance remains pending after installing the M4-T11 build.
 
+### M4-T12 — Recoverable processing UX
+
+- The receipt list and detail read the persisted upload job alongside the SQLite receipt. A shared presentation distinguishes offline waiting, upload, active analysis, a retryable processing failure, successful empty extraction, human validation and publication.
+- Retryable errors expose `Réessayer maintenant`. The local transaction requeues the existing job without resetting attempt counts, recreating the source, clearing the confirmed date or discarding line corrections.
+- Invalid or missing local sources explain the failure and require another source import instead of offering an endless retry. A successful extraction with no readable lines is explicit and does not pretend that processing is still pending.
+- Concurrent upload queues sharing one database/store coalesce into one active cycle. Jobs left `RUNNING` after app termination are recoverable through the same idempotent server completion path.
+- The upload queue records analysis-in-progress before completion and a failure state when processing fails. Network failures retain the connectivity-pending state and automatic retry backoff. A confirmed upload without a review draft keeps the existing job retryable rather than silently ending the analysis workflow.
+- The synchronization retry timer rearms after a pending cycle and avoids firing while synchronization is active. Focused receipt screens refresh local processing state without blanking existing content; form effects use persisted field values rather than changing draft-object identity.
+- Confirmed date entry, existing line corrections and exclusions remain usable locally during processing failures and offline operation. M4-T12 does not add a full manual replacement for Vision extraction.
+- No transport contract or schema migration is needed: job status, retry time and bounded error codes already persist in `local_jobs`. Raw server exceptions are not displayed in the UI.
+
+Verification: structure, lint, TypeScript and focused queue/presentation tests cover automatic recovery, explicit retry, retained source/date, concurrent attempts, permanent failures, empty extraction and offline published content. The M4 physical-device gate remains pending and should exercise M4-T11/M4-T12 together with a staging build.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
@@ -152,7 +165,7 @@ Verification: structure, lint, strict TypeScript, full unit suite, transaction r
 ## Next work
 
 1. Validate M4-T11 on the target iPhone: review and publish a ticket, inspect local KPI, restart offline, reconnect and confirm synchronization without duplicate observations.
-2. Implement M4-T12 explicit AI pending/failure recovery UX, then pass the complete M4 offline end-to-end gate.
+2. Validate M4-T12 on the target iPhone: offline waiting, resume after restart, retryable error explanation, manual retry and preservation of date/line edits; then pass the complete M4 offline end-to-end gate.
 3. Collapse the product-selection form after confirmation and expose a compact association with `Modifier le produit`.
 4. Persist confirmation evidence and, after repeated consistent choices, propose an explicit source-specific alias or mapping without silently retraining the Vision model.
 5. Design multi-photo import with per-image persistence, progress, duplicate handling and retry, after deciding whether images represent independent tickets, pages of one ticket or an explicit choice between both.

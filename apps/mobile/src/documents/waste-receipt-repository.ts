@@ -22,10 +22,19 @@ export interface LocalWasteReceiptAggregate {
   lines?: readonly WasteLine[];
 }
 
+export interface LocalWasteReceiptUploadJob {
+  id: string;
+  status: string;
+  lastError: string | null;
+  nextAttemptAt: string | null;
+  attemptCount: number;
+}
+
 export interface LocalWasteReceiptSummary {
   receipt: WasteReceipt;
   localFileUri: string | null;
   lineCount: number;
+  uploadJob: LocalWasteReceiptUploadJob | null;
 }
 
 export interface LocalWasteLineDraft {
@@ -44,6 +53,7 @@ export interface LocalWasteReceiptDetail {
   localFileUri: string | null;
   lines: LocalWasteLineDraft[];
   duplicateCandidate: LocalWasteDuplicateCandidate | null;
+  uploadJob: LocalWasteReceiptUploadJob | null;
 }
 
 export interface LocalWasteDuplicateCandidate {
@@ -220,10 +230,18 @@ export class WasteReceiptRepository {
       `,
       storeId,
     );
+    const jobs = await this.database.getAllAsync<UploadJobRow>(
+      `SELECT id, status, last_error, next_attempt_at, attempt_count, json_extract(payload_json, '$.sourceDocumentId') AS source_document_id FROM local_jobs WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json, '$.storeId') = ? ORDER BY created_at`,
+      storeId,
+    );
+    const bySource = new Map(
+      jobs.map((job) => [job.source_document_id, mapUploadJob(job)]),
+    );
     return rows.map((row) => ({
       receipt: mapReceipt(row),
       localFileUri: row.local_uri,
       lineCount: Number(row.line_count),
+      uploadJob: bySource.get(row.source_document_id ?? "") ?? null,
     }));
   }
 
@@ -267,7 +285,65 @@ export class WasteReceiptRepository {
       localFileUri: row.local_uri,
       lines: lines.map(mapLineDraft),
       duplicateCandidate,
+      uploadJob: await this.readUploadJob(row.store_id, row.source_document_id),
     };
+  }
+
+  private async readUploadJob(
+    storeId: string,
+    sourceDocumentId: string | null,
+  ) {
+    if (!sourceDocumentId) return null;
+    const job = await this.database.getFirstAsync<UploadJobRow>(
+      `SELECT id, status, last_error, next_attempt_at, attempt_count FROM local_jobs WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json, '$.storeId') = ? AND json_extract(payload_json, '$.sourceDocumentId') = ? ORDER BY created_at DESC LIMIT 1`,
+      storeId,
+      sourceDocumentId,
+    );
+    return job ? mapUploadJob(job) : null;
+  }
+
+  async retryProcessing(
+    receiptId: string,
+    timestamp = new Date().toISOString(),
+  ) {
+    await this.database.withExclusiveTransactionAsync(async (tx) => {
+      const receipt = await tx.getFirstAsync<WasteReceiptRow>(
+        "SELECT * FROM waste_receipts WHERE id = ? AND deleted_at IS NULL",
+        receiptId,
+      );
+      if (
+        !receipt ||
+        receipt.processing_status === "PUBLISHED" ||
+        receipt.ai_status === "COMPLETED" ||
+        ["POSSIBLE_DUPLICATE", "CONFIRMED_DUPLICATE"].includes(
+          receipt.duplicate_status,
+        )
+      )
+        throw new Error("WASTE_RECEIPT_RETRY_UNAVAILABLE");
+      const job = await tx.getFirstAsync<UploadJobRow>(
+        `SELECT id, status, last_error, next_attempt_at, attempt_count FROM local_jobs WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json, '$.storeId') = ? AND json_extract(payload_json, '$.sourceDocumentId') = ? ORDER BY created_at DESC LIMIT 1`,
+        receipt.store_id,
+        receipt.source_document_id,
+      );
+      if (
+        !job ||
+        job.status === "RUNNING" ||
+        ["SOURCE_UPLOAD_INVALID", "SOURCE_UPLOAD_LOCAL_FILE_MISSING"].includes(
+          job.last_error ?? "",
+        )
+      )
+        throw new Error("WASTE_RECEIPT_RETRY_UNAVAILABLE");
+      await tx.runAsync(
+        "UPDATE local_jobs SET status = 'PENDING', next_attempt_at = NULL, last_error = NULL, updated_at = ? WHERE id = ?",
+        timestamp,
+        job.id,
+      );
+      await tx.runAsync(
+        "UPDATE waste_receipts SET processing_status = 'UPLOAD_PENDING', ai_status = 'PENDING', updated_at = ? WHERE id = ?",
+        timestamp,
+        receiptId,
+      );
+    });
   }
 
   async resolveExactDuplicate(
@@ -1033,4 +1109,22 @@ interface WasteLineRow {
   sync_state: string;
   remote_version: number | null;
   dirty: number;
+}
+
+interface UploadJobRow {
+  id: string;
+  status: string;
+  last_error: string | null;
+  next_attempt_at: string | null;
+  attempt_count: number;
+  source_document_id: string;
+}
+function mapUploadJob(row: UploadJobRow): LocalWasteReceiptUploadJob {
+  return {
+    id: row.id,
+    status: row.status,
+    lastError: row.last_error,
+    nextAttemptAt: row.next_attempt_at,
+    attemptCount: row.attempt_count,
+  };
 }
