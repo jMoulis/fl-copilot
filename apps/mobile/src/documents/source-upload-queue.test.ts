@@ -193,6 +193,188 @@ afterEach(() => {
 });
 
 describe("source upload queue", () => {
+  it("persists an extraction failure, retains edits and retries the same source immediately on request", async () => {
+    const { adapter, database } = await wasteReceiptFixture();
+    const { WasteReceiptRepository } =
+      await import("./waste-receipt-repository");
+    const repository = new WasteReceiptRepository(adapter);
+    const receiptId = "77777777-7777-4777-8777-777777777777";
+    await repository.confirmWasteDate(receiptId, "2026-10-02");
+    let calls = 0;
+    const transport: SourceUploadTransport = {
+      init: async () => ({
+        uploadId,
+        objectKey: "source",
+        status: "ALREADY_UPLOADED",
+        uploadUrl: null,
+        expiresAt: null,
+        headers: {},
+      }),
+      complete: async () => {
+        calls++;
+        expect((await repository.getReceipt(receiptId))?.aiStatus).toBe(
+          "PROCESSING",
+        );
+        if (calls === 1)
+          throw new ApiClientError(503, {
+            code: "INTERNAL_ERROR",
+            messageFr: "Analyse indisponible",
+            retryable: true,
+          });
+        return {
+          sourceDocumentId,
+          remoteUploadStatus: "CONFIRMED",
+          jobId: null,
+          wasteReceiptDraft: {
+            detectedReceiptDate: "2026-10-01",
+            extractionModelVersion: "test",
+            arithmeticValidatorVersion: "test",
+            productMatcherVersion: "test",
+            lines: [],
+          },
+        };
+      },
+      verify: async () => {
+        throw new Error("No Mercalys verification");
+      },
+    };
+    const queue = new SourceUploadQueue(
+      adapter,
+      transport,
+      {
+        upload: async () => {
+          throw new Error("Must not upload again");
+        },
+      },
+      () => new Date("2026-10-03T12:00:00.000Z"),
+    );
+    await queue.process(storeId);
+    const failed = await repository.getReceiptDetail(receiptId);
+    expect(failed).toMatchObject({
+      receipt: {
+        aiStatus: "FAILED",
+        processingStatus: "FAILED",
+        confirmedWasteDate: "2026-10-02",
+      },
+      uploadJob: {
+        status: "RETRY",
+        lastError: "INTERNAL_ERROR",
+        attemptCount: 1,
+      },
+    });
+    expect(await queue.process(storeId)).toEqual({
+      attempted: 0,
+      confirmed: 0,
+    });
+    await repository.retryProcessing(receiptId);
+    expect(await queue.process(storeId)).toEqual({
+      attempted: 1,
+      confirmed: 1,
+    });
+    expect(
+      (await repository.getReceiptDetail(receiptId))?.receipt,
+    ).toMatchObject({
+      aiStatus: "COMPLETED",
+      processingStatus: "TO_VALIDATE",
+      confirmedWasteDate: "2026-10-02",
+    });
+    expect(
+      database.prepare("SELECT COUNT(*) AS count FROM source_documents").get(),
+    ).toEqual({ count: 1 });
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS count FROM local_jobs WHERE type = 'SOURCE_UPLOAD_AND_REGISTER'",
+        )
+        .get(),
+    ).toEqual({ count: 1 });
+    expect(
+      database
+        .prepare("SELECT local_uri, retention_status FROM local_files")
+        .get(),
+    ).toEqual({
+      local_uri: "file:///waste-receipts/ticket.jpg",
+      retention_status: "RETAINED",
+    });
+    await expect(repository.retryProcessing(receiptId)).rejects.toThrow(
+      "WASTE_RECEIPT_RETRY_UNAVAILABLE",
+    );
+    database.close();
+  });
+
+  it("recovers interrupted claims and coalesces concurrent queue instances", async () => {
+    const { database } = await wasteReceiptFixture();
+    database.exec("UPDATE local_jobs SET status = 'RUNNING'");
+    const path = (
+      database.prepare("PRAGMA database_list").get() as { file: string }
+    ).file;
+    database.close();
+    const reopened = new DatabaseSync(path);
+    const recoveredAdapter = new NodeDatabase(reopened);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let initCalls = 0;
+    const transport: SourceUploadTransport = {
+      init: async () => {
+        initCalls++;
+        await gate;
+        return {
+          uploadId,
+          objectKey: "source",
+          status: "ALREADY_UPLOADED",
+          uploadUrl: null,
+          expiresAt: null,
+          headers: {},
+        };
+      },
+      complete: async () => ({
+        sourceDocumentId,
+        remoteUploadStatus: "CONFIRMED",
+        jobId: null,
+      }),
+      verify: async () => {
+        throw new Error("Must not verify");
+      },
+    };
+    const first = new SourceUploadQueue(recoveredAdapter, transport).process(
+      storeId,
+    );
+    const second = new SourceUploadQueue(recoveredAdapter, transport).process(
+      storeId,
+    );
+    expect(first).toBe(second);
+    release();
+    await first;
+    expect(initCalls).toBe(1);
+    expect(
+      reopened.prepare("SELECT status, attempt_count FROM local_jobs").get(),
+    ).toEqual({ status: "RETRY", attempt_count: 1 });
+    reopened.close();
+  });
+
+  it.each(["SOURCE_UPLOAD_INVALID", "SOURCE_UPLOAD_LOCAL_FILE_MISSING"])(
+    "does not offer endless retries for %s",
+    async (code) => {
+      const { adapter, database } = await wasteReceiptFixture();
+      database
+        .prepare("UPDATE local_jobs SET status = 'FAILED', last_error = ?")
+        .run(code);
+      const { WasteReceiptRepository } =
+        await import("./waste-receipt-repository");
+      await expect(
+        new WasteReceiptRepository(adapter).retryProcessing(
+          "77777777-7777-4777-8777-777777777777",
+        ),
+      ).rejects.toThrow("WASTE_RECEIPT_RETRY_UNAVAILABLE");
+      expect(database.prepare("SELECT status FROM local_jobs").get()).toEqual({
+        status: "FAILED",
+      });
+      database.close();
+    },
+  );
+
   it("resumes a waste receipt upload after reconnect without Mercalys verification", async () => {
     const { adapter, database } = await wasteReceiptFixture();
     let currentTime = new Date("2026-10-03T12:00:00.000Z");

@@ -17,6 +17,8 @@ import {
   type LocalWasteReceiptSummary,
 } from "@/documents/waste-receipt-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
+import { receiptProcessingPresentation } from "@/documents/waste-receipt-processing";
+import { useSync } from "@/sync/sync-provider";
 
 const receiptDateFormatter = new Intl.DateTimeFormat("fr-FR", {
   dateStyle: "medium",
@@ -25,6 +27,7 @@ const receiptDateFormatter = new Intl.DateTimeFormat("fr-FR", {
 
 export default function Screen() {
   const router = useRouter();
+  const { status: syncStatus } = useSync();
   const { session } = useAuth();
   const database = useLocalDatabase();
   const repository = useMemo(
@@ -49,10 +52,20 @@ export default function Screen() {
     }
   }, [repository, storeId]);
 
+  const needsRefresh = receipts.some(
+    (item) =>
+      item.uploadJob &&
+      ["PENDING", "RETRY", "RUNNING"].includes(item.uploadJob.status),
+  );
   useFocusEffect(
     useCallback(() => {
       void loadReceipts();
-    }, [loadReceipts]),
+      if (!needsRefresh) return;
+      const timer = setInterval(() => {
+        void loadReceipts();
+      }, 2000);
+      return () => clearInterval(timer);
+    }, [loadReceipts, needsRefresh]),
   );
 
   const refresh = useCallback(async () => {
@@ -107,12 +120,12 @@ export default function Screen() {
             title="Tickets enregistrés"
             description={`${receipts.length} brouillon${receipts.length > 1 ? "s" : ""} conservé${receipts.length > 1 ? "s" : ""} sur cet appareil.`}
           >
-            {receipts.map(({ receipt, lineCount }) => {
-              const presentation = receiptPresentation(
-                receipt.processingStatus,
-                receipt.duplicateStatus,
+            {receipts.map(({ receipt, lineCount, uploadJob }) => {
+              const presentation = receiptProcessingPresentation(
+                receipt,
+                uploadJob,
                 lineCount,
-                receipt.syncState,
+                syncStatus === "offline",
               );
               return (
                 <Pressable
@@ -128,7 +141,7 @@ export default function Screen() {
                         Ticket du {formatReceiptDate(receipt.captureDate)}
                       </Text>
                       <Text className="text-sm leading-5 text-muted">
-                        {presentation.description}
+                        {presentation.title}
                       </Text>
                     </View>
                     <StatusBadge status={presentation.status} />
@@ -141,53 +154,6 @@ export default function Screen() {
       )}
     </AppScreen>
   );
-}
-
-function receiptPresentation(
-  processingStatus: LocalWasteReceiptSummary["receipt"]["processingStatus"],
-  duplicateStatus: LocalWasteReceiptSummary["receipt"]["duplicateStatus"],
-  lineCount: number,
-  syncState: LocalWasteReceiptSummary["receipt"]["syncState"],
-): {
-  status: "local" | "pending" | "error" | "incomplete" | "synced";
-  description: string;
-} {
-  if (processingStatus === "PUBLISHED")
-    return {
-      status: syncState === "SYNCED" ? "synced" : "pending",
-      description: "Casse validée et publiée",
-    };
-  if (duplicateStatus === "POSSIBLE_DUPLICATE") {
-    return { status: "incomplete", description: "Doublon possible à examiner" };
-  }
-  if (duplicateStatus === "CONFIRMED_DUPLICATE") {
-    return {
-      status: "local",
-      description: "Doublon confirmé · source conservée",
-    };
-  }
-  if (processingStatus === "FAILED") {
-    return { status: "error", description: "Envoi à reprendre" };
-  }
-  if (processingStatus === "UPLOAD_PENDING") {
-    return {
-      status: "pending",
-      description: "Envoi en attente · analyse en attente",
-    };
-  }
-  if (processingStatus === "UPLOADED") {
-    return {
-      status: "pending",
-      description: "Image envoyée · analyse en attente",
-    };
-  }
-  return {
-    status: "local",
-    description:
-      lineCount === 0
-        ? "Analyse en attente"
-        : `${lineCount} ligne${lineCount > 1 ? "s" : ""}`,
-  };
 }
 
 function formatReceiptDate(value: string | null | undefined) {

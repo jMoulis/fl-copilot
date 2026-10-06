@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, Text, TextInput, View } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -18,6 +18,7 @@ import {
 } from "@/documents/waste-receipt-repository";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { useSync } from "@/sync/sync-provider";
+import { receiptProcessingPresentation } from "@/documents/waste-receipt-processing";
 
 import { WasteReceiptPublicationRepository } from "@/documents/waste-receipt-publication";
 import {
@@ -29,14 +30,16 @@ export default function WasteReceiptValidationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const database = useLocalDatabase();
-  const { syncNow } = useSync();
+  const { syncNow, status: syncStatus } = useSync();
   const repository = useMemo(
     () => new WasteReceiptRepository(database.sqlite),
     [database.sqlite],
   );
   const [detail, setDetail] = useState<LocalWasteReceiptDetail | null>();
   const [date, setDate] = useState("");
+  const dateReceiptId = useRef(id);
   const [publishing, setPublishing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [comparingDuplicate, setComparingDuplicate] = useState(false);
@@ -47,29 +50,52 @@ export default function WasteReceiptValidationScreen() {
     try {
       const next = await repository.getReceiptDetail(id);
       setDetail(next);
-      setDate(
-        next?.receipt.confirmedWasteDate ??
-          next?.receipt.detectedReceiptDate ??
-          "",
-      );
+
       setError(next ? undefined : "Ce ticket est introuvable.");
     } catch {
       setError("Le ticket n’a pas pu être relu.");
     }
   }, [id, repository]);
 
+  const needsRefresh =
+    !detail ||
+    (detail.receipt.aiStatus !== "COMPLETED" &&
+      !["POSSIBLE_DUPLICATE", "CONFIRMED_DUPLICATE"].includes(
+        detail.receipt.duplicateStatus,
+      )) ||
+    (detail.receipt.processingStatus === "PUBLISHED" &&
+      detail.receipt.syncState !== "SYNCED");
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load]),
+      if (!needsRefresh) return;
+      const timer = setInterval(() => {
+        void load();
+      }, 2000);
+      return () => clearInterval(timer);
+    }, [load, needsRefresh]),
   );
+  const loadedReceiptId = detail?.receipt.id;
+  const savedDate =
+    detail?.receipt.confirmedWasteDate ??
+    detail?.receipt.detectedReceiptDate ??
+    "";
+  useEffect(() => {
+    if (loadedReceiptId !== id) return;
+    if (dateReceiptId.current !== id) {
+      dateReceiptId.current = id;
+      setDate(savedDate);
+    } else {
+      setDate((current) => current || savedDate);
+    }
+  }, [id, loadedReceiptId, savedDate]);
 
   const groups = useMemo(
     () => groupLines(detail?.lines ?? []),
     [detail?.lines],
   );
 
-  if (detail === undefined) {
+  if (detail === undefined || (detail && detail.receipt.id !== id)) {
     return (
       <AppScreen>
         <AppHeader title="Validation du ticket" subtitle="Chargement…" />
@@ -90,6 +116,12 @@ export default function WasteReceiptValidationScreen() {
     );
   }
 
+  const processing = receiptProcessingPresentation(
+    detail.receipt,
+    detail.uploadJob,
+    detail.lines.length,
+    syncStatus === "offline",
+  );
   const reviewCount = detail.lines.filter(
     ({ line }) => line.validationStatus === "TO_REVIEW",
   ).length;
@@ -106,13 +138,40 @@ export default function WasteReceiptValidationScreen() {
               ? detail.receipt.syncState === "SYNCED"
                 ? "synced"
                 : "pending"
-              : reviewCount > 0
+              : detail.receipt.aiStatus === "COMPLETED" && reviewCount > 0
                 ? "incomplete"
-                : "pending"
+                : processing.status
           }
         />
       </AppHeader>
 
+      <SectionCard title={processing.title} description={processing.message}>
+        {processing.canRetry ? (
+          <SecondaryButton
+            label="Réessayer maintenant"
+            loading={retrying}
+            onPress={() => {
+              setRetrying(true);
+              setError(undefined);
+              setMessage(undefined);
+              void repository
+                .retryProcessing(detail.receipt.id)
+                .then(async () => {
+                  await load();
+                  setMessage("Une nouvelle tentative a été demandée.");
+                  await syncNow(detail.receipt.storeId);
+                  await load();
+                })
+                .catch(() =>
+                  setError(
+                    "La reprise n’est pas disponible pendant un traitement ou pour ce fichier. La source reste conservée.",
+                  ),
+                )
+                .finally(() => setRetrying(false));
+            }}
+          />
+        ) : null}
+      </SectionCard>
       {message ? <InlineAlert title="Enregistré" message={message} /> : null}
       {error ? <InlineAlert title="Action impossible" message={error} /> : null}
 
@@ -438,7 +497,14 @@ function LineEditor({
     setQuantityUnit(draft.line.quantityUnit ?? "UNKNOWN");
     setUnitPrice(draft.line.unitPrice ?? "");
     setTotalPrice(draft.line.totalPrice ?? "");
-  }, [draft]);
+  }, [
+    draft.line.rawLabel,
+    draft.line.weight,
+    draft.line.quantity,
+    draft.line.quantityUnit,
+    draft.line.unitPrice,
+    draft.line.totalPrice,
+  ]);
 
   return (
     <View className="gap-3 rounded-2xl border border-line bg-canvas p-4">

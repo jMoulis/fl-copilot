@@ -70,6 +70,11 @@ type PendingUploadRow = {
   business_period_end: string | null;
 };
 
+const activeUploadCycles = new WeakMap<
+  UploadQueueDatabase,
+  Map<string, Promise<{ attempted: number; confirmed: number }>>
+>();
+
 export class SourceUploadQueue {
   constructor(
     private readonly database: UploadQueueDatabase,
@@ -78,7 +83,28 @@ export class SourceUploadQueue {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async process(storeId: string) {
+  process(storeId: string) {
+    let cycles = activeUploadCycles.get(this.database);
+    if (!cycles) {
+      cycles = new Map();
+      activeUploadCycles.set(this.database, cycles);
+    }
+    const active = cycles.get(storeId);
+    if (active) return active;
+    const run = this.processPending(storeId).finally(() => {
+      if (cycles.get(storeId) === run) cycles.delete(storeId);
+    });
+    cycles.set(storeId, run);
+    return run;
+  }
+
+  private async processPending(storeId: string) {
+    // No cycle is running for this database/store. Recover a claim left by app termination.
+    await this.database.runAsync(
+      `UPDATE local_jobs SET status = 'RETRY', next_attempt_at = NULL, last_error = 'SOURCE_UPLOAD_INTERRUPTED', updated_at = ? WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND status = 'RUNNING' AND json_extract(payload_json, '$.storeId') = ?`,
+      this.now().toISOString(),
+      storeId,
+    );
     const rows = await this.database.getAllAsync<PendingUploadRow>(
       `
         SELECT j.id AS job_id, j.payload_json, j.attempt_count,
@@ -160,6 +186,14 @@ export class SourceUploadQueue {
           );
         }
       }
+      if (row.source_type === "WASTE_RECEIPT") {
+        await this.database.runAsync(
+          `UPDATE waste_receipts SET processing_status = 'EXTRACTING', ai_status = 'PROCESSING', updated_at = ? WHERE source_document_id = ? AND store_id = ? AND processing_status != 'PUBLISHED'`,
+          this.now().toISOString(),
+          payload.sourceDocumentId,
+          storeId,
+        );
+      }
       const result = await this.transport.complete(storeId, init.uploadId, {
         checksum: row.checksum,
         sizeBytes: row.size_bytes,
@@ -192,6 +226,7 @@ export class SourceUploadQueue {
           payload,
           storeId,
           Boolean(draft),
+          row.source_type === "WASTE_RECEIPT" && !draft,
         );
         return true;
       }
@@ -385,6 +420,7 @@ export class SourceUploadQueue {
     const nextAttemptAt = new Date(
       attemptedAt.getTime() + delayMs,
     ).toISOString();
+    const offline = error instanceof ApiClientError && error.status === 0;
     const code =
       error instanceof ApiClientError
         ? error.response.code
@@ -419,8 +455,10 @@ export class SourceUploadQueue {
       );
       await transaction.runAsync(
         `UPDATE waste_receipts
-         SET processing_status = 'UPLOAD_PENDING', updated_at = ?
-         WHERE source_document_id = ? AND store_id = ?`,
+         SET processing_status = ?, ai_status = ?, updated_at = ?
+         WHERE source_document_id = ? AND store_id = ? AND processing_status != 'PUBLISHED'`,
+        offline ? "UPLOAD_PENDING" : "FAILED",
+        offline ? "PENDING" : "FAILED",
         attemptedAt.toISOString(),
         payload.sourceDocumentId,
         storeId,
@@ -516,6 +554,7 @@ export class SourceUploadQueue {
     payload: UploadJobPayload,
     storeId: string,
     draftReady: boolean,
+    analysisPending: boolean,
   ) {
     const timestamp = this.now().toISOString();
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
@@ -551,9 +590,13 @@ export class SourceUploadQueue {
       );
       await transaction.runAsync(
         `UPDATE local_jobs
-         SET status = 'COMPLETED', next_attempt_at = NULL,
+         SET status = ?, next_attempt_at = ?,
              last_error = NULL, updated_at = ?
          WHERE id = ?`,
+        analysisPending ? "RETRY" : "COMPLETED",
+        analysisPending
+          ? new Date(this.now().getTime() + 60_000).toISOString()
+          : null,
         timestamp,
         jobId,
       );

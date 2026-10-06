@@ -150,12 +150,18 @@ export function SyncProvider({ children }: PropsWithChildren) {
   }, [defaultStoreId, service, syncNow]);
 
   useEffect(() => {
-    if (!service || !defaultStoreId || state.pendingCount === 0) return;
+    if (
+      !service ||
+      !defaultStoreId ||
+      state.pendingCount === 0 ||
+      state.status === "syncing"
+    )
+      return;
     const retry = setTimeout(() => {
       void syncNow(defaultStoreId);
     }, 60_000);
     return () => clearTimeout(retry);
-  }, [defaultStoreId, service, state.pendingCount, syncNow]);
+  }, [defaultStoreId, service, state.pendingCount, state.status, syncNow]);
 
   return (
     <SyncContext.Provider value={{ ...state, syncNow }}>
