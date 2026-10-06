@@ -178,6 +178,98 @@ function payload(db: DatabaseSync) {
 }
 
 describe("Waste receipt atomic publication", () => {
+  it("reports all blocking fields across lines and keeps publication atomic", async () => {
+    const { db, adapter, publisher } = await setup();
+    db.exec(
+      "UPDATE waste_lines SET weight = NULL, total_price = NULL; UPDATE waste_receipts SET confirmed_waste_date = NULL",
+    );
+    const { insertLine } = await import("./waste-receipt-repository");
+    const secondId = randomUUID();
+    await insertLine(adapter, line({ id: secondId, sourceLineIndex: 1 }));
+    const issues = await publisher.validate(receiptId, storeId);
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ field: "date" }),
+        expect.objectContaining({ lineId, field: "weight" }),
+        expect.objectContaining({ lineId, field: "totalPrice" }),
+        expect.objectContaining({ lineId: secondId, field: "product" }),
+      ]),
+    );
+    const { WastePublicationValidationError } =
+      await import("./waste-publication-validation");
+    await expect(publisher.publish(input())).rejects.toBeInstanceOf(
+      WastePublicationValidationError,
+    );
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM waste_observations").get(),
+    ).toEqual({ count: 0 });
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
+    ).toEqual({ count: 0 });
+    db.close();
+  });
+  it("identifies catalog incompleteness, permits explicit reconfirmation and clears blockers after correction", async () => {
+    const { db, publisher, repo } = await setup();
+    db.exec(
+      "UPDATE products SET nature = 'UNKNOWN', sales_unit = 'UNKNOWN', status = 'TO_REVIEW'",
+    );
+    expect(await publisher.validate(receiptId, storeId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          lineId,
+          field: "product",
+          message: expect.stringContaining("actif"),
+        }),
+        expect.objectContaining({
+          field: "product",
+          message: expect.stringContaining("Vrac"),
+        }),
+        expect.objectContaining({
+          field: "product",
+          message: expect.stringContaining("unité"),
+        }),
+      ]),
+    );
+    db.exec(
+      "UPDATE products SET nature = 'PACKAGED', sales_unit = 'PACK', status = 'ACTIVE'",
+    );
+    expect(await publisher.validate(receiptId, storeId)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: "product",
+          message: expect.stringContaining("Reconfirmez"),
+        }),
+        expect.objectContaining({ field: "quantityUnit" }),
+        expect.objectContaining({ field: "quantity" }),
+      ]),
+    );
+    await repo.selectProductCandidate(receiptId, lineId, productId);
+    await repo.updateLineValues(receiptId, lineId, {
+      rawLabel: "TOMATE CONDITIONNÉE",
+      weight: null,
+      quantity: "2",
+      quantityUnit: "PACK",
+      unitPrice: null,
+      totalPrice: "4.38",
+    });
+    expect(await publisher.validate(receiptId, storeId)).toEqual([]);
+    expect(await publisher.publish(input())).toEqual({ publishedCount: 1 });
+    db.close();
+  });
+  it("highlights each arithmetic input, and ignores excluded occurrences", async () => {
+    const { db, publisher, repo } = await setup();
+    db.exec("UPDATE waste_lines SET total_price = '99'");
+    const issues = await publisher.validate(receiptId, storeId);
+    expect(
+      issues.filter((i) => i.lineId === lineId).map((i) => i.field),
+    ).toEqual(expect.arrayContaining(["weight", "unitPrice", "totalPrice"]));
+    await repo.setLineExcluded(receiptId, lineId, true);
+    expect(await publisher.validate(receiptId, storeId)).toEqual([
+      expect.objectContaining({ field: "lines" }),
+    ]);
+    db.close();
+  });
+
   it("publishes a packaged quantity with its own unit and keeps excluded occurrences out of observations", async () => {
     const { db, adapter, publisher, repo } = await setup();
     db.exec(

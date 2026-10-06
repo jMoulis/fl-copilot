@@ -671,7 +671,17 @@ export class WasteReceiptRepository {
     const candidate = parseCandidates(row.match_candidates_json).find(
       (item) => item.productId === productId,
     );
-    if (!candidate) throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+    if (!candidate && row.matched_product_id !== productId)
+      throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+    const product = await this.database.getFirstAsync<{
+      label: string;
+      nature: WasteLine["productNature"];
+    }>(
+      "SELECT label, nature FROM products WHERE id = ? AND store_id = ? AND deleted_at IS NULL",
+      productId,
+      row.store_id,
+    );
+    if (!product) throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
     await this.database.runAsync(
       `UPDATE waste_lines
        SET matched_product_id = ?, matched_product_label = ?,
@@ -680,10 +690,10 @@ export class WasteReceiptRepository {
            validation_status = ?, updated_at = ?, version = version + 1,
            dirty = 1, sync_state = 'LOCAL_ONLY'
        WHERE id = ? AND receipt_id = ?`,
-      candidate.productId,
-      candidate.label,
-      candidate.score,
-      candidate.nature,
+      productId,
+      product.label,
+      candidate?.score ?? row.match_confidence,
+      product.nature,
       row.validation_status === "EXCLUDED"
         ? "EXCLUDED"
         : row.arithmetic_status === "MISMATCH"

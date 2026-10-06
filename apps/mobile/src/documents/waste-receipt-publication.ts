@@ -5,10 +5,14 @@ import {
 } from "@fl-copilot/sync-contracts";
 import {
   type LocalSourceDocument,
-  type Product,
   type WasteObservation,
 } from "@fl-copilot/domain";
-import { validateWasteReceiptArithmetic } from "@fl-copilot/analytics-core";
+import {
+  validateWastePublication,
+  WastePublicationValidationError,
+  type PublicationProduct,
+  type WastePublicationIssue,
+} from "./waste-publication-validation";
 import {
   WasteReceiptRepository,
   insertSourceDocument,
@@ -26,6 +30,13 @@ export class WasteReceiptPublicationRepository {
   constructor(
     private readonly database: OutboxDatabase & AtomicMutationDatabase,
   ) {}
+  async validate(receiptId: string, storeId: string) {
+    let issues: WastePublicationIssue[] = [];
+    await this.database.withExclusiveTransactionAsync(async (tx) => {
+      issues = (await readPublicationContext(tx, receiptId, storeId)).issues;
+    });
+    return issues;
+  }
   async publish(input: {
     receiptId: string;
     storeId: string;
@@ -36,36 +47,16 @@ export class WasteReceiptPublicationRepository {
   }) {
     let count = 0;
     await this.database.withExclusiveTransactionAsync(async (tx) => {
-      const repository = new WasteReceiptRepository({
-        ...tx,
-        withExclusiveTransactionAsync: async (task) => task(tx),
-        getFirstAsync: tx.getFirstAsync.bind(tx),
-        getAllAsync: tx.getAllAsync.bind(tx),
-        runAsync: tx.runAsync.bind(tx),
-      });
-      const detail = await repository.getReceiptDetail(input.receiptId);
-      if (!detail || detail.receipt.storeId !== input.storeId)
-        throw new Error("WASTE_RECEIPT_NOT_FOUND");
-      if (detail.receipt.processingStatus === "PUBLISHED") return;
-      const receipt = detail.receipt;
-      if (
-        receipt.processingStatus !== "TO_VALIDATE" ||
-        !receipt.confirmedWasteDate ||
-        !receipt.sourceDocumentId
-      )
-        throw new Error("WASTE_RECEIPT_NOT_READY");
-      const source = await tx.getFirstAsync<{
-        original_filename: string;
-        checksum: string;
-        remote_upload_status: string;
-        created_at: string;
-      }>(
-        "SELECT * FROM source_documents WHERE id = ? AND store_id = ?",
-        receipt.sourceDocumentId,
+      const { detail, source, products, issues } = await readPublicationContext(
+        tx,
+        input.receiptId,
         input.storeId,
       );
-      if (!source || source.remote_upload_status !== "CONFIRMED")
-        throw new Error("WASTE_RECEIPT_SOURCE_PENDING");
+      if (detail.receipt.processingStatus === "PUBLISHED") return;
+      if (issues.length) throw new WastePublicationValidationError(issues);
+      const receipt = detail.receipt;
+      if (!source || !receipt.sourceDocumentId || !receipt.confirmedWasteDate)
+        throw new Error("WASTE_RECEIPT_INVALID_CONTEXT");
       const lines = detail.lines.map((d) => ({
         ...d.line,
         validationStatus:
@@ -77,47 +68,9 @@ export class WasteReceiptPublicationRepository {
       for (const draft of detail.lines) {
         const line = draft.line;
         if (line.validationStatus === "EXCLUDED") continue;
-        const product = await tx.getFirstAsync<{
-          nature: Product["nature"];
-          sales_unit: Product["salesUnit"];
-          status: string;
-          deleted_at: string | null;
-        }>(
-          "SELECT * FROM products WHERE id = ? AND store_id = ?",
-          line.matchedProductId ?? "",
-          input.storeId,
-        );
-        const arithmetic = validateWasteReceiptArithmetic([
-          {
-            sourceLineIndex: line.sourceLineIndex,
-            weight: line.weight ?? null,
-            unitPrice: line.unitPrice ?? null,
-            totalPrice: line.totalPrice ?? null,
-          },
-        ]).lines[0]!;
-        if (
-          !product ||
-          product.deleted_at ||
-          product.status !== "ACTIVE" ||
-          product.nature === "UNKNOWN" ||
-          line.matchStatus !== "MATCHED" ||
-          line.productNature !== product.nature ||
-          arithmetic.status === "MISMATCH" ||
-          line.totalPrice == null
-        )
-          throw new Error("WASTE_RECEIPT_LINE_REVIEW_REQUIRED");
+        const product = products.get(line.matchedProductId!)!;
         const quantity =
-          product.sales_unit === "KG"
-            ? (line.weight ?? null)
-            : line.quantityUnit === product.sales_unit
-              ? (line.quantity ?? null)
-              : null;
-        if (
-          quantity == null ||
-          Number(quantity) <= 0 ||
-          product.sales_unit === "UNKNOWN"
-        )
-          throw new Error("WASTE_RECEIPT_QUANTITY_REQUIRED");
+          product.sales_unit === "KG" ? line.weight! : line.quantity!;
         observations.push({
           id: line.id,
           storeId: input.storeId,
@@ -127,7 +80,7 @@ export class WasteReceiptPublicationRepository {
           quantity,
           purchaseValueKnown: null,
           purchaseValueEstimated: null,
-          salesValue: line.totalPrice,
+          salesValue: line.totalPrice!,
           costQuality: "UNAVAILABLE",
           sourceType: "WASTE_RECEIPT",
           sourceDocumentId: receipt.sourceDocumentId,
@@ -338,4 +291,50 @@ export async function applyWastePublication(
     })),
     createdAt: p.receipt.updatedAt,
   });
+}
+
+async function readPublicationContext(
+  tx: OutboxDatabase,
+  receiptId: string,
+  storeId: string,
+) {
+  const repository = new WasteReceiptRepository({
+    getFirstAsync: tx.getFirstAsync.bind(tx),
+    getAllAsync: tx.getAllAsync.bind(tx),
+    runAsync: tx.runAsync.bind(tx),
+    withExclusiveTransactionAsync: async (task) => task(tx),
+  });
+  const detail = await repository.getReceiptDetail(receiptId);
+  if (!detail || detail.receipt.storeId !== storeId)
+    throw new Error("WASTE_RECEIPT_NOT_FOUND");
+  const source = await tx.getFirstAsync<{
+    original_filename: string;
+    checksum: string;
+    remote_upload_status: string;
+    created_at: string;
+  }>(
+    "SELECT * FROM source_documents WHERE id = ? AND store_id = ?",
+    detail.receipt.sourceDocumentId ?? null,
+    storeId,
+  );
+  const products = new Map<string, PublicationProduct>();
+  for (const { line } of detail.lines) {
+    if (!line.matchedProductId || products.has(line.matchedProductId)) continue;
+    const product = await tx.getFirstAsync<PublicationProduct>(
+      "SELECT * FROM products WHERE id = ? AND store_id = ?",
+      line.matchedProductId,
+      storeId,
+    );
+    if (product) products.set(line.matchedProductId, product);
+  }
+  return {
+    detail,
+    source,
+    products,
+    issues: validateWastePublication(
+      detail,
+      products,
+      source?.remote_upload_status === "CONFIRMED",
+    ),
+  };
 }

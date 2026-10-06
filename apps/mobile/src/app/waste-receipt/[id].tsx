@@ -22,6 +22,11 @@ import { receiptProcessingPresentation } from "@/documents/waste-receipt-process
 
 import { WasteReceiptPublicationRepository } from "@/documents/waste-receipt-publication";
 import {
+  WastePublicationValidationError,
+  type WastePublicationIssue,
+  type WastePublicationField,
+} from "@/documents/waste-publication-validation";
+import {
   LocalAnalyticsRecomputationScheduler,
   SQLiteProductDateRecomputer,
 } from "@/analytics/local-recomputation";
@@ -34,6 +39,27 @@ export default function WasteReceiptValidationScreen() {
   const repository = useMemo(
     () => new WasteReceiptRepository(database.sqlite),
     [database.sqlite],
+  );
+  const publisher = useMemo(
+    () => new WasteReceiptPublicationRepository(database.sqlite),
+    [database.sqlite],
+  );
+  const [publicationIssues, setPublicationIssues] = useState<
+    WastePublicationIssue[]
+  >([]);
+  const [validationAttempted, setValidationAttempted] = useState(false);
+  const [dirtyFields, setDirtyFields] = useState<
+    Record<string, WastePublicationField[]>
+  >({});
+  const onDirty = useCallback(
+    (lineId: string, fields: WastePublicationField[]) => {
+      setDirtyFields((current) =>
+        JSON.stringify(current[lineId] ?? []) === JSON.stringify(fields)
+          ? current
+          : { ...current, [lineId]: fields },
+      );
+    },
+    [],
   );
   const [detail, setDetail] = useState<LocalWasteReceiptDetail | null>();
   const [date, setDate] = useState("");
@@ -50,12 +76,16 @@ export default function WasteReceiptValidationScreen() {
     try {
       const next = await repository.getReceiptDetail(id);
       setDetail(next);
+      if (validationAttempted && next)
+        setPublicationIssues(
+          await publisher.validate(next.receipt.id, next.receipt.storeId),
+        );
 
       setError(next ? undefined : "Ce ticket est introuvable.");
     } catch {
       setError("Le ticket n’a pas pu être relu.");
     }
-  }, [id, repository]);
+  }, [id, repository, publisher, validationAttempted]);
 
   const needsRefresh =
     !detail ||
@@ -122,6 +152,39 @@ export default function WasteReceiptValidationScreen() {
     detail.lines.length,
     syncStatus === "offline",
   );
+  const unsavedIssues: WastePublicationIssue[] = detail.lines.flatMap(
+    ({ line }) =>
+      line.validationStatus === "EXCLUDED"
+        ? []
+        : (dirtyFields[line.id] ?? []).map((field) => ({
+            lineId: line.id,
+            lineIndex: line.sourceLineIndex,
+            label: line.rawLabel,
+            field,
+            message:
+              "Modification non enregistrée. Enregistrez cette ligne avant de publier.",
+          })),
+  );
+  if (
+    detail.receipt.confirmedWasteDate &&
+    date !== detail.receipt.confirmedWasteDate
+  )
+    unsavedIssues.push({
+      field: "date",
+      message: "La date a été modifiée. Confirmez-la avant de publier.",
+    });
+  const issues = validationAttempted
+    ? [...publicationIssues, ...unsavedIssues]
+    : [];
+  const summaryIssues = [
+    ...new Map(
+      issues.map((issue) => [
+        `${issue.lineId ?? "ticket"}:${issue.message}`,
+        issue,
+      ]),
+    ).values(),
+  ];
+  const dateIssue = issues.find((issue) => issue.field === "date")?.message;
   const reviewCount = detail.lines.filter(
     ({ line }) => line.validationStatus === "TO_REVIEW",
   ).length;
@@ -174,6 +237,25 @@ export default function WasteReceiptValidationScreen() {
       </SectionCard>
       {message ? <InlineAlert title="Enregistré" message={message} /> : null}
       {error ? <InlineAlert title="Action impossible" message={error} /> : null}
+      {summaryIssues.length ? (
+        <SectionCard
+          title="Champs à corriger"
+          description="Les champs bloquants sont surlignés ci-dessous. Aucune ligne n’a été publiée."
+        >
+          {summaryIssues.map((issue, index) => (
+            <Text
+              key={`${issue.lineId ?? issue.field}:${index}`}
+              accessibilityRole="alert"
+              className="text-sm leading-5 text-critical"
+            >
+              {issue.lineIndex !== undefined
+                ? `Ligne ${issue.lineIndex + 1} · ${issue.label} : `
+                : ""}
+              {issue.message}
+            </Text>
+          ))}
+        </SectionCard>
+      ) : null}
 
       {detail.receipt.duplicateStatus === "POSSIBLE_DUPLICATE" ? (
         <SectionCard
@@ -282,17 +364,23 @@ export default function WasteReceiptValidationScreen() {
           <PrimaryButton
             label="Valider la casse"
             loading={publishing}
-            disabled={
-              detail.lines.length === 0 ||
-              !detail.receipt.confirmedWasteDate ||
-              detail.receipt.duplicateStatus === "POSSIBLE_DUPLICATE" ||
-              detail.receipt.duplicateStatus === "CONFIRMED_DUPLICATE"
-            }
             onPress={() => {
-              setPublishing(true);
+              setValidationAttempted(true);
               setError(undefined);
               setMessage(undefined);
-              void new WasteReceiptPublicationRepository(database.sqlite)
+              if (unsavedIssues.length) {
+                void publisher
+                  .validate(detail.receipt.id, detail.receipt.storeId)
+                  .then(setPublicationIssues)
+                  .catch(() =>
+                    setError(
+                      "Les contrôles du ticket n’ont pas pu être relus. Réessayez.",
+                    ),
+                  );
+                return;
+              }
+              setPublishing(true);
+              void publisher
                 .publish({
                   receiptId: detail.receipt.id,
                   storeId: detail.receipt.storeId,
@@ -315,11 +403,14 @@ export default function WasteReceiptValidationScreen() {
                   );
                   void syncNow(detail.receipt.storeId).then(load);
                 })
-                .catch(() =>
-                  setError(
-                    "Vérifiez les produits associés, les quantités, les montants et la date. La casse n’a pas été publiée.",
-                  ),
-                )
+                .catch((reason) => {
+                  if (reason instanceof WastePublicationValidationError)
+                    setPublicationIssues(reason.issues);
+                  else
+                    setError(
+                      "Une erreur technique empêche l’enregistrement local. Vos corrections sont conservées. Réessayez ; si cela persiste, signalez ce ticket.",
+                    );
+                })
                 .finally(() => setPublishing(false));
             }}
           />
@@ -355,9 +446,15 @@ export default function WasteReceiptValidationScreen() {
             onChangeText={setDate}
             placeholder="AAAA-MM-JJ"
             autoCapitalize="none"
-            className="min-h-12 rounded-xl border border-line bg-canvas px-4 text-base text-ink"
+            className={`min-h-12 rounded-xl border px-4 text-base text-ink ${dateIssue ? "border-critical bg-critical-soft" : "border-line bg-canvas"}`}
+            accessibilityHint={dateIssue}
             accessibilityLabel="Date de casse au format année mois jour"
           />
+          {dateIssue ? (
+            <Text accessibilityRole="alert" className="text-sm text-critical">
+              {dateIssue}
+            </Text>
+          ) : null}
           <PrimaryButton
             label="Confirmer la date"
             onPress={() => {
@@ -402,11 +499,16 @@ export default function WasteReceiptValidationScreen() {
                 key={group.key}
                 label={group.label}
                 lines={group.lines}
+                hasUnsavedChanges={group.lines.some(
+                  ({ line }) => (dirtyFields[line.id]?.length ?? 0) > 0,
+                )}
                 receiptId={detail.receipt.id}
                 repository={repository}
                 onChanged={load}
                 onMessage={setMessage}
                 onError={setError}
+                issues={issues}
+                onDirty={onDirty}
               />
             ))}
       </View>
@@ -417,6 +519,9 @@ export default function WasteReceiptValidationScreen() {
 }
 
 function LineGroup({
+  hasUnsavedChanges,
+  issues,
+  onDirty,
   label,
   lines,
   receiptId,
@@ -426,12 +531,15 @@ function LineGroup({
   onError,
 }: {
   label: string;
+  hasUnsavedChanges: boolean;
   lines: LocalWasteLineDraft[];
   receiptId: string;
   repository: WasteReceiptRepository;
   onChanged(): Promise<void>;
   onMessage(value: string | undefined): void;
   onError(value: string | undefined): void;
+  issues: WastePublicationIssue[];
+  onDirty(lineId: string, fields: WastePublicationField[]): void;
 }) {
   const [expanded, setExpanded] = useState(lines.length === 1);
   const total = lines.reduce(
@@ -446,10 +554,17 @@ function LineGroup({
       {lines.length > 1 ? (
         <SecondaryButton
           label={expanded ? "Masquer les occurrences" : "Voir les occurrences"}
+          disabled={hasUnsavedChanges}
           onPress={() => setExpanded((value) => !value)}
         />
       ) : null}
-      {expanded
+      {hasUnsavedChanges && lines.length > 1 ? (
+        <Text className="text-sm text-muted">
+          Enregistrez les lignes modifiées avant de fermer le groupe.
+        </Text>
+      ) : null}
+      {expanded ||
+      lines.some(({ line }) => issues.some((issue) => issue.lineId === line.id))
         ? lines.map((draft) => (
             <LineEditor
               key={draft.line.id}
@@ -459,6 +574,8 @@ function LineGroup({
               onChanged={onChanged}
               onMessage={onMessage}
               onError={onError}
+              issues={issues}
+              onDirty={onDirty}
             />
           ))
         : null}
@@ -467,6 +584,8 @@ function LineGroup({
 }
 
 function LineEditor({
+  issues,
+  onDirty,
   draft,
   receiptId,
   repository,
@@ -480,7 +599,16 @@ function LineEditor({
   onChanged(): Promise<void>;
   onMessage(value: string | undefined): void;
   onError(value: string | undefined): void;
+  issues: WastePublicationIssue[];
+  onDirty(lineId: string, fields: WastePublicationField[]): void;
 }) {
+  const router = useRouter();
+  const [localIssues, setLocalIssues] = useState<WastePublicationIssue[]>([]);
+  const fieldIssue = (field: WastePublicationField) =>
+    [
+      ...localIssues,
+      ...issues.filter((issue) => issue.lineId === draft.line.id),
+    ].find((issue) => issue.field === field)?.message;
   const [rawLabel, setRawLabel] = useState(draft.line.rawLabel);
   const [weight, setWeight] = useState(draft.line.weight ?? "");
   const [quantity, setQuantity] = useState(draft.line.quantity ?? "");
@@ -506,6 +634,33 @@ function LineEditor({
     draft.line.totalPrice,
   ]);
 
+  useEffect(() => {
+    const fields: WastePublicationField[] = [];
+    if (rawLabel !== draft.line.rawLabel) fields.push("rawLabel");
+    if (weight !== (draft.line.weight ?? "")) fields.push("weight");
+    if (quantity !== (draft.line.quantity ?? "")) fields.push("quantity");
+    if (quantityUnit !== (draft.line.quantityUnit ?? "UNKNOWN"))
+      fields.push("quantityUnit");
+    if (unitPrice !== (draft.line.unitPrice ?? "")) fields.push("unitPrice");
+    if (totalPrice !== (draft.line.totalPrice ?? "")) fields.push("totalPrice");
+    onDirty(draft.line.id, fields);
+  }, [
+    onDirty,
+    draft.line.id,
+    draft.line.rawLabel,
+    draft.line.weight,
+    draft.line.quantity,
+    draft.line.quantityUnit,
+    draft.line.unitPrice,
+    draft.line.totalPrice,
+    rawLabel,
+    weight,
+    quantity,
+    quantityUnit,
+    unitPrice,
+    totalPrice,
+  ]);
+
   return (
     <View className="gap-3 rounded-2xl border border-line bg-canvas p-4">
       <View className="flex-row items-center justify-between gap-3">
@@ -517,14 +672,22 @@ function LineEditor({
         ) : null}
       </View>
 
-      <Field label="Libellé" value={rawLabel} onChangeText={setRawLabel} />
       <Field
-        label="Quantité (pièces ou packs)"
+        label="Libellé"
+        value={rawLabel}
+        onChangeText={setRawLabel}
+        issue={fieldIssue("rawLabel")}
+      />
+      <Field
+        label="Quantité (pièces ou unités conditionnées)"
+        issue={fieldIssue("quantity")}
         value={quantity}
         onChangeText={setQuantity}
         decimal
       />
-      <View className="flex-row gap-2">
+      <View
+        className={`flex-row flex-wrap gap-2 rounded-xl ${fieldIssue("quantityUnit") ? "border border-critical bg-critical-soft p-1" : ""}`}
+      >
         {(["KG", "PIECE", "PACK", "UNKNOWN"] as const).map((unit) => (
           <Pressable
             key={unit}
@@ -539,17 +702,23 @@ function LineEditor({
                 : unit === "PIECE"
                   ? "Pièces"
                   : unit === "PACK"
-                    ? "Packs"
+                    ? "Unités conditionnées"
                     : "À préciser"}
               {quantityUnit === unit ? " ✓" : ""}
             </Text>
           </Pressable>
         ))}
       </View>
+      {fieldIssue("quantityUnit") ? (
+        <Text accessibilityRole="alert" className="text-sm text-critical">
+          {fieldIssue("quantityUnit")}
+        </Text>
+      ) : null}
       <View className="flex-row gap-3">
         <View className="flex-1">
           <Field
             label="Poids (kg)"
+            issue={fieldIssue("weight")}
             value={weight}
             onChangeText={setWeight}
             decimal
@@ -558,6 +727,7 @@ function LineEditor({
         <View className="flex-1">
           <Field
             label="Prix unitaire (€)"
+            issue={fieldIssue("unitPrice")}
             value={unitPrice}
             onChangeText={setUnitPrice}
             decimal
@@ -566,6 +736,7 @@ function LineEditor({
       </View>
       <Field
         label="Montant (€)"
+        issue={fieldIssue("totalPrice")}
         value={totalPrice}
         onChangeText={setTotalPrice}
         decimal
@@ -578,14 +749,48 @@ function LineEditor({
         />
       ) : null}
 
-      <View className="gap-2">
+      <View
+        className={`gap-2 rounded-xl ${fieldIssue("product") ? "border border-critical bg-critical-soft p-3" : ""}`}
+      >
         <Text className="text-sm font-semibold text-ink">Produit associé</Text>
+        {fieldIssue("product") ? (
+          <Text accessibilityRole="alert" className="text-sm text-critical">
+            {fieldIssue("product")}
+          </Text>
+        ) : null}
+        {fieldIssue("product") && draft.line.matchedProductId ? (
+          <SecondaryButton
+            label="Compléter la fiche produit"
+            onPress={() =>
+              router.push(`/(tabs)/products/${draft.line.matchedProductId}`)
+            }
+          />
+        ) : null}
         <Text className="text-sm text-muted">
           {draft.matchedProductLabel ??
             (draft.candidates.length > 0
               ? "Choisissez le bon produit."
               : "Aucun produit proposé.")}
         </Text>
+        {fieldIssue("product") && draft.line.matchedProductId ? (
+          <SecondaryButton
+            label="Reconfirmer le produit associé"
+            onPress={() => {
+              void repository
+                .selectProductCandidate(
+                  receiptId,
+                  draft.line.id,
+                  draft.line.matchedProductId!,
+                )
+                .then(onChanged)
+                .catch(() =>
+                  onError(
+                    "Ce produit n’est plus disponible dans le référentiel.",
+                  ),
+                );
+            }}
+          />
+        ) : null}
         {draft.candidates.map((candidate) => (
           <Pressable
             key={candidate.productId}
@@ -647,6 +852,29 @@ function LineEditor({
       <PrimaryButton
         label="Enregistrer la ligne"
         onPress={() => {
+          const invalid: WastePublicationIssue[] = [];
+          if (!rawLabel.trim())
+            invalid.push({
+              field: "rawLabel",
+              message: "Renseignez le libellé.",
+            });
+          for (const [field, value] of [
+            ["weight", weight],
+            ["quantity", quantity],
+            ["unitPrice", unitPrice],
+            ["totalPrice", totalPrice],
+          ] as const) {
+            if (
+              value.trim() &&
+              !/^\d+(?:\.\d+)?$/.test(value.trim().replace(",", "."))
+            )
+              invalid.push({
+                field,
+                message: "Utilisez un nombre positif ou nul, par exemple 1,25.",
+              });
+          }
+          setLocalIssues(invalid);
+          if (invalid.length) return;
           onError(undefined);
           onMessage(undefined);
           void repository
@@ -676,11 +904,13 @@ function Field({
   value,
   onChangeText,
   decimal = false,
+  issue,
 }: {
   label: string;
   value: string;
   onChangeText(value: string): void;
   decimal?: boolean;
+  issue?: string;
 }) {
   return (
     <View className="gap-1">
@@ -689,8 +919,15 @@ function Field({
         value={value}
         onChangeText={onChangeText}
         keyboardType={decimal ? "decimal-pad" : "default"}
-        className="min-h-12 rounded-xl border border-line bg-white px-3 text-base text-ink"
+        accessibilityLabel={label}
+        accessibilityHint={issue}
+        className={`min-h-12 rounded-xl border px-3 text-base text-ink ${issue ? "border-critical bg-critical-soft" : "border-line bg-white"}`}
       />
+      {issue ? (
+        <Text accessibilityRole="alert" className="text-sm text-critical">
+          {issue}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -721,7 +958,7 @@ function emptyToNull(value: string) {
 
 function natureLabel(value: "BULK" | "PACKAGED" | "UNKNOWN") {
   if (value === "BULK") return "Vrac";
-  if (value === "PACKAGED") return "Emballé";
+  if (value === "PACKAGED") return "Conditionné";
   return "Nature à confirmer";
 }
 
