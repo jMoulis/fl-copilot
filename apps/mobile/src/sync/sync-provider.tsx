@@ -40,7 +40,8 @@ const SyncContext = createContext<SyncContextValue | null>(null);
 
 export function SyncProvider({ children }: PropsWithChildren) {
   const database = useLocalDatabase();
-  const { session } = useAuth();
+  const { session, withAccessToken } = useAuth();
+  const hasLocalSession = Boolean(session);
   const [state, setState] = useState<Omit<SyncContextValue, "syncNow">>({
     status: "pending",
     pendingCount: 0,
@@ -48,35 +49,40 @@ export function SyncProvider({ children }: PropsWithChildren) {
     failedCount: 0,
   });
   const service = useMemo(() => {
-    if (!session?.accessToken) return undefined;
+    if (!hasLocalSession) return undefined;
     const api = new ApiClient(getApiBaseUrl());
-    const accessToken = session.accessToken;
     return new MobileSyncService(
       database.sqlite,
       {
-        bootstrap: (storeId) => api.bootstrapSync(accessToken, storeId),
-        push: (request) => api.pushSync(accessToken, request),
-        pull: (storeId, cursor) => api.pullSync(accessToken, storeId, cursor),
+        bootstrap: (storeId) =>
+          withAccessToken((token) => api.bootstrapSync(token, storeId)),
+        push: (request) =>
+          withAccessToken((token) => api.pushSync(token, request)),
+        pull: (storeId, cursor) =>
+          withAccessToken((token) => api.pullSync(token, storeId, cursor)),
       },
       {
         appVersion: Constants.expoConfig?.version ?? "0.0.0",
         deviceId: database.deviceId,
       },
     );
-  }, [database.deviceId, database.sqlite, session?.accessToken]);
+  }, [database.deviceId, database.sqlite, hasLocalSession, withAccessToken]);
   const uploadQueue = useMemo(() => {
-    if (!session?.accessToken) return undefined;
+    if (!hasLocalSession) return undefined;
     const api = new ApiClient(getApiBaseUrl());
-    const accessToken = session.accessToken;
     return new SourceUploadQueue(database.sqlite, {
       init: (storeId, input) =>
-        api.initSourceUpload(accessToken, storeId, input),
+        withAccessToken((token) => api.initSourceUpload(token, storeId, input)),
       complete: (storeId, uploadId, input) =>
-        api.completeSourceUpload(accessToken, storeId, uploadId, input),
+        withAccessToken((token) =>
+          api.completeSourceUpload(token, storeId, uploadId, input),
+        ),
       verify: (storeId, sourceDocumentId, input) =>
-        api.verifyImport(accessToken, storeId, sourceDocumentId, input),
+        withAccessToken((token) =>
+          api.verifyImport(token, storeId, sourceDocumentId, input),
+        ),
     });
-  }, [database.sqlite, session?.accessToken]);
+  }, [database.sqlite, hasLocalSession, withAccessToken]);
   const defaultStoreId = session?.stores[0]?.storeId;
 
   const refreshLocalState = useCallback(async () => {

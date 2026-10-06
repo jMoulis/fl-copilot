@@ -20,7 +20,7 @@ type FormValues = z.infer<typeof formSchema>;
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { status, requestCode } = useAuth();
+  const { status, requestCode, sessionExpired } = useAuth();
   const [error, setError] = useState<string>();
   const {
     control,
@@ -53,6 +53,12 @@ export default function LoginScreen() {
         title="Connexion"
         subtitle="Un code de connexion vous sera envoyé par e-mail."
       />
+      {sessionExpired ? (
+        <InlineAlert
+          title="Session expirée"
+          message="Reconnectez-vous pour reprendre la synchronisation. Vos données et les actions en attente restent conservées sur cet appareil."
+        />
+      ) : null}
       {error ? (
         <InlineAlert title="Connexion impossible" message={error} />
       ) : null}
