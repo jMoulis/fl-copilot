@@ -1,3 +1,4 @@
+import { applyWastePublication } from "../documents/waste-receipt-publication";
 import {
   SYNC_PROTOCOL_VERSION,
   type SyncPullResponse,
@@ -13,6 +14,14 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (change.entityType === "waste_receipt_publication") {
+        if (change.operation !== "UPSERT")
+          throw new Error(
+            "Published waste cannot be deleted through generic sync.",
+          );
+        await applyWastePublication(transaction, storeId, change.entity);
+        continue;
+      }
       if (await applyProductMasterChange(transaction, storeId, change)) {
         continue;
       }

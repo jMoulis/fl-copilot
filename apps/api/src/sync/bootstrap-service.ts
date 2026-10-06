@@ -80,6 +80,12 @@ export function createMongoSyncBootstrapService(
                 .sort({ _id: 1 })
                 .toArray(),
             ]);
+            const publications = await mongoDatabase
+              .collection<
+                import("../uploads/waste-receipt-publication.js").WastePublicationDocument
+              >("wasteReceiptPublications")
+              .find({ storeId: store.storeId }, { session })
+              .toArray();
             const sequence = counter?.nextSequence ?? Long.ZERO;
             response = {
               protocolVersion: SYNC_PROTOCOL_VERSION,
@@ -107,6 +113,12 @@ export function createMongoSyncBootstrapService(
                 productSubstitutions: [],
                 salesObservations: [],
                 wasteObservations: [],
+                wasteReceiptPublications: publications.map((p) => ({
+                  id: p.id,
+                  storeId: p.storeId,
+                  remoteVersion: p.remoteVersion,
+                  publication: p.publication,
+                })),
                 commercialOperations: [],
                 offers: [],
                 marketSignals: [],

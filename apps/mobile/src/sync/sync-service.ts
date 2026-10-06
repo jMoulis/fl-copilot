@@ -1,3 +1,4 @@
+import { applyWastePublication } from "../documents/waste-receipt-publication";
 import { ApiClientError } from "@fl-copilot/api-client";
 import {
   SYNC_PROTOCOL_VERSION,
@@ -212,6 +213,12 @@ export class MobileSyncService {
               localVersion,
             );
           }
+          if (command.entityType === "waste_receipt_publication")
+            await applyWastePublication(
+              transaction,
+              storeId,
+              result.remoteEntity,
+            );
           await outbox.markAcknowledged(command.commandId);
           pushed += 1;
         } else if (result.status === "CONFLICT") {

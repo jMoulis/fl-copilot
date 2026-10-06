@@ -66,8 +66,32 @@ export function createMongoSyncPullService(
         storeId,
         selected,
       );
-      const changes = selected.map((change) =>
-        toEnvelope(change, entities, productEntities),
+      const changes = await Promise.all(
+        selected.map(async (change) => {
+          if (change.entityType === "waste_receipt_publication") {
+            const entity = await mongoDatabase
+              .collection<
+                import("../uploads/waste-receipt-publication.js").WastePublicationDocument
+              >("wasteReceiptPublications")
+              .findOne({ _id: change.entityId, storeId });
+            if (!entity) throw new Error("Waste publication missing.");
+            return {
+              sequence: change.sequence.toString(),
+              entityType: change.entityType,
+              entityId: change.entityId,
+              operation: change.operation,
+              entityVersion: entity.version,
+              entity: {
+                id: entity.id,
+                storeId: entity.storeId,
+                remoteVersion: entity.remoteVersion,
+                publication: entity.publication,
+              },
+              changedAt: change.changedAt.toISOString(),
+            };
+          }
+          return toEnvelope(change, entities, productEntities);
+        }),
       );
       const nextSequence = selected.at(-1)?.sequence ?? afterSequence;
 

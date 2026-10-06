@@ -112,6 +112,7 @@ export default function Screen() {
                 receipt.processingStatus,
                 receipt.duplicateStatus,
                 lineCount,
+                receipt.syncState,
               );
               return (
                 <Pressable
@@ -146,10 +147,16 @@ function receiptPresentation(
   processingStatus: LocalWasteReceiptSummary["receipt"]["processingStatus"],
   duplicateStatus: LocalWasteReceiptSummary["receipt"]["duplicateStatus"],
   lineCount: number,
+  syncState: LocalWasteReceiptSummary["receipt"]["syncState"],
 ): {
-  status: "local" | "pending" | "error" | "incomplete";
+  status: "local" | "pending" | "error" | "incomplete" | "synced";
   description: string;
 } {
+  if (processingStatus === "PUBLISHED")
+    return {
+      status: syncState === "SYNCED" ? "synced" : "pending",
+      description: "Casse validée et publiée",
+    };
   if (duplicateStatus === "POSSIBLE_DUPLICATE") {
     return { status: "incomplete", description: "Doublon possible à examiner" };
   }

@@ -1,3 +1,4 @@
+import { applyWastePublication } from "../documents/waste-receipt-publication";
 import { z } from "zod";
 import type { BootstrapResponse } from "@fl-copilot/sync-contracts";
 import type { AtomicMutationDatabase } from "./atomic-local-mutation";
@@ -26,6 +27,8 @@ export async function applyBootstrap(
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await applyProductMasterSnapshot(transaction, storeId, bootstrap.entities);
+    for (const entity of bootstrap.entities.wasteReceiptPublications ?? [])
+      await applyWastePublication(transaction, storeId, entity);
     await transaction.runAsync(
       "DELETE FROM sync_test_entities WHERE store_id = ?",
       storeId,
@@ -72,6 +75,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "products",
     "productIdentifiers",
     "productAliases",
+    "wasteReceiptPublications",
   ]);
   if (
     Object.entries(bootstrap.entities).some(
