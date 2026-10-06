@@ -102,6 +102,24 @@ Before implementing multi-photo receipt import, validate the intended semantics 
 
 Batch processing must remain local-first, use bounded upload/extraction concurrency and expose item-level progress rather than one opaque global loader.
 
+### Analyses — Date navigation and flexible periods
+
+A planned extension of M3 analytics will turn `Analyses` into a historical exploration workspace. Scope its delivery after the core M4 workflow, before closing the M8 pilot UX gate; the exact increment and order remain to be agreed during product review.
+
+The intended scope includes:
+
+- a daily view with a date picker, previous/next-day navigation and an explicit return to the latest available business day;
+- calendar week, calendar month and calendar year views, alongside rolling 7-day and 28-day periods;
+- a custom start/end date range;
+- a separate reference-period control for J-7, comparable week, averages of comparable weekdays, N-1 and a custom reference when supported by available data;
+- the selected business dates, data coverage, missing days and comparison availability displayed clearly. An incomplete month or year must not be presented as a complete period or compared silently with a full reference period;
+- deterministic aggregation from trusted observations, explicit handling of incompatible units and aggregate margin calculated from totals rather than an average of line percentages;
+- local navigation over available history, with clear bounds when older data is not present on the device and explicit recovery/synchronization behavior.
+
+Before implementation, hold a dedicated UX discussion with the product owner and review representative mobile mockups. Agree how calendar navigation, presets and custom ranges fit together; how the selected period differs from its comparison period; how partial periods and missing history are explained; and how the same selection persists across product, category and waste views. Clarify the meaning of N-1 and comparable days before fixing defaults.
+
+Acceptance should include one-handed date changes on the target iPhone, a readable month/year comparison, a custom range, incomplete-history states and offline navigation without losing the selected period. Iterate on the UX from these scenarios before committing to the final controls.
+
 ## Cross-cutting UX/UI track
 
 UX/UI is a continuous product track rather than a separate milestone that postpones functional delivery. Its first structured pass happens now, before `Aujourd’hui` defines the visual reference for M3 and the later field workflows.
