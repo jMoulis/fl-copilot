@@ -169,3 +169,17 @@ Verification: structure, lint, TypeScript and focused queue/presentation tests c
 3. Collapse the product-selection form after confirmation and expose a compact association with `Modifier le produit`.
 4. Persist confirmation evidence and, after repeated consistent choices, propose an explicit source-specific alias or mapping without silently retraining the Vision model.
 5. Design multi-photo import with per-image persistence, progress, duplicate handling and retry, after deciding whether images represent independent tickets, pages of one ticket or an explicit choice between both.
+
+## Pilot refinement — Actionable publication blockers
+
+Publication previously exposed only a generic failure even when a specific receipt field or Product Master property blocked validation. The local validator now returns all blocking fields with stable line IDs, source indexes, raw labels and French corrective instructions. The same checks run during read-only inspection and inside the atomic publication transaction.
+
+- A `Champs à corriger` summary identifies affected occurrences; their groups open automatically and the fields display a critical border/background, explanatory text and accessibility hints.
+- Date, missing/invalid product association, inactive/incomplete catalog metadata, incompatible quantity units, missing positive quantity/weight, missing amounts and arithmetic mismatches are distinguished from source/processing/duplicate blockers.
+- Product-related errors expose the product editor and an explicit reconfirmation action using current catalog metadata, including when an existing association has no remaining suggestion snapshot.
+- Unsaved line edits and a changed date block publication of stale persisted values. Unsaved grouped edits prevent closing their editor; numeric entry errors are reported beside their fields before saving.
+- Corrections trigger another inspection. Excluded occurrences are omitted from validation, while an entirely excluded ticket receives a clear no-publishable-lines explanation.
+- The receipt form uses `Conditionné` and `unités conditionnées` instead of `Packs`. Internal product nature, identifiers and quantity units remain separate.
+- Technical storage failures use a distinct message and do not masquerade as an instruction to edit business fields. Validation failures leave all observations and Outbox commands uncommitted.
+
+Verification covers multi-line error aggregation, catalog correction/reconfirmation, quantity/unit compatibility, arithmetic-field reporting, exclusions and publication rollback. Physical iPhone acceptance of field highlighting remains pending in the updated staging build.
