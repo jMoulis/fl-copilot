@@ -19,6 +19,12 @@ import {
 import { useLocalDatabase } from "@/providers/database-provider";
 import { useSync } from "@/sync/sync-provider";
 
+import { WasteReceiptPublicationRepository } from "@/documents/waste-receipt-publication";
+import {
+  LocalAnalyticsRecomputationScheduler,
+  SQLiteProductDateRecomputer,
+} from "@/analytics/local-recomputation";
+
 export default function WasteReceiptValidationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -30,6 +36,7 @@ export default function WasteReceiptValidationScreen() {
   );
   const [detail, setDetail] = useState<LocalWasteReceiptDetail | null>();
   const [date, setDate] = useState("");
+  const [publishing, setPublishing] = useState(false);
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const [comparingDuplicate, setComparingDuplicate] = useState(false);
@@ -93,7 +100,17 @@ export default function WasteReceiptValidationScreen() {
         title="Valider le ticket"
         subtitle={`${detail.lines.length} ligne${detail.lines.length > 1 ? "s" : ""} extraite${detail.lines.length > 1 ? "s" : ""}`}
       >
-        <StatusBadge status={reviewCount > 0 ? "incomplete" : "pending"} />
+        <StatusBadge
+          status={
+            detail.receipt.processingStatus === "PUBLISHED"
+              ? detail.receipt.syncState === "SYNCED"
+                ? "synced"
+                : "pending"
+              : reviewCount > 0
+                ? "incomplete"
+                : "pending"
+          }
+        />
       </AppHeader>
 
       {message ? <InlineAlert title="Enregistré" message={message} /> : null}
@@ -189,6 +206,66 @@ export default function WasteReceiptValidationScreen() {
         />
       ) : null}
 
+      {detail.receipt.processingStatus === "PUBLISHED" ? (
+        <InlineAlert
+          title="Casse validée"
+          message={
+            detail.receipt.syncState === "SYNCED"
+              ? "Les lignes sont publiées et synchronisées."
+              : "Les lignes sont publiées localement. Synchronisation en attente."
+          }
+        />
+      ) : (
+        <SectionCard
+          title="Publication de la casse"
+          description="Confirmez la date et vérifiez chaque produit, quantité et montant avant de valider."
+        >
+          <PrimaryButton
+            label="Valider la casse"
+            loading={publishing}
+            disabled={
+              detail.lines.length === 0 ||
+              !detail.receipt.confirmedWasteDate ||
+              detail.receipt.duplicateStatus === "POSSIBLE_DUPLICATE" ||
+              detail.receipt.duplicateStatus === "CONFIRMED_DUPLICATE"
+            }
+            onPress={() => {
+              setPublishing(true);
+              setError(undefined);
+              setMessage(undefined);
+              void new WasteReceiptPublicationRepository(database.sqlite)
+                .publish({
+                  receiptId: detail.receipt.id,
+                  storeId: detail.receipt.storeId,
+                  deviceId: database.deviceId,
+                  commandId: randomUUID(),
+                  analyticsJobId: randomUUID(),
+                  timestamp: new Date().toISOString(),
+                })
+                .then(async () => {
+                  await load();
+                  const recomputation =
+                    await new LocalAnalyticsRecomputationScheduler(
+                      database.sqlite,
+                      new SQLiteProductDateRecomputer(database.sqlite),
+                    ).process(detail.receipt.storeId);
+                  setMessage(
+                    recomputation.failedJobs > 0
+                      ? "La casse est validée. Le recalcul des indicateurs reste en attente."
+                      : "La casse est validée et les indicateurs locaux sont mis à jour.",
+                  );
+                  void syncNow(detail.receipt.storeId).then(load);
+                })
+                .catch(() =>
+                  setError(
+                    "Vérifiez les produits associés, les quantités, les montants et la date. La casse n’a pas été publiée.",
+                  ),
+                )
+                .finally(() => setPublishing(false));
+            }}
+          />
+        </SectionCard>
+      )}
       <SectionCard
         title="Photo source"
         description="L’original reste conservé sur cet appareil."
@@ -205,39 +282,45 @@ export default function WasteReceiptValidationScreen() {
         )}
       </SectionCard>
 
-      <SectionCard
-        title="Date de casse"
-        description={
-          detail.receipt.detectedReceiptDate
-            ? `Date détectée : ${formatDate(detail.receipt.detectedReceiptDate)}`
-            : "Aucune date fiable n’a été détectée. Saisissez la date du ticket."
-        }
-      >
-        <TextInput
-          value={date}
-          onChangeText={setDate}
-          placeholder="AAAA-MM-JJ"
-          autoCapitalize="none"
-          className="min-h-12 rounded-xl border border-line bg-canvas px-4 text-base text-ink"
-          accessibilityLabel="Date de casse au format année mois jour"
-        />
-        <PrimaryButton
-          label="Confirmer la date"
-          onPress={() => {
-            setError(undefined);
-            setMessage(undefined);
-            void repository
-              .confirmWasteDate(detail.receipt.id, date)
-              .then(async () => {
-                setMessage("La date de casse est confirmée.");
-                await load();
-              })
-              .catch(() =>
-                setError("Saisissez une date valide au format AAAA-MM-JJ."),
-              );
-          }}
-        />
-      </SectionCard>
+      {detail.receipt.processingStatus !== "PUBLISHED" ? (
+        <SectionCard
+          title="Date de casse"
+          description={
+            detail.receipt.detectedReceiptDate
+              ? `Date détectée : ${formatDate(detail.receipt.detectedReceiptDate)}`
+              : "Aucune date fiable n’a été détectée. Saisissez la date du ticket."
+          }
+        >
+          <TextInput
+            value={date}
+            onChangeText={setDate}
+            placeholder="AAAA-MM-JJ"
+            autoCapitalize="none"
+            className="min-h-12 rounded-xl border border-line bg-canvas px-4 text-base text-ink"
+            accessibilityLabel="Date de casse au format année mois jour"
+          />
+          <PrimaryButton
+            label="Confirmer la date"
+            onPress={() => {
+              setError(undefined);
+              setMessage(undefined);
+              void repository
+                .confirmWasteDate(detail.receipt.id, date)
+                .then(async () => {
+                  setMessage("La date de casse est confirmée.");
+                  await load();
+                })
+                .catch(() =>
+                  setError("Saisissez une date valide au format AAAA-MM-JJ."),
+                );
+            }}
+          />
+        </SectionCard>
+      ) : (
+        <Text className="text-base text-ink">
+          Date de casse : {formatDate(detail.receipt.confirmedWasteDate!)}
+        </Text>
+      )}
 
       <View className="gap-4">
         <View className="gap-1">
@@ -249,18 +332,24 @@ export default function WasteReceiptValidationScreen() {
             modifiable séparément.
           </Text>
         </View>
-        {groups.map((group) => (
-          <LineGroup
-            key={group.key}
-            label={group.label}
-            lines={group.lines}
-            receiptId={detail.receipt.id}
-            repository={repository}
-            onChanged={load}
-            onMessage={setMessage}
-            onError={setError}
-          />
-        ))}
+        {detail.receipt.processingStatus === "PUBLISHED"
+          ? detail.lines.map(({ line }) => (
+              <Text key={line.id} className="text-base text-ink">
+                {line.rawLabel} · {line.totalPrice ?? "—"} €
+              </Text>
+            ))
+          : groups.map((group) => (
+              <LineGroup
+                key={group.key}
+                label={group.label}
+                lines={group.lines}
+                receiptId={detail.receipt.id}
+                repository={repository}
+                onChanged={load}
+                onMessage={setMessage}
+                onError={setError}
+              />
+            ))}
       </View>
 
       <SecondaryButton label="Retour à Casse" onPress={() => router.back()} />
@@ -335,12 +424,18 @@ function LineEditor({
 }) {
   const [rawLabel, setRawLabel] = useState(draft.line.rawLabel);
   const [weight, setWeight] = useState(draft.line.weight ?? "");
+  const [quantity, setQuantity] = useState(draft.line.quantity ?? "");
+  const [quantityUnit, setQuantityUnit] = useState(
+    draft.line.quantityUnit ?? "UNKNOWN",
+  );
   const [unitPrice, setUnitPrice] = useState(draft.line.unitPrice ?? "");
   const [totalPrice, setTotalPrice] = useState(draft.line.totalPrice ?? "");
 
   useEffect(() => {
     setRawLabel(draft.line.rawLabel);
     setWeight(draft.line.weight ?? "");
+    setQuantity(draft.line.quantity ?? "");
+    setQuantityUnit(draft.line.quantityUnit ?? "UNKNOWN");
     setUnitPrice(draft.line.unitPrice ?? "");
     setTotalPrice(draft.line.totalPrice ?? "");
   }, [draft]);
@@ -357,6 +452,34 @@ function LineEditor({
       </View>
 
       <Field label="Libellé" value={rawLabel} onChangeText={setRawLabel} />
+      <Field
+        label="Quantité (pièces ou packs)"
+        value={quantity}
+        onChangeText={setQuantity}
+        decimal
+      />
+      <View className="flex-row gap-2">
+        {(["KG", "PIECE", "PACK", "UNKNOWN"] as const).map((unit) => (
+          <Pressable
+            key={unit}
+            accessibilityRole="button"
+            accessibilityState={{ selected: quantityUnit === unit }}
+            onPress={() => setQuantityUnit(unit)}
+            className="min-h-12 justify-center rounded-xl border border-line px-2"
+          >
+            <Text>
+              {unit === "KG"
+                ? "kg"
+                : unit === "PIECE"
+                  ? "Pièces"
+                  : unit === "PACK"
+                    ? "Packs"
+                    : "À préciser"}
+              {quantityUnit === unit ? " ✓" : ""}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       <View className="flex-row gap-3">
         <View className="flex-1">
           <Field
@@ -432,6 +555,29 @@ function LineEditor({
         ))}
       </View>
 
+      <SecondaryButton
+        label={
+          draft.line.validationStatus === "EXCLUDED"
+            ? "Réintégrer la ligne"
+            : "Exclure cette ligne de la casse"
+        }
+        onPress={() => {
+          void repository
+            .setLineExcluded(
+              receiptId,
+              draft.line.id,
+              draft.line.validationStatus !== "EXCLUDED",
+            )
+            .then(onChanged)
+            .catch(() => onError("Le choix n’a pas pu être enregistré."));
+        }}
+      />
+      {draft.line.validationStatus === "EXCLUDED" ? (
+        <InlineAlert
+          title="Ligne exclue"
+          message="Cette occurrence reste conservée dans le ticket et ne sera pas publiée."
+        />
+      ) : null}
       <PrimaryButton
         label="Enregistrer la ligne"
         onPress={() => {
@@ -440,6 +586,8 @@ function LineEditor({
           void repository
             .updateLineValues(receiptId, draft.line.id, {
               rawLabel,
+              quantity: emptyToNull(quantity),
+              quantityUnit,
               weight: emptyToNull(weight),
               unitPrice: emptyToNull(unitPrice),
               totalPrice: emptyToNull(totalPrice),

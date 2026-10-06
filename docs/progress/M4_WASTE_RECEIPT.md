@@ -123,6 +123,20 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 - A server result cannot undo an explicit local `Conserver les deux` decision. Product/day similarity alone is never used as duplicate evidence.
 - SQLite schema version 14 records the candidate source and exact-checksum reason for recoverable review.
 
+### M4-T11 — Atomic waste publication
+
+- `Valider la casse` validates the persisted local review state, confirmed waste date, active product, nature, compatible positive quantity, amount and arithmetic before committing the receipt.
+- The receipt, source records, validated waste observations, analytics recomputation job and one `WASTE_RECEIPT_PUBLISH` Outbox command commit in one SQLite transaction. A repeated action creates no additional observation or command.
+- Each observation keeps its source document and occurrence ID. Kilogram products use weight; piece/pack products require a compatible quantity unit. The editor exposes quantity and unit correction, and explicit reversible line exclusion.
+- Receipt amounts populate waste sales value only. Unknown purchase cost remains `UNAVAILABLE`; no sales observation is changed or created.
+- Publication is immutable in this increment. The UI keeps a readable published summary, synchronization state and source photo; repository guards prevent edits after publication.
+- MongoDB migration 11 initializes receipt publication indexes. The API checks uploaded source ownership/checksum, product ownership/status/nature, quantities and exact arithmetic before atomically storing the publication, receipt, lines, source records, observations and incremental sync change with the processed command.
+- `waste_receipt_publication` is a store-scoped aggregate sync entity. Its serializer strips device file paths and local file IDs; an existing source image remains local on the originating device. Published receipt data is restored by bootstrap and incremental pull on another device, with no claim that its source photo has been downloaded.
+- A changed publication of an already published receipt is a domain conflict; command retries and an identical publication are idempotent. Remote analytics confirmation runs after the transaction and can be retried safely.
+- Shared Zod contracts include the publication aggregate and optional bootstrap array. Existing SQLite tables and IDs are reused, so no local schema migration is required.
+
+Verification: structure, lint, strict TypeScript, full unit suite, transaction rollback/idempotency/restart/unit/exclusion tests, and real Atlas transaction/pull/bootstrap integration in isolated temporary databases. Native iPhone acceptance remains pending after installing the M4-T11 build.
+
 ## Verification evidence
 
 | Check                | Result                                                                                       |
@@ -137,5 +151,5 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 ## Next work
 
-1. Validate M4-T10 on the target iPhone by importing the same image twice and exercising both resolution choices.
-2. Implement M4-T11 atomic publication of confirmed waste lines and their outbox mutations.
+1. Validate M4-T11 on the target iPhone: review and publish a ticket, inspect local KPI, restart offline, reconnect and confirm synchronization without duplicate observations.
+2. Implement M4-T12 explicit AI pending/failure recovery UX, then pass the complete M4 offline end-to-end gate.

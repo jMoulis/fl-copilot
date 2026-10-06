@@ -23,6 +23,11 @@ import {
   isProductMasterCommand,
 } from "../products/product-master.js";
 
+import { applyWastePublicationCommand } from "../uploads/waste-receipt-publication.js";
+
+import { wastePublicationSchema } from "@fl-copilot/sync-contracts";
+import { createMongoRemoteAnalyticsConfirmationService } from "../analytics/remote-confirmation.js";
+
 interface StoredCommandResponse {
   remoteEntity?: SyncCommandResult["remoteEntity"];
   error?: ApiErrorDto;
@@ -63,6 +68,21 @@ export function createMongoSyncPushService(
                 syncChanges,
               ),
           );
+          if (
+            command.type === "WASTE_RECEIPT_PUBLISH" &&
+            outcome.command.resultStatus === "APPLIED"
+          ) {
+            const publication = wastePublicationSchema.parse(command.payload);
+            await createMongoRemoteAnalyticsConfirmationService(
+              database,
+            ).confirm(
+              input.storeId,
+              publication.observations.map((o) => ({
+                productId: o.productId,
+                businessDate: o.businessDate,
+              })),
+            );
+          }
           results.push(
             toCommandResult(outcome.command, outcome.alreadyApplied),
           );
@@ -87,6 +107,14 @@ async function applyCommand(
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
 ) {
+  if (command.type === "WASTE_RECEIPT_PUBLISH")
+    return applyWastePublicationCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
   if (isProductMasterCommand(command)) {
     return applyProductMasterCommand(
       context,

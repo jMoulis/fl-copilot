@@ -13,6 +13,10 @@ import { ApiClient, ApiClientError } from "@fl-copilot/api-client";
 import { useAuth } from "@/auth/auth-provider";
 import { getApiBaseUrl } from "@/config/environment";
 import { useLocalDatabase } from "@/providers/database-provider";
+import {
+  LocalAnalyticsRecomputationScheduler,
+  SQLiteProductDateRecomputer,
+} from "@/analytics/local-recomputation";
 import { SourceUploadQueue } from "@/documents/source-upload-queue";
 import { MobileSyncService, type SyncSummary } from "./sync-service";
 import { subscribeOutboxChanges } from "./outbox-repository";
@@ -101,6 +105,10 @@ export function SyncProvider({ children }: PropsWithChildren) {
       try {
         await uploadQueue?.process(storeId);
         const summary = await service.sync(storeId);
+        await new LocalAnalyticsRecomputationScheduler(
+          database.sqlite,
+          new SQLiteProductDateRecomputer(database.sqlite),
+        ).process(storeId);
         const snapshot = await readLocalSyncSnapshot(database.sqlite, storeId);
         setState({ ...snapshot, status: deriveStatus(snapshot) });
         return summary;

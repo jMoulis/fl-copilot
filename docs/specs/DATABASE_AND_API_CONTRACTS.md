@@ -4784,3 +4784,16 @@ IMPLEMENTATION_PLAN.md
 ```
 
 will sequence the actual development agent work.
+
+
+# M4-T11 — Published receipt synchronization contract
+
+`WASTE_RECEIPT_PUBLISH` targets a `waste_receipt_publication` aggregate with the stable receipt UUID. Its shared Zod payload contains the confirmed receipt, source metadata without a device URI, all retained lines (including explicit exclusions) and validated waste observations. One publication is immutable. A different payload for an already published receipt yields `WASTE_RECEIPT_ALREADY_PUBLISHED`; an identical payload or command retry never inserts observations twice.
+
+SQLite uses the existing `waste_receipts`, `waste_lines`, `source_documents`, `source_records`, `waste_observations`, `local_jobs` and `sync_outbox` tables. Each published observation UUID equals its source line UUID, preserving occurrence identity across devices. The local transaction commits publication and Outbox together; the same IDs are retained remotely.
+
+MongoDB collections are `wasteReceiptPublications` (aggregate serializer and synchronization version), `wasteReceipts`, `wasteLines`, `sourceRecords` and `wasteObservations`. Migration 11 initializes the aggregate's unique store/source index and receipt/line lookup indexes. Observation money and quantities use Decimal128; unknown purchase costs remain null. MongoDB's processed-command transaction stores the aggregate, entities and incremental change atomically.
+
+Incremental pull exposes a `waste_receipt_publication` UPSERT envelope. Bootstrap adds the optional `entities.wasteReceiptPublications` array for published receipts. Mobile validates aggregate ownership and lineage before inserting foreign-key dependencies, acknowledging local publication or recovering published data on another device. Source images are retained on the originating device and in private Blob storage; bootstrap does not download an image or fabricate a local file path.
+
+All participating devices need the M4-T11 client to understand the new entity type. Native acceptance must use the current build before publishing receipts.

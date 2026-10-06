@@ -388,6 +388,8 @@ export class WasteReceiptRepository {
       sourceDocumentId,
     );
     if (!receipt) throw new Error("WASTE_RECEIPT_LOCAL_DRAFT_NOT_FOUND");
+    if ((await this.getReceipt(receipt.id))?.processingStatus === "PUBLISHED")
+      return;
 
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
       for (const line of draft.lines) {
@@ -424,7 +426,8 @@ export class WasteReceiptRepository {
              arithmetic_warning_code = excluded.arithmetic_warning_code,
              match_state = excluded.match_state,
              matched_product_label = excluded.matched_product_label,
-             match_candidates_json = excluded.match_candidates_json`,
+             match_candidates_json = excluded.match_candidates_json
+           WHERE waste_lines.dirty = 0`,
           line.lineId,
           receipt.store_id,
           receipt.id,
@@ -479,6 +482,7 @@ export class WasteReceiptRepository {
   }
 
   async confirmWasteDate(receiptId: string, date: string) {
+    await this.assertEditable(receiptId);
     const parsedDate =
       wasteReceiptSchema.shape.confirmedWasteDate.safeParse(date);
     if (!parsedDate.success || parsedDate.data == null) {
@@ -500,11 +504,14 @@ export class WasteReceiptRepository {
     lineId: string,
     input: {
       rawLabel: string;
+      quantity?: string | null;
+      quantityUnit?: WasteLine["quantityUnit"];
       weight: string | null;
       unitPrice: string | null;
       totalPrice: string | null;
     },
   ) {
+    await this.assertEditable(receiptId);
     const current = await this.database.getFirstAsync<WasteLineRow>(
       `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
       lineId,
@@ -522,21 +529,29 @@ export class WasteReceiptRepository {
       },
     ]).lines[0]!;
     const validationStatus =
-      arithmetic.status === "MISMATCH" || current.match_status !== "MATCHED"
-        ? "TO_REVIEW"
-        : "PENDING";
+      current.validation_status === "EXCLUDED"
+        ? "EXCLUDED"
+        : arithmetic.status === "MISMATCH" || current.match_status !== "MATCHED"
+          ? "TO_REVIEW"
+          : "PENDING";
     await this.database.runAsync(
       `UPDATE waste_lines
-       SET raw_label = ?, weight = ?, unit_price = ?, total_price = ?,
+       SET raw_label = ?, quantity = ?, quantity_unit = ?, weight = ?, unit_price = ?, total_price = ?,
            arithmetic_status = ?, arithmetic_expected_total = ?,
            arithmetic_difference = ?, arithmetic_warning_code = ?,
            validation_status = ?, updated_at = ?, version = version + 1,
            dirty = 1, sync_state = 'LOCAL_ONLY'
        WHERE id = ? AND receipt_id = ?`,
       rawLabel,
-      input.weight,
-      input.unitPrice,
-      input.totalPrice,
+      input.quantity === undefined
+        ? current.quantity
+        : nullableDecimal(input.quantity),
+      input.quantityUnit === undefined
+        ? current.quantity_unit
+        : (input.quantityUnit ?? null),
+      nullableDecimal(input.weight),
+      nullableDecimal(input.unitPrice),
+      nullableDecimal(input.totalPrice),
       arithmetic.status,
       arithmetic.expectedTotal,
       arithmetic.absoluteDifference,
@@ -548,11 +563,29 @@ export class WasteReceiptRepository {
     );
   }
 
+  async setLineExcluded(receiptId: string, lineId: string, excluded: boolean) {
+    await this.assertEditable(receiptId);
+    await this.database.runAsync(
+      "UPDATE waste_lines SET validation_status = ?, dirty = 1, sync_state = 'LOCAL_ONLY', version = version + 1, updated_at = ? WHERE id = ? AND receipt_id = ?",
+      excluded ? "EXCLUDED" : "PENDING",
+      new Date().toISOString(),
+      lineId,
+      receiptId,
+    );
+  }
+
+  private async assertEditable(receiptId: string) {
+    const receipt = await this.getReceipt(receiptId);
+    if (!receipt || receipt.processingStatus === "PUBLISHED")
+      throw new Error("WASTE_RECEIPT_READ_ONLY");
+  }
+
   async selectProductCandidate(
     receiptId: string,
     lineId: string,
     productId: string,
   ) {
+    await this.assertEditable(receiptId);
     const row = await this.database.getFirstAsync<WasteLineRow>(
       `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
       lineId,
@@ -575,7 +608,11 @@ export class WasteReceiptRepository {
       candidate.label,
       candidate.score,
       candidate.nature,
-      row.arithmetic_status === "MISMATCH" ? "TO_REVIEW" : "PENDING",
+      row.validation_status === "EXCLUDED"
+        ? "EXCLUDED"
+        : row.arithmetic_status === "MISMATCH"
+          ? "TO_REVIEW"
+          : "PENDING",
       new Date().toISOString(),
       lineId,
       receiptId,
@@ -668,7 +705,7 @@ function assertAggregate(
   }
 }
 
-async function insertSourceDocument(
+export async function insertSourceDocument(
   database: OutboxDatabase,
   document: LocalSourceDocument,
 ) {
@@ -752,7 +789,10 @@ async function insertLocalFile(
   );
 }
 
-async function insertReceipt(database: OutboxDatabase, receipt: WasteReceipt) {
+export async function insertReceipt(
+  database: OutboxDatabase,
+  receipt: WasteReceipt,
+) {
   await database.runAsync(
     `
       INSERT INTO waste_receipts (
@@ -786,7 +826,7 @@ async function insertReceipt(database: OutboxDatabase, receipt: WasteReceipt) {
   );
 }
 
-async function insertLine(database: OutboxDatabase, line: WasteLine) {
+export async function insertLine(database: OutboxDatabase, line: WasteLine) {
   await database.runAsync(
     `
       INSERT INTO waste_lines (

@@ -117,6 +117,7 @@ export const bootstrapEntitiesSchema = z.object({
   productSubstitutions: z.array(jsonObjectSchema),
   salesObservations: z.array(jsonObjectSchema),
   wasteObservations: z.array(jsonObjectSchema),
+  wasteReceiptPublications: z.array(jsonObjectSchema).optional(),
   commercialOperations: z.array(jsonObjectSchema),
   offers: z.array(jsonObjectSchema),
   marketSignals: z.array(jsonObjectSchema),

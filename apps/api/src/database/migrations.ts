@@ -205,6 +205,29 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 11,
+    name: "initialize-waste-receipt-publication-indexes",
+    async up(database) {
+      await Promise.all([
+        database
+          .collection("wasteReceiptPublications")
+          .createIndex(
+            { storeId: 1, "publication.source.id": 1 },
+            { unique: true },
+          ),
+        database
+          .collection("wasteReceipts")
+          .createIndex({ storeId: 1, confirmedWasteDate: 1 }),
+        database
+          .collection("wasteLines")
+          .createIndex(
+            { storeId: 1, receiptId: 1, sourceLineIndex: 1 },
+            { unique: true },
+          ),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(
