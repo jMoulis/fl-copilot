@@ -4806,3 +4806,12 @@ A validated `WASTE_RECEIPT` observation may carry `productNature = UNKNOWN` and 
 The publication gate protects date, identity, source ownership/confirmation, duplicate handling, provided positive measures and arithmetic consistency. Product status, nature and unit completeness generate independent reference-quality warnings. The shared quantity resolver returns a value only for a known compatible unit; the API verifies that the observation quantity equals this interpretation, including null, and never fabricates a quantity from missing metadata.
 
 The shared publication serializer permits unknown classification while preserving identity, lineage and amount checks. Native code and API must be deployed together for this qualification policy; older pilot clients cannot consume newly qualified aggregates until updated. Existing nullable SQLite/MongoDB observation fields require no migration.
+
+
+## Receipt cashier metadata
+
+Receipt fields are optional `detectedCashierNumber`, `confirmedCashierNumber` (nullable strings up to 64 characters) and `cashierNumberConfirmedAt` (nullable ISO timestamp). SQLite migration 15 persists `detected_cashier_number`, `confirmed_cashier_number` and `cashier_number_confirmed_at` as TEXT. A confirmation timestamp distinguishes an explicit empty human value from an unconfirmed AI proposal.
+
+Vision schema `waste-receipt.vision.v2` requires nullable `cashierNumber`, `cashierNumberConfidence` and `cashierNumberRegion` evidence. The review draft adds optional `detectedCashierNumber`, allowing legacy extraction output to remain readable. The cashier identifier is never converted to a number or used as a KPI input.
+
+Before publication, confirmation remains local review state. The immutable publication aggregate carries the receipt metadata with its existing Outbox command, transaction and incremental sync policy. The published receipt stores it in MongoDB, and the aggregate serializer preserves text and ISO confirmation timestamps for pull/bootstrap. Published metadata is read-only in this increment; no automatic re-extraction or metadata backfill is performed.

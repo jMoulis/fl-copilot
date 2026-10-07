@@ -427,6 +427,11 @@ describe("Waste receipt atomic publication", () => {
   });
   it("acknowledges and restores published receipts via pull and a fresh-device bootstrap", async () => {
     const { db, adapter, publisher } = await setup();
+    await new WasteReceiptRepository(adapter).confirmCashierNumber(
+      receiptId,
+      "000123",
+      timestamp,
+    );
     await publisher.publish(input());
     const p = payload(db);
     const entity = { id: receiptId, storeId, remoteVersion: 1, publication: p };
@@ -497,6 +502,12 @@ describe("Waste receipt atomic publication", () => {
       serverTime: timestamp,
     });
     await applyBootstrap(second.adapter, storeId, bootstrap);
+    expect(
+      await new WasteReceiptRepository(second.adapter).getReceipt(receiptId),
+    ).toMatchObject({
+      confirmedCashierNumber: "000123",
+      cashierNumberConfirmedAt: timestamp,
+    });
     expect(
       second.db
         .prepare("SELECT COUNT(*) AS count FROM waste_observations")
@@ -663,6 +674,7 @@ integrationIt.each([false, true])(
         local.db.exec(
           "UPDATE products SET nature = 'UNKNOWN', sales_unit = 'UNKNOWN', status = 'TO_REVIEW'",
         );
+      await local.repo.confirmCashierNumber(receiptId, "000123", timestamp);
       await local.publisher.publish(input());
       const p = payload(local.db);
       const db = await remote.getDb();
@@ -750,6 +762,14 @@ integrationIt.each([false, true])(
           { rawObservationDays: 90 },
         );
         await applyBootstrap(second.adapter, storeId, snapshot);
+        expect(
+          await new WasteReceiptRepository(second.adapter).getReceipt(
+            receiptId,
+          ),
+        ).toMatchObject({
+          confirmedCashierNumber: "000123",
+          cashierNumberConfirmedAt: timestamp,
+        });
         expect(
           second.db
             .prepare("SELECT COUNT(*) AS count FROM waste_observations")

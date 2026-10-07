@@ -44,10 +44,35 @@ afterEach(() => {
 });
 
 describe("local SQLite migrations", () => {
+  it("upgrades existing v14 receipts without losing their date or pending work", async () => {
+    const { adapter, database } = openTemporaryDatabase();
+    await runLocalMigrations(adapter, localMigrations.slice(0, 14));
+    database.exec(`INSERT INTO waste_receipts (id, store_id, confirmed_waste_date, processing_status, ai_status, duplicate_status, version, created_at, updated_at, sync_state, dirty) VALUES ('legacy-receipt', 'legacy-store', '2026-09-23', 'CAPTURED', 'PENDING', 'NOT_DUPLICATE', 1, '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z', 'LOCAL_ONLY', 1);
+      INSERT INTO local_jobs (id, type, payload_json, status, created_at, updated_at) VALUES ('legacy-job', 'SOURCE_UPLOAD_AND_REGISTER', '{}', 'PENDING', '2026-10-01T00:00:00Z', '2026-10-01T00:00:00Z');`);
+    await runLocalMigrations(adapter);
+    expect(
+      database
+        .prepare(
+          "SELECT confirmed_waste_date, detected_cashier_number, confirmed_cashier_number FROM waste_receipts WHERE id = 'legacy-receipt'",
+        )
+        .get(),
+    ).toEqual({
+      confirmed_waste_date: "2026-09-23",
+      detected_cashier_number: null,
+      confirmed_cashier_number: null,
+    });
+    expect(
+      database
+        .prepare("SELECT status FROM local_jobs WHERE id = 'legacy-job'")
+        .get(),
+    ).toEqual({ status: "PENDING" });
+    database.close();
+  });
+
   it("creates the foundation schema and exposes its version", async () => {
     const { adapter, database } = openTemporaryDatabase();
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(14);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
 
     const tables = database
       .prepare(
@@ -77,12 +102,12 @@ describe("local SQLite migrations", () => {
       "waste_observations",
       "waste_receipts",
     ]);
-    expect(await getLocalSchemaVersion(adapter)).toBe(14);
+    expect(await getLocalSchemaVersion(adapter)).toBe(15);
     expect(
       database
         .prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'")
         .get(),
-    ).toEqual({ value: "14" });
+    ).toEqual({ value: "15" });
     expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({
       foreign_keys: 1,
     });
@@ -118,7 +143,7 @@ describe("local SQLite migrations", () => {
 
     const reopenedDatabase = new DatabaseSync(path);
     const reopenedAdapter = new NodeSQLiteAdapter(reopenedDatabase);
-    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(14);
+    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(15);
     expect(
       reopenedDatabase
         .prepare("SELECT id, status FROM local_jobs WHERE id = ?")
@@ -154,7 +179,7 @@ describe("local SQLite migrations", () => {
         "2026-09-27T10:00:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(14);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
     expect(
       database
         .prepare("SELECT id, checksum FROM local_files WHERE id = ?")
@@ -218,7 +243,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:02:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(14);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
     expect(
       database
         .prepare(
@@ -289,7 +314,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:03:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(14);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
     expect(
       database
         .prepare(
@@ -341,14 +366,14 @@ describe("local SQLite migrations", () => {
       runLocalMigrations(adapter, [
         ...localMigrations,
         {
-          version: 15,
+          version: 16,
           name: "invalid-migration",
           sql: "CREATE TABLE broken (",
         },
       ]),
-    ).rejects.toThrow("Local migration 15 (invalid-migration) failed");
+    ).rejects.toThrow("Local migration 16 (invalid-migration) failed");
 
-    expect(await getLocalSchemaVersion(adapter)).toBe(14);
+    expect(await getLocalSchemaVersion(adapter)).toBe(15);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
     ).toEqual({ count: 1 });

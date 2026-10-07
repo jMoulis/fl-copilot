@@ -610,6 +610,15 @@ export const localMigrations: readonly LocalMigration[] = [
         ON waste_receipts (duplicate_candidate_source_document_id);
     `,
   },
+  {
+    version: 15,
+    name: "add-waste-receipt-cashier-metadata",
+    sql: `
+      ALTER TABLE waste_receipts ADD COLUMN detected_cashier_number TEXT;
+      ALTER TABLE waste_receipts ADD COLUMN confirmed_cashier_number TEXT;
+      ALTER TABLE waste_receipts ADD COLUMN cashier_number_confirmed_at TEXT;
+    `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -50,6 +50,7 @@ describe("waste receipt draft reader", () => {
     expect(second).toEqual(first);
     expect(first).toMatchObject({
       detectedReceiptDate: "2026-09-26",
+      detectedCashierNumber: "000007",
       extractionModelVersion: "gpt-5.4-mini",
       arithmeticValidatorVersion: "receipt-arithmetic-v1",
       productMatcherVersion: "product-matcher-v1",
@@ -105,6 +106,7 @@ function readyDatabase() {
     resolvedModel: "gpt-5.4-mini",
     output: {
       detectedReceiptDate: "2026-09-26",
+      cashierNumber: "000007",
       lines: [
         {
           sourceLineIndex: 0,

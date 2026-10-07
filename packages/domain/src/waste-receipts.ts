@@ -71,6 +71,8 @@ export const wasteLineQuantityUnitSchema = z.enum([
   "UNKNOWN",
 ]);
 
+export const cashierNumberSchema = z.string().trim().min(1).max(64);
+
 export const wasteReceiptSchema = z.object({
   id: idSchema,
   storeId: idSchema,
@@ -79,6 +81,9 @@ export const wasteReceiptSchema = z.object({
   captureDate: nullableTimestampSchema,
   detectedReceiptDate: nullableDateSchema,
   confirmedWasteDate: nullableDateSchema,
+  detectedCashierNumber: cashierNumberSchema.nullable().optional(),
+  confirmedCashierNumber: cashierNumberSchema.nullable().optional(),
+  cashierNumberConfirmedAt: nullableTimestampSchema,
   processingStatus: wasteReceiptProcessingStatusSchema,
   aiStatus: wasteReceiptAiStatusSchema,
   duplicateStatus: wasteReceiptDuplicateStatusSchema,

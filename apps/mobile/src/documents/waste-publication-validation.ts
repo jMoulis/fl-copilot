@@ -14,7 +14,8 @@ export type WastePublicationField =
   | "unitPrice"
   | "totalPrice"
   | "save"
-  | "rawLabel";
+  | "rawLabel"
+  | "cashierNumber";
 export interface WastePublicationIssue {
   lineId?: string;
   lineIndex?: number;

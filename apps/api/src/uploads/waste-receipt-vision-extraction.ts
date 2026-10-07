@@ -9,7 +9,7 @@ import {
   type ReceiptImageStorage,
 } from "./waste-receipt-image-normalization.js";
 
-export const WASTE_RECEIPT_VISION_SCHEMA_VERSION = "waste-receipt.vision.v1";
+export const WASTE_RECEIPT_VISION_SCHEMA_VERSION = "waste-receipt.vision.v2";
 
 const confidenceSchema = z
   .object({
@@ -35,6 +35,9 @@ export const wasteReceiptVisionOutputSchema = z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/)
       .nullable(),
+    cashierNumber: z.string().min(1).max(64).nullable(),
+    cashierNumberConfidence: z.number().min(0).max(1).nullable(),
+    cashierNumberRegion: sourceRegionSchema.nullable(),
     lines: z
       .array(
         z
@@ -108,6 +111,7 @@ Search carefully for the receipt date in the footer, near the bottom of the tick
 French printed dates use day/month/year (DD/MM/YYYY, sometimes DD/MM/YY), never month/day/year. Establish the full year only when supported by the printed evidence; do not guess a missing century. For example 07/10/2026 means 7 October 2026; output 2026-10-07.
 Normalize a clearly printed date to YYYY-MM-DD. Do not substitute the capture/upload date or confuse cashier identifiers, receipt numbers or times with the business date.
 If the footer is cropped, unreadable, contains conflicting dates, or the year cannot be established reliably, return null instead of guessing.
+Find the cashier number in the receipt footer. In the pilot format it begins with 000; this is a hint, never a reason to add missing zeroes or truncate digits. Preserve its complete printed text and every leading zero; it is an identifier, never a numeric quantity. Do not substitute a till/register number, transaction number, EAN or receipt number. If the cashier identifier is unclear or absent return null, with null confidence/region. Otherwise provide confidence and its image region when reliable.
 sourceRegion coordinates are fractions of the full image between 0 and 1, or null when a reliable region cannot be provided.`;
 
 export function createOpenAIReceiptVisionProvider(

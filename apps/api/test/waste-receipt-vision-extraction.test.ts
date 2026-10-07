@@ -3,6 +3,7 @@ import type { Db } from "mongodb";
 import type { DatabaseService } from "../src/database/types.js";
 import {
   WASTE_RECEIPT_VISION_SCHEMA_VERSION,
+  wasteReceiptVisionOutputSchema,
   createMongoWasteReceiptVisionExtractionService,
   createOpenAIReceiptVisionProvider,
   type ReceiptVisionProvider,
@@ -62,6 +63,9 @@ const image = new Uint8Array([1, 2, 3]);
 
 const validOutput = {
   detectedReceiptDate: "2026-10-04",
+  cashierNumber: "000123",
+  cashierNumberConfidence: 0.95,
+  cashierNumberRegion: { x: 0.1, y: 0.9, width: 0.5, height: 0.05 },
   lines: [
     {
       sourceLineIndex: 0,
@@ -83,6 +87,26 @@ const validOutput = {
 };
 
 describe("waste receipt Vision extraction", () => {
+  it("preserves cashier identifiers as text and leaves absent cashier evidence nullable", () => {
+    expect(
+      wasteReceiptVisionOutputSchema.parse(validOutput).cashierNumber,
+    ).toBe("000123");
+    expect(
+      wasteReceiptVisionOutputSchema.safeParse({
+        ...validOutput,
+        cashierNumber: 123,
+      }).success,
+    ).toBe(false);
+    expect(
+      wasteReceiptVisionOutputSchema.parse({
+        ...validOutput,
+        cashierNumber: null,
+        cashierNumberConfidence: null,
+        cashierNumberRegion: null,
+      }).cashierNumber,
+    ).toBeNull();
+  });
+
   it("persists schema-valid evidence once and marks it ready for review", async () => {
     const database = readyDatabase();
     let reads = 0;
