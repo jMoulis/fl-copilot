@@ -8,6 +8,8 @@ const environmentSchema = z.object({
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
     .default("info"),
+  INNGEST_EVENT_KEY: z.string().trim().min(1).optional(),
+  INNGEST_SIGNING_KEY: z.string().trim().min(1).optional(),
   SENTRY_DSN: z.string().url().optional(),
   SENTRY_ENVIRONMENT: z.string().trim().min(1).optional(),
   SENTRY_TEST_ROUTE_ENABLED: z

@@ -1058,3 +1058,25 @@ describe("synchronization bootstrap route", () => {
     expect(response.statusCode).toBe(400);
   });
 });
+
+describe("signed Inngest PDF workflow endpoint", () => {
+  it("exposes the workflow handler but refuses unsigned invocations", async () => {
+    const app = createApp("connected", {
+      INNGEST_EVENT_KEY: "test-event-key",
+      INNGEST_SIGNING_KEY: `signkey-prod-${"a".repeat(64)}`,
+    });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/inngest",
+      payload: { event: { name: "commercial/pdf.uploaded", data: {} } },
+    });
+    expect([401, 403]).toContain(response.statusCode);
+  });
+  it("leaves workflow execution disabled when keys are absent", async () => {
+    const app = createApp();
+    expect(
+      (await app.inject({ method: "POST", url: "/api/inngest", payload: {} }))
+        .statusCode,
+    ).toBe(404);
+  });
+});

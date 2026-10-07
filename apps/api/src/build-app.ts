@@ -1,3 +1,5 @@
+import { serve as serveInngest } from "inngest/fastify";
+import { createCommercialInngestWorkflows } from "./commercial/inngest-workflows.js";
 import { randomUUID } from "node:crypto";
 import Fastify from "fastify";
 import { z } from "zod";
@@ -94,6 +96,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
   const syncBootstrap =
     dependencies.syncBootstrap ??
     createMongoSyncBootstrapService(dependencies.database);
+  const commercialWorkflows =
+    config.INNGEST_EVENT_KEY && config.INNGEST_SIGNING_KEY
+      ? createCommercialInngestWorkflows(
+          dependencies.database,
+          config.INNGEST_EVENT_KEY,
+          config.INNGEST_SIGNING_KEY,
+        )
+      : undefined;
   const sourceUploads =
     dependencies.sourceUploads ??
     createMongoSourceUploadService(
@@ -117,6 +127,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       ),
       createMongoWasteReceiptProductMatchingService(dependencies.database),
       createMongoWasteReceiptDraftReader(dependencies.database),
+      commercialWorkflows?.dispatch,
     );
   const importVerification =
     dependencies.importVerification ??
@@ -141,6 +152,18 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     genReqId: () => randomUUID(),
     bodyLimit: 1024 * 1024,
   }).withTypeProvider<ZodTypeProvider>();
+  if (commercialWorkflows)
+    app
+      .withTypeProvider()
+      .route<{ Querystring: Record<string, string | undefined> }>({
+        method: ["GET", "POST", "PUT"],
+        url: "/api/inngest",
+        handler: serveInngest({
+          client: commercialWorkflows.client,
+          functions: commercialWorkflows.functions,
+          servePath: "/api/inngest",
+        }),
+      });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.addHook("onClose", async () => {

@@ -56,3 +56,23 @@ Native acceptance after merge/build:
 2. In `Ma semaine`, confirm `Document envoyé` and `Analyse commerciale en attente`.
 3. Import an already-downloaded PDF offline, close/reopen, then reconnect or choose `Envoyer le PDF` / `Réessayer l’envoi`.
 4. A confirmed PDF remains listed and does not enter another upload cycle. Offers and page text are not expected yet.
+
+## M5-T02 native acceptance
+
+The pilot confirmed `Document envoyé` and the subordinate analysis-pending message for the retained weekly PDF. Its pending processing registration was verified in MongoDB. Transfer is accepted; a confirmed transfer is not an extracted or validated commercial plan.
+
+## M5-T03 — Deterministic PDF pages and Inngest execution
+
+- Inngest was provisioned and connected to the existing `fl-copilot` Vercel project on the Hobby (Free) plan after the user accepted Marketplace terms. `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` remain server-side; local environment snapshots and project linkage are ignored by Git.
+- The signed `/api/inngest` endpoint is hosted by the existing Fastify/Vercel handler. Both keys are required to enable it. Unsigned execution is rejected; this endpoint uses Inngest signatures rather than mobile bearer authentication.
+- Upload completion sends a source/store identity event with a stable ID after durable job registration. No PDF bytes, extracted text or commercial values are placed in event or step result payloads. A five-minute Inngest recovery schedule picks up previously registered or interrupted jobs, including the pilot's existing file.
+- Event execution is limited to two concurrent extraction steps; recovery is limited to one coordinator. Each recovery pass selects at most five eligible sources. Processing uses a five-minute CAS lease, per-attempt token, and bounded backoff for temporary failures. Expired claims are recoverable; stale claims cannot overwrite newer job completion.
+- `pdfjs-dist` 6.4.299 reads immutable original bytes remotely. The processor verifies the registered SHA-256 checksum and source/store identity before extraction. Limits are 100 MiB, 100 pages, 200,000 text characters and 20,000 spans per page, and 3,000,000 total text characters. Full raster rendering and OCR are not implemented here.
+- Every page retains its one-based source number, text, dimensions, rotation and ordered text spans with original PDF transforms/direction. The text is source evidence, not normalized offers: prices, strict `<`, dates and column spans are not interpreted as business mechanics.
+- A page without extractable text remains present with `NO_EXTRACTABLE_TEXT`. Scanned image text is not guessed. Encrypted, malformed, over-limit or mismatched sources receive explicit job error codes; temporary storage/database failures retain retryable intent.
+- `commercialDocumentPages` is insert-only, with stable UUIDs retained on retries and unique source/parser/page identity enforced by Mongo migration 13. Parser identity is `pdfjs.text.v1.6.4.299`. Partial writes do not duplicate pages on recovery. Originals, source metadata and published business data are not modified.
+- Successful jobs become `TEXT_READY` / `AI_EXTRACTION`, with page and text-page counts. This is the boundary for M5-T04; no AI extraction, offer publication or official KPI change occurs yet.
+
+Verification: actual synthetic PDF parsing (literal text, French accents/euro symbols/decimal commas, geometry, blank page, invalid source and page limits); signed route rejection; strict TypeScript/lint/repository tests; real MongoDB concurrent claims, checksum failure, expired-lease restart, stable pages and transient retry; API and iOS/Android exports. The existing real-Atlas concurrent transaction test uses a 20-second budget rather than the unit-test default of five seconds.
+
+Cloud acceptance remains pending after merging/deploying this PR: verify that Inngest registers both functions and processes the retained pilot PDF to `TEXT_READY`, or returns a specific source-reading error. No native UI change is included; the current app continues to say analysis pending because commercial offer extraction is still subsequent work. No reimport or native rebuild is required just to execute this backend stage.
