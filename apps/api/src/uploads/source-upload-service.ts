@@ -142,6 +142,10 @@ export function createMongoSourceUploadService(
   receiptArithmetic?: WasteReceiptArithmeticValidationService,
   receiptProductMatching?: WasteReceiptProductMatchingService,
   receiptDrafts?: WasteReceiptDraftReader,
+  dispatchCommercialPdf?: (
+    storeId: string,
+    sourceDocumentId: string,
+  ) => Promise<void>,
 ): SourceUploadService {
   return {
     async init(storeId, userId, input) {
@@ -268,6 +272,8 @@ export function createMongoSourceUploadService(
           upload,
         );
         const jobId = await queueCommercialDocument(database, upload, now());
+        if (jobId && dispatchCommercialPdf)
+          await dispatchCommercialPdf(storeId, upload.sourceDocumentId);
         return confirmed(upload, draft, duplicate, jobId);
       }
 
@@ -317,6 +323,8 @@ export function createMongoSourceUploadService(
       );
       const duplicate = await findExactWasteReceiptDuplicate(database, upload);
       const jobId = await queueCommercialDocument(database, upload, now());
+      if (jobId && dispatchCommercialPdf)
+        await dispatchCommercialPdf(storeId, upload.sourceDocumentId);
       return confirmed(upload, draft, duplicate, jobId);
     },
   };

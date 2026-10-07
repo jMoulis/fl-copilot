@@ -245,6 +245,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 13,
+    name: "initialize-commercial-document-page-indexes",
+    async up(database) {
+      await database
+        .collection("commercialDocumentPages")
+        .createIndex(
+          { storeId: 1, sourceDocumentId: 1, parserVersion: 1, pageNumber: 1 },
+          { unique: true },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

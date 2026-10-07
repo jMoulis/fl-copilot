@@ -17,3 +17,6 @@ apps/mobile/android/
 
 # User-owned pilot workbooks and receipt photos stay local; commit only explicitly anonymized fixtures elsewhere.
 /docs/files_examples/
+
+# Local Vercel project linkage and build output.
+.vercel/

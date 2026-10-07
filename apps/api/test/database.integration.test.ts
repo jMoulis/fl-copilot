@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { createCommercialPdfPageProcessor } from "../src/commercial/pdf-page-processing.js";
+import { commercialPdfFixture } from "./fixtures/commercial-pdf.js";
 import {
   createMongoSourceUploadService,
   type SourceBlobMetadata,
@@ -125,6 +128,171 @@ describeWithMongo("MongoDB infrastructure", () => {
       checksum: input.checksum,
     });
   }, 15_000);
+
+  async function pdfSource() {
+    const db = await database.getDb();
+    const storeId = randomUUID();
+    const sourceDocumentId = randomUUID();
+    const bytes = commercialPdfFixture(["Semaine 42: Tomate < 2.99 EUR", ""]);
+    const checksum = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+    const identity = {
+      _id: sourceDocumentId,
+      storeId,
+      sourceDocumentId,
+      checksum,
+      objectKey: `private/${sourceDocumentId}.pdf`,
+    };
+    await db
+      .collection<{ _id: string; [key: string]: unknown }>("sourceDocuments")
+      .insertOne({
+        ...identity,
+        sourceType: "WEEKLY_COMMERCIAL_PDF",
+        remoteUploadStatus: "CONFIRMED",
+      });
+    await db
+      .collection<{ _id: string; [key: string]: unknown }>(
+        "commercialDocumentJobs",
+      )
+      .insertOne({
+        ...identity,
+        pipelineVersion: "commercial-pdf.v1",
+        status: "PENDING",
+        stage: "TEXT_EXTRACTION",
+        attemptCount: 0,
+        createdAt: new Date(),
+      });
+    return { db, storeId, sourceDocumentId, bytes };
+  }
+  it("claims one source concurrently, preserves page references, and recovers an expired lease without duplicating pages", async () => {
+    const { db, storeId, sourceDocumentId, bytes } = await pdfSource();
+    let reads = 0;
+    const processor = createCommercialPdfPageProcessor(database, undefined, {
+      read: async () => {
+        reads++;
+        return bytes;
+      },
+    });
+    expect(
+      await processor.process(randomUUID(), sourceDocumentId),
+    ).toMatchObject({ status: "SKIPPED" });
+    const results = await Promise.all([
+      processor.process(storeId, sourceDocumentId),
+      processor.process(storeId, sourceDocumentId),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([
+      "SKIPPED",
+      "TEXT_READY",
+    ]);
+    expect(reads).toBe(1);
+    const pages = await db
+      .collection("commercialDocumentPages")
+      .find({ storeId, sourceDocumentId })
+      .sort({ pageNumber: 1 })
+      .toArray();
+    expect(pages).toHaveLength(2);
+    expect(pages[0]).toMatchObject({
+      pageNumber: 1,
+      text: "Semaine 42: Tomate < 2.99 EUR",
+    });
+    expect(pages[1]).toMatchObject({
+      pageNumber: 2,
+      text: "",
+      warnings: ["NO_EXTRACTABLE_TEXT"],
+    });
+    expect(
+      await db
+        .collection("commercialDocumentJobs")
+        .findOne({ storeId, sourceDocumentId }),
+    ).toMatchObject({
+      status: "TEXT_READY",
+      stage: "AI_EXTRACTION",
+      pageCount: 2,
+      textPageCount: 1,
+    });
+    await db.collection("commercialDocumentJobs").updateOne(
+      { storeId, sourceDocumentId },
+      {
+        $set: {
+          status: "PROCESSING",
+          stage: "TEXT_EXTRACTION",
+          leaseToken: "interrupted",
+          leaseExpiresAt: new Date(0),
+        },
+      },
+    );
+    expect(await processor.process(storeId, sourceDocumentId)).toMatchObject({
+      status: "TEXT_READY",
+    });
+    expect(
+      await db
+        .collection("commercialDocumentPages")
+        .find({ storeId, sourceDocumentId })
+        .sort({ pageNumber: 1 })
+        .toArray(),
+    ).toEqual(pages);
+  }, 20_000);
+  it("rejects changed binary bytes before storing page text", async () => {
+    const { db, storeId, sourceDocumentId } = await pdfSource();
+    const processor = createCommercialPdfPageProcessor(database, undefined, {
+      read: async () => new TextEncoder().encode("changed"),
+    });
+    expect(await processor.process(storeId, sourceDocumentId)).toMatchObject({
+      status: "FAILED",
+      errorCode: "PDF_SOURCE_CHECKSUM_MISMATCH",
+    });
+    expect(
+      await db
+        .collection("commercialDocumentPages")
+        .countDocuments({ storeId, sourceDocumentId }),
+    ).toBe(0);
+    expect(
+      await db
+        .collection("commercialDocumentJobs")
+        .findOne({ storeId, sourceDocumentId }),
+    ).toMatchObject({
+      status: "FAILED",
+      errorCode: "PDF_SOURCE_CHECKSUM_MISMATCH",
+    });
+  });
+  it("backs off a temporary storage failure and recovers using the same source", async () => {
+    const { db, storeId, sourceDocumentId, bytes } = await pdfSource();
+    let current = new Date();
+    let fail = true;
+    const processor = createCommercialPdfPageProcessor(
+      database,
+      undefined,
+      {
+        read: async () => {
+          if (fail) {
+            fail = false;
+            throw new Error("temporary storage failure");
+          }
+          return bytes;
+        },
+      },
+      () => current,
+    );
+    await expect(processor.process(storeId, sourceDocumentId)).rejects.toThrow(
+      "PDF_PROCESSING_TEMPORARILY_UNAVAILABLE",
+    );
+    expect(
+      await db
+        .collection("commercialDocumentJobs")
+        .findOne({ storeId, sourceDocumentId }),
+    ).toMatchObject({
+      status: "PENDING",
+      errorCode: "PDF_PROCESSING_TEMPORARILY_UNAVAILABLE",
+    });
+    current = new Date(current.getTime() + 6 * 60_000);
+    expect(
+      (await processor.pending()).some(
+        (item) => item.sourceDocumentId === sourceDocumentId,
+      ),
+    ).toBe(true);
+    expect(await processor.process(storeId, sourceDocumentId)).toMatchObject({
+      status: "TEXT_READY",
+    });
+  }, 20_000);
 
   it("records the infrastructure migration exactly once", async () => {
     const mongoDatabase = await database.getDb();
@@ -299,6 +467,7 @@ describeWithMongo("MongoDB infrastructure", () => {
         .findOne({ _id: storeId });
       expect(counter?.nextSequence.toString()).toBe("10");
     },
+    20_000, // Real Atlas transaction retries can exceed the default 5-second unit-test budget.
   );
 
   itWithMongoTransactions(
