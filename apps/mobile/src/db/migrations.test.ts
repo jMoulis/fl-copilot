@@ -72,7 +72,7 @@ describe("local SQLite migrations", () => {
   it("creates the foundation schema and exposes its version", async () => {
     const { adapter, database } = openTemporaryDatabase();
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(16);
 
     const tables = database
       .prepare(
@@ -82,6 +82,8 @@ describe("local SQLite migrations", () => {
       .map((row) => row.name);
     expect(tables).toEqual([
       "app_metadata",
+      "commercial_review_decisions",
+      "commercial_review_pages",
       "department_daily_performance",
       "import_reconciliations",
       "import_verification_conflicts",
@@ -102,12 +104,12 @@ describe("local SQLite migrations", () => {
       "waste_observations",
       "waste_receipts",
     ]);
-    expect(await getLocalSchemaVersion(adapter)).toBe(15);
+    expect(await getLocalSchemaVersion(adapter)).toBe(16);
     expect(
       database
         .prepare("SELECT value FROM app_metadata WHERE key = 'schema_version'")
         .get(),
-    ).toEqual({ value: "15" });
+    ).toEqual({ value: "16" });
     expect(database.prepare("PRAGMA foreign_keys").get()).toEqual({
       foreign_keys: 1,
     });
@@ -143,7 +145,7 @@ describe("local SQLite migrations", () => {
 
     const reopenedDatabase = new DatabaseSync(path);
     const reopenedAdapter = new NodeSQLiteAdapter(reopenedDatabase);
-    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(15);
+    await expect(runLocalMigrations(reopenedAdapter)).resolves.toBe(16);
     expect(
       reopenedDatabase
         .prepare("SELECT id, status FROM local_jobs WHERE id = ?")
@@ -179,7 +181,7 @@ describe("local SQLite migrations", () => {
         "2026-09-27T10:00:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(16);
     expect(
       database
         .prepare("SELECT id, checksum FROM local_files WHERE id = ?")
@@ -243,7 +245,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:02:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(16);
     expect(
       database
         .prepare(
@@ -314,7 +316,7 @@ describe("local SQLite migrations", () => {
         "2026-09-16T10:03:00.000Z",
       );
 
-    await expect(runLocalMigrations(adapter)).resolves.toBe(15);
+    await expect(runLocalMigrations(adapter)).resolves.toBe(16);
     expect(
       database
         .prepare(
@@ -366,14 +368,14 @@ describe("local SQLite migrations", () => {
       runLocalMigrations(adapter, [
         ...localMigrations,
         {
-          version: 16,
+          version: 17,
           name: "invalid-migration",
           sql: "CREATE TABLE broken (",
         },
       ]),
-    ).rejects.toThrow("Local migration 16 (invalid-migration) failed");
+    ).rejects.toThrow("Local migration 17 (invalid-migration) failed");
 
-    expect(await getLocalSchemaVersion(adapter)).toBe(15);
+    expect(await getLocalSchemaVersion(adapter)).toBe(16);
     expect(
       database.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get(),
     ).toEqual({ count: 1 });

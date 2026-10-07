@@ -126,6 +126,9 @@ importers:
       '@fl-copilot/api-client':
         specifier: workspace:*
         version: link:../../packages/api-client
+      '@fl-copilot/commercial-core':
+        specifier: workspace:*
+        version: link:../../packages/commercial-core
       '@fl-copilot/domain':
         specifier: workspace:*
         version: link:../../packages/domain

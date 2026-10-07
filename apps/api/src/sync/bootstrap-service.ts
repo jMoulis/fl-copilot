@@ -1,3 +1,10 @@
+import {
+  registerCommercialReviewPages,
+  serializeCommercialReviewPage,
+  serializeCommercialReviewDecision,
+  type ReviewPageDocument,
+  type ReviewDecisionDocument,
+} from "../commercial/review-sync.js";
 import { randomUUID } from "node:crypto";
 import { Long } from "mongodb";
 import {
@@ -40,6 +47,8 @@ export function createMongoSyncBootstrapService(
 ): SyncBootstrapService {
   return {
     async bootstrap(store, query) {
+      if (query.commercialReview === "true")
+        await registerCommercialReviewPages(database, store.storeId);
       const mongoDatabase = await database.getDb();
       const session = mongoDatabase.client.startSession();
       let response: BootstrapResponse | undefined;
@@ -86,6 +95,22 @@ export function createMongoSyncBootstrapService(
               >("wasteReceiptPublications")
               .find({ storeId: store.storeId }, { session })
               .toArray();
+            const reviewPages =
+              query.commercialReview === "true"
+                ? await mongoDatabase
+                    .collection<ReviewPageDocument>("commercialReviewPages")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
+            const reviewDecisions =
+              query.commercialReview === "true"
+                ? await mongoDatabase
+                    .collection<ReviewDecisionDocument>(
+                      "commercialReviewDecisions",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const sequence = counter?.nextSequence ?? Long.ZERO;
             response = {
               protocolVersion: SYNC_PROTOCOL_VERSION,
@@ -119,6 +144,16 @@ export function createMongoSyncBootstrapService(
                   remoteVersion: p.remoteVersion,
                   publication: p.publication,
                 })),
+                ...(query.commercialReview === "true"
+                  ? {
+                      commercialReviewPages: reviewPages.map(
+                        serializeCommercialReviewPage,
+                      ),
+                      commercialReviewDecisions: reviewDecisions.map(
+                        serializeCommercialReviewDecision,
+                      ),
+                    }
+                  : {}),
                 commercialOperations: [],
                 offers: [],
                 marketSignals: [],

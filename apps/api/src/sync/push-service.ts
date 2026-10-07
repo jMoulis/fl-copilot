@@ -1,3 +1,4 @@
+import { applyCommercialReviewCommand } from "../commercial/review-sync.js";
 import type {
   ApiErrorDto,
   SyncCommand,
@@ -107,6 +108,14 @@ async function applyCommand(
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
 ) {
+  if (command.type === "COMMERCIAL_TRANSCRIPTION_REVIEW")
+    return applyCommercialReviewCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
   if (command.type === "WASTE_RECEIPT_PUBLISH")
     return applyWastePublicationCommand(
       context,

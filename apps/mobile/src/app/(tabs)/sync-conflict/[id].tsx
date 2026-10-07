@@ -1,3 +1,4 @@
+import { commercialReviewDecisionSchema } from "@fl-copilot/sync-contracts";
 import { useState } from "react";
 import { randomUUID } from "expo-crypto";
 import { useLocalDatabase } from "@/providers/database-provider";
@@ -25,6 +26,10 @@ export default function SyncConflictDetailScreen() {
   const { syncNow } = useSync();
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string>();
+  const review =
+    conflict?.entityType === "commercial_review_decision"
+      ? commercialReviewDecisionSchema.safeParse(conflict.localPayload)
+      : null;
 
   return (
     <AppScreen>
@@ -66,6 +71,16 @@ export default function SyncConflictDetailScreen() {
           </SectionCard>
 
           <SectionCard title="Actions autorisées">
+            {review?.success ? (
+              <SecondaryButton
+                label="Comparer dans le document commercial"
+                onPress={() =>
+                  router.push(
+                    `/commercial-review/${review.data.sourceDocumentId}`,
+                  )
+                }
+              />
+            ) : null}
             {conflict.entityType === "product_alias" ? (
               <SecondaryButton
                 label={

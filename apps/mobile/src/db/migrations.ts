@@ -619,6 +619,14 @@ export const localMigrations: readonly LocalMigration[] = [
       ALTER TABLE waste_receipts ADD COLUMN cashier_number_confirmed_at TEXT;
     `,
   },
+  {
+    version: 16,
+    name: "add-commercial-extraction-review",
+    sql: `CREATE TABLE commercial_review_pages (id TEXT PRIMARY KEY NOT NULL, store_id TEXT NOT NULL, source_document_id TEXT NOT NULL, page_number INTEGER NOT NULL, payload_json TEXT NOT NULL, remote_version INTEGER NOT NULL);
+    CREATE INDEX idx_commercial_review_sources ON commercial_review_pages(store_id,source_document_id,page_number);
+    CREATE TABLE commercial_review_decisions (id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,page_id TEXT NOT NULL,source_block_index INTEGER NOT NULL,payload_json TEXT NOT NULL,remote_version INTEGER,sync_state TEXT NOT NULL);
+    CREATE INDEX idx_commercial_review_decisions ON commercial_review_decisions(store_id,page_id,source_block_index);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

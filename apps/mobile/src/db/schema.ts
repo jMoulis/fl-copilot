@@ -551,7 +551,29 @@ export const productAliases = sqliteTable(
   ],
 );
 
+export const commercialReviewPages = sqliteTable("commercial_review_pages", {
+  id: text("id").primaryKey(),
+  storeId: text("store_id").notNull(),
+  sourceDocumentId: text("source_document_id").notNull(),
+  pageNumber: integer("page_number").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  remoteVersion: integer("remote_version").notNull(),
+});
+export const commercialReviewDecisions = sqliteTable(
+  "commercial_review_decisions",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    pageId: text("page_id").notNull(),
+    sourceBlockIndex: integer("source_block_index").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    remoteVersion: integer("remote_version"),
+    syncState: text("sync_state").notNull(),
+  },
+);
 export const localSchema = {
+  commercialReviewPages,
+  commercialReviewDecisions,
   appMetadata,
   syncInboxState,
   syncOutbox,

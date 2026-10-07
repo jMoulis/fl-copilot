@@ -1,3 +1,4 @@
+import { applyCommercialReviewEntity } from "../commercial/review-repository";
 import { applyWastePublication } from "../documents/waste-receipt-publication";
 import {
   SYNC_PROTOCOL_VERSION,
@@ -14,6 +15,29 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (
+        ["commercial_review_page", "commercial_review_decision"].includes(
+          change.entityType,
+        )
+      ) {
+        if (
+          change.operation !== "UPSERT" ||
+          typeof change.entity !== "object" ||
+          !change.entity ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("remoteVersion" in change.entity) ||
+          change.entity.remoteVersion !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_REVIEW_ENVELOPE_INVALID");
+        await applyCommercialReviewEntity(
+          transaction,
+          storeId,
+          change.entityType,
+          change.entity,
+        );
+        continue;
+      }
       if (change.entityType === "waste_receipt_publication") {
         if (change.operation !== "UPSERT")
           throw new Error(

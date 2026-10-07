@@ -79,6 +79,7 @@ export const syncChangeEnvelopeSchema = z.object({
 export type SyncChangeEnvelope = z.infer<typeof syncChangeEnvelopeSchema>;
 
 export const syncPullQuerySchema = z.object({
+  commercialReview: z.enum(["true", "false"]).optional(),
   cursor: nonEmptyStringSchema.optional(),
   limit: z.coerce
     .number()
@@ -98,6 +99,7 @@ export const syncPullResponseSchema = z.object({
 export type SyncPullResponse = z.infer<typeof syncPullResponseSchema>;
 
 export const bootstrapQuerySchema = z.object({
+  commercialReview: z.enum(["true", "false"]).optional(),
   rawObservationDays: z.coerce
     .number()
     .int()
@@ -118,6 +120,8 @@ export const bootstrapEntitiesSchema = z.object({
   salesObservations: z.array(jsonObjectSchema),
   wasteObservations: z.array(jsonObjectSchema),
   wasteReceiptPublications: z.array(jsonObjectSchema).optional(),
+  commercialReviewPages: z.array(jsonObjectSchema).optional(),
+  commercialReviewDecisions: z.array(jsonObjectSchema).optional(),
   commercialOperations: z.array(jsonObjectSchema),
   offers: z.array(jsonObjectSchema),
   marketSignals: z.array(jsonObjectSchema),

@@ -1,3 +1,7 @@
+import {
+  registerCommercialReviewPages,
+  loadCommercialReviewEntity,
+} from "../commercial/review-sync.js";
 import { Long } from "mongodb";
 import { z } from "zod";
 import type {
@@ -44,6 +48,8 @@ export function createMongoSyncPullService(
       const afterSequence = query.cursor
         ? decodeCursor(query.cursor, storeId)
         : Long.ZERO;
+      if (query.commercialReview === "true")
+        await registerCommercialReviewPages(database, storeId);
       const mongoDatabase = await database.getDb();
       const page = await mongoDatabase
         .collection<SyncChangeDocument>("syncChanges")
@@ -67,31 +73,64 @@ export function createMongoSyncPullService(
         selected,
       );
       const changes = await Promise.all(
-        selected.map(async (change) => {
-          if (change.entityType === "waste_receipt_publication") {
-            const entity = await mongoDatabase
-              .collection<
-                import("../uploads/waste-receipt-publication.js").WastePublicationDocument
-              >("wasteReceiptPublications")
-              .findOne({ _id: change.entityId, storeId });
-            if (!entity) throw new Error("Waste publication missing.");
-            return {
-              sequence: change.sequence.toString(),
-              entityType: change.entityType,
-              entityId: change.entityId,
-              operation: change.operation,
-              entityVersion: entity.version,
-              entity: {
-                id: entity.id,
-                storeId: entity.storeId,
-                remoteVersion: entity.remoteVersion,
-                publication: entity.publication,
-              },
-              changedAt: change.changedAt.toISOString(),
-            };
-          }
-          return toEnvelope(change, entities, productEntities);
-        }),
+        selected
+          .filter(
+            (change) =>
+              query.commercialReview === "true" ||
+              ![
+                "commercial_review_page",
+                "commercial_review_decision",
+              ].includes(change.entityType),
+          )
+          .map(async (change) => {
+            if (
+              ["commercial_review_page", "commercial_review_decision"].includes(
+                change.entityType,
+              )
+            ) {
+              if (change.operation !== "UPSERT")
+                throw Error("Commercial review deletion unsupported");
+              const entity = await loadCommercialReviewEntity(
+                mongoDatabase,
+                storeId,
+                change.entityId,
+                change.entityType,
+              );
+              if (!entity) throw Error("Commercial review entity missing");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: 1,
+                entity,
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "waste_receipt_publication") {
+              const entity = await mongoDatabase
+                .collection<
+                  import("../uploads/waste-receipt-publication.js").WastePublicationDocument
+                >("wasteReceiptPublications")
+                .findOne({ _id: change.entityId, storeId });
+              if (!entity) throw new Error("Waste publication missing.");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: entity.version,
+                entity: {
+                  id: entity.id,
+                  storeId: entity.storeId,
+                  remoteVersion: entity.remoteVersion,
+                  publication: entity.publication,
+                },
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            return toEnvelope(change, entities, productEntities);
+          }),
       );
       const nextSequence = selected.at(-1)?.sequence ?? afterSequence;
 
