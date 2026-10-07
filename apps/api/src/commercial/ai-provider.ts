@@ -1,4 +1,7 @@
-import { COMMERCIAL_AI_TIMEOUT_MS } from "./ai-runtime-limits.js";
+import {
+  COMMERCIAL_AI_TIMEOUT_MS,
+  COMMERCIAL_AI_MAX_OUTPUT_TOKENS,
+} from "./ai-runtime-limits.js";
 import {
   createGateway,
   generateText,
@@ -72,7 +75,7 @@ export function createCommercialAiProvider(input: {
             schema: commercialAiPageOutputSchema,
             name: "commercial_page_proposals",
           }),
-          maxOutputTokens: 6000,
+          maxOutputTokens: COMMERCIAL_AI_MAX_OUTPUT_TOKENS,
           maxRetries: 0,
           abortSignal: AbortSignal.timeout(COMMERCIAL_AI_TIMEOUT_MS),
           providerOptions: {
@@ -90,21 +93,32 @@ export function createCommercialAiProvider(input: {
           },
         };
       } catch (error) {
-        if (
-          NoObjectGeneratedError.isInstance(error) ||
-          NoOutputGeneratedError.isInstance(error)
-        )
-          throw new CommercialAiPermanentError("COMMERCIAL_AI_OUTPUT_INVALID");
-        if (
-          APICallError.isInstance(error) &&
-          error.statusCode &&
-          [400, 401, 402, 403, 404].includes(error.statusCode)
-        )
-          throw new CommercialAiPermanentError(
-            "COMMERCIAL_AI_CONFIGURATION_REQUIRED",
-          );
+        const classified = classifyCommercialGenerationError(error);
+        if (classified) throw classified;
         throw error;
       }
     },
   };
+}
+
+export function classifyCommercialGenerationError(error: unknown) {
+  if (
+    NoObjectGeneratedError.isInstance(error) &&
+    error.finishReason === "length"
+  )
+    return new CommercialAiPermanentError("COMMERCIAL_AI_OUTPUT_TOKEN_LIMIT");
+  if (
+    NoObjectGeneratedError.isInstance(error) ||
+    NoOutputGeneratedError.isInstance(error)
+  )
+    return new CommercialAiPermanentError("COMMERCIAL_AI_OUTPUT_INVALID");
+  if (
+    APICallError.isInstance(error) &&
+    error.statusCode &&
+    [400, 401, 402, 403, 404].includes(error.statusCode)
+  )
+    return new CommercialAiPermanentError(
+      "COMMERCIAL_AI_CONFIGURATION_REQUIRED",
+    );
+  return null;
 }

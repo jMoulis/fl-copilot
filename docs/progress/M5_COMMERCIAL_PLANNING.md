@@ -111,3 +111,16 @@ After PR #86 deployment, the real eight-page PDF started processing. Some pages 
 A bounded live test of page 5 with the same model/schema completed in 73,454 ms: 26 raw blocks, 22 anchored blocks, seven source-validation issues and date uncertainty, 50,623 input and 5,197 output tokens. This test wrote only ignored local output, not production drafts or business records. It confirms the previous 45-second deadline was insufficient for a representative dense page.
 
 Verification covers execution/lease/function budget ordering, legacy unfinished recovery with retained completed drafts/stable IDs/total attempts, and refusal to revive permanent/current-budget failures. Full production completion remains pending after merging/deploying this correction. No native rebuild or reimport is required.
+
+## Cloud correction — Truncated structured commercial response
+
+PR #87 deployment allowed seven of eight pilot pages to complete, preserving earlier cached drafts. The remaining page failed structured-output validation. A bounded diagnostic using the exact input/schema reproduced the cause: `finishReason=length`, 6,000 output tokens, incomplete JSON and an SDK JSON parse error after about 80 seconds. This was a response-capacity limit, not permission to salvage or trust partial JSON.
+
+- Increase bounded output capacity to 12,000 tokens. Allow 180 seconds for generation, 240 seconds for the existing Fluid Compute callback, and a 300-second page lease. Runtime budget version becomes 3; the invariant test still requires model deadline < server duration < lease.
+- Distinguish `COMMERCIAL_AI_OUTPUT_TOKEN_LIMIT` from actual schema-invalid output. Partial JSON is never accepted and source/citation/field-validation rules remain unchanged.
+- An explicit maintenance retry after confirmed truncation is available through `src/development/retry-commercial-ai-page.ts`. It requires confirmation plus store/source/page arguments, checks the frozen model/schema/parser/checksum and failed older-budget state, and transactionally requeues only an uncommitted page. Completed drafts and newer-budget failures cannot be reset. Automatic schema-failure recovery remains disabled.
+- Lifetime attempts and previous error/retry reason remain auditable. The seven existing pages keep their original UUIDs, raw responses and anchored results. No source, proposal validation, operation or official observation is overwritten.
+
+A bounded replay of page 6 with the wider response completed in 85,858 ms: 6,521 output tokens, 26 raw blocks, 21 anchored blocks and six source issues, with date uncertainty retained. Raw/anchored output stayed in ignored local diagnostics; production data were not modified by that replay.
+
+After merge/deployment, use the confirmed maintenance retry for the failed pilot page, then verify full `TO_VALIDATE/DRAFT_REVIEW` completion. No native build or reimport is needed. This maintenance path is not a general automatic revival of schema/configuration errors or human-rejected proposals.

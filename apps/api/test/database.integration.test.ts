@@ -1,4 +1,5 @@
 import { createCommercialAiDraftProcessor } from "../src/commercial/ai-draft-processing.js";
+import { COMMERCIAL_AI_RUNTIME_BUDGET_VERSION } from "../src/commercial/ai-runtime-limits.js";
 import { COMMERCIAL_AI_SCHEMA_VERSION } from "@fl-copilot/domain";
 import type { CommercialAiProvider } from "../src/commercial/ai-provider.js";
 import { createHash } from "node:crypto";
@@ -502,7 +503,7 @@ describeWithMongo("MongoDB infrastructure", () => {
       .findOne({ storeId, sourceDocumentId, pageNumber: 2 });
     expect(recovered).toMatchObject({
       status: "RETRY",
-      runtimeBudgetVersion: 2,
+      runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
       attemptCount: 5,
       budgetAttemptCount: 0,
     });
@@ -556,7 +557,7 @@ describeWithMongo("MongoDB infrastructure", () => {
       { storeId, sourceDocumentId, pageNumber: 1 },
       {
         $set: {
-          runtimeBudgetVersion: 2,
+          runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
           errorCode: "COMMERCIAL_AI_ATTEMPT_LIMIT",
         },
       },
@@ -566,6 +567,75 @@ describeWithMongo("MongoDB infrastructure", () => {
         (source) => source.sourceDocumentId === sourceDocumentId,
       ),
     ).toBe(false);
+  }, 20_000);
+
+  it("explicitly retries only an older failed uncommitted output page and preserves ready pages and lifetime attempts", async () => {
+    const { db, storeId, sourceDocumentId } = await commercialAiSource();
+    const provider = aiProvider();
+    const processor = createCommercialAiDraftProcessor(database, provider);
+    await processor.manifest(storeId, sourceDocumentId);
+    await processor.extractPage(storeId, sourceDocumentId, 1);
+    const ready = await db
+      .collection("commercialDocumentAiPages")
+      .findOne({ storeId, sourceDocumentId, pageNumber: 1 });
+    const job = (await db
+      .collection("commercialDocumentJobs")
+      .findOne({ storeId, sourceDocumentId }))!;
+    await db
+      .collection<{ _id: string; [key: string]: unknown }>(
+        "commercialDocumentAiPages",
+      )
+      .insertOne({
+        _id: randomUUID(),
+        storeId,
+        sourceDocumentId,
+        pageNumber: 2,
+        parserVersion: job.parserVersion,
+        schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+        model: provider.model,
+        checksum: job.checksum,
+        status: "FAILED",
+        runtimeBudgetVersion: 2,
+        errorCode: "COMMERCIAL_AI_OUTPUT_INVALID",
+        attemptCount: 6,
+      });
+    await db
+      .collection("commercialDocumentJobs")
+      .updateOne(
+        { storeId, sourceDocumentId },
+        { $set: { status: "AI_FAILED" } },
+      );
+    await expect(
+      processor.retryTruncatedPage(storeId, sourceDocumentId, 1),
+    ).rejects.toThrow("COMMERCIAL_AI_RETRY_UNSAFE");
+    await expect(
+      processor.retryTruncatedPage(randomUUID(), sourceDocumentId, 2),
+    ).rejects.toThrow("COMMERCIAL_AI_RETRY_UNSAFE");
+    await processor.retryTruncatedPage(storeId, sourceDocumentId, 2);
+    expect(
+      await db
+        .collection("commercialDocumentAiPages")
+        .findOne({ storeId, sourceDocumentId, pageNumber: 2 }),
+    ).toMatchObject({
+      status: "RETRY",
+      runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+      attemptCount: 6,
+      budgetAttemptCount: 0,
+      retryReason: "CONFIRMED_OUTPUT_TRUNCATION",
+    });
+    expect(
+      await db
+        .collection("commercialDocumentAiPages")
+        .findOne({ storeId, sourceDocumentId, pageNumber: 1 }),
+    ).toEqual(ready);
+    await expect(
+      processor.retryTruncatedPage(storeId, sourceDocumentId, 2),
+    ).rejects.toThrow("COMMERCIAL_AI_RETRY_UNSAFE");
+    await processor.extractPage(storeId, sourceDocumentId, 2);
+    expect(provider.calls).toBe(1);
+    expect(await processor.finalize(storeId, sourceDocumentId)).toMatchObject({
+      status: "TO_VALIDATE",
+    });
   }, 20_000);
 
   it("records the infrastructure migration exactly once", async () => {
