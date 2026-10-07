@@ -1,3 +1,4 @@
+import { applyCommercialReviewEntity } from "../commercial/review-repository";
 import { applyWastePublication } from "../documents/waste-receipt-publication";
 import { ApiClientError } from "@fl-copilot/api-client";
 import {
@@ -44,6 +45,7 @@ export interface SyncSummary extends PushSummary, PullSummary {
 }
 
 export interface MobileSyncServiceOptions {
+  commercialReview?: boolean;
   appVersion: string;
   deviceId: string;
   maxRetries?: number;
@@ -104,7 +106,13 @@ export class MobileSyncService {
       storeId,
     );
     const pushed = await this.pushUnlocked(storeId);
-    if (!(await this.readCursor(storeId))) {
+    const reviewAdopted = this.options.commercialReview
+      ? await this.database.getFirstAsync<{ value: string }>(
+          "SELECT value FROM app_metadata WHERE key = ?",
+          `commercial-review:${storeId}`,
+        )
+      : { value: "1" };
+    if (!(await this.readCursor(storeId)) || !reviewAdopted) {
       await this.bootstrapUnlocked(storeId);
     }
     const pulled = await this.pullUnlocked(storeId);
@@ -238,6 +246,13 @@ export class MobileSyncService {
               storeId,
               result.remoteEntity,
             );
+          if (command.entityType === "commercial_review_decision")
+            await applyCommercialReviewEntity(
+              transaction,
+              storeId,
+              command.entityType,
+              result.remoteEntity,
+            );
           await outbox.markAcknowledged(command.commandId);
           if (
             command.entityType === "product_alias" &&
@@ -260,6 +275,16 @@ export class MobileSyncService {
           }
           pushed += 1;
         } else if (result.status === "CONFLICT") {
+          if (
+            command.entityType === "commercial_review_decision" &&
+            result.remoteEntity
+          )
+            await applyCommercialReviewEntity(
+              transaction,
+              storeId,
+              command.entityType,
+              result.remoteEntity,
+            );
           await conflictsRepository.recordPushConflict(command, result);
           await outbox.markConflict(command.commandId, code);
           conflicts += 1;

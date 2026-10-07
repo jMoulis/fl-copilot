@@ -87,8 +87,10 @@ export class ApiClient {
     storeId: string,
     cursor?: string,
     limit?: number,
+    commercialReview = false,
   ) {
     const query = new URLSearchParams();
+    if (commercialReview) query.set("commercialReview", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
     const encodedQuery = query.toString();
@@ -104,11 +106,13 @@ export class ApiClient {
     accessToken: string,
     storeId: string,
     rawObservationDays?: number,
+    commercialReview = false,
   ) {
-    const suffix =
-      rawObservationDays === undefined
-        ? ""
-        : `?rawObservationDays=${encodeURIComponent(rawObservationDays)}`;
+    const query = new URLSearchParams();
+    if (rawObservationDays !== undefined)
+      query.set("rawObservationDays", String(rawObservationDays));
+    if (commercialReview) query.set("commercialReview", "true");
+    const suffix = query.toString() ? `?${query}` : "";
     return this.request(
       `/api/v1/sync/bootstrap${suffix}`,
       { method: "GET", headers: syncHeaders(accessToken, storeId) },

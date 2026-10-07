@@ -1,6 +1,11 @@
+import {
+  CommercialReviewRepository,
+  reviewProgress,
+} from "@/commercial/review-repository";
+import type { CommercialReviewPage } from "@fl-copilot/sync-contracts";
 import { useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { router, type Href, useFocusEffect } from "expo-router";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { randomUUID } from "expo-crypto";
 import type { LocalSourceDocument } from "@fl-copilot/domain";
@@ -46,6 +51,14 @@ export default function WeekScreen() {
     () => new SourceDocumentRepository(sqlite),
     [sqlite],
   );
+  const reviews = useMemo(
+    () => new CommercialReviewRepository(sqlite),
+    [sqlite],
+  );
+  const [reviewPages, setReviewPages] = useState<CommercialReviewPage[]>([]);
+  const [reviewDecisions, setReviewDecisions] = useState<
+    Awaited<ReturnType<CommercialReviewRepository["decisions"]>>
+  >([]);
   const [documents, setDocuments] = useState<LocalSourceDocument[]>([]);
   const [busy, setBusy] = useState(false);
   const [jobs, setJobs] = useState<
@@ -69,8 +82,13 @@ export default function WeekScreen() {
           ] as const,
       ),
     );
-    return { items, jobs: Object.fromEntries(entries) };
-  }, [repository, storeId]);
+    return {
+      items,
+      jobs: Object.fromEntries(entries),
+      pages: await reviews.pages(storeId),
+      decisions: await reviews.decisions(storeId),
+    };
+  }, [repository, reviews, storeId]);
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -80,6 +98,8 @@ export default function WeekScreen() {
             if (active) {
               setDocuments(result.items);
               setJobs(result.jobs);
+              setReviewPages(result.pages ?? []);
+              setReviewDecisions(result.decisions ?? []);
             }
           })
           .catch(() => {
@@ -171,8 +191,8 @@ export default function WeekScreen() {
           />
         ) : null}
         <Text className="text-sm leading-5 text-muted">
-          Le PDF sera envoyé dès que la connexion le permet. L’extraction des
-          offres sera disponible dans une prochaine version.
+          Le PDF sera envoyé dès que la connexion le permet. Examinez ensuite
+          les extraits, même hors connexion.
         </Text>
       </SectionCard>
       {message ? (
@@ -184,6 +204,10 @@ export default function WeekScreen() {
           document,
           jobs[document.id] ?? null,
         );
+        const pages = reviewPages.filter(
+          (page) => page.sourceDocumentId === document.id,
+        );
+        const progress = reviewProgress(pages, reviewDecisions);
         return (
           <SectionCard
             key={document.id}
@@ -194,8 +218,22 @@ export default function WeekScreen() {
                 Enregistré le{" "}
                 {new Date(document.createdAt).toLocaleDateString("fr-FR")}
               </Text>
-              <Text className="font-semibold text-forest">{state.title}</Text>
-              <Text className="text-sm text-muted">{state.message}</Text>
+              <Text className="font-semibold text-forest">
+                {pages.length ? "Analyse reçue" : state.title}
+              </Text>
+              <Text className="text-sm text-muted">
+                {pages.length
+                  ? `${pages.length} pages reçues · ${progress.remaining} éléments à examiner`
+                  : state.message}
+              </Text>
+              {pages.length ? (
+                <PrimaryButton
+                  label="Examiner les extraits"
+                  onPress={() =>
+                    router.push(`/commercial-review/${document.id}` as Href)
+                  }
+                />
+              ) : null}
               {state.canRetry ? (
                 <SecondaryButton
                   label={
@@ -217,6 +255,8 @@ export default function WeekScreen() {
                       .then((result) => {
                         setDocuments(result.items);
                         setJobs(result.jobs);
+                        setReviewPages(result.pages ?? []);
+                        setReviewDecisions(result.decisions ?? []);
                       })
                       .catch(() =>
                         setError(
@@ -231,9 +271,37 @@ export default function WeekScreen() {
           </SectionCard>
         );
       })}
+      {[...new Set(reviewPages.map((page) => page.sourceDocumentId))]
+        .filter(
+          (sourceId) => !documents.some((document) => document.id === sourceId),
+        )
+        .map((sourceId) => {
+          const pages = reviewPages.filter(
+            (page) => page.sourceDocumentId === sourceId,
+          );
+          const progress = reviewProgress(pages, reviewDecisions);
+          return (
+            <SectionCard
+              key={`review:${sourceId}`}
+              title={pages[0]?.originalFilename ?? "Communication commerciale"}
+              description={`${pages.length} pages reçues · ${progress.remaining} éléments à examiner`}
+            >
+              <Text className="text-sm text-muted">
+                Les transcriptions confirmées ne publient aucune offre et ne
+                valident pas leur application au magasin.
+              </Text>
+              <PrimaryButton
+                label="Examiner les extraits"
+                onPress={() =>
+                  router.push(`/commercial-review/${sourceId}` as Href)
+                }
+              />
+            </SectionCard>
+          );
+        })}
       <EmptyState
-        title="Aucune opération disponible"
-        message="Les opérations apparaîtront ici après l’analyse et la validation de vos documents commerciaux."
+        title="Aucune opération publiée"
+        message="Les extraits examinés restent séparés des opérations à préparer. Aucune offre n’est publiée automatiquement."
         icon="calendar-outline"
       />
     </AppScreen>

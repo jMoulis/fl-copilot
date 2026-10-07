@@ -1,3 +1,4 @@
+import { applyCommercialReviewEntity } from "../commercial/review-repository";
 import { applyWastePublication } from "../documents/waste-receipt-publication";
 import { z } from "zod";
 import type { BootstrapResponse } from "@fl-copilot/sync-contracts";
@@ -27,6 +28,27 @@ export async function applyBootstrap(
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await applyProductMasterSnapshot(transaction, storeId, bootstrap.entities);
+    for (const page of bootstrap.entities.commercialReviewPages ?? [])
+      await applyCommercialReviewEntity(
+        transaction,
+        storeId,
+        "commercial_review_page",
+        page,
+      );
+    for (const decision of bootstrap.entities.commercialReviewDecisions ?? [])
+      await applyCommercialReviewEntity(
+        transaction,
+        storeId,
+        "commercial_review_decision",
+        decision,
+      );
+    if (bootstrap.entities.commercialReviewPages)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES (?,?,?)",
+        `commercial-review:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     for (const entity of bootstrap.entities.wasteReceiptPublications ?? [])
       await applyWastePublication(transaction, storeId, entity);
     await transaction.runAsync(
@@ -71,6 +93,8 @@ export async function applyBootstrap(
 
 function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
   const supported = new Set([
+    "commercialReviewPages",
+    "commercialReviewDecisions",
     "syncTestEntities",
     "products",
     "productIdentifiers",

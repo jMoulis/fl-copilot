@@ -55,15 +55,20 @@ export function SyncProvider({ children }: PropsWithChildren) {
       database.sqlite,
       {
         bootstrap: (storeId) =>
-          withAccessToken((token) => api.bootstrapSync(token, storeId)),
+          withAccessToken((token) =>
+            api.bootstrapSync(token, storeId, undefined, true),
+          ),
         push: (request) =>
           withAccessToken((token) => api.pushSync(token, request)),
         pull: (storeId, cursor) =>
-          withAccessToken((token) => api.pullSync(token, storeId, cursor)),
+          withAccessToken((token) =>
+            api.pullSync(token, storeId, cursor, undefined, true),
+          ),
       },
       {
         appVersion: Constants.expoConfig?.version ?? "0.0.0",
         deviceId: database.deviceId,
+        commercialReview: true,
       },
     );
   }, [database.deviceId, database.sqlite, hasLocalSession, withAccessToken]);

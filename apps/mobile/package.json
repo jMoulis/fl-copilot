@@ -26,6 +26,7 @@
     "@fl-copilot/analytics-core": "workspace:*",
     "@fl-copilot/api-client": "workspace:*",
     "@fl-copilot/domain": "workspace:*",
+    "@fl-copilot/commercial-core": "workspace:*",
     "@fl-copilot/import-core": "workspace:*",
     "@fl-copilot/sync-contracts": "workspace:*",
     "@hookform/resolvers": "^5.2.0",

@@ -1,3 +1,7 @@
+import {
+  commercialReviewDecisionSchema,
+  synchronizedCommercialReviewDecisionSchema,
+} from "@fl-copilot/sync-contracts";
 import type { SyncConflict } from "./conflict-repository";
 
 export function conflictEntityLabel(conflict: SyncConflict) {
@@ -8,6 +12,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
   const entityLabels: Record<string, string> = {
     sync_test_entity: "Donnée de synchronisation",
     product: "Produit",
+    commercial_review_decision: "Examen commercial",
     recommendation: "Recommandation",
     decision: "Décision",
   };
@@ -16,6 +21,15 @@ export function conflictEntityLabel(conflict: SyncConflict) {
 
 export function conflictPayloadSummary(payload: unknown, emptyLabel: string) {
   if (payload === null || payload === undefined) return emptyLabel;
+  const review = commercialReviewDecisionSchema.safeParse(payload);
+  const remote = synchronizedCommercialReviewDecisionSchema.safeParse(payload);
+  const decision = review.success
+    ? review.data
+    : remote.success
+      ? remote.data.decision
+      : null;
+  if (decision)
+    return `${decision.decision === "DISMISSED" ? "Élément écarté" : "Transcription confirmée"}${decision.corrections.length ? " · corrections saisies" : ""}`;
   return payloadLabel(payload) ?? "Version conservée pour examen.";
 }
 

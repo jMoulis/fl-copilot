@@ -90,6 +90,7 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen name="commercial-review/[id]" options={{ href: null }} />
       <Tabs.Screen name="sync" options={{ href: null }} />
       <Tabs.Screen name="imports" options={{ href: null }} />
       <Tabs.Screen name="xlsx-diagnostic" options={{ href: null }} />

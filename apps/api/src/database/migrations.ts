@@ -274,6 +274,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 15,
+    name: "initialize-commercial-review-sync",
+    async up(database) {
+      await database
+        .collection("commercialReviewPages")
+        .createIndex(
+          { storeId: 1, sourceDocumentId: 1, pageNumber: 1 },
+          { unique: true },
+        );
+      await database
+        .collection("commercialReviewDecisions")
+        .createIndex(
+          { storeId: 1, pageId: 1, sourceBlockIndex: 1 },
+          { unique: true },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(
