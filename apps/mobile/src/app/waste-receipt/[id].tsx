@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, Text, TextInput, View } from "react-native";
+import { normalizeProductLabel, type ProductAlias } from "@fl-copilot/domain";
+import { ProductMasterRepository } from "@/products/product-master-repository";
 import { randomUUID } from "expo-crypto";
 import { DateSelector } from "@/components/date-selector";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
@@ -681,10 +683,21 @@ export default function WasteReceiptValidationScreen() {
           </Text>
         </View>
         {detail.receipt.processingStatus === "PUBLISHED"
-          ? detail.lines.map(({ line }) => (
-              <Text key={line.id} className="text-base text-ink">
-                {line.rawLabel} · {line.totalPrice ?? "—"} €
-              </Text>
+          ? detail.lines.map((draft) => (
+              <View key={draft.line.id} className="gap-2">
+                <Text className="text-base text-ink">
+                  {draft.line.rawLabel} · {draft.line.totalPrice ?? "—"} €
+                </Text>
+                {draft.line.matchStatus === "MATCHED" &&
+                draft.line.validationStatus !== "EXCLUDED" ? (
+                  <WasteAliasMemory
+                    receiptId={detail.receipt.id}
+                    draft={draft}
+                    disabled={false}
+                    onError={setError}
+                  />
+                ) : null}
+              </View>
             ))
           : groups.map((group) => (
               <LineGroup
@@ -1018,6 +1031,16 @@ function LineEditor({
         ))}
       </View>
 
+      {draft.line.matchStatus === "MATCHED" &&
+      draft.line.validationStatus !== "EXCLUDED" ? (
+        <WasteAliasMemory
+          receiptId={receiptId}
+          draft={draft}
+          disabled={rawLabel !== draft.line.rawLabel}
+          onError={onError}
+        />
+      ) : null}
+
       <SecondaryButton
         label={
           draft.line.validationStatus === "EXCLUDED"
@@ -1175,4 +1198,152 @@ function formatMoney(value: number) {
     style: "currency",
     currency: "EUR",
   }).format(value);
+}
+
+function WasteAliasMemory({
+  receiptId,
+  draft,
+  disabled,
+  onError,
+}: {
+  receiptId: string;
+  draft: LocalWasteLineDraft;
+  disabled: boolean;
+  onError(value: string | undefined): void;
+}) {
+  const database = useLocalDatabase();
+  const repository = useMemo(
+    () => new ProductMasterRepository(database.sqlite),
+    [database.sqlite],
+  );
+  const [alias, setAlias] = useState<ProductAlias | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [notice, setNotice] = useState<string>();
+  useEffect(() => {
+    let active = true;
+    setLoaded(false);
+    void repository
+      .listAliasesByStore(draft.line.storeId)
+      .then((records) => {
+        if (!active) return;
+        setAlias(
+          records.find(
+            ({ entity }) =>
+              entity.productId === draft.line.matchedProductId &&
+              entity.normalizedAlias ===
+                normalizeProductLabel(draft.line.rawLabel) &&
+              entity.status === "VALIDATED",
+          )?.entity ?? null,
+        );
+        setLoaded(true);
+      })
+      .catch(() => {
+        if (active) onError("Les libellés mémorisés ne peuvent pas être lus.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    repository,
+    draft.line.storeId,
+    draft.line.rawLabel,
+    draft.line.matchedProductId,
+    draft,
+    onError,
+  ]);
+  async function remember() {
+    setBusy(true);
+    onError(undefined);
+    try {
+      const saved = await repository.rememberWasteReceiptAlias(
+        receiptId,
+        draft.line.id,
+        randomUUID(),
+        { commandId: randomUUID(), deviceId: database.deviceId },
+      );
+      setAlias(saved);
+      setNotice(
+        "Libellé mémorisé sur cet appareil. Synchronisation avec le magasin en attente.",
+      );
+    } catch (error) {
+      onError(
+        error instanceof Error && error.message === "WASTE_ALIAS_CONFLICT"
+          ? "Ce libellé est déjà associé à un autre produit ou a été rejeté. Aucune association n’a été remplacée."
+          : "Ce libellé ne peut pas être mémorisé. Enregistrez la ligne et confirmez un produit actif.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function forget() {
+    if (!alias) return;
+    setBusy(true);
+    onError(undefined);
+    try {
+      const record = await repository.getAlias(alias.id);
+      if (!record) {
+        setAlias(null);
+        return;
+      }
+      if (record.entity.source !== "WASTE_RECEIPT") return;
+      await repository.delete(
+        "product_alias",
+        alias.id,
+        alias.storeId,
+        new Date().toISOString(),
+        {
+          commandId: randomUUID(),
+          deviceId: database.deviceId,
+          expectedRemoteVersion: record.remoteVersion,
+        },
+      );
+      setAlias(null);
+      setNotice(
+        "Mémorisation annulée. Les tickets déjà validés restent inchangés.",
+      );
+    } catch {
+      onError("La mémorisation n’a pas pu être annulée.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <View className="gap-2">
+      <Text className="text-sm text-muted">
+        Réutiliser « {draft.line.rawLabel} » pour {draft.matchedProductLabel}{" "}
+        lors des prochains imports du magasin.
+      </Text>
+      {alias ? (
+        <>
+          <Text className="text-sm font-semibold text-forest">
+            Libellé mémorisé
+          </Text>
+          {alias.source === "WASTE_RECEIPT" ? (
+            <SecondaryButton
+              label="Annuler la mémorisation"
+              disabled={busy || !loaded}
+              onPress={() => void forget()}
+            />
+          ) : null}
+        </>
+      ) : (
+        <SecondaryButton
+          label={busy ? "Mémorisation…" : "Mémoriser ce libellé"}
+          disabled={disabled || busy || !loaded}
+          onPress={() => void remember()}
+        />
+      )}
+      {disabled ? (
+        <Text className="text-sm text-muted">
+          Enregistrez le libellé modifié avant de le mémoriser.
+        </Text>
+      ) : null}
+      {notice ? (
+        <Text accessibilityRole="alert" className="text-sm text-muted">
+          {notice}
+        </Text>
+      ) : null}
+    </View>
+  );
 }

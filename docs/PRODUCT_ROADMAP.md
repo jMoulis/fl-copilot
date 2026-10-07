@@ -26,7 +26,7 @@ M2 still has two cross-platform follow-ups:
 - exercise one controlled real `DIFFERENCE` on the target iPhone and verify that acknowledging it never mutates published observations;
 - repeat the XLSX, publication, upload, verification and memory acceptance on representative Android hardware.
 
-M3 local/remote parity, offline Today behavior and the deterministic signal detail are complete. The next product milestone is M4, which turns `Casse` into an offline receipt-capture, assisted-extraction and validation workflow.
+M4 receipt capture, extraction, validation, publication and recovery have been accepted on iPhone, including cashier-number confirmation on 2026-10-07. Explicit label memory is the next pilot refinement before M5 commercial planning. The receipt selling-value KPI is automatically verified; a dedicated selling-value-by-date inspection UI remains a follow-up.
 
 ## Milestones
 
@@ -36,7 +36,7 @@ M3 local/remote parity, offline Today behavior and the deterministic signal deta
 | M1 — Offline-first sync              | Complete        | SQLite remains usable offline and synchronizes durable, idempotent changes across devices            | Offline create, restart, exactly-once sync and second-device observation                                         |
 | M2 — Product Master and Mercalys     | Complete on iOS | Trusted products and daily Mercalys sales/waste observations with source lineage and reconciliation  | Offline publication, restart persistence, reconnect, private upload and remote verification on iPhone Air        |
 | M3 — Analytics and Aujourd’hui       | Complete on iOS | Deterministic daily KPI, comparisons, quality signals and at most three priorities from SQLite       | Golden local/remote parity, offline Aujourd’hui and deterministic signal detail validated on iPhone Air          |
-| M4 — Waste receipt workflow          | Planned         | Photograph or import a waste receipt offline, validate assisted extraction and publish trusted waste | Offline capture survives restart; upload, extraction, validation and KPI update complete after reconnect         |
+| M4 — Waste receipt workflow          | Complete on iOS | Photograph or import a waste receipt offline, validate assisted extraction and publish trusted waste | Offline capture survives restart; upload, extraction, validation and KPI update complete after reconnect         |
 | M5 — Commercial planning             | Planned         | Import weekly commercial PDFs, validate operations and use Ma semaine offline                        | Validated plan, operation detail and execution checklist remain usable offline and synchronize later             |
 | M6 — Need Units and substitution     | Planned         | Record customer needs, directed substitutes and field events such as tension or stockout             | Offline event and substitute lookup later produce an auditable remote evidence update                            |
 | M7 — Copilot decisions and execution | Planned         | Show grounded French recommendations, record decisions and track execution separately                | Maximum three priorities, no unsupported number, offline decisions and deterministic fallback during AI outage   |
@@ -79,7 +79,7 @@ The complete experience is tested on representative iOS and Android devices and 
 9. Recompute affected analytics after publication and keep AI pending/failure states recoverable.
 10. Pass the offline capture, restart, reconnect, extraction, validation and KPI end-to-end gate.
 
-M4 is the immediate priority because `Casse` is the next missing daily field workflow and supplies more reliable waste evidence to the deterministic analytics already delivered by M3.
+The core M4 workflow is accepted on iPhone. Remaining pilot refinements below do not imply that multi-photo capture or piece arithmetic checks are already delivered.
 
 ### M4 pilot UX and product-mapping follow-up
 
@@ -87,6 +87,8 @@ The first real receipt-validation sessions identified two refinements to complet
 
 - after the manager selects or confirms the associated product, collapse the selection form into a compact confirmed state and keep a clear `Modifier le produit` action;
 - retain the confirmed raw-label-to-product association as auditable matching evidence. After repeated consistent confirmations, propose a store- and source-specific validated alias or mapping that can improve later deterministic matches.
+
+An explicit `Mémoriser ce libellé` action is now implemented for a matched active product, with an `Annuler la mémorisation` action for waste-created aliases, including on published receipts. It reuses the store-scoped ProductAlias entity, atomic SQLite/Outbox mutation and existing remote sync. Repeated consistent confirmations may later propose this action; they are not required when the manager deliberately chooses it. These aliases also participate in the existing shared catalog matcher for other imports; source-specific matching scope remains a later refinement. Aliases pointing at another product, rejected/unvalidated aliases and conflicting canonical labels block creation without being overwritten. Native acceptance of this new increment remains pending.
 
 This learning remains explicit and reversible. One correction must not silently retrain the Vision model, change matcher weights or create a trusted alias. Conflicting confirmations and explicit rejections prevent automatic reuse and require another human decision.
 

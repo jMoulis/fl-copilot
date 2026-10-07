@@ -1,4 +1,5 @@
 import {
+  normalizeProductLabel,
   productAliasSchema,
   productIdentifierSchema,
   productSchema,
@@ -51,6 +52,95 @@ export class ProductMasterRepository {
       productAliasSchema.parse(entity),
       context,
     );
+  }
+
+  /** Explicit receipt-label memory; the alias and command commit together. */
+  async rememberWasteReceiptAlias(
+    receiptId: string,
+    lineId: string,
+    aliasId: string,
+    context: ProductMutationContext,
+  ) {
+    let remembered: ProductAlias | undefined;
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const line = await transaction.getFirstAsync<{
+        store_id: string;
+        raw_label: string;
+        matched_product_id: string;
+      }>(
+        `SELECT l.store_id, l.raw_label, l.matched_product_id
+         FROM waste_lines l JOIN waste_receipts r ON r.id = l.receipt_id
+         JOIN products p ON p.id = l.matched_product_id AND p.store_id = l.store_id
+         WHERE l.id = ? AND r.id = ? AND r.store_id = l.store_id
+           AND l.match_status = 'MATCHED' AND l.validation_status != 'EXCLUDED'
+           AND p.deleted_at IS NULL AND p.status = 'ACTIVE'`,
+        lineId,
+        receiptId,
+      );
+      if (!line) throw new Error("WASTE_ALIAS_PRODUCT_REQUIRED");
+      const normalizedAlias = normalizeProductLabel(line.raw_label);
+      const products = await transaction.getAllAsync<{
+        id: string;
+        label: string;
+      }>(
+        "SELECT id, label FROM products WHERE store_id = ? AND deleted_at IS NULL AND status = 'ACTIVE'",
+        line.store_id,
+      );
+      if (
+        products.some(
+          (product) =>
+            product.id !== line.matched_product_id &&
+            normalizeProductLabel(product.label) === normalizedAlias,
+        )
+      )
+        throw new Error("WASTE_ALIAS_CONFLICT");
+      const existing = await transaction.getAllAsync<AliasRow>(
+        `SELECT * FROM product_aliases WHERE store_id = ?
+         AND normalized_alias = ? AND deleted_at IS NULL`,
+        line.store_id,
+        normalizedAlias,
+      );
+      if (
+        existing.some(
+          (row) =>
+            row.product_id !== line.matched_product_id ||
+            row.status !== "VALIDATED",
+        )
+      )
+        throw new Error("WASTE_ALIAS_CONFLICT");
+      if (existing[0]) {
+        remembered = mapAlias(existing[0]).entity;
+        return;
+      }
+      const timestamp = new Date().toISOString();
+      remembered = productAliasSchema.parse({
+        id: aliasId,
+        storeId: line.store_id,
+        productId: line.matched_product_id,
+        alias: line.raw_label,
+        normalizedAlias,
+        source: "WASTE_RECEIPT",
+        status: "VALIDATED",
+        confidence: 1,
+        version: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null,
+      });
+      await writeEntity(transaction, "product_alias", remembered, null);
+      await new OutboxRepository(transaction).enqueue({
+        commandId: context.commandId,
+        storeId: line.store_id,
+        deviceId: context.deviceId,
+        commandType: "PRODUCT_ALIAS_UPSERT",
+        entityType: "product_alias",
+        entityId: remembered.id,
+        expectedRemoteVersion: null,
+        payload: remembered,
+        createdAt: timestamp,
+      });
+    });
+    return remembered!;
   }
 
   async delete(

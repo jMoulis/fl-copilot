@@ -11,6 +11,8 @@ import type {
 import { runLocalMigrations } from "../db/migrations";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
+import { ProductMasterRepository } from "../products/product-master-repository";
+import { matchProduct, normalizeProductLabel } from "@fl-copilot/domain";
 import { WasteReceiptRepository } from "./waste-receipt-repository";
 
 type SQLiteValue = string | number | null;
@@ -569,6 +571,192 @@ describe("WasteReceiptRepository", () => {
       database.prepare("SELECT COUNT(*) AS count FROM local_files").get(),
     ).toEqual({ count: 0 });
 
+    database.close();
+  });
+});
+
+describe("explicit waste label memory", () => {
+  async function setup() {
+    const directory = mkdtempSync(join(tmpdir(), "fl-waste-alias-"));
+    directories.push(directory);
+    const path = join(directory, "local.db");
+    const database = new DatabaseSync(path);
+    const adapter = new NodeDatabase(database);
+    await runLocalMigrations(adapter);
+    const productId = "77777777-7777-4777-8777-777777777777";
+    database
+      .prepare(
+        `INSERT INTO products (id, store_id, label, category, nature, sales_unit, status, version, created_at, updated_at, sync_state, dirty) VALUES (?, ?, 'TOMATE GRAPPE VRAC', 'VEGETABLE', 'BULK', 'KG', 'ACTIVE', 1, ?, ?, 'SYNCED', 0)`,
+      )
+      .run(productId, storeId, timestamp, timestamp);
+    await new WasteReceiptRepository(adapter).createDraft({
+      receipt: receipt(),
+      file: file(),
+      lines: [
+        line({
+          rawLabel: "TOM GRAP VRA",
+          matchedProductId: productId,
+          matchStatus: "MATCHED",
+        }),
+      ],
+    });
+    return {
+      path,
+      database,
+      adapter,
+      productId,
+      repository: new ProductMasterRepository(adapter),
+    };
+  }
+  const aliasId = "88888888-8888-4888-8888-888888888888";
+  const context = {
+    commandId: "99999999-9999-4999-8999-999999999999",
+    deviceId: fileId,
+  };
+  it("persists offline memory and one command; repeat taps are idempotent, and removal disables future matching", async () => {
+    const { path, database, repository, productId } = await setup();
+    expect(await repository.listAliasesByStore(storeId)).toHaveLength(0);
+    await repository.rememberWasteReceiptAlias(
+      receiptId,
+      lineId,
+      aliasId,
+      context,
+    );
+    await repository.rememberWasteReceiptAlias(receiptId, lineId, fileId, {
+      ...context,
+      commandId: receiptId,
+    });
+    expect(
+      database
+        .prepare(
+          "SELECT * FROM sync_outbox WHERE entity_type = 'product_alias'",
+        )
+        .all(),
+    ).toHaveLength(1);
+    database.close();
+    const reopened = new DatabaseSync(path);
+    const restored = new ProductMasterRepository(new NodeDatabase(reopened));
+    const aliases = await restored.listAliasesByStore(storeId);
+    expect(aliases[0]?.entity).toMatchObject({
+      id: aliasId,
+      productId,
+      source: "WASTE_RECEIPT",
+      status: "VALIDATED",
+      normalizedAlias: normalizeProductLabel("TOM GRAP VRA"),
+    });
+    const products = (await restored.listProducts(storeId)).map(
+      ({ entity }) => entity,
+    );
+    expect(
+      matchProduct(
+        { storeId, label: "TOM GRAP VRA" },
+        {
+          products,
+          identifiers: [],
+          aliases: aliases.map(({ entity }) => entity),
+        },
+      ).state,
+    ).toBe("AUTO_MATCH");
+    await restored.delete("product_alias", aliasId, storeId, timestamp, {
+      ...context,
+      commandId: sourceDocumentId,
+    });
+    expect(await restored.listAliasesByStore(storeId)).toHaveLength(0);
+    expect(
+      matchProduct(
+        { storeId, label: "TOM GRAP VRA" },
+        { products, identifiers: [], aliases: [] },
+      ).method,
+    ).not.toBe("VALIDATED_ALIAS");
+    reopened.close();
+  });
+  it("blocks conflicting and rejected labels without overwriting them", async () => {
+    const { database, repository, productId } = await setup();
+    await repository.upsertAlias(
+      {
+        id: aliasId,
+        storeId,
+        productId,
+        alias: "TOM GRAP VRA",
+        normalizedAlias: normalizeProductLabel("TOM GRAP VRA"),
+        source: "USER",
+        status: "REJECTED",
+        confidence: null,
+        version: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null,
+      },
+      context,
+    );
+    await expect(
+      repository.rememberWasteReceiptAlias(receiptId, lineId, fileId, context),
+    ).rejects.toThrow("WASTE_ALIAS_CONFLICT");
+    expect((await repository.getAlias(aliasId))?.entity.status).toBe(
+      "REJECTED",
+    );
+    database
+      .prepare(
+        "UPDATE product_aliases SET status = 'VALIDATED', product_id = ?",
+      )
+      .run(fileId);
+    await expect(
+      repository.rememberWasteReceiptAlias(receiptId, lineId, fileId, context),
+    ).rejects.toThrow("WASTE_ALIAS_CONFLICT");
+    database.close();
+  });
+  it("refuses canonical-label collisions and inactive products without changing the receipt", async () => {
+    const { database, repository, productId } = await setup();
+    database
+      .prepare(
+        `INSERT INTO products (id, store_id, label, category, nature, sales_unit, status, version, created_at, updated_at, sync_state, dirty) VALUES (?, ?, 'TOM GRAP VRA', 'VEGETABLE', 'BULK', 'KG', 'ACTIVE', 1, ?, ?, 'SYNCED', 0)`,
+      )
+      .run(fileId, storeId, timestamp, timestamp);
+    await expect(
+      repository.rememberWasteReceiptAlias(receiptId, lineId, aliasId, context),
+    ).rejects.toThrow("WASTE_ALIAS_CONFLICT");
+    database
+      .prepare("UPDATE products SET deleted_at = ? WHERE id = ?")
+      .run(timestamp, fileId);
+    database
+      .prepare("UPDATE products SET status = 'INACTIVE' WHERE id = ?")
+      .run(productId);
+    await expect(
+      repository.rememberWasteReceiptAlias(receiptId, lineId, aliasId, context),
+    ).rejects.toThrow("WASTE_ALIAS_PRODUCT_REQUIRED");
+    expect(
+      database
+        .prepare(
+          "SELECT matched_product_id, raw_label FROM waste_lines WHERE id = ?",
+        )
+        .get(lineId),
+    ).toMatchObject({
+      matched_product_id: productId,
+      raw_label: "TOM GRAP VRA",
+    });
+    database.close();
+  });
+  it("rolls back alias when enqueue fails and refuses excluded or unresolved lines", async () => {
+    const { database, repository } = await setup();
+    database.exec(
+      "CREATE TRIGGER fail_alias_command BEFORE INSERT ON sync_outbox BEGIN SELECT RAISE(ABORT, 'OUTBOX_FAILURE'); END",
+    );
+    await expect(
+      repository.rememberWasteReceiptAlias(receiptId, lineId, aliasId, context),
+    ).rejects.toThrow("OUTBOX_FAILURE");
+    expect(await repository.listAliasesByStore(storeId)).toHaveLength(0);
+    database.exec(
+      "DROP TRIGGER fail_alias_command; UPDATE waste_lines SET validation_status = 'EXCLUDED'",
+    );
+    await expect(
+      repository.rememberWasteReceiptAlias(receiptId, lineId, aliasId, context),
+    ).rejects.toThrow("WASTE_ALIAS_PRODUCT_REQUIRED");
+    database.exec(
+      "UPDATE waste_lines SET validation_status = 'PENDING', match_status = 'AMBIGUOUS'",
+    );
+    await expect(
+      repository.rememberWasteReceiptAlias(receiptId, lineId, aliasId, context),
+    ).rejects.toThrow("WASTE_ALIAS_PRODUCT_REQUIRED");
     database.close();
   });
 });
