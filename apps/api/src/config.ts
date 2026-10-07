@@ -36,6 +36,11 @@ const environmentSchema = z.object({
   OPENAI_API_KEY: z.string().trim().startsWith("sk-").min(20).optional(),
   AI_GATEWAY_API_KEY: z.string().trim().min(20).optional(),
   VERCEL_OIDC_TOKEN: z.string().trim().min(20).optional(),
+  COMMERCIAL_PDF_AI_MODEL: z
+    .string()
+    .trim()
+    .regex(/^[a-z0-9-]+\/[a-zA-Z0-9._-]+$/)
+    .default("openai/gpt-6.1-sol"),
   WASTE_RECEIPT_VISION_MODEL: z.string().trim().min(1).default("gpt-5.6-luna"),
   WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR: z
     .string()

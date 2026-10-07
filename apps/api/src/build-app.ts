@@ -1,3 +1,4 @@
+import { createCommercialAiProvider } from "./commercial/ai-provider.js";
 import { serve as serveInngest } from "inngest/fastify";
 import { createCommercialInngestWorkflows } from "./commercial/inngest-workflows.js";
 import { randomUUID } from "node:crypto";
@@ -102,6 +103,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           dependencies.database,
           config.INNGEST_EVENT_KEY,
           config.INNGEST_SIGNING_KEY,
+          createCommercialAiProvider({
+            model: config.COMMERCIAL_PDF_AI_MODEL,
+            gatewayApiKey: config.AI_GATEWAY_API_KEY,
+            vercelOidcToken: config.VERCEL_OIDC_TOKEN,
+            getVercelOidcToken,
+          }),
         )
       : undefined;
   const sourceUploads =
