@@ -1,3 +1,8 @@
+import {
+  resolveWasteReceiptQuantity,
+  productNatureSchema,
+  salesUnitSchema,
+} from "@fl-copilot/domain";
 import type { Document } from "mongodb";
 import { Decimal128 } from "mongodb";
 import {
@@ -98,15 +103,14 @@ export async function applyWastePublicationCommand(
     const product = await context.database
       .collection<Document & { _id: string }>("products")
       .findOne(
-        { _id: o.productId, storeId, deletedAt: null, status: "ACTIVE" },
+        { _id: o.productId, storeId, deletedAt: null },
         { session: context.session },
       );
-    const quantity =
-      product?.salesUnit === "KG"
-        ? line.weight
-        : line.quantityUnit === product?.salesUnit
-          ? line.quantity
-          : null;
+    const nature = productNatureSchema.safeParse(product?.nature);
+    const unit = salesUnitSchema.safeParse(product?.salesUnit);
+    if (!product || !nature.success || !unit.success)
+      return rejected("WASTE_PUBLICATION_LINE_INVALID");
+    const quantity = resolveWasteReceiptQuantity(line, unit.data);
     const arithmetic = validateWasteReceiptArithmetic([
       {
         sourceLineIndex: line.sourceLineIndex,
@@ -117,9 +121,7 @@ export async function applyWastePublicationCommand(
     ]).lines[0]!;
     if (
       !product ||
-      product.nature !== o.productNature ||
-      quantity == null ||
-      Number(quantity) <= 0 ||
+      nature.data !== o.productNature ||
       quantity !== o.quantity ||
       arithmetic.status === "MISMATCH"
     )

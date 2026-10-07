@@ -125,7 +125,7 @@ The JPEG and HEIC normalization path was validated from the target iPhone Air ag
 
 ### M4-T11 — Atomic waste publication
 
-- `Valider la casse` validates the persisted local review state, confirmed waste date, active product, nature, compatible positive quantity, amount and arithmetic before committing the receipt.
+- `Valider la casse` validates the persisted review state, confirmed date, explicit product identity, source, amount and supplied measures/arithmetic before committing the receipt. Incomplete reference metadata is qualified separately as described in the catalog-enrichment refinement below.
 - The receipt, source records, validated waste observations, analytics recomputation job and one `WASTE_RECEIPT_PUBLISH` Outbox command commit in one SQLite transaction. A repeated action creates no additional observation or command.
 - Each observation keeps its source document and occurrence ID. Kilogram products use weight; piece/pack products require a compatible quantity unit. The editor exposes quantity and unit correction, and explicit reversible line exclusion.
 - Receipt amounts populate waste sales value only. Unknown purchase cost remains `UNAVAILABLE`; no sales observation is changed or created.
@@ -183,3 +183,16 @@ Publication previously exposed only a generic failure even when a specific recei
 - Technical storage failures use a distinct message and do not masquerade as an instruction to edit business fields. Validation failures leave all observations and Outbox commands uncommitted.
 
 Verification covers multi-line error aggregation, catalog correction/reconfirmation, quantity/unit compatibility, arithmetic-field reporting, exclusions and publication rollback. Physical iPhone acceptance of field highlighting remains pending in the updated staging build.
+
+## Pilot refinement — Receipt validation and catalog enrichment
+
+The receipt workflow now separates trustworthy source validation from Product Master completeness. An explicitly matched existing product may contribute validated receipt amounts while its nature, sales unit or catalog status remains incomplete. Product identity ambiguity, missing confirmed date/amount, duplicate conflicts, invalid supplied measures and arithmetic mismatches remain blocking.
+
+- Catalog enrichment appears as grouped, initially collapsed warnings under `Référentiel à compléter`, with optional navigation to the reference workspace. It no longer opens blocking line editors or forces an administrative detour.
+- The published nature is inherited from the referenced catalog and may remain `UNKNOWN`. The client and API allow review/inactive product records that remain explicitly identified and not deleted.
+- A shared quantity resolver interprets only positive measures in a known compatible catalog unit. Missing or non-comparable quantities become null in observations, while the original quantity, weight and unit remain in receipt lines and source records.
+- The deterministic value-of-waste KPI can be available while quantity is unavailable. Costs remain unavailable when absent, and Mercalys sales are never modified.
+- Native validation, shared publication contracts and server transaction checks use the same policy. A client publication is not rejected remotely merely because the linked reference is incomplete.
+- Persisted quantity gaps remain visible after later reference completion. This increment does not silently backfill immutable published quantities; an explicit audited enrichment workflow remains a product follow-up.
+
+Verification covers monetary publication with unknown nature/unit and a review product, nullable analytics, original-measure retention, incompatible units, unchanged publication guards, server acceptance for incomplete/inactive catalog entries, and isolated MongoDB transaction/pull/bootstrap round-trips. Native iPhone acceptance remains pending after deploying the API and installing the matching staging build.

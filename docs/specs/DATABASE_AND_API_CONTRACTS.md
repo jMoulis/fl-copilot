@@ -4797,3 +4797,12 @@ MongoDB collections are `wasteReceiptPublications` (aggregate serializer and syn
 Incremental pull exposes a `waste_receipt_publication` UPSERT envelope. Bootstrap adds the optional `entities.wasteReceiptPublications` array for published receipts. Mobile validates aggregate ownership and lineage before inserting foreign-key dependencies, acknowledging local publication or recovering published data on another device. Source images are retained on the originating device and in private Blob storage; bootstrap does not download an image or fabricate a local file path.
 
 All participating devices need the M4-T11 client to understand the new entity type. Native acceptance must use the current build before publishing receipts.
+
+
+## Receipt publication quality qualification
+
+A validated `WASTE_RECEIPT` observation may carry `productNature = UNKNOWN` and `quantity = null` when its explicitly matched, non-deleted product reference is incomplete. Validated `salesValue` remains the recorded ticket amount; missing cost remains null with `UNAVAILABLE` quality. Original measures and units remain retained in the receipt aggregate.
+
+The publication gate protects date, identity, source ownership/confirmation, duplicate handling, provided positive measures and arithmetic consistency. Product status, nature and unit completeness generate independent reference-quality warnings. The shared quantity resolver returns a value only for a known compatible unit; the API verifies that the observation quantity equals this interpretation, including null, and never fabricates a quantity from missing metadata.
+
+The shared publication serializer permits unknown classification while preserving identity, lineage and amount checks. Native code and API must be deployed together for this qualification policy; older pilot clients cannot consume newly qualified aggregates until updated. Existing nullable SQLite/MongoDB observation fields require no migration.

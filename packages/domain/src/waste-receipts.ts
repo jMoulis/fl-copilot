@@ -123,3 +123,17 @@ export const wasteLineSchema = z.object({
 
 export type WasteReceipt = z.infer<typeof wasteReceiptSchema>;
 export type WasteLine = z.infer<typeof wasteLineSchema>;
+
+/** Source facts remain intact; interpreted quantity is nullable until units are comparable. */
+export function resolveWasteReceiptQuantity(
+  line: Pick<WasteLine, "weight" | "quantity" | "quantityUnit">,
+  salesUnit: "KG" | "PIECE" | "PACK" | "UNKNOWN",
+): string | null {
+  const value =
+    salesUnit === "KG"
+      ? line.weight
+      : salesUnit !== "UNKNOWN" && line.quantityUnit === salesUnit
+        ? line.quantity
+        : null;
+  return value != null && Number(value) > 0 ? value : null;
+}

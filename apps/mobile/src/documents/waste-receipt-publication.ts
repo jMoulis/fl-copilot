@@ -4,11 +4,13 @@ import {
   type WastePublication,
 } from "@fl-copilot/sync-contracts";
 import {
+  resolveWasteReceiptQuantity,
   type LocalSourceDocument,
   type WasteObservation,
 } from "@fl-copilot/domain";
 import {
   validateWastePublication,
+  wastePublicationWarnings,
   WastePublicationValidationError,
   type PublicationProduct,
   type WastePublicationIssue,
@@ -30,6 +32,17 @@ export class WasteReceiptPublicationRepository {
   constructor(
     private readonly database: OutboxDatabase & AtomicMutationDatabase,
   ) {}
+  async inspect(receiptId: string, storeId: string) {
+    let report: {
+      issues: WastePublicationIssue[];
+      warnings: ReturnType<typeof wastePublicationWarnings>;
+    } = { issues: [], warnings: [] };
+    await this.database.withExclusiveTransactionAsync(async (tx) => {
+      const context = await readPublicationContext(tx, receiptId, storeId);
+      report = { issues: context.issues, warnings: context.warnings };
+    });
+    return report;
+  }
   async validate(receiptId: string, storeId: string) {
     let issues: WastePublicationIssue[] = [];
     await this.database.withExclusiveTransactionAsync(async (tx) => {
@@ -59,6 +72,10 @@ export class WasteReceiptPublicationRepository {
         throw new Error("WASTE_RECEIPT_INVALID_CONTEXT");
       const lines = detail.lines.map((d) => ({
         ...d.line,
+        productNature:
+          d.line.validationStatus === "EXCLUDED"
+            ? d.line.productNature
+            : products.get(d.line.matchedProductId!)!.nature,
         validationStatus:
           d.line.validationStatus === "EXCLUDED"
             ? ("EXCLUDED" as const)
@@ -69,8 +86,7 @@ export class WasteReceiptPublicationRepository {
         const line = draft.line;
         if (line.validationStatus === "EXCLUDED") continue;
         const product = products.get(line.matchedProductId!)!;
-        const quantity =
-          product.sales_unit === "KG" ? line.weight! : line.quantity!;
+        const quantity = resolveWasteReceiptQuantity(line, product.sales_unit);
         observations.push({
           id: line.id,
           storeId: input.storeId,
@@ -127,6 +143,13 @@ export class WasteReceiptPublicationRepository {
         observations,
       });
       await persistObservations(tx, publication, null);
+      for (const line of publication.lines)
+        await tx.runAsync(
+          "UPDATE waste_lines SET product_nature = ? WHERE id = ? AND receipt_id = ?",
+          line.productNature,
+          line.id,
+          receipt.id,
+        );
       await tx.runAsync(
         "UPDATE waste_receipts SET processing_status = 'PUBLISHED', sync_state = 'PENDING', dirty = 1, version = ?, updated_at = ? WHERE id = ?",
         publication.receipt.version,
@@ -327,6 +350,41 @@ async function readPublicationContext(
     );
     if (product) products.set(line.matchedProductId, product);
   }
+  const warnings = wastePublicationWarnings(detail, products);
+  if (detail.receipt.processingStatus === "PUBLISHED") {
+    const observations = await tx.getAllAsync<{
+      source_record_id: string;
+      quantity: string | null;
+    }>(
+      "SELECT source_record_id, quantity FROM waste_observations WHERE source_document_id = ? AND store_id = ? AND deleted_at IS NULL",
+      detail.receipt.sourceDocumentId ?? null,
+      storeId,
+    );
+    for (const observation of observations) {
+      if (
+        observation.quantity !== null ||
+        warnings.some(
+          (w) =>
+            w.kind === "QUANTITY" && w.lineId === observation.source_record_id,
+        )
+      )
+        continue;
+      const line = detail.lines.find(
+        (d) => d.line.id === observation.source_record_id,
+      )?.line;
+      if (line)
+        warnings.push({
+          kind: "QUANTITY",
+          productId: line.matchedProductId ?? undefined,
+          field: "quantity",
+          lineId: line.id,
+          lineIndex: line.sourceLineIndex,
+          label: line.rawLabel,
+          message:
+            "Cette ligne a été publiée sans quantité interprétable. Son montant est compté et ses mesures d’origine sont conservées.",
+        });
+    }
+  }
   return {
     detail,
     source,
@@ -336,5 +394,6 @@ async function readPublicationContext(
       products,
       source?.remote_upload_status === "CONFIRMED",
     ),
+    warnings,
   };
 }

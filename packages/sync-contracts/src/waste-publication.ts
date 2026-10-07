@@ -61,7 +61,6 @@ export const wastePublicationSchema = z
         !o ||
         line.matchStatus !== "MATCHED" ||
         !line.matchedProductId ||
-        line.productNature === "UNKNOWN" ||
         line.totalPrice == null ||
         o.id !== line.id ||
         o.storeId !== receipt.storeId ||
@@ -71,6 +70,11 @@ export const wastePublicationSchema = z
         o.sourceDocumentId !== source.id ||
         o.sourceType !== "WASTE_RECEIPT" ||
         o.salesValue !== line.totalPrice ||
+        (o.quantity !== null &&
+          (Number(o.quantity) <= 0 ||
+            ![line.weight, line.quantity].includes(o.quantity))) ||
+        (line.weight != null && Number(line.weight) <= 0) ||
+        (line.quantity != null && Number(line.quantity) <= 0) ||
         o.purchaseValueKnown !== null ||
         o.purchaseValueEstimated !== null ||
         o.costQuality !== "UNAVAILABLE" ||

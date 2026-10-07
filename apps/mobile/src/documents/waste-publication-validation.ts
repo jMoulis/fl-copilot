@@ -1,4 +1,4 @@
-import type { Product } from "@fl-copilot/domain";
+import { resolveWasteReceiptQuantity, type Product } from "@fl-copilot/domain";
 import { validateWasteReceiptArithmetic } from "@fl-copilot/analytics-core";
 import type { LocalWasteReceiptDetail } from "./waste-receipt-repository";
 export type WastePublicationField =
@@ -21,6 +21,10 @@ export interface WastePublicationIssue {
   label?: string;
   field: WastePublicationField;
   message: string;
+}
+export interface WastePublicationWarning extends WastePublicationIssue {
+  productId?: string;
+  kind: "CATALOG" | "QUANTITY";
 }
 export interface PublicationProduct {
   nature: Product["nature"];
@@ -89,46 +93,16 @@ export function validateWastePublication(
         "product",
         "Associez cette ligne à un produit disponible dans le référentiel.",
       );
-    else {
-      if (product.status !== "ACTIVE")
-        add(
-          "product",
-          "Ce produit n’est pas actif. Complétez et activez sa fiche produit.",
-        );
-      if (product.nature === "UNKNOWN")
-        add(
-          "product",
-          "Précisez « Vrac » ou « Conditionné » dans la fiche produit.",
-        );
-      else if (line.productNature !== product.nature)
-        add(
-          "product",
-          "La nature a changé dans le référentiel. Reconfirmez le produit associé.",
-        );
-      if (product.sales_unit === "UNKNOWN")
-        add(
-          "product",
-          "Précisez l’unité de vente dans la fiche produit : kg, pièce ou unité conditionnée.",
-        );
-      else if (product.sales_unit === "KG") {
-        if (line.weight == null || Number(line.weight) <= 0)
-          add(
-            "weight",
-            "Saisissez un poids strictement supérieur à zéro en kg pour ce produit.",
-          );
-      } else {
-        if (line.quantityUnit !== product.sales_unit)
-          add(
-            "quantityUnit",
-            `L’unité doit correspondre au produit : ${product.sales_unit === "PIECE" ? "pièces" : "unités conditionnées"}.`,
-          );
-        if (line.quantity == null || Number(line.quantity) <= 0)
-          add(
-            "quantity",
-            "Saisissez une quantité strictement supérieure à zéro.",
-          );
-      }
-    }
+    if (line.weight != null && Number(line.weight) <= 0)
+      add(
+        "weight",
+        "Le poids saisi doit être strictement supérieur à zéro, ou laissé vide s’il est inconnu.",
+      );
+    if (line.quantity != null && Number(line.quantity) <= 0)
+      add(
+        "quantity",
+        "La quantité saisie doit être strictement supérieure à zéro, ou laissée vide si elle est inconnue.",
+      );
     if (line.totalPrice == null)
       add("totalPrice", "Renseignez le montant de cette ligne en euros.");
     const arithmetic = validateWasteReceiptArithmetic([
@@ -146,4 +120,48 @@ export function validateWastePublication(
     }
   }
   return issues;
+}
+
+export function wastePublicationWarnings(
+  detail: LocalWasteReceiptDetail,
+  products: ReadonlyMap<string, PublicationProduct>,
+): WastePublicationWarning[] {
+  const warnings: WastePublicationWarning[] = [];
+  for (const { line } of detail.lines) {
+    if (line.validationStatus === "EXCLUDED") continue;
+    const product = products.get(line.matchedProductId ?? "");
+    if (!product || product.deleted_at || line.matchStatus !== "MATCHED")
+      continue;
+    const add = (kind: WastePublicationWarning["kind"], message: string) =>
+      warnings.push({
+        kind,
+        productId: line.matchedProductId ?? undefined,
+        lineId: line.id,
+        lineIndex: line.sourceLineIndex,
+        label: line.rawLabel,
+        field: "product",
+        message,
+      });
+    if (product.status !== "ACTIVE")
+      add(
+        "CATALOG",
+        "Le produit est identifié mais sa fiche n’est pas active. Sa casse peut être enregistrée ; le référentiel est à revoir séparément.",
+      );
+    if (product.nature === "UNKNOWN")
+      add(
+        "CATALOG",
+        "Nature à préciser dans le référentiel : la valeur est comptée, mais la répartition vrac/conditionné restera incomplète.",
+      );
+    if (product.sales_unit === "UNKNOWN")
+      add(
+        "CATALOG",
+        "Unité de vente à préciser dans le référentiel : la valeur est comptée, mais la quantité analytique restera indisponible.",
+      );
+    else if (resolveWasteReceiptQuantity(line, product.sales_unit) === null)
+      add(
+        "QUANTITY",
+        "Quantité absente ou unité non comparable : le montant peut être enregistré. Cette ligne ne contribuera pas au total des quantités.",
+      );
+  }
+  return warnings;
 }
