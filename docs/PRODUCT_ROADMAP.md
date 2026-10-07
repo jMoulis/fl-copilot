@@ -102,6 +102,16 @@ Before implementing multi-photo receipt import, validate the intended semantics 
 
 Batch processing must remain local-first, use bounded upload/extraction concurrency and expose item-level progress rather than one opaque global loader.
 
+### Receipt controls, cashier metadata and long-ticket capture
+
+Pilot feedback confirms that normal waste tickets should cover bulk products sold by weight or by piece. The first arithmetic increment implemented only `weight × unit price`; extend source-level checks to an explicit piece quantity and per-piece price, with the same rounding tolerance. Do not derive missing quantities from amounts or rely on catalog completion to validate ticket arithmetic. Unexpected conditioned products must retain their actual nature and source evidence rather than being forced into bulk classification.
+
+Add the cashier identifier printed near the bottom of the receipt to assisted extraction and review. Preserve the complete identifier as a nullable string, including its `000` prefix and any other leading zeroes. Capture confidence and source-region evidence, permit manual correction, and leave it unknown when unreadable or ambiguous instead of guessing or substituting the till/transaction number. Validate its printed context against representative tickets before implementation; it must not block otherwise valid waste publication.
+
+For long receipts, evaluate a linked multi-photo capture mode for one logical ticket, with close-up views of the header, item sections and footer. Preserve each original and its source regions; reconcile overlapping sections without discarding legitimate repeated item occurrences or publishing them twice. This differs from a batch of independent tickets and needs an explicit grouping UX.
+
+Review the current 2048-pixel derivative bound on representative long receipts. Prefer framing/cropping irrelevant background and processing readable sections from the immutable original over enlarging already unreadable text. Define capture guidance, legibility checks and extraction acceptance for the smallest printed amounts and cashier identifier before choosing the final image-preparation strategy.
+
 ### Analyses — Date navigation and flexible periods
 
 A planned extension of M3 analytics will turn `Analyses` into a historical exploration workspace. Scope its delivery after the core M4 workflow, before closing the M8 pilot UX gate; the exact increment and order remain to be agreed during product review.
