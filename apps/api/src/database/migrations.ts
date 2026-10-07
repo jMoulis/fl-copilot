@@ -257,6 +257,23 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 14,
+    name: "initialize-commercial-ai-page-draft-indexes",
+    async up(database) {
+      await database.collection("commercialDocumentAiPages").createIndex(
+        {
+          storeId: 1,
+          sourceDocumentId: 1,
+          parserVersion: 1,
+          schemaVersion: 1,
+          model: 1,
+          pageNumber: 1,
+        },
+        { unique: true },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

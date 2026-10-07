@@ -12,11 +12,13 @@
   },
   "dependencies": {
     "@fl-copilot/analytics-core": "workspace:*",
+    "@fl-copilot/commercial-core": "workspace:*",
     "@fl-copilot/domain": "workspace:*",
     "@fl-copilot/import-core": "workspace:*",
     "@fl-copilot/sync-contracts": "workspace:*",
     "@sentry/node": "^11.0.0",
     "@vercel/blob": "^2.3.0",
+    "ai": "7.0.130",
     "fastify": "^5.12.5",
     "fastify-type-provider-zod": "^7.0.0",
     "heic-convert": "^2.1.0",

@@ -10,6 +10,7 @@ export default defineConfig({
   splitting: false,
   noExternal: [
     "@fl-copilot/analytics-core",
+    "@fl-copilot/commercial-core",
     "@fl-copilot/domain",
     "@fl-copilot/import-core",
     "@fl-copilot/sync-contracts",

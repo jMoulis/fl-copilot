@@ -1,3 +1,6 @@
+import { createCommercialAiDraftProcessor } from "../src/commercial/ai-draft-processing.js";
+import { COMMERCIAL_AI_SCHEMA_VERSION } from "@fl-copilot/domain";
+import type { CommercialAiProvider } from "../src/commercial/ai-provider.js";
 import { createHash } from "node:crypto";
 import { createCommercialPdfPageProcessor } from "../src/commercial/pdf-page-processing.js";
 import { commercialPdfFixture } from "./fixtures/commercial-pdf.js";
@@ -292,6 +295,166 @@ describeWithMongo("MongoDB infrastructure", () => {
     expect(await processor.process(storeId, sourceDocumentId)).toMatchObject({
       status: "TEXT_READY",
     });
+  }, 20_000);
+
+  async function commercialAiSource() {
+    const fixture = await pdfSource();
+    await createCommercialPdfPageProcessor(database, undefined, {
+      read: async () => fixture.bytes,
+    }).process(fixture.storeId, fixture.sourceDocumentId);
+    return fixture;
+  }
+  function aiProvider(
+    result?: unknown,
+  ): CommercialAiProvider & { calls: number } {
+    return {
+      model: "openai/gpt-6.1-sol",
+      calls: 0,
+      async extract(target, pages) {
+        this.calls++;
+        const span = pages.find((page) => page.pageNumber === target)!
+          .spans[0]!;
+        const evidence = {
+          pageNumber: target,
+          spanIndices: [span.index],
+          quote: span.text,
+        };
+        return {
+          output: result ?? {
+            blocks: [
+              {
+                kind: "OFFER",
+                label: "Tomate",
+                evidence: [evidence],
+                fields: [
+                  {
+                    name: "sellingPrice",
+                    rawValue: "9",
+                    confidence: 1,
+                    evidence: [evidence],
+                  },
+                ],
+              },
+            ],
+            warnings: [],
+          },
+          responseId: "test-response",
+          resolvedModel: this.model,
+          usage: { inputTokens: 100, outputTokens: 50 },
+        };
+      },
+    };
+  }
+  it("caches one AI call per page, rejects unsupported values and never publishes commercial business data", async () => {
+    const { db, storeId, sourceDocumentId } = await commercialAiSource();
+    const provider = aiProvider();
+    const processor = createCommercialAiDraftProcessor(database, provider);
+    expect(await processor.manifest(storeId, sourceDocumentId)).toMatchObject({
+      status: "READY",
+      pages: [1, 2],
+    });
+    const outcomes = await Promise.all([
+      processor.extractPage(storeId, sourceDocumentId, 1),
+      processor.extractPage(storeId, sourceDocumentId, 1),
+    ]);
+    expect(outcomes.some((result) => result.status === "DRAFT_READY")).toBe(
+      true,
+    );
+    expect(provider.calls).toBe(1);
+    await processor.extractPage(storeId, sourceDocumentId, 1);
+    await processor.extractPage(storeId, sourceDocumentId, 2);
+    expect(provider.calls).toBe(1); // Blank page is retained without a model request.
+    expect(await processor.finalize(storeId, sourceDocumentId)).toMatchObject({
+      status: "TO_VALIDATE",
+      blockCount: 1,
+    });
+    const draft = await db
+      .collection("commercialDocumentAiPages")
+      .findOne({ storeId, sourceDocumentId, pageNumber: 1 });
+    expect(draft).toMatchObject({
+      status: "DRAFT_READY",
+      schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+      rawOutput: { blocks: [{ fields: [{ rawValue: "9" }] }] },
+      draft: {
+        blocks: [
+          { fields: [{ rawValue: null, validationStatus: "TO_VALIDATE" }] },
+        ],
+      },
+      responseId: "test-response",
+    });
+    expect(
+      await db.collection("commercialOperations").countDocuments({ storeId }),
+    ).toBe(0);
+    expect(await db.collection("offers").countDocuments({ storeId })).toBe(0);
+    expect(await processor.manifest(storeId, sourceDocumentId)).toMatchObject({
+      status: "SKIPPED",
+    });
+    expect(
+      await db
+        .collection("commercialDocumentPages")
+        .countDocuments({ storeId, sourceDocumentId }),
+    ).toBe(2);
+  }, 20_000);
+  it("keeps schema-invalid AI output out of drafts and stops repeating a permanent failure", async () => {
+    const { db, storeId, sourceDocumentId } = await commercialAiSource();
+    const provider = aiProvider({ blocks: "not an array", warnings: [] });
+    const processor = createCommercialAiDraftProcessor(database, provider);
+    await processor.manifest(storeId, sourceDocumentId);
+    expect(
+      await processor.extractPage(storeId, sourceDocumentId, 1),
+    ).toMatchObject({
+      status: "FAILED",
+      errorCode: "COMMERCIAL_AI_OUTPUT_INVALID",
+    });
+    await processor.extractPage(storeId, sourceDocumentId, 1);
+    expect(provider.calls).toBe(1);
+    expect(await processor.finalize(storeId, sourceDocumentId)).toMatchObject({
+      status: "AI_FAILED",
+    });
+    expect(
+      (
+        await db
+          .collection("commercialDocumentAiPages")
+          .findOne({ storeId, sourceDocumentId })
+      )?.draft,
+    ).toBeUndefined();
+  }, 20_000);
+  it("retries temporary AI failure with the same cache identity and remains scoped to its store", async () => {
+    const { db, storeId, sourceDocumentId } = await commercialAiSource();
+    const provider = aiProvider();
+    const extract = provider.extract.bind(provider);
+    let fail = true;
+    provider.extract = async (...args) => {
+      if (fail) {
+        fail = false;
+        throw new Error("provider unavailable");
+      }
+      return extract(...args);
+    };
+    const processor = createCommercialAiDraftProcessor(database, provider);
+    expect(
+      await processor.manifest(randomUUID(), sourceDocumentId),
+    ).toMatchObject({ status: "SKIPPED" });
+    await processor.manifest(storeId, sourceDocumentId);
+    await expect(
+      processor.extractPage(storeId, sourceDocumentId, 1),
+    ).rejects.toThrow("COMMERCIAL_AI_TEMPORARILY_UNAVAILABLE");
+    const first = await db
+      .collection("commercialDocumentAiPages")
+      .findOne({ storeId, sourceDocumentId });
+    expect(
+      await processor.extractPage(storeId, sourceDocumentId, 1),
+    ).toMatchObject({ status: "DRAFT_READY" });
+    expect(
+      await db
+        .collection("commercialDocumentAiPages")
+        .countDocuments({ storeId, sourceDocumentId }),
+    ).toBe(1);
+    const ready = await db
+      .collection("commercialDocumentAiPages")
+      .findOne({ storeId, sourceDocumentId });
+    expect(ready?._id).toEqual(first?._id);
+    expect(ready?.attemptCount).toBe(2);
   }, 20_000);
 
   it("records the infrastructure migration exactly once", async () => {
@@ -780,5 +943,5 @@ describeWithMongo("MongoDB infrastructure", () => {
     await expect(
       auth.refreshSession(deviceId, rotated.refreshToken),
     ).rejects.toMatchObject({ publicCode: "AUTH_SESSION_EXPIRED" });
-  });
+  }, 20_000);
 });
