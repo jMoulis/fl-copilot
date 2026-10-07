@@ -11,6 +11,11 @@ import type {
 import { runLocalMigrations } from "../db/migrations";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
+import {
+  captureCommercialPdf,
+  assertPdfHeader,
+  type CommercialPdfStorage,
+} from "./commercial-pdf-capture";
 import { SourceDocumentRepository } from "./source-document-repository";
 
 type SQLiteValue = string | number | null;
@@ -241,5 +246,183 @@ describe("SourceDocumentRepository", () => {
     ).rejects.toThrow("checksums must match");
 
     database.close();
+  });
+});
+
+describe("commercial PDF offline capture", () => {
+  const pdfChecksum = `sha256:${"a".repeat(64)}`;
+  const input = {
+    uri: "file:///picker/week.pdf",
+    originalFilename: "Semaine 41.pdf",
+    mimeType: "application/pdf",
+    storeId,
+    documentId,
+    fileId,
+    capturedAt: timestamp,
+  };
+  async function setup() {
+    const directory = mkdtempSync(join(tmpdir(), "fl-commercial-pdf-"));
+    directories.push(directory);
+    const path = join(directory, "local.db");
+    const database = new DatabaseSync(path);
+    const adapter = new NodeDatabase(database);
+    await runLocalMigrations(adapter);
+    const removed: string[] = [];
+    const copies: string[] = [];
+    const storage: CommercialPdfStorage = {
+      async persist({ uri, filename }) {
+        expect(uri).toBe(input.uri);
+        const localUri = `file:///documents/commercial-pdfs/${filename}`;
+        copies.push(localUri);
+        return { localUri, sizeBytes: 42, checksum: pdfChecksum };
+      },
+      async remove(uri) {
+        removed.push(uri);
+      },
+    };
+    return {
+      database,
+      path,
+      storage,
+      removed,
+      copies,
+      repository: new SourceDocumentRepository(adapter),
+    };
+  }
+  it("keeps the source and metadata after restart, leaves dates unknown and does not create business data or a premature upload job", async () => {
+    const { database, path, repository, storage, removed } = await setup();
+    await captureCommercialPdf(input, repository, storage);
+    expect(removed).toEqual([]);
+    expect(database.prepare("SELECT * FROM local_jobs").all()).toEqual([]);
+    expect(database.prepare("SELECT * FROM sync_outbox").all()).toEqual([]);
+    expect(database.prepare("SELECT * FROM source_records").all()).toEqual([]);
+    database.close();
+    const reopened = new DatabaseSync(path);
+    const restored = new SourceDocumentRepository(new NodeDatabase(reopened));
+    expect(
+      await restored.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
+    ).toMatchObject([
+      {
+        id: documentId,
+        originalFilename: "Semaine 41.pdf",
+        localProcessingStatus: "PENDING",
+        remoteUploadStatus: "LOCAL_ONLY",
+        businessPeriodStart: null,
+        businessPeriodEnd: null,
+      },
+    ]);
+    expect(await restored.getFileForDocument(documentId)).toMatchObject({
+      checksum: pdfChecksum,
+      mimeType: "application/pdf",
+      retentionStatus: "RETAINED",
+      localUri: `file:///documents/commercial-pdfs/${fileId}.pdf`,
+    });
+    expect(
+      await restored.listDocuments(recordId, "WEEKLY_COMMERCIAL_PDF"),
+    ).toEqual([]);
+    reopened.close();
+  });
+  it("keeps one source for exact duplicate content, while a changed PDF keeps its own immutable source", async () => {
+    const { database, repository, storage, removed } = await setup();
+    const first = await captureCommercialPdf(input, repository, storage);
+    const duplicate = await captureCommercialPdf(
+      {
+        ...input,
+        documentId: recordId,
+        fileId: recordId,
+        originalFilename: "renamed.pdf",
+      },
+      repository,
+      storage,
+    );
+    expect(duplicate).toMatchObject({
+      duplicate: true,
+      document: { id: first.document.id },
+    });
+    expect(removed).toEqual([
+      `file:///documents/commercial-pdfs/${recordId}.pdf`,
+    ]);
+    expect(
+      await repository.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
+    ).toHaveLength(1);
+    const changed = await captureCommercialPdf(
+      { ...input, documentId: recordId, fileId: recordId },
+      repository,
+      {
+        ...storage,
+        async persist(args) {
+          const file = await storage.persist(args);
+          return { ...file, checksum: `sha256:${"b".repeat(64)}` };
+        },
+      },
+    );
+    expect(changed.duplicate).toBe(false);
+    expect(
+      await repository.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
+    ).toHaveLength(2);
+    expect((await repository.getDocument(documentId))?.checksum).toBe(
+      pdfChecksum,
+    );
+    database.close();
+  });
+  it("rolls back file metadata failure and removes only the new copy, never the selected original", async () => {
+    const { database, repository, storage, removed } = await setup();
+    database.exec(
+      "CREATE TRIGGER fail_pdf_file BEFORE INSERT ON local_files BEGIN SELECT RAISE(ABORT, 'FILE_METADATA_FAILURE'); END",
+    );
+    await expect(
+      captureCommercialPdf(input, repository, storage),
+    ).rejects.toThrow("FILE_METADATA_FAILURE");
+    expect(
+      await repository.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
+    ).toEqual([]);
+    expect(removed).toEqual([
+      `file:///documents/commercial-pdfs/${fileId}.pdf`,
+    ]);
+    expect(removed).not.toContain(input.uri);
+    database.close();
+  });
+  it("rejects non-PDF selections, empty files and invalid checksums before saving a source", async () => {
+    const { database, repository, storage, copies, removed } = await setup();
+    await expect(
+      captureCommercialPdf(
+        { ...input, mimeType: "image/jpeg" },
+        repository,
+        storage,
+      ),
+    ).rejects.toThrow("COMMERCIAL_PDF_INVALID");
+    expect(copies).toEqual([]);
+    await expect(
+      captureCommercialPdf(input, repository, {
+        ...storage,
+        async persist(args) {
+          return { ...(await storage.persist(args)), sizeBytes: 0 };
+        },
+      }),
+    ).rejects.toThrow("COMMERCIAL_PDF_SIZE_INVALID");
+    await expect(
+      captureCommercialPdf(input, repository, {
+        ...storage,
+        async persist(args) {
+          return { ...(await storage.persist(args)), checksum: "invalid" };
+        },
+      }),
+    ).rejects.toThrow();
+    expect(removed).toHaveLength(2);
+    expect(
+      await repository.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
+    ).toEqual([]);
+    database.close();
+  });
+  it("checks actual PDF header bytes instead of trusting a filename", () => {
+    expect(() =>
+      assertPdfHeader(new TextEncoder().encode("%PDF-1.7\n1 0 obj")),
+    ).not.toThrow();
+    expect(() =>
+      assertPdfHeader(new TextEncoder().encode("renamed spreadsheet.xlsx")),
+    ).toThrow("COMMERCIAL_PDF_INVALID");
+    expect(() => assertPdfHeader(new Uint8Array())).toThrow(
+      "COMMERCIAL_PDF_INVALID",
+    );
   });
 });
