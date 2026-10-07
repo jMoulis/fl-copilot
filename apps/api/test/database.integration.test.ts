@@ -457,6 +457,117 @@ describeWithMongo("MongoDB infrastructure", () => {
     expect(ready?.attemptCount).toBe(2);
   }, 20_000);
 
+  it("recovers legacy unfinished budget failures once while retaining completed AI drafts and historical attempts", async () => {
+    const { db, storeId, sourceDocumentId } = await commercialAiSource();
+    const provider = aiProvider();
+    const processor = createCommercialAiDraftProcessor(database, provider);
+    await processor.manifest(storeId, sourceDocumentId);
+    await processor.extractPage(storeId, sourceDocumentId, 1);
+    const completed = await db
+      .collection("commercialDocumentAiPages")
+      .findOne({ storeId, sourceDocumentId, pageNumber: 1 });
+    const job = (await db
+      .collection("commercialDocumentJobs")
+      .findOne({ storeId, sourceDocumentId }))!;
+    await db
+      .collection<{ _id: string; [key: string]: unknown }>(
+        "commercialDocumentAiPages",
+      )
+      .insertOne({
+        _id: randomUUID(),
+        storeId,
+        sourceDocumentId,
+        pageNumber: 2,
+        parserVersion: job.parserVersion,
+        schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+        model: provider.model,
+        checksum: job.checksum,
+        status: "FAILED",
+        errorCode: "COMMERCIAL_AI_ATTEMPT_LIMIT",
+        attemptCount: 5,
+      });
+    await db
+      .collection("commercialDocumentJobs")
+      .updateOne(
+        { storeId, sourceDocumentId },
+        { $set: { status: "AI_FAILED" } },
+      );
+    expect(
+      (await processor.pendingDocuments()).some(
+        (source) => source.sourceDocumentId === sourceDocumentId,
+      ),
+    ).toBe(true);
+    const recovered = await db
+      .collection("commercialDocumentAiPages")
+      .findOne({ storeId, sourceDocumentId, pageNumber: 2 });
+    expect(recovered).toMatchObject({
+      status: "RETRY",
+      runtimeBudgetVersion: 2,
+      attemptCount: 5,
+      budgetAttemptCount: 0,
+    });
+    await processor.extractPage(storeId, sourceDocumentId, 2);
+    expect(
+      await db
+        .collection("commercialDocumentAiPages")
+        .findOne({ storeId, sourceDocumentId, pageNumber: 1 }),
+    ).toEqual(completed);
+    expect(provider.calls).toBe(1); // Retained page is cached; blank page needs no API call.
+    expect(await processor.finalize(storeId, sourceDocumentId)).toMatchObject({
+      status: "TO_VALIDATE",
+    });
+    expect(
+      (
+        await db
+          .collection("commercialDocumentAiPages")
+          .findOne({ storeId, sourceDocumentId, pageNumber: 2 })
+      )?.attemptCount,
+    ).toBe(6);
+  }, 20_000);
+  it("does not revive schema-invalid or current-budget permanent AI failures", async () => {
+    const { db, storeId, sourceDocumentId } = await commercialAiSource();
+    const provider = aiProvider({ blocks: "invalid", warnings: [] });
+    const processor = createCommercialAiDraftProcessor(database, provider);
+    await processor.manifest(storeId, sourceDocumentId);
+    await processor.extractPage(storeId, sourceDocumentId, 1);
+    await processor.finalize(storeId, sourceDocumentId);
+    const failed = await db
+      .collection("commercialDocumentAiPages")
+      .findOne({ storeId, sourceDocumentId, pageNumber: 1 });
+    await db
+      .collection("commercialDocumentAiPages")
+      .updateOne(
+        { storeId, sourceDocumentId, pageNumber: 1 },
+        { $unset: { runtimeBudgetVersion: "" } },
+      );
+    expect(
+      (await processor.pendingDocuments()).some(
+        (source) => source.sourceDocumentId === sourceDocumentId,
+      ),
+    ).toBe(false);
+    expect(
+      (
+        await db
+          .collection("commercialDocumentAiPages")
+          .findOne({ storeId, sourceDocumentId, pageNumber: 1 })
+      )?.errorCode,
+    ).toBe(failed?.errorCode);
+    await db.collection("commercialDocumentAiPages").updateOne(
+      { storeId, sourceDocumentId, pageNumber: 1 },
+      {
+        $set: {
+          runtimeBudgetVersion: 2,
+          errorCode: "COMMERCIAL_AI_ATTEMPT_LIMIT",
+        },
+      },
+    );
+    expect(
+      (await processor.pendingDocuments()).some(
+        (source) => source.sourceDocumentId === sourceDocumentId,
+      ),
+    ).toBe(false);
+  }, 20_000);
+
   it("records the infrastructure migration exactly once", async () => {
     const mongoDatabase = await database.getDb();
     const migrations = mongoDatabase.collection<{

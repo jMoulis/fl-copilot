@@ -1,3 +1,8 @@
+import {
+  COMMERCIAL_AI_PAGE_LEASE_MS,
+  COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+} from "./ai-runtime-limits.js";
+import type { Db } from "mongodb";
 import { randomUUID } from "node:crypto";
 import {
   commercialPdfPageSchema,
@@ -46,6 +51,8 @@ type DraftPage = {
   checksum: string;
   status: string;
   attemptCount?: number;
+  budgetAttemptCount?: number;
+  runtimeBudgetVersion?: number;
   leaseToken?: string | null;
   leaseExpiresAt?: Date | null;
   draft?: AnchoredCommercialDraft;
@@ -69,6 +76,7 @@ export function createCommercialAiDraftProcessor(
   return {
     async pendingDocuments() {
       const db = await database.getDb();
+      await recoverLegacyBudgetFailures(db, provider.model, now());
       return db
         .collection<Job>("commercialDocumentJobs")
         .find({
@@ -92,6 +100,10 @@ export function createCommercialAiDraftProcessor(
     async manifest(storeId: string, sourceDocumentId: string) {
       const db = await database.getDb();
       const jobs = db.collection<Job>("commercialDocumentJobs");
+      await recoverLegacyBudgetFailures(db, provider.model, now(), {
+        storeId,
+        sourceDocumentId,
+      });
       await jobs.updateOne(
         {
           _id: sourceDocumentId,
@@ -222,7 +234,9 @@ export function createCommercialAiDraftProcessor(
               ...identity,
               _id: randomUUID(),
               checksum: job.checksum,
-              status: "PENDING",
+              status: "RETRY",
+              runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+              budgetAttemptCount: 0,
               attemptCount: 0,
               createdAt: timestamp,
             },
@@ -232,28 +246,45 @@ export function createCommercialAiDraftProcessor(
       } catch (error) {
         if (!duplicateKey(error)) throw error;
       }
+      await drafts.updateOne(
+        {
+          ...identity,
+          status: "PENDING",
+          runtimeBudgetVersion: { $exists: false },
+        },
+        {
+          $set: {
+            status: "RETRY",
+            runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+            budgetAttemptCount: 0,
+          },
+        },
+      );
       const claimed = await drafts.findOneAndUpdate(
         {
           ...identity,
           $or: [
-            { status: "PENDING" },
+            { status: { $in: ["PENDING", "RETRY"] } },
             { status: "PROCESSING", leaseExpiresAt: { $lte: timestamp } },
           ],
         },
         {
           $set: {
             status: "PROCESSING",
+            runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
             leaseToken: token,
-            leaseExpiresAt: new Date(timestamp.getTime() + 90_000),
+            leaseExpiresAt: new Date(
+              timestamp.getTime() + COMMERCIAL_AI_PAGE_LEASE_MS,
+            ),
             updatedAt: timestamp,
           },
-          $inc: { attemptCount: 1 },
+          $inc: { attemptCount: 1, budgetAttemptCount: 1 },
         },
         { returnDocument: "after" },
       );
       if (!claimed) return { status: "IN_PROGRESS", pageNumber };
       try {
-        if ((claimed.attemptCount ?? 1) > 4)
+        if ((claimed.budgetAttemptCount ?? claimed.attemptCount ?? 1) > 4)
           throw new CommercialAiPermanentError("COMMERCIAL_AI_ATTEMPT_LIMIT");
         const records = await db
           .collection<Page>("commercialDocumentPages")
@@ -342,11 +373,23 @@ export function createCommercialAiDraftProcessor(
         };
       } catch (error) {
         const permanent = error instanceof CommercialAiPermanentError;
+        const failureElapsedMs = Math.max(
+          0,
+          now().getTime() - timestamp.getTime(),
+        );
+        const failureType = permanent
+          ? "PERMANENT"
+          : error instanceof Error &&
+              ["AbortError", "TimeoutError"].includes(error.name)
+            ? "TIMEOUT"
+            : "TEMPORARY";
         await drafts.updateOne(
           { ...identity, leaseToken: token },
           {
             $set: {
-              status: permanent ? "FAILED" : "PENDING",
+              status: permanent ? "FAILED" : "RETRY",
+              lastFailureElapsedMs: failureElapsedMs,
+              lastFailureType: failureType,
               leaseToken: null,
               leaseExpiresAt: null,
               errorCode: permanent
@@ -422,4 +465,82 @@ export function createCommercialAiDraftProcessor(
       return { status, blockCount, issueCount };
     },
   };
+}
+
+async function recoverLegacyBudgetFailures(
+  db: Db,
+  model: string,
+  timestamp: Date,
+  scope?: { storeId: string; sourceDocumentId: string },
+) {
+  const pages = db.collection<DraftPage>("commercialDocumentAiPages");
+  const legacy = await pages
+    .find({
+      ...scope,
+      model,
+      schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+      runtimeBudgetVersion: { $exists: false },
+      status: { $in: ["PENDING", "FAILED"] },
+      draft: { $exists: false },
+      errorCode: {
+        $in: [
+          "COMMERCIAL_AI_TEMPORARILY_UNAVAILABLE",
+          "COMMERCIAL_AI_ATTEMPT_LIMIT",
+        ],
+      },
+    })
+    .sort({ createdAt: 1 })
+    .limit(100)
+    .toArray();
+  const sources = new Map<string, DraftPage>();
+  for (const page of legacy) {
+    await pages.updateOne(
+      {
+        _id: page._id,
+        runtimeBudgetVersion: { $exists: false },
+        status: { $in: ["PENDING", "FAILED"] },
+        draft: { $exists: false },
+      },
+      {
+        $set: {
+          status: "RETRY",
+          runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+          budgetAttemptCount: 0,
+          leaseToken: null,
+          leaseExpiresAt: null,
+          errorCode: null,
+          updatedAt: timestamp,
+        },
+      },
+    );
+    sources.set(`${page.storeId}:${page.sourceDocumentId}`, page);
+  }
+  for (const page of sources.values()) {
+    const remainingFailures = await pages.countDocuments({
+      storeId: page.storeId,
+      sourceDocumentId: page.sourceDocumentId,
+      model,
+      parserVersion: page.parserVersion,
+      schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+      status: "FAILED",
+    });
+    if (remainingFailures) continue;
+    await db.collection<Job>("commercialDocumentJobs").updateOne(
+      {
+        _id: page.sourceDocumentId,
+        storeId: page.storeId,
+        aiModel: model,
+        aiSchemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+        stage: "AI_EXTRACTION",
+        status: "AI_FAILED",
+      },
+      {
+        $set: {
+          status: "TEXT_READY",
+          nextAiAttemptAt: null,
+          updatedAt: timestamp,
+        },
+      },
+    );
+  }
 }

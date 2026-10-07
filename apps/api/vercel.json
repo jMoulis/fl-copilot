@@ -5,7 +5,7 @@
   "regions": ["cdg1"],
   "functions": {
     "api/index.ts": {
-      "maxDuration": 60
+      "maxDuration": 120
     }
   },
   "rewrites": [

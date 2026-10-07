@@ -1,3 +1,4 @@
+import { COMMERCIAL_AI_TIMEOUT_MS } from "./ai-runtime-limits.js";
 import {
   createGateway,
   generateText,
@@ -73,7 +74,7 @@ export function createCommercialAiProvider(input: {
           }),
           maxOutputTokens: 6000,
           maxRetries: 0,
-          abortSignal: AbortSignal.timeout(45_000),
+          abortSignal: AbortSignal.timeout(COMMERCIAL_AI_TIMEOUT_MS),
           providerOptions: {
             openai: { store: false, reasoningEffort: "low" },
             gateway: { tags: ["fl-copilot", "commercial-pdf"] },

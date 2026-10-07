@@ -98,3 +98,16 @@ Verification includes source/citation/number-boundary tests, preserved `<`/comma
 A bounded live test on the first pilot page used the authorized Gateway access: model `openai/gpt-6.1-sol`, 15,080 input and 1,376 output tokens, about 21 seconds, six raw blocks and five anchored blocks. One block was rejected by source checks; date uncertainty remained flagged. It wrote no production draft or business record; raw/validated results stayed in an ignored temporary file.
 
 Full-document cloud execution is pending after deploying this PR. Native review/synchronization of draft proposals is not implemented yet; the current app still displays analysis pending. This is a backend increment, so no iPhone rebuild or reimport is needed to trigger the existing PDF. The future review screen must read cached local draft data, not depend on a synchronous remote request.
+
+## Cloud correction — Commercial AI execution time budgets
+
+After PR #86 deployment, the real eight-page PDF started processing. Some pages completed on their first attempt, while denser requests repeatedly failed at about 45,080 ms, matching the application's 45-second generation deadline. Full-document acceptance is not complete.
+
+- Raise the model deadline to 90 seconds and the Vercel function limit to 120 seconds under the existing Fluid Compute configuration. The per-page claim lease becomes 180 seconds, exceeding the entire callback budget; a meaningful invariant test guards the ordering of these limits.
+- Runtime budget version 2 provides four bounded provider attempts per budget version while preserving the lifetime attempt counter. Completed cached drafts, raw responses, identity/model/schema and field validation remain unchanged.
+- Only legacy unfinished rows without a draft and with temporary/attempt-limit errors receive one recovery window. They move to `RETRY`, which the legacy worker cannot claim as pending work. Schema-invalid/configuration failures and current-budget terminal failures are not automatically revived. A failed source job is reopened only when no permanent failed page remains in the matching cache identity.
+- Capture failure category and elapsed time as sanitized diagnostics, without prompts, document text, credentials or provider response bodies.
+
+A bounded live test of page 5 with the same model/schema completed in 73,454 ms: 26 raw blocks, 22 anchored blocks, seven source-validation issues and date uncertainty, 50,623 input and 5,197 output tokens. This test wrote only ignored local output, not production drafts or business records. It confirms the previous 45-second deadline was insufficient for a representative dense page.
+
+Verification covers execution/lease/function budget ordering, legacy unfinished recovery with retained completed drafts/stable IDs/total attempts, and refusal to revive permanent/current-budget failures. Full production completion remains pending after merging/deploying this correction. No native rebuild or reimport is required.
