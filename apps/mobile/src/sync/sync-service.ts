@@ -135,7 +135,26 @@ export class MobileSyncService {
       summary.pushed += batch.pushed;
       summary.conflicts += batch.conflicts;
       summary.failed += batch.failed;
-      if (batch.retryable === 0) return summary;
+      if (batch.retryable === 0) {
+        const next = await new OutboxRepository(
+          this.database,
+          this.now,
+        ).listPending(storeId);
+        if (
+          !next.some(
+            (item) =>
+              item.entityType === "product_alias" &&
+              commands.some(
+                (prior) =>
+                  prior.entityType === item.entityType &&
+                  prior.entityId === item.entityId,
+              ),
+          )
+        )
+          return summary;
+        retry -= 1;
+        continue;
+      }
       if (retry >= this.maxRetries) {
         summary.failed += batch.retryable;
         return summary;
@@ -220,6 +239,25 @@ export class MobileSyncService {
               result.remoteEntity,
             );
           await outbox.markAcknowledged(command.commandId);
+          if (
+            command.entityType === "product_alias" &&
+            command.commandType === "PRODUCT_ALIAS_UPSERT" &&
+            command.expectedRemoteVersion == null &&
+            typeof result.remoteVersion === "number"
+          ) {
+            // Only rebase an unsent delete after our own creation was acknowledged.
+            await transaction.runAsync(
+              `UPDATE sync_outbox SET expected_remote_version = ?
+               WHERE store_id = ? AND entity_type = 'product_alias' AND entity_id = ?
+                 AND command_type = 'PRODUCT_ALIAS_DELETE' AND status = 'PENDING'
+                 AND attempt_count = 0 AND expected_remote_version IS NULL
+                 AND local_sequence > ?`,
+              result.remoteVersion,
+              storeId,
+              command.entityId,
+              command.localSequence,
+            );
+          }
           pushed += 1;
         } else if (result.status === "CONFLICT") {
           await conflictsRepository.recordPushConflict(command, result);
