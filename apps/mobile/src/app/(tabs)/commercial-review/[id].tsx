@@ -1,5 +1,6 @@
+import { CommercialSummaryView } from "@/commercial/summary-view";
 import { captureScreenError } from "@/observability/sentry";
-import { reconcileCommercialDraftPages } from "@fl-copilot/commercial-core";
+import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, Text, TextInput, View } from "react-native";
 import {
@@ -13,10 +14,7 @@ import type { CommercialReviewPage } from "@fl-copilot/sync-contracts";
 import { useAuth } from "@/auth/auth-provider";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { useSync } from "@/sync/sync-provider";
-import {
-  CommercialReviewRepository,
-  reviewProgress,
-} from "@/commercial/review-repository";
+import { CommercialReviewRepository } from "@/commercial/review-repository";
 import {
   commercialFieldLabels,
   commercialKindLabels,
@@ -50,6 +48,7 @@ export default function CommercialReviewScreen() {
   const [decisions, setDecisions] = useState<
     Awaited<ReturnType<CommercialReviewRepository["decisions"]>>
   >([]);
+  const [viewSummary, setViewSummary] = useState(true);
   const [index, setIndex] = useState(0),
     [error, setError] = useState<string>(),
     [loading, setLoading] = useState(true),
@@ -102,24 +101,11 @@ export default function CommercialReviewScreen() {
   );
   const items = useMemo(() => commercialReviewItems(pages), [pages]);
   const item = items[index];
-  const groups = useMemo(
-    () =>
-      storeId
-        ? reconcileCommercialDraftPages({
-            storeId,
-            sourceDocumentId: id,
-            pages: pages.map((page) => ({
-              pageNumber: page.pageNumber,
-              draft: {
-                blocks: page.blocks,
-                issues: page.issues,
-                warnings: page.warnings,
-              },
-            })),
-          })
-        : [],
-    [storeId, id, pages],
+  const summary = useMemo(
+    () => buildCommercialDocumentSummary(pages, decisions),
+    [pages, decisions],
   );
+  const groups = summary.offerGroups;
   const group = item
     ? groups.find((group) =>
         group.variants.some((variant) =>
@@ -143,7 +129,6 @@ export default function CommercialReviewScreen() {
     setEditing(false);
     setError(undefined);
   }, [item?.key]);
-  const progress = reviewProgress(pages, decisions);
   const choices = item
     ? decisions.filter(
         (d) =>
@@ -161,8 +146,7 @@ export default function CommercialReviewScreen() {
         d.decision.sourceBlockIndex === x.block.sourceBlockIndex,
     ),
   );
-  function navigate(next: number) {
-    const move = () => setIndex(next);
+  function discardEdits(move: () => void) {
     if (Object.keys(changes).length && !choices.length)
       Alert.alert(
         "Corrections non enregistrées",
@@ -173,6 +157,75 @@ export default function CommercialReviewScreen() {
         ],
       );
     else move();
+  }
+  function navigate(next: number) {
+    discardEdits(() => setIndex(next));
+  }
+  function openSummaryItem(key: string) {
+    const target = items.findIndex((item) => item.key === key);
+    if (target < 0) return;
+    setChanges({});
+    setEditing(false);
+    setError(undefined);
+    setIndex(target);
+    setViewSummary(false);
+  }
+  function confirmReadable() {
+    const candidates = summary.bulkEligible.slice(0, 100);
+    if (!storeId || busy || !candidates.length) return;
+    Alert.alert(
+      `Confirmer ${candidates.length} transcriptions ?`,
+      "Vous confirmez ensemble les transcriptions source lisibles. Les points à clarifier restent visibles ; aucune offre, application au magasin ou TG n’est validée.",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Confirmer cette série",
+          onPress: () => {
+            setBusy(true);
+            setError(undefined);
+            void repository
+              .reviewReadableGroup({
+                storeId,
+                sourceDocumentId: id,
+                deviceId,
+                reviewedAt: new Date().toISOString(),
+                entries: candidates.map((item) => ({
+                  pageId: item.page.id,
+                  sourceBlockIndex: item.block.sourceBlockIndex,
+                  id: randomUUID(),
+                  commandId: randomUUID(),
+                })),
+              })
+              .then(refresh)
+              .then(apply)
+              .then(() => {
+                void syncNow(storeId);
+              })
+              .catch(async (reason: unknown) => {
+                if (
+                  reason instanceof Error &&
+                  reason.message === "COMMERCIAL_GROUP_REVIEW_UNSAFE"
+                ) {
+                  setError(
+                    "Certains choix ont changé. La synthèse va être actualisée ; aucun nouvel élément de cette série n’a été confirmé.",
+                  );
+                  try {
+                    apply(await refresh());
+                  } catch (readError) {
+                    captureScreenError(readError, "commercial-review");
+                  }
+                } else {
+                  captureScreenError(reason, "commercial-review");
+                  setError(
+                    "La série n’a pas pu être confirmée. Les sources restent conservées. Rechargez la synthèse pour réessayer.",
+                  );
+                }
+              })
+              .finally(() => setBusy(false));
+          },
+        },
+      ],
+    );
   }
   async function submit(decision: "CONFIRMED_TRANSCRIPTION" | "DISMISSED") {
     if (!storeId || !item || busy || choices.length) return;
@@ -238,14 +291,14 @@ export default function CommercialReviewScreen() {
     );
   }
   return (
-    <AppScreen key={item?.key ?? "pending"}>
+    <AppScreen key={viewSummary ? "summary" : (item?.key ?? "pending")}>
       <AppHeader
-        title="Examiner le document"
+        title={viewSummary ? "Synthèse commerciale" : "Consulter un extrait"}
         subtitle={pages[0]?.originalFilename ?? "Communication commerciale"}
       />
       <SecondaryButton
         label="Retour à Ma semaine"
-        onPress={() => router.replace("/week" as Href)}
+        onPress={() => discardEdits(() => router.replace("/week" as Href))}
       />
       {error ? (
         <InlineAlert title="Examen indisponible" message={error} />
@@ -263,19 +316,38 @@ export default function CommercialReviewScreen() {
           icon="document-text-outline"
         />
       ) : null}
-      {pages.length ? (
-        <SectionCard
-          title={`${progress.examined} sur ${progress.total} éléments examinés`}
-          description={`${progress.remaining} à examiner. Les transcriptions confirmées restent distinctes des offres commerciales validées.`}
+      {pages.length && viewSummary ? (
+        <CommercialSummaryView
+          summary={summary}
+          busy={busy}
+          decisions={decisions}
+          onOpen={openSummaryItem}
+          onConfirmReadable={confirmReadable}
+        />
+      ) : null}
+      {!viewSummary ? (
+        <SecondaryButton
+          label="Retour à la synthèse"
+          disabled={busy}
+          onPress={() =>
+            discardEdits(() => {
+              setChanges({});
+              setEditing(false);
+              setViewSummary(true);
+            })
+          }
         />
       ) : null}
       {conflictIndex >= 0 ? (
         <SecondaryButton
           label="Examiner le choix en conflit"
-          onPress={() => navigate(conflictIndex)}
+          onPress={() => {
+            setViewSummary(false);
+            navigate(conflictIndex);
+          }}
         />
       ) : null}
-      {item ? (
+      {item && !viewSummary ? (
         <>
           <SectionCard
             title={`Extrait source · page ${item.page.pageNumber} sur ${item.page.pageCount}`}
@@ -519,41 +591,14 @@ export default function CommercialReviewScreen() {
             }}
           />
           <SecondaryButton
-            label="Élément précédent"
+            label="Extrait précédent"
             disabled={index === 0 || busy}
             onPress={() => navigate(index - 1)}
           />
           <PrimaryButton
-            label="Élément suivant"
+            label="Extrait suivant"
             disabled={index >= items.length - 1 || busy}
             onPress={() => navigate(index + 1)}
-          />
-          <SecondaryButton
-            label="Prochain élément à examiner"
-            disabled={
-              busy ||
-              !items.some(
-                (x, i) =>
-                  i > index &&
-                  !decisions.some(
-                    (d) =>
-                      d.decision.pageId === x.page.id &&
-                      d.decision.sourceBlockIndex === x.block.sourceBlockIndex,
-                  ),
-              )
-            }
-            onPress={() => {
-              const next = items.findIndex(
-                (x, i) =>
-                  i > index &&
-                  !decisions.some(
-                    (d) =>
-                      d.decision.pageId === x.page.id &&
-                      d.decision.sourceBlockIndex === x.block.sourceBlockIndex,
-                  ),
-              );
-              if (next >= 0) navigate(next);
-            }}
           />
         </>
       ) : null}
