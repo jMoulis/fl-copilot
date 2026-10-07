@@ -267,7 +267,8 @@ export function createMongoSourceUploadService(
           database,
           upload,
         );
-        return confirmed(upload, draft, duplicate);
+        const jobId = await queueCommercialDocument(database, upload, now());
+        return confirmed(upload, draft, duplicate, jobId);
       }
 
       const blob = await storage.head(upload.objectKey);
@@ -315,7 +316,8 @@ export function createMongoSourceUploadService(
         upload,
       );
       const duplicate = await findExactWasteReceiptDuplicate(database, upload);
-      return confirmed(upload, draft, duplicate);
+      const jobId = await queueCommercialDocument(database, upload, now());
+      return confirmed(upload, draft, duplicate, jobId);
     },
   };
 }
@@ -445,11 +447,12 @@ function confirmed(
   upload: UploadRecord,
   wasteReceiptDraft?: WasteReceiptDraft,
   wasteReceiptDuplicate?: WasteReceiptDuplicate,
+  jobId: string | null = null,
 ): CompleteSourceUploadResponse {
   return {
     sourceDocumentId: upload.sourceDocumentId,
     remoteUploadStatus: "CONFIRMED",
-    jobId: null,
+    jobId,
     wasteReceiptDraft,
     wasteReceiptDuplicate,
   };
@@ -486,4 +489,60 @@ function isDuplicateKeyError(error: unknown): error is { code: number } {
     "code" in error &&
     error.code === 11000
   );
+}
+
+// Durable pipeline registration. Page processing is implemented in M5-T03.
+async function queueCommercialDocument(
+  database: DatabaseService,
+  upload: UploadRecord,
+  timestamp: Date,
+): Promise<string | null> {
+  if (upload.sourceType !== "WEEKLY_COMMERCIAL_PDF") return null;
+  const db = await database.getDb();
+  const jobs = db.collection<{
+    _id: string;
+    storeId: string;
+    sourceDocumentId: string;
+    checksum: string;
+    objectKey: string;
+    pipelineVersion: string;
+    status?: string;
+    stage?: string;
+    attemptCount?: number;
+    createdAt?: Date;
+    updatedAt?: Date;
+  }>("commercialDocumentJobs");
+  const identity = {
+    _id: upload.sourceDocumentId,
+    storeId: upload.storeId,
+    sourceDocumentId: upload.sourceDocumentId,
+    checksum: upload.checksum,
+    objectKey: upload.objectKey,
+    pipelineVersion: "commercial-pdf.v1",
+  };
+  try {
+    await jobs.updateOne(
+      identity,
+      {
+        $setOnInsert: {
+          ...identity,
+          status: "PENDING",
+          stage: "TEXT_EXTRACTION",
+          attemptCount: 0,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+      },
+      { upsert: true },
+    );
+  } catch (error) {
+    if (!isDuplicateKeyError(error)) throw error;
+    if (!(await jobs.findOne(identity)))
+      throw new AuthError(
+        409,
+        "COMMERCIAL_DOCUMENT_JOB_IDENTITY_MISMATCH",
+        "Ce document possède déjà un traitement incompatible.",
+      );
+  }
+  return upload.sourceDocumentId;
 }

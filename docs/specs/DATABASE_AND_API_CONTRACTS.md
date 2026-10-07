@@ -4815,3 +4815,29 @@ Receipt fields are optional `detectedCashierNumber`, `confirmedCashierNumber` (n
 Vision schema `waste-receipt.vision.v2` requires nullable `cashierNumber`, `cashierNumberConfidence` and `cashierNumberRegion` evidence. The review draft adds optional `detectedCashierNumber`, allowing legacy extraction output to remain readable. The cashier identifier is never converted to a number or used as a KPI input.
 
 Before publication, confirmation remains local review state. The immutable publication aggregate carries the receipt metadata with its existing Outbox command, transaction and incremental sync policy. The published receipt stores it in MongoDB, and the aggregate serializer preserves text and ISO confirmation timestamps for pull/bootstrap. Published metadata is read-only in this increment; no automatic re-extraction or metadata backfill is performed.
+
+## Commercial PDF processing registration — M5-T02
+
+A locally captured `WEEKLY_COMMERCIAL_PDF` uses existing `source_documents`, `local_files` and `local_jobs` contracts. The upload job ID is the stable source UUID and its payload is `{ storeId, sourceDocumentId, localFileId }`. Source/file creation and job insertion commit together. Previously captured sources without a job are registered transactionally during the normal upload cycle. No general Outbox command or business operation is emitted.
+
+Once source upload is confirmed, `commercialDocumentJobs` holds a durable processing intent:
+
+```ts
+{
+  _id: string; // sourceDocumentId, stable UUID
+  storeId: string;
+  sourceDocumentId: string;
+  checksum: string;
+  objectKey: string;
+  pipelineVersion: "commercial-pdf.v1";
+  status: "PENDING";
+  stage: "TEXT_EXTRACTION";
+  attemptCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+MongoDB migration 12 enforces unique `(storeId, sourceDocumentId, pipelineVersion)` and indexes pending-stage lookup by status/time. Source UUID also remains globally unique through `_id`. Insert-only registration preserves progress if completion is retried. A response lost after upload confirmation can retry registration without a second binary transfer. The existing `CompleteSourceUploadResponse.jobId` identifies this intent; it is not an extraction result. Inngest execution and page processing follow in the next increments, without introducing a replacement polling worker.
+
+Local source upload becomes `CONFIRMED`, processing remains `UPLOADED`, and the local upload job completes. The original file stays `RETAINED`. Missing originals and metadata/processing-identity mismatches keep a visible local error. Manual retry only resets eligible pending/retry jobs; it does not replace invalid files, reset confirmed transfers or silently restart extraction. PDF source history is not yet part of bootstrap restoration.
