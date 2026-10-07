@@ -211,3 +211,8 @@ The technical and product foundations required for an operational alpha are pres
 - Waste capture is now the clearest missing daily workflow: the `Casse` tab is still a placeholder and the current source material already includes a representative bulk-waste receipt.
 
 Pilot observation is still required to measure time saved, trust after repeated daily use and acceptable manual-import effort. These measures remain product follow-ups and do not block M4. The offline-first architecture and the dependency order for later recommendations remain unchanged.
+
+## Confirmed receipt UX decisions — 2026-10-07
+
+- Date review uses a French calendar selector (day/month/year display), with explicit human confirmation and ISO storage. Assisted extraction should inspect the footer for a printed French date without replacing it with capture/upload time or guessing an ambiguous year.
+- The product owner approves several linked photos for one long waste ticket. This grouping mode is confirmed; independent multi-ticket batches remain a distinct use case. Design the capture/review UX and overlap reconciliation before delivery, preserving genuine repeated occurrences and all source images.
