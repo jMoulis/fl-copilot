@@ -124,3 +124,15 @@ PR #87 deployment allowed seven of eight pilot pages to complete, preserving ear
 A bounded replay of page 6 with the wider response completed in 85,858 ms: 6,521 output tokens, 26 raw blocks, 21 anchored blocks and six source issues, with date uncertainty retained. Raw/anchored output stayed in ignored local diagnostics; production data were not modified by that replay.
 
 After merge/deployment, use the confirmed maintenance retry for the failed pilot page, then verify full `TO_VALIDATE/DRAFT_REVIEW` completion. No native build or reimport is needed. This maintenance path is not a general automatic revival of schema/configuration errors or human-rejected proposals.
+
+## M5-T04 cloud acceptance
+
+PR #88 was deployed and only the failed page was explicitly requeued. The retained pilot PDF reached `TO_VALIDATE/DRAFT_REVIEW`: eight complete pages, 140 anchored blocks and 37 source issues. The other seven page cache records were compared before/after and remained unchanged. No draft was validated or published. No native rebuild was needed.
+
+## M5-T05 — Deterministic mechanism normalization foundation
+
+Shared Zod contracts distinguish fixed price, strict/inclusive ceiling, threshold price, card benefit, lot and supplier purchase conditions. Runtime-neutral normalization retains the raw inputs, returns `TO_VALIDATE` and refuses unsupported or contradictory syntax rather than guessing. A recomputable offer projection retains the source block index and never edits cached AI responses, citations or source documents.
+
+Explicit French price/unit forms, threshold conditions, card percentage/amount and lot quantity/total are supported. No effective card price, lot unit price or missing purchase unit is inferred. Supplier discounts never become customer benefits. Unsupported wording remains available with an issue; this conservative grammar is not comprehensive French-language interpretation. Missing data remains null and an explicit zero price remains zero.
+
+This increment establishes the shared normalization layer. It does not persist new operational offers, regenerate the eight cached AI pages, or provide the review UI. M5-T06 reconciliation and M5-T07 review will consume this projection; compound/unsupported mechanics require explicit human confirmation. No database migration or native dependency is introduced.
