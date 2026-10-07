@@ -404,6 +404,89 @@ export function createCommercialAiDraftProcessor(
         return { status: "FAILED", pageNumber, errorCode: error.code };
       }
     },
+    // Explicit maintenance action after a confirmed output-budget failure.
+    async retryTruncatedPage(
+      storeId: string,
+      sourceDocumentId: string,
+      pageNumber: number,
+    ) {
+      const db = await database.getDb();
+      const session = db.client.startSession();
+      try {
+        await session.withTransaction(async () => {
+          const jobs = db.collection<Job>("commercialDocumentJobs");
+          const job = await jobs.findOne(
+            {
+              _id: sourceDocumentId,
+              storeId,
+              aiModel: provider.model,
+              aiSchemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+              stage: "AI_EXTRACTION",
+              status: { $in: ["AI_FAILED", "TEXT_READY"] },
+            },
+            { session },
+          );
+          if (!job) throw new Error("COMMERCIAL_AI_RETRY_UNSAFE");
+          const pages = db.collection<DraftPage>("commercialDocumentAiPages");
+          const page = await pages.findOne(
+            {
+              storeId,
+              sourceDocumentId,
+              pageNumber,
+              parserVersion: job.parserVersion,
+              schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+              model: provider.model,
+              checksum: job.checksum,
+              status: "FAILED",
+              draft: { $exists: false },
+              runtimeBudgetVersion: {
+                $lt: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+              },
+              errorCode: {
+                $in: [
+                  "COMMERCIAL_AI_OUTPUT_INVALID",
+                  "COMMERCIAL_AI_OUTPUT_TOKEN_LIMIT",
+                ],
+              },
+            },
+            { session },
+          );
+          if (!page) throw new Error("COMMERCIAL_AI_RETRY_UNSAFE");
+          const result = await pages.updateOne(
+            { _id: page._id, status: "FAILED", draft: { $exists: false } },
+            {
+              $set: {
+                status: "RETRY",
+                runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+                budgetAttemptCount: 0,
+                errorCode: null,
+                previousErrorCode: page.errorCode,
+                retryReason: "CONFIRMED_OUTPUT_TRUNCATION",
+                leaseToken: null,
+                leaseExpiresAt: null,
+                updatedAt: now(),
+              },
+            },
+            { session },
+          );
+          if (result.modifiedCount !== 1)
+            throw new Error("COMMERCIAL_AI_RETRY_UNSAFE");
+          await jobs.updateOne(
+            { _id: sourceDocumentId, storeId, stage: "AI_EXTRACTION" },
+            {
+              $set: {
+                status: "TEXT_READY",
+                nextAiAttemptAt: null,
+                updatedAt: now(),
+              },
+            },
+            { session },
+          );
+        });
+      } finally {
+        await session.endSession();
+      }
+    },
     async finalize(storeId: string, sourceDocumentId: string) {
       const db = await database.getDb();
       const jobs = db.collection<Job>("commercialDocumentJobs");

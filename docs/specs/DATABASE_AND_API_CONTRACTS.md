@@ -4865,3 +4865,9 @@ The signed Inngest document/page functions operate on identity/page-number metad
 ### Commercial AI runtime budget version 2
 
 The model deadline is 90 seconds, the Vercel callback budget 120 seconds, and the claim lease 180 seconds. `runtimeBudgetVersion` and `budgetAttemptCount` bound provider attempts to four per execution-budget version; `attemptCount` remains the lifetime claim counter. A legacy unfinished temporary/attempt-limit failure with no draft may receive one new window. Complete drafts, schema/configuration failures and current-budget exhausted pages are not reset. `RETRY` rows require the new worker; the earlier worker's pending-only claim cannot consume them. Source reopening remains scoped to the frozen model/schema/parser and is refused while any matching permanent failed page remains. Failure diagnostics retain category/elapsed time only.
+
+### Commercial AI output capacity and explicit retry — runtime budget version 3
+
+A truncated structured response is identified from the SDK's `finishReason=length` and reported as `COMMERCIAL_AI_OUTPUT_TOKEN_LIMIT`; malformed schema output remains `COMMERCIAL_AI_OUTPUT_INVALID`. No partial JSON is parsed as accepted proposals. Bounded capacity is 12,000 output tokens, 180 seconds per model call, 240 seconds per callback and a 300-second claim lease.
+
+Explicit confirmed-truncation maintenance may transactionally requeue one failed older-budget page with no draft, within its store/source/frozen model/parser/schema/checksum identity. It retains the UUID/lifetime attempts, records the previous error and retry reason, and opens one current-budget retry window. Completed or current-budget cache entries and completed source jobs are refused. Automatic permanent-schema recovery is unchanged. A successful retry still passes full schema and source anchoring and produces only `TO_VALIDATE` proposals.
