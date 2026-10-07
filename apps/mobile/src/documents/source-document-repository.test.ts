@@ -289,11 +289,15 @@ describe("commercial PDF offline capture", () => {
       repository: new SourceDocumentRepository(adapter),
     };
   }
-  it("keeps the source and metadata after restart, leaves dates unknown and does not create business data or a premature upload job", async () => {
+  it("keeps the source and metadata after restart, leaves dates unknown and atomically queues one upload without creating business data", async () => {
     const { database, path, repository, storage, removed } = await setup();
     await captureCommercialPdf(input, repository, storage);
     expect(removed).toEqual([]);
-    expect(database.prepare("SELECT * FROM local_jobs").all()).toEqual([]);
+    expect(
+      database.prepare("SELECT id, type, status FROM local_jobs").all(),
+    ).toEqual([
+      { id: documentId, type: "SOURCE_UPLOAD_AND_REGISTER", status: "PENDING" },
+    ]);
     expect(database.prepare("SELECT * FROM sync_outbox").all()).toEqual([]);
     expect(database.prepare("SELECT * FROM source_records").all()).toEqual([]);
     database.close();
@@ -306,7 +310,7 @@ describe("commercial PDF offline capture", () => {
         id: documentId,
         originalFilename: "Semaine 41.pdf",
         localProcessingStatus: "PENDING",
-        remoteUploadStatus: "LOCAL_ONLY",
+        remoteUploadStatus: "PENDING",
         businessPeriodStart: null,
         businessPeriodEnd: null,
       },
@@ -380,6 +384,23 @@ describe("commercial PDF offline capture", () => {
       `file:///documents/commercial-pdfs/${fileId}.pdf`,
     ]);
     expect(removed).not.toContain(input.uri);
+    database.close();
+  });
+  it("rolls back source and file together when the upload job cannot be registered", async () => {
+    const { database, repository, storage, removed } = await setup();
+    database.exec(
+      "CREATE TRIGGER fail_pdf_job BEFORE INSERT ON local_jobs BEGIN SELECT RAISE(ABORT, 'PDF_JOB_FAILURE'); END",
+    );
+    await expect(
+      captureCommercialPdf(input, repository, storage),
+    ).rejects.toThrow("PDF_JOB_FAILURE");
+    expect(
+      await repository.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
+    ).toEqual([]);
+    expect(database.prepare("SELECT * FROM local_files").all()).toEqual([]);
+    expect(removed).toEqual([
+      `file:///documents/commercial-pdfs/${fileId}.pdf`,
+    ]);
     database.close();
   });
   it("rejects non-PDF selections, empty files and invalid checksums before saving a source", async () => {

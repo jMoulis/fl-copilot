@@ -4,6 +4,8 @@ import { useFocusEffect } from "expo-router";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { randomUUID } from "expo-crypto";
 import type { LocalSourceDocument } from "@fl-copilot/domain";
+import { useSync } from "@/sync/sync-provider";
+import { commercialPdfUploadPresentation } from "@/documents/commercial-pdf-upload";
 import { useAuth } from "@/auth/auth-provider";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { SourceDocumentRepository } from "@/documents/source-document-repository";
@@ -15,6 +17,7 @@ import {
   InlineAlert,
   PrimaryButton,
   SectionCard,
+  SecondaryButton,
 } from "@/components/ui";
 
 interface NativePdfPicker {
@@ -36,6 +39,7 @@ const picker =
 
 export default function WeekScreen() {
   const { session } = useAuth();
+  const { syncNow, status: syncStatus } = useSync();
   const { sqlite } = useLocalDatabase();
   const storeId = session?.stores[0]?.storeId;
   const repository = useMemo(
@@ -44,16 +48,39 @@ export default function WeekScreen() {
   );
   const [documents, setDocuments] = useState<LocalSourceDocument[]>([]);
   const [busy, setBusy] = useState(false);
+  const [jobs, setJobs] = useState<
+    Record<string, { status: string; last_error: string | null } | null>
+  >({});
+  const [sendingId, setSendingId] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
+  const readDocuments = useCallback(async () => {
+    if (!storeId) return { items: [], jobs: {} };
+    const items = await repository.listDocuments(
+      storeId,
+      "WEEKLY_COMMERCIAL_PDF",
+    );
+    const entries = await Promise.all(
+      items.map(
+        async (item) =>
+          [
+            item.id,
+            await repository.commercialPdfUploadJob(item.id, storeId),
+          ] as const,
+      ),
+    );
+    return { items, jobs: Object.fromEntries(entries) };
+  }, [repository, storeId]);
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      if (storeId)
-        void repository
-          .listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF")
-          .then((items) => {
-            if (active) setDocuments(items);
+      const refresh = () => {
+        void readDocuments()
+          .then((result) => {
+            if (active) {
+              setDocuments(result.items);
+              setJobs(result.jobs);
+            }
           })
           .catch(() => {
             if (active)
@@ -61,10 +88,14 @@ export default function WeekScreen() {
                 "Les documents enregistrés ne peuvent pas être lus. Réouvrez cet écran pour réessayer.",
               );
           });
+      };
+      refresh();
+      const interval = setInterval(refresh, 2000);
       return () => {
         active = false;
+        clearInterval(interval);
       };
-    }, [repository, storeId]),
+    }, [readDocuments]),
   );
 
   async function importPdf() {
@@ -99,9 +130,10 @@ export default function WeekScreen() {
           ? "Ce PDF est déjà enregistré. Aucune nouvelle copie n’a été ajoutée."
           : "Document enregistré sur cet appareil, disponible hors connexion.",
       );
-      setDocuments(
-        await repository.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
-      );
+      const refreshed = await readDocuments();
+      setDocuments(refreshed.items);
+      setJobs(refreshed.jobs);
+      void syncNow(storeId);
     } catch (reason) {
       const code = reason instanceof Error ? reason.message : "";
       setError(
@@ -139,31 +171,66 @@ export default function WeekScreen() {
           />
         ) : null}
         <Text className="text-sm leading-5 text-muted">
-          L’analyse commerciale sera disponible dans une prochaine version. Vos
-          documents restent enregistrés en attendant.
+          Le PDF sera envoyé dès que la connexion le permet. L’extraction des
+          offres sera disponible dans une prochaine version.
         </Text>
       </SectionCard>
       {message ? (
         <InlineAlert title="Document enregistré" message={message} />
       ) : null}
       {error ? <InlineAlert title="Import impossible" message={error} /> : null}
-      {documents.map((document) => (
-        <SectionCard
-          key={document.id}
-          title={document.originalFilename ?? "Document commercial"}
-        >
-          <View className="gap-2">
-            <Text className="text-sm text-muted">
-              Enregistré le{" "}
-              {new Date(document.createdAt).toLocaleDateString("fr-FR")}
-            </Text>
-            <Text className="font-semibold text-forest">
-              Conservé sur cet appareil
-            </Text>
-            <Text className="text-sm text-muted">Analyse en attente</Text>
-          </View>
-        </SectionCard>
-      ))}
+      {documents.map((document) => {
+        const state = commercialPdfUploadPresentation(
+          document,
+          jobs[document.id] ?? null,
+        );
+        return (
+          <SectionCard
+            key={document.id}
+            title={document.originalFilename ?? "Document commercial"}
+          >
+            <View className="gap-2">
+              <Text className="text-sm text-muted">
+                Enregistré le{" "}
+                {new Date(document.createdAt).toLocaleDateString("fr-FR")}
+              </Text>
+              <Text className="font-semibold text-forest">{state.title}</Text>
+              <Text className="text-sm text-muted">{state.message}</Text>
+              {state.canRetry ? (
+                <SecondaryButton
+                  label={
+                    sendingId === document.id
+                      ? "Envoi…"
+                      : jobs[document.id]?.status === "RETRY"
+                        ? "Réessayer l’envoi"
+                        : "Envoyer le PDF"
+                  }
+                  disabled={!!sendingId || syncStatus === "syncing"}
+                  onPress={() => {
+                    if (!storeId) return;
+                    setSendingId(document.id);
+                    setError(undefined);
+                    void repository
+                      .retryCommercialPdfUpload(document.id, storeId)
+                      .then(() => syncNow(storeId))
+                      .then(readDocuments)
+                      .then((result) => {
+                        setDocuments(result.items);
+                        setJobs(result.jobs);
+                      })
+                      .catch(() =>
+                        setError(
+                          "L’envoi n’a pas pu reprendre. Le PDF reste conservé sur cet appareil.",
+                        ),
+                      )
+                      .finally(() => setSendingId(undefined));
+                  }}
+                />
+              ) : null}
+            </View>
+          </SectionCard>
+        );
+      })}
       <EmptyState
         title="Aucune opération disponible"
         message="Les opérations apparaîtront ici après l’analyse et la validation de vos documents commerciaux."

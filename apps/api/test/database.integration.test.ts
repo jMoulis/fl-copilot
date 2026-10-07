@@ -1,3 +1,7 @@
+import {
+  createMongoSourceUploadService,
+  type SourceBlobMetadata,
+} from "../src/uploads/source-upload-service.js";
 import { randomUUID } from "node:crypto";
 import { Long } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -57,6 +61,70 @@ describeWithMongo("MongoDB infrastructure", () => {
       entity,
     );
   });
+
+  it("keeps one durable PDF workflow under concurrent completion retries", async () => {
+    let blob: SourceBlobMetadata | null = null;
+    const service = createMongoSourceUploadService(database, {
+      createUploadUrl: async () => "https://blob.example/upload",
+      head: async () => blob,
+    });
+    const storeId = randomUUID();
+    const sourceDocumentId = randomUUID();
+    const input = {
+      sourceDocumentId,
+      sourceType: "WEEKLY_COMMERCIAL_PDF" as const,
+      filename: "week.pdf",
+      mimeType: "application/pdf" as const,
+      sizeBytes: 4096,
+      checksum: `sha256:${"b".repeat(64)}`,
+    };
+    const init = await service.init(storeId, randomUUID(), input);
+    blob = {
+      pathname: init.objectKey,
+      size: input.sizeBytes,
+      contentType: input.mimeType,
+      url: "https://blob.example/private.pdf",
+      etag: "etag",
+    };
+    const results = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        service.complete(storeId, init.uploadId, {
+          checksum: input.checksum,
+          sizeBytes: input.sizeBytes,
+        }),
+      ),
+    );
+    expect(results.map((result) => result.jobId)).toEqual([
+      sourceDocumentId,
+      sourceDocumentId,
+      sourceDocumentId,
+    ]);
+    const db = await database.getDb();
+    expect(
+      await db
+        .collection("commercialDocumentJobs")
+        .countDocuments({ storeId, sourceDocumentId }),
+    ).toBe(1);
+    expect(
+      await db
+        .collection("sourceUploads")
+        .countDocuments({ storeId, sourceDocumentId }),
+    ).toBe(1);
+    expect(
+      await db
+        .collection<{ _id: number }>("schemaMigrations")
+        .countDocuments({ _id: 12 }),
+    ).toBe(1);
+    expect(
+      await db
+        .collection("commercialDocumentJobs")
+        .findOne({ storeId, sourceDocumentId }),
+    ).toMatchObject({
+      status: "PENDING",
+      stage: "TEXT_EXTRACTION",
+      checksum: input.checksum,
+    });
+  }, 15_000);
 
   it("records the infrastructure migration exactly once", async () => {
     const mongoDatabase = await database.getDb();

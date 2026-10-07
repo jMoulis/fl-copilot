@@ -13,6 +13,7 @@ import {
 } from "@fl-copilot/import-core";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
+import { SourceDocumentRepository } from "./source-document-repository";
 import { WasteReceiptRepository } from "./waste-receipt-repository";
 
 type UploadQueueDatabase = OutboxDatabase & AtomicMutationDatabase;
@@ -99,6 +100,9 @@ export class SourceUploadQueue {
   }
 
   private async processPending(storeId: string) {
+    await new SourceDocumentRepository(
+      this.database,
+    ).ensureCommercialPdfUploads(storeId);
     // No cycle is running for this database/store. Recover a claim left by app termination.
     await this.database.runAsync(
       `UPDATE local_jobs SET status = 'RETRY', next_attempt_at = NULL, last_error = 'SOURCE_UPLOAD_INTERRUPTED', updated_at = ? WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND status = 'RUNNING' AND json_extract(payload_json, '$.storeId') = ?`,
@@ -326,6 +330,7 @@ export class SourceUploadQueue {
         [
           "SOURCE_UPLOAD_METADATA_MISMATCH",
           "SOURCE_DOCUMENT_ALREADY_REGISTERED",
+          "COMMERCIAL_DOCUMENT_JOB_IDENTITY_MISMATCH",
         ].includes(error.response.code)
       ) {
         await this.markInvalid(row.job_id, payload, storeId);
@@ -614,7 +619,9 @@ const nativeBinaryUploader: SourceBinaryUploader = {
         Paths.document,
         input.sourceType === "WASTE_RECEIPT"
           ? "waste-receipts"
-          : "mercalys-imports",
+          : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
+            ? "commercial-pdfs"
+            : "mercalys-imports",
         filename,
       );
     }

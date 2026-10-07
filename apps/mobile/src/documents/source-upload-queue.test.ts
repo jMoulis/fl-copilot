@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
+import { SourceDocumentRepository } from "./source-document-repository";
+import { commercialPdfUploadPresentation } from "./commercial-pdf-upload";
 import { ApiClientError } from "@fl-copilot/api-client";
 import {
   runLocalMigrations,
@@ -842,6 +844,193 @@ describe("source upload queue", () => {
       }),
       status: "OPEN",
     });
+    database.close();
+  });
+});
+
+describe("commercial PDF upload queue", () => {
+  async function pdfFixture() {
+    const result = await fixture();
+    result.database.exec(
+      "UPDATE source_documents SET source_type = 'WEEKLY_COMMERCIAL_PDF', original_filename = 'week.pdf', business_period_start = NULL, business_period_end = NULL, local_processing_status = 'PENDING'; UPDATE local_files SET mime_type = 'application/pdf'",
+    );
+    return result;
+  }
+  it("recovers legacy PDFs into one stable job and confirms without Mercalys verification or deleting the original", async () => {
+    const { adapter, database } = await pdfFixture();
+    database.exec(
+      "DELETE FROM local_jobs; UPDATE source_documents SET remote_upload_status = 'LOCAL_ONLY'",
+    );
+    const repository = new SourceDocumentRepository(adapter);
+    await repository.ensureCommercialPdfUploads(storeId);
+    await repository.ensureCommercialPdfUploads(storeId);
+    expect(database.prepare("SELECT id, status FROM local_jobs").all()).toEqual(
+      [{ id: sourceDocumentId, status: "PENDING" }],
+    );
+    let uploads = 0;
+    const queue = new SourceUploadQueue(
+      adapter,
+      {
+        init: async (_, input) => {
+          expect(input).toMatchObject({
+            sourceDocumentId,
+            sourceType: "WEEKLY_COMMERCIAL_PDF",
+            mimeType: "application/pdf",
+            checksum,
+          });
+          return {
+            uploadId,
+            objectKey: "source",
+            status: "UPLOAD_REQUIRED",
+            uploadUrl: "https://blob.example/upload",
+            expiresAt: null,
+            headers: {},
+          };
+        },
+        complete: async () => ({
+          sourceDocumentId,
+          remoteUploadStatus: "CONFIRMED",
+          jobId: sourceDocumentId,
+        }),
+        verify: async () => {
+          throw new Error("PDF_MUST_NOT_VERIFY_MERCALYS");
+        },
+      },
+      {
+        upload: async (input) => {
+          expect(input.sourceType).toBe("WEEKLY_COMMERCIAL_PDF");
+          uploads++;
+        },
+      },
+    );
+    expect(await queue.process(storeId)).toEqual({
+      attempted: 1,
+      confirmed: 1,
+    });
+    expect(await queue.process(storeId)).toEqual({
+      attempted: 0,
+      confirmed: 0,
+    });
+    expect(uploads).toBe(1);
+    const document = (await repository.getDocument(sourceDocumentId))!;
+    expect(document).toMatchObject({
+      remoteUploadStatus: "CONFIRMED",
+      remoteProcessingStatus: "UPLOADED",
+      businessPeriodStart: null,
+      businessPeriodEnd: null,
+    });
+    expect(
+      commercialPdfUploadPresentation(
+        document,
+        await repository.commercialPdfUploadJob(sourceDocumentId, storeId),
+      ),
+    ).toMatchObject({ title: "Document envoyé", canRetry: false });
+    expect(
+      database.prepare("SELECT retention_status FROM local_files").get(),
+    ).toEqual({ retention_status: "RETAINED" });
+    database.close();
+  });
+  it("retries the same source after losing completion, skips a second binary upload and clears backoff on explicit retry", async () => {
+    const { adapter, database } = await pdfFixture();
+    const repository = new SourceDocumentRepository(adapter);
+    let binaryStored = false;
+    let completes = 0;
+    let uploads = 0;
+    const sourceIds: string[] = [];
+    const queue = new SourceUploadQueue(
+      adapter,
+      {
+        init: async (_, input) => {
+          sourceIds.push(input.sourceDocumentId);
+          return {
+            uploadId,
+            objectKey: "source",
+            status: binaryStored ? "ALREADY_UPLOADED" : "UPLOAD_REQUIRED",
+            uploadUrl: binaryStored ? null : "https://blob.example/upload",
+            expiresAt: null,
+            headers: {},
+          };
+        },
+        complete: async () => {
+          if (++completes === 1)
+            throw new ApiClientError(0, {
+              code: "NETWORK_ERROR",
+              messageFr: "Connexion indisponible",
+              retryable: true,
+            });
+          return {
+            sourceDocumentId,
+            remoteUploadStatus: "CONFIRMED",
+            jobId: sourceDocumentId,
+          };
+        },
+        verify: async () => {
+          throw new Error("Unexpected verification");
+        },
+      },
+      {
+        upload: async () => {
+          uploads++;
+          binaryStored = true;
+        },
+      },
+      () => new Date("2026-10-07T08:00:00Z"),
+    );
+    expect(await queue.process(storeId)).toMatchObject({ confirmed: 0 });
+    expect(await queue.process(storeId)).toMatchObject({ attempted: 0 });
+    expect(
+      await repository.retryCommercialPdfUpload(sourceDocumentId, storeId),
+    ).toBe(true);
+    expect(await queue.process(storeId)).toMatchObject({ confirmed: 1 });
+    expect(sourceIds).toEqual([sourceDocumentId, sourceDocumentId]);
+    expect(uploads).toBe(1);
+    expect(
+      database
+        .prepare("SELECT id, attempt_count, status FROM local_jobs")
+        .all(),
+    ).toEqual([{ id: jobId, attempt_count: 2, status: "COMPLETED" }]);
+    database.close();
+  });
+  it("keeps missing PDFs as non-retryable errors", async () => {
+    const { adapter, database } = await pdfFixture();
+    const repository = new SourceDocumentRepository(adapter);
+    const queue = new SourceUploadQueue(
+      adapter,
+      {
+        init: async () => ({
+          uploadId,
+          objectKey: "source",
+          status: "UPLOAD_REQUIRED",
+          uploadUrl: "https://blob.example/upload",
+          expiresAt: null,
+          headers: {},
+        }),
+        complete: async () => {
+          throw new Error("Must not complete missing file");
+        },
+        verify: async () => {
+          throw new Error("Must not verify");
+        },
+      },
+      {
+        upload: async () => {
+          throw new SourceUploadLocalFileMissingError();
+        },
+      },
+    );
+    expect(await queue.process(storeId)).toMatchObject({ confirmed: 0 });
+    expect(
+      await repository.retryCommercialPdfUpload(sourceDocumentId, storeId),
+    ).toBe(false);
+    expect(
+      commercialPdfUploadPresentation(
+        (await repository.getDocument(sourceDocumentId))!,
+        await repository.commercialPdfUploadJob(sourceDocumentId, storeId),
+      ),
+    ).toMatchObject({ title: "Fichier local indisponible", canRetry: false });
+    expect(
+      database.prepare("SELECT retention_status FROM local_files").get(),
+    ).toEqual({ retention_status: "RETAINED" });
     database.close();
   });
 });

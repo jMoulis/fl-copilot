@@ -65,8 +65,64 @@ export class SourceDocumentRepository {
       }
       await insertDocument(transaction, document);
       await insertFile(transaction, file);
+      await enqueueCommercialPdfUpload(
+        transaction,
+        document.id,
+        document.storeId,
+        file.id,
+        document.createdAt,
+      );
     });
     return result;
+  }
+
+  async ensureCommercialPdfUploads(storeId: string) {
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const rows = await transaction.getAllAsync<{
+        id: string;
+        file_id: string;
+      }>(
+        `SELECT d.id, f.id AS file_id FROM source_documents d JOIN local_files f ON f.source_document_id = d.id AND f.store_id = d.store_id
+         WHERE d.store_id = ? AND d.source_type = 'WEEKLY_COMMERCIAL_PDF'
+           AND d.deleted_at IS NULL AND d.remote_upload_status IN ('LOCAL_ONLY', 'PENDING', 'UPLOADING')
+           AND NOT EXISTS (SELECT 1 FROM local_jobs j WHERE j.type = 'SOURCE_UPLOAD_AND_REGISTER' AND json_extract(j.payload_json, '$.sourceDocumentId') = d.id)`,
+        storeId,
+      );
+      for (const row of rows)
+        await enqueueCommercialPdfUpload(
+          transaction,
+          row.id,
+          storeId,
+          row.file_id,
+          new Date().toISOString(),
+        );
+    });
+  }
+
+  async commercialPdfUploadJob(sourceDocumentId: string, storeId: string) {
+    return this.database.getFirstAsync<{
+      status: string;
+      last_error: string | null;
+    }>(
+      "SELECT status, last_error FROM local_jobs WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json, '$.sourceDocumentId') = ? AND json_extract(payload_json, '$.storeId') = ? ORDER BY created_at, id LIMIT 1",
+      sourceDocumentId,
+      storeId,
+    );
+  }
+
+  async retryCommercialPdfUpload(sourceDocumentId: string, storeId: string) {
+    const result = await this.database.runAsync(
+      `UPDATE local_jobs SET status = 'RETRY', next_attempt_at = NULL, updated_at = ?
+       WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json, '$.sourceDocumentId') = ? AND json_extract(payload_json, '$.storeId') = ?
+         AND status IN ('PENDING', 'RETRY') AND COALESCE(last_error, '') NOT IN ('SOURCE_UPLOAD_LOCAL_FILE_MISSING', 'SOURCE_UPLOAD_INVALID')
+         AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id = ? AND d.store_id = ? AND d.source_type = 'WEEKLY_COMMERCIAL_PDF' AND d.remote_upload_status != 'CONFIRMED')`,
+      new Date().toISOString(),
+      sourceDocumentId,
+      storeId,
+      sourceDocumentId,
+      storeId,
+    );
+    return Number(result.changes) > 0;
   }
 
   async listDocuments(storeId: string, sourceType: SourceType) {
@@ -381,4 +437,31 @@ interface SourceRecordRow {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+}
+
+async function enqueueCommercialPdfUpload(
+  database: OutboxDatabase,
+  sourceDocumentId: string,
+  storeId: string,
+  localFileId: string,
+  timestamp: string,
+) {
+  await database.runAsync(
+    `INSERT INTO local_jobs (id, type, payload_json, status, attempt_count, created_at, updated_at)
+    VALUES (?, 'SOURCE_UPLOAD_AND_REGISTER', ?, 'PENDING', 0, ?, ?)`,
+    sourceDocumentId,
+    JSON.stringify({ storeId, sourceDocumentId, localFileId }),
+    timestamp,
+    timestamp,
+  );
+  await database.runAsync(
+    "UPDATE source_documents SET remote_upload_status = 'PENDING', sync_state = 'PENDING', dirty = 1 WHERE id = ? AND store_id = ?",
+    sourceDocumentId,
+    storeId,
+  );
+  await database.runAsync(
+    "UPDATE local_files SET upload_status = 'PENDING' WHERE id = ? AND store_id = ?",
+    localFileId,
+    storeId,
+  );
 }

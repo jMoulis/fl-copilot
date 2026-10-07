@@ -228,6 +228,23 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 12,
+    name: "initialize-commercial-document-job-indexes",
+    async up(database) {
+      await Promise.all([
+        database
+          .collection("commercialDocumentJobs")
+          .createIndex(
+            { storeId: 1, sourceDocumentId: 1, pipelineVersion: 1 },
+            { unique: true },
+          ),
+        database
+          .collection("commercialDocumentJobs")
+          .createIndex({ status: 1, createdAt: 1 }),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(
