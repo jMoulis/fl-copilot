@@ -536,10 +536,11 @@ export class WasteReceiptRepository {
       }
       await transaction.runAsync(
         `UPDATE waste_receipts
-         SET detected_receipt_date = ?, processing_status = 'TO_VALIDATE',
+         SET detected_receipt_date = ?, detected_cashier_number = ?, processing_status = 'TO_VALIDATE',
              ai_status = 'COMPLETED', updated_at = ?, version = version + 1
          WHERE id = ? AND store_id = ?`,
         draft.detectedReceiptDate,
+        draft.detectedCashierNumber ?? null,
         timestamp,
         receipt.id,
         receipt.store_id,
@@ -555,6 +556,24 @@ export class WasteReceiptRepository {
         receipt.store_id,
       );
     });
+  }
+
+  async confirmCashierNumber(
+    receiptId: string,
+    value: string,
+    timestamp = new Date().toISOString(),
+  ) {
+    await this.assertEditable(receiptId);
+    const number = wasteReceiptSchema.shape.confirmedCashierNumber.parse(
+      value.trim() || null,
+    );
+    await this.database.runAsync(
+      `UPDATE waste_receipts SET confirmed_cashier_number = ?, cashier_number_confirmed_at = ?, updated_at = ?, version = version + 1, dirty = 1, sync_state = 'LOCAL_ONLY' WHERE id = ?`,
+      number ?? null,
+      timestamp,
+      timestamp,
+      receiptId,
+    );
   }
 
   async confirmWasteDate(receiptId: string, date: string) {
@@ -883,11 +902,11 @@ export async function insertReceipt(
     `
       INSERT INTO waste_receipts (
         id, store_id, source_document_id, local_file_id, capture_date,
-        detected_receipt_date, confirmed_waste_date, processing_status,
+        detected_receipt_date, confirmed_waste_date, detected_cashier_number, confirmed_cashier_number, cashier_number_confirmed_at, processing_status,
         ai_status, duplicate_status, duplicate_candidate_source_document_id,
         duplicate_reason, note, version, created_at, updated_at, deleted_at,
         sync_state, remote_version, dirty
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     receipt.id,
     receipt.storeId,
@@ -896,6 +915,9 @@ export async function insertReceipt(
     receipt.captureDate ?? null,
     receipt.detectedReceiptDate ?? null,
     receipt.confirmedWasteDate ?? null,
+    receipt.detectedCashierNumber ?? null,
+    receipt.confirmedCashierNumber ?? null,
+    receipt.cashierNumberConfirmedAt ?? null,
     receipt.processingStatus,
     receipt.aiStatus,
     receipt.duplicateStatus,
@@ -965,6 +987,9 @@ function mapReceipt(row: WasteReceiptRow) {
     captureDate: row.capture_date,
     detectedReceiptDate: row.detected_receipt_date,
     confirmedWasteDate: row.confirmed_waste_date,
+    detectedCashierNumber: row.detected_cashier_number,
+    confirmedCashierNumber: row.confirmed_cashier_number,
+    cashierNumberConfirmedAt: row.cashier_number_confirmed_at,
     processingStatus: row.processing_status,
     aiStatus: row.ai_status,
     duplicateStatus: row.duplicate_status,
@@ -1059,6 +1084,9 @@ interface WasteReceiptRow {
   capture_date: string | null;
   detected_receipt_date: string | null;
   confirmed_waste_date: string | null;
+  detected_cashier_number: string | null;
+  confirmed_cashier_number: string | null;
+  cashier_number_confirmed_at: string | null;
   processing_status: string;
   ai_status: string;
   duplicate_status: string;

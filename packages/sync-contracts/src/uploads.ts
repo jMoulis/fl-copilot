@@ -88,6 +88,7 @@ export const wasteReceiptDraftLineSchema = z.object({
 
 export const wasteReceiptDraftSchema = z.object({
   detectedReceiptDate: z.string().date().nullable(),
+  detectedCashierNumber: z.string().trim().min(1).max(64).nullable().optional(),
   extractionModelVersion: z.string().min(1),
   arithmeticValidatorVersion: z.string().min(1),
   productMatcherVersion: z.string().min(1),

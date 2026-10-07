@@ -206,3 +206,14 @@ Verification covers monetary publication with unknown nature/unit and a review p
 - The approved linked multi-photo capture mode for one ticket is recorded in the roadmap and remains a separate implementation increment.
 
 Verification covers French formatting, calendar date validity, leap years, Monday-first grids, year boundaries and the instructions transmitted to the Vision adapter. Native selector interaction and real footer-date recognition remain pending on iPhone with a matching staging build and representative receipt.
+
+## Pilot refinement — Cashier number review
+
+- Vision schema v2 extracts the cashier identifier from the footer as nullable text, preserving every leading zero, with confidence and source-region evidence. The `000` prefix is a location hint, not a reason to pad digits or substitute a till/transaction/EAN identifier.
+- Draft contracts expose the proposed identifier; domain receipt fields keep the detected value separately from the human-confirmed value and confirmation timestamp. Missing metadata stays optional and does not block publication.
+- SQLite migration 15 adds three nullable TEXT fields. Legacy receipts, dates, retained images and queued work are preserved. Drizzle and repository serializers include the same fields.
+- The validation screen displays `Numéro de caissier`, a free text field and `Confirmer le numéro`. It supports correction or an explicit empty confirmation, remains usable offline, and guards against losing unsaved changes at publication.
+- A later AI draft cannot overwrite human confirmation. Publication includes the metadata in its atomic aggregate/Outbox command; pull/bootstrap restore it on another device. Published receipts display the retained value read-only, consistent with their date and immutable publication policy.
+- Existing completed tickets are not automatically reprocessed with v2. Older drafts can receive manual metadata before publication; new extraction requests use the v2 evidence identity.
+
+Verification covers v14→v15 migration preservation, leading-zero strings, restart persistence, optional/empty values, retained human correction, Vision output types, draft assembly and MongoDB publication/pull/bootstrap metadata. Native interaction and recognition of a real cashier footer remain pending in the matching staging build.

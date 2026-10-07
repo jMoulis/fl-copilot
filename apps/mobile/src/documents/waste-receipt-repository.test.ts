@@ -135,6 +135,39 @@ afterEach(() => {
 });
 
 describe("WasteReceiptRepository", () => {
+  it("confirms cashier text with leading zeroes, survives restart, and permits an explicit empty value", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "fl-cashier-"));
+    directories.push(directory);
+    const path = join(directory, "local.db");
+    const database = new DatabaseSync(path);
+    const adapter = new NodeDatabase(database);
+    await runLocalMigrations(adapter);
+    const repository = new WasteReceiptRepository(adapter);
+    await repository.createDraft({
+      receipt: receipt({ detectedCashierNumber: "000007" }),
+      file: file(),
+    });
+    await repository.confirmCashierNumber(receiptId, " 000123 ", timestamp);
+    expect(await repository.getReceipt(receiptId)).toMatchObject({
+      detectedCashierNumber: "000007",
+      confirmedCashierNumber: "000123",
+      cashierNumberConfirmedAt: timestamp,
+    });
+    database.close();
+    const reopened = new DatabaseSync(path);
+    const repo = new WasteReceiptRepository(new NodeDatabase(reopened));
+    expect(await repo.getReceipt(receiptId)).toMatchObject({
+      confirmedCashierNumber: "000123",
+    });
+    await repo.confirmCashierNumber(receiptId, "", timestamp);
+    expect(await repo.getReceipt(receiptId)).toMatchObject({
+      detectedCashierNumber: "000007",
+      confirmedCashierNumber: null,
+      cashierNumberConfirmedAt: timestamp,
+    });
+    reopened.close();
+  });
+
   it("atomically queues a captured receipt source for upload", async () => {
     const directory = mkdtempSync(join(tmpdir(), "fl-copilot-receipts-"));
     directories.push(directory);
@@ -416,6 +449,7 @@ describe("WasteReceiptRepository", () => {
         checksum: "sha256:receipt",
       },
     });
+    await repository.confirmCashierNumber(receiptId, "000009", timestamp);
     const productId = "77777777-7777-4777-8777-777777777777";
     database
       .prepare(
@@ -431,6 +465,7 @@ describe("WasteReceiptRepository", () => {
       sourceDocumentId,
       {
         detectedReceiptDate: "2026-10-03",
+        detectedCashierNumber: "000003",
         extractionModelVersion: "gpt-test",
         arithmeticValidatorVersion: "waste-receipt.arithmetic.v1",
         productMatcherVersion: "product-matcher-v1",
@@ -486,6 +521,8 @@ describe("WasteReceiptRepository", () => {
       {
         receipt: {
           detectedReceiptDate: "2026-10-03",
+          detectedCashierNumber: "000003",
+          confirmedCashierNumber: "000009",
           confirmedWasteDate: "2026-10-02",
           processingStatus: "TO_VALIDATE",
           aiStatus: "COMPLETED",

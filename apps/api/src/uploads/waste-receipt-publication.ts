@@ -144,6 +144,9 @@ export async function applyWastePublicationCommand(
         _id: p.receipt.id,
         createdAt: new Date(p.receipt.createdAt),
         updatedAt: new Date(p.receipt.updatedAt),
+        cashierNumberConfirmedAt: p.receipt.cashierNumberConfirmedAt
+          ? new Date(p.receipt.cashierNumberConfirmedAt)
+          : null,
         syncState: "SYNCED",
         dirty: false,
         remoteVersion: 1,

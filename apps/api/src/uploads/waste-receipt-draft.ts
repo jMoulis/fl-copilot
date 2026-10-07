@@ -32,6 +32,7 @@ type ExtractionRecord = {
   resolvedModel: string;
   output: {
     detectedReceiptDate: string | null;
+    cashierNumber?: string | null;
     lines: Array<{
       sourceLineIndex: number;
       rawLabel: string;
@@ -138,6 +139,7 @@ export function createMongoWasteReceiptDraftReader(
 
       return wasteReceiptDraftSchema.parse({
         detectedReceiptDate: extraction.output.detectedReceiptDate,
+        detectedCashierNumber: extraction.output.cashierNumber?.trim() || null,
         extractionModelVersion: extraction.resolvedModel,
         arithmeticValidatorVersion: arithmetic.validatorVersion,
         productMatcherVersion: matching.engineVersion,

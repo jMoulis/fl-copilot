@@ -71,6 +71,9 @@ export default function WasteReceiptValidationScreen() {
   const [detail, setDetail] = useState<LocalWasteReceiptDetail | null>();
   const [date, setDate] = useState("");
   const dateReceiptId = useRef(id);
+  const cashierReceiptId = useRef(id);
+  const [cashierNumber, setCashierNumber] = useState("");
+  const [cashierSaving, setCashierSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [retrying, setRetrying] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -131,6 +134,17 @@ export default function WasteReceiptValidationScreen() {
     }
   }, [id, loadedReceiptId, savedDate]);
 
+  const savedCashierNumber = detail?.receipt.cashierNumberConfirmedAt
+    ? (detail.receipt.confirmedCashierNumber ?? "")
+    : (detail?.receipt.detectedCashierNumber ?? "");
+  useEffect(() => {
+    if (loadedReceiptId !== id) return;
+    if (cashierReceiptId.current !== id) {
+      cashierReceiptId.current = id;
+      setCashierNumber(savedCashierNumber);
+    } else setCashierNumber((current) => current || savedCashierNumber);
+  }, [id, loadedReceiptId, savedCashierNumber]);
+
   const groups = useMemo(
     () => groupLines(detail?.lines ?? []),
     [detail?.lines],
@@ -184,6 +198,15 @@ export default function WasteReceiptValidationScreen() {
       field: "date",
       message: "La date a été modifiée. Confirmez-la avant de publier.",
     });
+  if (cashierNumber.trim() !== savedCashierNumber)
+    unsavedIssues.push({
+      field: "cashierNumber",
+      message:
+        "Le numéro de caissier a été modifié. Confirmez-le pour conserver votre correction.",
+    });
+  const cashierIssue = unsavedIssues.find(
+    (issue) => issue.field === "cashierNumber",
+  )?.message;
   const issues = validationAttempted
     ? [...publicationIssues, ...unsavedIssues]
     : [];
@@ -579,6 +602,73 @@ export default function WasteReceiptValidationScreen() {
           Date de casse : {formatDate(detail.receipt.confirmedWasteDate!)}
         </Text>
       )}
+
+      <SectionCard
+        title="Numéro de caissier"
+        description={
+          detail.receipt.processingStatus === "PUBLISHED"
+            ? "Métadonnée conservée avec le ticket."
+            : detail.receipt.detectedCashierNumber
+              ? `Numéro proposé par l’IA : ${detail.receipt.detectedCashierNumber}. Vérifiez-le en bas du ticket.`
+              : "Non détecté. Vous pouvez le saisir à partir du bas du ticket. Ce champ est facultatif."
+        }
+      >
+        {detail.receipt.processingStatus === "PUBLISHED" ? (
+          <Text className="text-base text-ink">
+            {savedCashierNumber || "Non renseigné"}
+            {detail.receipt.cashierNumberConfirmedAt
+              ? " · Confirmé"
+              : savedCashierNumber
+                ? " · Non confirmé"
+                : ""}
+          </Text>
+        ) : (
+          <>
+            <TextInput
+              value={cashierNumber}
+              onChangeText={setCashierNumber}
+              placeholder="Ex. 000123"
+              maxLength={64}
+              autoCapitalize="none"
+              autoCorrect={false}
+              accessibilityLabel="Numéro de caissier"
+              accessibilityHint="Conservez tous les zéros initiaux. Vous pouvez laisser ce champ vide."
+              className={`min-h-12 rounded-xl border px-4 text-base text-ink ${validationAttempted && cashierIssue ? "border-critical bg-critical-soft" : "border-line bg-canvas"}`}
+            />
+            {validationAttempted && cashierIssue ? (
+              <Text accessibilityRole="alert" className="text-sm text-critical">
+                {cashierIssue}
+              </Text>
+            ) : null}
+            <PrimaryButton
+              label="Confirmer le numéro"
+              loading={cashierSaving}
+              onPress={() => {
+                setCashierSaving(true);
+                setError(undefined);
+                setMessage(undefined);
+                void repository
+                  .confirmCashierNumber(detail.receipt.id, cashierNumber)
+                  .then(async () => {
+                    setCashierNumber(cashierNumber.trim());
+                    setMessage(
+                      cashierNumber.trim()
+                        ? "Le numéro de caissier est confirmé."
+                        : "Le numéro de caissier reste non renseigné.",
+                    );
+                    await load();
+                  })
+                  .catch(() =>
+                    setError(
+                      "Le numéro de caissier n’a pas pu être enregistré. Vérifiez le champ et réessayez.",
+                    ),
+                  )
+                  .finally(() => setCashierSaving(false));
+              }}
+            />
+          </>
+        )}
+      </SectionCard>
 
       <View className="gap-4">
         <View className="gap-1">
