@@ -190,7 +190,6 @@ describe("Waste receipt atomic publication", () => {
     expect(issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ field: "date" }),
-        expect.objectContaining({ lineId, field: "weight" }),
         expect.objectContaining({ lineId, field: "totalPrice" }),
         expect.objectContaining({ lineId: secondId, field: "product" }),
       ]),
@@ -208,52 +207,100 @@ describe("Waste receipt atomic publication", () => {
     ).toEqual({ count: 0 });
     db.close();
   });
-  it("identifies catalog incompleteness, permits explicit reconfirmation and clears blockers after correction", async () => {
-    const { db, publisher, repo } = await setup();
+  it("publishes a monetary amount with incomplete catalog metadata and leaves quantity analytics unavailable", async () => {
+    const { db, adapter, publisher } = await setup();
     db.exec(
       "UPDATE products SET nature = 'UNKNOWN', sales_unit = 'UNKNOWN', status = 'TO_REVIEW'",
     );
-    expect(await publisher.validate(receiptId, storeId)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          lineId,
-          field: "product",
-          message: expect.stringContaining("actif"),
-        }),
-        expect.objectContaining({
-          field: "product",
-          message: expect.stringContaining("Vrac"),
-        }),
-        expect.objectContaining({
-          field: "product",
-          message: expect.stringContaining("unité"),
-        }),
-      ]),
-    );
-    db.exec(
-      "UPDATE products SET nature = 'PACKAGED', sales_unit = 'PACK', status = 'ACTIVE'",
-    );
-    expect(await publisher.validate(receiptId, storeId)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          field: "product",
-          message: expect.stringContaining("Reconfirmez"),
-        }),
-        expect.objectContaining({ field: "quantityUnit" }),
-        expect.objectContaining({ field: "quantity" }),
-      ]),
-    );
-    await repo.selectProductCandidate(receiptId, lineId, productId);
-    await repo.updateLineValues(receiptId, lineId, {
-      rawLabel: "TOMATE CONDITIONNÉE",
-      weight: null,
-      quantity: "2",
-      quantityUnit: "PACK",
-      unitPrice: null,
-      totalPrice: "4.38",
-    });
-    expect(await publisher.validate(receiptId, storeId)).toEqual([]);
+    const report = await publisher.inspect(receiptId, storeId);
+    expect(report.issues).toEqual([]);
+    expect(report.warnings).toHaveLength(3);
+    expect(report.warnings.every((w) => w.kind === "CATALOG")).toBe(true);
     expect(await publisher.publish(input())).toEqual({ publishedCount: 1 });
+    expect(
+      db
+        .prepare(
+          "SELECT sales_value, quantity, product_nature FROM waste_observations",
+        )
+        .get(),
+    ).toEqual({
+      sales_value: "4.38",
+      quantity: null,
+      product_nature: "UNKNOWN",
+    });
+    expect(
+      db.prepare("SELECT weight, product_nature FROM waste_lines").get(),
+    ).toEqual({ weight: "1.25", product_nature: "UNKNOWN" });
+    const p = payload(db);
+    expect(p.lines[0]!.weight).toBe("1.25");
+    expect(p.observations[0]!.quantity).toBeNull();
+    await new SQLiteProductDateRecomputer(adapter).recomputeProduct(storeId, {
+      productId,
+      businessDate: "2026-10-03",
+    });
+    const performance = JSON.parse(
+      (
+        db
+          .prepare("SELECT payload_json FROM product_daily_performance")
+          .get() as { payload_json: string }
+      ).payload_json,
+    );
+    expect(performance.waste.salesValue).toBe("4.38");
+    expect(performance.availability.wasteSalesValue.status).toBe("AVAILABLE");
+    expect(performance.waste.quantity).toBeNull();
+    expect(performance.availability.wasteQuantity.status).toBe("UNAVAILABLE");
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM sales_observations").get(),
+    ).toEqual({ count: 0 });
+    db.exec(
+      "UPDATE products SET nature = 'BULK', sales_unit = 'KG', status = 'ACTIVE'",
+    );
+    const followUp = await publisher.inspect(receiptId, storeId);
+    expect(followUp.warnings.filter((w) => w.kind === "CATALOG")).toEqual([]);
+    expect(followUp.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "QUANTITY",
+          message: expect.stringContaining("publiée sans quantité"),
+        }),
+      ]),
+    );
+    expect(db.prepare("SELECT quantity FROM waste_observations").get()).toEqual(
+      { quantity: null },
+    );
+    db.close();
+  });
+  it("preserves unmatched units as raw facts while publishing only the reliable amount", async () => {
+    const { db, publisher } = await setup();
+    db.exec(
+      "UPDATE products SET sales_unit = 'PACK'; UPDATE waste_lines SET quantity = '2', quantity_unit = 'PIECE'",
+    );
+    expect(await publisher.validate(receiptId, storeId)).toEqual([]);
+    expect((await publisher.inspect(receiptId, storeId)).warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "QUANTITY" })]),
+    );
+    await publisher.publish(input());
+    expect(db.prepare("SELECT quantity FROM waste_observations").get()).toEqual(
+      { quantity: null },
+    );
+    expect(payload(db).lines[0]).toMatchObject({
+      quantity: "2",
+      quantityUnit: "PIECE",
+      weight: "1.25",
+    });
+    db.close();
+  });
+  it("inherits the current catalog nature without requiring a reference-edit detour", async () => {
+    const { db, publisher } = await setup();
+    db.exec(
+      "UPDATE products SET nature = 'PACKAGED'; UPDATE waste_lines SET product_nature = 'UNKNOWN'",
+    );
+    expect(await publisher.validate(receiptId, storeId)).toEqual([]);
+    await publisher.publish(input());
+    expect(payload(db).lines[0]!.productNature).toBe("PACKAGED");
+    expect(db.prepare("SELECT product_nature FROM waste_lines").get()).toEqual({
+      product_nature: "PACKAGED",
+    });
     db.close();
   });
   it("highlights each arithmetic input, and ignores excluded occurrences", async () => {
@@ -349,8 +396,7 @@ describe("Waste receipt atomic publication", () => {
         );
       if (reason === "arithmetic")
         db.exec("UPDATE waste_lines SET total_price = '9.99'");
-      if (reason === "quantity")
-        db.exec("UPDATE waste_lines SET weight = NULL");
+      if (reason === "quantity") db.exec("UPDATE waste_lines SET weight = '0'");
       if (reason === "duplicate")
         db.exec(
           "UPDATE waste_receipts SET duplicate_status = 'POSSIBLE_DUPLICATE'",
@@ -459,123 +505,132 @@ describe("Waste receipt atomic publication", () => {
     second.db.close();
     db.close();
   });
-  it("publishes server-side once and rejects forged lineage or quantity", async () => {
-    const { db, publisher } = await setup();
-    await publisher.publish(input());
-    const p = payload(db);
-    const collections = new Map<string, Record<string, unknown>[]>();
-    collections.set("products", [
-      {
-        _id: productId,
-        storeId,
-        nature: "BULK",
-        salesUnit: "KG",
-        status: "ACTIVE",
-        deletedAt: null,
-      },
-    ]);
-    collections.set("sourceDocuments", [
-      {
-        _id: sourceDocumentId,
-        storeId,
-        sourceType: "WASTE_RECEIPT",
-        remoteUploadStatus: "CONFIRMED",
-        checksum: p.source.checksum,
-      },
-    ]);
-    const context = {
-      database: {
-        collection(name: string) {
-          const rows = collections.get(name) ?? [];
-          collections.set(name, rows);
-          return {
-            async findOne(filter: Record<string, unknown>) {
-              return (
-                rows.find((row) =>
-                  Object.entries(filter).every(([k, v]) => row[k] === v),
-                ) ?? null
-              );
-            },
-            async updateOne() {},
-            async insertOne(value: Record<string, unknown>) {
-              rows.push(value);
-            },
-          };
+  it.each(["ACTIVE", "TO_REVIEW", "INACTIVE"])(
+    "publishes server-side once with catalog status %s and rejects forged lineage or quantity",
+    async (catalogStatus) => {
+      const { db, publisher } = await setup();
+      await publisher.publish(input());
+      const p = payload(db);
+      const incompleteCatalog = catalogStatus === "TO_REVIEW";
+      if (incompleteCatalog) {
+        p.lines[0]!.productNature = "UNKNOWN";
+        p.observations[0]!.productNature = "UNKNOWN";
+        p.observations[0]!.quantity = null;
+      }
+      const collections = new Map<string, Record<string, unknown>[]>();
+      collections.set("products", [
+        {
+          _id: productId,
+          storeId,
+          nature: incompleteCatalog ? "UNKNOWN" : "BULK",
+          salesUnit: incompleteCatalog ? "UNKNOWN" : "KG",
+          status: catalogStatus,
+          deletedAt: null,
         },
-      },
-      session: {},
-    } as unknown as MongoCommandMutationContext;
-    const changes = { async append() {} } as unknown as ReturnType<
-      typeof createMongoSyncChangeService
-    >;
-    const command: SyncCommand = {
-      commandId: randomUUID(),
-      localSequence: 1,
-      type: "WASTE_RECEIPT_PUBLISH",
-      entityType: "waste_receipt_publication",
-      entityId: receiptId,
-      expectedRemoteVersion: null,
-      createdAt: timestamp,
-      payload: JSON.parse(JSON.stringify(p)),
-    };
-    const forged = structuredClone(p);
-    forged.observations[0]!.quantity = "100";
-    expect(
-      (
-        await applyWastePublicationCommand(
-          context,
+      ]);
+      collections.set("sourceDocuments", [
+        {
+          _id: sourceDocumentId,
           storeId,
-          { ...command, payload: JSON.parse(JSON.stringify(forged)) },
-          "test",
-          changes,
-        )
-      ).resultStatus,
-    ).toBe("REJECTED");
-    expect(collections.get("wasteObservations") ?? []).toHaveLength(0);
-    expect(
-      (
-        await applyWastePublicationCommand(
-          context,
-          storeId,
-          command,
-          "test",
-          changes,
-        )
-      ).resultStatus,
-    ).toBe("APPLIED");
-    expect(
-      (
-        await applyWastePublicationCommand(
-          context,
-          storeId,
-          command,
-          "test",
-          changes,
-        )
-      ).resultStatus,
-    ).toBe("APPLIED");
-    expect(collections.get("wasteObservations")).toHaveLength(1);
-    const tampered = structuredClone(p);
-    tampered.observations[0]!.quantity = "100";
-    expect(
-      (
-        await applyWastePublicationCommand(
-          context,
-          storeId,
-          { ...command, payload: JSON.parse(JSON.stringify(tampered)) },
-          "test",
-          changes,
-        )
-      ).resultStatus,
-    ).toBe("CONFLICT");
-    expect(
-      wastePublicationSchema.safeParse({
-        ...p,
-        source: { ...p.source, storeId: randomUUID() },
-      }).success,
-    ).toBe(false);
-    db.close();
-  });
+          sourceType: "WASTE_RECEIPT",
+          remoteUploadStatus: "CONFIRMED",
+          checksum: p.source.checksum,
+        },
+      ]);
+      const context = {
+        database: {
+          collection(name: string) {
+            const rows = collections.get(name) ?? [];
+            collections.set(name, rows);
+            return {
+              async findOne(filter: Record<string, unknown>) {
+                return (
+                  rows.find((row) =>
+                    Object.entries(filter).every(([k, v]) => row[k] === v),
+                  ) ?? null
+                );
+              },
+              async updateOne() {},
+              async insertOne(value: Record<string, unknown>) {
+                rows.push(value);
+              },
+            };
+          },
+        },
+        session: {},
+      } as unknown as MongoCommandMutationContext;
+      const changes = { async append() {} } as unknown as ReturnType<
+        typeof createMongoSyncChangeService
+      >;
+      const command: SyncCommand = {
+        commandId: randomUUID(),
+        localSequence: 1,
+        type: "WASTE_RECEIPT_PUBLISH",
+        entityType: "waste_receipt_publication",
+        entityId: receiptId,
+        expectedRemoteVersion: null,
+        createdAt: timestamp,
+        payload: JSON.parse(JSON.stringify(p)),
+      };
+      const forged = structuredClone(p);
+      forged.observations[0]!.quantity = incompleteCatalog ? "1.25" : "100";
+      expect(
+        (
+          await applyWastePublicationCommand(
+            context,
+            storeId,
+            { ...command, payload: JSON.parse(JSON.stringify(forged)) },
+            "test",
+            changes,
+          )
+        ).resultStatus,
+      ).toBe("REJECTED");
+      expect(collections.get("wasteObservations") ?? []).toHaveLength(0);
+      expect(
+        (
+          await applyWastePublicationCommand(
+            context,
+            storeId,
+            command,
+            "test",
+            changes,
+          )
+        ).resultStatus,
+      ).toBe("APPLIED");
+      expect(
+        (
+          await applyWastePublicationCommand(
+            context,
+            storeId,
+            command,
+            "test",
+            changes,
+          )
+        ).resultStatus,
+      ).toBe("APPLIED");
+      expect(collections.get("wasteObservations")).toHaveLength(1);
+      const tampered = structuredClone(p);
+      tampered.observations[0]!.quantity = "100";
+      expect(
+        (
+          await applyWastePublicationCommand(
+            context,
+            storeId,
+            { ...command, payload: JSON.parse(JSON.stringify(tampered)) },
+            "test",
+            changes,
+          )
+        ).resultStatus,
+      ).toBe("REJECTED");
+      expect(
+        wastePublicationSchema.safeParse({
+          ...p,
+          source: { ...p.source, storeId: randomUUID() },
+        }).success,
+      ).toBe(false);
+      db.close();
+    },
+  );
 });
 
 const integrationIt =
@@ -583,9 +638,9 @@ const integrationIt =
   process.env.TEST_MONGODB_TRANSACTIONS === "true"
     ? it
     : it.skip;
-integrationIt(
-  "commits a real MongoDB publication and recovers it with incremental pull and bootstrap",
-  async () => {
+integrationIt.each([false, true])(
+  "commits a real MongoDB publication with incomplete catalog %s and recovers it with pull/bootstrap",
+  async (incompleteCatalog) => {
     const { createMongoDatabase } =
       await import("../../../api/src/database/mongo");
     const { parseEnvironment } = await import("../../../api/src/config");
@@ -604,6 +659,10 @@ integrationIt(
     );
     const local = await setup();
     try {
+      if (incompleteCatalog)
+        local.db.exec(
+          "UPDATE products SET nature = 'UNKNOWN', sales_unit = 'UNKNOWN', status = 'TO_REVIEW'",
+        );
       await local.publisher.publish(input());
       const p = payload(local.db);
       const db = await remote.getDb();
@@ -614,9 +673,9 @@ integrationIt(
           storeId,
           label: "TOMATE VRAC",
           category: "VEGETABLE",
-          nature: "BULK",
-          salesUnit: "KG",
-          status: "ACTIVE",
+          nature: incompleteCatalog ? "UNKNOWN" : "BULK",
+          salesUnit: incompleteCatalog ? "UNKNOWN" : "KG",
+          status: incompleteCatalog ? "TO_REVIEW" : "ACTIVE",
           version: 1,
           createdAt: new Date(timestamp),
           updatedAt: new Date(timestamp),

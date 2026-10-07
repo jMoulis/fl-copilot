@@ -24,6 +24,7 @@ import { WasteReceiptPublicationRepository } from "@/documents/waste-receipt-pub
 import {
   WastePublicationValidationError,
   type WastePublicationIssue,
+  type WastePublicationWarning,
   type WastePublicationField,
 } from "@/documents/waste-publication-validation";
 import {
@@ -48,6 +49,11 @@ export default function WasteReceiptValidationScreen() {
     WastePublicationIssue[]
   >([]);
   const [validationAttempted, setValidationAttempted] = useState(false);
+  const [showCatalogWarnings, setShowCatalogWarnings] = useState(false);
+  const [showQuantityWarnings, setShowQuantityWarnings] = useState(false);
+  const [publicationWarnings, setPublicationWarnings] = useState<
+    WastePublicationWarning[]
+  >([]);
   const [dirtyFields, setDirtyFields] = useState<
     Record<string, WastePublicationField[]>
   >({});
@@ -76,10 +82,14 @@ export default function WasteReceiptValidationScreen() {
     try {
       const next = await repository.getReceiptDetail(id);
       setDetail(next);
-      if (validationAttempted && next)
-        setPublicationIssues(
-          await publisher.validate(next.receipt.id, next.receipt.storeId),
+      if (next) {
+        const report = await publisher.inspect(
+          next.receipt.id,
+          next.receipt.storeId,
         );
+        setPublicationWarnings(report.warnings);
+        if (validationAttempted) setPublicationIssues(report.issues);
+      }
 
       setError(next ? undefined : "Ce ticket est introuvable.");
     } catch {
@@ -184,6 +194,16 @@ export default function WasteReceiptValidationScreen() {
       ]),
     ).values(),
   ];
+  const catalogWarnings = [
+    ...new Map(
+      publicationWarnings
+        .filter((w) => w.kind === "CATALOG")
+        .map((w) => [`${w.productId}:${w.message}`, w]),
+    ).values(),
+  ];
+  const quantityWarnings = publicationWarnings.filter(
+    (w) => w.kind === "QUANTITY",
+  );
   const dateIssue = issues.find((issue) => issue.field === "date")?.message;
   const reviewCount = detail.lines.filter(
     ({ line }) => line.validationStatus === "TO_REVIEW",
@@ -237,6 +257,69 @@ export default function WasteReceiptValidationScreen() {
       </SectionCard>
       {message ? <InlineAlert title="Enregistré" message={message} /> : null}
       {error ? <InlineAlert title="Action impossible" message={error} /> : null}
+      {catalogWarnings.length ? (
+        <SectionCard
+          title="Référentiel à compléter"
+          description="Ces informations manquantes ne bloquent pas la casse. Elles pourront être complétées séparément ; certaines analyses resteront limitées."
+        >
+          <Text className="text-sm text-muted">
+            {new Set(catalogWarnings.map((w) => w.productId)).size} produit(s)
+            concerné(s).
+          </Text>
+          <SecondaryButton
+            label={
+              showCatalogWarnings
+                ? "Masquer les informations manquantes"
+                : "Voir les informations manquantes"
+            }
+            onPress={() => setShowCatalogWarnings((value) => !value)}
+          />
+          {showCatalogWarnings
+            ? catalogWarnings.map((w) => (
+                <Text
+                  key={`${w.productId}:${w.message}`}
+                  className="text-sm leading-5 text-warning"
+                >
+                  {w.label} : {w.message}
+                </Text>
+              ))
+            : null}
+          {showCatalogWarnings ? (
+            <SecondaryButton
+              label="Ouvrir le référentiel"
+              onPress={() => router.push("/(tabs)/products")}
+            />
+          ) : null}
+        </SectionCard>
+      ) : null}
+      {quantityWarnings.length ? (
+        <SectionCard
+          title="Quantités non comparables"
+          description="Les montants validés peuvent être publiés. Les mesures d’origine restent conservées sur le ticket."
+        >
+          <Text className="text-sm text-muted">
+            {quantityWarnings.length} ligne(s) concernée(s).
+          </Text>
+          <SecondaryButton
+            label={
+              showQuantityWarnings
+                ? "Masquer les détails"
+                : "Voir les détails des quantités"
+            }
+            onPress={() => setShowQuantityWarnings((value) => !value)}
+          />
+          {showQuantityWarnings
+            ? quantityWarnings.map((w) => (
+                <Text
+                  key={`${w.lineId}:${w.message}`}
+                  className="text-sm leading-5 text-warning"
+                >
+                  Ligne {(w.lineIndex ?? 0) + 1} · {w.label} : {w.message}
+                </Text>
+              ))
+            : null}
+        </SectionCard>
+      ) : null}
       {summaryIssues.length ? (
         <SectionCard
           title="Champs à corriger"
@@ -359,7 +442,7 @@ export default function WasteReceiptValidationScreen() {
       ) : (
         <SectionCard
           title="Publication de la casse"
-          description="Confirmez la date et vérifiez chaque produit, quantité et montant avant de valider."
+          description="Confirmez la date, l’identité des produits et les montants. Les informations manquantes du référentiel restent signalées sans bloquer la casse."
         >
           <PrimaryButton
             label="Valider la casse"
