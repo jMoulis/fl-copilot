@@ -33,6 +33,51 @@ export class SourceDocumentRepository {
     return { document, file };
   }
 
+  async createCommercialPdf(input: LocalSourceAggregate) {
+    const document = localSourceDocumentSchema.parse(input.document);
+    const file = localFileMetadataSchema.parse(input.file);
+    assertAggregateConsistency(document, file);
+    if (
+      document.sourceType !== "WEEKLY_COMMERCIAL_PDF" ||
+      file.mimeType !== "application/pdf"
+    )
+      throw new Error("COMMERCIAL_PDF_REQUIRED");
+    let result = { document, file, duplicate: false };
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const existing = await transaction.getFirstAsync<SourceDocumentRow>(
+        `SELECT * FROM source_documents WHERE store_id = ? AND source_type = 'WEEKLY_COMMERCIAL_PDF' AND checksum = ? AND deleted_at IS NULL ORDER BY created_at, id LIMIT 1`,
+        document.storeId,
+        document.checksum!,
+      );
+      if (existing) {
+        const existingFile = await transaction.getFirstAsync<LocalFileRow>(
+          "SELECT * FROM local_files WHERE source_document_id = ? ORDER BY created_at, id LIMIT 1",
+          existing.id,
+        );
+        if (!existingFile)
+          throw new Error("COMMERCIAL_PDF_FILE_METADATA_MISSING");
+        result = {
+          document: mapDocument(existing),
+          file: mapFile(existingFile),
+          duplicate: true,
+        };
+        return;
+      }
+      await insertDocument(transaction, document);
+      await insertFile(transaction, file);
+    });
+    return result;
+  }
+
+  async listDocuments(storeId: string, sourceType: SourceType) {
+    const rows = await this.database.getAllAsync<SourceDocumentRow>(
+      "SELECT * FROM source_documents WHERE store_id = ? AND source_type = ? AND deleted_at IS NULL ORDER BY created_at DESC, id DESC",
+      storeId,
+      sourceType,
+    );
+    return rows.map(mapDocument);
+  }
+
   async addRecords(recordsInput: readonly SourceRecord[]) {
     const records = recordsInput.map((record) =>
       sourceRecordSchema.parse(record),
