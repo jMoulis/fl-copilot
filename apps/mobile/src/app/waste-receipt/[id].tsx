@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Pressable, Text, TextInput, View } from "react-native";
 import { randomUUID } from "expo-crypto";
+import { DateSelector } from "@/components/date-selector";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AppHeader,
@@ -521,17 +522,28 @@ export default function WasteReceiptValidationScreen() {
           description={
             detail.receipt.detectedReceiptDate
               ? `Date détectée : ${formatDate(detail.receipt.detectedReceiptDate)}`
-              : "Aucune date fiable n’a été détectée. Saisissez la date du ticket."
+              : "Aucune date fiable n’a été détectée. Choisissez la date imprimée sur le ticket."
           }
         >
-          <TextInput
+          <DateSelector
             value={date}
-            onChangeText={setDate}
-            placeholder="AAAA-MM-JJ"
-            autoCapitalize="none"
-            className={`min-h-12 rounded-xl border px-4 text-base text-ink ${dateIssue ? "border-critical bg-critical-soft" : "border-line bg-canvas"}`}
-            accessibilityHint={dateIssue}
-            accessibilityLabel="Date de casse au format année mois jour"
+            issue={dateIssue}
+            onConfirm={(selected) => {
+              setDate(selected);
+              setError(undefined);
+              setMessage(undefined);
+              void repository
+                .confirmWasteDate(detail.receipt.id, selected)
+                .then(async () => {
+                  setMessage("La date de casse est confirmée.");
+                  await load();
+                })
+                .catch(() =>
+                  setError(
+                    "La date choisie n’a pas pu être enregistrée. Réessayez.",
+                  ),
+                );
+            }}
           />
           {dateIssue ? (
             <Text accessibilityRole="alert" className="text-sm text-critical">
@@ -539,7 +551,12 @@ export default function WasteReceiptValidationScreen() {
             </Text>
           ) : null}
           <PrimaryButton
-            label="Confirmer la date"
+            label={
+              date === detail.receipt.confirmedWasteDate
+                ? "Date confirmée"
+                : "Confirmer la date"
+            }
+            disabled={date === detail.receipt.confirmedWasteDate}
             onPress={() => {
               setError(undefined);
               setMessage(undefined);
@@ -550,7 +567,9 @@ export default function WasteReceiptValidationScreen() {
                   await load();
                 })
                 .catch(() =>
-                  setError("Saisissez une date valide au format AAAA-MM-JJ."),
+                  setError(
+                    "Choisissez une date dans le calendrier avant de la confirmer.",
+                  ),
                 );
             }}
           />

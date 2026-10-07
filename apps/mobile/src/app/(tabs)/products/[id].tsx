@@ -28,6 +28,11 @@ export default function ProductEditorScreen() {
         subtitle="Les changements sont d’abord enregistrés sur cet appareil."
       />
 
+      <SecondaryButton
+        label="Retour aux produits"
+        onPress={() => router.replace("/(tabs)/products")}
+      />
+
       {conflictId ? (
         <>
           <InlineAlert
@@ -70,7 +75,7 @@ export default function ProductEditorScreen() {
 
       <SecondaryButton
         label="Retour aux produits"
-        onPress={() => router.back()}
+        onPress={() => router.replace("/(tabs)/products")}
       />
     </AppScreen>
   );

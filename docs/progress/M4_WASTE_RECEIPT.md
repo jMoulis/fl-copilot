@@ -196,3 +196,13 @@ The receipt workflow now separates trustworthy source validation from Product Ma
 - Persisted quantity gaps remain visible after later reference completion. This increment does not silently backfill immutable published quantities; an explicit audited enrichment workflow remains a product follow-up.
 
 Verification covers monetary publication with unknown nature/unit and a review product, nullable analytics, original-measure retention, incompatible units, unchanged publication guards, server acceptance for incomplete/inactive catalog entries, and isolated MongoDB transaction/pull/bootstrap round-trips. Native iPhone acceptance remains pending after deploying the API and installing the matching staging build.
+
+## Pilot refinement — French date selection
+
+- Receipt date entry now opens an offline French calendar with Monday-first weeks, month navigation and day/month/year display. Confirming a selected date persists the local business date; cancelling the selector makes no change.
+- The selector reuses React Native primitives and existing UI tokens, without another native dependency or system tooling change. ISO remains the domain/synchronization representation.
+- Vision instructions explicitly inspect the footer and interpret French day/month/year printing, preserving null for missing/cropped/conflicting evidence and avoiding capture-time or identifier substitutions.
+- The instruction update applies to new extraction requests. Existing cached extraction evidence and manually confirmed dates are not reprocessed or overwritten automatically.
+- The approved linked multi-photo capture mode for one ticket is recorded in the roadmap and remains a separate implementation increment.
+
+Verification covers French formatting, calendar date validity, leap years, Monday-first grids, year boundaries and the instructions transmitted to the Vision adapter. Native selector interaction and real footer-date recognition remain pending on iPhone with a matching staging build and representative receipt.

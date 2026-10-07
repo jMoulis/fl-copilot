@@ -202,6 +202,16 @@ describe("waste receipt Vision extraction", () => {
       model: "gpt-test-2026-10-01",
     });
     expect(request).toMatchObject({ model: "gpt-test", store: false });
+    expect(request?.instructions).toEqual(expect.stringContaining("footer"));
+    expect(request?.instructions).toEqual(
+      expect.stringContaining("DD/MM/YYYY"),
+    );
+    expect(request?.instructions).toEqual(
+      expect.stringContaining("2026-10-07"),
+    );
+    expect(request?.instructions).toEqual(
+      expect.stringContaining("return null instead of guessing"),
+    );
     const content = (
       request?.input as Array<{ content: Array<Record<string, unknown>> }>
     )[0]?.content;
