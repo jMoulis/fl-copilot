@@ -136,3 +136,15 @@ Shared Zod contracts distinguish fixed price, strict/inclusive ceiling, threshol
 Explicit French price/unit forms, threshold conditions, card percentage/amount and lot quantity/total are supported. No effective card price, lot unit price or missing purchase unit is inferred. Supplier discounts never become customer benefits. Unsupported wording remains available with an issue; this conservative grammar is not comprehensive French-language interpretation. Missing data remains null and an explicit zero price remains zero.
 
 This increment establishes the shared normalization layer. It does not persist new operational offers, regenerate the eight cached AI pages, or provide the review UI. M5-T06 reconciliation and M5-T07 review will consume this projection; compound/unsupported mechanics require explicit human confirmation. No database migration or native dependency is introduced.
+
+## M5-T06 — Conservative offer reconciliation
+
+Shared candidate contracts and deterministic reconciliation group identical source-anchored offer terms within the same store, document, explicit operation and exact product identity (confirmed UUID, exact identifier set, or exact normalized label). Identifiers retain leading zeroes; fuzzy label matching and product validation are not inferred. Missing operation/product identity keeps occurrences separate.
+
+A detail/recap group retains one terms variant with every source occurrence/citation. Different mechanisms, prices, sale periods, supplier terms or unresolved raw operators/units/prices retain separate variants with explicit conflicts. Missing dates cannot bridge incompatible variants. No corrected document replaces an earlier document; cross-version comparison remains M5-T08. Repeated identical inputs are idempotent and input order does not change the result. Contradictory data for the same page/block occurrence is rejected.
+
+The page-cache adapter projects existing anchored drafts without another AI request, edits or validation. This is a recomputable shared layer for the forthcoming review/persistence path, not an operational-offer publication. No local/remote table is added yet, and no native UI is changed.
+
+A read-only projection of the retained pilot's eight caches found 58 offer occurrences. None was automatically merged: the available operation/identity context did not establish safe duplication. Explicit French source prices now recognize `Moins de`, `le kg`, `la pièce` and the explicit PVC threshold form; seven offer variants normalize. The remaining unsupported/incomplete terms remain raw for review, rather than borrowing units or guessing packaging. These counts describe draft occurrences, not 58 validated offers or 51 erroneous ones.
+
+Verification covers detail/recap citations, changed prices/dates, ceiling vs fixed/inclusive price, card price, supplier conditions, incomplete/raw mechanisms, store/document/operation/product boundaries, unknown identity, replay/order/immutability and contradiction rejection. This increment requires no native build; physical review acceptance belongs to M5-T07.

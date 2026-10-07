@@ -34,8 +34,20 @@ export function normalizeCommercialMechanisms(input: {
   supplierCondition?: string | null;
 }) {
   const issues: string[] = [];
-  const selling = text(input.sellingPrice);
-  const customer = text(input.customerMechanism);
+  const literalPrice = (raw: string | null | undefined) =>
+    text(raw)
+      .replace(/^moins de\s+/, "< ")
+      .replace(/€\s+(?:le|la)\s+(kg|pièce|piece)$/, "€/$1");
+  const selling = literalPrice(input.sellingPrice);
+  let customer = text(input.customerMechanism);
+  const explicitThreshold = customer.match(
+    new RegExp(
+      `^pvc à partir de ${number} ${units} : ${money.replace("\\s*/\\s*", "\\s+(?:le|la)\\s+")}$`,
+    ),
+  );
+  if (explicitThreshold && selling) {
+    customer = `${selling} ; ${explicitThreshold[3]} €/${explicitThreshold[4]} à partir de ${explicitThreshold[1]} ${explicitThreshold[2]}`;
+  }
   let mechanism: CommercialMechanism | null = null;
   // A compound mechanism must be reviewed rather than silently reduced to price.
   if (customer) {
@@ -54,11 +66,15 @@ export function normalizeCommercialMechanisms(input: {
         `^lot de (\\d+) (pièces|pieces|packs|unités conditionnées)(?: (?:pour|à) ${number}\\s*€)?$`,
       ),
     );
+    const base = selling.match(new RegExp(`^${money}$`));
     if (
       threshold &&
       decimal(threshold[5]!) > 0 &&
       threshold[2] === threshold[4] &&
-      (!selling || selling === `${threshold[1]} €/${threshold[2]}`)
+      (!selling ||
+        (base &&
+          decimal(base[1]!) === decimal(threshold[1]!) &&
+          unit(base[2]!) === unit(threshold[2]!)))
     ) {
       mechanism = {
         type: "THRESHOLD_PRICE",
@@ -86,7 +102,7 @@ export function normalizeCommercialMechanisms(input: {
     } else issues.push("CUSTOMER_MECHANISM_TO_CONFIRM");
   } else if (selling) {
     const match = selling.match(new RegExp(`^(<|<=|≤|=)?\\s*${money}$`));
-    const operator = text(input.priceOperator);
+    const operator = text(input.priceOperator).replace(/^moins de$/, "<");
     if (
       match &&
       (!operator || ["<", "<=", "≤", "="].includes(operator)) &&
@@ -110,7 +126,7 @@ export function normalizeCommercialMechanisms(input: {
           : { type: "FIXED_PRICE", ...values };
     } else issues.push("SELLING_PRICE_TO_CONFIRM");
   } else if (input.priceOperator) issues.push("SELLING_PRICE_TO_CONFIRM");
-  const purchase = text(input.purchasePrice);
+  const purchase = literalPrice(input.purchasePrice);
   const supplier = text(input.supplierCondition);
   const purchaseMatch = purchase.match(new RegExp(`^${money}$`));
   const discount = supplier.match(
@@ -166,7 +182,7 @@ export function normalizeCommercialDraftMechanisms(draft: {
       // Only an explicit price field plus explicit unit may form a price candidate.
       const withUnit = (value: string | null) =>
         value && salesUnit && /^\d+(?:[,.]\d{1,2})?\s*€$/.test(value.trim())
-          ? `${value}/${salesUnit}`
+          ? `${value}/${salesUnit.replace(/^(?:le|la)\s+/, "")}`
           : value;
       return {
         sourceBlockIndex: block.sourceBlockIndex,

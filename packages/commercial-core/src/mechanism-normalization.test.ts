@@ -127,3 +127,57 @@ it("projects only anchored offers without mutating drafts or borrowing sales uni
   });
   expect(JSON.stringify(draft)).toBe(original);
 });
+
+it("supports explicit French source wording without changing ceiling meaning", () => {
+  expect(
+    normalize({
+      sellingPrice: "Moins de 2,20€ le kg",
+      priceOperator: "Moins de",
+    }).mechanism,
+  ).toMatchObject({
+    type: "PRICE_CEILING",
+    operator: "LESS_THAN",
+    amount: 2.2,
+    unit: "KG",
+  });
+  expect(
+    normalize({
+      sellingPrice: "1,89€ le kg",
+      customerMechanism: "PVC à partir de 1 kg : 1,59€ le kg",
+    }).mechanism,
+  ).toMatchObject({
+    type: "THRESHOLD_PRICE",
+    basePrice: 1.89,
+    thresholdPrice: 1.59,
+    thresholdQuantity: 1,
+    thresholdUnit: "KG",
+  });
+  const result = normalizeCommercialDraftMechanisms({
+    blocks: [
+      {
+        kind: "OFFER",
+        sourceBlockIndex: 1,
+        fields: [
+          {
+            name: "sellingPrice",
+            rawValue: "0,80€",
+            validationStatus: "TO_VALIDATE",
+          },
+          {
+            name: "salesUnit",
+            rawValue: "la pièce",
+            validationStatus: "TO_VALIDATE",
+          },
+        ],
+      },
+    ],
+  });
+  expect(result[0]?.mechanism).toMatchObject({
+    type: "FIXED_PRICE",
+    amount: 0.8,
+    unit: "PIECE",
+  });
+  expect(
+    normalize({ sellingPrice: "Moins de 1,80€ le filet de 3kg" }).mechanism,
+  ).toBeNull();
+});
