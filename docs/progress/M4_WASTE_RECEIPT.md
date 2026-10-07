@@ -217,3 +217,15 @@ Verification covers French formatting, calendar date validity, leap years, Monda
 - Existing completed tickets are not automatically reprocessed with v2. Older drafts can receive manual metadata before publication; new extraction requests use the v2 evidence identity.
 
 Verification covers v14→v15 migration preservation, leading-zero strings, restart persistence, optional/empty values, retained human correction, Vision output types, draft assembly and MongoDB publication/pull/bootstrap metadata. Native interaction and recognition of a real cashier footer remain pending in the matching staging build.
+
+## iPhone acceptance — 2026-10-07
+
+The pilot user reports all tested flows working, including cashier metadata in the staging build following PR #80. The core M4 native gate is accepted. The ticket selling-value calculations are covered by automatic verification; the current Today card displays purchase-cost waste, so it is not a direct receipt selling-value inspection surface.
+
+## Pilot refinement — Explicit label memory
+
+A matched non-excluded receipt line may explicitly create a validated `WASTE_RECEIPT` ProductAlias for its persisted raw label and active product. No alias is created merely by choosing a product. Alias insertion and its stable Outbox command share an exclusive SQLite transaction; repeated taps reuse the alias. Existing incompatible/rejected/unvalidated aliases and conflicting active canonical product labels block creation. Remote alias conflicts retain the existing domain policy, and duplicate valid remote aliases continue to yield ambiguity in the shared matcher.
+
+Waste-created aliases can be removed from the receipt, including after publication, using the existing versioned delete command. Published observations and extracted source lines remain unchanged. The existing ProductAlias bootstrap/pull/push path handles remote durability and device restoration. These store-scoped aliases are shared by the existing catalog matcher, not a separate Vision-training system. Creating aliases for review/inactive products is intentionally disabled without blocking their receipt publication.
+
+Verification covers restart persistence, explicit creation only, stable repeated-tap behavior, one atomic command, Outbox rollback, rejection/collision guards, excluded/unresolved lines and deterministic matching/removal. The new native controls still require pilot acceptance after merge and build.
