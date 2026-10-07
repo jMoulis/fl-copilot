@@ -229,3 +229,13 @@ A matched non-excluded receipt line may explicitly create a validated `WASTE_REC
 Waste-created aliases can be removed from the receipt, including after publication, using the existing versioned delete command. Published observations and extracted source lines remain unchanged. The existing ProductAlias bootstrap/pull/push path handles remote durability and device restoration. These store-scoped aliases are shared by the existing catalog matcher, not a separate Vision-training system. Creating aliases for review/inactive products is intentionally disabled without blocking their receipt publication.
 
 Verification covers restart persistence, explicit creation only, stable repeated-tap behavior, one atomic command, Outbox rollback, rejection/collision guards, excluded/unresolved lines and deterministic matching/removal. The new native controls still require pilot acceptance after merge and build.
+
+## Pilot correction — Alias creation followed by immediate cancellation
+
+A production conflict response identified `PRODUCT_ALIAS_DELETE` for `TOMATE ALLONGE VRAC`: cancellation could carry a null expected remote version even after initial creation had reached remote version 1. This is a local command-ordering/version dependency, not a PDF capture or document-analysis failure.
+
+Pending alias commands now wait for earlier commands on that same store/entity. An acknowledged initial alias creation rebases only a never-sent pending deletion with a null expected version. Already-attempted commands retain their original identity/version for idempotent retry; failed or open-conflict predecessors block dependent deletion. Other entity command behavior is unchanged.
+
+Existing unchanged waste-alias deletion conflicts have an explicit `Reprendre l’annulation du libellé` action. It verifies the original delete command, retained deleted local alias, remote identity/product/label/source/status/confidence/version, then atomically enqueues a new delete UUID with the conflict snapshot version and resolves the old conflict. If any association changed, it refuses. The server still rejects a concurrent newer change; no general last-write-wins policy or remote cleanup is added. Existing published receipts remain immutable.
+
+Verification includes SQLite command-order reproduction, blocked dependent deletion after a creation conflict, safe existing-conflict retry, rollback and rejection of a changed product mapping, plus real MongoDB two-device creation/cancellation and removal. Native acceptance is pending after merge and updated staging build.

@@ -11,6 +11,7 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
+import { ConflictRepository } from "../sync/conflict-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 
 type EntityKind = "product" | "product_identifier" | "product_alias";
@@ -141,6 +142,87 @@ export class ProductMasterRepository {
       });
     });
     return remembered!;
+  }
+
+  async retryWasteAliasDeletion(
+    conflictId: string,
+    context: ProductMutationContext,
+  ) {
+    await this.database.withExclusiveTransactionAsync(async (transaction) => {
+      const conflict = await new ConflictRepository(transaction).getById(
+        conflictId,
+      );
+      if (
+        !conflict ||
+        conflict.status !== "OPEN" ||
+        conflict.entityType !== "product_alias" ||
+        conflict.remoteVersion === null
+      )
+        throw new Error("WASTE_ALIAS_RESOLUTION_UNSAFE");
+      const command = await new OutboxRepository(transaction).getById(
+        conflict.commandId!,
+      );
+      const row = await transaction.getFirstAsync<AliasRow>(
+        "SELECT * FROM product_aliases WHERE id = ? AND store_id = ?",
+        conflict.entityId,
+        conflict.storeId,
+      );
+      const remote = productAliasSchema.safeParse(conflict.remotePayload);
+      if (
+        !row ||
+        !row.deleted_at ||
+        command?.commandType !== "PRODUCT_ALIAS_DELETE" ||
+        !remote.success
+      )
+        throw new Error("WASTE_ALIAS_RESOLUTION_UNSAFE");
+      const local = mapAlias(row).entity;
+      const other = remote.data;
+      if (
+        local.source !== "WASTE_RECEIPT" ||
+        other.deletedAt ||
+        other.id !== local.id ||
+        other.storeId !== local.storeId ||
+        other.version !== conflict.remoteVersion ||
+        other.productId !== local.productId ||
+        other.alias !== local.alias ||
+        other.normalizedAlias !== local.normalizedAlias ||
+        other.source !== local.source ||
+        other.status !== local.status ||
+        other.confidence !== local.confidence
+      )
+        throw new Error("WASTE_ALIAS_RESOLUTION_UNSAFE");
+      const timestamp = new Date().toISOString();
+      const version = conflict.remoteVersion + 1;
+      await transaction.runAsync(
+        "UPDATE product_aliases SET version = ?, remote_version = ?, updated_at = ?, deleted_at = ?, sync_state = 'PENDING', dirty = 1 WHERE id = ?",
+        version,
+        conflict.remoteVersion,
+        timestamp,
+        timestamp,
+        local.id,
+      );
+      await new OutboxRepository(transaction).enqueue({
+        commandId: context.commandId,
+        deviceId: context.deviceId,
+        storeId: local.storeId,
+        commandType: "PRODUCT_ALIAS_DELETE",
+        entityType: "product_alias",
+        entityId: local.id,
+        expectedRemoteVersion: conflict.remoteVersion,
+        payload: {
+          id: local.id,
+          storeId: local.storeId,
+          deletedAt: timestamp,
+          version,
+        },
+        createdAt: timestamp,
+      });
+      await transaction.runAsync(
+        "UPDATE sync_conflicts SET status = 'RESOLVED_LOCAL', resolved_at = ? WHERE id = ? AND status = 'OPEN'",
+        timestamp,
+        conflictId,
+      );
+    });
   }
 
   async delete(

@@ -400,6 +400,51 @@ describeWithMongoTransactions("M1 two-device synchronization proof", () => {
     });
     await expect(repositoryB.listAliases(productId)).resolves.toEqual([]);
 
+    // A manager may cancel memory before its initial creation has synchronized.
+    const quickAliasId = randomUUID();
+    await repositoryA.upsertAlias(
+      {
+        id: quickAliasId,
+        storeId,
+        productId,
+        alias: "POIRE CONF VRA",
+        normalizedAlias: normalizeProductLabel("POIRE CONF VRA"),
+        source: "WASTE_RECEIPT",
+        status: "VALIDATED",
+        confidence: 1,
+        version: 1,
+        createdAt: updateTimestamp,
+        updatedAt: updateTimestamp,
+        deletedAt: null,
+      },
+      { commandId: randomUUID(), deviceId: deviceAId },
+    );
+    await repositoryA.delete(
+      "product_alias",
+      quickAliasId,
+      storeId,
+      updateTimestamp,
+      {
+        commandId: randomUUID(),
+        deviceId: deviceAId,
+        expectedRemoteVersion: null,
+      },
+    );
+    await expect(
+      new MobileSyncService(deviceA, transportFor(deviceAId), {
+        appVersion: "0.1.0",
+        deviceId: deviceAId,
+      }).sync(storeId),
+    ).resolves.toMatchObject({ pushed: 2, conflicts: 0, failed: 0 });
+    await expect(
+      new MobileSyncService(deviceB, transportFor(deviceBId), {
+        appVersion: "0.1.0",
+        deviceId: deviceBId,
+      }).sync(storeId),
+    ).resolves.toMatchObject({ pulled: 2 });
+    await expect(repositoryA.getAlias(quickAliasId)).resolves.toBeNull();
+    await expect(repositoryB.getAlias(quickAliasId)).resolves.toBeNull();
+
     const deviceCId = randomUUID();
     const deviceC = await openDevice(createLocalDatabasePath("product-c"));
     await new MobileSyncService(deviceC, transportFor(deviceCId), {
@@ -413,7 +458,7 @@ describeWithMongoTransactions("M1 two-device synchronization proof", () => {
     deviceA.database.close();
     deviceB.database.close();
     deviceC.database.close();
-  });
+  }, 20_000);
 
   function createLocalDatabasePath(label: string) {
     const directory = mkdtempSync(join(tmpdir(), `fl-copilot-${label}-`));

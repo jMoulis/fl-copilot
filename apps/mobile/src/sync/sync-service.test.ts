@@ -559,3 +559,120 @@ describe("mobile sync service", () => {
     database.close();
   });
 });
+
+describe("ordered alias creation and cancellation", () => {
+  async function prepareAlias() {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    const repository = new ProductMasterRepository(adapter);
+    const alias = {
+      id: entityId,
+      storeId,
+      productId: deviceId,
+      alias: "TOMATE ALLONGE VRAC",
+      normalizedAlias: "TOMATE ALLONGE VRAC",
+      source: "WASTE_RECEIPT" as const,
+      status: "VALIDATED" as const,
+      confidence: 1,
+      version: 1,
+      createdAt: "2026-10-07T08:00:00.000Z",
+      updatedAt: "2026-10-07T08:00:00.000Z",
+      deletedAt: null,
+    };
+    await repository.upsertAlias(alias, { commandId, deviceId });
+    await repository.delete(
+      "product_alias",
+      entityId,
+      storeId,
+      "2026-10-07T08:01:00.000Z",
+      {
+        commandId: "88888888-8888-4888-8888-888888888888",
+        deviceId,
+        expectedRemoteVersion: null,
+      },
+    );
+    return { adapter, database, repository, alias };
+  }
+  it("acknowledges creation before sending the unsent deletion with its actual version", async () => {
+    const { adapter, database, repository, alias } = await prepareAlias();
+    const expected: Array<number | null | undefined> = [];
+    const transport: SyncTransport = {
+      bootstrap: async () => bootstrapResponse(),
+      pull: async (_, cursor) => emptyPull(cursor),
+      push: async (request) => {
+        expect(request.commands).toHaveLength(1);
+        const command = request.commands[0]!;
+        expected.push(command.expectedRemoteVersion);
+        if (command.type === "PRODUCT_ALIAS_DELETE")
+          expect(command.expectedRemoteVersion).toBe(1);
+        return {
+          results: [
+            {
+              commandId: command.commandId,
+              status: "APPLIED",
+              entityType: "product_alias",
+              entityId,
+              remoteVersion: command.type === "PRODUCT_ALIAS_DELETE" ? 2 : 1,
+              remoteEntity: alias,
+            },
+          ],
+          serverTime: alias.updatedAt,
+        };
+      },
+    };
+    expect(
+      await new MobileSyncService(adapter, transport, {
+        appVersion: "test",
+        deviceId,
+      }).push(storeId),
+    ).toMatchObject({ pushed: 2, conflicts: 0 });
+    expect(expected).toEqual([null, 1]);
+    expect(await repository.getAlias(entityId)).toBeNull();
+    expect(database.prepare("SELECT status FROM sync_outbox").all()).toEqual([
+      { status: "ACKNOWLEDGED" },
+      { status: "ACKNOWLEDGED" },
+    ]);
+    database.close();
+  });
+  it("does not send a dependent deletion when creation conflicts", async () => {
+    const { adapter, database, alias } = await prepareAlias();
+    let requests = 0;
+    const transport: SyncTransport = {
+      bootstrap: async () => bootstrapResponse(),
+      pull: async (_, cursor) => emptyPull(cursor),
+      push: async (request) => {
+        requests++;
+        expect(request.commands).toHaveLength(1);
+        expect(request.commands[0]?.type).toBe("PRODUCT_ALIAS_UPSERT");
+        return {
+          results: [
+            {
+              commandId,
+              status: "CONFLICT",
+              entityType: "product_alias",
+              entityId,
+              remoteVersion: 1,
+              remoteEntity: alias,
+            },
+          ],
+          serverTime: alias.updatedAt,
+        };
+      },
+    };
+    expect(
+      await new MobileSyncService(adapter, transport, {
+        appVersion: "test",
+        deviceId,
+      }).push(storeId),
+    ).toMatchObject({ conflicts: 1 });
+    expect(requests).toBe(1);
+    expect(
+      database
+        .prepare(
+          "SELECT expected_remote_version, attempt_count FROM sync_outbox WHERE command_type = 'PRODUCT_ALIAS_DELETE'",
+        )
+        .get(),
+    ).toMatchObject({ expected_remote_version: null, attempt_count: 0 });
+    database.close();
+  });
+});
