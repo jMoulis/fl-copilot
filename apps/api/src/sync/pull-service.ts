@@ -1,4 +1,8 @@
 import {
+  serializeVisualReading,
+  type VisualReadingDocument,
+} from "../commercial/visual-reading-store.js";
+import {
   registerCommercialReviewPages,
   loadCommercialReviewEntity,
 } from "../commercial/review-sync.js";
@@ -76,13 +80,35 @@ export function createMongoSyncPullService(
         selected
           .filter(
             (change) =>
-              query.commercialReview === "true" ||
-              ![
-                "commercial_review_page",
-                "commercial_review_decision",
-              ].includes(change.entityType),
+              (query.commercialReview === "true" ||
+                ![
+                  "commercial_review_page",
+                  "commercial_review_decision",
+                ].includes(change.entityType)) &&
+              (query.commercialVisual === "true" ||
+                change.entityType !== "commercial_visual_reading"),
           )
           .map(async (change) => {
+            if (change.entityType === "commercial_visual_reading") {
+              const reading = await mongoDatabase
+                .collection<VisualReadingDocument>("commercialVisualReadings")
+                .findOne({
+                  _id: change.entityId,
+                  storeId,
+                  status: { $in: ["READY", "FAILED"] },
+                });
+              if (!reading || change.operation !== "UPSERT")
+                throw Error("COMMERCIAL_VISUAL_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: 1,
+                entity: serializeVisualReading(reading),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (
               ["commercial_review_page", "commercial_review_decision"].includes(
                 change.entityType,

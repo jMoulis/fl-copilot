@@ -1,3 +1,7 @@
+import { readCommercialVisualReadings } from "@/commercial/visual-repository";
+import { CommercialVisualView } from "@/commercial/visual-view";
+import type { SynchronizedCommercialVisualReading } from "@fl-copilot/sync-contracts";
+import { CommercialOriginalButton } from "@/commercial/original-button";
 import { CommercialSummaryView } from "@/commercial/summary-view";
 import { captureScreenError } from "@/observability/sentry";
 import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
@@ -49,6 +53,10 @@ export default function CommercialReviewScreen() {
     Awaited<ReturnType<CommercialReviewRepository["decisions"]>>
   >([]);
   const [viewSummary, setViewSummary] = useState(true);
+  const [visuals, setVisuals] = useState<SynchronizedCommercialVisualReading[]>(
+    [],
+  );
+  const [legacy, setLegacy] = useState(false);
   const [index, setIndex] = useState(0),
     [error, setError] = useState<string>(),
     [loading, setLoading] = useState(true),
@@ -62,12 +70,17 @@ export default function CommercialReviewScreen() {
       repository.pages(storeId, id),
       repository.decisions(storeId),
     ]);
-    return { p, d };
-  }, [repository, storeId, id]);
+    return {
+      p,
+      d,
+      visuals: await readCommercialVisualReadings(sqlite, storeId, id),
+    };
+  }, [repository, storeId, id, sqlite]);
   const apply = useCallback((data: Awaited<ReturnType<typeof refresh>>) => {
     if (data) {
       setPages(data.p);
       setDecisions(data.d);
+      setVisuals(data.visuals);
     }
     setLoading(false);
   }, []);
@@ -300,6 +313,7 @@ export default function CommercialReviewScreen() {
         label="Retour à Ma semaine"
         onPress={() => discardEdits(() => router.replace("/week" as Href))}
       />
+      <CommercialOriginalButton sourceDocumentId={id} />
       {error ? (
         <InlineAlert title="Examen indisponible" message={error} />
       ) : null}
@@ -316,7 +330,22 @@ export default function CommercialReviewScreen() {
           icon="document-text-outline"
         />
       ) : null}
-      {pages.length && viewSummary ? (
+      {viewSummary && visuals.length && !legacy ? (
+        <>
+          <CommercialVisualView readings={visuals} />
+          <SecondaryButton
+            label="Consulter les extraits et choix précédents"
+            onPress={() => setLegacy(true)}
+          />
+        </>
+      ) : null}
+      {viewSummary && legacy && visuals.length ? (
+        <SecondaryButton
+          label="Revenir à la lecture visuelle"
+          onPress={() => setLegacy(false)}
+        />
+      ) : null}
+      {pages.length && viewSummary && (!visuals.length || legacy) ? (
         <CommercialSummaryView
           summary={summary}
           busy={busy}

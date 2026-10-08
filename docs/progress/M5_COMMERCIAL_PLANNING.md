@@ -201,3 +201,17 @@ Native acceptance:
 3. Open a source detail, then return to the brief. Informational clauses do not require acknowledgement to keep reading.
 4. Optionally confirm a readable series offline. Reopen and reconnect: each ordinary decision persists and synchronizes once; questions remain visible and no offer, TG, instruction execution or KPI is published by that acknowledgement.
 5. Existing corrections/dispositions and conflicts remain visible, with source text separate from manually corrected values.
+
+## M5-T07-C — Original PDF visual reading
+
+The remote adapter now sends the immutable original PDF as a multimodal file, with text used as corroboration. It proposes nested operation dossiers instead of guessing relationships between neighbouring text blocks: Dramat/prospectus, products and price operators, specifications, deadlines, communication, source TG ideas and announced figures remain separately identifiable. The full conversational Copilot stays in M7.
+
+Visual citations are proposals, never deterministic proof or automatic commercial validation. Literal corroboration is labelled separately; inconsistent field citations are removed from the anchored proposal, while private raw model output remains retained. Shared French-month dates can retain the month explicitly printed in their citation; a missing year is never invented. Existing text caches and human review decisions remain intact.
+
+Inngest processes leased, retryable pages with checksum checks, immutable cache identities and transactional incremental sync. Mongo migration 16 and SQLite migration 17 add visual snapshots. The new capability is adopted through bootstrap; older clients skip unsupported changes. Saved readings remain available offline. Limits are 20 MiB and 16 PDF pages; failures remain visible with access to the original and older text extraction.
+
+`Consulter le PDF original` uses the retained local copy on iOS through the system share/preview sheet. Otherwise an authenticated store-scoped endpoint returns a private, read-only link valid for 120 seconds. No Blob credential reaches the client. This is original-document access, not an embedded page renderer.
+
+Two bounded read-only Gateway calls on the attached eight-page pilot PDF verified page 2: three distinct Dramat dossiers plus the banana campaign, including product attributes, source prices and strict price ceilings, explicit dates, the visual PLU 4274, and the difference between the banana poster's Costa Rica origin and the source's allowed origin alternatives. No production draft, choice, offer or KPI was changed by this diagnostic.
+
+Verification covers literal/visual evidence, citation rejection, immutable native snapshots and cursor rollback, concurrent remote leases, checksum rejection without a model call, legacy-client filtering and store-scoped original links. Physical acceptance: synchronize the retained PDF, read the Dramat dossiers and their source conditions, open the original, then reopen saved readings offline. No reimport or data deletion is required.

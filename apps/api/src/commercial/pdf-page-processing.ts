@@ -1,3 +1,4 @@
+import { getVercelOidcToken } from "../vercel-request-context.js";
 import { createHash, randomUUID } from "node:crypto";
 import { get } from "@vercel/blob";
 import type { DatabaseService } from "../database/types.js";
@@ -49,9 +50,12 @@ type PageRecord = CommercialPdfPage & {
 export interface PdfSourceStorage {
   read(pathname: string): Promise<Uint8Array | null>;
 }
-const privatePdfStorage: PdfSourceStorage = {
+export const privatePdfStorage: PdfSourceStorage = {
   async read(pathname) {
-    const blob = await get(pathname, { access: "private" });
+    const blob = await get(pathname, {
+      access: "private",
+      oidcToken: getVercelOidcToken() ?? process.env.VERCEL_OIDC_TOKEN,
+    });
     if (!blob || blob.statusCode !== 200) return null;
     const chunks: Uint8Array[] = [];
     let size = 0;

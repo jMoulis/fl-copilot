@@ -387,3 +387,91 @@ it("rechecks eligibility after an intervening review and preserves the earlier c
     { count: 1 },
   );
 });
+
+import {
+  applyCommercialVisualReading,
+  readCommercialVisualReadings,
+} from "./visual-repository";
+import type { SynchronizedCommercialVisualReading } from "@fl-copilot/sync-contracts";
+function visualFixture(): SynchronizedCommercialVisualReading {
+  return {
+    id: randomUUID(),
+    storeId,
+    sourceDocumentId,
+    checksum: page.checksum,
+    pageNumber: 1,
+    pageCount: 1,
+    schemaVersion: "commercial-visual.v1",
+    model: "test",
+    remoteVersion: 1,
+    status: "READY",
+    errorCode: null,
+    reading: {
+      operations: [
+        {
+          kind: "DRAMAT",
+          label: "POIRE",
+          summaryFr: "Poire proposée dans le document.",
+          fields: [],
+          items: [],
+          evidence: [
+            {
+              pageNumber: 1,
+              quote: "POIRE",
+              region: null,
+              verification: "TEXT_SUPPORTED",
+            },
+          ],
+          validationStatus: "TO_VALIDATE",
+        },
+      ],
+      tgIdeas: [],
+      otherInformation: [],
+      warnings: [],
+    },
+  };
+}
+it("retains immutable visual dossiers offline and refuses another store or a silent replacement", async () => {
+  const { adapter, repo } = await setup();
+  const visual = visualFixture();
+  await applyCommercialVisualReading(adapter, storeId, visual);
+  await applyCommercialVisualReading(adapter, storeId, visual);
+  expect(
+    await readCommercialVisualReadings(adapter, storeId, sourceDocumentId),
+  ).toEqual([visual]);
+  expect(await repo.pages(storeId)).toEqual([page]);
+  await expect(
+    applyCommercialVisualReading(adapter, randomUUID(), visual),
+  ).rejects.toThrow("COMMERCIAL_VISUAL_STORE_MISMATCH");
+  await expect(
+    applyCommercialVisualReading(adapter, storeId, {
+      ...visual,
+      checksum: "changed",
+    }),
+  ).rejects.toThrow("COMMERCIAL_VISUAL_IMMUTABLE_READING");
+});
+it("rolls back a malformed visual envelope and keeps the synchronization cursor", async () => {
+  const { adapter, db } = await setup();
+  const visual = visualFixture();
+  await expect(
+    applyPullPage(adapter, storeId, {
+      changes: [
+        {
+          sequence: "1",
+          entityType: "commercial_visual_reading",
+          entityId: randomUUID(),
+          entityVersion: 1,
+          operation: "UPSERT",
+          entity: visual,
+          changedAt: new Date().toISOString(),
+        },
+      ],
+      nextCursor: "wrong",
+      hasMore: false,
+      serverTime: new Date().toISOString(),
+    }),
+  ).rejects.toThrow("COMMERCIAL_VISUAL_ENVELOPE_INVALID");
+  expect(
+    db.prepare("SELECT cursor FROM sync_inbox_state").get(),
+  ).toBeUndefined();
+});

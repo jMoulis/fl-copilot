@@ -1,3 +1,5 @@
+import { createCommercialVisualProcessor } from "./visual-processing.js";
+import type { CommercialVisualProvider } from "./visual-provider.js";
 import { createCommercialAiDraftProcessor } from "./ai-draft-processing.js";
 import type { CommercialAiProvider } from "./ai-provider.js";
 import { Inngest } from "inngest";
@@ -13,6 +15,7 @@ export function createCommercialInngestWorkflows(
   eventKey: string,
   signingKey: string,
   aiProvider?: CommercialAiProvider,
+  visualProvider?: CommercialVisualProvider,
 ) {
   const client = new Inngest({
     id: "fl-copilot-api",
@@ -96,6 +99,31 @@ export function createCommercialInngestWorkflows(
       return result;
     },
   );
+  const visualProcessor = visualProvider
+    ? createCommercialVisualProcessor(database, visualProvider)
+    : undefined;
+  const visualPage = visualProcessor
+    ? client.createFunction(
+        {
+          id: "commercial-pdf-visual-page-v1",
+          concurrency: 2,
+          retries: 3,
+          triggers: [{ event: "commercial/pdf.visual-page" }],
+        },
+        async ({ event, step }) => {
+          const identity = sourceIdentity
+            .extend({ pageNumber: z.number().int().min(1).max(100) })
+            .parse(event.data);
+          return step.run("read-original-pdf", () =>
+            visualProcessor.process(
+              identity.storeId,
+              identity.sourceDocumentId,
+              identity.pageNumber,
+            ),
+          );
+        },
+      )
+    : undefined;
   const recover = client.createFunction(
     {
       id: "commercial-pdf-recover-pending-v1",
@@ -124,7 +152,30 @@ export function createCommercialInngestWorkflows(
             function: aiDocument,
             data: source,
           });
-      return { scheduled: pending.length, aiScheduled: aiPending.length };
+      const visualPending = visualProcessor
+        ? await step.run("pending-visual-sources", () =>
+            visualProcessor.pending(),
+          )
+        : [];
+      if (visualPage)
+        for (const source of visualPending)
+          await Promise.all(
+            source.pages.map((pageNumber) =>
+              step.invoke(`visual-${source.sourceDocumentId}-${pageNumber}`, {
+                function: visualPage,
+                data: {
+                  storeId: source.storeId,
+                  sourceDocumentId: source.sourceDocumentId,
+                  pageNumber,
+                },
+              }),
+            ),
+          );
+      return {
+        scheduled: pending.length,
+        aiScheduled: aiPending.length,
+        visualScheduled: visualPending.length,
+      };
     },
   );
   return {
@@ -133,6 +184,7 @@ export function createCommercialInngestWorkflows(
       extract,
       recover,
       ...(aiDocument && aiPage ? [aiDocument, aiPage] : []),
+      ...(visualPage ? [visualPage] : []),
     ],
     async dispatch(storeId: string, sourceDocumentId: string) {
       sourceIdentity.parse({ storeId, sourceDocumentId });

@@ -571,7 +571,18 @@ export const commercialReviewDecisions = sqliteTable(
     syncState: text("sync_state").notNull(),
   },
 );
+export const commercialVisualReadings = sqliteTable(
+  "commercial_visual_readings",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    sourceDocumentId: text("source_document_id").notNull(),
+    pageNumber: integer("page_number").notNull(),
+    payloadJson: text("payload_json").notNull(),
+  },
+);
 export const localSchema = {
+  commercialVisualReadings,
   commercialReviewPages,
   commercialReviewDecisions,
   appMetadata,
