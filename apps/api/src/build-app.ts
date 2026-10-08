@@ -1,3 +1,6 @@
+import { createCommercialVisualProvider } from "./commercial/visual-provider.js";
+import { createCommercialOriginalLinkService } from "./commercial/original-link.js";
+import { commercialOriginalLinkSchema } from "@fl-copilot/sync-contracts";
 import { createCommercialAiProvider } from "./commercial/ai-provider.js";
 import { serve as serveInngest } from "inngest/fastify";
 import { createCommercialInngestWorkflows } from "./commercial/inngest-workflows.js";
@@ -108,6 +111,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             gatewayApiKey: config.AI_GATEWAY_API_KEY,
             vercelOidcToken: config.VERCEL_OIDC_TOKEN,
             getVercelOidcToken,
+          }),
+          createCommercialVisualProvider({
+            model: config.COMMERCIAL_PDF_AI_MODEL,
+            gatewayApiKey: config.AI_GATEWAY_API_KEY,
+            getVercelOidcToken: () =>
+              getVercelOidcToken() ?? config.VERCEL_OIDC_TOKEN,
           }),
         )
       : undefined;
@@ -352,6 +361,32 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.body.deviceId,
       );
       return syncPush.push(request.body, request.id);
+    },
+  );
+  app.get(
+    "/api/v1/commercial/:id/original-link",
+    {
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        response: { 200: commercialOriginalLinkSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization;
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string")
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      await auth.authorizeStore(token.slice(7), storeId);
+      return createCommercialOriginalLinkService(dependencies.database).link(
+        storeId,
+        request.params.id,
+      );
     },
   );
   app.get(

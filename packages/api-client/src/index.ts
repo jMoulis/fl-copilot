@@ -1,4 +1,8 @@
 import {
+  commercialOriginalLinkSchema,
+  type CommercialOriginalLink,
+} from "@fl-copilot/sync-contracts";
+import {
   apiErrorSchema,
   authChallengeResponseSchema,
   authSessionResponseSchema,
@@ -88,9 +92,11 @@ export class ApiClient {
     cursor?: string,
     limit?: number,
     commercialReview = false,
+    commercialVisual = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
+    if (commercialVisual) query.set("commercialVisual", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
     const encodedQuery = query.toString();
@@ -107,11 +113,13 @@ export class ApiClient {
     storeId: string,
     rawObservationDays?: number,
     commercialReview = false,
+    commercialVisual = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
       query.set("rawObservationDays", String(rawObservationDays));
     if (commercialReview) query.set("commercialReview", "true");
+    if (commercialVisual) query.set("commercialVisual", "true");
     const suffix = query.toString() ? `?${query}` : "";
     return this.request(
       `/api/v1/sync/bootstrap${suffix}`,
@@ -120,6 +128,17 @@ export class ApiClient {
     ) as Promise<BootstrapResponse>;
   }
 
+  commercialOriginalLink(
+    accessToken: string,
+    storeId: string,
+    sourceDocumentId: string,
+  ) {
+    return this.request(
+      `/api/v1/commercial/${encodeURIComponent(sourceDocumentId)}/original-link`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      commercialOriginalLinkSchema,
+    ) as Promise<CommercialOriginalLink>;
+  }
   initSourceUpload(
     accessToken: string,
     storeId: string,

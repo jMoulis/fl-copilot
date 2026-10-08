@@ -1,4 +1,8 @@
 import {
+  serializeVisualReading,
+  type VisualReadingDocument,
+} from "../commercial/visual-reading-store.js";
+import {
   registerCommercialReviewPages,
   serializeCommercialReviewPage,
   serializeCommercialReviewDecision,
@@ -111,6 +115,21 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const visuals =
+              query.commercialVisual === "true"
+                ? await mongoDatabase
+                    .collection<VisualReadingDocument>(
+                      "commercialVisualReadings",
+                    )
+                    .find(
+                      {
+                        storeId: store.storeId,
+                        status: { $in: ["READY", "FAILED"] },
+                      },
+                      { session },
+                    )
+                    .toArray()
+                : [];
             const sequence = counter?.nextSequence ?? Long.ZERO;
             response = {
               protocolVersion: SYNC_PROTOCOL_VERSION,
@@ -151,6 +170,13 @@ export function createMongoSyncBootstrapService(
                       ),
                       commercialReviewDecisions: reviewDecisions.map(
                         serializeCommercialReviewDecision,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialVisual === "true"
+                  ? {
+                      commercialVisualReadings: visuals.map(
+                        serializeVisualReading,
                       ),
                     }
                   : {}),

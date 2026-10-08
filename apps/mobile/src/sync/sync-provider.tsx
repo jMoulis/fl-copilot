@@ -56,19 +56,20 @@ export function SyncProvider({ children }: PropsWithChildren) {
       {
         bootstrap: (storeId) =>
           withAccessToken((token) =>
-            api.bootstrapSync(token, storeId, undefined, true),
+            api.bootstrapSync(token, storeId, undefined, true, true),
           ),
         push: (request) =>
           withAccessToken((token) => api.pushSync(token, request)),
         pull: (storeId, cursor) =>
           withAccessToken((token) =>
-            api.pullSync(token, storeId, cursor, undefined, true),
+            api.pullSync(token, storeId, cursor, undefined, true, true),
           ),
       },
       {
         appVersion: Constants.expoConfig?.version ?? "0.0.0",
         deviceId: database.deviceId,
         commercialReview: true,
+        commercialVisual: true,
       },
     );
   }, [database.deviceId, database.sqlite, hasLocalSession, withAccessToken]);

@@ -46,6 +46,7 @@ export interface SyncSummary extends PushSummary, PullSummary {
 
 export interface MobileSyncServiceOptions {
   commercialReview?: boolean;
+  commercialVisual?: boolean;
   appVersion: string;
   deviceId: string;
   maxRetries?: number;
@@ -112,7 +113,13 @@ export class MobileSyncService {
           `commercial-review:${storeId}`,
         )
       : { value: "1" };
-    if (!(await this.readCursor(storeId)) || !reviewAdopted) {
+    const visualAdopted = this.options.commercialVisual
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key = ?",
+          `commercial-visual:${storeId}`,
+        )
+      : { value: "1" };
+    if (!(await this.readCursor(storeId)) || !reviewAdopted || !visualAdopted) {
       await this.bootstrapUnlocked(storeId);
     }
     const pulled = await this.pullUnlocked(storeId);

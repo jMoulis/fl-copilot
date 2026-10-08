@@ -12,7 +12,7 @@ function normalized(value: string) {
     .trim()
     .toLocaleLowerCase("fr-FR");
 }
-function literalContains(text: string, fragment: string) {
+export function commercialLiteralContains(text: string, fragment: string) {
   const haystack = normalized(text);
   const needle = normalized(fragment);
   let index = haystack.indexOf(needle);
@@ -43,7 +43,10 @@ function supported(
     page.spans.find((span) => span.index === index),
   );
   if (spans.some((span) => !span)) return false;
-  return literalContains(spans.map((span) => span!.text).join(" "), ref.quote);
+  return commercialLiteralContains(
+    spans.map((span) => span!.text).join(" "),
+    ref.quote,
+  );
 }
 export function anchorCommercialAiDraft(
   output: unknown,
@@ -78,7 +81,7 @@ export function anchorCommercialAiDraft(
       const rawSupported =
         field.rawValue === null ||
         (field.evidence.length > 0 &&
-          literalContains(
+          commercialLiteralContains(
             field.evidence.map((ref) => ref.quote).join(" "),
             field.rawValue,
           ));
@@ -102,7 +105,7 @@ export function anchorCommercialAiDraft(
         validationStatus: "TO_VALIDATE" as const,
       };
     });
-    const label = literalContains(
+    const label = commercialLiteralContains(
       block.evidence.map((ref) => ref.quote).join(" "),
       block.label,
     )

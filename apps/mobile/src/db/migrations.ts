@@ -627,6 +627,11 @@ export const localMigrations: readonly LocalMigration[] = [
     CREATE TABLE commercial_review_decisions (id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,page_id TEXT NOT NULL,source_block_index INTEGER NOT NULL,payload_json TEXT NOT NULL,remote_version INTEGER,sync_state TEXT NOT NULL);
     CREATE INDEX idx_commercial_review_decisions ON commercial_review_decisions(store_id,page_id,source_block_index);`,
   },
+  {
+    version: 17,
+    name: "add-commercial-visual-readings",
+    sql: `CREATE TABLE commercial_visual_readings(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,source_document_id TEXT NOT NULL,page_number INTEGER NOT NULL,payload_json TEXT NOT NULL); CREATE INDEX idx_commercial_visual_sources ON commercial_visual_readings(store_id,source_document_id,page_number);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

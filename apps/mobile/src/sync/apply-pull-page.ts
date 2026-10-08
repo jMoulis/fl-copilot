@@ -1,3 +1,4 @@
+import { applyCommercialVisualReading } from "../commercial/visual-repository";
 import { applyCommercialReviewEntity } from "../commercial/review-repository";
 import { applyWastePublication } from "../documents/waste-receipt-publication";
 import {
@@ -15,6 +16,20 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (change.entityType === "commercial_visual_reading") {
+        if (
+          change.operation !== "UPSERT" ||
+          typeof change.entity !== "object" ||
+          !change.entity ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("remoteVersion" in change.entity) ||
+          change.entity.remoteVersion !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_VISUAL_ENVELOPE_INVALID");
+        await applyCommercialVisualReading(transaction, storeId, change.entity);
+        continue;
+      }
       if (
         ["commercial_review_page", "commercial_review_decision"].includes(
           change.entityType,
