@@ -178,6 +178,10 @@ export default function WeekScreen() {
         onPress={() => router.push("/week-preparation")}
       />
       <SecondaryButton
+        label="Voir mon plan de semaine validé"
+        onPress={() => router.push("/commercial-plan")}
+      />
+      <SecondaryButton
         label="Comparer un PDF corrigé"
         onPress={() => router.push("/commercial-comparison")}
       />

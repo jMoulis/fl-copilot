@@ -571,6 +571,49 @@ export const commercialReviewDecisions = sqliteTable(
     syncState: text("sync_state").notNull(),
   },
 );
+export const commercialWeekPlans = sqliteTable("commercial_week_plans", {
+  id: text("id").primaryKey(),
+  storeId: text("store_id").notNull(),
+  weekStart: text("week_start").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  remotePayloadJson: text("remote_payload_json"),
+  remoteVersion: integer("remote_version"),
+  syncState: text("sync_state").notNull(),
+  dirty: integer("dirty").notNull(),
+});
+export const commercialPlanHistory = sqliteTable("commercial_plan_history", {
+  actionId: text("action_id").primaryKey(),
+  planId: text("plan_id").notNull(),
+  storeId: text("store_id").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  action: text("action").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+export const commercialPlanRevisions = sqliteTable(
+  "commercial_plan_revisions",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    planId: text("plan_id").notNull(),
+    planVersion: integer("plan_version").notNull(),
+    payloadJson: text("payload_json").notNull(),
+  },
+);
+export const commercialOperations = sqliteTable("commercial_operations", {
+  id: text("id").primaryKey(),
+  storeId: text("store_id").notNull(),
+  planId: text("plan_id").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  syncState: text("sync_state").notNull(),
+});
+export const offers = sqliteTable("offers", {
+  id: text("id").primaryKey(),
+  storeId: text("store_id").notNull(),
+  planId: text("plan_id").notNull(),
+  operationId: text("operation_id").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  syncState: text("sync_state").notNull(),
+});
 export const commercialValidatedOffers = sqliteTable(
   "commercial_validated_offers",
   {
@@ -677,6 +720,11 @@ export const commercialVisualReadings = sqliteTable(
 export const localSchema = {
   commercialVisualReadings,
   commercialOfferChoices,
+  commercialWeekPlans,
+  commercialPlanHistory,
+  commercialPlanRevisions,
+  commercialOperations,
+  offers,
   commercialValidatedOffers,
   commercialOfferValidationHistory,
   commercialVersionDecisions,

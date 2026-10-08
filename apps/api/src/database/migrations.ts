@@ -391,6 +391,36 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 21,
+    name: "commercial_week_plans",
+    async up(db) {
+      await db
+        .collection("commercialWeekPlans")
+        .createIndex(
+          { storeId: 1, weekStart: 1 },
+          { unique: true, name: "commercial_plan_week" },
+        );
+      await db
+        .collection("commercialPlanRevisions")
+        .createIndex(
+          { storeId: 1, "plan.id": 1, "plan.version": 1 },
+          { unique: true, name: "commercial_plan_revision" },
+        );
+      await db
+        .collection("commercialOperations")
+        .createIndex(
+          { storeId: 1, planId: 1 },
+          { name: "commercial_operations_plan" },
+        );
+      await db
+        .collection("offers")
+        .createIndex(
+          { storeId: 1, planId: 1 },
+          { name: "commercial_offers_plan" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

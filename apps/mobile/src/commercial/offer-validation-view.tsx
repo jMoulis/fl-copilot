@@ -160,9 +160,11 @@ type Context = Awaited<ReturnType<typeof readContext>>;
 export function CommercialOfferValidationView({
   plan,
   unsavedChanges,
+  onValidated,
 }: {
   plan: CommercialWeekPreparation;
   unsavedChanges: boolean;
+  onValidated?: () => void;
 }) {
   const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow } = useSync();
@@ -227,6 +229,7 @@ export function CommercialOfferValidationView({
       );
       setData(await readContext(sqlite, plan));
       setConfirmed(false);
+      onValidated?.();
       void syncNow(plan.storeId)
         .then(async () => setData(await readContext(sqlite, plan)))
         .catch(() => undefined);

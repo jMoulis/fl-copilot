@@ -67,6 +67,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         push: (request) =>
@@ -78,6 +79,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -96,6 +98,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         commercialPreparation: true,
         commercialVersions: true,
         commercialValidation: true,
+        commercialPlans: true,
       },
     );
   }, [database.deviceId, database.sqlite, hasLocalSession, withAccessToken]);

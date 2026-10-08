@@ -1,3 +1,7 @@
+import {
+  applyCommercialPlan,
+  applyCommercialPlanRevision,
+} from "../commercial/week-plan-repository";
 import { applyValidatedOffer } from "../commercial/validated-offer-repository";
 import { applyCommercialVersionDecision } from "../commercial/version-decision-repository";
 import { applyCommercialPreparation } from "../commercial/week-preparation-repository";
@@ -20,6 +24,34 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (change.entityType === "commercial_week_plan") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_PLAN_ENVELOPE_INVALID");
+        await applyCommercialPlan(transaction, storeId, change.entity);
+        continue;
+      }
+      if (change.entityType === "commercial_week_plan_revision") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_PLAN_REVISION_ENVELOPE_INVALID");
+        await applyCommercialPlanRevision(transaction, storeId, change.entity);
+        continue;
+      }
       if (change.entityType === "commercial_validated_offer") {
         if (
           change.operation !== "UPSERT" ||

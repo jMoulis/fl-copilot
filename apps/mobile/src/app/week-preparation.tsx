@@ -1,3 +1,4 @@
+import { CommercialPlanValidationView } from "@/commercial/plan-validation-view";
 import { CommercialOfferValidationView } from "@/commercial/offer-validation-view";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Alert } from "react-native";
@@ -70,6 +71,7 @@ export default function WeekPreparationScreen() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [issues, setIssues] = useState<Record<string, string>>({});
+  const [validationGeneration, setValidationGeneration] = useState(0);
   const initialized = useRef(false),
     saving = useRef(false);
   useFocusEffect(
@@ -523,6 +525,14 @@ export default function WeekPreparationScreen() {
         <CommercialOfferValidationView
           key={`${saved.entity.id}:${saved.entity.version}`}
           plan={saved.entity}
+          unsavedChanges={unsavedChanges}
+          onValidated={() => setValidationGeneration((v) => v + 1)}
+        />
+      ) : null}
+      {saved ? (
+        <CommercialPlanValidationView
+          key={`plan:${saved.entity.id}:${saved.entity.version}:${validationGeneration}`}
+          preparation={saved.entity}
           unsavedChanges={unsavedChanges}
         />
       ) : null}
