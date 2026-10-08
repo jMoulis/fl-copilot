@@ -779,3 +779,42 @@ it("refreshes bootstrap once when upgrading an existing cursor to commercial sto
   ).toEqual({ value: "1" });
   database.close();
 });
+
+it("refreshes bootstrap once when upgrading an existing cursor to weekly store preparation", async () => {
+  const { adapter, database } = temporaryDatabase();
+  await runLocalMigrations(adapter);
+  database
+    .prepare(
+      "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES (?, ?,1)",
+    )
+    .run(storeId, "old-cursor");
+  let bootstraps = 0;
+  const snapshot = bootstrapResponse();
+  snapshot.entities.commercialWeekPreparations = [];
+  const service = new MobileSyncService(
+    adapter,
+    {
+      bootstrap: async () => {
+        bootstraps++;
+        return snapshot;
+      },
+      push: async () => ({ results: [], serverTime: new Date().toISOString() }),
+      pull: async () => emptyPull("new-cursor"),
+    },
+    {
+      appVersion: "test",
+      deviceId,
+      commercialPreparation: true,
+      maxRetries: 0,
+    },
+  );
+  await service.sync(storeId);
+  await service.sync(storeId);
+  expect(bootstraps).toBe(1);
+  expect(
+    database
+      .prepare("SELECT value FROM app_metadata WHERE key=?")
+      .get(`commercial-preparation:${storeId}`),
+  ).toEqual({ value: "1" });
+  database.close();
+});

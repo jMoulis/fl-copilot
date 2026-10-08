@@ -1,3 +1,4 @@
+import { CommercialPreparationConflict } from "@/commercial/preparation-conflict";
 import { CommercialChoiceConflict } from "@/commercial/choice-conflict";
 import { commercialReviewDecisionSchema } from "@fl-copilot/sync-contracts";
 import { useState } from "react";
@@ -53,7 +54,9 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          {conflict.entityType === "commercial_offer_choice" ? (
+          {conflict.entityType === "commercial_week_preparation" ? (
+            <CommercialPreparationConflict conflict={conflict} />
+          ) : conflict.entityType === "commercial_offer_choice" ? (
             <CommercialChoiceConflict conflict={conflict} />
           ) : (
             <>
@@ -118,11 +121,13 @@ export default function SyncConflictDetailScreen() {
               <InlineAlert title="Résolution impossible" message={error} />
             ) : null}
             <Text className="text-base leading-6 text-muted">
-              {conflict.entityType === "commercial_offer_choice"
-                ? "Comparez les deux choix ci-dessus. La résolution conserve leur historique et ne confirme aucune action exécutée."
-                : conflict.entityType === "product_alias"
-                  ? "La reprise vérifie que le libellé désigne toujours le même produit avant de renvoyer votre annulation."
-                  : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
+              {conflict.entityType === "commercial_week_preparation"
+                ? "La préparation reste un brouillon. Comparez les affectations avant de choisir une version."
+                : conflict.entityType === "commercial_offer_choice"
+                  ? "Comparez les deux choix ci-dessus. La résolution conserve leur historique et ne confirme aucune action exécutée."
+                  : conflict.entityType === "product_alias"
+                    ? "La reprise vérifie que le libellé désigne toujours le même produit avant de renvoyer votre annulation."
+                    : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
             </Text>
           </SectionCard>
         </>

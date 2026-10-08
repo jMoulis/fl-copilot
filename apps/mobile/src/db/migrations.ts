@@ -650,6 +650,11 @@ export const localMigrations: readonly LocalMigration[] = [
     );
   `,
   },
+  {
+    version: 19,
+    name: "commercial_week_preparations",
+    sql: `CREATE TABLE commercial_week_preparations(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,week_start TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,UNIQUE(store_id,week_start)); CREATE TABLE commercial_preparation_history(action_id TEXT PRIMARY KEY NOT NULL,preparation_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

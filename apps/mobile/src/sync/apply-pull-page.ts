@@ -1,3 +1,4 @@
+import { applyCommercialPreparation } from "../commercial/week-preparation-repository";
 import { applyCommercialChoice } from "../commercial/offer-choice-repository";
 import { applyCommercialVisualReading } from "../commercial/visual-repository";
 import { applyCommercialReviewEntity } from "../commercial/review-repository";
@@ -17,6 +18,20 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (change.entityType === "commercial_week_preparation") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_PREPARATION_ENVELOPE_INVALID");
+        await applyCommercialPreparation(transaction, storeId, change.entity);
+        continue;
+      }
       if (change.entityType === "commercial_offer_choice") {
         if (
           change.operation !== "UPSERT" ||

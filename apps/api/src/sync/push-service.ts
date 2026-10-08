@@ -1,3 +1,4 @@
+import { applyCommercialPreparationCommand } from "../commercial/week-preparation-sync.js";
 import { applyCommercialChoiceCommand } from "../commercial/offer-choice-sync.js";
 import { applyCommercialReviewCommand } from "../commercial/review-sync.js";
 import type {
@@ -109,6 +110,14 @@ async function applyCommand(
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
 ) {
+  if (command.type === "COMMERCIAL_WEEK_PREPARATION_UPSERT")
+    return applyCommercialPreparationCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
   if (command.type === "COMMERCIAL_OFFER_CHOICE_UPSERT")
     return applyCommercialChoiceCommand(
       context,

@@ -7,3 +7,5 @@ export * from "./visual-reading-evidence";
 export * from "./commercial-week";
 
 export * from "./offer-choice";
+
+export * from "./week-preparation";

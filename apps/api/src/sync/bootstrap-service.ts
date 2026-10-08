@@ -1,4 +1,8 @@
 import {
+  serializeCommercialPreparation,
+  type PreparationDocument,
+} from "../commercial/week-preparation-sync.js";
+import {
   serializeCommercialChoice,
   type OfferChoiceDocument,
 } from "../commercial/offer-choice-sync.js";
@@ -141,6 +145,15 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const preparations =
+              query.commercialPreparation === "true"
+                ? await mongoDatabase
+                    .collection<PreparationDocument>(
+                      "commercialWeekPreparations",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const sequence = counter?.nextSequence ?? Long.ZERO;
             response = {
               protocolVersion: SYNC_PROTOCOL_VERSION,
@@ -195,6 +208,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialOfferChoices: choices.map(
                         serializeCommercialChoice,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialPreparation === "true"
+                  ? {
+                      commercialWeekPreparations: preparations.map(
+                        serializeCommercialPreparation,
                       ),
                     }
                   : {}),

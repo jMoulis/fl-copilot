@@ -14,6 +14,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     product: "Produit",
     commercial_review_decision: "Examen commercial",
     commercial_offer_choice: "Choix d’offre commerciale",
+    commercial_week_preparation: "Préparation de semaine",
     recommendation: "Recommandation",
     decision: "Décision",
   };

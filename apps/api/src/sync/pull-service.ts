@@ -1,4 +1,8 @@
 import {
+  serializeCommercialPreparation,
+  type PreparationDocument,
+} from "../commercial/week-preparation-sync.js";
+import {
   serializeCommercialChoice,
   type OfferChoiceDocument,
 } from "../commercial/offer-choice-sync.js";
@@ -92,9 +96,27 @@ export function createMongoSyncPullService(
               (query.commercialVisual === "true" ||
                 change.entityType !== "commercial_visual_reading") &&
               (query.commercialChoices === "true" ||
-                change.entityType !== "commercial_offer_choice"),
+                change.entityType !== "commercial_offer_choice") &&
+              (query.commercialPreparation === "true" ||
+                change.entityType !== "commercial_week_preparation"),
           )
           .map(async (change) => {
+            if (change.entityType === "commercial_week_preparation") {
+              const row = await mongoDatabase
+                .collection<PreparationDocument>("commercialWeekPreparations")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("COMMERCIAL_PREPARATION_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeCommercialPreparation(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (change.entityType === "commercial_offer_choice") {
               const row = await mongoDatabase
                 .collection<OfferChoiceDocument>("commercialOfferChoices")

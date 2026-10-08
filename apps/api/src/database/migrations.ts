@@ -343,6 +343,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 18,
+    name: "commercial_week_preparations",
+    async up(db) {
+      await db
+        .collection("commercialWeekPreparations")
+        .createIndex(
+          { storeId: 1, weekStart: 1 },
+          { unique: true, name: "commercial_preparation_week" },
+        );
+      await db
+        .collection("commercialPreparationHistory")
+        .createIndex(
+          { storeId: 1, preparationId: 1, version: 1 },
+          { unique: true, name: "commercial_preparation_history" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(
