@@ -67,3 +67,5 @@ export * from "./commercial-original";
 export * from "./commercial-visual";
 
 export * from "./commercial-offer-choice";
+
+export * from "./commercial-week-preparation";

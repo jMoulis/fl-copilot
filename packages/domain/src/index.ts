@@ -10,3 +10,5 @@ export * from "./commercial-offer-reconciliation";
 export * from "./commercial-visual-reading";
 
 export * from "./commercial-offer-choice";
+
+export * from "./commercial-week-preparation";

@@ -172,6 +172,10 @@ export default function WeekScreen() {
         title="Ma semaine"
         subtitle="Préparer les temps forts du rayon."
       />
+      <SecondaryButton
+        label="Préparer mon plan de semaine et mes TG"
+        onPress={() => router.push("/week-preparation")}
+      />
       <SectionCard
         title="Documents commerciaux"
         description="Conservez les PDF du rayon sur cet appareil, même hors connexion."

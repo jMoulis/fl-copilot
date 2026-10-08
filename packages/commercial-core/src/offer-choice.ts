@@ -24,9 +24,13 @@ export async function commercialChoiceId(
   source: CommercialOfferSource,
   digest: Digest,
 ) {
-  const raw = (
-    await digest(commercialChoiceIdentityText(storeId, source))
-  ).toLowerCase();
+  return commercialUuidFromText(
+    commercialChoiceIdentityText(storeId, source),
+    digest,
+  );
+}
+export async function commercialUuidFromText(text: string, digest: Digest) {
+  const raw = (await digest(text)).toLowerCase();
   if (!/^[a-f0-9]{64}$/.test(raw))
     throw Error("COMMERCIAL_CHOICE_DIGEST_INVALID");
   const chars = raw.slice(0, 32).split("");

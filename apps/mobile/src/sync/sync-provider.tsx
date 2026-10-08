@@ -56,13 +56,30 @@ export function SyncProvider({ children }: PropsWithChildren) {
       {
         bootstrap: (storeId) =>
           withAccessToken((token) =>
-            api.bootstrapSync(token, storeId, undefined, true, true, true),
+            api.bootstrapSync(
+              token,
+              storeId,
+              undefined,
+              true,
+              true,
+              true,
+              true,
+            ),
           ),
         push: (request) =>
           withAccessToken((token) => api.pushSync(token, request)),
         pull: (storeId, cursor) =>
           withAccessToken((token) =>
-            api.pullSync(token, storeId, cursor, undefined, true, true, true),
+            api.pullSync(
+              token,
+              storeId,
+              cursor,
+              undefined,
+              true,
+              true,
+              true,
+              true,
+            ),
           ),
       },
       {
@@ -71,6 +88,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         commercialReview: true,
         commercialVisual: true,
         commercialChoices: true,
+        commercialPreparation: true,
       },
     );
   }, [database.deviceId, database.sqlite, hasLocalSession, withAccessToken]);
