@@ -85,6 +85,7 @@ export const syncPullQuerySchema = z.object({
   commercialPreparation: z.enum(["true", "false"]).optional(),
   commercialVersions: z.enum(["true", "false"]).optional(),
   commercialValidation: z.enum(["true", "false"]).optional(),
+  commercialPlans: z.enum(["true", "false"]).optional(),
   cursor: nonEmptyStringSchema.optional(),
   limit: z.coerce
     .number()
@@ -110,6 +111,7 @@ export const bootstrapQuerySchema = z.object({
   commercialPreparation: z.enum(["true", "false"]).optional(),
   commercialVersions: z.enum(["true", "false"]).optional(),
   commercialValidation: z.enum(["true", "false"]).optional(),
+  commercialPlans: z.enum(["true", "false"]).optional(),
   rawObservationDays: z.coerce
     .number()
     .int()
@@ -135,6 +137,8 @@ export const bootstrapEntitiesSchema = z.object({
   commercialWeekPreparations: z.array(jsonObjectSchema).optional(),
   commercialVersionDecisions: z.array(jsonObjectSchema).optional(),
   commercialValidatedOffers: z.array(jsonObjectSchema).optional(),
+  commercialWeekPlans: z.array(jsonObjectSchema).optional(),
+  commercialPlanRevisions: z.array(jsonObjectSchema).optional(),
   commercialReviewPages: z.array(jsonObjectSchema).optional(),
   commercialReviewDecisions: z.array(jsonObjectSchema).optional(),
   commercialOperations: z.array(jsonObjectSchema),

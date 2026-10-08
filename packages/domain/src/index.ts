@@ -16,3 +16,5 @@ export * from "./commercial-week-preparation";
 export * from "./commercial-version-decision";
 
 export * from "./commercial-validated-offer";
+
+export * from "./commercial-week-plan";

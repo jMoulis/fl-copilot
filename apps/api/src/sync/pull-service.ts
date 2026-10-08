@@ -1,4 +1,10 @@
 import {
+  serializeCommercialPlan,
+  serializeCommercialPlanRevision,
+  type WeekPlanDocument,
+  type PlanRevisionDocument,
+} from "../commercial/week-plan-sync.js";
+import {
   serializeValidatedOffer,
   type ValidatedOfferDocument,
 } from "../commercial/validated-offer-sync.js";
@@ -110,9 +116,46 @@ export function createMongoSyncPullService(
               (query.commercialVersions === "true" ||
                 change.entityType !== "commercial_version_decision") &&
               (query.commercialValidation === "true" ||
-                change.entityType !== "commercial_validated_offer"),
+                change.entityType !== "commercial_validated_offer") &&
+              (query.commercialPlans === "true" ||
+                ![
+                  "commercial_week_plan",
+                  "commercial_week_plan_revision",
+                ].includes(change.entityType)),
           )
           .map(async (change) => {
+            if (change.entityType === "commercial_week_plan") {
+              const row = await mongoDatabase
+                .collection<WeekPlanDocument>("commercialWeekPlans")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("COMMERCIAL_PLAN_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeCommercialPlan(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "commercial_week_plan_revision") {
+              const row = await mongoDatabase
+                .collection<PlanRevisionDocument>("commercialPlanRevisions")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("COMMERCIAL_PLAN_REVISION_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: 1,
+                entity: serializeCommercialPlanRevision(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (change.entityType === "commercial_validated_offer") {
               const row = await mongoDatabase
                 .collection<ValidatedOfferDocument>("commercialValidatedOffers")

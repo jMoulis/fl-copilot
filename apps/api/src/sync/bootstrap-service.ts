@@ -1,4 +1,10 @@
 import {
+  serializeCommercialPlan,
+  serializeCommercialPlanRevision,
+  type WeekPlanDocument,
+  type PlanRevisionDocument,
+} from "../commercial/week-plan-sync.js";
+import {
   serializeValidatedOffer,
   type ValidatedOfferDocument,
 } from "../commercial/validated-offer-sync.js";
@@ -153,6 +159,20 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const weekPlans =
+              query.commercialPlans === "true"
+                ? await mongoDatabase
+                    .collection<WeekPlanDocument>("commercialWeekPlans")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
+            const planRevisions =
+              query.commercialPlans === "true"
+                ? await mongoDatabase
+                    .collection<PlanRevisionDocument>("commercialPlanRevisions")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const validatedOffers =
               query.commercialValidation === "true"
                 ? await mongoDatabase
@@ -234,6 +254,20 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialOfferChoices: choices.map(
                         serializeCommercialChoice,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialPlans === "true"
+                  ? {
+                      commercialWeekPlans: weekPlans.map(
+                        serializeCommercialPlan,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialPlans === "true"
+                  ? {
+                      commercialPlanRevisions: planRevisions.map(
+                        serializeCommercialPlanRevision,
                       ),
                     }
                   : {}),

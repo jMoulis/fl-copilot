@@ -274,3 +274,7 @@ The manager can save a pair-specific preference for the old or corrected PDF aft
 ### Selected-offer validation and preparation checks — M5-T07-F
 
 Only selected offers in the saved draft need commercial validation. Their products, chosen dates/mechanisms, source conditions/citations and original are reviewed together; each accepted choice revision receives an immutable synchronized validation snapshot. Changed or withdrawn offers require review again, without deleting older validations or TG drafts. Targeted readiness checks surface stale selections, conflicting fixed prices, changed PDF references and empty placements. The plan remains a draft: canonical operation grouping, explicit final-plan validation and execution recording are the next M5 steps. No M7 chat is introduced here.
+
+### Explicit weekly-plan validation — M5-T09-B / T10-B
+
+The manager can confirm the saved draft’s selected validated offers, conservative source-operation groups and TG assignments as one versioned weekly plan. The plan persists offline, synchronizes atomically with canonical projections and keeps confirmed previous versions available. Known source/choice/product/draft changes require review rather than silently replacing the plan. Validation means planned operations, not executed actions. Next: the separate execution checklist (including signage printing for retained offers); remaining context/reminder providers and M6/M7 stay in the canonical sequence.

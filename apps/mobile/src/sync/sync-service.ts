@@ -1,3 +1,4 @@
+import { applyCommercialPlan } from "../commercial/week-plan-repository";
 import { applyValidatedOffer } from "../commercial/validated-offer-repository";
 import { applyCommercialVersionDecision } from "../commercial/version-decision-repository";
 import { applyCommercialPreparation } from "../commercial/week-preparation-repository";
@@ -55,6 +56,7 @@ export interface MobileSyncServiceOptions {
   commercialPreparation?: boolean;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
+  commercialPlans?: boolean;
   appVersion: string;
   deviceId: string;
   maxRetries?: number;
@@ -121,6 +123,12 @@ export class MobileSyncService {
           `commercial-review:${storeId}`,
         )
       : { value: "1" };
+    const plansAdopted = this.options.commercialPlans
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `commercial-plans:${storeId}`,
+        )
+      : true;
     const validationAdopted = this.options.commercialValidation
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -156,6 +164,7 @@ export class MobileSyncService {
       !reviewAdopted ||
       !visualAdopted ||
       !choicesAdopted ||
+      !plansAdopted ||
       !validationAdopted ||
       !versionsAdopted ||
       !prepAdopted
@@ -202,6 +211,7 @@ export class MobileSyncService {
                 "product_alias",
                 "commercial_offer_choice",
                 "commercial_week_preparation",
+                "commercial_week_plan",
                 "commercial_version_decision",
               ].includes(item.entityType) &&
               commands.some(
@@ -311,6 +321,13 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (command.entityType === "commercial_week_plan")
+            await applyCommercialPlan(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              (command.payload as { version: number }).version,
+            );
           if (command.entityType === "commercial_week_preparation")
             await applyCommercialPreparation(
               transaction,
@@ -377,6 +394,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (command.entityType === "commercial_week_plan")
+            await transaction.runAsync(
+              "UPDATE commercial_week_plans SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "commercial_week_preparation")
             await transaction.runAsync(
               "UPDATE commercial_week_preparations SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -402,6 +425,12 @@ export class MobileSyncService {
           if (command.entityType === "commercial_version_decision")
             await transaction.runAsync(
               "UPDATE commercial_version_decisions SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "commercial_week_plan")
+            await transaction.runAsync(
+              "UPDATE commercial_week_plans SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );
