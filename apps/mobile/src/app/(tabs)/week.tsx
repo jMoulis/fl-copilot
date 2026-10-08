@@ -176,6 +176,10 @@ export default function WeekScreen() {
         label="Préparer mon plan de semaine et mes TG"
         onPress={() => router.push("/week-preparation")}
       />
+      <SecondaryButton
+        label="Comparer un PDF corrigé"
+        onPress={() => router.push("/commercial-comparison")}
+      />
       <SectionCard
         title="Documents commerciaux"
         description="Conservez les PDF du rayon sur cet appareil, même hors connexion."
