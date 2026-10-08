@@ -1,5 +1,14 @@
-import { useState } from "react";
-import { Text, View } from "react-native";
+import { useFocusEffect } from "expo-router";
+import {
+  currentCommercialWeek,
+  commercialEntryWeekStatus,
+  commercialItemWeekStatus,
+  commercialDeadlineThisWeek,
+  commercialDocumentWeekContext,
+  withParentYear,
+} from "@fl-copilot/commercial-core";
+import { useState, useCallback } from "react";
+import { Text, View, AppState } from "react-native";
 import type { SynchronizedCommercialVisualReading } from "@fl-copilot/sync-contracts";
 import { SectionCard, InlineAlert, SecondaryButton } from "@/components/ui";
 import { commercialFieldLabels } from "./review-presentation";
@@ -30,8 +39,26 @@ export function CommercialVisualView({
   readings: SynchronizedCommercialVisualReading[];
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [week, setWeek] = useState(() => currentCommercialWeek());
+  useFocusEffect(
+    useCallback(() => {
+      const refresh = () => setWeek(currentCommercialWeek());
+      refresh();
+      const timer = setInterval(refresh, 60000);
+      const subscription = AppState.addEventListener("change", (state) => {
+        if (state === "active") refresh();
+      });
+      return () => {
+        clearInterval(timer);
+        subscription.remove();
+      };
+    }, []),
+  );
   const ready = readings.filter((r) => r.status === "READY" && r.reading);
-  const operations = ready
+  const documentContext = commercialDocumentWeekContext(
+    ready.map((page) => page.reading!),
+  );
+  const allOperations = ready
     .flatMap((page) =>
       page.reading!.operations.map((operation, index) => ({
         operation,
@@ -44,6 +71,60 @@ export function CommercialVisualView({
         ["DRAMAT", "PROSPECTUS", "BASIC", "OTHER"].indexOf(a.operation.kind) -
         ["DRAMAT", "PROSPECTUS", "BASIC", "OTHER"].indexOf(b.operation.kind),
     );
+  const operations = allOperations
+    .filter(
+      ({ operation }) =>
+        commercialEntryWeekStatus(operation, week) === "CURRENT",
+    )
+    .map((entry) => ({
+      ...entry,
+      operation: {
+        ...entry.operation,
+        items: entry.operation.items.filter(
+          (item) =>
+            commercialItemWeekStatus(item, entry.operation, week) === "CURRENT",
+        ),
+      },
+    }));
+  const outsideCount = allOperations.length - operations.length;
+  const anticipation = allOperations
+    .filter(
+      ({ operation }) =>
+        commercialEntryWeekStatus(operation, week) !== "CURRENT",
+    )
+    .flatMap(({ operation, page, key }) =>
+      operation.items
+        .filter((item) =>
+          commercialDeadlineThisWeek(withParentYear(item, operation), week),
+        )
+        .map((item, index) => ({
+          label: operation.label,
+          page: page.pageNumber,
+          key: `${key}:anticipation:${index}`,
+          fields: withParentYear(item, operation).fields.filter(
+            (f) =>
+              f.name === "preorderDeadline" || f.name === "executionDeadline",
+          ),
+        })),
+    );
+  const standaloneAnticipation = ready.flatMap((page) =>
+    page
+      .reading!.otherInformation.filter(
+        (item) =>
+          commercialEntryWeekStatus(item, week) !== "CURRENT" &&
+          commercialDeadlineThisWeek(item, week),
+      )
+      .map((item, index) => ({
+        label: item.label,
+        page: page.pageNumber,
+        key: `${page.id}:anticipation:${index}`,
+        fields: item.fields.filter(
+          (f) =>
+            f.name === "preorderDeadline" || f.name === "executionDeadline",
+        ),
+      })),
+  );
+  const allAnticipation = [...anticipation, ...standaloneAnticipation];
   function fields(
     items: NonNullable<
       SynchronizedCommercialVisualReading["reading"]
@@ -70,13 +151,15 @@ export function CommercialVisualView({
   return (
     <>
       <SectionCard
-        title="Lecture du PDF original"
-        description={`${ready.length} pages lues visuellement sur ${readings[0]?.pageCount ?? "…"}`}
+        title={`Semaine ${week.number} · ${week.year}`}
+        description={`Du ${week.start.split("-").reverse().join("/")} au ${week.end.split("-").reverse().join("/")}`}
       >
         <Text className="text-sm text-muted">
-          Produits, prix et consignes sont regroupés d’après le document et sa
-          mise en page. Les liens restent proposés ; aucune opération n’est
-          validée pour votre magasin.
+          Seules les offres dont la période concerne cette semaine sont
+          présentées. Aucune opération n’est validée pour votre magasin.
+          {outsideCount > 0
+            ? ` ${outsideCount} dossiers hors période ou sans période fiable ne sont pas affichés. Le PDF original reste complet.`
+            : ""}
         </Text>
       </SectionCard>
       {readings.some((r) => r.status === "FAILED") ? (
@@ -136,42 +219,77 @@ export function CommercialVisualView({
         </SectionCard>
       ))}
       {ready.flatMap((page) =>
-        page.reading!.tgIdeas.map((tg, index) => (
-          <SectionCard
-            key={`${page.id}:tg:${index}`}
-            title={`Idée de TG · ${tg.label}`}
-            description={`Source : page ${page.pageNumber}, emplacement magasin non sélectionné`}
-          >
-            {fields(tg.fields)}
-            <Text selectable className="text-sm text-muted">
-              {tg.evidence.map((ref) => ref.quote).join("\n")}
-            </Text>
-          </SectionCard>
-        )),
+        page
+          .reading!.tgIdeas.filter(
+            (tg) =>
+              commercialItemWeekStatus(tg, documentContext, week) === "CURRENT",
+          )
+          .map((tg, index) => (
+            <SectionCard
+              key={`${page.id}:tg:${index}`}
+              title={`Idée de TG · ${tg.label}`}
+              description={`Source : page ${page.pageNumber}, emplacement magasin non sélectionné`}
+            >
+              {fields(tg.fields)}
+              <Text selectable className="text-sm text-muted">
+                {tg.evidence.map((ref) => ref.quote).join("\n")}
+              </Text>
+            </SectionCard>
+          )),
       )}
       {ready.flatMap((page) =>
-        page.reading!.otherInformation.map((item, index) => (
-          <SectionCard
-            key={`${page.id}:info:${index}`}
-            title={`${kinds[item.kind]} · ${item.label}`}
-            description={`Source : page ${page.pageNumber}`}
-          >
-            {fields(item.fields)}
-            <Text selectable className="text-sm text-muted">
-              {item.evidence.map((ref) => ref.quote).join("\n")}
-            </Text>
-          </SectionCard>
-        )),
+        page
+          .reading!.otherInformation.filter(
+            (item) => commercialEntryWeekStatus(item, week) === "CURRENT",
+          )
+          .map((item, index) => (
+            <SectionCard
+              key={`${page.id}:info:${index}`}
+              title={`${kinds[item.kind]} · ${item.label}`}
+              description={`Source : page ${page.pageNumber}`}
+            >
+              {fields(item.fields)}
+              <Text selectable className="text-sm text-muted">
+                {item.evidence.map((ref) => ref.quote).join("\n")}
+              </Text>
+            </SectionCard>
+          )),
       )}
-      {ready.flatMap((page) =>
-        page.reading!.warnings.map((warning, index) => (
-          <InlineAlert
-            key={`${page.id}:warning:${index}`}
-            title={`À vérifier · page ${page.pageNumber}`}
-            message={warning}
-          />
-        )),
-      )}
+      {allAnticipation.length ? (
+        <SectionCard
+          title="À anticiper cette semaine"
+          description="Échéances de cette semaine pour des offres futures, distinctes des offres actives."
+        >
+          {allAnticipation.map((item) => (
+            <View key={item.key} className="gap-1">
+              <Text className="font-semibold text-ink">{item.label}</Text>
+              <Text className="text-sm text-muted">
+                Page {item.page} ·{" "}
+                {item.fields.map((f) => f.rawValue).join(" · ")}
+              </Text>
+            </View>
+          ))}
+        </SectionCard>
+      ) : null}
+      {!operations.length ? (
+        <InlineAlert
+          title="Aucune offre datée pour cette semaine"
+          message="Le document peut concerner une autre période ou contenir des dates à préciser. Consultez le PDF original ; sa semaine ne remplace pas les dates réelles des offres."
+        />
+      ) : null}
+      {ready
+        .filter((page) =>
+          operations.some((operation) => operation.page.id === page.id),
+        )
+        .flatMap((page) =>
+          page.reading!.warnings.map((warning, index) => (
+            <InlineAlert
+              key={`${page.id}:warning:${index}`}
+              title={`À vérifier · page ${page.pageNumber}`}
+              message={warning}
+            />
+          )),
+        )}
     </>
   );
 }

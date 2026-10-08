@@ -74,7 +74,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
     function provider(called: () => void): CommercialVisualProvider {
       return {
         model: "test-vision",
-        async extract(target, pages, bytes) {
+        async extract(target, pages, bytes, referenceDate) {
+          expect(referenceDate).toBeInstanceOf(Date);
           called();
           expect(target).toBe(1);
           expect(pages).toHaveLength(1);
@@ -248,12 +249,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
     }, 20000);
     it("backs off temporary failures and publishes only the eventual immutable result", async () => {
       const s = await seed();
-      let clock = new Date("2026-10-08T06:00:00Z"),
+      let clock = new Date("2026-10-11T21:59:00Z"),
         calls = 0;
+      const referenceDates: string[] = [];
       const retrying: CommercialVisualProvider = {
         model: "test-retry",
         extract: async (...args) => {
           calls++;
+          referenceDates.push(args[3]!.toISOString());
           if (calls === 1) throw new Error("temporary network failure");
           return provider(() => undefined).extract(...args);
         },
@@ -287,6 +290,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await processor.process(s.storeId, s.sourceDocumentId, 1),
       ).toMatchObject({ status: "READY" });
       expect(calls).toBe(2);
+      expect(referenceDates).toEqual([
+        "2026-10-11T21:59:00.000Z",
+        "2026-10-11T21:59:00.000Z",
+      ]);
       expect(
         await processor.process(s.storeId, s.sourceDocumentId, 1),
       ).toMatchObject({ status: "READY" });

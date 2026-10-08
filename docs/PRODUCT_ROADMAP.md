@@ -244,3 +244,7 @@ M5 may offer optional grouped transcription confirmation of supported, unambiguo
 M6 remains the next milestone for Need Units and substitution. The full contextual/conversational Copilot — the manager's assistant across commercial planning, analytics, waste, alternatives, decisions and execution — stays in M7. No general chat or new agent runtime is introduced in M5.
 
 Future M5-T11 checklist idea: propose `Print signage` tasks for explicitly retained Dramat/prospectus, threshold-price and lot offers, retaining the source signage reference and requiring a separate execution confirmation. Print a document and mark a task done are separate actions; source capture alone never creates completed tasks. Source-proposed versus store-selected TGs must remain distinct.
+
+### Current-week reading focus — 2026-10-08
+
+The visual PDF brief defaults to the actual current ISO week in Europe/Paris. AI receives that date/week context, and a shared filter separates current sales periods from later campaigns in the same document. A short deadline due this week may remain in a separate anticipation section; this does not make a future offer active. Missing or uncertain periods are not silently assigned to the document week. Existing sources/choices stay preserved; later multi-week navigation and the full M7 Copilot remain separate scope.
