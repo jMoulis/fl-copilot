@@ -3,7 +3,12 @@ import {
   COMMERCIAL_VISUAL_SCHEMA_VERSION,
   commercialPdfPageSchema,
 } from "@fl-copilot/domain";
-import { anchorCommercialVisualReading } from "@fl-copilot/commercial-core";
+import {
+  anchorCommercialVisualReading,
+  currentCommercialWeek,
+  commercialDocumentWeekContext,
+  scopeCommercialVisualReading,
+} from "@fl-copilot/commercial-core";
 import {
   synchronizedCommercialVisualReadingSchema,
   type SynchronizedCommercialVisualReading,
@@ -284,13 +289,23 @@ export function createCommercialVisualProcessor(
         const pages = rawPages.map((p) => commercialPdfPageSchema.parse(p));
         if (pages.length !== job.pageCount)
           throw Error("VISUAL_SOURCE_PAGES_PENDING");
-        const result = await provider.extract(pageNumber, pages, bytes);
+        const result = await provider.extract(
+          pageNumber,
+          pages,
+          bytes,
+          job.createdAt ?? now(),
+        );
         let reading;
         try {
-          reading = anchorCommercialVisualReading(
+          const anchored = anchorCommercialVisualReading(
             result.output,
             pageNumber,
             pages,
+          );
+          reading = scopeCommercialVisualReading(
+            anchored,
+            currentCommercialWeek(job.createdAt ?? now()),
+            commercialDocumentWeekContext([anchored]),
           );
         } catch {
           throw new CommercialAiPermanentError(
