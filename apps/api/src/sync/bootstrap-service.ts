@@ -1,4 +1,8 @@
 import {
+  serializeCommercialChoice,
+  type OfferChoiceDocument,
+} from "../commercial/offer-choice-sync.js";
+import {
   serializeVisualReading,
   type VisualReadingDocument,
 } from "../commercial/visual-reading-store.js";
@@ -130,6 +134,13 @@ export function createMongoSyncBootstrapService(
                     )
                     .toArray()
                 : [];
+            const choices =
+              query.commercialChoices === "true"
+                ? await mongoDatabase
+                    .collection<OfferChoiceDocument>("commercialOfferChoices")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const sequence = counter?.nextSequence ?? Long.ZERO;
             response = {
               protocolVersion: SYNC_PROTOCOL_VERSION,
@@ -177,6 +188,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialVisualReadings: visuals.map(
                         serializeVisualReading,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialChoices === "true"
+                  ? {
+                      commercialOfferChoices: choices.map(
+                        serializeCommercialChoice,
                       ),
                     }
                   : {}),

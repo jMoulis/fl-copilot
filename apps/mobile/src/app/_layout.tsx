@@ -52,6 +52,7 @@ function RootLayout() {
         <Stack.Screen name="waste-capture" />
         <Stack.Screen name="waste-import" />
         <Stack.Screen name="waste-receipt/[id]" />
+        <Stack.Screen name="commercial-offer/[id]" />
       </Stack>
     </AppProviders>
   );

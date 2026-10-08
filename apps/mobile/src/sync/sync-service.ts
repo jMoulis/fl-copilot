@@ -1,3 +1,4 @@
+import { applyCommercialChoice } from "../commercial/offer-choice-repository";
 import { applyCommercialReviewEntity } from "../commercial/review-repository";
 import { applyWastePublication } from "../documents/waste-receipt-publication";
 import { ApiClientError } from "@fl-copilot/api-client";
@@ -47,6 +48,7 @@ export interface SyncSummary extends PushSummary, PullSummary {
 export interface MobileSyncServiceOptions {
   commercialReview?: boolean;
   commercialVisual?: boolean;
+  commercialChoices?: boolean;
   appVersion: string;
   deviceId: string;
   maxRetries?: number;
@@ -113,13 +115,24 @@ export class MobileSyncService {
           `commercial-review:${storeId}`,
         )
       : { value: "1" };
+    const choicesAdopted = this.options.commercialChoices
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `commercial-choices:${storeId}`,
+        )
+      : true;
     const visualAdopted = this.options.commercialVisual
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key = ?",
           `commercial-visual:${storeId}`,
         )
       : { value: "1" };
-    if (!(await this.readCursor(storeId)) || !reviewAdopted || !visualAdopted) {
+    if (
+      !(await this.readCursor(storeId)) ||
+      !reviewAdopted ||
+      !visualAdopted ||
+      !choicesAdopted
+    ) {
       await this.bootstrapUnlocked(storeId);
     }
     const pulled = await this.pullUnlocked(storeId);
@@ -158,7 +171,9 @@ export class MobileSyncService {
         if (
           !next.some(
             (item) =>
-              item.entityType === "product_alias" &&
+              ["product_alias", "commercial_offer_choice"].includes(
+                item.entityType,
+              ) &&
               commands.some(
                 (prior) =>
                   prior.entityType === item.entityType &&
@@ -253,6 +268,14 @@ export class MobileSyncService {
               storeId,
               result.remoteEntity,
             );
+          if (command.entityType === "commercial_offer_choice") {
+            await applyCommercialChoice(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              (command.payload as { version: number }).version,
+            );
+          }
           if (command.entityType === "commercial_review_decision")
             await applyCommercialReviewEntity(
               transaction,
@@ -292,10 +315,22 @@ export class MobileSyncService {
               command.entityType,
               result.remoteEntity,
             );
+          if (command.entityType === "commercial_offer_choice")
+            await transaction.runAsync(
+              "UPDATE commercial_offer_choices SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           await conflictsRepository.recordPushConflict(command, result);
           await outbox.markConflict(command.commandId, code);
           conflicts += 1;
         } else {
+          if (command.entityType === "commercial_offer_choice")
+            await transaction.runAsync(
+              "UPDATE commercial_offer_choices SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           await outbox.markFailed(command.commandId, code);
           failed += 1;
         }

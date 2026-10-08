@@ -1,3 +1,6 @@
+import { commercialChoiceSummary } from "./choice-presentation";
+import type { LocalCommercialChoice } from "./offer-choice-repository";
+import { router } from "expo-router";
 import { useFocusEffect } from "expo-router";
 import {
   currentCommercialWeek,
@@ -6,6 +9,7 @@ import {
   commercialDeadlineThisWeek,
   commercialDocumentWeekContext,
   withParentYear,
+  commercialChoiceWithinWeek,
 } from "@fl-copilot/commercial-core";
 import { useState, useCallback } from "react";
 import { Text, View, AppState } from "react-native";
@@ -35,8 +39,10 @@ const kinds: Record<string, string> = {
 };
 export function CommercialVisualView({
   readings,
+  choices = [],
 }: {
   readings: SynchronizedCommercialVisualReading[];
+  choices?: LocalCommercialChoice[];
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [week, setWeek] = useState(() => currentCommercialWeek());
@@ -64,6 +70,7 @@ export function CommercialVisualView({
         operation,
         page,
         key: `${page.id}:${index}`,
+        operationIndex: index,
       })),
     )
     .sort(
@@ -162,13 +169,65 @@ export function CommercialVisualView({
             : ""}
         </Text>
       </SectionCard>
+      <SectionCard
+        title="Mes offres retenues"
+        description="Vos choix pour cette semaine, disponibles hors connexion. Le choix ne confirme pas une action exécutée."
+      >
+        {choices.filter(
+          (c) =>
+            c.entity.status === "RETAINED" &&
+            commercialChoiceWithinWeek(c.entity, week),
+        ).length === 0 ? (
+          <Text className="text-sm text-muted">
+            Aucune offre retenue. Choisissez uniquement les offres utiles au
+            magasin dans le document ci-dessous.
+          </Text>
+        ) : null}
+        {choices
+          .filter(
+            (c) =>
+              c.entity.status === "RETAINED" &&
+              commercialChoiceWithinWeek(c.entity, week),
+          )
+          .map((choice) => (
+            <View key={choice.entity.id} className="gap-2">
+              <Text className="text-base text-ink">
+                {commercialChoiceSummary(choice.entity)}
+              </Text>
+              <Text className="text-sm text-muted">
+                {choice.syncState === "SYNCED"
+                  ? "Synchronisé"
+                  : choice.syncState === "CONFLICT"
+                    ? "Conflit à comparer"
+                    : choice.syncState === "ERROR"
+                      ? "Synchronisation à corriger"
+                      : "À synchroniser"}
+              </Text>
+              <SecondaryButton
+                label="Consulter mon choix"
+                onPress={() =>
+                  router.push({
+                    pathname: "/commercial-offer/[id]",
+                    params: {
+                      id: choice.entity.source.readingId,
+                      operationIndex: String(
+                        choice.entity.source.operationIndex,
+                      ),
+                      itemIndex: String(choice.entity.source.itemIndex),
+                    },
+                  })
+                }
+              />
+            </View>
+          ))}
+      </SectionCard>
       {readings.some((r) => r.status === "FAILED") ? (
         <InlineAlert
           title="Lecture visuelle partielle"
           message="Certaines pages n’ont pas pu être lues visuellement. Le PDF original et les extraits précédents restent disponibles."
         />
       ) : null}
-      {operations.map(({ operation, page, key }) => (
+      {operations.map(({ operation, page, key, operationIndex }) => (
         <SectionCard
           key={key}
           title={`${kinds[operation.kind]} · ${operation.label}`}
@@ -192,6 +251,39 @@ export function CommercialVisualView({
                   {kinds[item.kind]} · {item.label}
                 </Text>
                 {fields(item.fields)}
+                {item.kind === "OFFER" ? (
+                  <SecondaryButton
+                    label={
+                      choices.some(
+                        (c) =>
+                          c.entity.source.readingId === page.id &&
+                          c.entity.source.operationIndex === operationIndex &&
+                          c.entity.source.itemIndex ===
+                            page.reading!.operations[
+                              operationIndex
+                            ]!.items.indexOf(item) &&
+                          c.entity.status === "RETAINED",
+                      )
+                        ? "Voir mon choix pour cette offre"
+                        : "Choisir cette offre pour mon magasin"
+                    }
+                    onPress={() =>
+                      router.push({
+                        pathname: "/commercial-offer/[id]",
+                        params: {
+                          id: page.id,
+                          operationIndex: String(operationIndex),
+                          itemIndex: String(
+                            page.reading!.operations[
+                              operationIndex
+                            ]!.items.indexOf(item),
+                          ),
+                        },
+                      })
+                    }
+                  />
+                ) : null}
+
                 <Text selectable className="text-sm text-muted">
                   {item.evidence
                     .map((ref) => `Page ${ref.pageNumber} : ${ref.quote}`)

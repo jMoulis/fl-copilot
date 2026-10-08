@@ -1,3 +1,4 @@
+import { CommercialChoiceConflict } from "@/commercial/choice-conflict";
 import { commercialReviewDecisionSchema } from "@fl-copilot/sync-contracts";
 import { useState } from "react";
 import { randomUUID } from "expo-crypto";
@@ -52,24 +53,29 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          <SectionCard title="Votre version">
-            <Text className="text-base leading-6 text-ink">
-              {conflictPayloadSummary(
-                conflict.localPayload,
-                "Version locale indisponible.",
-              )}
-            </Text>
-          </SectionCard>
+          {conflict.entityType === "commercial_offer_choice" ? (
+            <CommercialChoiceConflict conflict={conflict} />
+          ) : (
+            <>
+              <SectionCard title="Votre version">
+                <Text className="text-base leading-6 text-ink">
+                  {conflictPayloadSummary(
+                    conflict.localPayload,
+                    "Version locale indisponible.",
+                  )}
+                </Text>
+              </SectionCard>
 
-          <SectionCard title="Version synchronisée">
-            <Text className="text-base leading-6 text-ink">
-              {conflictPayloadSummary(
-                conflict.remotePayload,
-                "Aucune version distante disponible.",
-              )}
-            </Text>
-          </SectionCard>
-
+              <SectionCard title="Version synchronisée">
+                <Text className="text-base leading-6 text-ink">
+                  {conflictPayloadSummary(
+                    conflict.remotePayload,
+                    "Aucune version distante disponible.",
+                  )}
+                </Text>
+              </SectionCard>
+            </>
+          )}
           <SectionCard title="Actions autorisées">
             {review?.success ? (
               <SecondaryButton
@@ -112,9 +118,11 @@ export default function SyncConflictDetailScreen() {
               <InlineAlert title="Résolution impossible" message={error} />
             ) : null}
             <Text className="text-base leading-6 text-muted">
-              {conflict.entityType === "product_alias"
-                ? "La reprise vérifie que le libellé désigne toujours le même produit avant de renvoyer votre annulation."
-                : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
+              {conflict.entityType === "commercial_offer_choice"
+                ? "Comparez les deux choix ci-dessus. La résolution conserve leur historique et ne confirme aucune action exécutée."
+                : conflict.entityType === "product_alias"
+                  ? "La reprise vérifie que le libellé désigne toujours le même produit avant de renvoyer votre annulation."
+                  : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
             </Text>
           </SectionCard>
         </>

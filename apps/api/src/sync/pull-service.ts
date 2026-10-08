@@ -1,4 +1,8 @@
 import {
+  serializeCommercialChoice,
+  type OfferChoiceDocument,
+} from "../commercial/offer-choice-sync.js";
+import {
   serializeVisualReading,
   type VisualReadingDocument,
 } from "../commercial/visual-reading-store.js";
@@ -86,9 +90,27 @@ export function createMongoSyncPullService(
                   "commercial_review_decision",
                 ].includes(change.entityType)) &&
               (query.commercialVisual === "true" ||
-                change.entityType !== "commercial_visual_reading"),
+                change.entityType !== "commercial_visual_reading") &&
+              (query.commercialChoices === "true" ||
+                change.entityType !== "commercial_offer_choice"),
           )
           .map(async (change) => {
+            if (change.entityType === "commercial_offer_choice") {
+              const row = await mongoDatabase
+                .collection<OfferChoiceDocument>("commercialOfferChoices")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("COMMERCIAL_CHOICE_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeCommercialChoice(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (change.entityType === "commercial_visual_reading") {
               const reading = await mongoDatabase
                 .collection<VisualReadingDocument>("commercialVisualReadings")

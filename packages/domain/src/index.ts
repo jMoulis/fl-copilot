@@ -8,3 +8,5 @@ export * from "./commercial-ai-drafts";
 export * from "./commercial-mechanisms";
 export * from "./commercial-offer-reconciliation";
 export * from "./commercial-visual-reading";
+
+export * from "./commercial-offer-choice";

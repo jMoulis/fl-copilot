@@ -1,3 +1,4 @@
+import { applyCommercialChoice } from "../commercial/offer-choice-repository";
 import { applyCommercialVisualReading } from "../commercial/visual-repository";
 import { applyCommercialReviewEntity } from "../commercial/review-repository";
 import { applyWastePublication } from "../documents/waste-receipt-publication";
@@ -29,6 +30,15 @@ export async function applyBootstrap(
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await applyProductMasterSnapshot(transaction, storeId, bootstrap.entities);
+    for (const choice of bootstrap.entities.commercialOfferChoices ?? [])
+      await applyCommercialChoice(transaction, storeId, choice);
+    if (bootstrap.entities.commercialOfferChoices)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `commercial-choices:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     for (const reading of bootstrap.entities.commercialVisualReadings ?? [])
       await applyCommercialVisualReading(transaction, storeId, reading);
     if (bootstrap.entities.commercialVisualReadings)
@@ -103,6 +113,7 @@ export async function applyBootstrap(
 
 function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
   const supported = new Set([
+    "commercialOfferChoices",
     "commercialVisualReadings",
     "commercialReviewPages",
     "commercialReviewDecisions",
