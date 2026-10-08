@@ -1,3 +1,4 @@
+import { applyCommercialVersionDecision } from "../commercial/version-decision-repository";
 import { applyCommercialPreparation } from "../commercial/week-preparation-repository";
 import { applyCommercialChoice } from "../commercial/offer-choice-repository";
 import { applyCommercialVisualReading } from "../commercial/visual-repository";
@@ -18,6 +19,24 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (change.entityType === "commercial_version_decision") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_VERSION_DECISION_ENVELOPE_INVALID");
+        await applyCommercialVersionDecision(
+          transaction,
+          storeId,
+          change.entity,
+        );
+        continue;
+      }
       if (change.entityType === "commercial_week_preparation") {
         if (
           change.operation !== "UPSERT" ||

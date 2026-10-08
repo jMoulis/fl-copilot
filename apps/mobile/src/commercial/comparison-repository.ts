@@ -48,5 +48,17 @@ export async function readCommercialComparison(
           ),
         })),
     }));
-  return { comparison, impacts };
+  const snapshot = (documentId: string, pages: typeof before) => ({
+    documentId,
+    checksum: pages[0]?.checksum ?? "",
+    readingIds: pages.map((p) => p.id).sort(),
+  });
+  return {
+    comparison,
+    impacts,
+    sources: {
+      before: snapshot(beforeDocumentId, before),
+      after: snapshot(afterDocumentId, after),
+    },
+  };
 }

@@ -1,6 +1,7 @@
+import { CommercialVersionDecisionView } from "@/commercial/version-decision-view";
 import { useCallback, useState } from "react";
 import { Text, View } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useAuth } from "@/auth/auth-provider";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { readCommercialComparison } from "@/commercial/comparison-repository";
@@ -37,12 +38,16 @@ const fields: Record<string, string> = {
   BASE_PRICE: "Prix de base indépendant de l’avantage carte",
 };
 export default function CommercialComparisonScreen() {
+  const params = useLocalSearchParams<{
+    beforeId?: string;
+    afterId?: string;
+  }>();
   const { session } = useAuth(),
     storeId = session?.stores[0]?.storeId;
   const { sqlite } = useLocalDatabase();
   const [documents, setDocuments] = useState<Document[]>([]),
-    [oldId, setOldId] = useState(""),
-    [newId, setNewId] = useState(""),
+    [oldId, setOldId] = useState(params.beforeId ?? ""),
+    [newId, setNewId] = useState(params.afterId ?? ""),
     [result, setResult] =
       useState<Awaited<ReturnType<typeof readCommercialComparison>>>(),
     [busy, setBusy] = useState(false),
@@ -326,6 +331,18 @@ export default function CommercialComparisonScreen() {
                 ))}
             </SectionCard>
           ))}
+          {storeId ? (
+            <CommercialVersionDecisionView
+              key={`${oldId}:${newId}`}
+              storeId={storeId}
+              sources={result.sources}
+              complete={
+                result.comparison.beforeCoverage.complete &&
+                result.comparison.afterCoverage.complete &&
+                !result.comparison.sameBinary
+              }
+            />
+          ) : null}
         </>
       ) : null}
     </AppScreen>

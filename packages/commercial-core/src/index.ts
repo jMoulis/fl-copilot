@@ -11,3 +11,5 @@ export * from "./offer-choice";
 export * from "./week-preparation";
 
 export * from "./document-version-comparison";
+
+export * from "./version-decision";

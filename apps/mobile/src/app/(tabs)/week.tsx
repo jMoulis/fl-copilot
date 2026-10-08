@@ -1,3 +1,4 @@
+import { CommercialVersionDecisionList } from "@/commercial/version-decision-list";
 import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
 import { CommercialReviewRepository } from "@/commercial/review-repository";
 import type { CommercialReviewPage } from "@fl-copilot/sync-contracts";
@@ -180,6 +181,7 @@ export default function WeekScreen() {
         label="Comparer un PDF corrigé"
         onPress={() => router.push("/commercial-comparison")}
       />
+      {storeId ? <CommercialVersionDecisionList storeId={storeId} /> : null}
       <SectionCard
         title="Documents commerciaux"
         description="Conservez les PDF du rayon sur cet appareil, même hors connexion."

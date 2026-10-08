@@ -361,6 +361,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 19,
+    name: "commercial_version_decisions",
+    async up(db) {
+      await db
+        .collection("commercialVersionDecisions")
+        .createIndex(
+          { storeId: 1, id: 1 },
+          { unique: true, name: "commercial_version_decision_identity" },
+        );
+      await db
+        .collection("commercialVersionDecisionHistory")
+        .createIndex(
+          { storeId: 1, decisionId: 1, version: 1 },
+          { unique: true, name: "commercial_version_decision_history" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(
