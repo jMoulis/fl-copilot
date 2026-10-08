@@ -270,3 +270,7 @@ A store-scoped offline comparator now shows proposed reading changes between exp
 ### Reference decision after corrected PDF comparison — M5-T08-B
 
 The manager can save a pair-specific preference for the old or corrected PDF after reviewing its differences. The choice persists offline, synchronizes with history and preserves existing retained offers/TG drafts. This preference does not assert global version activation or final plan validation. Next: canonical operation/offer validation and explicit final-plan gates using saved source/offer revisions; execution stays separately recorded.
+
+### Selected-offer validation and preparation checks — M5-T07-F
+
+Only selected offers in the saved draft need commercial validation. Their products, chosen dates/mechanisms, source conditions/citations and original are reviewed together; each accepted choice revision receives an immutable synchronized validation snapshot. Changed or withdrawn offers require review again, without deleting older validations or TG drafts. Targeted readiness checks surface stale selections, conflicting fixed prices, changed PDF references and empty placements. The plan remains a draft: canonical operation grouping, explicit final-plan validation and execution recording are the next M5 steps. No M7 chat is introduced here.

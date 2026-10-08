@@ -96,6 +96,7 @@ export class ApiClient {
     commercialChoices = false,
     commercialPreparation = false,
     commercialVersions = false,
+    commercialValidation = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -103,6 +104,7 @@ export class ApiClient {
     if (commercialChoices) query.set("commercialChoices", "true");
     if (commercialPreparation) query.set("commercialPreparation", "true");
     if (commercialVersions) query.set("commercialVersions", "true");
+    if (commercialValidation) query.set("commercialValidation", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
     const encodedQuery = query.toString();
@@ -123,6 +125,7 @@ export class ApiClient {
     commercialChoices = false,
     commercialPreparation = false,
     commercialVersions = false,
+    commercialValidation = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -132,6 +135,7 @@ export class ApiClient {
     if (commercialChoices) query.set("commercialChoices", "true");
     if (commercialPreparation) query.set("commercialPreparation", "true");
     if (commercialVersions) query.set("commercialVersions", "true");
+    if (commercialValidation) query.set("commercialValidation", "true");
     const suffix = query.toString() ? `?${query}` : "";
     return this.request(
       `/api/v1/sync/bootstrap${suffix}`,

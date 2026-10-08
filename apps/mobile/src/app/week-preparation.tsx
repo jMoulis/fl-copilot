@@ -1,3 +1,4 @@
+import { CommercialOfferValidationView } from "@/commercial/offer-validation-view";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Alert } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -275,6 +276,25 @@ export default function WeekPreparationScreen() {
       setBusy(false);
     }
   }
+  const unsavedChanges =
+    !!saved &&
+    JSON.stringify({
+      tgCapacity:
+        capacity.trim() === ""
+          ? null
+          : /^\d+$/.test(capacity.trim())
+            ? Number(capacity)
+            : "invalid",
+      offerRefs: refs,
+      placements,
+      note: note.trim(),
+    }) !==
+      JSON.stringify({
+        tgCapacity: saved.entity.tgCapacity,
+        offerRefs: saved.entity.offerRefs,
+        placements: saved.entity.placements,
+        note: saved.entity.note,
+      });
   return (
     <AppScreen>
       <AppHeader
@@ -499,6 +519,13 @@ export default function WeekPreparationScreen() {
         disabled={busy || !loaded || saved?.syncState === "CONFLICT"}
         onPress={() => void save()}
       />
+      {saved ? (
+        <CommercialOfferValidationView
+          key={`${saved.entity.id}:${saved.entity.version}`}
+          plan={saved.entity}
+          unsavedChanges={unsavedChanges}
+        />
+      ) : null}
     </AppScreen>
   );
 }

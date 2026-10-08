@@ -114,6 +114,20 @@ export class OutboxRepository {
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
 
+  async countActive(storeId: string) {
+    const row = await this.database.getFirstAsync<{
+      pending_count: number | null;
+      failed_count: number | null;
+    }>(
+      `SELECT SUM(CASE WHEN status IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending_count,SUM(CASE WHEN status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED') THEN 1 ELSE 0 END) AS failed_count FROM sync_outbox WHERE store_id=?`,
+      storeId,
+    );
+    return {
+      pending_count: row?.pending_count ?? 0,
+      failed_count: row?.failed_count ?? 0,
+    };
+  }
+
   private async allocateLocalSequence() {
     const timestamp = this.now();
     const row = await this.database.getFirstAsync<{ value: string }>(

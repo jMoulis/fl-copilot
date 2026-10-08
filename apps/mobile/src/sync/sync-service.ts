@@ -1,3 +1,4 @@
+import { applyValidatedOffer } from "../commercial/validated-offer-repository";
 import { applyCommercialVersionDecision } from "../commercial/version-decision-repository";
 import { applyCommercialPreparation } from "../commercial/week-preparation-repository";
 import { applyCommercialChoice } from "../commercial/offer-choice-repository";
@@ -53,6 +54,7 @@ export interface MobileSyncServiceOptions {
   commercialChoices?: boolean;
   commercialPreparation?: boolean;
   commercialVersions?: boolean;
+  commercialValidation?: boolean;
   appVersion: string;
   deviceId: string;
   maxRetries?: number;
@@ -119,6 +121,12 @@ export class MobileSyncService {
           `commercial-review:${storeId}`,
         )
       : { value: "1" };
+    const validationAdopted = this.options.commercialValidation
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `commercial-validation:${storeId}`,
+        )
+      : true;
     const versionsAdopted = this.options.commercialVersions
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -148,6 +156,7 @@ export class MobileSyncService {
       !reviewAdopted ||
       !visualAdopted ||
       !choicesAdopted ||
+      !validationAdopted ||
       !versionsAdopted ||
       !prepAdopted
     ) {
@@ -289,6 +298,12 @@ export class MobileSyncService {
               storeId,
               result.remoteEntity,
             );
+          if (command.entityType === "commercial_validated_offer")
+            await applyValidatedOffer(
+              transaction,
+              storeId,
+              result.remoteEntity,
+            );
           if (command.entityType === "commercial_version_decision")
             await applyCommercialVersionDecision(
               transaction,
@@ -375,6 +390,12 @@ export class MobileSyncService {
           if (command.entityType === "commercial_offer_choice")
             await transaction.runAsync(
               "UPDATE commercial_offer_choices SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "commercial_validated_offer")
+            await transaction.runAsync(
+              "UPDATE commercial_validated_offers SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );

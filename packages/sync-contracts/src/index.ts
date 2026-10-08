@@ -71,3 +71,5 @@ export * from "./commercial-offer-choice";
 export * from "./commercial-week-preparation";
 
 export * from "./commercial-version-decision";
+
+export * from "./commercial-validated-offer";

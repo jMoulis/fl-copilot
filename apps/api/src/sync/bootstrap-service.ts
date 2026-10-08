@@ -1,4 +1,8 @@
 import {
+  serializeValidatedOffer,
+  type ValidatedOfferDocument,
+} from "../commercial/validated-offer-sync.js";
+import {
   serializeCommercialVersionDecision,
   type VersionDecisionDocument,
 } from "../commercial/version-decision-sync.js";
@@ -149,6 +153,15 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const validatedOffers =
+              query.commercialValidation === "true"
+                ? await mongoDatabase
+                    .collection<ValidatedOfferDocument>(
+                      "commercialValidatedOffers",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const versionDecisions =
               query.commercialVersions === "true"
                 ? await mongoDatabase
@@ -221,6 +234,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialOfferChoices: choices.map(
                         serializeCommercialChoice,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialValidation === "true"
+                  ? {
+                      commercialValidatedOffers: validatedOffers.map(
+                        serializeValidatedOffer,
                       ),
                     }
                   : {}),

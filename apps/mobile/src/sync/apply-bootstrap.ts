@@ -1,3 +1,4 @@
+import { applyValidatedOffer } from "../commercial/validated-offer-repository";
 import { applyCommercialVersionDecision } from "../commercial/version-decision-repository";
 import { applyCommercialPreparation } from "../commercial/week-preparation-repository";
 import { applyCommercialChoice } from "../commercial/offer-choice-repository";
@@ -32,6 +33,15 @@ export async function applyBootstrap(
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
     await applyProductMasterSnapshot(transaction, storeId, bootstrap.entities);
+    for (const prep of bootstrap.entities.commercialValidatedOffers ?? [])
+      await applyValidatedOffer(transaction, storeId, prep);
+    if (bootstrap.entities.commercialValidatedOffers)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `commercial-validation:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     for (const prep of bootstrap.entities.commercialVersionDecisions ?? [])
       await applyCommercialVersionDecision(transaction, storeId, prep);
     if (bootstrap.entities.commercialVersionDecisions)
@@ -136,6 +146,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialOfferChoices",
     "commercialWeekPreparations",
     "commercialVersionDecisions",
+    "commercialValidatedOffers",
     "commercialVisualReadings",
     "commercialReviewPages",
     "commercialReviewDecisions",
