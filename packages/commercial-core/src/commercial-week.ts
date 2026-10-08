@@ -304,3 +304,8 @@ export function scopeCommercialVisualReading<
     otherInformation: [...otherInformation, ...anticipated].slice(0, 40),
   };
 }
+
+export {
+  sourceDate as commercialSourceDate,
+  sourceYear as commercialSourceYear,
+};

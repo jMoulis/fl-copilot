@@ -13,6 +13,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     sync_test_entity: "Donnée de synchronisation",
     product: "Produit",
     commercial_review_decision: "Examen commercial",
+    commercial_offer_choice: "Choix d’offre commerciale",
     recommendation: "Recommandation",
     decision: "Décision",
   };

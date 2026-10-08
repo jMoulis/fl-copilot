@@ -254,3 +254,7 @@ The visual PDF brief defaults to the actual current ISO week in Europe/Paris. AI
 The product owner places further anticipation tools after completion of the current version. Keep the current weekly reading focused; do not expand this increment into a separate ordering or multi-week preparation workflow. Design and prioritize those additional tools during the subsequent product review.
 
 A source deadline note in the current brief is not an ordering tool or a completed store action. The original PDF remains retained for later use. This follow-up does not change the canonical M6/M7 sequence or make additional anticipation tooling a release gate for the current version.
+
+### Store offer choices — M5-T07-E
+
+The source brief now supports retaining, modifying and withdrawing selected offers for the store, with explicit critical-field/applicability review, offline persistence, audit and incremental synchronization. Only selected offers need this review. These choices prepare planning; canonical operations, a finalized weekly plan and execution remain separate. Next: compare corrected source versions, then use retained choices for store planning and TG selection. Physical acceptance of the new choice workflow remains pending.

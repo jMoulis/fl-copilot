@@ -65,3 +65,5 @@ export const logoutResponseSchema = z.object({ revoked: z.literal(true) });
 export * from "./commercial-review";
 export * from "./commercial-original";
 export * from "./commercial-visual";
+
+export * from "./commercial-offer-choice";

@@ -1,3 +1,7 @@
+import {
+  readCommercialChoices,
+  type LocalCommercialChoice,
+} from "@/commercial/offer-choice-repository";
 import { readCommercialVisualReadings } from "@/commercial/visual-repository";
 import { CommercialVisualView } from "@/commercial/visual-view";
 import type { SynchronizedCommercialVisualReading } from "@fl-copilot/sync-contracts";
@@ -56,6 +60,7 @@ export default function CommercialReviewScreen() {
   const [visuals, setVisuals] = useState<SynchronizedCommercialVisualReading[]>(
     [],
   );
+  const [offerChoices, setOfferChoices] = useState<LocalCommercialChoice[]>([]);
   const [legacy, setLegacy] = useState(false);
   const [index, setIndex] = useState(0),
     [error, setError] = useState<string>(),
@@ -74,6 +79,7 @@ export default function CommercialReviewScreen() {
       p,
       d,
       visuals: await readCommercialVisualReadings(sqlite, storeId, id),
+      offerChoices: await readCommercialChoices(sqlite, storeId, id),
     };
   }, [repository, storeId, id, sqlite]);
   const apply = useCallback((data: Awaited<ReturnType<typeof refresh>>) => {
@@ -81,6 +87,7 @@ export default function CommercialReviewScreen() {
       setPages(data.p);
       setDecisions(data.d);
       setVisuals(data.visuals);
+      setOfferChoices(data.offerChoices);
     }
     setLoading(false);
   }, []);
@@ -332,7 +339,7 @@ export default function CommercialReviewScreen() {
       ) : null}
       {viewSummary && visuals.length && !legacy ? (
         <>
-          <CommercialVisualView readings={visuals} />
+          <CommercialVisualView readings={visuals} choices={offerChoices} />
           <SecondaryButton
             label="Consulter les extraits et choix précédents"
             onPress={() => setLegacy(true)}

@@ -1,3 +1,4 @@
+import { applyCommercialChoiceCommand } from "../commercial/offer-choice-sync.js";
 import { applyCommercialReviewCommand } from "../commercial/review-sync.js";
 import type {
   ApiErrorDto,
@@ -108,6 +109,14 @@ async function applyCommand(
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
 ) {
+  if (command.type === "COMMERCIAL_OFFER_CHOICE_UPSERT")
+    return applyCommercialChoiceCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
   if (command.type === "COMMERCIAL_TRANSCRIPTION_REVIEW")
     return applyCommercialReviewCommand(
       context,

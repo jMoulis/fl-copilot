@@ -314,6 +314,35 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 17,
+    name: "commercial_offer_choices",
+    async up(db) {
+      await db.collection("commercialOfferChoices").createIndex(
+        {
+          storeId: 1,
+          "source.readingId": 1,
+          "source.operationIndex": 1,
+          "source.itemIndex": 1,
+        },
+        { unique: true, name: "commercial_choice_source" },
+      );
+      await db.collection("commercialOfferChoices").createIndex(
+        { storeId: 1, duplicateKey: 1 },
+        {
+          unique: true,
+          partialFilterExpression: { status: "RETAINED" },
+          name: "commercial_choice_active_duplicate",
+        },
+      );
+      await db
+        .collection("commercialChoiceHistory")
+        .createIndex(
+          { storeId: 1, choiceId: 1, version: 1 },
+          { unique: true, name: "commercial_choice_history" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

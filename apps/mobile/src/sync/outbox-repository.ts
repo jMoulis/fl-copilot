@@ -181,13 +181,13 @@ export class OutboxRepository {
       `
         SELECT * FROM sync_outbox
         WHERE store_id = ? AND status = 'PENDING'
-          AND (entity_type != 'product_alias' OR NOT EXISTS (
+          AND (entity_type NOT IN ('product_alias','commercial_offer_choice') OR NOT EXISTS (
             SELECT 1 FROM sync_outbox prior
             WHERE prior.store_id = sync_outbox.store_id
               AND prior.entity_type = sync_outbox.entity_type
               AND prior.entity_id = sync_outbox.entity_id
               AND prior.local_sequence < sync_outbox.local_sequence
-              AND (prior.status IN ('PENDING', 'SYNCING', 'FAILED') OR
+              AND ((prior.status IN ('PENDING', 'SYNCING') OR (prior.status='FAILED' AND COALESCE(prior.last_error_code,'')!='COMMERCIAL_CHOICE_SUPERSEDED')) OR
                 (prior.status = 'CONFLICT' AND NOT EXISTS (
                   SELECT 1 FROM sync_conflicts c WHERE c.command_id = prior.command_id AND c.status IN ('RESOLVED_LOCAL', 'RESOLVED_REMOTE', 'MERGED')
                 )))

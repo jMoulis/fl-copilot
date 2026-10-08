@@ -1,3 +1,4 @@
+import { applyCommercialChoice } from "../commercial/offer-choice-repository";
 import { applyCommercialVisualReading } from "../commercial/visual-repository";
 import { applyCommercialReviewEntity } from "../commercial/review-repository";
 import { applyWastePublication } from "../documents/waste-receipt-publication";
@@ -16,6 +17,20 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (change.entityType === "commercial_offer_choice") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_CHOICE_ENVELOPE_INVALID");
+        await applyCommercialChoice(transaction, storeId, change.entity);
+        continue;
+      }
       if (change.entityType === "commercial_visual_reading") {
         if (
           change.operation !== "UPSERT" ||
