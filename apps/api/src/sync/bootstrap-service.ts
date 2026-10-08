@@ -1,4 +1,8 @@
 import {
+  serializeCommercialVersionDecision,
+  type VersionDecisionDocument,
+} from "../commercial/version-decision-sync.js";
+import {
   serializeCommercialPreparation,
   type PreparationDocument,
 } from "../commercial/week-preparation-sync.js";
@@ -145,6 +149,15 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const versionDecisions =
+              query.commercialVersions === "true"
+                ? await mongoDatabase
+                    .collection<VersionDecisionDocument>(
+                      "commercialVersionDecisions",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const preparations =
               query.commercialPreparation === "true"
                 ? await mongoDatabase
@@ -208,6 +221,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialOfferChoices: choices.map(
                         serializeCommercialChoice,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialVersions === "true"
+                  ? {
+                      commercialVersionDecisions: versionDecisions.map(
+                        serializeCommercialVersionDecision,
                       ),
                     }
                   : {}),

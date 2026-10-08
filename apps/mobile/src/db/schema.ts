@@ -571,6 +571,30 @@ export const commercialReviewDecisions = sqliteTable(
     syncState: text("sync_state").notNull(),
   },
 );
+export const commercialVersionDecisions = sqliteTable(
+  "commercial_version_decisions",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    pairKey: text("pair_key").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    remotePayloadJson: text("remote_payload_json"),
+    remoteVersion: integer("remote_version"),
+    syncState: text("sync_state").notNull(),
+    dirty: integer("dirty").notNull(),
+  },
+);
+export const commercialVersionDecisionHistory = sqliteTable(
+  "commercial_version_decision_history",
+  {
+    actionId: text("action_id").primaryKey(),
+    decisionId: text("decision_id").notNull(),
+    storeId: text("store_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    action: text("action").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+);
 export const commercialWeekPreparations = sqliteTable(
   "commercial_week_preparations",
   {
@@ -632,6 +656,8 @@ export const commercialVisualReadings = sqliteTable(
 export const localSchema = {
   commercialVisualReadings,
   commercialOfferChoices,
+  commercialVersionDecisions,
+  commercialVersionDecisionHistory,
   commercialWeekPreparations,
   commercialPreparationHistory,
   commercialChoiceHistory,

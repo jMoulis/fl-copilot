@@ -266,3 +266,7 @@ The current-week preparation uses retained store offers and explicitly declared 
 ### Corrected PDF comparison — M5-T08-A
 
 A store-scoped offline comparator now shows proposed reading changes between explicitly selected PDF documents and identifies retained choices/TG drafts that still refer to the older occurrences. Original sources and decisions remain unchanged. Partial reading/ambiguous identity never becomes a definitive deletion or an automatically adopted correction. Next: an explicit source-version decision and final plan-validation gates; this read-only comparison alone does not validate the plan.
+
+### Reference decision after corrected PDF comparison — M5-T08-B
+
+The manager can save a pair-specific preference for the old or corrected PDF after reviewing its differences. The choice persists offline, synchronizes with history and preserves existing retained offers/TG drafts. This preference does not assert global version activation or final plan validation. Next: canonical operation/offer validation and explicit final-plan gates using saved source/offer revisions; execution stays separately recorded.
