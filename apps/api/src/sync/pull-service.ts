@@ -1,4 +1,8 @@
 import {
+  serializeValidatedOffer,
+  type ValidatedOfferDocument,
+} from "../commercial/validated-offer-sync.js";
+import {
   serializeCommercialVersionDecision,
   type VersionDecisionDocument,
 } from "../commercial/version-decision-sync.js";
@@ -104,9 +108,27 @@ export function createMongoSyncPullService(
               (query.commercialPreparation === "true" ||
                 change.entityType !== "commercial_week_preparation") &&
               (query.commercialVersions === "true" ||
-                change.entityType !== "commercial_version_decision"),
+                change.entityType !== "commercial_version_decision") &&
+              (query.commercialValidation === "true" ||
+                change.entityType !== "commercial_validated_offer"),
           )
           .map(async (change) => {
+            if (change.entityType === "commercial_validated_offer") {
+              const row = await mongoDatabase
+                .collection<ValidatedOfferDocument>("commercialValidatedOffers")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("COMMERCIAL_VALIDATION_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeValidatedOffer(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (change.entityType === "commercial_version_decision") {
               const row = await mongoDatabase
                 .collection<VersionDecisionDocument>(

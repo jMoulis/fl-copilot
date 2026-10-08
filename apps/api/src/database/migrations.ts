@@ -379,6 +379,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 20,
+    name: "commercial_validated_offers",
+    async up(db) {
+      await db
+        .collection("commercialValidatedOffers")
+        .createIndex(
+          { storeId: 1, "choice.id": 1, "choice.version": 1 },
+          { unique: true, name: "commercial_validated_offer_revision" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

@@ -660,6 +660,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "commercial_version_decisions",
     sql: `CREATE TABLE commercial_version_decisions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,pair_key TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,UNIQUE(store_id,pair_key)); CREATE TABLE commercial_version_decision_history(action_id TEXT PRIMARY KEY NOT NULL,decision_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 21,
+    name: "commercial_validated_offers",
+    sql: `CREATE TABLE commercial_validated_offers(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,choice_id TEXT NOT NULL,choice_version INTEGER NOT NULL,payload_json TEXT NOT NULL,sync_state TEXT NOT NULL,UNIQUE(store_id,choice_id,choice_version)); CREATE TABLE commercial_offer_validation_history(action_id TEXT PRIMARY KEY NOT NULL,offer_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

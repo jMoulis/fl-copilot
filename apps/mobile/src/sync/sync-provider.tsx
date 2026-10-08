@@ -1,3 +1,4 @@
+import { OutboxRepository } from "./outbox-repository";
 import {
   createContext,
   useCallback,
@@ -65,6 +66,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         push: (request) =>
@@ -81,6 +83,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
       },
@@ -92,6 +95,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         commercialChoices: true,
         commercialPreparation: true,
         commercialVersions: true,
+        commercialValidation: true,
       },
     );
   }, [database.deviceId, database.sqlite, hasLocalSession, withAccessToken]);
@@ -221,19 +225,7 @@ async function readLocalSyncSnapshot(
   database: ReturnType<typeof useLocalDatabase>["sqlite"],
   storeId: string,
 ): Promise<LocalSyncSnapshot> {
-  const outboxCounts = await database.getFirstAsync<{
-    pending_count: number;
-    failed_count: number;
-  }>(
-    `
-        SELECT
-          SUM(CASE WHEN status IN ('PENDING', 'SYNCING') THEN 1 ELSE 0 END)
-            AS pending_count,
-          SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END)
-            AS failed_count
-        FROM sync_outbox
-        WHERE store_id = ?
-      `,
+  const outboxCounts = await new OutboxRepository(database).countActive(
     storeId,
   );
   const conflictCounts = await database.getFirstAsync<{

@@ -1,3 +1,4 @@
+import { applyValidatedOfferCommand } from "../commercial/validated-offer-sync.js";
 import { applyCommercialVersionDecisionCommand } from "../commercial/version-decision-sync.js";
 import { applyCommercialPreparationCommand } from "../commercial/week-preparation-sync.js";
 import { applyCommercialChoiceCommand } from "../commercial/offer-choice-sync.js";
@@ -111,6 +112,14 @@ async function applyCommand(
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
 ) {
+  if (command.type === "COMMERCIAL_OFFER_VALIDATE")
+    return applyValidatedOfferCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
   if (command.type === "COMMERCIAL_VERSION_DECISION_UPSERT")
     return applyCommercialVersionDecisionCommand(
       context,
