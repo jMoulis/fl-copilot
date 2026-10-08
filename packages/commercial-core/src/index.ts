@@ -9,3 +9,5 @@ export * from "./commercial-week";
 export * from "./offer-choice";
 
 export * from "./week-preparation";
+
+export * from "./document-version-comparison";

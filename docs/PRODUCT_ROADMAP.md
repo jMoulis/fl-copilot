@@ -262,3 +262,7 @@ The source brief now supports retaining, modifying and withdrawing selected offe
 ### Weekly preparation and TG selection — M5-T09-A
 
 The current-week preparation uses retained store offers and explicitly declared available TG capacity. The manager selects offers, assigns named placements and may use document TG ideas as inspiration. It is a saved, audited offline draft, not a finalized plan or an installation. Source/offer changes remain visible for review instead of silently replacing decisions. Final plan validation awaits corrected-source comparison, canonical validation and known-conflict checks.
+
+### Corrected PDF comparison — M5-T08-A
+
+A store-scoped offline comparator now shows proposed reading changes between explicitly selected PDF documents and identifies retained choices/TG drafts that still refer to the older occurrences. Original sources and decisions remain unchanged. Partial reading/ambiguous identity never becomes a definitive deletion or an automatically adopted correction. Next: an explicit source-version decision and final plan-validation gates; this read-only comparison alone does not validate the plan.
