@@ -248,3 +248,9 @@ Future M5-T11 checklist idea: propose `Print signage` tasks for explicitly retai
 ### Current-week reading focus — 2026-10-08
 
 The visual PDF brief defaults to the actual current ISO week in Europe/Paris. AI receives that date/week context, and a shared filter separates current sales periods from later campaigns in the same document. A short deadline due this week may remain in a separate anticipation section; this does not make a future offer active. Missing or uncertain periods are not silently assigned to the document week. Existing sources/choices stay preserved; later multi-week navigation and the full M7 Copilot remain separate scope.
+
+### Additional anticipation tools — Deferred until the current version is complete
+
+The product owner places further anticipation tools after completion of the current version. Keep the current weekly reading focused; do not expand this increment into a separate ordering or multi-week preparation workflow. Design and prioritize those additional tools during the subsequent product review.
+
+A source deadline note in the current brief is not an ordering tool or a completed store action. The original PDF remains retained for later use. This follow-up does not change the canonical M6/M7 sequence or make additional anticipation tooling a release gate for the current version.
