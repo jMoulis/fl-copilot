@@ -1,3 +1,5 @@
+import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
+import { OutboxRepository } from "../sync/outbox-repository";
 import {
   commercialReviewPageSchema,
   commercialReviewDecisionSchema,
@@ -176,6 +178,95 @@ export class CommercialReviewRepository {
           JSON.stringify(decision),
         );
       },
+    });
+  }
+  async reviewReadableGroup(input: {
+    storeId: string;
+    sourceDocumentId: string;
+    deviceId: string;
+    reviewedAt: string;
+    entries: Array<{
+      pageId: string;
+      sourceBlockIndex: number;
+      id: string;
+      commandId: string;
+    }>;
+  }) {
+    if (
+      !input.entries.length ||
+      input.entries.length > 100 ||
+      new Set(input.entries.map((e) => `${e.pageId}:${e.sourceBlockIndex}`))
+        .size !== input.entries.length
+    )
+      throw Error("COMMERCIAL_GROUP_REVIEW_INVALID");
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      const rows = await tx.getAllAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM commercial_review_pages WHERE store_id = ? AND source_document_id = ?",
+        input.storeId,
+        input.sourceDocumentId,
+      );
+      const pages = rows.map((row) =>
+        commercialReviewPageSchema.parse(JSON.parse(row.payload_json)),
+      );
+      const decisionRows = await tx.getAllAsync<{
+        payload_json: string;
+        sync_state: string;
+      }>(
+        "SELECT payload_json,sync_state FROM commercial_review_decisions WHERE store_id = ? AND sync_state <> 'SUPERSEDED'",
+        input.storeId,
+      );
+      const decisions = decisionRows.map((row) => ({
+        decision: commercialReviewDecisionSchema.parse(
+          JSON.parse(row.payload_json),
+        ),
+        state: row.sync_state,
+      }));
+      const eligible = buildCommercialDocumentSummary(
+        pages,
+        decisions,
+      ).bulkEligible;
+      const selected = input.entries.map((entry) => {
+        const item = eligible.find(
+          (item) =>
+            item.page.id === entry.pageId &&
+            item.block.sourceBlockIndex === entry.sourceBlockIndex,
+        );
+        if (!item) throw Error("COMMERCIAL_GROUP_REVIEW_UNSAFE");
+        return {
+          entry,
+          decision: commercialReviewDecisionSchema.parse({
+            id: entry.id,
+            storeId: input.storeId,
+            sourceDocumentId: input.sourceDocumentId,
+            pageId: entry.pageId,
+            sourceBlockIndex: entry.sourceBlockIndex,
+            checksum: item.page.checksum,
+            decision: "CONFIRMED_TRANSCRIPTION",
+            corrections: [],
+            reviewedAt: input.reviewedAt,
+          }),
+        };
+      });
+      for (const { entry, decision } of selected) {
+        await tx.runAsync(
+          "INSERT INTO commercial_review_decisions(id,store_id,page_id,source_block_index,payload_json,remote_version,sync_state) VALUES (?,?,?,?,?,NULL,'PENDING')",
+          decision.id,
+          input.storeId,
+          decision.pageId,
+          decision.sourceBlockIndex,
+          JSON.stringify(decision),
+        );
+        await new OutboxRepository(tx).enqueue({
+          commandId: entry.commandId,
+          deviceId: input.deviceId,
+          storeId: input.storeId,
+          entityType: "commercial_review_decision",
+          entityId: decision.id,
+          commandType: "COMMERCIAL_TRANSCRIPTION_REVIEW",
+          expectedRemoteVersion: null,
+          payload: decision,
+        });
+      }
     });
   }
   async useRemoteDecision(storeId: string, localId: string, remoteId: string) {

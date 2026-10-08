@@ -174,3 +174,30 @@ Physical iPhone acceptance after merge and loading this JavaScript version (Metr
 5. A conflict, if reproduced with two devices, must preserve both choices and corrections and offer explicit comparison/adoption of the synchronized decision.
 
 M5-T07-A native acceptance remains pending. M5-T07 as a whole remains in progress.
+
+## Pilot feedback — Review workload
+
+The pilot opened the M5-T07-A build but rejected the 140-item mandatory-looking review flow as impractical. No complete native acceptance is claimed. The user confirmed that Dramat and prospectus are the primary reading priorities, the weekly document normally proposes four TG ideas, and threshold/degressive prices and lots are recurring weekly basics. A future signage-printing checklist was requested. The full conversational Copilot remains in M7; the current adjustment stays within M5.
+
+## M5-T07-B — Source-based commercial brief and selective review
+
+- `Ma semaine` opens a commercial brief rather than the first raw extraction item. Dramat/prospectus come first, followed by named source TG ideas and weekly basics. Source operation natures may overlap; they are not collapsed into one category. The catalogue retains all source offers, and secondary operations, deadlines and informational clauses remain consultable without mandatory individual acknowledgement.
+- Classification uses only explicit operation names/natures, named TG captions and literal customer-mechanism wording. It does not infer product/operation relationships from neighbouring text. Dramat/prospectus sections can expose offers extracted on the same pages, explicitly labelled as a page association, not an established operation relationship. No missing TG is invented, no recommendation is truncated to force a count of four, and no source TG is declared selected for the store.
+- Material source-field concerns, yearless dates, duplicate-price/period conflicts, page-wide warnings and sync conflicts are grouped by concern while retaining affected item/page references. A page warning is not repeated as an individual task on every block. Grouping is not a shared correction or resolution: relevant ambiguities remain to clarify before retaining the information in a canonical plan.
+- Source details, original raw fields and existing human choices/corrections remain accessible. No source/cache/decision is deleted or silently replaced. The document brief is not an AI strategic recommendation and requires no new generation call; it uses the already anchored extraction and shared deterministic projection.
+- Optional grouped acknowledgement is limited to at most 100 supported transcriptions per series. Low-confidence, null/unsupported fields, source issues, ambiguous date/operator/identity/applicability signals, conflicting offers and already recorded choices are excluded. Dates must have an explicit year and a valid supported simple calendar representation for grouped acknowledgement. This does not publish or validate commercial offers, product matches, dates of a store plan, applicability or execution.
+- The repository rechecks the selected series against current SQLite snapshots/choices in an exclusive transaction. All decisions and ordinary `COMMERCIAL_TRANSCRIPTION_REVIEW` Outbox commands commit together or roll back together. Changed eligibility refuses the entire series; existing commands/choices are retained. Existing server idempotency/store/source checks and domain conflict policy are reused without a protocol change or migration.
+
+A read-only projection of the retained eight-page pilot PDF found 58 source offer occurrences, four named TG ideas and nine grouped topics, rather than 140 mandatory-looking tasks. Before previously recorded choices are excluded, 68 transcriptions satisfy the conservative grouping policy. These are reading/transcription counts, not approved operations or a selected store plan. Raw grouping references and source price/date uncertainty remain intact.
+
+The roadmap and M5-T07/M5-T11 implementation notes now record the scope boundary and the future signage-printing checklist. Actual PDF page rendering, canonical operation/product/applicability selection, submitted-choice revision and the weekly plan/checklist remain subsequent M5 work. The full cross-domain conversational assistant stays in M7, after M6.
+
+Verification covers reading priorities, multiple natures, four source TGs versus unknown store capacity, no guessed operation association, no invented missing TG, grouped warning references, exclusion of unsupported/low-confidence/yearless/invalid-date/conflicting information, preserved sources and previous choices, atomic grouped decision/Outbox rollback, duplicate replay refusal and an intervening review. Physical iPhone acceptance remains pending after merge and loading this JavaScript version.
+
+Native acceptance:
+
+1. Open `Ma semaine → Voir la synthèse commerciale` using the retained PDF; no reimport is needed. The default screen must show the commercial brief, not a 140-step queue.
+2. Consult Dramat/prospectus and their same-page offers, the four source TG ideas, and threshold/lot basics. Their source status and unconfirmed relationships must be clear.
+3. Open a source detail, then return to the brief. Informational clauses do not require acknowledgement to keep reading.
+4. Optionally confirm a readable series offline. Reopen and reconnect: each ordinary decision persists and synchronizes once; questions remain visible and no offer, TG, instruction execution or KPI is published by that acknowledgement.
+5. Existing corrections/dispositions and conflicts remain visible, with source text separate from manually corrected values.

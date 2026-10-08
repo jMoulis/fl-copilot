@@ -102,7 +102,7 @@ class SqliteAdapter implements OutboxDatabase {
 }
 const connections: DatabaseSync[] = [],
   directories: string[] = [];
-async function setup(path = ":memory:") {
+async function setup(path = ":memory:", fixture = page) {
   const db = new DatabaseSync(path);
   connections.push(db);
   const adapter = new SqliteAdapter(db);
@@ -111,7 +111,7 @@ async function setup(path = ":memory:") {
     adapter,
     storeId,
     "commercial_review_page",
-    page,
+    fixture,
   );
   return { db, adapter, repo: new CommercialReviewRepository(adapter) };
 }
@@ -305,4 +305,85 @@ describe("local commercial extraction review", () => {
       ),
     ).toEqual({ value: "1" });
   });
+});
+
+function readablePage() {
+  const p = structuredClone(page);
+  p.blocks[0]!.fields[0]!.confidence = 0.95;
+  p.blocks.push({ ...structuredClone(p.blocks[0]!), sourceBlockIndex: 5 });
+  return p;
+}
+function groupInput(fixture: CommercialReviewPage) {
+  return {
+    storeId,
+    sourceDocumentId,
+    deviceId,
+    reviewedAt: new Date().toISOString(),
+    entries: fixture.blocks.map((b) => ({
+      pageId: fixture.id,
+      sourceBlockIndex: b.sourceBlockIndex,
+      id: randomUUID(),
+      commandId: randomUUID(),
+    })),
+  };
+}
+it("commits a readable group and its ordinary review commands atomically offline", async () => {
+  const fixture = readablePage();
+  const { repo, db } = await setup(":memory:", fixture);
+  const before = JSON.stringify(await repo.pages(storeId));
+  const input = groupInput(fixture);
+  await repo.reviewReadableGroup(input);
+  expect(await repo.decisions(storeId)).toHaveLength(2);
+  expect(
+    db
+      .prepare("SELECT command_type FROM sync_outbox ORDER BY local_sequence")
+      .all(),
+  ).toEqual([
+    { command_type: "COMMERCIAL_TRANSCRIPTION_REVIEW" },
+    { command_type: "COMMERCIAL_TRANSCRIPTION_REVIEW" },
+  ]);
+  expect(JSON.stringify(await repo.pages(storeId))).toBe(before);
+  expect(
+    db.prepare("SELECT COUNT(*) AS count FROM sales_observations").get(),
+  ).toEqual({ count: 0 });
+  await expect(repo.reviewReadableGroup(input)).rejects.toThrow(
+    "COMMERCIAL_GROUP_REVIEW_UNSAFE",
+  );
+  expect(await repo.decisions(storeId)).toHaveLength(2);
+});
+it("a mixed unsafe group writes neither decisions nor commands", async () => {
+  const fixture = readablePage();
+  fixture.blocks[1]!.fields[0]!.confidence = 0.5;
+  const { repo, db } = await setup(":memory:", fixture);
+  await expect(repo.reviewReadableGroup(groupInput(fixture))).rejects.toThrow(
+    "COMMERCIAL_GROUP_REVIEW_UNSAFE",
+  );
+  expect(await repo.decisions(storeId)).toEqual([]);
+  expect(db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual(
+    { count: 0 },
+  );
+});
+it("rolls back the whole group when a command insertion fails", async () => {
+  const fixture = readablePage();
+  const { repo, db } = await setup(":memory:", fixture);
+  const input = groupInput(fixture);
+  input.entries[1]!.commandId = input.entries[0]!.commandId;
+  await expect(repo.reviewReadableGroup(input)).rejects.toThrow();
+  expect(await repo.decisions(storeId)).toEqual([]);
+  expect(db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual(
+    { count: 0 },
+  );
+});
+it("rechecks eligibility after an intervening review and preserves the earlier choice", async () => {
+  const fixture = readablePage();
+  const { repo, db } = await setup(":memory:", fixture);
+  const input = groupInput(fixture);
+  await repo.review(decision(), deviceId, randomUUID());
+  await expect(repo.reviewReadableGroup(input)).rejects.toThrow(
+    "COMMERCIAL_GROUP_REVIEW_UNSAFE",
+  );
+  expect(await repo.decisions(storeId)).toHaveLength(1);
+  expect(db.prepare("SELECT COUNT(*) AS count FROM sync_outbox").get()).toEqual(
+    { count: 1 },
+  );
 });

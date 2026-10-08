@@ -1516,7 +1516,9 @@ Acceptance:
 
 # 89. M5-T07 — Extraction validation UI
 
-Implement native issue-by-issue review.
+Implement native issue-by-issue review for material ambiguities, entered from a source-based commercial summary. Do not require acknowledging every informational extraction block. Support explicit grouped transcription confirmation only for unambiguous, source-supported items; it is not offer publication or applicability validation.
+
+Pilot reading order: Dramat/prospectus, source TG ideas, threshold-price/lot weekly basics. The full conversational Copilot remains M7.
 
 ---
 
@@ -1561,6 +1563,8 @@ Implement:
 ---
 
 # 93. M5-T11 — Offline execution checklist
+
+Follow-up: propose signage-printing tasks from retained commercial offers, with source references, separate store choice and explicit execution status.
 
 Mark:
 

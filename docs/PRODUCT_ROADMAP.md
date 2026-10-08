@@ -1,6 +1,6 @@
 # Product roadmap
 
-Date: 2026-10-04.
+Date: 2026-10-07.
 
 ## Product objective
 
@@ -26,7 +26,7 @@ M2 still has two cross-platform follow-ups:
 - exercise one controlled real `DIFFERENCE` on the target iPhone and verify that acknowledging it never mutates published observations;
 - repeat the XLSX, publication, upload, verification and memory acceptance on representative Android hardware.
 
-M4 receipt capture, extraction, validation, publication and recovery have been accepted on iPhone, including cashier-number confirmation on 2026-10-07. Explicit label memory has also been accepted on iPhone. M5 commercial planning starts with local PDF capture. The receipt selling-value KPI is automatically verified; a dedicated selling-value-by-date inspection UI remains a follow-up.
+M4 receipt capture, extraction, validation, publication and recovery have been accepted on iPhone, including cashier-number confirmation on 2026-10-07. Explicit label memory has also been accepted on iPhone. M5 commercial planning is in progress: PDF capture/upload and the eight-page pilot extraction are accepted in production. Source-anchored drafts, mechanism normalization and conservative reconciliation are implemented; the review UX is being changed to a commercial brief after the pilot rejected a 140-item acknowledgement queue. Canonical operation validation, the weekly plan and execution checklist remain pending. The receipt selling-value KPI is automatically verified; a dedicated selling-value-by-date inspection UI remains a follow-up.
 
 ## Milestones
 
@@ -231,4 +231,16 @@ Pilot observation is still required to measure time saved, trust after repeated 
 
 ## M5 implementation start — Local PDF capture
 
-M5-T01 adds `Importer le PDF hebdo` to the native `Ma semaine` screen. Selected PDF bytes are copied into app-owned persistent storage and source/file metadata are committed atomically in SQLite. Exact same-store content is retained once; a changed file is a separate immutable source. Documents remain visible after restart with analysis pending. M5-T02 now adds resumable private upload and one durable processing registration per source. PDFs imported before this increment are queued automatically on the next sync cycle. M5-T03 page extraction is accepted in production for the pilot PDF (eight readable pages). M5-T04 now adds source-anchored AI proposals, pending full-document cloud acceptance; mechanism normalization, repeated-offer reconciliation and native validation remain subsequent increments; no commercial operation is created merely by uploading a PDF. See `docs/progress/M5_COMMERCIAL_PLANNING.md` for implementation and acceptance evidence.
+M5-T01/T02 retain and upload the immutable weekly PDF. M5-T03/T04 page parsing and source-anchored AI extraction are accepted for the retained eight-page pilot PDF. M5-T05/T06 provide shared mechanism normalization and conservative reconciliation. M5-T07-A implemented offline transcription review but its mandatory-looking 140-item queue was rejected by the pilot. M5-T07-B now opens a source-based commercial brief with selective review and optional grouped transcription acknowledgement. No commercial operation is created merely by uploading, reading or acknowledging the document. Canonical offers/applicability, source page rendering, the weekly plan and checklist remain subsequent M5 work. See `docs/progress/M5_COMMERCIAL_PLANNING.md` for evidence.
+
+## M5 usability clarification — Weekly brief first
+
+Pilot feedback on 2026-10-07 rejected a mandatory 140-item transcription queue as impractical. M5 keeps its commercial-planning objective but starts document review with a source-based brief, not an extraction administration checklist. Source instructions remain consultable without a mandatory acknowledgement for each clause. Material ambiguities are grouped and surfaced before the relevant business decision; grouping never resolves missing years, conflicting prices or applicability automatically.
+
+The pilot's primary reading order is Dramat (dramatization) and prospectus offers, followed by the document's four TG ideas and weekly basics (threshold/degressive prices and lots). Four source TG ideas do not imply four available store TGs. Relationships not explicitly extracted are not guessed from a nearby heading: a same-page offer list is labelled as such. Source references remain available.
+
+M5 may offer optional grouped transcription confirmation of supported, unambiguous items. This does not validate product identity, store applicability, publish an offer or execute an action. Existing extraction data and human choices stay intact. A canonical weekly plan and checklist remain M5 deliverables.
+
+M6 remains the next milestone for Need Units and substitution. The full contextual/conversational Copilot — the manager's assistant across commercial planning, analytics, waste, alternatives, decisions and execution — stays in M7. No general chat or new agent runtime is introduced in M5.
+
+Future M5-T11 checklist idea: propose `Print signage` tasks for explicitly retained Dramat/prospectus, threshold-price and lot offers, retaining the source signage reference and requiring a separate execution confirmation. Print a document and mark a task done are separate actions; source capture alone never creates completed tasks. Source-proposed versus store-selected TGs must remain distinct.

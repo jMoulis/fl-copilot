@@ -1,7 +1,5 @@
-import {
-  CommercialReviewRepository,
-  reviewProgress,
-} from "@/commercial/review-repository";
+import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
+import { CommercialReviewRepository } from "@/commercial/review-repository";
 import type { CommercialReviewPage } from "@fl-copilot/sync-contracts";
 import { useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
@@ -191,8 +189,8 @@ export default function WeekScreen() {
           />
         ) : null}
         <Text className="text-sm leading-5 text-muted">
-          Le PDF sera envoyé dès que la connexion le permet. Examinez ensuite
-          les extraits, même hors connexion.
+          Le PDF sera envoyé dès que la connexion le permet. Consultez ensuite
+          la synthèse commerciale, même hors connexion.
         </Text>
       </SectionCard>
       {message ? (
@@ -207,7 +205,7 @@ export default function WeekScreen() {
         const pages = reviewPages.filter(
           (page) => page.sourceDocumentId === document.id,
         );
-        const progress = reviewProgress(pages, reviewDecisions);
+        const summary = buildCommercialDocumentSummary(pages, reviewDecisions);
         return (
           <SectionCard
             key={document.id}
@@ -223,12 +221,12 @@ export default function WeekScreen() {
               </Text>
               <Text className="text-sm text-muted">
                 {pages.length
-                  ? `${pages.length} pages reçues · ${progress.remaining} éléments à examiner`
+                  ? `${summary.offerCount} offres à consulter · ${summary.questions.length} points regroupés à clarifier`
                   : state.message}
               </Text>
               {pages.length ? (
                 <PrimaryButton
-                  label="Examiner les extraits"
+                  label="Voir la synthèse commerciale"
                   onPress={() =>
                     router.push(`/commercial-review/${document.id}` as Href)
                   }
@@ -279,19 +277,22 @@ export default function WeekScreen() {
           const pages = reviewPages.filter(
             (page) => page.sourceDocumentId === sourceId,
           );
-          const progress = reviewProgress(pages, reviewDecisions);
+          const summary = buildCommercialDocumentSummary(
+            pages,
+            reviewDecisions,
+          );
           return (
             <SectionCard
               key={`review:${sourceId}`}
               title={pages[0]?.originalFilename ?? "Communication commerciale"}
-              description={`${pages.length} pages reçues · ${progress.remaining} éléments à examiner`}
+              description={`${summary.offerCount} offres à consulter · ${summary.questions.length} points regroupés à clarifier`}
             >
               <Text className="text-sm text-muted">
-                Les transcriptions confirmées ne publient aucune offre et ne
-                valident pas leur application au magasin.
+                Les offres et consignes sont regroupées pour préparer la
+                semaine. Aucune offre n’est publiée automatiquement.
               </Text>
               <PrimaryButton
-                label="Examiner les extraits"
+                label="Voir la synthèse commerciale"
                 onPress={() =>
                   router.push(`/commercial-review/${sourceId}` as Href)
                 }
