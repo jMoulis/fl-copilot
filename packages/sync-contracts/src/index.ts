@@ -77,3 +77,5 @@ export * from "./commercial-validated-offer";
 export * from "./commercial-week-plan";
 
 export * from "./commercial-execution-task";
+
+export * from "./store-context-settings";

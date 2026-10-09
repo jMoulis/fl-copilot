@@ -1,3 +1,4 @@
+import { applyStoreContextCommand } from "../store-context-sync.js";
 import { applyCommercialExecutionCommand } from "../commercial/execution-sync.js";
 import { applyCommercialPlanCommand } from "../commercial/week-plan-sync.js";
 import { applyValidatedOfferCommand } from "../commercial/validated-offer-sync.js";
@@ -132,6 +133,14 @@ async function applyCommand(
     );
   if (command.type === "COMMERCIAL_VERSION_DECISION_UPSERT")
     return applyCommercialVersionDecisionCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
+  if (command.type === "STORE_CONTEXT_SETTINGS_UPSERT")
+    return applyStoreContextCommand(
       context,
       storeId,
       command,

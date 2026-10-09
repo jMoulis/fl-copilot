@@ -1,4 +1,8 @@
 import {
+  serializeStoreContext,
+  type StoreContextDocument,
+} from "../store-context-sync.js";
+import {
   serializeCommercialExecution,
   type ExecutionTaskDocument,
 } from "../commercial/execution-sync.js";
@@ -119,6 +123,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "commercial_week_preparation") &&
               (query.commercialExecution === "true" ||
                 change.entityType !== "commercial_execution_task") &&
+              (query.storeContext === "true" ||
+                change.entityType !== "store_context_settings") &&
               (query.commercialVersions === "true" ||
                 change.entityType !== "commercial_version_decision") &&
               (query.commercialValidation === "true" ||
@@ -193,6 +199,22 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeCommercialVersionDecision(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "store_context_settings") {
+              const row = await mongoDatabase
+                .collection<StoreContextDocument>("storeContextSettings")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("STORE_CONTEXT_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeStoreContext(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }

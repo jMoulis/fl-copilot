@@ -282,3 +282,7 @@ The manager can confirm the saved draft’s selected validated offers, conservat
 ### Bounded execution tracking — M5-T11-A
 
 The validated plan now proposes signage-preparation/printing and TG-installation tasks. The manager explicitly saves À faire / Fait / Ignoré / Non applicable, with notes and separate statuses, offline first. Each plan version retains its own declarations; a revised plan does not inherit old completion silently. These facts do not assert actual selling price, whole-promotion execution, orders or sales effects. Physical acceptance remains pending. Remaining M5 context/reminder providers and broader actual-operation capture are separate follow-ups; M6 Need Units and M7 conversational Copilot keep their canonical order.
+
+### Store context/location setup — M5-T12-A
+
+The pilot store is Asnières-sur-Seine, 92600. A dedicated `Plus → Mon magasin` page configures the commune, school-holiday zone and fixed weather location. An optional location switch allows a one-shot phone capture at the store; the saved point remains fixed afterward and no background tracking is requested. Manual commune entry remains available when permission/GPS is unavailable. Settings persist offline and synchronize with audit/conflict handling. MET Norway is selected for the next weather-provider increment; forecasts/holiday context and reminders are not yet delivered by these settings. Provider failure must never block planning or execution capture.

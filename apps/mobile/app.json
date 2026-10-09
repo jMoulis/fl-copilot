@@ -56,6 +56,17 @@
           "organization": "moulis",
           "project": "fruits-et-legumes"
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Autoriser Fruits & Légumes à relever ponctuellement la position du magasin.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false,
+          "locationAlwaysAndWhenInUsePermission": false,
+          "locationAlwaysPermission": false
+        }
       ]
     ],
     "extra": {
