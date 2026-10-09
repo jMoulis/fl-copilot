@@ -49,6 +49,7 @@ export async function reconcileReminders(input: {
     if (!input.enabled || !r.enabled || r.storeId !== input.storeId)
       state = "DISABLED";
     else if (!granted) state = "PERMISSION_DENIED";
+    else if (r.fireAt <= input.now.toISOString()) state = "PAST";
     else if (
       !plan ||
       plan.revisionId !== r.planRevisionId ||
@@ -62,7 +63,6 @@ export async function reconcileReminders(input: {
     else if (plan.syncState === "ERROR" || plan.syncState === "CONFLICT")
       state = "PLAN_CHANGED";
     else if (plan.syncState !== "SYNCED") state = "WAITING_SYNC";
-    else if (r.fireAt <= input.now.toISOString()) state = "PAST";
     else if (desired.size >= 32) state = "LIMIT";
     if (state === "SCHEDULED") desired.set(r.id, r);
     statuses.set(r.id, state);

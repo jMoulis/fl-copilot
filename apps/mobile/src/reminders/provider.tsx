@@ -56,15 +56,30 @@ export function ReminderProvider({ children }: PropsWithChildren) {
         const store = storeId,
           rows = store ? await repo.list(store) : [],
           enabled = store ? await repo.preferences(store) : false;
-        const raw = store
-          ? await sqlite.getAllAsync<{
-              payload_json: string;
-              sync_state: string;
-            }>(
-              "SELECT payload_json,sync_state FROM commercial_week_plans WHERE store_id=?",
-              store,
-            )
+        const planIds = enabled
+          ? [
+              ...new Set(
+                rows
+                  .filter(
+                    (r) =>
+                      r.reminder.enabled &&
+                      r.reminder.fireAt > new Date().toISOString(),
+                  )
+                  .map((r) => r.reminder.planId),
+              ),
+            ]
           : [];
+        const raw =
+          store && planIds.length
+            ? await sqlite.getAllAsync<{
+                payload_json: string;
+                sync_state: string;
+              }>(
+                `SELECT payload_json,sync_state FROM commercial_week_plans WHERE store_id=? AND id IN (${planIds.map(() => "?").join(",")})`,
+                store,
+                ...planIds,
+              )
+            : [];
         const plans = await Promise.all(
           raw.map(async (row) => {
             const p = commercialWeekPlanSchema.parse(
