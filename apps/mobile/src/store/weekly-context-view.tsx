@@ -128,7 +128,10 @@ export function WeeklyContextView({ storeId }: { storeId: string }) {
   }
   const validContext =
       settings &&
-      context?.settingsFingerprint === storeContextFingerprint(settings.entity)
+      settings.entity.storeId === storeId &&
+      context?.storeId === storeId &&
+      context.weekStart === weekStart &&
+      context.settingsFingerprint === storeContextFingerprint(settings.entity)
         ? context
         : null,
     now = new Date();
