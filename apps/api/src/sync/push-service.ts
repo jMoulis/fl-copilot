@@ -1,3 +1,7 @@
+import {
+  applyNeedMembershipCommand,
+  NeedMembershipParentPendingError,
+} from "../need-membership-sync";
 import { applyNeedUnitCommand } from "../need-unit-sync";
 import { applyStoreContextCommand } from "../store-context-sync.js";
 import { applyCommercialExecutionCommand } from "../commercial/execution-sync.js";
@@ -99,7 +103,18 @@ export function createMongoSyncPushService(
           results.push(
             error instanceof ProcessedCommandIdentityError
               ? rejectedIdentityResult(command, requestId)
-              : retryableResult(command, requestId),
+              : error instanceof NeedMembershipParentPendingError
+                ? {
+                    ...retryableResult(command, requestId),
+                    error: {
+                      code: "NEED_MEMBERSHIP_PARENT_PENDING",
+                      messageFr:
+                        "Synchronisez d’abord le produit et le besoin client.",
+                      retryable: true,
+                      requestId,
+                    },
+                  }
+                : retryableResult(command, requestId),
           );
         }
       }
@@ -150,6 +165,14 @@ async function applyCommand(
     );
   if (command.type === "NEED_UNIT_UPSERT")
     return applyNeedUnitCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
+  if (command.type === "NEED_MEMBERSHIP_UPSERT")
+    return applyNeedMembershipCommand(
       context,
       storeId,
       command,

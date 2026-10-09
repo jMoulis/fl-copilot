@@ -1,3 +1,4 @@
+import { applyNeedMembership } from "../needs/membership-repository";
 import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
@@ -113,6 +114,20 @@ export async function applyPullPage(
         )
           throw Error("NEED_UNIT_ENVELOPE_INVALID");
         await applyNeedUnit(transaction, storeId, change.entity);
+        continue;
+      }
+      if (change.entityType === "need_membership") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("NEED_MEMBERSHIP_ENVELOPE_INVALID");
+        await applyNeedMembership(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "commercial_execution_task") {

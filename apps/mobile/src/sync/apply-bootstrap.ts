@@ -1,3 +1,4 @@
+import { applyNeedMembership } from "../needs/membership-repository";
 import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
@@ -84,6 +85,15 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `need-units:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    for (const prep of bootstrap.entities.productNeedMemberships ?? [])
+      await applyNeedMembership(transaction, storeId, prep);
+    if (bootstrap.entities.productNeedMemberships)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `need-memberships:${storeId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -193,6 +203,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialExecutionTasks",
     "storeContextSettings",
     "needUnitCatalogue",
+    "productNeedMemberships",
     "commercialVersionDecisions",
     "commercialValidatedOffers",
     "commercialWeekPlans",

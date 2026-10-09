@@ -695,6 +695,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "need_units",
     sql: `CREATE TABLE need_units(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,code TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE UNIQUE INDEX need_unit_store_code ON need_units(store_id,code) WHERE dirty=0; CREATE TABLE need_unit_history(action_id TEXT PRIMARY KEY NOT NULL,need_unit_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 28,
+    name: "need_memberships",
+    sql: `CREATE TABLE need_memberships(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,product_id TEXT NOT NULL,need_unit_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,UNIQUE(store_id,product_id,need_unit_id)); CREATE TABLE need_membership_history(action_id TEXT PRIMARY KEY NOT NULL,membership_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

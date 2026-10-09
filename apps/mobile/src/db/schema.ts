@@ -827,7 +827,38 @@ export const needUnitHistory = sqliteTable("need_unit_history", {
   action: text("action").notNull(),
   createdAt: text("created_at").notNull(),
 });
+export const needMemberships = sqliteTable(
+  "need_memberships",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    needUnitId: text("need_unit_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    remotePayloadJson: text("remote_payload_json"),
+    remoteVersion: integer("remote_version"),
+    syncState: text("sync_state").notNull(),
+    dirty: integer("dirty").notNull(),
+  },
+  (t) => [
+    uniqueIndex("need_membership_pair").on(
+      t.storeId,
+      t.productId,
+      t.needUnitId,
+    ),
+  ],
+);
+export const needMembershipHistory = sqliteTable("need_membership_history", {
+  actionId: text("action_id").primaryKey(),
+  membershipId: text("membership_id").notNull(),
+  storeId: text("store_id").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  action: text("action").notNull(),
+  createdAt: text("created_at").notNull(),
+});
 export const localSchema = {
+  needMemberships,
+  needMembershipHistory,
   needUnits,
   needUnitHistory,
   deviceReminderPreferences,

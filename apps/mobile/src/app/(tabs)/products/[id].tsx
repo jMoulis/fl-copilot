@@ -1,3 +1,4 @@
+import { MembershipView } from "@/needs/membership-view";
 import { Text } from "react-native";
 import { router, useLocalSearchParams, type Href } from "expo-router";
 import {
@@ -48,6 +49,9 @@ export default function ProductEditorScreen() {
         </>
       ) : null}
 
+      {productId && snapshot && !storeMissing ? (
+        <MembershipView productId={productId} />
+      ) : null}
       {storeMissing ? (
         <InlineAlert
           title="Aucun magasin actif"

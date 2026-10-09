@@ -1053,3 +1053,42 @@ it("refreshes bootstrap once when upgrading an existing cursor to need-unit cata
   ).toEqual({ value: "1" });
   database.close();
 });
+
+it("refreshes bootstrap once when upgrading an existing cursor to product-need memberships settings", async () => {
+  const { adapter, database } = temporaryDatabase();
+  await runLocalMigrations(adapter);
+  database
+    .prepare(
+      "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES (?, ?,1)",
+    )
+    .run(storeId, "old-cursor");
+  let bootstraps = 0;
+  const snapshot = bootstrapResponse();
+  snapshot.entities.productNeedMemberships = [];
+  const service = new MobileSyncService(
+    adapter,
+    {
+      bootstrap: async () => {
+        bootstraps++;
+        return snapshot;
+      },
+      push: async () => ({ results: [], serverTime: new Date().toISOString() }),
+      pull: async () => emptyPull("new-cursor"),
+    },
+    {
+      appVersion: "test",
+      deviceId,
+      needMemberships: true,
+      maxRetries: 0,
+    },
+  );
+  await service.sync(storeId);
+  await service.sync(storeId);
+  expect(bootstraps).toBe(1);
+  expect(
+    database
+      .prepare("SELECT value FROM app_metadata WHERE key=?")
+      .get(`need-memberships:${storeId}`),
+  ).toEqual({ value: "1" });
+  database.close();
+});
