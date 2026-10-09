@@ -17,6 +17,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     commercial_week_preparation: "Préparation de semaine",
     commercial_execution_task: "Suivi d’exécution",
     need_membership: "Association produit/besoin",
+    product_substitution: "Relation de substitution",
     need_unit: "Unité de besoin",
     store_context_settings: "Réglages du magasin",
     commercial_week_plan: "Plan commercial validé",

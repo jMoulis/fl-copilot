@@ -2,6 +2,10 @@ import {
   serializeNeedMembership,
   type NeedMembershipDocument,
 } from "../need-membership-sync";
+import {
+  serializeProductSubstitution,
+  type ProductSubstitutionDocument,
+} from "../product-substitution-sync";
 import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync";
 import {
   serializeStoreContext,
@@ -225,6 +229,15 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const substitutionRows =
+              query.productSubstitutions === "true"
+                ? await mongoDatabase
+                    .collection<ProductSubstitutionDocument>(
+                      "productSubstitutions",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const executionTasks =
               query.commercialExecution === "true"
                 ? await mongoDatabase
@@ -344,6 +357,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       productNeedMemberships: membershipRows.map(
                         serializeNeedMembership,
+                      ),
+                    }
+                  : {}),
+                ...(query.productSubstitutions === "true"
+                  ? {
+                      directedProductSubstitutions: substitutionRows.map(
+                        serializeProductSubstitution,
                       ),
                     }
                   : {}),
