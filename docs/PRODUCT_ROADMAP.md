@@ -278,3 +278,7 @@ Only selected offers in the saved draft need commercial validation. Their produc
 ### Explicit weekly-plan validation — M5-T09-B / T10-B
 
 The manager can confirm the saved draft’s selected validated offers, conservative source-operation groups and TG assignments as one versioned weekly plan. The plan persists offline, synchronizes atomically with canonical projections and keeps confirmed previous versions available. Known source/choice/product/draft changes require review rather than silently replacing the plan. Validation means planned operations, not executed actions. Next: the separate execution checklist (including signage printing for retained offers); remaining context/reminder providers and M6/M7 stay in the canonical sequence.
+
+### Bounded execution tracking — M5-T11-A
+
+The validated plan now proposes signage-preparation/printing and TG-installation tasks. The manager explicitly saves À faire / Fait / Ignoré / Non applicable, with notes and separate statuses, offline first. Each plan version retains its own declarations; a revised plan does not inherit old completion silently. These facts do not assert actual selling price, whole-promotion execution, orders or sales effects. Physical acceptance remains pending. Remaining M5 context/reminder providers and broader actual-operation capture are separate follow-ups; M6 Need Units and M7 conversational Copilot keep their canonical order.

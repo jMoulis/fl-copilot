@@ -1,4 +1,8 @@
 import {
+  serializeCommercialExecution,
+  type ExecutionTaskDocument,
+} from "../commercial/execution-sync.js";
+import {
   serializeCommercialPlan,
   serializeCommercialPlanRevision,
   type WeekPlanDocument,
@@ -191,6 +195,15 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const executionTasks =
+              query.commercialExecution === "true"
+                ? await mongoDatabase
+                    .collection<ExecutionTaskDocument>(
+                      "commercialExecutionTasks",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const preparations =
               query.commercialPreparation === "true"
                 ? await mongoDatabase
@@ -282,6 +295,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialVersionDecisions: versionDecisions.map(
                         serializeCommercialVersionDecision,
+                      ),
+                    }
+                  : {}),
+                ...(query.commercialExecution === "true"
+                  ? {
+                      commercialExecutionTasks: executionTasks.map(
+                        serializeCommercialExecution,
                       ),
                     }
                   : {}),

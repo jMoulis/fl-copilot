@@ -421,6 +421,28 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 22,
+    name: "commercial_execution_tasks",
+    async up(db) {
+      await db.collection("commercialExecutionTasks").createIndex(
+        {
+          storeId: 1,
+          planRevisionId: 1,
+          planChecksum: 1,
+          kind: 1,
+          targetId: 1,
+        },
+        { unique: true, name: "commercial_execution_target" },
+      );
+      await db
+        .collection("commercialExecutionHistory")
+        .createIndex(
+          { storeId: 1, taskId: 1, version: 1 },
+          { unique: true, name: "commercial_execution_history" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

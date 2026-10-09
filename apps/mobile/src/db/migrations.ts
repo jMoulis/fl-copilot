@@ -670,6 +670,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "commercial_week_plans",
     sql: `CREATE TABLE commercial_week_plans(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,week_start TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,UNIQUE(store_id,week_start)); CREATE TABLE commercial_plan_history(action_id TEXT PRIMARY KEY NOT NULL,plan_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL); CREATE TABLE commercial_plan_revisions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,plan_id TEXT NOT NULL,plan_version INTEGER NOT NULL,payload_json TEXT NOT NULL,UNIQUE(store_id,plan_id,plan_version)); CREATE TABLE commercial_operations(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,plan_id TEXT NOT NULL,payload_json TEXT NOT NULL,sync_state TEXT NOT NULL); CREATE INDEX commercial_operations_plan ON commercial_operations(store_id,plan_id); CREATE TABLE offers(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,plan_id TEXT NOT NULL,operation_id TEXT NOT NULL,payload_json TEXT NOT NULL,sync_state TEXT NOT NULL); CREATE INDEX offers_plan ON offers(store_id,plan_id);`,
   },
+  {
+    version: 23,
+    name: "commercial_execution_tasks",
+    sql: `CREATE TABLE commercial_execution_tasks(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,plan_id TEXT NOT NULL,plan_revision_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX commercial_execution_revision ON commercial_execution_tasks(store_id,plan_revision_id); CREATE TABLE commercial_execution_history(action_id TEXT PRIMARY KEY NOT NULL,task_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

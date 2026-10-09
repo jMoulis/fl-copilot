@@ -1,3 +1,4 @@
+import { applyCommercialExecution } from "../commercial/execution-repository";
 import {
   applyCommercialPlan,
   applyCommercialPlanRevision,
@@ -63,6 +64,15 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `commercial-versions:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    for (const prep of bootstrap.entities.commercialExecutionTasks ?? [])
+      await applyCommercialExecution(transaction, storeId, prep);
+    if (bootstrap.entities.commercialExecutionTasks)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `commercial-execution:${storeId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -160,6 +170,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
   const supported = new Set([
     "commercialOfferChoices",
     "commercialWeekPreparations",
+    "commercialExecutionTasks",
     "commercialVersionDecisions",
     "commercialValidatedOffers",
     "commercialWeekPlans",
