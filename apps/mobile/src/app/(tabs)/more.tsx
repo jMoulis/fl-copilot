@@ -78,6 +78,14 @@ export default function MoreScreen() {
           onPress={() => router.push("/store-settings")}
         />
       </SectionCard>
+      <SectionCard title="Rappels">
+        <MenuRow
+          title="Rappels sur ce téléphone"
+          description="Notifications locales et opérations à préparer"
+          icon="notifications-outline"
+          onPress={() => router.push("/reminder-settings")}
+        />
+      </SectionCard>
       <SectionCard title="Compte et application">
         <Text className="text-sm leading-5 text-muted">Compte connecté</Text>
         <Text className="text-base font-semibold text-ink">

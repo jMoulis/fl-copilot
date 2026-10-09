@@ -685,6 +685,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "weekly_context_cache",
     sql: `CREATE TABLE weekly_context_cache(store_id TEXT NOT NULL,week_start TEXT NOT NULL,settings_fingerprint TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,week_start,settings_fingerprint));`,
   },
+  {
+    version: 26,
+    name: "device_commercial_reminders",
+    sql: `CREATE TABLE device_reminder_preferences(store_id TEXT PRIMARY KEY NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL); CREATE TABLE device_commercial_reminders(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,operation_id TEXT NOT NULL,payload_json TEXT NOT NULL,status TEXT NOT NULL,notification_id TEXT,UNIQUE(store_id,operation_id)); CREATE TABLE device_reminder_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

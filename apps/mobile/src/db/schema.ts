@@ -772,7 +772,38 @@ export const weeklyContextCache = sqliteTable(
     primaryKey({ columns: [t.storeId, t.weekStart, t.settingsFingerprint] }),
   ],
 );
+export const deviceReminderPreferences = sqliteTable(
+  "device_reminder_preferences",
+  {
+    storeId: text("store_id").primaryKey(),
+    enabled: integer("enabled").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+);
+export const deviceCommercialReminders = sqliteTable(
+  "device_commercial_reminders",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    operationId: text("operation_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    status: text("status").notNull(),
+    notificationId: text("notification_id"),
+  },
+  (t) => [
+    uniqueIndex("device_reminder_operation").on(t.storeId, t.operationId),
+  ],
+);
+export const deviceReminderHistory = sqliteTable("device_reminder_history", {
+  actionId: text("action_id").primaryKey(),
+  storeId: text("store_id").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  createdAt: text("created_at").notNull(),
+});
 export const localSchema = {
+  deviceReminderPreferences,
+  deviceCommercialReminders,
+  deviceReminderHistory,
   weeklyContextCache,
   commercialVisualReadings,
   commercialOfferChoices,

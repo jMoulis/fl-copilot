@@ -1,3 +1,4 @@
+import { ReminderProvider } from "@/reminders/provider";
 import { useState, type PropsWithChildren } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -22,7 +23,9 @@ export function AppProviders({ children }: PropsWithChildren) {
         <QueryClientProvider client={queryClient}>
           <DatabaseProvider>
             <AuthProvider>
-              <SyncProvider>{children}</SyncProvider>
+              <SyncProvider>
+                <ReminderProvider>{children}</ReminderProvider>
+              </SyncProvider>
             </AuthProvider>
           </DatabaseProvider>
         </QueryClientProvider>
