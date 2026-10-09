@@ -1,5 +1,6 @@
 import {
   index,
+  primaryKey,
   integer,
   real,
   sqliteTable,
@@ -759,7 +760,20 @@ export const commercialVisualReadings = sqliteTable(
     payloadJson: text("payload_json").notNull(),
   },
 );
+export const weeklyContextCache = sqliteTable(
+  "weekly_context_cache",
+  {
+    storeId: text("store_id").notNull(),
+    weekStart: text("week_start").notNull(),
+    settingsFingerprint: text("settings_fingerprint").notNull(),
+    payloadJson: text("payload_json").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.storeId, t.weekStart, t.settingsFingerprint] }),
+  ],
+);
 export const localSchema = {
+  weeklyContextCache,
   commercialVisualReadings,
   commercialOfferChoices,
   storeContextSettings,

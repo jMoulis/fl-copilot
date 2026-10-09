@@ -290,8 +290,8 @@ export default function StoreSettingsScreen() {
       </SectionCard>
       <SectionCard title="Contexte météo">
         <Text className="text-muted">
-          Fournisseur retenu : MET Norway. Les prévisions, jours fériés et
-          vacances seront ajoutés dans la prochaine étape. Ces réglages ne
+          La météo MET Norway et les calendriers officiels sont disponibles dans
+          Ma semaine, après synchronisation des réglages. Ces réglages ne
           changent pas les offres, les plans ni les résultats du rayon.
         </Text>
       </SectionCard>

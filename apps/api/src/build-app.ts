@@ -1,3 +1,11 @@
+import {
+  createWeekContextService,
+  type WeekContextService,
+} from "./context/week-context.js";
+import {
+  contextWeekQuerySchema,
+  weeklyContextSchema,
+} from "@fl-copilot/sync-contracts";
 import { createCommercialVisualProvider } from "./commercial/visual-provider.js";
 import { createCommercialOriginalLinkService } from "./commercial/original-link.js";
 import { commercialOriginalLinkSchema } from "@fl-copilot/sync-contracts";
@@ -76,6 +84,7 @@ import { createMongoWasteReceiptProductMatchingService } from "./uploads/waste-r
 
 type AppDependencies = {
   database: DatabaseService;
+  weekContext?: WeekContextService;
   auth?: AuthService;
   sendAuthCode?: AuthCodeSender;
   syncBootstrap?: SyncBootstrapService;
@@ -361,6 +370,35 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.body.deviceId,
       );
       return syncPush.push(request.body, request.id);
+    },
+  );
+  app.get(
+    "/api/v1/store/context",
+    {
+      schema: {
+        querystring: contextWeekQuerySchema,
+        response: { 200: weeklyContextSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization;
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      const storeId = request.headers["x-store-id"];
+      if (
+        typeof storeId !== "string" ||
+        !z.string().uuid().safeParse(storeId).success
+      )
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      await auth.authorizeStore(token.slice(7), storeId);
+      return (
+        dependencies.weekContext ??
+        createWeekContextService(dependencies.database)
+      ).read(storeId, request.query.weekStart);
     },
   );
   app.get(
