@@ -700,6 +700,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "need_memberships",
     sql: `CREATE TABLE need_memberships(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,product_id TEXT NOT NULL,need_unit_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,UNIQUE(store_id,product_id,need_unit_id)); CREATE TABLE need_membership_history(action_id TEXT PRIMARY KEY NOT NULL,membership_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 29,
+    name: "product_substitutions",
+    sql: `CREATE TABLE product_substitutions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,source_product_id TEXT NOT NULL,substitute_product_id TEXT NOT NULL,need_unit_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,CHECK(source_product_id<>substitute_product_id),UNIQUE(store_id,source_product_id,substitute_product_id,need_unit_id)); CREATE TABLE product_substitution_history(action_id TEXT PRIMARY KEY NOT NULL,substitution_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

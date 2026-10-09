@@ -111,3 +111,5 @@ export async function prepareNeedMembershipBatch(input: {
   }
   return { prepared, skipped };
 }
+
+export { prepareProductSubstitutionBatch } from "./substitution-batch";

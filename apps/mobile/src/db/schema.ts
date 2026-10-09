@@ -856,7 +856,43 @@ export const needMembershipHistory = sqliteTable("need_membership_history", {
   action: text("action").notNull(),
   createdAt: text("created_at").notNull(),
 });
+export const productSubstitutions = sqliteTable(
+  "product_substitutions",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    sourceProductId: text("source_product_id").notNull(),
+    substituteProductId: text("substitute_product_id").notNull(),
+    needUnitId: text("need_unit_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    remotePayloadJson: text("remote_payload_json"),
+    remoteVersion: integer("remote_version"),
+    syncState: text("sync_state").notNull(),
+    dirty: integer("dirty").notNull(),
+  },
+  (t) => [
+    uniqueIndex("product_substitution_pair").on(
+      t.storeId,
+      t.sourceProductId,
+      t.substituteProductId,
+      t.needUnitId,
+    ),
+  ],
+);
+export const productSubstitutionHistory = sqliteTable(
+  "product_substitution_history",
+  {
+    actionId: text("action_id").primaryKey(),
+    substitutionId: text("substitution_id").notNull(),
+    storeId: text("store_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    action: text("action").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+);
 export const localSchema = {
+  productSubstitutions,
+  productSubstitutionHistory,
   needMemberships,
   needMembershipHistory,
   needUnits,

@@ -1,4 +1,5 @@
 import { applyNeedMembership } from "../needs/membership-repository";
+import { applyProductSubstitution } from "../needs/substitution-repository";
 import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
@@ -62,6 +63,7 @@ export interface MobileSyncServiceOptions {
   storeContext?: boolean;
   needUnits?: boolean;
   needMemberships?: boolean;
+  productSubstitutions?: boolean;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
   commercialPlans?: boolean;
@@ -167,6 +169,12 @@ export class MobileSyncService {
           `need-memberships:${storeId}`,
         )
       : true;
+    const productSubstitutionsAdopted = this.options.productSubstitutions
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `product-substitutions:${storeId}`,
+        )
+      : true;
     const executionAdopted = this.options.commercialExecution
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -202,6 +210,7 @@ export class MobileSyncService {
       !storeContextAdopted ||
       !needUnitsAdopted ||
       !needMembershipsAdopted ||
+      !productSubstitutionsAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {
@@ -251,6 +260,7 @@ export class MobileSyncService {
                 "store_context_settings",
                 "need_unit",
                 "need_membership",
+                "product_substitution",
                 "commercial_week_plan",
                 "commercial_version_decision",
               ].includes(item.entityType) &&
@@ -389,6 +399,13 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (command.entityType === "product_substitution")
+            await applyProductSubstitution(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              (command.payload as { version: number }).version,
+            );
           if (command.entityType === "commercial_execution_task")
             await applyCommercialExecution(
               transaction,
@@ -486,6 +503,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (command.entityType === "product_substitution")
+            await transaction.runAsync(
+              "UPDATE product_substitutions SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "commercial_execution_task")
             await transaction.runAsync(
               "UPDATE commercial_execution_tasks SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -541,6 +564,12 @@ export class MobileSyncService {
           if (command.entityType === "need_membership")
             await transaction.runAsync(
               "UPDATE need_memberships SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "product_substitution")
+            await transaction.runAsync(
+              "UPDATE product_substitutions SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );

@@ -2,6 +2,10 @@ import {
   serializeNeedMembership,
   type NeedMembershipDocument,
 } from "../need-membership-sync";
+import {
+  serializeProductSubstitution,
+  type ProductSubstitutionDocument,
+} from "../product-substitution-sync";
 import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync";
 import {
   serializeStoreContext,
@@ -134,6 +138,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "need_unit") &&
               (query.needMemberships === "true" ||
                 change.entityType !== "need_membership") &&
+              (query.productSubstitutions === "true" ||
+                change.entityType !== "product_substitution") &&
               (query.commercialVersions === "true" ||
                 change.entityType !== "commercial_version_decision") &&
               (query.commercialValidation === "true" ||
@@ -256,6 +262,22 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeNeedMembership(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "product_substitution") {
+              const row = await mongoDatabase
+                .collection<ProductSubstitutionDocument>("productSubstitutions")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("PRODUCT_SUBSTITUTION_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeProductSubstitution(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }

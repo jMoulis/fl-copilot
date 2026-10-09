@@ -509,6 +509,27 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 27,
+    name: "product_substitutions",
+    async up(db) {
+      await db.collection("productSubstitutions").createIndex(
+        {
+          storeId: 1,
+          sourceProductId: 1,
+          substituteProductId: 1,
+          needUnitId: 1,
+        },
+        { unique: true, name: "product_substitution_directed_edge" },
+      );
+      await db
+        .collection("productSubstitutionHistory")
+        .createIndex(
+          { storeId: 1, substitutionId: 1, version: 1 },
+          { unique: true, name: "product_substitution_history" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(
