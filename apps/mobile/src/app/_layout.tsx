@@ -56,6 +56,8 @@ function RootLayout() {
         <Stack.Screen name="week-preparation" />
         <Stack.Screen name="commercial-plan" />
         <Stack.Screen name="store-settings" />
+        <Stack.Screen name="reminder-settings" />
+        <Stack.Screen name="commercial-operation/[id]" />
         <Stack.Screen name="commercial-comparison" />
       </Stack>
     </AppProviders>

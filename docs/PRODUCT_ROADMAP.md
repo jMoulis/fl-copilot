@@ -290,3 +290,11 @@ The pilot store is Asnières-sur-Seine, 92600. A dedicated `Plus → Mon magasin
 ### Downloaded weather/calendar context — M5-T12-B
 
 The pilot accepted store settings on iPhone. Ma semaine now offers an explicit download of MET Norway forecasts and official national/public-school holiday context for the saved store location/zone. Snapshots remain available offline with original issue/retrieval/expiry dates and source links. Missing weather/rain periods, ambiguous locations and failed/truncated providers stay explicit; none blocks planning or changes official figures. A compact today/tomorrow preview can expand to the seven-day detail. This increment is contextual data, not an AI recommendation or a sales-uplift forecast. Physical acceptance remains pending; next is M5-T13 reminder preferences and scheduling of known deadlines before the M5 exit gate.
+
+### Explicit local reminders — M5-T13-A
+
+The pilot accepted weather/calendars on iPhone. Optional local reminders now target known planned operation starts: the manager enables this phone's notifications and chooses each date/time from an operation detail. The request survives restart, fires through the device while offline and is canceled when the plan changes or the account disconnects. Permission failure, missing native module and scheduling errors remain visible without blocking field work. Unconfirmed PDF supplier/order dates are not guessed; reminders do not record execution. Physical offline-delivery acceptance and the M5 exit review remain next.
+
+### UX acceptance before the pilot
+
+The product owner reiterates that the functional screens remain too dense. Reserve a dedicated cross-flow UX review before pilot release: simplify the weekly plan, imports/reviews, waste forms and reminder settings; progressively reveal secondary information; reduce steps and harmonize visual hierarchy, colours, typography and navigation. Validate proposed journeys with the owner and real field usage rather than treating functional test success as UX acceptance.
