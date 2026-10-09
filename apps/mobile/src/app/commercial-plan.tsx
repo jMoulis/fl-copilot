@@ -1,3 +1,4 @@
+import { CommercialExecutionView } from "@/commercial/execution-view";
 import { useSync } from "@/sync/sync-provider";
 import { useCallback, useMemo, useState } from "react";
 import { Text } from "react-native";
@@ -166,6 +167,7 @@ export default function CommercialPlanScreen() {
             />
           )}
           <CommercialPlanContent plan={archive ?? record.entity} />
+          <CommercialExecutionView plan={archive ?? record.entity} />
           <SectionCard title="Versions synchronisées du plan">
             {revisions.map((r) => (
               <SecondaryButton

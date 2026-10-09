@@ -1,3 +1,4 @@
+import { applyCommercialExecution } from "../commercial/execution-repository";
 import {
   applyCommercialPlan,
   applyCommercialPlanRevision,
@@ -82,6 +83,20 @@ export async function applyPullPage(
           storeId,
           change.entity,
         );
+        continue;
+      }
+      if (change.entityType === "commercial_execution_task") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("COMMERCIAL_EXECUTION_ENVELOPE_INVALID");
+        await applyCommercialExecution(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "commercial_week_preparation") {

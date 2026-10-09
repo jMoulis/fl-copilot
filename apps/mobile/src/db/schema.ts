@@ -571,6 +571,31 @@ export const commercialReviewDecisions = sqliteTable(
     syncState: text("sync_state").notNull(),
   },
 );
+export const commercialExecutionTasks = sqliteTable(
+  "commercial_execution_tasks",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    planId: text("plan_id").notNull(),
+    planRevisionId: text("plan_revision_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    remotePayloadJson: text("remote_payload_json"),
+    remoteVersion: integer("remote_version"),
+    syncState: text("sync_state").notNull(),
+    dirty: integer("dirty").notNull(),
+  },
+);
+export const commercialExecutionHistory = sqliteTable(
+  "commercial_execution_history",
+  {
+    actionId: text("action_id").primaryKey(),
+    taskId: text("task_id").notNull(),
+    storeId: text("store_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    action: text("action").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+);
 export const commercialWeekPlans = sqliteTable("commercial_week_plans", {
   id: text("id").primaryKey(),
   storeId: text("store_id").notNull(),
@@ -720,6 +745,8 @@ export const commercialVisualReadings = sqliteTable(
 export const localSchema = {
   commercialVisualReadings,
   commercialOfferChoices,
+  commercialExecutionTasks,
+  commercialExecutionHistory,
   commercialWeekPlans,
   commercialPlanHistory,
   commercialPlanRevisions,

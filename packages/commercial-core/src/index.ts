@@ -17,3 +17,5 @@ export * from "./version-decision";
 export * from "./offer-validation";
 
 export * from "./week-plan";
+
+export * from "./execution-checklist";

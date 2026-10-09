@@ -1,4 +1,8 @@
 import {
+  serializeCommercialExecution,
+  type ExecutionTaskDocument,
+} from "../commercial/execution-sync.js";
+import {
   serializeCommercialPlan,
   serializeCommercialPlanRevision,
   type WeekPlanDocument,
@@ -113,6 +117,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "commercial_offer_choice") &&
               (query.commercialPreparation === "true" ||
                 change.entityType !== "commercial_week_preparation") &&
+              (query.commercialExecution === "true" ||
+                change.entityType !== "commercial_execution_task") &&
               (query.commercialVersions === "true" ||
                 change.entityType !== "commercial_version_decision") &&
               (query.commercialValidation === "true" ||
@@ -187,6 +193,22 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeCommercialVersionDecision(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "commercial_execution_task") {
+              const row = await mongoDatabase
+                .collection<ExecutionTaskDocument>("commercialExecutionTasks")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("COMMERCIAL_EXECUTION_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeCommercialExecution(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }
