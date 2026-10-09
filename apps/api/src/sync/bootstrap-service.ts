@@ -1,3 +1,7 @@
+import {
+  serializeNeedMembership,
+  type NeedMembershipDocument,
+} from "../need-membership-sync";
 import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync";
 import {
   serializeStoreContext,
@@ -214,6 +218,13 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const membershipRows =
+              query.needMemberships === "true"
+                ? await mongoDatabase
+                    .collection<NeedMembershipDocument>("needMemberships")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const executionTasks =
               query.commercialExecution === "true"
                 ? await mongoDatabase
@@ -327,6 +338,13 @@ export function createMongoSyncBootstrapService(
                 ...(query.needUnits === "true"
                   ? {
                       needUnitCatalogue: needUnitRows.map(serializeNeedUnit),
+                    }
+                  : {}),
+                ...(query.needMemberships === "true"
+                  ? {
+                      productNeedMemberships: membershipRows.map(
+                        serializeNeedMembership,
+                      ),
                     }
                   : {}),
                 ...(query.commercialExecution === "true"

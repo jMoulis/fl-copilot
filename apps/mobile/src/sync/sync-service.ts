@@ -1,3 +1,4 @@
+import { applyNeedMembership } from "../needs/membership-repository";
 import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
@@ -60,6 +61,7 @@ export interface MobileSyncServiceOptions {
   commercialExecution?: boolean;
   storeContext?: boolean;
   needUnits?: boolean;
+  needMemberships?: boolean;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
   commercialPlans?: boolean;
@@ -159,6 +161,12 @@ export class MobileSyncService {
           `need-units:${storeId}`,
         )
       : true;
+    const needMembershipsAdopted = this.options.needMemberships
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `need-memberships:${storeId}`,
+        )
+      : true;
     const executionAdopted = this.options.commercialExecution
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -193,6 +201,7 @@ export class MobileSyncService {
       !versionsAdopted ||
       !storeContextAdopted ||
       !needUnitsAdopted ||
+      !needMembershipsAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {
@@ -241,6 +250,7 @@ export class MobileSyncService {
                 "commercial_execution_task",
                 "store_context_settings",
                 "need_unit",
+                "need_membership",
                 "commercial_week_plan",
                 "commercial_version_decision",
               ].includes(item.entityType) &&
@@ -372,6 +382,13 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (command.entityType === "need_membership")
+            await applyNeedMembership(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              (command.payload as { version: number }).version,
+            );
           if (command.entityType === "commercial_execution_task")
             await applyCommercialExecution(
               transaction,
@@ -463,6 +480,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (command.entityType === "need_membership")
+            await transaction.runAsync(
+              "UPDATE need_memberships SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "commercial_execution_task")
             await transaction.runAsync(
               "UPDATE commercial_execution_tasks SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -512,6 +535,12 @@ export class MobileSyncService {
           if (command.entityType === "need_unit")
             await transaction.runAsync(
               "UPDATE need_units SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "need_membership")
+            await transaction.runAsync(
+              "UPDATE need_memberships SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );

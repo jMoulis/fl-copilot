@@ -1,3 +1,4 @@
+import { NeedMembershipConflict } from "@/needs/membership-conflict";
 import { NeedUnitConflict } from "@/needs/conflict";
 import { StoreContextConflict } from "@/store/context-conflict";
 import { CommercialExecutionConflict } from "@/commercial/execution-conflict";
@@ -59,7 +60,9 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          {conflict.entityType === "need_unit" ? (
+          {conflict.entityType === "need_membership" ? (
+            <NeedMembershipConflict conflict={conflict} />
+          ) : conflict.entityType === "need_unit" ? (
             <NeedUnitConflict conflict={conflict} />
           ) : conflict.entityType === "store_context_settings" ? (
             <StoreContextConflict conflict={conflict} />

@@ -1,3 +1,4 @@
+import { MembershipView } from "@/needs/membership-view";
 import { useCallback, useMemo, useState } from "react";
 import { Text, TextInput, View } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -255,6 +256,7 @@ export default function NeedUnitScreen() {
           />
         </SectionCard>
       )}
+      {record ? <MembershipView needUnitId={record.entity.id} /> : null}
       {error ? (
         <InlineAlert title="Enregistrement impossible" message={error} />
       ) : null}

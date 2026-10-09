@@ -28,3 +28,5 @@ export * from "./weekly-context";
 export * from "./commercial-reminder";
 
 export * from "./need-unit";
+
+export * from "./need-membership";

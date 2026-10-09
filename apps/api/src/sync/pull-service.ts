@@ -1,3 +1,7 @@
+import {
+  serializeNeedMembership,
+  type NeedMembershipDocument,
+} from "../need-membership-sync";
 import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync";
 import {
   serializeStoreContext,
@@ -128,6 +132,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "store_context_settings") &&
               (query.needUnits === "true" ||
                 change.entityType !== "need_unit") &&
+              (query.needMemberships === "true" ||
+                change.entityType !== "need_membership") &&
               (query.commercialVersions === "true" ||
                 change.entityType !== "commercial_version_decision") &&
               (query.commercialValidation === "true" ||
@@ -234,6 +240,22 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeNeedUnit(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "need_membership") {
+              const row = await mongoDatabase
+                .collection<NeedMembershipDocument>("needMemberships")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("NEED_MEMBERSHIP_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeNeedMembership(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }

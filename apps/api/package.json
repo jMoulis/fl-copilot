@@ -15,6 +15,7 @@
     "@fl-copilot/commercial-core": "workspace:*",
     "@fl-copilot/domain": "workspace:*",
     "@fl-copilot/import-core": "workspace:*",
+    "@fl-copilot/substitution-core": "workspace:*",
     "@fl-copilot/sync-contracts": "workspace:*",
     "@sentry/node": "^11.0.0",
     "@vercel/blob": "^2.3.0",
