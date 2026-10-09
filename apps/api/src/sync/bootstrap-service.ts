@@ -1,3 +1,4 @@
+import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync";
 import {
   serializeStoreContext,
   type StoreContextDocument,
@@ -206,6 +207,13 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const needUnitRows =
+              query.needUnits === "true"
+                ? await mongoDatabase
+                    .collection<NeedUnitDocument>("needUnits")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const executionTasks =
               query.commercialExecution === "true"
                 ? await mongoDatabase
@@ -314,6 +322,11 @@ export function createMongoSyncBootstrapService(
                       storeContextSettings: contextSettings.map(
                         serializeStoreContext,
                       ),
+                    }
+                  : {}),
+                ...(query.needUnits === "true"
+                  ? {
+                      needUnitCatalogue: needUnitRows.map(serializeNeedUnit),
                     }
                   : {}),
                 ...(query.commercialExecution === "true"

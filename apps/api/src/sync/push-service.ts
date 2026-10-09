@@ -1,3 +1,4 @@
+import { applyNeedUnitCommand } from "../need-unit-sync";
 import { applyStoreContextCommand } from "../store-context-sync.js";
 import { applyCommercialExecutionCommand } from "../commercial/execution-sync.js";
 import { applyCommercialPlanCommand } from "../commercial/week-plan-sync.js";
@@ -141,6 +142,14 @@ async function applyCommand(
     );
   if (command.type === "STORE_CONTEXT_SETTINGS_UPSERT")
     return applyStoreContextCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
+  if (command.type === "NEED_UNIT_UPSERT")
+    return applyNeedUnitCommand(
       context,
       storeId,
       command,

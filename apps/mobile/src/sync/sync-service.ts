@@ -1,3 +1,4 @@
+import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
 import { applyCommercialPlan } from "../commercial/week-plan-repository";
@@ -58,6 +59,7 @@ export interface MobileSyncServiceOptions {
   commercialPreparation?: boolean;
   commercialExecution?: boolean;
   storeContext?: boolean;
+  needUnits?: boolean;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
   commercialPlans?: boolean;
@@ -151,6 +153,12 @@ export class MobileSyncService {
           `store-context:${storeId}`,
         )
       : true;
+    const needUnitsAdopted = this.options.needUnits
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `need-units:${storeId}`,
+        )
+      : true;
     const executionAdopted = this.options.commercialExecution
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -184,6 +192,7 @@ export class MobileSyncService {
       !validationAdopted ||
       !versionsAdopted ||
       !storeContextAdopted ||
+      !needUnitsAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {
@@ -231,6 +240,7 @@ export class MobileSyncService {
                 "commercial_week_preparation",
                 "commercial_execution_task",
                 "store_context_settings",
+                "need_unit",
                 "commercial_week_plan",
                 "commercial_version_decision",
               ].includes(item.entityType) &&
@@ -355,6 +365,13 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (command.entityType === "need_unit")
+            await applyNeedUnit(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              (command.payload as { version: number }).version,
+            );
           if (command.entityType === "commercial_execution_task")
             await applyCommercialExecution(
               transaction,
@@ -440,6 +457,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (command.entityType === "need_unit")
+            await transaction.runAsync(
+              "UPDATE need_units SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "commercial_execution_task")
             await transaction.runAsync(
               "UPDATE commercial_execution_tasks SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -483,6 +506,12 @@ export class MobileSyncService {
           if (command.entityType === "store_context_settings")
             await transaction.runAsync(
               "UPDATE store_context_settings SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "need_unit")
+            await transaction.runAsync(
+              "UPDATE need_units SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );

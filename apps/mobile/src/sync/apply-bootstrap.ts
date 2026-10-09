@@ -1,3 +1,4 @@
+import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
 import {
@@ -74,6 +75,15 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `store-context:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    for (const prep of bootstrap.entities.needUnitCatalogue ?? [])
+      await applyNeedUnit(transaction, storeId, prep);
+    if (bootstrap.entities.needUnitCatalogue)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `need-units:${storeId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -182,6 +192,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialWeekPreparations",
     "commercialExecutionTasks",
     "storeContextSettings",
+    "needUnitCatalogue",
     "commercialVersionDecisions",
     "commercialValidatedOffers",
     "commercialWeekPlans",

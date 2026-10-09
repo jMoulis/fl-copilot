@@ -473,6 +473,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 25,
+    name: "need_unit_catalogue",
+    async up(db) {
+      await db
+        .collection("needUnits")
+        .createIndex(
+          { storeId: 1, code: 1 },
+          { unique: true, name: "need_unit_store_code" },
+        );
+      await db
+        .collection("needUnitHistory")
+        .createIndex(
+          { storeId: 1, needUnitId: 1, version: 1 },
+          { unique: true, name: "need_unit_history_revision" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

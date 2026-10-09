@@ -1,6 +1,6 @@
 # Product roadmap
 
-Date: 2026-10-07.
+Date: 2026-10-09.
 
 ## Product objective
 
@@ -26,7 +26,7 @@ M2 still has two cross-platform follow-ups:
 - exercise one controlled real `DIFFERENCE` on the target iPhone and verify that acknowledging it never mutates published observations;
 - repeat the XLSX, publication, upload, verification and memory acceptance on representative Android hardware.
 
-M4 receipt capture, extraction, validation, publication and recovery have been accepted on iPhone, including cashier-number confirmation on 2026-10-07. Explicit label memory has also been accepted on iPhone. M5 commercial planning is in progress: PDF capture/upload and the eight-page pilot extraction are accepted in production. Source-anchored drafts, mechanism normalization and conservative reconciliation are implemented; the review UX is being changed to a commercial brief after the pilot rejected a 140-item acknowledgement queue. Canonical operation validation, the weekly plan and execution checklist remain pending. The receipt selling-value KPI is automatically verified; a dedicated selling-value-by-date inspection UI remains a follow-up.
+M4 receipt capture, extraction, validation, publication and recovery have been accepted on iPhone, including cashier-number confirmation and explicit label memory. The M5 functional minimum is now accepted on iPhone: source-anchored commercial brief, retained offers, corrected-source preference, validated weekly plan/history, offline execution checklist, fixed store settings, cached weather/calendars and optional device-local reminders. This is functional field-beta acceptance, not the final UX/pilot or Android acceptance. M6 begins with the editable customer-need catalogue; product memberships and directed substitution evidence follow. The full conversational Copilot remains in M7. The receipt selling-value-by-date inspection and broader UX refinements remain tracked follow-ups.
 
 ## Milestones
 
@@ -37,8 +37,8 @@ M4 receipt capture, extraction, validation, publication and recovery have been a
 | M2 — Product Master and Mercalys     | Complete on iOS | Trusted products and daily Mercalys sales/waste observations with source lineage and reconciliation  | Offline publication, restart persistence, reconnect, private upload and remote verification on iPhone Air        |
 | M3 — Analytics and Aujourd’hui       | Complete on iOS | Deterministic daily KPI, comparisons, quality signals and at most three priorities from SQLite       | Golden local/remote parity, offline Aujourd’hui and deterministic signal detail validated on iPhone Air          |
 | M4 — Waste receipt workflow          | Complete on iOS | Photograph or import a waste receipt offline, validate assisted extraction and publish trusted waste | Offline capture survives restart; upload, extraction, validation and KPI update complete after reconnect         |
-| M5 — Commercial planning             | In progress     | Import weekly commercial PDFs, validate operations and use Ma semaine offline                        | Validated plan, operation detail and execution checklist remain usable offline and synchronize later             |
-| M6 — Need Units and substitution     | Planned         | Record customer needs, directed substitutes and field events such as tension or stockout             | Offline event and substitute lookup later produce an auditable remote evidence update                            |
+| M5 — Commercial planning             | Complete on iOS | Import weekly commercial PDFs, validate operations and use Ma semaine offline                        | Validated plan, operation detail and execution checklist remain usable offline and synchronize later             |
+| M6 — Need Units and substitution     | In progress     | Record customer needs, directed substitutes and field events such as tension or stockout             | Offline event and substitute lookup later produce an auditable remote evidence update                            |
 | M7 — Copilot decisions and execution | Planned         | Show grounded French recommendations, record decisions and track execution separately                | Maximum three priorities, no unsupported number, offline decisions and deterministic fallback during AI outage   |
 | M8 — Pilot release                   | Planned         | Secure, observable and recoverable iOS/Android pilot distribution                                    | Full offline/conflict matrix, recovery, accessibility, performance, security, backups and release checklist pass |
 
@@ -298,3 +298,7 @@ The pilot accepted weather/calendars on iPhone. Optional local reminders now tar
 ### UX acceptance before the pilot
 
 The product owner reiterates that the functional screens remain too dense. Reserve a dedicated cross-flow UX review before pilot release: simplify the weekly plan, imports/reviews, waste forms and reminder settings; progressively reveal secondary information; reduce steps and harmonize visual hierarchy, colours, typography and navigation. Validate proposed journeys with the owner and real field usage rather than treating functional test success as UX acceptance.
+
+### Customer-need catalogue — M6-T01
+
+The owner accepted local reminders on iPhone after PR #105, completing the M5 functional minimum. M6 starts with `Plus → Unités de besoin`: create, rename, describe, review and deactivate a store-specific customer purchase intention. Nothing is seeded automatically, no products are assigned yet and no substitution/AI score is invented. UUIDs and confirmed codes remain stable; inactive units remain available for history. Local edits survive restart and synchronize with audit and explicit conflict resolution. A rejected duplicate draft remains editable without hiding the confirmed catalogue. Physical acceptance remains pending. Next: many-to-many product memberships (M6-T02), then directed substitution relationships (M6-T03).

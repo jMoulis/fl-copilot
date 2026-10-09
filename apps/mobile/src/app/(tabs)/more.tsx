@@ -78,6 +78,14 @@ export default function MoreScreen() {
           onPress={() => router.push("/store-settings")}
         />
       </SectionCard>
+      <SectionCard title="Besoins clients">
+        <MenuRow
+          title="Unités de besoin"
+          description="Salade, apéritif et autres usages des clients"
+          icon="people-outline"
+          onPress={() => router.push("/need-units")}
+        />
+      </SectionCard>
       <SectionCard title="Rappels">
         <MenuRow
           title="Rappels sur ce téléphone"
