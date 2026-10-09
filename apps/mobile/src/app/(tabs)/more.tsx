@@ -70,6 +70,14 @@ export default function MoreScreen() {
         />
       </SectionCard>
 
+      <SectionCard title="Magasin">
+        <MenuRow
+          title="Mon magasin"
+          description="Commune, position et zone de vacances scolaires"
+          icon="storefront-outline"
+          onPress={() => router.push("/store-settings")}
+        />
+      </SectionCard>
       <SectionCard title="Compte et application">
         <Text className="text-sm leading-5 text-muted">Compte connecté</Text>
         <Text className="text-base font-semibold text-ink">

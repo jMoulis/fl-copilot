@@ -1,3 +1,4 @@
+import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
 import {
   applyCommercialPlan,
@@ -64,6 +65,15 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `commercial-versions:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    for (const prep of bootstrap.entities.storeContextSettings ?? [])
+      await applyStoreContext(transaction, storeId, prep);
+    if (bootstrap.entities.storeContextSettings)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `store-context:${storeId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -171,6 +181,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialOfferChoices",
     "commercialWeekPreparations",
     "commercialExecutionTasks",
+    "storeContextSettings",
     "commercialVersionDecisions",
     "commercialValidatedOffers",
     "commercialWeekPlans",

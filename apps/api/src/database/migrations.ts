@@ -443,6 +443,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 23,
+    name: "store_context_settings",
+    async up(db) {
+      await db
+        .collection("storeContextSettings")
+        .createIndex(
+          { storeId: 1 },
+          { unique: true, name: "store_context_owner" },
+        );
+      await db
+        .collection("storeContextHistory")
+        .createIndex(
+          { storeId: 1, version: 1 },
+          { unique: true, name: "store_context_history" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

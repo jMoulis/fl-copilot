@@ -675,6 +675,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "commercial_execution_tasks",
     sql: `CREATE TABLE commercial_execution_tasks(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,plan_id TEXT NOT NULL,plan_revision_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX commercial_execution_revision ON commercial_execution_tasks(store_id,plan_revision_id); CREATE TABLE commercial_execution_history(action_id TEXT PRIMARY KEY NOT NULL,task_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 24,
+    name: "store_context_settings",
+    sql: `CREATE TABLE store_context_settings(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE TABLE store_context_history(action_id TEXT PRIMARY KEY NOT NULL,settings_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

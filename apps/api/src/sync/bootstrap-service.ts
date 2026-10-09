@@ -1,4 +1,8 @@
 import {
+  serializeStoreContext,
+  type StoreContextDocument,
+} from "../store-context-sync.js";
+import {
   serializeCommercialExecution,
   type ExecutionTaskDocument,
 } from "../commercial/execution-sync.js";
@@ -195,6 +199,13 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const contextSettings =
+              query.storeContext === "true"
+                ? await mongoDatabase
+                    .collection<StoreContextDocument>("storeContextSettings")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const executionTasks =
               query.commercialExecution === "true"
                 ? await mongoDatabase
@@ -295,6 +306,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialVersionDecisions: versionDecisions.map(
                         serializeCommercialVersionDecision,
+                      ),
+                    }
+                  : {}),
+                ...(query.storeContext === "true"
+                  ? {
+                      storeContextSettings: contextSettings.map(
+                        serializeStoreContext,
                       ),
                     }
                   : {}),

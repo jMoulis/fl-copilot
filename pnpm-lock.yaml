@@ -183,6 +183,9 @@ importers:
       expo-linking:
         specifier: ~57.0.11
         version: 57.0.11(expo@57.0.26)(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
+      expo-location:
+        specifier: ~57.0.20
+        version: 57.0.20(expo@57.0.26)(typescript@6.0.3)
       expo-router:
         specifier: ~57.0.24
         version: 57.0.24(hh37mbgwawk7zpqh2a4xy4t264)
@@ -4145,6 +4148,11 @@ packages:
     peerDependencies:
       react: '*'
       react-native: '*'
+
+  expo-location@57.0.20:
+    resolution: {integrity: sha512-E9cr7A5eQS91bm3McMx3FiWy7SCorVTPLq9gLFFW+7dfuSqQp5FLNBZQ6NFJaS8tVhCyl2WyKMFh0TAo/+7K9Q==}
+    peerDependencies:
+      expo: '*'
 
   expo-manifests@57.0.2:
     resolution: {integrity: sha512-pPIIcKR73OShwlWMg8H90WRzKUd2krDdKlKAwuQV1FtUwE7H3hQEFw0ePFQY9yFoGMF/77ryYwNKfI5umMcCog==}
@@ -9140,9 +9148,7 @@ snapshots:
       metro-runtime: 0.84.5
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 
@@ -10625,6 +10631,14 @@ snapshots:
     transitivePeerDependencies:
       - expo
       - supports-color
+
+  expo-location@57.0.20(expo@57.0.26)(typescript@6.0.3):
+    dependencies:
+      '@expo/image-utils': 0.11.5(typescript@6.0.3)
+      expo: 57.0.26(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(@expo/metro-runtime@57.0.16)(expo-router@57.0.24)(react-dom@19.2.3(react@19.2.3))(react-native-web@0.21.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-native-worklets@0.10.1(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3))(react-native@0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.86.3(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
+    transitivePeerDependencies:
+      - supports-color
+      - typescript
 
   expo-manifests@57.0.2(expo@57.0.26):
     dependencies:
