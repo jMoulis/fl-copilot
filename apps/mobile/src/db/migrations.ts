@@ -690,6 +690,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "device_commercial_reminders",
     sql: `CREATE TABLE device_reminder_preferences(store_id TEXT PRIMARY KEY NOT NULL,enabled INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL); CREATE TABLE device_commercial_reminders(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,operation_id TEXT NOT NULL,payload_json TEXT NOT NULL,status TEXT NOT NULL,notification_id TEXT,UNIQUE(store_id,operation_id)); CREATE TABLE device_reminder_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 27,
+    name: "need_units",
+    sql: `CREATE TABLE need_units(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,code TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE UNIQUE INDEX need_unit_store_code ON need_units(store_id,code) WHERE dirty=0; CREATE TABLE need_unit_history(action_id TEXT PRIMARY KEY NOT NULL,need_unit_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

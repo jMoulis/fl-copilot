@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   primaryKey,
@@ -800,7 +801,35 @@ export const deviceReminderHistory = sqliteTable("device_reminder_history", {
   payloadJson: text("payload_json").notNull(),
   createdAt: text("created_at").notNull(),
 });
+export const needUnits = sqliteTable(
+  "need_units",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    code: text("code").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    remotePayloadJson: text("remote_payload_json"),
+    remoteVersion: integer("remote_version"),
+    syncState: text("sync_state").notNull(),
+    dirty: integer("dirty").notNull(),
+  },
+  (t) => [
+    uniqueIndex("need_unit_store_code")
+      .on(t.storeId, t.code)
+      .where(sql`${t.dirty}=0`),
+  ],
+);
+export const needUnitHistory = sqliteTable("need_unit_history", {
+  actionId: text("action_id").primaryKey(),
+  needUnitId: text("need_unit_id").notNull(),
+  storeId: text("store_id").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  action: text("action").notNull(),
+  createdAt: text("created_at").notNull(),
+});
 export const localSchema = {
+  needUnits,
+  needUnitHistory,
   deviceReminderPreferences,
   deviceCommercialReminders,
   deviceReminderHistory,

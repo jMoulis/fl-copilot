@@ -16,6 +16,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     commercial_offer_choice: "Choix d’offre commerciale",
     commercial_week_preparation: "Préparation de semaine",
     commercial_execution_task: "Suivi d’exécution",
+    need_unit: "Unité de besoin",
     store_context_settings: "Réglages du magasin",
     commercial_week_plan: "Plan commercial validé",
     commercial_version_decision: "Référence PDF",

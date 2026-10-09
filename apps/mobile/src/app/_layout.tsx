@@ -57,6 +57,8 @@ function RootLayout() {
         <Stack.Screen name="commercial-plan" />
         <Stack.Screen name="store-settings" />
         <Stack.Screen name="reminder-settings" />
+        <Stack.Screen name="need-units" />
+        <Stack.Screen name="need-unit/[id]" />
         <Stack.Screen name="commercial-operation/[id]" />
         <Stack.Screen name="commercial-comparison" />
       </Stack>

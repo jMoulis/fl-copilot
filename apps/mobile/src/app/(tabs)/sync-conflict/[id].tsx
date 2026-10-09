@@ -1,3 +1,4 @@
+import { NeedUnitConflict } from "@/needs/conflict";
 import { StoreContextConflict } from "@/store/context-conflict";
 import { CommercialExecutionConflict } from "@/commercial/execution-conflict";
 import { CommercialVersionDecisionConflict } from "@/commercial/version-decision-conflict";
@@ -58,7 +59,9 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          {conflict.entityType === "store_context_settings" ? (
+          {conflict.entityType === "need_unit" ? (
+            <NeedUnitConflict conflict={conflict} />
+          ) : conflict.entityType === "store_context_settings" ? (
             <StoreContextConflict conflict={conflict} />
           ) : conflict.entityType === "commercial_execution_task" ? (
             <CommercialExecutionConflict conflict={conflict} />
