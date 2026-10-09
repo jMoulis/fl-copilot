@@ -54,6 +54,7 @@ export default function NeedUnitScreen() {
                 setCode(v.entity.code);
                 setDescription(v.entity.description ?? "");
                 setStatus(v.entity.status);
+                setMessage(undefined);
                 setManualCode(true);
               }
             }
@@ -177,8 +178,10 @@ export default function NeedUnitScreen() {
           <Text className="text-ink">Nom du besoin</Text>
           <TextInput
             accessibilityLabel="Nom du besoin client"
+            editable={!busy}
             value={name}
             onChangeText={(v) => {
+              setMessage(undefined);
               setName(v);
               if (canCode && !manualCode) setCode(normalizeNeedUnitCode(v));
             }}
@@ -192,10 +195,11 @@ export default function NeedUnitScreen() {
           <Text className="text-ink">Code interne</Text>
           <TextInput
             accessibilityLabel="Code interne du besoin client"
-            editable={canCode}
+            editable={canCode && !busy}
             autoCapitalize="characters"
             value={code}
             onChangeText={(v) => {
+              setMessage(undefined);
               setManualCode(true);
               setCode(normalizeNeedUnitCode(v));
             }}
@@ -214,7 +218,11 @@ export default function NeedUnitScreen() {
           <TextInput
             accessibilityLabel="Description du besoin client"
             value={description}
-            onChangeText={setDescription}
+            onChangeText={(v) => {
+              setDescription(v);
+              setMessage(undefined);
+            }}
+            editable={!busy}
             multiline
             className={`rounded-xl border p-3 text-ink ${issues.description ? "border-danger" : "border-line"}`}
           />
@@ -229,7 +237,11 @@ export default function NeedUnitScreen() {
               <SecondaryButton
                 key={s}
                 label={`${status === s ? "✓ " : ""}${{ ACTIVE: "Active", TO_REVIEW: "À revoir", INACTIVE: "Désactivée" }[s]}`}
-                onPress={() => setStatus(s)}
+                disabled={busy}
+                onPress={() => {
+                  setStatus(s);
+                  setMessage(undefined);
+                }}
               />
             ))}
           </View>
