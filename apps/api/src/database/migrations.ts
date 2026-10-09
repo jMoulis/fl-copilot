@@ -461,6 +461,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 24,
+    name: "context_provider_cache",
+    async up(db) {
+      await db
+        .collection("contextProviderCache")
+        .createIndex(
+          { url: 1 },
+          { unique: true, name: "context_provider_url" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

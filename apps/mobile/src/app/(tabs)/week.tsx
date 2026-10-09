@@ -1,3 +1,4 @@
+import { WeeklyContextView } from "@/store/weekly-context-view";
 import { CommercialVersionDecisionList } from "@/commercial/version-decision-list";
 import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
 import { CommercialReviewRepository } from "@/commercial/review-repository";
@@ -186,6 +187,7 @@ export default function WeekScreen() {
         onPress={() => router.push("/commercial-comparison")}
       />
       {storeId ? <CommercialVersionDecisionList storeId={storeId} /> : null}
+      {storeId ? <WeeklyContextView storeId={storeId} /> : null}
       <SectionCard
         title="Documents commerciaux"
         description="Conservez les PDF du rayon sur cet appareil, même hors connexion."

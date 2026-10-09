@@ -680,6 +680,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "store_context_settings",
     sql: `CREATE TABLE store_context_settings(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE TABLE store_context_history(action_id TEXT PRIMARY KEY NOT NULL,settings_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 25,
+    name: "weekly_context_cache",
+    sql: `CREATE TABLE weekly_context_cache(store_id TEXT NOT NULL,week_start TEXT NOT NULL,settings_fingerprint TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,week_start,settings_fingerprint));`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -1,4 +1,8 @@
 import {
+  weeklyContextSchema,
+  type WeeklyContext,
+} from "@fl-copilot/sync-contracts";
+import {
   commercialOriginalLinkSchema,
   type CommercialOriginalLink,
 } from "@fl-copilot/sync-contracts";
@@ -42,6 +46,13 @@ export class ApiClientError extends Error {
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
+  weeklyContext(accessToken: string, storeId: string, weekStart: string) {
+    return this.request(
+      `/api/v1/store/context?${new URLSearchParams({ weekStart })}`,
+      { method: "GET", headers: syncHeaders(accessToken, storeId) },
+      weeklyContextSchema,
+    ) as Promise<WeeklyContext>;
+  }
   requestLoginCode(input: AuthChallengeRequest) {
     return this.request(
       "/api/v1/auth/challenges",
