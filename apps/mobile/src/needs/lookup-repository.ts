@@ -6,7 +6,7 @@ import { NeedUnitRepository } from "./repository";
 import { substitutionIdentifierLabels } from "./substitution-details";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
-const readOnly = () => {
+export const substituteReadOnly = () => {
   throw Error("SUBSTITUTE_LOOKUP_READ_ONLY");
 };
 export class SubstituteLookupRepository {
@@ -32,21 +32,14 @@ async function readSnapshot(
   needUnitId: string | undefined,
   at: string,
 ) {
-  // Bind the transaction's readers; existing repository writers cannot be invoked here.
-  const reader: OutboxDatabase & AtomicMutationDatabase = {
-    getFirstAsync: tx.getFirstAsync.bind(tx),
-    getAllAsync: tx.getAllAsync.bind(tx),
-    runAsync: async () => readOnly(),
-    withExclusiveTransactionAsync: async () => readOnly(),
-  };
+  const reader = substituteReadOnlyReader(tx);
   const products = new ProductMasterRepository(reader);
   const [p, n, r, e, identifiers] = await Promise.all([
     products.listProducts(storeId),
     new NeedUnitRepository(reader).list(storeId),
-    new ProductSubstitutionRepository(reader, async () => readOnly()).forSource(
-      storeId,
-      productId,
-    ),
+    new ProductSubstitutionRepository(reader, async () =>
+      substituteReadOnly(),
+    ).forSource(storeId, productId),
     new StoreProductEventRepository(reader).list(storeId),
     products.listIdentifiersByStore(storeId),
   ]);
@@ -73,5 +66,16 @@ async function readSnapshot(
           r.some((r) => r.entity.needUnitId === n.entity.id),
       )
       .map((n) => n.entity),
+  };
+}
+
+export function substituteReadOnlyReader(
+  tx: OutboxDatabase,
+): OutboxDatabase & AtomicMutationDatabase {
+  return {
+    getFirstAsync: tx.getFirstAsync.bind(tx),
+    getAllAsync: tx.getAllAsync.bind(tx),
+    runAsync: async () => substituteReadOnly(),
+    withExclusiveTransactionAsync: async () => substituteReadOnly(),
   };
 }

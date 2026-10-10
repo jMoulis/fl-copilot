@@ -1,3 +1,5 @@
+import { WeeklySubstitutesView } from "@/commercial/substitute-view";
+import { currentCommercialWeek } from "@fl-copilot/commercial-core";
 import { WeeklyContextView } from "@/store/weekly-context-view";
 import { CommercialVersionDecisionList } from "@/commercial/version-decision-list";
 import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
@@ -188,6 +190,12 @@ export default function WeekScreen() {
       />
       {storeId ? <CommercialVersionDecisionList storeId={storeId} /> : null}
       {storeId ? <WeeklyContextView storeId={storeId} /> : null}
+      {storeId ? (
+        <WeeklySubstitutesView
+          storeId={storeId}
+          weekStart={currentCommercialWeek().start}
+        />
+      ) : null}
       <SectionCard
         title="Documents commerciaux"
         description="Conservez les PDF du rayon sur cet appareil, même hors connexion."

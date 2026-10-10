@@ -1,3 +1,4 @@
+import { WeeklySubstitutesView } from "@/commercial/substitute-view";
 import { CommercialExecutionView } from "@/commercial/execution-view";
 import { useSync } from "@/sync/sync-provider";
 import { useCallback, useMemo, useState } from "react";
@@ -167,6 +168,13 @@ export default function CommercialPlanScreen() {
             />
           )}
           <CommercialPlanContent plan={archive ?? record.entity} />
+          {!archive && storeId ? (
+            <WeeklySubstitutesView
+              storeId={storeId}
+              weekStart={record.entity.weekStart}
+              plan={record.entity}
+            />
+          ) : null}
           <CommercialExecutionView plan={archive ?? record.entity} />
           <SectionCard title="Versions synchronisées du plan">
             {revisions.map((r) => (
