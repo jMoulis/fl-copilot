@@ -1,3 +1,4 @@
+import { SubstitutionView } from "@/needs/substitution-view";
 import { MembershipView } from "@/needs/membership-view";
 import { Text } from "react-native";
 import { router, useLocalSearchParams, type Href } from "expo-router";
@@ -50,7 +51,11 @@ export default function ProductEditorScreen() {
       ) : null}
 
       {productId && snapshot && !storeMissing ? (
-        <MembershipView productId={productId} />
+        <>
+          {" "}
+          <MembershipView productId={productId} />
+          <SubstitutionView productId={productId} />
+        </>
       ) : null}
       {storeMissing ? (
         <InlineAlert
