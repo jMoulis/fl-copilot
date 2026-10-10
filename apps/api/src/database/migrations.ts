@@ -590,22 +590,20 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .project<{ _id: string; storeId: string }>({ _id: 1, storeId: 1 })
         .toArray();
       for (const event of events)
-        await db
-          .collection("substitutionEvidenceWork")
-          .updateOne(
-            { _id: event._id, storeId: event.storeId } as never,
-            {
-              $setOnInsert: {
-                eventId: event._id,
-                storeId: event.storeId,
-                generation: 1,
-                nextAttemptAt: new Date(0),
-                leaseUntil: null,
-                leaseId: null,
-              },
+        await db.collection("substitutionEvidenceWork").updateOne(
+          { _id: event._id, storeId: event.storeId } as never,
+          {
+            $setOnInsert: {
+              eventId: event._id,
+              storeId: event.storeId,
+              generation: 1,
+              nextAttemptAt: new Date(0),
+              leaseUntil: null,
+              leaseId: null,
             },
-            { upsert: true },
-          );
+          },
+          { upsert: true },
+        );
     },
   },
 ];
