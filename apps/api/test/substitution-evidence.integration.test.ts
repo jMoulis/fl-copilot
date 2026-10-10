@@ -603,17 +603,15 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       const work = await f.db
         .collection<EvidenceWork>("substitutionEvidenceWork")
         .findOne({ _id: second.id });
-      await f.db
-        .collection<EvidenceWork>("substitutionEvidenceWork")
-        .updateOne(
-          { _id: second.id },
-          {
-            $set: {
-              processedGeneration: work!.generation,
-              lastError: "PROCESSING_UNAVAILABLE",
-            },
+      await f.db.collection<EvidenceWork>("substitutionEvidenceWork").updateOne(
+        { _id: second.id },
+        {
+          $set: {
+            processedGeneration: work!.generation,
+            lastError: "PROCESSING_UNAVAILABLE",
           },
-        );
+        },
+      );
       await f.due();
       await f.processor.process(f.need.storeId, f.event.id);
       expect(
