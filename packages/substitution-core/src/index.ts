@@ -119,3 +119,5 @@ export * from "./evidence";
 export * from "./scoring";
 
 export * from "./lookup";
+
+export * from "./promotion-overlap";

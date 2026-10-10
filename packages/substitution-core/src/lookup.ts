@@ -76,6 +76,21 @@ function declaredFit(r: ProductSubstitution, p: SubstitutionScorePolicy) {
     }
   return total / weight;
 }
+/** Read-only ordering indicator; null learned score remains a distinct declared basis. */
+export function substitutionBehaviouralFit(
+  relation: ProductSubstitution,
+  policy: SubstitutionScorePolicy = conservativeSubstitutionScorePolicy,
+) {
+  const r = productSubstitutionSchema.parse(relation),
+    p = substitutionScorePolicySchema.parse(policy);
+  return {
+    fit: Math.round((r.relationshipScore ?? declaredFit(r, p)) * 1e8) / 1e8,
+    basis:
+      r.relationshipScore === null
+        ? ("DECLARED" as const)
+        : ("LEARNED" as const),
+  };
+}
 /** Read-only directed lookup. No margin, price forecast, stock amount or AI input determines behavioural order. */
 export function lookupSubstitutes(input: {
   storeId: string;
@@ -165,9 +180,7 @@ export function lookupSubstitutes(input: {
     const row: LookupRelation = {
       relation: r,
       syncState: record.syncState,
-      fit:
-        Math.round((r.relationshipScore ?? declaredFit(r, policy)) * 1e8) / 1e8,
-      basis: r.relationshipScore === null ? "DECLARED" : "LEARNED",
+      ...substitutionBehaviouralFit(r, policy),
     };
     const old = groups.get(r.substituteProductId);
     if (old) old.relationships.push(row);
