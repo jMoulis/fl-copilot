@@ -117,3 +117,5 @@ export { prepareProductSubstitutionBatch } from "./substitution-batch";
 export * from "./evidence";
 
 export * from "./scoring";
+
+export * from "./lookup";
