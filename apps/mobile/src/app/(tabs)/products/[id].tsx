@@ -38,6 +38,17 @@ export default function ProductEditorScreen() {
 
       {productId && snapshot && !storeMissing ? (
         <SecondaryButton
+          label="Trouver un remplaçant"
+          onPress={() =>
+            router.push({
+              pathname: "/substitutes",
+              params: { productId },
+            } as Href)
+          }
+        />
+      ) : null}
+      {productId && snapshot && !storeMissing ? (
+        <SecondaryButton
           label="Signaler"
           onPress={() =>
             router.push({

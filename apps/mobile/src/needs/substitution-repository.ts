@@ -105,6 +105,14 @@ export class ProductSubstitutionRepository {
     );
     return rows.map(mapped);
   }
+  async forSource(storeId: string, productId: string) {
+    const rows = await this.db.getAllAsync<Row>(
+      "SELECT p.* FROM product_substitutions p WHERE p.store_id=? AND p.source_product_id=? ORDER BY id",
+      storeId,
+      productId,
+    );
+    return rows.map(mapped);
+  }
   async get(storeId: string, id: string) {
     const row = await this.db.getFirstAsync<Row>(
       "SELECT p.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=p.store_id AND o.entity_id=p.id AND o.entity_type='product_substitution' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM product_substitutions p WHERE p.store_id=? AND p.id=?",

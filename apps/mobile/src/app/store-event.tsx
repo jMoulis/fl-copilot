@@ -321,6 +321,15 @@ export default function StoreEventEditor() {
           </SectionCard>
           {record ? (
             <>
+              <SecondaryButton
+                label="Trouver un remplaçant"
+                onPress={() =>
+                  router.push({
+                    pathname: "/substitutes",
+                    params: { productId: record.entity.productId },
+                  } as Href)
+                }
+              />
               <SectionCard title="Observation conservée">
                 <Text className="text-ink">
                   {storeEventSummary(record.entity)}
