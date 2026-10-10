@@ -75,6 +75,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         push: (request) =>
@@ -86,6 +87,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -120,6 +122,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         productSubstitutions: true,
         storeProductEvents: true,
         substitutionEvidence: true,
+        substitutionScores: true,
       },
     );
   }, [database.deviceId, database.sqlite, hasLocalSession, withAccessToken]);

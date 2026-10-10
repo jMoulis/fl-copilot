@@ -1,3 +1,4 @@
+import { applySubstitutionScoreHistory } from "../needs/score-repository";
 import {
   applySubstitutionEvidence,
   applySubstitutionEvidenceState,
@@ -118,6 +119,15 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `store-product-events:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    for (const e of bootstrap.entities.substitutionScoreHistory ?? [])
+      await applySubstitutionScoreHistory(transaction, storeId, e);
+    if (bootstrap.entities.substitutionScoreHistory)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `substitution-scores:${storeId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -244,6 +254,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "productNeedMemberships",
     "directedProductSubstitutions",
     "productStoreEvents",
+    "substitutionScoreHistory",
     "dailySubstitutionEvidence",
     "dailySubstitutionEvidenceStates",
     "commercialVersionDecisions",

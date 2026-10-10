@@ -24,6 +24,7 @@ it("keeps optional unknown compatibilities distinct from declared zero, accepts 
   });
   expect(substitutionPercent(null)).toBe("Indisponible");
   expect(substitutionPercent(0)).toBe("0 %");
+  expect(substitutionPercent(0.004)).toBe("Moins de 1 %");
 });
 it("identifies each missing/invalid field instead of silently assigning a score", () => {
   const r = validateSubstitutionForm({

@@ -85,7 +85,7 @@ export async function applyProductSubstitutionCommand(
         error: {
           code: "PRODUCT_SUBSTITUTION_VERSION_CONFLICT",
           messageFr:
-            "Cette relation a changé sur un autre appareil. Comparez les deux versions.",
+            "Cette relation ou ses indices synchronisés ont changé. Comparez les deux versions.",
           retryable: false,
           requestId,
         },

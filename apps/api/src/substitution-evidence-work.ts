@@ -71,7 +71,12 @@ export async function queueSubstitutionEvidence(
   ctx: MongoCommandMutationContext,
   change: SyncChangeDocument,
 ) {
-  if (!relevant.has(change.entityType)) return;
+  if (
+    !relevant.has(change.entityType) ||
+    (change.entityType === "product_substitution" &&
+      change.payloadRevision === "substitution-score.v1")
+  )
+    return;
   const jobs = ctx.database.collection<EvidenceWork>(
       "substitutionEvidenceWork",
     ),
@@ -91,22 +96,19 @@ export async function queueSubstitutionEvidence(
       },
       { upsert: true, session: ctx.session },
     );
-  } else
-    await jobs.updateMany(
-      { storeId: change.storeId },
-      { $inc: { generation: 1 }, $set: { nextAttemptAt: change.changedAt } },
-      { session: ctx.session },
-    );
-  const scopes = eventChange
-    ? await jobs
-        .find(
-          { _id: change.entityId, storeId: change.storeId },
-          { session: ctx.session },
-        )
-        .toArray()
-    : await jobs
-        .find({ storeId: change.storeId }, { session: ctx.session })
-        .toArray();
+  }
+  // A newly captured/closed incident may invalidate another incident's baseline.
+  await jobs.updateMany(
+    {
+      storeId: change.storeId,
+      ...(eventChange ? { _id: { $ne: change.entityId } } : {}),
+    },
+    { $inc: { generation: 1 }, $set: { nextAttemptAt: change.changedAt } },
+    { session: ctx.session },
+  );
+  const scopes = await jobs
+    .find({ storeId: change.storeId }, { session: ctx.session })
+    .toArray();
   for (const scope of scopes) {
     const old = await ctx.database
       .collection<EvidenceStateDocument>("substitutionEvidenceStates")

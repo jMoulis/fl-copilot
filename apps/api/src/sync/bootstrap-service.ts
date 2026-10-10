@@ -1,4 +1,8 @@
 import {
+  serializeScoreHistory,
+  type ScoreHistoryDocument,
+} from "../substitution/score-store";
+import {
   serializeSubstitutionEvidence,
   serializeSubstitutionEvidenceState,
   type SubstitutionEvidenceDocument,
@@ -255,6 +259,16 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const scoreHistory =
+              query.substitutionScores === "true"
+                ? await mongoDatabase
+                    .collection<ScoreHistoryDocument>(
+                      "substitutionScoreHistory",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .sort({ relationshipVersion: 1, _id: 1 })
+                    .toArray()
+                : [];
             const evidenceRows =
               query.substitutionEvidence === "true"
                 ? await mongoDatabase
@@ -406,6 +420,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       productStoreEvents: storeEventRows.map(
                         serializeStoreProductEvent,
+                      ),
+                    }
+                  : {}),
+                ...(query.substitutionScores === "true"
+                  ? {
+                      substitutionScoreHistory: scoreHistory.map(
+                        serializeScoreHistory,
                       ),
                     }
                   : {}),

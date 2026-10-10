@@ -942,7 +942,27 @@ export const substitutionEvidenceStates = sqliteTable(
     version: integer("version").notNull(),
   },
 );
+export const substitutionScoreHistory = sqliteTable(
+  "substitution_score_history",
+  {
+    id: text("id").primaryKey().notNull(),
+    storeId: text("store_id").notNull(),
+    substitutionId: text("substitution_id").notNull(),
+    relationshipVersion: integer("relationship_version").notNull(),
+    payloadJson: text("payload_json").notNull(),
+  },
+  (t) => [
+    uniqueIndex("substitution_score_revision").on(
+      t.storeId,
+      t.substitutionId,
+      t.relationshipVersion,
+    ),
+    index("substitution_score_scope").on(t.storeId, t.substitutionId),
+  ],
+);
+
 export const localSchema = {
+  substitutionScoreHistory,
   substitutionEvidence,
   substitutionEvidenceStates,
   storeProductEvents,

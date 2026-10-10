@@ -1,4 +1,8 @@
 import {
+  serializeScoreHistory,
+  type ScoreHistoryDocument,
+} from "../substitution/score-store";
+import {
   serializeSubstitutionEvidence,
   serializeSubstitutionEvidenceState,
   type SubstitutionEvidenceDocument,
@@ -152,6 +156,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "product_substitution") &&
               (query.storeProductEvents === "true" ||
                 change.entityType !== "store_product_event") &&
+              (query.substitutionScores === "true" ||
+                change.entityType !== "substitution_score_history") &&
               (query.substitutionEvidence === "true" ||
                 ![
                   "substitution_evidence",
@@ -295,6 +301,22 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeProductSubstitution(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "substitution_score_history") {
+              const row = await mongoDatabase
+                .collection<ScoreHistoryDocument>("substitutionScoreHistory")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("SUBSTITUTION_SCORE_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: 1,
+                entity: serializeScoreHistory(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }
