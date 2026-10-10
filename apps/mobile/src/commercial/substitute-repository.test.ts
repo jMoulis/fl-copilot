@@ -1,3 +1,5 @@
+import { applyNeedMembership } from "../needs/membership-repository";
+import { needMembershipId } from "@fl-copilot/domain";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -57,7 +59,7 @@ class Adapter implements OutboxDatabase {
   }
 }
 const at = "2026-10-10T12:00:00.000Z";
-async function setup(secondOffer = false) {
+async function setup(secondOffer = false, marketSignal = true) {
   const f = await commercialPlanFixture(),
     candidate = { ...f.product, id: randomUUID(), label: "Raisin rouge" },
     need = { ...needUnitFixture(), storeId: f.storeId },
@@ -69,13 +71,14 @@ async function setup(secondOffer = false) {
         verification: "TEXT_SUPPORTED" as const,
       },
     ];
-  f.reading.reading!.operations[0]!.items[0]!.fields.push({
-    name: "marketSignal",
-    rawValue: "Tension d’approvisionnement",
-    confidence: 1,
-    validationStatus: "TO_VALIDATE",
-    evidence: proof,
-  });
+  if (marketSignal)
+    f.reading.reading!.operations[0]!.items[0]!.fields.push({
+      name: "marketSignal",
+      rawValue: "Tension d’approvisionnement",
+      confidence: 1,
+      validationStatus: "TO_VALIDATE",
+      evidence: proof,
+    });
   const validated = {
       ...f.validated,
       ...commercialOfferValidationSource(f.choice, [f.reading]),
@@ -387,6 +390,113 @@ it("keeps a rejected relation excluded from weekly suggestions without reactivat
     if (s.status !== "READY") throw Error("NOT_READY");
     expect(s.items[0]!.candidates).toEqual([]);
     expect(s.items[0]!.lookup.excluded[0]!.reason).toBe("REJECTED");
+    expect(f.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n).toBe(0);
+  } finally {
+    f.dispose();
+  }
+});
+
+it("restores overlap warnings offline even when the PDF has no market tension, preserving source terms and plan/Outbox", async () => {
+  const f = await setup(true, false),
+    network = vi.fn(async () => {
+      throw Error("OFFLINE");
+    });
+  vi.stubGlobal("fetch", network);
+  try {
+    f.reopen();
+    const s = await f.repo.read(f.storeId, f.plan.weekStart, f.plan, at);
+    if (s.status !== "READY") throw Error("NOT_READY");
+    expect(s.items).toEqual([]);
+    expect(s.overlaps).toHaveLength(1);
+    expect(s.overlaps[0]!.support[0]!.kind).toBe("DIRECTED_SUBSTITUTION");
+    expect(s.overlaps[0]!.start).toBe("2026-10-10");
+    expect(s.overlaps[0]!.impact).toEqual({
+      salesTransfer: null,
+      lostSales: null,
+      marginImpact: null,
+    });
+    expect(network).not.toHaveBeenCalled();
+    expect(f.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n).toBe(0);
+    expect(
+      JSON.parse(
+        f.db
+          .prepare("SELECT payload_json FROM commercial_week_plans WHERE id=?")
+          .get(f.plan.id)!.payload_json as string,
+      ),
+    ).toEqual(f.plan);
+  } finally {
+    vi.unstubAllGlobals();
+    f.dispose();
+  }
+});
+it("updates the alert when a confirmed relation is rejected or conflicted without reactivating it", async () => {
+  const f = await setup(true, false);
+  try {
+    await applyProductSubstitution(f.tx, f.storeId, {
+      ...f.relation,
+      status: "REJECTED",
+      version: 2,
+    });
+    let s = await f.repo.read(f.storeId, f.plan.weekStart, f.plan, at);
+    if (s.status !== "READY") throw Error("NOT_READY");
+    expect(s.overlaps).toEqual([]);
+    await applyProductSubstitution(f.tx, f.storeId, {
+      ...f.relation,
+      version: 3,
+    });
+    f.db
+      .prepare(
+        "UPDATE product_substitutions SET sync_state='CONFLICT' WHERE id=?",
+      )
+      .run(f.relation.id);
+    s = await f.repo.read(f.storeId, f.plan.weekStart, f.plan, at);
+    if (s.status !== "READY") throw Error("NOT_READY");
+    expect(s.overlaps).toEqual([]);
+    expect(f.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n).toBe(0);
+  } finally {
+    f.dispose();
+  }
+});
+it("supports a shared confirmed need independently of a rejected edge while exposing the correct basis", async () => {
+  const f = await setup(true, false);
+  try {
+    await applyProductSubstitution(f.tx, f.storeId, {
+      ...f.relation,
+      status: "REJECTED",
+      version: 2,
+    });
+    for (const productId of [f.product.id, f.candidate.id])
+      await applyNeedMembership(f.tx, f.storeId, {
+        id: await needMembershipId(
+          f.storeId,
+          productId,
+          f.need.id,
+          testChoiceDigest,
+        ),
+        storeId: f.storeId,
+        productId,
+        needUnitId: f.need.id,
+        strength: 0.8,
+        confidence: 0.6,
+        primary: false,
+        source: "MANUAL",
+        status: "VALIDATED",
+        humanConfirmed: true,
+        version: 1,
+        createdAt: at,
+        updatedAt: at,
+      });
+    const s = await f.repo.read(f.storeId, f.plan.weekStart, f.plan, at);
+    if (s.status !== "READY") throw Error("NOT_READY");
+    expect(s.overlaps).toHaveLength(1);
+    expect(s.overlaps[0]!.support.map((s) => s.kind)).toEqual(["SHARED_NEED"]);
+    expect(
+      JSON.parse(
+        f.db
+          .prepare("SELECT payload_json FROM product_substitutions WHERE id=?")
+          .get(f.relation.id)!.payload_json as string,
+      ).status,
+    ).toBe("REJECTED");
     expect(f.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n).toBe(0);
   } finally {
     f.dispose();

@@ -43,7 +43,8 @@ export function WeeklySubstitutesView({
     [error, setError] = useState<{ scope: string; message: string }>(),
     [shown, setShown] = useState(3),
     [showReview, setShowReview] = useState(false),
-    [reviewShown, setReviewShown] = useState(10);
+    [reviewShown, setReviewShown] = useState(10),
+    [shownOverlaps, setShownOverlaps] = useState(3);
   useFocusEffect(
     useCallback(() => {
       const refresh = () => setDay(currentCommercialWeek().date);
@@ -101,7 +102,13 @@ export function WeeklySubstitutesView({
     currentError = error?.scope === scope ? error.message : undefined;
   if ((!current && !currentError) || current?.status === "NO_PLAN") return null;
   return (
-    <SectionCard title="Substituts potentiels">
+    <SectionCard
+      title={
+        current?.status === "READY" && current.overlaps.length
+          ? "Points de vigilance du plan"
+          : "Substituts potentiels"
+      }
+    >
       {currentError ? (
         <InlineAlert title="Lecture indisponible" message={currentError} />
       ) : null}
@@ -121,6 +128,114 @@ export function WeeklySubstitutesView({
       ) : null}
       {current?.status === "READY" ? (
         <>
+          {current.overlaps.slice(0, shownOverlaps).map((overlap) => (
+            <View
+              key={overlap.id}
+              className="gap-3 rounded-xl border border-line p-3"
+            >
+              <Text className="font-semibold text-ink">
+                Chevauchement commercial à surveiller
+              </Text>
+              <Text className="text-ink">
+                {current.labels[overlap.first.productId] ??
+                  overlap.first.rawProductLabel}{" "}
+                ·{" "}
+                {current.labels[overlap.second.productId] ??
+                  overlap.second.rawProductLabel}
+              </Text>
+              <Text className="text-muted">
+                Ventes prévues communes du{" "}
+                {formatFrenchCalendarDate(overlap.start)} au{" "}
+                {formatFrenchCalendarDate(overlap.end)}. Les associations
+                enregistrées rapprochent ces références.
+              </Text>
+              {[overlap.first, overlap.second].map((o) => (
+                <View key={o.id} className="gap-1">
+                  <Text className="text-ink">
+                    {o.rawProductLabel} :{" "}
+                    {commercialMechanismDescription(o.customerMechanism)}.
+                  </Text>
+                  <Text className="text-muted">
+                    Période de l’offre : {formatFrenchCalendarDate(o.saleStart)}{" "}
+                    au {formatFrenchCalendarDate(o.saleEnd)} · source page{" "}
+                    {o.sourceReference.pageNumber}.
+                  </Text>
+                  <SecondaryButton
+                    label="Ouvrir cette offre et son opération"
+                    onPress={() =>
+                      router.push({
+                        pathname: "/commercial-operation/[id]",
+                        params: {
+                          id: o.operationId,
+                          weekStart: current.weekStart,
+                          reminderRevision: current.revisionId,
+                        },
+                      } as Href)
+                    }
+                  />
+                </View>
+              ))}
+              {overlap.support.map((s, i) =>
+                s.kind === "SHARED_NEED" ? (
+                  <Text key={i} className="text-muted">
+                    Besoin commun confirmé :{" "}
+                    {current.needs[s.needUnitId] ?? "Besoin client"} · force{" "}
+                    {substitutionPercent(s.strengths[0])} /{" "}
+                    {substitutionPercent(s.strengths[1])} · confiance déclarée{" "}
+                    {substitutionPercent(s.confidences[0])} /{" "}
+                    {substitutionPercent(s.confidences[1])}.
+                  </Text>
+                ) : (
+                  <View key={i} className="gap-1">
+                    <Text className="text-muted">
+                      Relation dirigée confirmée :{" "}
+                      {current.labels[s.sourceProductId] ?? "Produit source"} →{" "}
+                      {current.labels[s.substituteProductId] ?? "Remplaçant"} ·{" "}
+                      {s.basis === "LEARNED"
+                        ? "score appris"
+                        : "compatibilité déclarée"}{" "}
+                      {substitutionPercent(s.fit)} · confiance{" "}
+                      {substitutionPercent(s.confidence)}.
+                    </Text>
+                    <SecondaryButton
+                      label="Comprendre cette relation"
+                      onPress={() =>
+                        router.push({
+                          pathname: "/substitutes",
+                          params: { productId: s.sourceProductId },
+                        } as Href)
+                      }
+                    />
+                  </View>
+                ),
+              )}
+              <Text className="text-muted">
+                Point de vigilance à discuter : ces offres peuvent aussi se
+                compléter. L’effet sur les ventes et la marge reste inconnu. Le
+                plan ne confirme pas leur exécution et aucune offre n’est
+                retirée automatiquement.
+              </Text>
+              <CommercialOriginalButton
+                sourceDocumentId={
+                  overlap.first.sourceReference.sourceDocumentId
+                }
+              />
+              {overlap.second.sourceReference.sourceDocumentId !==
+              overlap.first.sourceReference.sourceDocumentId ? (
+                <CommercialOriginalButton
+                  sourceDocumentId={
+                    overlap.second.sourceReference.sourceDocumentId
+                  }
+                />
+              ) : null}
+            </View>
+          ))}
+          {current.overlaps.length > shownOverlaps ? (
+            <SecondaryButton
+              label="Afficher les autres chevauchements"
+              onPress={() => setShownOverlaps((n) => n + 3)}
+            />
+          ) : null}
           <Text className="text-muted">
             Annonces de l’enseigne pour cette semaine. La disponibilité réelle
             reste à vérifier en magasin. Les candidats suivent la compatibilité

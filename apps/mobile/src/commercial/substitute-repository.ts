@@ -1,10 +1,14 @@
+import { NeedMembershipRepository } from "../needs/membership-repository";
 import {
   currentCommercialWeek,
   commercialPlanNeedsReview,
   commercialPlanTensions,
   type CommercialTension,
 } from "@fl-copilot/commercial-core";
-import { lookupSubstitutes } from "@fl-copilot/substitution-core";
+import {
+  lookupSubstitutes,
+  detectPromotionOverlaps,
+} from "@fl-copilot/substitution-core";
 import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import { ProductMasterRepository } from "../products/product-master-repository";
 import { ProductSubstitutionRepository } from "../needs/substitution-repository";
@@ -62,7 +66,7 @@ async function readSnapshot(
     return { status: "PLAN_CHANGED" as const };
   if (!["SYNCED", "PENDING"].includes(record.syncState))
     return { status: "PLAN_REVIEW" as const };
-  const [ctx, validated, p, n, r, e, ids] = await Promise.all([
+  const [ctx, validated, p, n, r, e, ids, memberships] = await Promise.all([
     readWeekPlanContext(reader, plan.preparation),
     readValidatedOffers(reader, storeId),
     new ProductMasterRepository(reader).listProducts(storeId),
@@ -72,6 +76,9 @@ async function readSnapshot(
     ).list(storeId),
     new StoreProductEventRepository(reader).list(storeId),
     new ProductMasterRepository(reader).listIdentifiersByStore(storeId),
+    new NeedMembershipRepository(reader, async () => substituteReadOnly()).list(
+      storeId,
+    ),
   ]);
   if (commercialPlanNeedsReview(plan, ctx).length)
     return { status: "PLAN_REVIEW" as const };
@@ -145,6 +152,15 @@ async function readSnapshot(
   return {
     status: "READY" as const,
     ruleVersion: projection.ruleVersion,
+    overlaps: detectPromotionOverlaps({
+      storeId,
+      plan,
+      fromDate: today,
+      products: p,
+      needs: n,
+      memberships,
+      relations: r,
+    }).warnings,
     planId: plan.id,
     revisionId: plan.revisionId,
     planVersion: plan.version,
