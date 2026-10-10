@@ -1,3 +1,4 @@
+import { substitutionError } from "./substitution-presentation";
 import { useCallback, useMemo, useState } from "react";
 import { Text, View, Switch } from "react-native";
 import { router, useFocusEffect, type Href } from "expo-router";
@@ -208,6 +209,12 @@ export function SubstitutionView({ productId }: { productId: string }) {
                   estimée. Des dates différentes ne constituent pas une
                   comparaison équivalente.
                 </Text>
+                {r.syncState === "ERROR" ? (
+                  <InlineAlert
+                    title="Synchronisation à reprendre"
+                    message={substitutionError(r.lastErrorCode ?? undefined)}
+                  />
+                ) : null}
                 <SecondaryButton
                   label={
                     r.syncState === "CONFLICT"

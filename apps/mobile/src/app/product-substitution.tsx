@@ -28,6 +28,7 @@ import {
   substitutionFormValues,
   substitutionState,
   substitutionSyncState,
+  substitutionIdentifierLabels,
   type SubstitutionFormValues,
 } from "@/needs/substitution-details";
 import {
@@ -71,6 +72,7 @@ export default function SubstitutionEditor() {
       products: Product[];
       needs: NeedUnit[];
       records: LocalProductSubstitution[];
+      identifiers: Record<string, string>;
     }>(),
     [base, setBase] = useState<LocalProductSubstitution>(),
     [substituteId, setSubstituteId] = useState(""),
@@ -86,12 +88,15 @@ export default function SubstitutionEditor() {
     [message, setMessage] = useState<string>();
   const read = useCallback(async () => {
     if (!storeId) return undefined;
-    const [p, n, records] = await Promise.all([
+    const [p, n, records, ids] = await Promise.all([
       new ProductMasterRepository(sqlite).listProducts(storeId),
       new NeedUnitRepository(sqlite).list(storeId),
       repo.list(storeId),
+      new ProductMasterRepository(sqlite).listIdentifiersByStore(storeId),
     ]);
+    const identifiers = substitutionIdentifierLabels(ids.map((r) => r.entity));
     return {
+      identifiers,
       scope,
       products: p.map((r) => r.entity),
       needs: n.map((r) => r.entity),
@@ -145,7 +150,7 @@ export default function SubstitutionEditor() {
         p.id !== source?.id &&
         p.status === "ACTIVE" &&
         !p.deletedAt &&
-        p.label
+        (p.label + " " + (current.identifiers[p.id] ?? ""))
           .toLocaleLowerCase("fr-FR")
           .includes(search.toLocaleLowerCase("fr-FR")),
     ) ?? [];
@@ -313,6 +318,10 @@ export default function SubstitutionEditor() {
               même besoin ?
             </Text>
             <Text className="text-muted">
+              {current!.identifiers[source!.id] ??
+                "Aucun code enregistré pour le produit initial"}
+            </Text>
+            <Text className="text-muted">
               L’inverse n’est pas créé. Ces déclarations ne sont ni des ventes
               observées ni une action exécutée.
             </Text>
@@ -329,6 +338,10 @@ export default function SubstitutionEditor() {
                     ?.label ?? "Produit conservé"}
                 </Text>
                 <Text className="text-muted">
+                  {current!.identifiers[substituteId] ??
+                    "Aucun code enregistré pour le remplaçant"}
+                </Text>
+                <Text className="text-muted">
                   Besoin :{" "}
                   {current!.needs.find((n) => n.id === needId)?.name ??
                     "Besoin conservé"}
@@ -338,20 +351,26 @@ export default function SubstitutionEditor() {
               <>
                 <TextInput
                   accessibilityLabel="Rechercher un remplaçant"
-                  placeholder="Rechercher un produit"
+                  placeholder="Nom, EAN ou code produit"
                   value={search}
                   onChangeText={setSearch}
                   editable={!busy}
                   className="rounded-xl border border-line p-3 text-ink"
                 />
-                {products.map((p) => (
+                {products.slice(0, 20).map((p) => (
                   <View
                     key={p.id}
                     className="flex-row items-center justify-between gap-2"
                   >
-                    <Text className="flex-1 text-ink">{p.label}</Text>
+                    <View className="flex-1 gap-1">
+                      <Text className="text-ink">{p.label}</Text>
+                      <Text className="text-muted">
+                        {current!.identifiers[p.id] ??
+                          "Aucun code produit enregistré"}
+                      </Text>
+                    </View>
                     <Switch
-                      accessibilityLabel={`Choisir ${p.label} comme remplaçant`}
+                      accessibilityLabel={`Choisir ${p.label} ${current!.identifiers[p.id] ?? ""} comme remplaçant`}
                       disabled={busy}
                       value={substituteId === p.id}
                       onValueChange={(v) => {
@@ -362,6 +381,19 @@ export default function SubstitutionEditor() {
                     />
                   </View>
                 ))}
+                {products.length > 20 ? (
+                  <Text className="text-muted">
+                    20 produits affichés sur {products.length}. Précisez la
+                    recherche pour trouver votre remplaçant.
+                  </Text>
+                ) : null}
+                {substituteId ? (
+                  <Text className="font-semibold text-ink">
+                    Remplaçant choisi :{" "}
+                    {current!.products.find((p) => p.id === substituteId)
+                      ?.label ?? "Produit indisponible"}
+                  </Text>
+                ) : null}
                 {!products.length ? (
                   <Text className="text-muted">
                     Aucun produit actif ne correspond à la recherche.
@@ -419,6 +451,12 @@ export default function SubstitutionEditor() {
             </>
           ) : (
             <SectionCard title="Appréciation de la relation">
+              {record?.syncState === "ERROR" ? (
+                <InlineAlert
+                  title="Synchronisation à reprendre"
+                  message={substitutionError(record.lastErrorCode ?? undefined)}
+                />
+              ) : null}
               {changedWhileEditing ? (
                 <InlineAlert
                   title="Relation modifiée"

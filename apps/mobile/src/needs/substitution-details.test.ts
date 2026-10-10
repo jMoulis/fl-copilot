@@ -6,6 +6,7 @@ import {
   substitutionPercent,
   substitutionState,
   selectSubstitutions,
+  substitutionIdentifierLabels,
 } from "./substitution-details";
 it("keeps optional unknown compatibilities distinct from declared zero, accepts French decimals", () => {
   const r = validateSubstitutionForm({
@@ -118,4 +119,18 @@ it("prefills exact canonical percentages without floating-point artifacts or exp
     packaging: "0",
   });
   expect(validateSubstitutionForm(values).errors).toEqual({});
+});
+
+it("keeps official leading-zero identifiers and review state so equal product labels can be distinguished", () => {
+  const labels = substitutionIdentifierLabels([
+    {
+      productId: "a",
+      type: "EAN",
+      value: "0000123456789",
+      status: "VALIDATED",
+    },
+    { productId: "b", type: "ITM8", value: "00000023", status: "TO_REVIEW" },
+  ]);
+  expect(labels.a).toBe("EAN : 0000123456789");
+  expect(labels.b).toBe("ITM8 : 00000023 (à vérifier)");
 });

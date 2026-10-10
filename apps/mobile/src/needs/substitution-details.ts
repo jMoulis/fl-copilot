@@ -1,4 +1,7 @@
-import type { ProductSubstitution } from "@fl-copilot/domain";
+import type {
+  ProductSubstitution,
+  ProductIdentifier,
+} from "@fl-copilot/domain";
 export const substitutionState = (e: ProductSubstitution) =>
   ({
     PROPOSED: "Proposée",
@@ -90,4 +93,17 @@ export function selectSubstitutions<T extends { entity: ProductSubstitution }>(
         : r.entity.sourceProductId === productId) &&
       (includeRejected || r.entity.status !== "REJECTED"),
   );
+}
+
+export function substitutionIdentifierLabels(
+  ids: Pick<ProductIdentifier, "productId" | "type" | "value" | "status">[],
+) {
+  const labels: Record<string, string> = {};
+  for (const i of ids) {
+    const text = `${i.type} : ${i.value}${i.status === "VALIDATED" ? "" : " (à vérifier)"}`;
+    labels[i.productId] = [labels[i.productId], text]
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return labels;
 }
