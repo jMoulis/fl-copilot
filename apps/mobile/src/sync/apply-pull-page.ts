@@ -1,5 +1,6 @@
 import { applyNeedMembership } from "../needs/membership-repository";
 import { applyProductSubstitution } from "../needs/substitution-repository";
+import { applyStoreProductEvent } from "../needs/store-event-repository";
 import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
@@ -143,6 +144,20 @@ export async function applyPullPage(
         )
           throw Error("PRODUCT_SUBSTITUTION_ENVELOPE_INVALID");
         await applyProductSubstitution(transaction, storeId, change.entity);
+        continue;
+      }
+      if (change.entityType === "store_product_event") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("STORE_EVENT_ENVELOPE_INVALID");
+        await applyStoreProductEvent(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "commercial_execution_task") {

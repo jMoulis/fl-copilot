@@ -57,6 +57,11 @@ export default function TodayScreen() {
         ) : null}
       </AppHeader>
 
+      <SecondaryButton
+        label="Signaler une observation magasin"
+        disabled={storeMissing}
+        onPress={() => router.push("/store-event" as Href)}
+      />
       {error ? (
         <InlineAlert title="Lecture impossible" message={error} />
       ) : null}

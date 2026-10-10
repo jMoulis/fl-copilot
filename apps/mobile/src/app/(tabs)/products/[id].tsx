@@ -1,3 +1,4 @@
+import { StoreEventsView } from "@/needs/store-events-view";
 import { SubstitutionView } from "@/needs/substitution-view";
 import { MembershipView } from "@/needs/membership-view";
 import { Text } from "react-native";
@@ -35,6 +36,17 @@ export default function ProductEditorScreen() {
         onPress={() => router.replace("/(tabs)/products")}
       />
 
+      {productId && snapshot && !storeMissing ? (
+        <SecondaryButton
+          label="Signaler"
+          onPress={() =>
+            router.push({
+              pathname: "/store-event",
+              params: { productId },
+            } as Href)
+          }
+        />
+      ) : null}
       {conflictId ? (
         <>
           <InlineAlert
@@ -53,6 +65,7 @@ export default function ProductEditorScreen() {
       {productId && snapshot && !storeMissing ? (
         <>
           {" "}
+          <StoreEventsView productId={productId} compact />
           <MembershipView productId={productId} />
           <SubstitutionView productId={productId} />
         </>

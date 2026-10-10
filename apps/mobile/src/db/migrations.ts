@@ -705,6 +705,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "product_substitutions",
     sql: `CREATE TABLE product_substitutions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,source_product_id TEXT NOT NULL,substitute_product_id TEXT NOT NULL,need_unit_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,CHECK(source_product_id<>substitute_product_id),UNIQUE(store_id,source_product_id,substitute_product_id,need_unit_id)); CREATE TABLE product_substitution_history(action_id TEXT PRIMARY KEY NOT NULL,substitution_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 30,
+    name: "store_product_events",
+    sql: `CREATE TABLE store_product_events(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,product_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX store_product_event_scope ON store_product_events(store_id,product_id); CREATE TABLE store_product_event_history(action_id TEXT PRIMARY KEY NOT NULL,event_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

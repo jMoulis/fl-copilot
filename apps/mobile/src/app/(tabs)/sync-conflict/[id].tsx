@@ -1,3 +1,4 @@
+import { StoreEventConflict } from "@/needs/store-event-conflict";
 import { ProductSubstitutionConflict } from "@/needs/substitution-conflict";
 import { NeedMembershipConflict } from "@/needs/membership-conflict";
 import { NeedUnitConflict } from "@/needs/conflict";
@@ -61,7 +62,9 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          {conflict.entityType === "product_substitution" ? (
+          {conflict.entityType === "store_product_event" ? (
+            <StoreEventConflict conflict={conflict} />
+          ) : conflict.entityType === "product_substitution" ? (
             <ProductSubstitutionConflict conflict={conflict} />
           ) : conflict.entityType === "need_membership" ? (
             <NeedMembershipConflict conflict={conflict} />

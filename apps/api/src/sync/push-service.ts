@@ -6,6 +6,10 @@ import {
   applyProductSubstitutionCommand,
   ProductSubstitutionParentPendingError,
 } from "../product-substitution-sync";
+import {
+  applyStoreProductEventCommand,
+  StoreEventParentPendingError,
+} from "../store-product-event-sync";
 import { applyNeedUnitCommand } from "../need-unit-sync";
 import { applyStoreContextCommand } from "../store-context-sync.js";
 import { applyCommercialExecutionCommand } from "../commercial/execution-sync.js";
@@ -108,7 +112,8 @@ export function createMongoSyncPushService(
             error instanceof ProcessedCommandIdentityError
               ? rejectedIdentityResult(command, requestId)
               : error instanceof NeedMembershipParentPendingError ||
-                  error instanceof ProductSubstitutionParentPendingError
+                  error instanceof ProductSubstitutionParentPendingError ||
+                  error instanceof StoreEventParentPendingError
                 ? {
                     ...retryableResult(command, requestId),
                     error: {
@@ -186,6 +191,17 @@ async function applyCommand(
     );
   if (command.type === "PRODUCT_SUBSTITUTION_UPSERT")
     return applyProductSubstitutionCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
+  if (
+    command.type === "CREATE_STORE_EVENT" ||
+    command.type === "CLOSE_STORE_EVENT"
+  )
+    return applyStoreProductEventCommand(
       context,
       storeId,
       command,
