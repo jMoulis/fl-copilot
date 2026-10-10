@@ -606,6 +606,29 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 30,
+    name: "substitution_score_audit",
+    async up(db) {
+      await db
+        .collection("substitutionScoreHistory")
+        .createIndex(
+          { storeId: 1, substitutionId: 1, relationshipVersion: 1 },
+          { unique: true, name: "substitution_score_revision" },
+        );
+      // Reconsider existing current evidence after enabling audited scoring.
+      await db.collection("substitutionEvidenceWork").updateMany(
+        { scorePolicyAdopted: { $ne: "substitution-score.v1" } },
+        {
+          $inc: { generation: 1 },
+          $set: {
+            nextAttemptAt: new Date(0),
+            scorePolicyAdopted: "substitution-score.v1",
+          },
+        },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

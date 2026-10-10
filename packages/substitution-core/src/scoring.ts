@@ -1,5 +1,6 @@
-import { z } from "zod";
 import {
+  substitutionScorePolicySchema,
+  type SubstitutionScorePolicy,
   productSubstitutionSchema,
   substitutionEvidenceSchema,
   type ProductSubstitution,
@@ -7,33 +8,8 @@ import {
 } from "@fl-copilot/domain";
 
 // Versioned policy, not a statistical probability or a causal attribution.
-export const substitutionScorePolicySchema = z
-  .object({
-    version: z.literal("substitution-score.v1"),
-    needWeight: z.number().finite().positive().max(1),
-    usageWeight: z.number().finite().positive().max(1),
-    priceWeight: z.number().finite().nonnegative().max(1),
-    packagingWeight: z.number().finite().nonnegative().max(1),
-    observedWeight: z.number().finite().positive().max(1),
-    maxEvidenceStep: z.number().finite().positive().max(0.05),
-    confidenceCeiling: z.number().finite().positive().max(0.5),
-  })
-  .strict()
-  .refine(
-    (p) =>
-      Math.abs(
-        p.needWeight +
-          p.usageWeight +
-          p.priceWeight +
-          p.packagingWeight +
-          p.observedWeight -
-          1,
-      ) < 1e-9,
-    "Les poids doivent totaliser 1.",
-  );
-export type SubstitutionScorePolicy = z.infer<
-  typeof substitutionScorePolicySchema
->;
+export { substitutionScorePolicySchema } from "@fl-copilot/domain";
+export type { SubstitutionScorePolicy } from "@fl-copilot/domain";
 export const conservativeSubstitutionScorePolicy: SubstitutionScorePolicy = {
   version: "substitution-score.v1",
   needWeight: 0.3,

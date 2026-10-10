@@ -91,3 +91,5 @@ export * from "./product-substitution";
 export * from "./store-product-event";
 
 export * from "./substitution-evidence";
+
+export * from "./substitution-score-history";

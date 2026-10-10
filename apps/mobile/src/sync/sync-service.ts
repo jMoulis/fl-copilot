@@ -67,6 +67,7 @@ export interface MobileSyncServiceOptions {
   productSubstitutions?: boolean;
   storeProductEvents?: boolean;
   substitutionEvidence?: boolean;
+  substitutionScores?: boolean;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
   commercialPlans?: boolean;
@@ -184,6 +185,12 @@ export class MobileSyncService {
           `store-product-events:${storeId}`,
         )
       : true;
+    const scoresAdopted = this.options.substitutionScores
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `substitution-scores:${storeId}`,
+        )
+      : true;
     const evidenceAdopted = this.options.substitutionEvidence
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -228,6 +235,7 @@ export class MobileSyncService {
       !productSubstitutionsAdopted ||
       !storeProductEventsAdopted ||
       !evidenceAdopted ||
+      !scoresAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {

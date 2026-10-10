@@ -1,3 +1,4 @@
+import { publishSubstitutionScores } from "./score-store";
 import { commercialExecutionPlanChecksum } from "@fl-copilot/commercial-core";
 import type { StoreProductEventDocument } from "../store-product-event-sync";
 import { createHash, randomUUID } from "node:crypto";
@@ -379,6 +380,12 @@ export function createSubstitutionEvidenceProcessor(
                 },
                 { session },
               );
+            await publishSubstitutionScores(
+              ctx,
+              storeId,
+              event.productId,
+              at.toISOString(),
+            );
             result = { status: "COMPUTED", count: ids.length };
           },
           {

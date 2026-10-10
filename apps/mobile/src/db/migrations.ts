@@ -715,6 +715,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "daily_substitution_evidence",
     sql: `CREATE TABLE substitution_evidence(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,event_id TEXT NOT NULL,relationship_id TEXT NOT NULL,payload_json TEXT NOT NULL,version INTEGER NOT NULL); CREATE INDEX substitution_evidence_scope ON substitution_evidence(store_id,event_id,relationship_id); CREATE TABLE substitution_evidence_states(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,version INTEGER NOT NULL);`,
   },
+  {
+    version: 32,
+    name: "substitution_score_audit",
+    sql: `CREATE TABLE substitution_score_history(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,substitution_id TEXT NOT NULL,relationship_version INTEGER NOT NULL,payload_json TEXT NOT NULL,UNIQUE(store_id,substitution_id,relationship_version)); CREATE INDEX substitution_score_scope ON substitution_score_history(store_id,substitution_id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

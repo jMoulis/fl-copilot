@@ -1,3 +1,4 @@
+import { applySubstitutionScoreHistory } from "../needs/score-repository";
 import {
   applySubstitutionEvidence,
   applySubstitutionEvidenceState,
@@ -148,6 +149,23 @@ export async function applyPullPage(
         )
           throw Error("PRODUCT_SUBSTITUTION_ENVELOPE_INVALID");
         await applyProductSubstitution(transaction, storeId, change.entity);
+        continue;
+      }
+      if (change.entityType === "substitution_score_history") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          change.entityVersion !== 1
+        )
+          throw Error("SUBSTITUTION_SCORE_ENVELOPE_INVALID");
+        await applySubstitutionScoreHistory(
+          transaction,
+          storeId,
+          change.entity,
+        );
         continue;
       }
       if (change.entityType === "store_product_event") {

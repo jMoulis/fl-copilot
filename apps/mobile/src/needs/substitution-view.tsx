@@ -176,6 +176,15 @@ export function SubstitutionView({ productId }: { productId: string }) {
                     conditionnement{" "}
                     {substitutionPercent(e.packagingCompatibility)}
                   </Text>
+                  <SecondaryButton
+                    label="Comprendre l’évolution du score"
+                    onPress={() =>
+                      router.push({
+                        pathname: "/substitution-score",
+                        params: { id: e.id },
+                      } as Href)
+                    }
+                  />
                   <Text className="text-muted">
                     Score appris :{" "}
                     {e.relationshipScore === null

@@ -10,7 +10,11 @@ export const substitutionState = (e: ProductSubstitution) =>
     REJECTED: "Rejetée",
   })[e.status];
 export const substitutionPercent = (n: number | null) =>
-  n === null ? "Indisponible" : `${Math.round(n * 100)} %`;
+  n === null
+    ? "Indisponible"
+    : n > 0 && n < 0.01
+      ? "Moins de 1 %"
+      : `${Math.round(n * 100)} %`;
 export const substitutionSyncState = (s: string) =>
   ({
     SYNCED: "Synchronisée",
