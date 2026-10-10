@@ -1,3 +1,4 @@
+import { EvidenceView } from "@/needs/evidence-view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Switch } from "react-native";
 import {
@@ -489,6 +490,7 @@ export default function StoreEventEditor() {
           )}
         </>
       )}
+      {record ? <EvidenceView eventId={record.entity.id} /> : null}
       {error ? (
         <InlineAlert title="Signalement non enregistré" message={error} />
       ) : null}

@@ -1,3 +1,4 @@
+import { EvidenceView } from "./evidence-view";
 import { substitutionError } from "./substitution-presentation";
 import { useCallback, useMemo, useState } from "react";
 import { Text, View, Switch } from "react-native";
@@ -107,153 +108,161 @@ export function SubstitutionView({ productId }: { productId: string }) {
           )
         : [];
   return (
-    <SectionCard title="Substitutions">
-      <Text className="text-muted">
-        Un remplaçant répond au même besoin client. La relation inverse doit
-        être décidée séparément ; elle n’est jamais créée automatiquement.
-      </Text>
-      <SecondaryButton
-        label="Ajouter un remplaçant"
-        disabled={!storeId}
-        onPress={() =>
-          router.push({
-            pathname: "/product-substitution",
-            params: { productId },
-          } as Href)
-        }
-      />
-      <View className="flex-row items-center justify-between">
-        <Text className="flex-1 text-ink">
-          Voir les produits que celui-ci peut remplacer
+    <>
+      {" "}
+      <SectionCard title="Substitutions">
+        <Text className="text-muted">
+          Un remplaçant répond au même besoin client. La relation inverse doit
+          être décidée séparément ; elle n’est jamais créée automatiquement.
         </Text>
-        <Switch
-          accessibilityLabel="Afficher les relations entrantes"
-          value={showIncoming}
-          onValueChange={setShowIncoming}
+        <SecondaryButton
+          label="Ajouter un remplaçant"
+          disabled={!storeId}
+          onPress={() =>
+            router.push({
+              pathname: "/product-substitution",
+              params: { productId },
+            } as Href)
+          }
         />
-      </View>
-      <View className="flex-row items-center justify-between">
-        <Text className="flex-1 text-ink">
-          Afficher aussi les relations rejetées
-        </Text>
-        <Switch
-          accessibilityLabel="Afficher les relations rejetées"
-          value={showRejected}
-          onValueChange={setShowRejected}
-        />
-      </View>
-      {data ? (
-        rows.length ? (
-          rows.map((r) => {
-            const e = r.entity,
-              source =
-                data.labels[e.sourceProductId] ?? "Produit source indisponible",
-              substitute =
-                data.labels[e.substituteProductId] ?? "Remplaçant indisponible";
-            return (
-              <View
-                key={e.id}
-                className="gap-2 rounded-xl border border-line p-3"
-              >
-                <Text className="font-semibold text-ink">
-                  {source} → {substitute}
-                </Text>
-                <Text className="text-muted">
-                  Besoin : {data.needs[e.needUnitId] ?? "Besoin indisponible"} ·{" "}
-                  {substitutionState(e)} · {substitutionSyncState(r.syncState)}
-                </Text>
-                <Text className="text-muted">
-                  Compatibilité déclarée : besoin{" "}
-                  {substitutionPercent(e.needCompatibility)} · usage{" "}
-                  {substitutionPercent(e.usageCompatibility)} · prix{" "}
-                  {substitutionPercent(e.priceCompatibility)} · conditionnement{" "}
-                  {substitutionPercent(e.packagingCompatibility)}
-                </Text>
-                <Text className="text-muted">
-                  Score appris :{" "}
-                  {e.relationshipScore === null
-                    ? "Non calculé"
-                    : substitutionPercent(e.relationshipScore)}{" "}
-                  · confiance apprise : {substitutionPercent(e.confidence)} ·{" "}
-                  {e.evidenceCount} observation(s)
-                </Text>
-                {e.lastEvidenceAt ? (
-                  <Text className="text-muted">
-                    Dernière observation :{" "}
-                    {new Date(e.lastEvidenceAt).toLocaleDateString("fr-FR")}
-                  </Text>
-                ) : null}
-                <Text className="text-muted">
-                  Origine :{" "}
-                  {
-                    {
-                      MANUAL: "déclaration manuelle",
-                      AI_PROPOSED: "proposition IA",
-                      LEARNED: "apprentissage audité",
-                    }[e.source]
-                  }
-                </Text>
-                <Text className="font-semibold text-ink">
-                  Contexte de marge Mercalys
-                </Text>
-                <Text className="text-muted">
-                  {source} :{" "}
-                  {sourceMarginLabel(data.margins[e.sourceProductId])}
-                </Text>
-                <Text className="text-muted">
-                  {substitute} :{" "}
-                  {sourceMarginLabel(data.margins[e.substituteProductId])}
-                </Text>
-                <Text className="text-muted">
-                  Valeurs sources, sans conversion HT/TTC ni marge future
-                  estimée. Des dates différentes ne constituent pas une
-                  comparaison équivalente.
-                </Text>
-                {r.syncState === "ERROR" ? (
-                  <InlineAlert
-                    title="Synchronisation à reprendre"
-                    message={substitutionError(r.lastErrorCode ?? undefined)}
-                  />
-                ) : null}
-                <SecondaryButton
-                  label={
-                    r.syncState === "CONFLICT"
-                      ? "Comparer dans Synchronisation"
-                      : "Revoir cette relation"
-                  }
-                  onPress={() =>
-                    r.syncState === "CONFLICT"
-                      ? router.push("/sync-center")
-                      : router.push({
-                          pathname: "/product-substitution",
-                          params: { productId: e.sourceProductId, id: e.id },
-                        } as Href)
-                  }
-                />
-                <SecondaryButton
-                  label={`Ouvrir ${showIncoming ? source : substitute}`}
-                  onPress={() =>
-                    router.push(
-                      `/(tabs)/products/${showIncoming ? e.sourceProductId : e.substituteProductId}` as Href,
-                    )
-                  }
-                />
-              </View>
-            );
-          })
-        ) : (
-          <Text className="text-muted">
-            {showIncoming
-              ? "Aucun produit à remplacer dans cette sélection."
-              : "Aucun remplaçant enregistré dans cette sélection."}
+        <View className="flex-row items-center justify-between">
+          <Text className="flex-1 text-ink">
+            Voir les produits que celui-ci peut remplacer
           </Text>
-        )
-      ) : (
-        <Text className="text-muted">Lecture des relations locales…</Text>
-      )}
-      {error ? (
-        <InlineAlert title="Substitutions indisponibles" message={error} />
-      ) : null}
-    </SectionCard>
+          <Switch
+            accessibilityLabel="Afficher les relations entrantes"
+            value={showIncoming}
+            onValueChange={setShowIncoming}
+          />
+        </View>
+        <View className="flex-row items-center justify-between">
+          <Text className="flex-1 text-ink">
+            Afficher aussi les relations rejetées
+          </Text>
+          <Switch
+            accessibilityLabel="Afficher les relations rejetées"
+            value={showRejected}
+            onValueChange={setShowRejected}
+          />
+        </View>
+        {data ? (
+          rows.length ? (
+            rows.map((r) => {
+              const e = r.entity,
+                source =
+                  data.labels[e.sourceProductId] ??
+                  "Produit source indisponible",
+                substitute =
+                  data.labels[e.substituteProductId] ??
+                  "Remplaçant indisponible";
+              return (
+                <View
+                  key={e.id}
+                  className="gap-2 rounded-xl border border-line p-3"
+                >
+                  <Text className="font-semibold text-ink">
+                    {source} → {substitute}
+                  </Text>
+                  <Text className="text-muted">
+                    Besoin : {data.needs[e.needUnitId] ?? "Besoin indisponible"}{" "}
+                    · {substitutionState(e)} ·{" "}
+                    {substitutionSyncState(r.syncState)}
+                  </Text>
+                  <Text className="text-muted">
+                    Compatibilité déclarée : besoin{" "}
+                    {substitutionPercent(e.needCompatibility)} · usage{" "}
+                    {substitutionPercent(e.usageCompatibility)} · prix{" "}
+                    {substitutionPercent(e.priceCompatibility)} ·
+                    conditionnement{" "}
+                    {substitutionPercent(e.packagingCompatibility)}
+                  </Text>
+                  <Text className="text-muted">
+                    Score appris :{" "}
+                    {e.relationshipScore === null
+                      ? "Non calculé"
+                      : substitutionPercent(e.relationshipScore)}{" "}
+                    · confiance apprise : {substitutionPercent(e.confidence)} ·{" "}
+                    {e.evidenceCount} observation(s)
+                  </Text>
+                  {e.lastEvidenceAt ? (
+                    <Text className="text-muted">
+                      Dernière observation :{" "}
+                      {new Date(e.lastEvidenceAt).toLocaleDateString("fr-FR")}
+                    </Text>
+                  ) : null}
+                  <Text className="text-muted">
+                    Origine :{" "}
+                    {
+                      {
+                        MANUAL: "déclaration manuelle",
+                        AI_PROPOSED: "proposition IA",
+                        LEARNED: "apprentissage audité",
+                      }[e.source]
+                    }
+                  </Text>
+                  <Text className="font-semibold text-ink">
+                    Contexte de marge Mercalys
+                  </Text>
+                  <Text className="text-muted">
+                    {source} :{" "}
+                    {sourceMarginLabel(data.margins[e.sourceProductId])}
+                  </Text>
+                  <Text className="text-muted">
+                    {substitute} :{" "}
+                    {sourceMarginLabel(data.margins[e.substituteProductId])}
+                  </Text>
+                  <Text className="text-muted">
+                    Valeurs sources, sans conversion HT/TTC ni marge future
+                    estimée. Des dates différentes ne constituent pas une
+                    comparaison équivalente.
+                  </Text>
+                  {r.syncState === "ERROR" ? (
+                    <InlineAlert
+                      title="Synchronisation à reprendre"
+                      message={substitutionError(r.lastErrorCode ?? undefined)}
+                    />
+                  ) : null}
+                  <SecondaryButton
+                    label={
+                      r.syncState === "CONFLICT"
+                        ? "Comparer dans Synchronisation"
+                        : "Revoir cette relation"
+                    }
+                    onPress={() =>
+                      r.syncState === "CONFLICT"
+                        ? router.push("/sync-center")
+                        : router.push({
+                            pathname: "/product-substitution",
+                            params: { productId: e.sourceProductId, id: e.id },
+                          } as Href)
+                    }
+                  />
+                  <SecondaryButton
+                    label={`Ouvrir ${showIncoming ? source : substitute}`}
+                    onPress={() =>
+                      router.push(
+                        `/(tabs)/products/${showIncoming ? e.sourceProductId : e.substituteProductId}` as Href,
+                      )
+                    }
+                  />
+                </View>
+              );
+            })
+          ) : (
+            <Text className="text-muted">
+              {showIncoming
+                ? "Aucun produit à remplacer dans cette sélection."
+                : "Aucun remplaçant enregistré dans cette sélection."}
+            </Text>
+          )
+        ) : (
+          <Text className="text-muted">Lecture des relations locales…</Text>
+        )}
+        {error ? (
+          <InlineAlert title="Substitutions indisponibles" message={error} />
+        ) : null}
+      </SectionCard>
+      <EvidenceView productId={productId} />
+    </>
   );
 }

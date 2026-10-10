@@ -1,4 +1,10 @@
 import {
+  serializeSubstitutionEvidence,
+  serializeSubstitutionEvidenceState,
+  type SubstitutionEvidenceDocument,
+} from "../substitution-evidence-sync";
+import type { EvidenceStateDocument } from "../substitution-evidence-work";
+import {
   serializeNeedMembership,
   type NeedMembershipDocument,
 } from "../need-membership-sync";
@@ -249,6 +255,24 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const evidenceRows =
+              query.substitutionEvidence === "true"
+                ? await mongoDatabase
+                    .collection<SubstitutionEvidenceDocument>(
+                      "substitutionEvidence",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
+            const evidenceStates =
+              query.substitutionEvidence === "true"
+                ? await mongoDatabase
+                    .collection<EvidenceStateDocument>(
+                      "substitutionEvidenceStates",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const executionTasks =
               query.commercialExecution === "true"
                 ? await mongoDatabase
@@ -382,6 +406,16 @@ export function createMongoSyncBootstrapService(
                   ? {
                       productStoreEvents: storeEventRows.map(
                         serializeStoreProductEvent,
+                      ),
+                    }
+                  : {}),
+                ...(query.substitutionEvidence === "true"
+                  ? {
+                      dailySubstitutionEvidence: evidenceRows.map(
+                        serializeSubstitutionEvidence,
+                      ),
+                      dailySubstitutionEvidenceStates: evidenceStates.map(
+                        serializeSubstitutionEvidenceState,
                       ),
                     }
                   : {}),

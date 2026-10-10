@@ -35,3 +35,5 @@ export * from "./product-substitution";
 export * from "./store-product-event";
 
 export * from "./store-event-time";
+
+export * from "./substitution-evidence";

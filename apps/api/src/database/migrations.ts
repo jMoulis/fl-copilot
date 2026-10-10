@@ -548,6 +548,66 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 29,
+    name: "daily_substitution_evidence",
+    async up(db) {
+      await db
+        .collection("substitutionEvidence")
+        .createIndex(
+          { storeId: 1, eventId: 1, relationshipId: 1 },
+          { unique: true, name: "substitution_evidence_scope" },
+        );
+      await db
+        .collection("substitutionEvidenceHistory")
+        .createIndex(
+          { storeId: 1, evidenceId: 1, version: 1 },
+          { unique: true, name: "substitution_evidence_history" },
+        );
+      await db
+        .collection("substitutionEvidenceWork")
+        .createIndex(
+          { nextAttemptAt: 1, leaseUntil: 1 },
+          { name: "substitution_evidence_due" },
+        );
+      await db
+        .collection("substitutionEvidenceWork")
+        .createIndex(
+          { storeId: 1 },
+          { name: "substitution_evidence_work_store" },
+        );
+      await db
+        .collection("substitutionEvidenceStates")
+        .createIndex(
+          { storeId: 1, eventId: 1 },
+          { unique: true, name: "substitution_evidence_state_scope" },
+        );
+      const events = await db
+        .collection<{ _id: string; storeId: string; source: string }>(
+          "storeProductEvents",
+        )
+        .find({ source: "USER" })
+        .project<{ _id: string; storeId: string }>({ _id: 1, storeId: 1 })
+        .toArray();
+      for (const event of events)
+        await db
+          .collection("substitutionEvidenceWork")
+          .updateOne(
+            { _id: event._id, storeId: event.storeId } as never,
+            {
+              $setOnInsert: {
+                eventId: event._id,
+                storeId: event.storeId,
+                generation: 1,
+                nextAttemptAt: new Date(0),
+                leaseUntil: null,
+                leaseId: null,
+              },
+            },
+            { upsert: true },
+          );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

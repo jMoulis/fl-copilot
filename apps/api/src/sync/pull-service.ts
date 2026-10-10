@@ -1,4 +1,10 @@
 import {
+  serializeSubstitutionEvidence,
+  serializeSubstitutionEvidenceState,
+  type SubstitutionEvidenceDocument,
+} from "../substitution-evidence-sync";
+import type { EvidenceStateDocument } from "../substitution-evidence-work";
+import {
   serializeNeedMembership,
   type NeedMembershipDocument,
 } from "../need-membership-sync";
@@ -146,6 +152,11 @@ export function createMongoSyncPullService(
                 change.entityType !== "product_substitution") &&
               (query.storeProductEvents === "true" ||
                 change.entityType !== "store_product_event") &&
+              (query.substitutionEvidence === "true" ||
+                ![
+                  "substitution_evidence",
+                  "substitution_evidence_state",
+                ].includes(change.entityType)) &&
               (query.commercialVersions === "true" ||
                 change.entityType !== "commercial_version_decision") &&
               (query.commercialValidation === "true" ||
@@ -300,6 +311,40 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeStoreProductEvent(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (
+              change.entityType === "substitution_evidence" ||
+              change.entityType === "substitution_evidence_state"
+            ) {
+              const evidence = change.entityType === "substitution_evidence";
+              const row = evidence
+                ? await mongoDatabase
+                    .collection<SubstitutionEvidenceDocument>(
+                      "substitutionEvidence",
+                    )
+                    .findOne({ _id: change.entityId, storeId })
+                : await mongoDatabase
+                    .collection<EvidenceStateDocument>(
+                      "substitutionEvidenceStates",
+                    )
+                    .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("SUBSTITUTION_EVIDENCE_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: evidence
+                  ? serializeSubstitutionEvidence(
+                      row as SubstitutionEvidenceDocument,
+                    )
+                  : serializeSubstitutionEvidenceState(
+                      row as EvidenceStateDocument,
+                    ),
                 changedAt: change.changedAt.toISOString(),
               };
             }

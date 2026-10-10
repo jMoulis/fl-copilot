@@ -710,6 +710,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "store_product_events",
     sql: `CREATE TABLE store_product_events(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,product_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX store_product_event_scope ON store_product_events(store_id,product_id); CREATE TABLE store_product_event_history(action_id TEXT PRIMARY KEY NOT NULL,event_id TEXT NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,action TEXT NOT NULL,created_at TEXT NOT NULL);`,
   },
+  {
+    version: 31,
+    name: "daily_substitution_evidence",
+    sql: `CREATE TABLE substitution_evidence(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,event_id TEXT NOT NULL,relationship_id TEXT NOT NULL,payload_json TEXT NOT NULL,version INTEGER NOT NULL); CREATE INDEX substitution_evidence_scope ON substitution_evidence(store_id,event_id,relationship_id); CREATE TABLE substitution_evidence_states(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,version INTEGER NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

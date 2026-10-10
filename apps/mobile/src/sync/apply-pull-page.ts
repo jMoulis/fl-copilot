@@ -1,3 +1,7 @@
+import {
+  applySubstitutionEvidence,
+  applySubstitutionEvidenceState,
+} from "../needs/evidence-repository";
 import { applyNeedMembership } from "../needs/membership-repository";
 import { applyProductSubstitution } from "../needs/substitution-repository";
 import { applyStoreProductEvent } from "../needs/store-event-repository";
@@ -158,6 +162,30 @@ export async function applyPullPage(
         )
           throw Error("STORE_EVENT_ENVELOPE_INVALID");
         await applyStoreProductEvent(transaction, storeId, change.entity);
+        continue;
+      }
+      if (
+        change.entityType === "substitution_evidence" ||
+        change.entityType === "substitution_evidence_state"
+      ) {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("SUBSTITUTION_EVIDENCE_ENVELOPE_INVALID");
+        if (change.entityType === "substitution_evidence")
+          await applySubstitutionEvidence(transaction, storeId, change.entity);
+        else
+          await applySubstitutionEvidenceState(
+            transaction,
+            storeId,
+            change.entity,
+          );
         continue;
       }
       if (change.entityType === "commercial_execution_task") {
