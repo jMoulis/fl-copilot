@@ -1,3 +1,5 @@
+import { ProductMasterRepository } from "@/products/product-master-repository";
+import { NeedUnitRepository } from "./repository";
 import { useAuth } from "@/auth/auth-provider";
 import { useEffect, useMemo, useState } from "react";
 import { Text } from "react-native";
@@ -36,6 +38,11 @@ export function ProductSubstitutionConflict({
       ),
     [sqlite],
   );
+  const [names, setNames] = useState<{
+    storeId: string;
+    products: Record<string, string>;
+    needs: Record<string, string>;
+  }>();
   const [local, setLocal] = useState<LocalProductSubstitution | null>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
@@ -48,10 +55,24 @@ export function ProductSubstitutionConflict({
   useEffect(() => {
     if (!allowedStore || !settingsStoreId) return;
     let active = true;
-    void repository
-      .get(conflict.storeId, conflict.entityId)
-      .then((row) => {
-        if (active) setLocal(row);
+    void Promise.all([
+      repository.get(conflict.storeId, conflict.entityId),
+      new ProductMasterRepository(sqlite).listProducts(conflict.storeId),
+      new NeedUnitRepository(sqlite).list(conflict.storeId),
+    ])
+      .then(([row, products, needs]) => {
+        if (active) {
+          setLocal(row);
+          setNames({
+            storeId: conflict.storeId,
+            products: Object.fromEntries(
+              products.map((r) => [r.entity.id, r.entity.label]),
+            ),
+            needs: Object.fromEntries(
+              needs.map((r) => [r.entity.id, r.entity.name]),
+            ),
+          });
+        }
       })
       .catch(() => {
         if (active) setError("La relation locale ne peut pas être lue.");
@@ -99,15 +120,23 @@ export function ProductSubstitutionConflict({
     <>
       <SectionCard title="Ma version locale">
         <Text className="text-base text-ink">
-          {local
-            ? substitutionSummary(local.entity)
+          {local &&
+          local.entity.storeId === conflict.storeId &&
+          local.entity.id === conflict.entityId
+            ? substitutionSummary(
+                local.entity,
+                names?.storeId === conflict.storeId ? names : undefined,
+              )
             : "Lecture de la version locale…"}
         </Text>
       </SectionCard>
       <SectionCard title="Version synchronisée">
         <Text className="text-base text-ink">
           {remote.success
-            ? substitutionSummary(remote.data)
+            ? substitutionSummary(
+                remote.data,
+                names?.storeId === conflict.storeId ? names : undefined,
+              )
             : "Aucune version distante disponible."}
         </Text>
       </SectionCard>
