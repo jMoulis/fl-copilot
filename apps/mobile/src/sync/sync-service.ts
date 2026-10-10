@@ -1,5 +1,6 @@
 import { applyNeedMembership } from "../needs/membership-repository";
 import { applyProductSubstitution } from "../needs/substitution-repository";
+import { applyStoreProductEvent } from "../needs/store-event-repository";
 import { applyNeedUnit } from "../needs/repository";
 import { applyStoreContext } from "../store/context-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
@@ -64,6 +65,7 @@ export interface MobileSyncServiceOptions {
   needUnits?: boolean;
   needMemberships?: boolean;
   productSubstitutions?: boolean;
+  storeProductEvents?: boolean;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
   commercialPlans?: boolean;
@@ -175,6 +177,12 @@ export class MobileSyncService {
           `product-substitutions:${storeId}`,
         )
       : true;
+    const storeProductEventsAdopted = this.options.storeProductEvents
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `store-product-events:${storeId}`,
+        )
+      : true;
     const executionAdopted = this.options.commercialExecution
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -211,6 +219,7 @@ export class MobileSyncService {
       !needUnitsAdopted ||
       !needMembershipsAdopted ||
       !productSubstitutionsAdopted ||
+      !storeProductEventsAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {
@@ -261,6 +270,7 @@ export class MobileSyncService {
                 "need_unit",
                 "need_membership",
                 "product_substitution",
+                "store_product_event",
                 "commercial_week_plan",
                 "commercial_version_decision",
               ].includes(item.entityType) &&
@@ -406,6 +416,15 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (command.entityType === "store_product_event")
+            await applyStoreProductEvent(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              command.commandType === "CREATE_STORE_EVENT"
+                ? 1
+                : (command.expectedRemoteVersion ?? 0) + 1,
+            );
           if (command.entityType === "commercial_execution_task")
             await applyCommercialExecution(
               transaction,
@@ -509,6 +528,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (command.entityType === "store_product_event")
+            await transaction.runAsync(
+              "UPDATE store_product_events SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "commercial_execution_task")
             await transaction.runAsync(
               "UPDATE commercial_execution_tasks SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -521,7 +546,23 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
-          await conflictsRepository.recordPushConflict(command, result);
+          const eventConflictLocal =
+            command.entityType === "store_product_event"
+              ? await transaction.getFirstAsync<{ payload_json: string }>(
+                  "SELECT payload_json FROM store_product_events WHERE id=? AND store_id=?",
+                  command.entityId,
+                  storeId,
+                )
+              : null;
+          await conflictsRepository.recordPushConflict(
+            eventConflictLocal
+              ? {
+                  ...command,
+                  payload: JSON.parse(eventConflictLocal.payload_json),
+                }
+              : command,
+            result,
+          );
           await outbox.markConflict(command.commandId, code);
           conflicts += 1;
         } else {
@@ -570,6 +611,12 @@ export class MobileSyncService {
           if (command.entityType === "product_substitution")
             await transaction.runAsync(
               "UPDATE product_substitutions SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "store_product_event")
+            await transaction.runAsync(
+              "UPDATE store_product_events SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );

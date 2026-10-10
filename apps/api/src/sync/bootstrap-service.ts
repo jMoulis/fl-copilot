@@ -6,6 +6,10 @@ import {
   serializeProductSubstitution,
   type ProductSubstitutionDocument,
 } from "../product-substitution-sync";
+import {
+  serializeStoreProductEvent,
+  type StoreProductEventDocument,
+} from "../store-product-event-sync";
 import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync";
 import {
   serializeStoreContext,
@@ -238,6 +242,13 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const storeEventRows =
+              query.storeProductEvents === "true"
+                ? await mongoDatabase
+                    .collection<StoreProductEventDocument>("storeProductEvents")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
             const executionTasks =
               query.commercialExecution === "true"
                 ? await mongoDatabase
@@ -364,6 +375,13 @@ export function createMongoSyncBootstrapService(
                   ? {
                       directedProductSubstitutions: substitutionRows.map(
                         serializeProductSubstitution,
+                      ),
+                    }
+                  : {}),
+                ...(query.storeProductEvents === "true"
+                  ? {
+                      productStoreEvents: storeEventRows.map(
+                        serializeStoreProductEvent,
                       ),
                     }
                   : {}),

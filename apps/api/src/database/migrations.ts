@@ -530,6 +530,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 28,
+    name: "store_product_events",
+    async up(db) {
+      await db
+        .collection("storeProductEvents")
+        .createIndex(
+          { storeId: 1, productId: 1, status: 1, startedAt: -1 },
+          { name: "store_product_event_scope" },
+        );
+      await db
+        .collection("storeProductEventHistory")
+        .createIndex(
+          { storeId: 1, eventId: 1, version: 1 },
+          { unique: true, name: "store_product_event_history" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

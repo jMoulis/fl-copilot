@@ -890,7 +890,34 @@ export const productSubstitutionHistory = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
 );
+export const storeProductEvents = sqliteTable(
+  "store_product_events",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    productId: text("product_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    remotePayloadJson: text("remote_payload_json"),
+    remoteVersion: integer("remote_version"),
+    syncState: text("sync_state").notNull(),
+    dirty: integer("dirty").notNull(),
+  },
+  (t) => [index("store_product_event_scope").on(t.storeId, t.productId)],
+);
+export const storeProductEventHistory = sqliteTable(
+  "store_product_event_history",
+  {
+    actionId: text("action_id").primaryKey(),
+    eventId: text("event_id").notNull(),
+    storeId: text("store_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    action: text("action").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+);
 export const localSchema = {
+  storeProductEvents,
+  storeProductEventHistory,
   productSubstitutions,
   productSubstitutionHistory,
   needMemberships,

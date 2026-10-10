@@ -70,6 +70,10 @@ export default function MoreScreen() {
         />
       </SectionCard>
 
+      <SecondaryButton
+        label="Signalements magasin"
+        onPress={() => router.push("/store-events" as Href)}
+      />
       <SectionCard title="Magasin">
         <MenuRow
           title="Mon magasin"

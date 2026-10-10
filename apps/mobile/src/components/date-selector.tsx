@@ -22,10 +22,16 @@ export function DateSelector({
   value,
   onConfirm,
   issue,
+  disabled = false,
+  label = "Date de casse",
+  description = "Choisissez la date imprimée en bas du ticket.",
 }: {
   value: string;
   onConfirm(value: string): void;
+  disabled?: boolean;
   issue?: string;
+  label?: string;
+  description?: string;
 }) {
   const [visible, setVisible] = useState(false);
   const [selected, setSelected] = useState("");
@@ -40,12 +46,10 @@ export function DateSelector({
   return (
     <>
       <Pressable
+        disabled={disabled}
         accessibilityRole="button"
-        accessibilityLabel={`Date de casse : ${formatFrenchCalendarDate(value)}`}
-        accessibilityHint={
-          issue ??
-          "Ouvrir le calendrier pour choisir la date imprimée sur le ticket."
-        }
+        accessibilityLabel={`${label} : ${formatFrenchCalendarDate(value)}`}
+        accessibilityHint={issue ?? description}
         onPress={open}
         className={`min-h-12 justify-center rounded-xl border px-4 py-3 ${issue ? "border-critical bg-critical-soft" : "border-line bg-canvas"}`}
       >
@@ -87,11 +91,9 @@ export function DateSelector({
                 accessibilityRole="header"
                 className="px-2 text-xl font-semibold text-ink"
               >
-                Date de casse
+                {label}
               </Text>
-              <Text className="px-2 text-sm text-muted">
-                Choisissez la date imprimée en bas du ticket.
-              </Text>
+              <Text className="px-2 text-sm text-muted">{description}</Text>
               <View className="flex-row items-center justify-between gap-2">
                 <Pressable
                   accessibilityRole="button"

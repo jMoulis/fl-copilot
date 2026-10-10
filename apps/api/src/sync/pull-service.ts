@@ -6,6 +6,10 @@ import {
   serializeProductSubstitution,
   type ProductSubstitutionDocument,
 } from "../product-substitution-sync";
+import {
+  serializeStoreProductEvent,
+  type StoreProductEventDocument,
+} from "../store-product-event-sync";
 import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync";
 import {
   serializeStoreContext,
@@ -140,6 +144,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "need_membership") &&
               (query.productSubstitutions === "true" ||
                 change.entityType !== "product_substitution") &&
+              (query.storeProductEvents === "true" ||
+                change.entityType !== "store_product_event") &&
               (query.commercialVersions === "true" ||
                 change.entityType !== "commercial_version_decision") &&
               (query.commercialValidation === "true" ||
@@ -278,6 +284,22 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeProductSubstitution(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "store_product_event") {
+              const row = await mongoDatabase
+                .collection<StoreProductEventDocument>("storeProductEvents")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("STORE_EVENT_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeStoreProductEvent(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }
