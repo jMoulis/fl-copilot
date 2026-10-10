@@ -1170,3 +1170,43 @@ it("refreshes bootstrap once when upgrading an existing cursor to store product 
   ).toEqual({ value: "1" });
   database.close();
 });
+
+it("refreshes bootstrap once when upgrading an existing cursor to daily substitution evidence", async () => {
+  const { adapter, database } = temporaryDatabase();
+  await runLocalMigrations(adapter);
+  database
+    .prepare(
+      "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES (?, ?,1)",
+    )
+    .run(storeId, "old-cursor");
+  let bootstraps = 0;
+  const snapshot = bootstrapResponse();
+  snapshot.entities.dailySubstitutionEvidence = [];
+  snapshot.entities.dailySubstitutionEvidenceStates = [];
+  const service = new MobileSyncService(
+    adapter,
+    {
+      bootstrap: async () => {
+        bootstraps++;
+        return snapshot;
+      },
+      push: async () => ({ results: [], serverTime: new Date().toISOString() }),
+      pull: async () => emptyPull("new-cursor"),
+    },
+    {
+      appVersion: "test",
+      deviceId,
+      substitutionEvidence: true,
+      maxRetries: 0,
+    },
+  );
+  await service.sync(storeId);
+  await service.sync(storeId);
+  expect(bootstraps).toBe(1);
+  expect(
+    database
+      .prepare("SELECT value FROM app_metadata WHERE key=?")
+      .get(`substitution-evidence:${storeId}`),
+  ).toEqual({ value: "1" });
+  database.close();
+});

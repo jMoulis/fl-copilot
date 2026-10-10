@@ -1,3 +1,4 @@
+import { createSubstitutionEvidenceProcessor } from "../substitution/processor.js";
 import { createCommercialVisualProcessor } from "./visual-processing.js";
 import type { CommercialVisualProvider } from "./visual-provider.js";
 import { createCommercialAiDraftProcessor } from "./ai-draft-processing.js";
@@ -178,11 +179,34 @@ export function createCommercialInngestWorkflows(
       };
     },
   );
+  const evidenceProcessor = createSubstitutionEvidenceProcessor(database);
+  const evidence = client.createFunction(
+    {
+      id: "substitution-evidence-recover-v1",
+      concurrency: 1,
+      retries: 3,
+      triggers: [{ cron: "*/15 * * * *" }],
+    },
+    async ({ step }) => {
+      const due = await step.run("due-field-observations", () =>
+        evidenceProcessor.due(10),
+      );
+      const results = [];
+      for (const item of due)
+        results.push(
+          await step.run(`evidence-${item.eventId}`, () =>
+            evidenceProcessor.process(item.storeId, item.eventId),
+          ),
+        );
+      return { processed: results.length };
+    },
+  );
   return {
     client,
     functions: [
       extract,
       recover,
+      evidence,
       ...(aiDocument && aiPage ? [aiDocument, aiPage] : []),
       ...(visualPage ? [visualPage] : []),
     ],

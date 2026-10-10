@@ -1,3 +1,7 @@
+import {
+  applySubstitutionEvidence,
+  applySubstitutionEvidenceState,
+} from "../needs/evidence-repository";
 import { applyNeedMembership } from "../needs/membership-repository";
 import { applyProductSubstitution } from "../needs/substitution-repository";
 import { applyStoreProductEvent } from "../needs/store-event-repository";
@@ -117,6 +121,20 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    for (const e of bootstrap.entities.dailySubstitutionEvidence ?? [])
+      await applySubstitutionEvidence(transaction, storeId, e);
+    for (const e of bootstrap.entities.dailySubstitutionEvidenceStates ?? [])
+      await applySubstitutionEvidenceState(transaction, storeId, e);
+    if (
+      bootstrap.entities.dailySubstitutionEvidence &&
+      bootstrap.entities.dailySubstitutionEvidenceStates
+    )
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `substitution-evidence:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     for (const prep of bootstrap.entities.commercialExecutionTasks ?? [])
       await applyCommercialExecution(transaction, storeId, prep);
     if (bootstrap.entities.commercialExecutionTasks)
@@ -226,6 +244,8 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "productNeedMemberships",
     "directedProductSubstitutions",
     "productStoreEvents",
+    "dailySubstitutionEvidence",
+    "dailySubstitutionEvidenceStates",
     "commercialVersionDecisions",
     "commercialValidatedOffers",
     "commercialWeekPlans",

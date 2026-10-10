@@ -915,7 +915,36 @@ export const storeProductEventHistory = sqliteTable(
     createdAt: text("created_at").notNull(),
   },
 );
+export const substitutionEvidence = sqliteTable(
+  "substitution_evidence",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    eventId: text("event_id").notNull(),
+    relationshipId: text("relationship_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    version: integer("version").notNull(),
+  },
+  (t) => [
+    index("substitution_evidence_scope").on(
+      t.storeId,
+      t.eventId,
+      t.relationshipId,
+    ),
+  ],
+);
+export const substitutionEvidenceStates = sqliteTable(
+  "substitution_evidence_states",
+  {
+    id: text("id").primaryKey(),
+    storeId: text("store_id").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    version: integer("version").notNull(),
+  },
+);
 export const localSchema = {
+  substitutionEvidence,
+  substitutionEvidenceStates,
   storeProductEvents,
   storeProductEventHistory,
   productSubstitutions,

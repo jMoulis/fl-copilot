@@ -1,3 +1,4 @@
+import { queueSubstitutionEvidence } from "../substitution-evidence-work.js";
 import { randomUUID } from "node:crypto";
 import { Long } from "mongodb";
 import type { MongoCommandMutationContext } from "./processed-command-service.js";
@@ -97,6 +98,7 @@ class MongoSyncChangeStore implements SyncChangeStore<MongoCommandMutationContex
     await database
       .collection<SyncChangeDocument>("syncChanges")
       .insertOne(change, { session });
+    await queueSubstitutionEvidence({ database, session }, change);
   }
 }
 

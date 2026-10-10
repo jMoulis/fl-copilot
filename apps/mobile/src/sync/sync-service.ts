@@ -66,6 +66,7 @@ export interface MobileSyncServiceOptions {
   needMemberships?: boolean;
   productSubstitutions?: boolean;
   storeProductEvents?: boolean;
+  substitutionEvidence?: boolean;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
   commercialPlans?: boolean;
@@ -183,6 +184,12 @@ export class MobileSyncService {
           `store-product-events:${storeId}`,
         )
       : true;
+    const evidenceAdopted = this.options.substitutionEvidence
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `substitution-evidence:${storeId}`,
+        )
+      : true;
     const executionAdopted = this.options.commercialExecution
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -220,6 +227,7 @@ export class MobileSyncService {
       !needMembershipsAdopted ||
       !productSubstitutionsAdopted ||
       !storeProductEventsAdopted ||
+      !evidenceAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {

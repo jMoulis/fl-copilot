@@ -314,6 +314,9 @@ importers:
 
   packages/substitution-core:
     dependencies:
+      '@fl-copilot/analytics-core':
+        specifier: workspace:*
+        version: link:../analytics-core
       '@fl-copilot/domain':
         specifier: workspace:*
         version: link:../domain
