@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/runtime.ts",
     "dev:ensure-store": "tsx --env-file-if-exists=.env src/development/ensure-store.ts",
-    "build": "tsup",
+    "build": "tsup && node ../../scripts/check-api-bundle.mjs",
     "start": "node --env-file-if-exists=.env dist/runtime.js",
     "typecheck": "tsc --noEmit"
   },
