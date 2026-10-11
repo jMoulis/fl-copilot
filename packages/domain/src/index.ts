@@ -41,3 +41,4 @@ export * from "./substitution-evidence";
 export * from "./substitution-score-history";
 export * from "./copilot-candidate";
 export * from "./copilot-eligibility";
+export * from "./copilot-priority";
