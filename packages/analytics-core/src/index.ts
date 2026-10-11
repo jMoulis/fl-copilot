@@ -8,3 +8,4 @@ export * from "./product-daily";
 export * from "./registry";
 export * from "./waste-receipt-arithmetic";
 export * from "./copilot-candidates";
+export * from "./copilot-eligibility";
