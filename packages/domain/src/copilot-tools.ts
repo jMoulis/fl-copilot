@@ -1,4 +1,9 @@
 import {
+  needListRequestSchema,
+  needListResultSchema,
+  needListTool,
+} from "./copilot-need-tools";
+import {
   sourceReferenceRequestSchema,
   sourceReferenceResultSchema,
   sourceReferenceTool,
@@ -46,6 +51,7 @@ export const copilotToolRequestSchema = z.discriminatedUnion("tool", [
   ...copilotContextRequestSchemas,
   ...copilotStoreRequestSchemas,
   sourceReferenceRequestSchema,
+  needListRequestSchema,
 ]);
 const record = <T extends z.ZodType>(entity: T) =>
   z.strictObject({
@@ -78,6 +84,7 @@ export const copilotToolResultSchema = z.discriminatedUnion("tool", [
   substitutesReadResultSchema,
   storeWeekReadResultSchema,
   sourceReferenceResultSchema,
+  needListResultSchema,
 ]);
 export type CopilotToolResult = z.infer<typeof copilotToolResultSchema>;
 export type InspectProductResult = z.infer<typeof inspectProductResultSchema>;
@@ -98,6 +105,7 @@ export const copilotToolRegistry = [
   ...copilotContextToolRegistry,
   ...copilotStoreToolRegistry,
   sourceReferenceTool,
+  needListTool,
   {
     name: "product.inspect",
     schemaVersion: 1,

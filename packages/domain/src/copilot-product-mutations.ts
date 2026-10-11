@@ -89,7 +89,11 @@ export class ProductClassificationError extends Error {
       | "UNAVAILABLE"
       | "CHILD_CONFLICT"
       | "IDENTIFIER_CONFLICT"
-      | "ALIAS_REFUSED",
+      | "ALIAS_REFUSED"
+      | "NEED_UNAVAILABLE"
+      | "NEED_CODE_CONFLICT"
+      | "NEED_CODE_IMMUTABLE"
+      | "RELATION_REFUSAL_REQUIRED",
     readonly details?: {
       productId: string;
       fields?: Array<"category" | "nature" | "salesUnit">;
@@ -117,6 +121,14 @@ export class ProductClassificationError extends Error {
           "Les identifiants ou alias ont changé. Relisez la fiche avant de confirmer.",
         IDENTIFIER_CONFLICT:
           "Un identifiant appartient déjà à un autre produit. Choisissez la fiche concernée.",
+        NEED_UNAVAILABLE:
+          "Ce besoin client n’est pas disponible dans ce magasin.",
+        NEED_CODE_CONFLICT:
+          "Ce code de besoin existe déjà, même si le besoin a été désactivé.",
+        NEED_CODE_IMMUTABLE:
+          "Le code d’un besoin existant ne peut pas être remplacé.",
+        RELATION_REFUSAL_REQUIRED:
+          "Cette association a été refusée. Une décision explicite de réactivation est nécessaire.",
         ALIAS_REFUSED:
           "Cet alias a déjà été refusé. La sauvegarde ne peut pas le réactiver.",
         UNAVAILABLE:
