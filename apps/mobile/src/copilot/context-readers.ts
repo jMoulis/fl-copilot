@@ -52,6 +52,26 @@ export async function readCopilotContext(
   digest?: (text: string) => Promise<string>,
 ) {
   switch (request.tool) {
+    case "store.settings.inspect": {
+      const value = await new StoreContextRepository(
+        readOnlyToolDatabase(tx),
+      ).get(storeId);
+      if (value && value.entity.storeId !== storeId)
+        throw new CopilotToolError("FORBIDDEN");
+      return {
+        snapshot: value
+          ? {
+              entity: value.entity,
+              syncState: value.syncState,
+              remoteVersion: value.remoteVersion,
+            }
+          : null,
+        message: value
+          ? "Configuration du magasin consultée. La position enregistrée, si présente, ne représente pas une nouvelle capture GPS."
+          : "Aucune configuration enregistrée pour ce magasin.",
+      };
+    }
+
     case "commercial.execution.inspect": {
       if (!digest) throw new CopilotToolError("UNAVAILABLE");
       const db = readOnlyToolDatabase(tx),
