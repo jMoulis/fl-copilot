@@ -13,3 +13,15 @@ Sources, entity IDs (including leading zeroes), dated context, evidence, data-qu
 This ticket creates the deterministic input seam for later filtering, scoring and remote generation. It is not an active chat, an AI call, a new mobile screen or a persistence/sync migration. Existing operational data remains authoritative. Weekly deadlines and other producers can supply the explicit weekly contract without changing the aggregator. M7-T02/T03/T04 own eligibility, priority components and conflicting proposed actions; M7-T05/T06 own configured remote AI and bounded French output. The full conversational copilot remains the M7 objective.
 
 Validation: 610 local tests, structure, lint and strict TypeScript. No paid EAS build is needed for this pure shared increment.
+
+## M7-T02 — Deterministic eligibility filter
+
+`filterCopilotEligibility` consumes the normalized T01 candidates and trusted store-scoped entity/fact snapshots. It does not fetch, generate text, write, rank or discard candidates. The versioned configurable quality policy defaults to .7. Every result retains its source scores/context/evidence and reports ELIGIBLE, TO_REVIEW or SUPPRESSED with stable structured reasons and the evaluation instant/policy.
+
+Inactive/missing or mismatched entity kinds, explicitly rejected relations, non-applicable operations, withdrawn/stale source context and passed exact deadlines suppress the proposal. Absent snapshots, unresolved synchronization, unconfirmed relations/applicability, unknown/weak quality, critical ambiguity, missing critical facts and required incomplete execution downgrade it for targeted review. A missing snapshot is not treated as proof that an entity does not exist. Confirmed pending local facts remain usable offline. Unknown availability is never turned into stock. No mandatory product category/nature/unit completion is introduced.
+
+Known purchase cost is required for local promotion/lot proposals; checking a price is an inspection and does not require inventing a purchase cost. The trusted adapter decides which facts are critical and resolves cost/execution/source currency from canonical state, never model text. VALIDATE_DATA and WAIT_FOR_MORE_DATA remain possible despite low quality, but still respect entity/source/rejection/deadline and critical-fact guards. Exact deadline equality remains timely. All suppressed/review entries remain explainable; no rejected relation is reactivated. Cross-store and divergent same-identity snapshots fail explicitly.
+
+The owner's ChatGPT-level simple, efficient and polished conversation requirement is recorded in PRODUCT_ROADMAP.md. It guides the later M7 native chat; this increment does not introduce a new UI or paid EAS build.
+
+Validation: 618 local tests pass, including eight eligibility scenarios covering offline pending state, guards, unknown versus zero, cost requirements, quality exceptions, execution/ambiguity, exact deadlines, stable replay, corruption and configurable boundary. Structure, lint and strict TypeScript pass.
