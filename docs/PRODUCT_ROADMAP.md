@@ -326,3 +326,7 @@ Follow `docs/M7_CONVERSATIONAL_DELIVERY_PLAN.md` for eleven delivery blocks and 
 ### Natural conversation and required web research — 2026-10-11
 
 Julien confirms the dialogue must be as natural as possible and the Copilot must be able to research the web. This is required V1 coverage in M7-T19. Ordinary questions/replies are the default; inline forms are contextual conveniences, not a compulsory format for every turn. Public-web research supports relevant store/retail/shopper questions with sources and freshness. External claims remain distinct from actual store data and cannot silently modify official figures or operational records. See the conversational delivery plan for provenance, privacy, uncertainty and UX acceptance.
+
+### Resend email source intake — approved 2026-10-11
+
+Use Resend inbound receiving for automatic document intake within M7-T23, starting with the account's managed development receiving address (`…resend.app`), not the test-sending identity `onboarding@resend.dev`. Direct sends/forwards and a later targeted Gmail forwarding rule remove the download/re-import journey. The existing source processors handle Mercalys and PDF/photo extraction, with durable private originals, store-bound provenance, duplicate/retry handling and conversational results/clarifications. Server-origin email reception replicates back to local SQLite; it does not replace offline-first user actions or authorize arbitrary model/email writes. Setup details/acceptance are in the conversational delivery plan.
