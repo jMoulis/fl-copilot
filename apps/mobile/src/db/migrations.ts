@@ -720,6 +720,11 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "substitution_score_audit",
     sql: `CREATE TABLE substitution_score_history(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,substitution_id TEXT NOT NULL,relationship_version INTEGER NOT NULL,payload_json TEXT NOT NULL,UNIQUE(store_id,substitution_id,relationship_version)); CREATE INDEX substitution_score_scope ON substitution_score_history(store_id,substitution_id);`,
   },
+  {
+    version: 33,
+    name: "copilot_priority_snapshots",
+    sql: `CREATE TABLE copilot_priority_snapshots(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,evaluated_at TEXT NOT NULL,payload_json TEXT NOT NULL); CREATE INDEX copilot_priority_scope ON copilot_priority_snapshots(store_id,evaluated_at);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {
