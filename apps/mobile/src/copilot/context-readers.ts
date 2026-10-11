@@ -13,7 +13,10 @@ import { CopilotToolError, copilotToolRequestSchema } from "@fl-copilot/domain";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { TodaySummaryRepository } from "../today/today-summary";
 import { WasteReceiptRepository } from "../documents/waste-receipt-repository";
-import { readCommercialChoices } from "../commercial/offer-choice-repository";
+import {
+  CommercialChoiceRepository,
+  readCommercialChoices,
+} from "../commercial/offer-choice-repository";
 import { readValidatedOffers } from "../commercial/validated-offer-repository";
 import { commercialOfferValidationCurrent } from "@fl-copilot/commercial-core";
 export function readOnlyToolDatabase(tx: OutboxDatabase) {
@@ -35,6 +38,27 @@ export async function readCopilotContext(
   observedAt: string,
 ) {
   switch (request.tool) {
+    case "commercial.choice.inspect": {
+      const value = await new CommercialChoiceRepository(
+        readOnlyToolDatabase(tx),
+        async () => {
+          throw new CopilotToolError("FORBIDDEN");
+        },
+      ).get(storeId, request.input.choiceId);
+      return {
+        snapshot: value
+          ? {
+              entity: value.entity,
+              syncState: value.syncState,
+              remoteVersion: value.remoteVersion,
+            }
+          : null,
+        message: value
+          ? "Choix commercial consulté. Son statut ne prouve pas l’exécution en rayon."
+          : "Choix commercial introuvable dans ce magasin.",
+      };
+    }
+
     case "commercial.preparation.inspect": {
       const value = await new CommercialPreparationRepository(
         readOnlyToolDatabase(tx),
