@@ -1,4 +1,9 @@
 import {
+  isChatType,
+  serializeChat,
+  chatCollections,
+} from "../copilot/conversation-store";
+import {
   serializeScoreHistory,
   type ScoreHistoryDocument,
 } from "../substitution/score-store";
@@ -93,7 +98,11 @@ export class SyncPullCursorError extends Error {
 }
 
 export interface SyncPullService {
-  pull(storeId: string, query: SyncPullQuery): Promise<SyncPullResponse>;
+  pull(
+    storeId: string,
+    query: SyncPullQuery,
+    ownerId?: string,
+  ): Promise<SyncPullResponse>;
 }
 
 export function createMongoSyncPullService(
@@ -101,7 +110,7 @@ export function createMongoSyncPullService(
   now: () => Date = () => new Date(),
 ): SyncPullService {
   return {
-    async pull(storeId, query) {
+    async pull(storeId, query, ownerId) {
       const afterSequence = query.cursor
         ? decodeCursor(query.cursor, storeId)
         : Long.ZERO;
@@ -129,10 +138,34 @@ export function createMongoSyncPullService(
         storeId,
         selected,
       );
+      const privateEntities = new Map<
+        string,
+        import("../copilot/conversation-store").ChatRecordDocument
+      >();
+      if (query.copilotHistory === "true" && ownerId) {
+        await Promise.all(
+          Object.entries(chatCollections).map(async ([type, collection]) => {
+            const ids = selected
+              .filter((change) => change.entityType === type)
+              .map((change) => change.entityId);
+            if (!ids.length) return;
+            const rows = await mongoDatabase
+              .collection<
+                import("../copilot/conversation-store").ChatRecordDocument
+              >(collection)
+              .find({ _id: { $in: ids }, storeId, ownerId })
+              .toArray();
+            for (const row of rows)
+              privateEntities.set(`${type}:${row._id}`, row);
+          }),
+        );
+      }
       const changes = await Promise.all(
         selected
           .filter(
             (change) =>
+              (!isChatType(change.entityType) ||
+                (query.copilotHistory === "true" && !!ownerId)) &&
               (query.commercialReview === "true" ||
                 ![
                   "commercial_review_page",
@@ -174,6 +207,23 @@ export function createMongoSyncPullService(
                 ].includes(change.entityType)),
           )
           .map(async (change) => {
+            if (isChatType(change.entityType)) {
+              const row = privateEntities.get(
+                `${change.entityType}:${change.entityId}`,
+              );
+              if (!row) return null;
+              if (change.operation !== "UPSERT")
+                throw Error("COPILOT_HISTORY_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                entityVersion: row.version,
+                operation: change.operation,
+                entity: serializeChat(change.entityType, row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (change.entityType === "commercial_week_plan") {
               const row = await mongoDatabase
                 .collection<WeekPlanDocument>("commercialWeekPlans")
@@ -487,12 +537,29 @@ export function createMongoSyncPullService(
             return toEnvelope(change, entities, productEntities);
           }),
       );
-      const nextSequence = selected.at(-1)?.sequence ?? afterSequence;
+      const ready = changes.filter(
+        (c): c is NonNullable<typeof c> => c !== null,
+      );
+      const bounded: typeof ready = [];
+      let bytes = 1024,
+        truncated = false;
+      for (const c of ready) {
+        const size = Buffer.byteLength(JSON.stringify(c), "utf8");
+        if (bounded.length && bytes + size > 2 * 1024 * 1024) {
+          truncated = true;
+          break;
+        }
+        bounded.push(c);
+        bytes += size + 1;
+      }
+      const nextSequence = truncated
+        ? Long.fromString(bounded.at(-1)!.sequence)
+        : (selected.at(-1)?.sequence ?? afterSequence);
 
       return {
-        changes,
+        changes: bounded,
         nextCursor: encodeSyncCursor(storeId, nextSequence),
-        hasMore,
+        hasMore: hasMore || truncated,
         serverTime: now().toISOString(),
       };
     },

@@ -1,3 +1,4 @@
+import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applyNeedMembership } from "../needs/membership-repository";
 import { applyProductSubstitution } from "../needs/substitution-repository";
 import { applyStoreProductEvent } from "../needs/store-event-repository";
@@ -68,6 +69,8 @@ export interface MobileSyncServiceOptions {
   storeProductEvents?: boolean;
   substitutionEvidence?: boolean;
   substitutionScores?: boolean;
+  copilotHistory?: boolean;
+  copilotOwnerId?: string;
   commercialVersions?: boolean;
   commercialValidation?: boolean;
   commercialPlans?: boolean;
@@ -99,14 +102,25 @@ export class MobileSyncService {
   }
 
   sync(storeId: string): Promise<SyncSummary> {
-    const active = activeSyncCycles.get(storeId);
+    const active = activeSyncCycles.get(
+      `${storeId}:${this.options.copilotOwnerId ?? ""}`,
+    );
     if (active) return active;
     const cycle = this.runSync(storeId).finally(() => {
-      if (activeSyncCycles.get(storeId) === cycle) {
-        activeSyncCycles.delete(storeId);
+      if (
+        activeSyncCycles.get(
+          `${storeId}:${this.options.copilotOwnerId ?? ""}`,
+        ) === cycle
+      ) {
+        activeSyncCycles.delete(
+          `${storeId}:${this.options.copilotOwnerId ?? ""}`,
+        );
       }
     });
-    activeSyncCycles.set(storeId, cycle);
+    activeSyncCycles.set(
+      `${storeId}:${this.options.copilotOwnerId ?? ""}`,
+      cycle,
+    );
     return cycle;
   }
 
@@ -185,6 +199,14 @@ export class MobileSyncService {
           `store-product-events:${storeId}`,
         )
       : true;
+    if (this.options.copilotHistory && !this.options.copilotOwnerId)
+      throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+    const chatAdopted = this.options.copilotHistory
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `copilot-history:${storeId}:${this.options.copilotOwnerId}`,
+        )
+      : true;
     const scoresAdopted = this.options.substitutionScores
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -236,6 +258,7 @@ export class MobileSyncService {
       !storeProductEventsAdopted ||
       !evidenceAdopted ||
       !scoresAdopted ||
+      !chatAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {
@@ -254,7 +277,12 @@ export class MobileSyncService {
     const snapshot = await this.withRetry(() =>
       this.transport.bootstrap(storeId),
     );
-    await applyBootstrap(this.database, storeId, snapshot);
+    await applyBootstrap(
+      this.database,
+      storeId,
+      snapshot,
+      this.options.copilotOwnerId,
+    );
   }
 
   private async pushUnlocked(storeId: string): Promise<PushSummary> {
@@ -264,8 +292,16 @@ export class MobileSyncService {
         this.database,
         this.now,
       ).listPending(storeId);
-      if (commands.length === 0) return summary;
-      const batch = await this.pushBatch(storeId, commands);
+      const ownedCommands = commands.filter(
+        (c) =>
+          !c.entityType.startsWith("copilot_") ||
+          (typeof c.payload === "object" &&
+            c.payload !== null &&
+            "ownerId" in c.payload &&
+            c.payload.ownerId === this.options.copilotOwnerId),
+      );
+      if (ownedCommands.length === 0) return summary;
+      const batch = await this.pushBatch(storeId, ownedCommands);
       summary.pushed += batch.pushed;
       summary.conflicts += batch.conflicts;
       summary.failed += batch.failed;
@@ -278,6 +314,8 @@ export class MobileSyncService {
           !next.some(
             (item) =>
               [
+                "copilot_conversation",
+                "copilot_message",
                 "product_alias",
                 "commercial_offer_choice",
                 "commercial_week_preparation",
@@ -376,6 +414,26 @@ export class MobileSyncService {
                   : { entity: result.remoteEntity }),
               },
               localVersion,
+            );
+          }
+          if (
+            command.entityType === "copilot_conversation" ||
+            command.entityType === "copilot_message"
+          ) {
+            const ownerId = this.options.copilotOwnerId;
+            if (!ownerId) throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+            const v =
+              typeof command.payload === "object" &&
+              command.payload !== null &&
+              "version" in command.payload
+                ? Number(command.payload.version)
+                : undefined;
+            await applyCopilotRecord(
+              transaction,
+              { storeId, ownerId },
+              command.entityType,
+              result.remoteEntity,
+              v,
             );
           }
           if (command.entityType === "waste_receipt_publication")
@@ -526,6 +584,15 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (
+            command.entityType === "copilot_conversation" ||
+            command.entityType === "copilot_message"
+          )
+            await transaction.runAsync(
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : "copilot_messages"} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "need_unit")
             await transaction.runAsync(
               "UPDATE need_units SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -612,6 +679,15 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (
+            command.entityType === "copilot_conversation" ||
+            command.entityType === "copilot_message"
+          )
+            await transaction.runAsync(
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : "copilot_messages"} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "need_unit")
             await transaction.runAsync(
               "UPDATE need_units SET sync_state='ERROR' WHERE id=? AND store_id=?",
@@ -669,7 +745,12 @@ export class MobileSyncService {
       const page = await this.withRetry(() =>
         this.transport.pull(storeId, cursor as string),
       );
-      await applyPullPage(this.database, storeId, page);
+      await applyPullPage(
+        this.database,
+        storeId,
+        page,
+        this.options.copilotOwnerId,
+      );
       cursor = page.nextCursor;
       pulled += page.changes.length;
       hasMore = page.hasMore;
@@ -722,7 +803,9 @@ export class MobileSyncService {
   }
 
   private async waitForActiveCycle(storeId: string) {
-    await activeSyncCycles.get(storeId);
+    await activeSyncCycles.get(
+      `${storeId}:${this.options.copilotOwnerId ?? ""}`,
+    );
   }
 
   private async withRetry<T>(operation: () => Promise<T>) {

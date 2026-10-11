@@ -91,6 +91,7 @@ export const syncPullQuerySchema = z.object({
   storeProductEvents: z.enum(["true", "false"]).optional(),
   substitutionEvidence: z.enum(["true", "false"]).optional(),
   substitutionScores: z.enum(["true", "false"]).optional(),
+  copilotHistory: z.enum(["true", "false"]).optional(),
   commercialVersions: z.enum(["true", "false"]).optional(),
   commercialValidation: z.enum(["true", "false"]).optional(),
   commercialPlans: z.enum(["true", "false"]).optional(),
@@ -125,6 +126,7 @@ export const bootstrapQuerySchema = z.object({
   storeProductEvents: z.enum(["true", "false"]).optional(),
   substitutionEvidence: z.enum(["true", "false"]).optional(),
   substitutionScores: z.enum(["true", "false"]).optional(),
+  copilotHistory: z.enum(["true", "false"]).optional(),
   commercialVersions: z.enum(["true", "false"]).optional(),
   commercialValidation: z.enum(["true", "false"]).optional(),
   commercialPlans: z.enum(["true", "false"]).optional(),
@@ -138,6 +140,10 @@ export const bootstrapQuerySchema = z.object({
 export type BootstrapQuery = z.infer<typeof bootstrapQuerySchema>;
 
 export const bootstrapEntitiesSchema = z.object({
+  copilotHistoryOwnerId: z.string().uuid().optional(),
+  copilotConversations: z.array(jsonObjectSchema).optional(),
+  copilotMessages: z.array(jsonObjectSchema).optional(),
+  copilotHistoryPartial: z.boolean().optional(),
   syncTestEntities: z.array(jsonObjectSchema),
   products: z.array(productSchema),
   productIdentifiers: z.array(productIdentifierSchema),

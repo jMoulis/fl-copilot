@@ -1,4 +1,8 @@
 import {
+  copilotHistoryPageSchema,
+  type CopilotHistoryPage,
+} from "@fl-copilot/sync-contracts";
+import {
   weeklyContextSchema,
   type WeeklyContext,
 } from "@fl-copilot/sync-contracts";
@@ -117,6 +121,7 @@ export class ApiClient {
     storeProductEvents = false,
     substitutionEvidence = false,
     substitutionScores = false,
+    copilotHistory = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -134,6 +139,7 @@ export class ApiClient {
     if (storeProductEvents) query.set("storeProductEvents", "true");
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
+    if (copilotHistory) query.set("copilotHistory", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
     const encodedQuery = query.toString();
@@ -164,6 +170,7 @@ export class ApiClient {
     storeProductEvents = false,
     substitutionEvidence = false,
     substitutionScores = false,
+    copilotHistory = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -183,6 +190,7 @@ export class ApiClient {
     if (storeProductEvents) query.set("storeProductEvents", "true");
     if (substitutionEvidence) query.set("substitutionEvidence", "true");
     if (substitutionScores) query.set("substitutionScores", "true");
+    if (copilotHistory) query.set("copilotHistory", "true");
     const suffix = query.toString() ? `?${query}` : "";
     return this.request(
       `/api/v1/sync/bootstrap${suffix}`,
@@ -191,6 +199,25 @@ export class ApiClient {
     ) as Promise<BootstrapResponse>;
   }
 
+  copilotHistory(
+    accessToken: string,
+    storeId: string,
+    conversationId?: string,
+    before?: { createdAt: string; id: string },
+    limit = 50,
+  ): Promise<CopilotHistoryPage> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (conversationId) query.set("conversationId", conversationId);
+    if (before) {
+      query.set("beforeCreatedAt", before.createdAt);
+      query.set("beforeId", before.id);
+    }
+    return this.request(
+      `/api/v1/copilot/history?${query}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      copilotHistoryPageSchema,
+    ) as Promise<CopilotHistoryPage>;
+  }
   commercialOriginalLink(
     accessToken: string,
     storeId: string,

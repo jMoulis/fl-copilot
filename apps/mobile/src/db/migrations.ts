@@ -725,6 +725,18 @@ export const localMigrations: readonly LocalMigration[] = [
     name: "copilot_priority_snapshots",
     sql: `CREATE TABLE copilot_priority_snapshots(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,evaluated_at TEXT NOT NULL,payload_json TEXT NOT NULL); CREATE INDEX copilot_priority_scope ON copilot_priority_snapshots(store_id,evaluated_at);`,
   },
+  {
+    version: 34,
+    name: "copilot_conversations",
+    sql: `
+ CREATE TABLE copilot_conversations(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+ CREATE INDEX copilot_conversations_scope ON copilot_conversations(store_id,owner_id);
+ CREATE TABLE copilot_messages(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,created_at TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+ CREATE INDEX copilot_messages_scope ON copilot_messages(store_id,owner_id,conversation_id,created_at,id);
+ CREATE TABLE copilot_conversation_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL);
+ CREATE TABLE copilot_drafts(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id));
+ `,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

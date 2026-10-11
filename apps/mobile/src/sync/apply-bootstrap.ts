@@ -1,3 +1,4 @@
+import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applySubstitutionScoreHistory } from "../needs/score-repository";
 import {
   applySubstitutionEvidence,
@@ -32,6 +33,7 @@ export async function applyBootstrap(
   database: AtomicMutationDatabase,
   storeId: string,
   bootstrap: BootstrapResponse,
+  ownerId?: string,
 ) {
   const store = bootstrapStoreSchema.parse(bootstrap.store);
   if (store.id !== storeId) {
@@ -47,6 +49,34 @@ export async function applyBootstrap(
   });
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
+    if (bootstrap.entities.copilotHistoryOwnerId) {
+      if (ownerId !== bootstrap.entities.copilotHistoryOwnerId)
+        throw Error("COPILOT_HISTORY_SCOPE_INVALID");
+      for (const c of bootstrap.entities.copilotConversations ?? [])
+        await applyCopilotRecord(
+          transaction,
+          { storeId, ownerId },
+          "copilot_conversation",
+          c,
+        );
+      for (const m of bootstrap.entities.copilotMessages ?? [])
+        await applyCopilotRecord(
+          transaction,
+          { storeId, ownerId },
+          "copilot_message",
+          m,
+        );
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `copilot-history:${storeId}:${ownerId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    } else if (
+      bootstrap.entities.copilotConversations ||
+      bootstrap.entities.copilotMessages
+    )
+      throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
     await applyProductMasterSnapshot(transaction, storeId, bootstrap.entities);
     for (const prep of bootstrap.entities.commercialWeekPlans ?? [])
       await applyCommercialPlan(transaction, storeId, prep);
@@ -250,6 +280,10 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialWeekPreparations",
     "commercialExecutionTasks",
     "storeContextSettings",
+    "copilotHistoryOwnerId",
+    "copilotHistoryPartial",
+    "copilotConversations",
+    "copilotMessages",
     "needUnitCatalogue",
     "productNeedMemberships",
     "directedProductSubstitutions",
@@ -272,7 +306,11 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
   ]);
   if (
     Object.entries(bootstrap.entities).some(
-      ([name, entities]) => !supported.has(name) && entities.length > 0,
+      ([name, entities]) =>
+        !supported.has(name) &&
+        (Array.isArray(entities)
+          ? entities.length > 0
+          : entities !== undefined),
     )
   ) {
     throw new Error("Bootstrap contains unsupported entity types.");

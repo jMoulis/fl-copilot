@@ -1,4 +1,9 @@
 import {
+  historyQuerySchema,
+  historyPageSchema,
+  readCopilotHistory,
+} from "./copilot/history";
+import {
   createWeekContextService,
   type WeekContextService,
 } from "./context/week-context.js";
@@ -364,12 +369,45 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       if (!accessToken) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
-      await auth.authorizeStore(
+      const principal = await auth.authorizeStore(
         accessToken,
         request.body.storeId,
         request.body.deviceId,
       );
-      return syncPush.push(request.body, request.id);
+      return request.body.commands.some(
+        (c) =>
+          c.entityType.startsWith("copilot_") || c.type.startsWith("COPILOT_"),
+      )
+        ? syncPush.push(request.body, request.id, principal.userId)
+        : syncPush.push(request.body, request.id);
+    },
+  );
+  app.get(
+    "/api/v1/copilot/history",
+    {
+      schema: {
+        querystring: historyQuerySchema,
+        response: { 200: historyPageSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization;
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string")
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      const store = await auth.authorizeStore(token.slice(7), storeId);
+      return readCopilotHistory(
+        await dependencies.database.getDb(),
+        storeId,
+        store.userId,
+        request.query,
+      );
     },
   );
   app.get(
@@ -460,9 +498,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       if (!accessToken) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
-      await auth.authorizeStore(accessToken, storeId);
+      const principal = await auth.authorizeStore(accessToken, storeId);
       try {
-        return await syncPull.pull(storeId, request.query);
+        return request.query.copilotHistory === "true"
+          ? await syncPull.pull(storeId, request.query, principal.userId)
+          : await syncPull.pull(storeId, request.query);
       } catch (error) {
         if (error instanceof SyncPullCursorError) {
           throw new AuthError(

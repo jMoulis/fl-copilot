@@ -93,3 +93,6 @@ export * from "./store-product-event";
 export * from "./substitution-evidence";
 
 export * from "./substitution-score-history";
+export * from "./copilot-conversation";
+
+export * from "./copilot-history";
