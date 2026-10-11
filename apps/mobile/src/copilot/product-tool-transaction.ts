@@ -48,22 +48,32 @@ export async function queueProductToolRecomputation(
   });
   return jobId;
 }
+export const reviewedStoreOperationAuthoritySchema =
+  productClassificationAuthoritySchema
+    .omit({ canManageProducts: true })
+    .extend({ canExecute: z.boolean() });
+export type ReviewedStoreOperationAuthority = z.infer<
+  typeof reviewedStoreOperationAuthoritySchema
+>;
 /** Request must already be parsed by its strict tool schema. Authority is trusted app context. */
-export async function runReviewedProductTool<
+export async function runReviewedStoreOperation<
   T extends { operationId: string; userMessageId: string; appliedAt: string },
 >(
   db: OutboxDatabase & AtomicMutationDatabase,
   request: { operationId: string },
-  rawAuthority: ProductClassificationAuthority,
+  rawAuthority: ReviewedStoreOperationAuthority,
   schema: z.ZodType<T>,
-  work: (tx: OutboxDatabase, ctx: ProductClassificationAuthority) => Promise<T>,
+  work: (
+    tx: OutboxDatabase,
+    ctx: ReviewedStoreOperationAuthority,
+  ) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> {
-  const scope = productClassificationAuthoritySchema.safeParse(rawAuthority),
+  const scope = reviewedStoreOperationAuthoritySchema.safeParse(rawAuthority),
     requestJson = JSON.stringify(request);
   if (
     !scope.success ||
-    !scope.data.canManageProducts ||
+    !scope.data.canExecute ||
     scope.data.authorizedRequestJson !== requestJson
   )
     throw new ProductClassificationError("FORBIDDEN");
@@ -150,4 +160,27 @@ export async function runReviewedProductTool<
   }
   if (!result) throw new ProductClassificationError("UNAVAILABLE");
   return result;
+}
+
+export async function runReviewedProductTool<
+  T extends { operationId: string; userMessageId: string; appliedAt: string },
+>(
+  db: OutboxDatabase & AtomicMutationDatabase,
+  request: { operationId: string },
+  rawAuthority: ProductClassificationAuthority,
+  schema: z.ZodType<T>,
+  work: (tx: OutboxDatabase, ctx: ProductClassificationAuthority) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const parsed = productClassificationAuthoritySchema.safeParse(rawAuthority);
+  if (!parsed.success) throw new ProductClassificationError("FORBIDDEN");
+  const { canManageProducts, ...scope } = parsed.data;
+  return runReviewedStoreOperation(
+    db,
+    request,
+    { ...scope, canExecute: canManageProducts },
+    schema,
+    (tx) => work(tx, parsed.data),
+    signal,
+  );
 }
