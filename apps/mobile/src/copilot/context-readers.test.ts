@@ -48,10 +48,14 @@ class Adapter implements OutboxDatabase {
     }
   }
 }
-async function setup() {
+async function setup(storeId?: string) {
   const db = new DatabaseSync(":memory:"),
     a = new Adapter(db),
     f = chatFixture(randomUUID);
+  if (storeId) {
+    f.storeId = storeId;
+    f.conversation.storeId = storeId;
+  }
   await runLocalMigrations(a);
   await new CopilotConversationRepository(a, f).save(f.conversation, {
     commandId: randomUUID(),
@@ -63,7 +67,7 @@ async function setup() {
     conversationId: f.conversation.id,
     canReadStore: true,
   };
-  const runtime = new CopilotToolRuntime(a);
+  const runtime = new CopilotToolRuntime(a, () => "2026-10-11T12:00:00.000Z");
   return {
     db,
     a,
@@ -294,6 +298,209 @@ it("does not reuse commercial validation after the selected choice revision chan
       offersReadResultSchema.parse(await x.call("commercial.offers", input))
         .offers[0]?.validation,
     ).toBeNull();
+  } finally {
+    x.db.close();
+  }
+});
+it("reads interval-overlapping store events with scope, closure boundaries, pagination and unresolved sync state", async () => {
+  const x = await setup();
+  try {
+    const { applyStoreProductEvent } =
+      await import("../needs/store-event-repository");
+    const base = {
+      storeId: x.f.storeId,
+      productId: randomUUID(),
+      type: "OUT_OF_STOCK" as const,
+      startedAt: "2026-10-10T08:00:00.000Z",
+      endedAt: null,
+      severity: null,
+      comment: null,
+      clientCapturedAt: "2026-10-10T10:00:00.000Z",
+      source: "USER" as const,
+      sourceDocumentId: null,
+      status: "ACTIVE" as const,
+      version: 1,
+      createdAt: "2026-10-10T10:00:00.000Z",
+      updatedAt: "2026-10-10T10:00:00.000Z",
+    };
+    const one = { ...base, id: randomUUID() },
+      two = { ...base, id: randomUUID(), type: "QUALITY_ISSUE" as const };
+    for (const e of [
+      one,
+      two,
+      {
+        ...base,
+        id: randomUUID(),
+        status: "CLOSED" as const,
+        endedAt: "2026-10-10T09:00:00.000Z",
+      },
+      { ...base, id: randomUUID(), storeId: randomUUID() },
+    ])
+      await applyStoreProductEvent(x.a, e.storeId, e);
+    await x.a.runAsync(
+      "UPDATE store_product_events SET sync_state='CONFLICT' WHERE id=?",
+      two.id,
+    );
+    const { eventsReadResultSchema } = await import("@fl-copilot/domain");
+    const input = {
+      startAt: "2026-10-10T11:00:00+02:00",
+      endAt: "2026-10-10T12:00:00+02:00",
+      limit: 1,
+    };
+    const first = eventsReadResultSchema.parse(
+      await x.call("store.events", input),
+    );
+    expect(first.startAt).toBe("2026-10-10T09:00:00.000Z");
+    expect(first.events).toHaveLength(1);
+    expect(first.hasMore).toBe(true);
+    const second = eventsReadResultSchema.parse(
+      await x.call("store.events", { ...input, afterId: first.nextAfterId }),
+    );
+    expect(second.hasMore).toBe(false);
+    expect(
+      new Set([...first.events, ...second.events].map((e) => e.entity.id)),
+    ).toEqual(new Set([one.id, two.id]));
+    expect(
+      [...first.events, ...second.events].find((e) => e.entity.id === two.id)
+        ?.syncState,
+    ).toBe("CONFLICT");
+    await expect(
+      x.call("store.events", { ...input, endAt: input.startAt }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  } finally {
+    x.db.close();
+  }
+});
+it("preserves directed substitution rules, declared basis, unknown stock, refusals and event exclusions without business writes", async () => {
+  const { substitutionFixture } =
+    await import("../../../../scripts/test-substitution-fixtures");
+  const f = await substitutionFixture(),
+    x = await setup(f.need.storeId);
+  try {
+    const { ProductMasterRepository } =
+      await import("../products/product-master-repository");
+    const { applyNeedUnit } = await import("../needs/repository");
+    const { applyProductSubstitution } =
+      await import("../needs/substitution-repository");
+    const { applyStoreProductEvent } =
+      await import("../needs/store-event-repository");
+    const { substitutesReadResultSchema } = await import("@fl-copilot/domain");
+    for (const p of [f.product, f.substitute])
+      await new ProductMasterRepository(x.a).upsertProduct(p, {
+        commandId: randomUUID(),
+        deviceId: randomUUID(),
+      });
+    await applyNeedUnit(x.a, f.need.storeId, f.need);
+    await applyProductSubstitution(x.a, f.need.storeId, f.substitution);
+    const before = x.db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get();
+    const first = substitutesReadResultSchema.parse(
+      await x.call("substitution.lookup", { productId: f.product.id }),
+    );
+    expect(first.candidates[0]?.availability).toBe("UNKNOWN");
+    expect(first.candidates[0]?.relationships[0]?.basis).toBe("DECLARED");
+    expect(
+      first.candidates[0]?.relationships[0]?.relation.relationshipScore,
+    ).toBeNull();
+    expect(x.db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()).toEqual(
+      before,
+    );
+    expect(
+      substitutesReadResultSchema.parse(
+        await x.call("substitution.lookup", { productId: f.substitute.id }),
+      ).candidates,
+    ).toHaveLength(0);
+    await applyStoreProductEvent(x.a, f.need.storeId, {
+      id: randomUUID(),
+      storeId: f.need.storeId,
+      productId: f.substitute.id,
+      type: "OUT_OF_STOCK",
+      startedAt: "2026-10-11T08:00:00.000Z",
+      endedAt: null,
+      severity: null,
+      comment: null,
+      clientCapturedAt: "2026-10-11T08:00:00.000Z",
+      source: "USER",
+      sourceDocumentId: null,
+      status: "ACTIVE",
+      version: 1,
+      createdAt: "2026-10-11T08:00:00.000Z",
+      updatedAt: "2026-10-11T08:00:00.000Z",
+    });
+    const blocked = substitutesReadResultSchema.parse(
+      await x.call("substitution.lookup", { productId: f.product.id }),
+    );
+    expect(blocked.candidates).toHaveLength(0);
+    expect(blocked.excluded[0]?.reason).toBe("OUT_OF_STOCK");
+    await applyProductSubstitution(x.a, f.need.storeId, {
+      ...f.substitution,
+      status: "REJECTED",
+      version: 2,
+    });
+    expect(
+      substitutesReadResultSchema.parse(
+        await x.call("substitution.lookup", { productId: f.product.id }),
+      ).excluded[0]?.reason,
+    ).toBe("REJECTED");
+    await expect(
+      x.call("substitution.lookup", {
+        productId: f.product.id,
+        at: "2027-01-01T00:00:00Z",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  } finally {
+    x.db.close();
+  }
+});
+it("reads only settings-matching weekly cache offline, marks expired forecasts stale, retains provenance and invalidates changed settings", async () => {
+  const x = await setup();
+  try {
+    const { storeContextFixture } =
+        await import("../../../../scripts/test-store-context-fixtures"),
+      { weeklyContextFixture } =
+        await import("../../../../scripts/test-weekly-context-fixtures");
+    const { applyStoreContext } = await import("../store/context-repository"),
+      { WeeklyContextRepository } =
+        await import("../store/weekly-context-repository");
+    const { storeWeekReadResultSchema } = await import("@fl-copilot/domain");
+    const settings = {
+        ...storeContextFixture(),
+        id: x.f.storeId,
+        storeId: x.f.storeId,
+      },
+      context = weeklyContextFixture(settings);
+    await applyStoreContext(x.a, x.f.storeId, settings);
+    await new WeeklyContextRepository(x.a).save(context, settings);
+    const result = storeWeekReadResultSchema.parse(
+      await x.call("store.week", { weekStart: context.weekStart }),
+    );
+    expect(result.settings?.postalCode).toBe("92600");
+    expect(result.context?.weather.status).toBe("STALE");
+    expect(result.context?.weather.retrievedAt).toBe(
+      context.weather.retrievedAt,
+    );
+    expect(result.context?.weather.sourceUrl).toBe(context.weather.sourceUrl);
+    expect(
+      (await new WeeklyContextRepository(x.a).get(settings, context.weekStart))
+        ?.weather.status,
+    ).toBe("AVAILABLE");
+    expect(
+      storeWeekReadResultSchema.parse(
+        await x.call("store.week", { weekStart: "2026-10-12" }),
+      ).context,
+    ).toBeNull();
+    await applyStoreContext(x.a, x.f.storeId, {
+      ...settings,
+      version: 2,
+      city: "Paris",
+    });
+    expect(
+      storeWeekReadResultSchema.parse(
+        await x.call("store.week", { weekStart: context.weekStart }),
+      ).context,
+    ).toBeNull();
+    await expect(
+      x.call("store.week", { weekStart: "2026-10-11" }),
+    ).rejects.toMatchObject({ code: "INVALID_INPUT" });
   } finally {
     x.db.close();
   }

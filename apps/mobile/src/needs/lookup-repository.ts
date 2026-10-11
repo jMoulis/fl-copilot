@@ -17,15 +17,22 @@ export class SubstituteLookupRepository {
     needUnitId?: string,
     at = new Date().toISOString(),
   ) {
-    let snapshot: Awaited<ReturnType<typeof readSnapshot>> | undefined;
+    let snapshot:
+      Awaited<ReturnType<typeof readSubstituteSnapshot>> | undefined;
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      snapshot = await readSnapshot(tx, storeId, productId, needUnitId, at);
+      snapshot = await readSubstituteSnapshot(
+        tx,
+        storeId,
+        productId,
+        needUnitId,
+        at,
+      );
     });
     if (!snapshot) throw Error("SUBSTITUTE_LOOKUP_SNAPSHOT_MISSING");
     return snapshot;
   }
 }
-async function readSnapshot(
+export async function readSubstituteSnapshot(
   tx: OutboxDatabase,
   storeId: string,
   productId: string,
