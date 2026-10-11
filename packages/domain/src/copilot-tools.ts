@@ -1,3 +1,10 @@
+import {
+  copilotContextRequestSchemas,
+  dailyReadResultSchema,
+  wasteReadResultSchema,
+  offersReadResultSchema,
+  copilotContextToolRegistry,
+} from "./copilot-context-tools";
 import { z } from "zod";
 import {
   productSchema,
@@ -16,12 +23,16 @@ export type CopilotToolScope = z.infer<typeof copilotToolScopeSchema>;
 export const inspectProductInputSchema = z.strictObject({
   productId: z.string().uuid(),
 });
-export const copilotToolRequestSchema = z.strictObject({
+const productRequestSchema = z.strictObject({
   operationId: z.string().uuid(),
   tool: z.literal("product.inspect"),
   schemaVersion: z.literal(1),
   input: inspectProductInputSchema,
 });
+export const copilotToolRequestSchema = z.discriminatedUnion("tool", [
+  productRequestSchema,
+  ...copilotContextRequestSchemas,
+]);
 const record = <T extends z.ZodType>(entity: T) =>
   z.strictObject({
     entity,
@@ -44,6 +55,13 @@ export const inspectProductResultSchema = z.strictObject({
     })
     .nullable(),
 });
+export const copilotToolResultSchema = z.discriminatedUnion("tool", [
+  inspectProductResultSchema,
+  dailyReadResultSchema,
+  wasteReadResultSchema,
+  offersReadResultSchema,
+]);
+export type CopilotToolResult = z.infer<typeof copilotToolResultSchema>;
 export type InspectProductResult = z.infer<typeof inspectProductResultSchema>;
 export const copilotToolErrors = {
   INVALID_INPUT: "La demande contient des informations invalides.",
@@ -59,6 +77,7 @@ export class CopilotToolError extends Error {
   }
 }
 export const copilotToolRegistry = [
+  ...copilotContextToolRegistry,
   {
     name: "product.inspect",
     schemaVersion: 1,

@@ -1,3 +1,4 @@
+import { inspectProductResultSchema } from "@fl-copilot/domain";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,6 +11,11 @@ import { CopilotConversationRepository } from "./conversation-repository";
 import { ProductMasterRepository } from "../products/product-master-repository";
 import { CopilotToolRuntime } from "./tool-runtime";
 import { chatFixture } from "../../../../scripts/test-chat-fixtures";
+class ProductTestRuntime extends CopilotToolRuntime {
+  async inspect(...args: Parameters<CopilotToolRuntime["execute"]>) {
+    return inspectProductResultSchema.parse(await this.execute(...args));
+  }
+}
 class Adapter implements OutboxDatabase {
   fail = false;
   productReads = 0;
@@ -109,7 +115,7 @@ it("reads offline once, preserves the original result on restart/retry and creat
   let db = x.db;
   try {
     const before = db.prepare("SELECT count(*) AS n FROM sync_outbox").get();
-    const first = await new CopilotToolRuntime(x.a).execute(x.request, x.scope);
+    const first = await new ProductTestRuntime(x.a).inspect(x.request, x.scope);
     expect(first.snapshot?.product.entity.label).toBe("BANANE VRAC");
     expect(first.snapshot?.product.syncState).toBe("PENDING");
     expect(first.snapshot?.identifiers[0]?.entity.value).toBe("00042");
@@ -123,12 +129,12 @@ it("reads offline once, preserves the original result on restart/retry and creat
     db.close();
     db = new DatabaseSync(path);
     const a = new Adapter(db),
-      runtime = new CopilotToolRuntime(a);
-    expect(await runtime.execute(x.request, x.scope)).toEqual(first);
+      runtime = new ProductTestRuntime(a);
+    expect(await runtime.inspect(x.request, x.scope)).toEqual(first);
     expect(a.productReads).toBe(0);
     expect(
       (
-        await runtime.execute(
+        await runtime.inspect(
           { ...x.request, operationId: randomUUID() },
           x.scope,
         )
@@ -141,15 +147,15 @@ it("reads offline once, preserves the original result on restart/retry and creat
 });
 it("rejects forged authority, revoked read access, foreign conversations and changed operation identities before cached disclosure", async () => {
   const x = await fixture(),
-    runtime = new CopilotToolRuntime(x.a);
+    runtime = new ProductTestRuntime(x.a);
   try {
-    await runtime.execute(x.request, x.scope);
+    await runtime.inspect(x.request, x.scope);
     for (const request of [
       { ...x.request, ownerId: x.f.ownerId },
       { ...x.request, input: { ...x.request.input, storeId: x.f.storeId } },
       { ...x.request, tool: "product.update" },
     ])
-      await expect(runtime.execute(request, x.scope)).rejects.toMatchObject({
+      await expect(runtime.inspect(request, x.scope)).rejects.toMatchObject({
         code: "INVALID_INPUT",
       });
     for (const scope of [
@@ -158,11 +164,11 @@ it("rejects forged authority, revoked read access, foreign conversations and cha
       { ...x.scope, storeId: randomUUID() },
       { ...x.scope, conversationId: randomUUID() },
     ])
-      await expect(runtime.execute(x.request, scope)).rejects.toMatchObject({
+      await expect(runtime.inspect(x.request, scope)).rejects.toMatchObject({
         code: "FORBIDDEN",
       });
     await expect(
-      runtime.execute(
+      runtime.inspect(
         { ...x.request, input: { productId: randomUUID() } },
         x.scope,
       ),
@@ -173,7 +179,7 @@ it("rejects forged authority, revoked read access, foreign conversations and cha
 });
 it("hides foreign products, rolls back failed/cancelled reads and gives actionable redacted errors", async () => {
   const x = await fixture(),
-    runtime = new CopilotToolRuntime(x.a);
+    runtime = new ProductTestRuntime(x.a);
   try {
     const foreign = { ...x.product, id: randomUUID(), storeId: randomUUID() };
     await new ProductMasterRepository(x.a).upsertProduct(foreign, {
@@ -182,7 +188,7 @@ it("hides foreign products, rolls back failed/cancelled reads and gives actionab
     });
     expect(
       (
-        await runtime.execute(
+        await runtime.inspect(
           {
             ...x.request,
             operationId: randomUUID(),
@@ -195,10 +201,10 @@ it("hides foreign products, rolls back failed/cancelled reads and gives actionab
     const cancelled = new AbortController();
     cancelled.abort();
     await expect(
-      runtime.execute(x.request, x.scope, cancelled.signal),
+      runtime.inspect(x.request, x.scope, cancelled.signal),
     ).rejects.toMatchObject({ code: "CANCELLED" });
     x.a.fail = true;
-    await expect(runtime.execute(x.request, x.scope)).rejects.toMatchObject({
+    await expect(runtime.inspect(x.request, x.scope)).rejects.toMatchObject({
       code: "UNAVAILABLE",
       message: "La lecture n’a pas pu être terminée. Vous pouvez réessayer.",
     });
@@ -210,7 +216,7 @@ it("hides foreign products, rolls back failed/cancelled reads and gives actionab
         .get(x.request.operationId),
     ).toBeUndefined();
     x.a.fail = false;
-    await runtime.execute(x.request, x.scope);
+    await runtime.inspect(x.request, x.scope);
     expect(x.a.productReads).toBe(3);
   } finally {
     x.db.close();
