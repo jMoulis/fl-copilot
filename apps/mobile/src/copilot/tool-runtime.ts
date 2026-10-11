@@ -17,6 +17,7 @@ export class CopilotToolRuntime {
   constructor(
     private db: AtomicMutationDatabase & OutboxDatabase,
     private now: () => string = () => new Date().toISOString(),
+    private digest?: (text: string) => Promise<string>,
   ) {}
 
   async execute(
@@ -97,6 +98,7 @@ export class CopilotToolRuntime {
             ctx.storeId,
             request,
             observedAt,
+            this.digest,
           );
         if (signal?.aborted) throw new CopilotToolError("CANCELLED");
         result = copilotToolResultSchema.parse({
