@@ -1,3 +1,9 @@
+import { CommercialPlanRepository } from "../commercial/week-plan-repository";
+import { readWeekPlanContext } from "../commercial/week-plan-context";
+import {
+  commercialPlanIssues,
+  buildCommercialWeekPlan,
+} from "@fl-copilot/commercial-core";
 import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
 import { NeedUnitRepository } from "../needs/repository";
 import { SourceDocumentRepository } from "../documents/source-document-repository";
@@ -36,8 +42,60 @@ export async function readCopilotContext(
   storeId: string,
   request: z.infer<typeof copilotToolRequestSchema>,
   observedAt: string,
+  digest?: (text: string) => Promise<string>,
 ) {
   switch (request.tool) {
+    case "commercial.plan.preview": {
+      if (!digest) throw new CopilotToolError("UNAVAILABLE");
+      const db = readOnlyToolDatabase(tx),
+        prep = await new CommercialPreparationRepository(db, digest).get(
+          storeId,
+          request.input.weekStart,
+        ),
+        plan = await new CommercialPlanRepository(db, digest).get(
+          storeId,
+          request.input.weekStart,
+        );
+      const issues = prep
+        ? commercialPlanIssues(
+            prep.entity,
+            await readWeekPlanContext(tx, prep.entity),
+          )
+        : [
+            {
+              code: "PREPARATION_MISSING",
+              messageFr: "Préparez cette semaine avant de valider son plan.",
+            },
+          ];
+      if (plan && ["ERROR", "CONFLICT"].includes(plan.syncState))
+        issues.push({
+          code: "PLAN_SYNC",
+          messageFr:
+            "Résolvez le plan dans Synchronisation avant de le valider.",
+        });
+      const candidate =
+        prep && !issues.length
+          ? await buildCommercialWeekPlan(
+              {
+                preparation: prep.entity,
+                version: (plan?.entity.version ?? 0) + 1,
+                createdAt: plan?.entity.createdAt ?? observedAt,
+                validatedAt: observedAt,
+              },
+              await readWeekPlanContext(tx, prep.entity),
+              digest,
+            )
+          : null;
+      return {
+        expectedPlanVersion: plan?.entity.version ?? null,
+        candidate,
+        issues,
+        message: candidate
+          ? "Aperçu prêt à examiner. Aucun plan n’a été enregistré ou exécuté."
+          : "Le plan nécessite des informations ou corrections avant validation.",
+      };
+    }
+
     case "commercial.choice.inspect": {
       const value = await new CommercialChoiceRepository(
         readOnlyToolDatabase(tx),

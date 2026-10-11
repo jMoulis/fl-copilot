@@ -1,4 +1,9 @@
 import {
+  planPreviewRequestSchema,
+  planPreviewResultSchema,
+  planPreviewTool,
+} from "./copilot-commercial-plan";
+import {
   choiceInspectRequestSchema,
   choiceInspectResultSchema,
   choiceInspectTool,
@@ -58,6 +63,7 @@ const productRequestSchema = z.strictObject({
 });
 export const copilotToolRequestSchema = z.discriminatedUnion("tool", [
   productRequestSchema,
+  planPreviewRequestSchema,
   choiceInspectRequestSchema,
   preparationReadRequestSchema,
   ...copilotContextRequestSchemas,
@@ -89,6 +95,7 @@ export const inspectProductResultSchema = z.strictObject({
 });
 export const copilotToolResultSchema = z.discriminatedUnion("tool", [
   inspectProductResultSchema,
+  planPreviewResultSchema,
   choiceInspectResultSchema,
   preparationReadResultSchema,
   dailyReadResultSchema,
@@ -117,6 +124,7 @@ export class CopilotToolError extends Error {
 }
 export const copilotToolRegistry = [
   preparationReadTool,
+  planPreviewTool,
   choiceInspectTool,
   ...copilotContextToolRegistry,
   ...copilotStoreToolRegistry,

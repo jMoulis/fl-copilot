@@ -57,3 +57,5 @@ export * from "./copilot-field-tools";
 export * from "./copilot-commercial-preparation";
 
 export * from "./copilot-commercial-choice";
+
+export * from "./copilot-commercial-plan";
