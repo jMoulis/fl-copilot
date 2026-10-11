@@ -1,3 +1,4 @@
+import { NeedUnitRepository } from "../needs/repository";
 import { SourceDocumentRepository } from "../documents/source-document-repository";
 import { StoreProductEventRepository } from "../needs/store-event-repository";
 import { readSubstituteSnapshot } from "../needs/lookup-repository";
@@ -247,6 +248,29 @@ export async function readCopilotContext(
         message: d
           ? "Source retrouvée. L’ouverture du PDF utilise le service autorisé et renouvelle le lien à la demande."
           : "Source introuvable dans ce magasin.",
+      };
+    }
+    case "need.list": {
+      const all = await new NeedUnitRepository(readOnlyToolDatabase(tx)).list(
+        storeId,
+      );
+      const matching = all
+        .filter(
+          (r) =>
+            r.entity.storeId === storeId &&
+            (!request.input.afterId || r.entity.id > request.input.afterId),
+        )
+        .sort((a, b) =>
+          a.entity.id < b.entity.id ? -1 : a.entity.id > b.entity.id ? 1 : 0,
+        );
+      const page = matching.slice(0, request.input.limit),
+        hasMore = matching.length > page.length;
+      return {
+        needs: page.map((r) => ({ entity: r.entity, syncState: r.syncState })),
+        hasMore,
+        nextAfterId: hasMore ? page.at(-1)!.entity.id : null,
+        message:
+          "Besoins clients consultés avec leur statut. Un besoin désactivé conserve son code et son historique.",
       };
     }
     default:
