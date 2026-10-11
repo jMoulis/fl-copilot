@@ -111,20 +111,27 @@ const thresholds: InitialCandidateThresholds = {
 export class TodaySummaryRepository {
   constructor(private readonly database: TodayDatabase) {}
 
-  async load(storeId: string): Promise<TodaySummary | null> {
+  async load(
+    storeId: string,
+    businessDate?: string,
+  ): Promise<TodaySummary | null> {
     const latest = await this.database.getFirstAsync<DepartmentRow>(
       `
         SELECT payload_json, origin
         FROM department_daily_performance
-        WHERE store_id = ?
+        WHERE store_id = ? AND (? IS NULL OR business_date = ?)
         ORDER BY business_date DESC
         LIMIT 1
       `,
       storeId,
+      businessDate ?? null,
+      businessDate ?? null,
     );
     if (!latest) return null;
 
     const department = parseDepartment(latest.payload_json, storeId);
+    if (businessDate && department.date !== businessDate)
+      throw new Error("Department performance is outside the requested day.");
     const referenceDate = addUtcDays(department.date, -7);
     const [referenceRow, currentRows, referenceRows, unresolved] =
       await Promise.all([
@@ -155,6 +162,8 @@ export class TodaySummaryRepository {
     const referenceDepartment = referenceRow
       ? parseDepartment(referenceRow.payload_json, storeId)
       : null;
+    if (referenceDepartment && referenceDepartment.date !== referenceDate)
+      throw new Error("Department reference is outside the requested day.");
     const currentProducts = parseProducts(
       currentRows,
       storeId,
