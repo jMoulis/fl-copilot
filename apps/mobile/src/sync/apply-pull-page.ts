@@ -1,3 +1,4 @@
+import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applySubstitutionScoreHistory } from "../needs/score-repository";
 import {
   applySubstitutionEvidence,
@@ -32,9 +33,33 @@ export async function applyPullPage(
   database: AtomicMutationDatabase,
   storeId: string,
   page: SyncPullResponse,
+  ownerId?: string,
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (
+        change.entityType === "copilot_conversation" ||
+        change.entityType === "copilot_message"
+      ) {
+        if (
+          !ownerId ||
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("COPILOT_HISTORY_ENVELOPE_INVALID");
+        await applyCopilotRecord(
+          transaction,
+          { storeId, ownerId },
+          change.entityType,
+          change.entity,
+        );
+        continue;
+      }
       if (change.entityType === "commercial_week_plan") {
         if (
           change.operation !== "UPSERT" ||

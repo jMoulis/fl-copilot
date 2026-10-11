@@ -18,6 +18,7 @@ export interface ProcessedCommandDocument {
   resultStatus: ProcessedCommandResultStatus;
   entityType: string;
   entityId: string;
+  ownerId?: string;
   resultingVersion: number | null;
   responseJson?: unknown;
   processedAt: Date;
@@ -30,6 +31,7 @@ export interface ProcessCommandInput {
   commandType: string;
   entityType: string;
   entityId: string;
+  ownerId?: string;
 }
 
 export interface CommandMutationResult {
@@ -91,6 +93,7 @@ export class ProcessedCommandService<TContext> {
           resultStatus: result.resultStatus,
           entityType: input.entityType,
           entityId: input.entityId,
+          ...(input.ownerId ? { ownerId: input.ownerId } : {}),
           resultingVersion: result.resultingVersion ?? null,
           ...(result.responseJson === undefined
             ? {}
@@ -118,7 +121,8 @@ function alreadyApplied(
     command.deviceId !== input.deviceId ||
     command.commandType !== input.commandType ||
     command.entityType !== input.entityType ||
-    command.entityId !== input.entityId
+    command.entityId !== input.entityId ||
+    command.ownerId !== input.ownerId
   ) {
     throw new ProcessedCommandIdentityError(input.commandId);
   }

@@ -1,3 +1,4 @@
+import { chatBootstrap } from "../copilot/conversation-store";
 import {
   serializeScoreHistory,
   type ScoreHistoryDocument,
@@ -119,6 +120,15 @@ export function createMongoSyncBootstrapService(
                 { _id: store.storeId },
                 { session, promoteLongs: false },
               );
+            const copilotHistory =
+              query.copilotHistory === "true"
+                ? await chatBootstrap(
+                    mongoDatabase,
+                    store.storeId,
+                    store.userId,
+                    session,
+                  )
+                : {};
             const [
               syncTestEntities,
               products,
@@ -319,6 +329,7 @@ export function createMongoSyncBootstrapService(
                 rawObservationDays: query.rawObservationDays,
               },
               entities: {
+                ...copilotHistory,
                 syncTestEntities: syncTestEntities.map(serializeSyncTestEntity),
                 products: products.map(serializeProductDocument),
                 productIdentifiers: productIdentifiers.map(

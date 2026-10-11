@@ -26,12 +26,12 @@ Snapshots below are screenshots of this mock, not evidence of live AI or product
 
 ![Targeted inline form](preview-form.jpg)
 
-## Decisions still needed from Julien
+## UX direction approved by Julien — 11 October 2026
 
 - Entry/navigation: chat inside Aujourd’hui with the five existing tabs, or a different approved arrangement?
 - Density: welcome prompts, small inline forms and source sheets natural enough on the iPhone?
 - Composer/history: visibility of attachment controls and access to topics/memory sufficient?
 
-T16 UX approval is pending; do not treat the prototype as approval to ship the native chat. Adapt the existing app only after the owner reviews the proposed journeys.
+Julien replied “Oui nickel”, approving the natural conversation direction, targeted forms and five retained tabs. Native functional/device acceptance remains pending; the prototype is not proof of live generation or business synchronization. Continue with the conversation foundation and tool authority before native chat integration.
 
 The static hosting project `fl-copilot-ux-preview` is separate from the application's API project. The CLI's first deployment created its production alias; it did not change `fl-copilot.vercel.app`, application environments, native code, schemas or EAS builds. Only the single demo HTML was published, without source files or credentials. Source copy lives here in Git so the preview can be reproduced or retired independently.

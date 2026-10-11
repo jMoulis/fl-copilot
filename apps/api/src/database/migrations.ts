@@ -629,6 +629,61 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 31,
+    name: "private_copilot_conversations",
+    async up(db) {
+      for (const name of [
+        "copilotConversations",
+        "copilotMessages",
+        "copilotConversationHistory",
+      ]) {
+        const validator = {
+          $jsonSchema: {
+            bsonType: "object",
+            required: ["storeId", "ownerId"],
+            properties: {
+              storeId: { bsonType: "string" },
+              ownerId: { bsonType: "string" },
+            },
+          },
+        };
+        if (!(await db.listCollections({ name }).hasNext())) {
+          try {
+            await db.createCollection(name, { validator });
+          } catch (error) {
+            if (!(
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              error.code === 48
+            ))
+              throw error;
+          }
+        }
+        await db.command({ collMod: name, validator });
+      }
+      await db
+        .collection("copilotConversations")
+        .createIndex({ storeId: 1, ownerId: 1, updatedAt: -1, _id: -1 });
+      await db.collection("copilotMessages").createIndex({
+        storeId: 1,
+        ownerId: 1,
+        conversationId: 1,
+        createdAt: -1,
+        _id: -1,
+      });
+      await db
+        .collection("copilotMessages")
+        .createIndex({ storeId: 1, ownerId: 1, createdAt: -1, _id: -1 });
+      await db
+        .collection("copilotConversationHistory")
+        .createIndex(
+          { storeId: 1, ownerId: 1, conversationId: 1, version: 1 },
+          { unique: true },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

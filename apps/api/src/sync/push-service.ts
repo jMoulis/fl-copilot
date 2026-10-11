@@ -1,4 +1,10 @@
 import {
+  applyChatCommand,
+  canAccessChatCommand,
+  isChatType,
+  ChatParentPendingError,
+} from "../copilot/conversation-store";
+import {
   applyNeedMembershipCommand,
   NeedMembershipParentPendingError,
 } from "../need-membership-sync";
@@ -55,7 +61,11 @@ interface StoredCommandResponse {
 }
 
 export interface SyncPushService {
-  push(input: SyncPushRequest, requestId: string): Promise<SyncPushResponse>;
+  push(
+    input: SyncPushRequest,
+    requestId: string,
+    ownerId?: string,
+  ): Promise<SyncPushResponse>;
 }
 
 export function createMongoSyncPushService(
@@ -66,10 +76,37 @@ export function createMongoSyncPushService(
   const syncChanges = createMongoSyncChangeService(now);
 
   return {
-    async push(input, requestId) {
+    async push(input, requestId, ownerId) {
       const results: SyncCommandResult[] = [];
       for (const command of input.commands) {
         try {
+          if (
+            isChatType(command.entityType) ||
+            command.type.startsWith("COPILOT_")
+          ) {
+            if (
+              !(await canAccessChatCommand(
+                await database.getDb(),
+                input.storeId,
+                ownerId,
+                command,
+              ))
+            ) {
+              results.push({
+                commandId: command.commandId,
+                entityType: command.entityType,
+                entityId: command.entityId,
+                status: "REJECTED",
+                error: {
+                  code: "COPILOT_HISTORY_ACCESS_INVALID",
+                  messageFr: "Cette conversation n’est pas accessible.",
+                  retryable: false,
+                  requestId,
+                },
+              });
+              continue;
+            }
+          }
           const outcome = await processedCommands.execute(
             {
               commandId: command.commandId,
@@ -78,6 +115,7 @@ export function createMongoSyncPushService(
               commandType: command.type,
               entityType: command.entityType,
               entityId: command.entityId,
+              ...(isChatType(command.entityType) ? { ownerId } : {}),
             },
             (context) =>
               applyCommand(
@@ -87,6 +125,7 @@ export function createMongoSyncPushService(
                 requestId,
                 now,
                 syncChanges,
+                ownerId,
               ),
           );
           if (
@@ -111,7 +150,8 @@ export function createMongoSyncPushService(
           results.push(
             error instanceof ProcessedCommandIdentityError
               ? rejectedIdentityResult(command, requestId)
-              : error instanceof NeedMembershipParentPendingError ||
+              : error instanceof ChatParentPendingError ||
+                  error instanceof NeedMembershipParentPendingError ||
                   error instanceof ProductSubstitutionParentPendingError ||
                   error instanceof StoreEventParentPendingError
                 ? {
@@ -140,7 +180,17 @@ async function applyCommand(
   requestId: string,
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
+  ownerId?: string,
 ) {
+  if (isChatType(command.entityType))
+    return applyChatCommand(
+      context,
+      storeId,
+      ownerId!,
+      command,
+      requestId,
+      syncChanges,
+    );
   if (command.type === "COMMERCIAL_WEEK_PLAN_UPSERT")
     return applyCommercialPlanCommand(
       context,
