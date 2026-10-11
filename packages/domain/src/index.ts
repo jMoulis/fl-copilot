@@ -39,3 +39,4 @@ export * from "./store-event-time";
 export * from "./substitution-evidence";
 
 export * from "./substitution-score-history";
+export * from "./copilot-candidate";
