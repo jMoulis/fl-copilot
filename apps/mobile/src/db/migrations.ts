@@ -737,6 +737,20 @@ export const localMigrations: readonly LocalMigration[] = [
  CREATE TABLE copilot_drafts(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id));
  `,
   },
+  {
+    version: 35,
+    name: "copilot-tool-results",
+    sql: `CREATE TABLE copilot_tool_results (
+      operation_id TEXT PRIMARY KEY NOT NULL,
+      store_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      request_json TEXT NOT NULL,
+      result_json TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX idx_copilot_tool_results_scope ON copilot_tool_results(store_id, owner_id, conversation_id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -44,3 +44,4 @@ export * from "./copilot-eligibility";
 export * from "./copilot-priority";
 export * from "./copilot-conflict";
 export * from "./copilot-conversation";
+export * from "./copilot-tools";
