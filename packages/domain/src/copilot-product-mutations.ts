@@ -97,7 +97,9 @@ export class ProductClassificationError extends Error {
       | "EVENT_UNAVAILABLE"
       | "EVENT_SOURCE_READ_ONLY"
       | "EVENT_ALREADY_CLOSED"
-      | "EVENT_DATE_INVALID",
+      | "EVENT_DATE_INVALID"
+      | "COMMERCIAL_OFFERS_CHANGED"
+      | "COMMERCIAL_SOURCE_INVALID",
     readonly details?: {
       productId: string;
       fields?: Array<"category" | "nature" | "salesUnit">;
@@ -139,6 +141,10 @@ export class ProductClassificationError extends Error {
           "Cette information vient d’un document commercial. Elle ne peut pas être clôturée comme une observation terrain.",
         EVENT_ALREADY_CLOSED:
           "L’observation a déjà été clôturée à une autre date. Consultez son historique.",
+        COMMERCIAL_OFFERS_CHANGED:
+          "Les offres choisies ont changé ou ne sont plus disponibles pour cette semaine. Consultez les choix actuels avant de réessayer.",
+        COMMERCIAL_SOURCE_INVALID:
+          "Une idée TG ne correspond plus à sa lecture source. Consultez le document avant de réessayer.",
         EVENT_DATE_INVALID:
           "Vérifiez les dates : elles doivent correspondre à une observation déjà faite et la fin doit suivre le début.",
         ALIAS_REFUSED:

@@ -1,3 +1,4 @@
+import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
 import { NeedUnitRepository } from "../needs/repository";
 import { SourceDocumentRepository } from "../documents/source-document-repository";
 import { StoreProductEventRepository } from "../needs/store-event-repository";
@@ -34,6 +35,27 @@ export async function readCopilotContext(
   observedAt: string,
 ) {
   switch (request.tool) {
+    case "commercial.preparation.inspect": {
+      const value = await new CommercialPreparationRepository(
+        readOnlyToolDatabase(tx),
+        async () => {
+          throw new CopilotToolError("FORBIDDEN");
+        },
+      ).get(storeId, request.input.weekStart);
+      return {
+        snapshot: value
+          ? {
+              entity: value.entity,
+              syncState: value.syncState,
+              remoteVersion: value.remoteVersion,
+            }
+          : null,
+        message: value
+          ? "Brouillon commercial consulté. Il ne représente pas une implantation exécutée."
+          : "Aucun brouillon commercial disponible pour cette semaine.",
+      };
+    }
+
     case "analytics.daily": {
       const summary = await new TodaySummaryRepository(tx).load(
         storeId,

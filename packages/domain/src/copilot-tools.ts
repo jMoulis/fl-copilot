@@ -1,4 +1,9 @@
 import {
+  preparationReadRequestSchema,
+  preparationReadResultSchema,
+  preparationReadTool,
+} from "./copilot-commercial-preparation";
+import {
   needListRequestSchema,
   needListResultSchema,
   needListTool,
@@ -48,6 +53,7 @@ const productRequestSchema = z.strictObject({
 });
 export const copilotToolRequestSchema = z.discriminatedUnion("tool", [
   productRequestSchema,
+  preparationReadRequestSchema,
   ...copilotContextRequestSchemas,
   ...copilotStoreRequestSchemas,
   sourceReferenceRequestSchema,
@@ -77,6 +83,7 @@ export const inspectProductResultSchema = z.strictObject({
 });
 export const copilotToolResultSchema = z.discriminatedUnion("tool", [
   inspectProductResultSchema,
+  preparationReadResultSchema,
   dailyReadResultSchema,
   wasteReadResultSchema,
   offersReadResultSchema,
@@ -102,6 +109,7 @@ export class CopilotToolError extends Error {
   }
 }
 export const copilotToolRegistry = [
+  preparationReadTool,
   ...copilotContextToolRegistry,
   ...copilotStoreToolRegistry,
   sourceReferenceTool,
