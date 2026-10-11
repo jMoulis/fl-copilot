@@ -1,3 +1,10 @@
+import { CommercialExecutionRepository } from "../commercial/execution-repository";
+import {
+  commercialExecutionChecklist,
+  commercialExecutionProgress,
+  commercialExecutionSameTarget,
+  commercialExecutionPlanChecksum,
+} from "@fl-copilot/commercial-core";
 import { CommercialPlanRepository } from "../commercial/week-plan-repository";
 import { readWeekPlanContext } from "../commercial/week-plan-context";
 import {
@@ -45,6 +52,65 @@ export async function readCopilotContext(
   digest?: (text: string) => Promise<string>,
 ) {
   switch (request.tool) {
+    case "commercial.execution.inspect": {
+      if (!digest) throw new CopilotToolError("UNAVAILABLE");
+      const db = readOnlyToolDatabase(tx),
+        plan = await new CommercialPlanRepository(db, digest).get(
+          storeId,
+          request.input.weekStart,
+        );
+      if (!plan)
+        return {
+          plan: null,
+          tasks: [],
+          progress: {
+            total: 0,
+            TODO: 0,
+            DONE: 0,
+            SKIPPED: 0,
+            NOT_APPLICABLE: 0,
+          },
+          message: "Aucun plan validé disponible pour cette semaine.",
+        };
+      const proposals = await commercialExecutionChecklist(plan.entity, digest),
+        records = await new CommercialExecutionRepository(db, digest).list(
+          storeId,
+          plan.entity.revisionId,
+        );
+      return {
+        plan: {
+          id: plan.entity.id,
+          revisionId: plan.entity.revisionId,
+          version: plan.entity.version,
+          checksum: await commercialExecutionPlanChecksum(plan.entity, digest),
+          weekStart: plan.entity.weekStart,
+          weekEnd: plan.entity.weekEnd,
+          syncState: plan.syncState,
+        },
+        tasks: proposals.map((proposal) => {
+          const r = records.find((r) =>
+            commercialExecutionSameTarget(r.entity, proposal),
+          );
+          return {
+            proposal,
+            record: r
+              ? {
+                  entity: r.entity,
+                  syncState: r.syncState,
+                  remoteVersion: r.remoteVersion,
+                }
+              : null,
+          };
+        }),
+        progress: commercialExecutionProgress(
+          proposals,
+          records.map((r) => r.entity),
+        ),
+        message:
+          "Tâches du plan courant consultées. Les statuts sont des déclarations utilisateur, sans preuve automatique de réalisation.",
+      };
+    }
+
     case "commercial.plan.preview": {
       if (!digest) throw new CopilotToolError("UNAVAILABLE");
       const db = readOnlyToolDatabase(tx),

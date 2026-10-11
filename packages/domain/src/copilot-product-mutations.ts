@@ -103,7 +103,8 @@ export class ProductClassificationError extends Error {
       | "COMMERCIAL_CHOICE_UNAVAILABLE"
       | "COMMERCIAL_CHOICE_DUPLICATE"
       | "COMMERCIAL_PLAN_REVIEW_REQUIRED"
-      | "COMMERCIAL_SOURCE_REVIEW_REQUIRED",
+      | "COMMERCIAL_SOURCE_REVIEW_REQUIRED"
+      | "COMMERCIAL_EXECUTION_UNAVAILABLE",
     readonly details?: {
       productId: string;
       fields?: Array<"category" | "nature" | "salesUnit">;
@@ -145,6 +146,8 @@ export class ProductClassificationError extends Error {
           "Cette information vient d’un document commercial. Elle ne peut pas être clôturée comme une observation terrain.",
         EVENT_ALREADY_CLOSED:
           "L’observation a déjà été clôturée à une autre date. Consultez son historique.",
+        COMMERCIAL_EXECUTION_UNAVAILABLE:
+          "Cette tâche ne correspond plus au plan courant. Consultez sa liste actuelle avant de déclarer la mise en place.",
         COMMERCIAL_SOURCE_REVIEW_REQUIRED:
           "La source de chaque offre doit être revue pour sa version actuelle avant de la valider.",
         COMMERCIAL_PLAN_REVIEW_REQUIRED:
