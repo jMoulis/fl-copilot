@@ -1,4 +1,9 @@
 import {
+  settingsReadRequestSchema,
+  settingsReadResultSchema,
+  settingsReadTool,
+} from "./copilot-store-settings";
+import {
   executionReadRequestSchema,
   executionReadResultSchema,
   executionReadTool,
@@ -68,6 +73,7 @@ const productRequestSchema = z.strictObject({
 });
 export const copilotToolRequestSchema = z.discriminatedUnion("tool", [
   productRequestSchema,
+  settingsReadRequestSchema,
   executionReadRequestSchema,
   planPreviewRequestSchema,
   choiceInspectRequestSchema,
@@ -101,6 +107,7 @@ export const inspectProductResultSchema = z.strictObject({
 });
 export const copilotToolResultSchema = z.discriminatedUnion("tool", [
   inspectProductResultSchema,
+  settingsReadResultSchema,
   executionReadResultSchema,
   planPreviewResultSchema,
   choiceInspectResultSchema,
@@ -131,6 +138,7 @@ export class CopilotToolError extends Error {
 }
 export const copilotToolRegistry = [
   preparationReadTool,
+  settingsReadTool,
   executionReadTool,
   planPreviewTool,
   choiceInspectTool,

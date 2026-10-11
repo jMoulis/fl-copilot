@@ -104,7 +104,8 @@ export class ProductClassificationError extends Error {
       | "COMMERCIAL_CHOICE_DUPLICATE"
       | "COMMERCIAL_PLAN_REVIEW_REQUIRED"
       | "COMMERCIAL_SOURCE_REVIEW_REQUIRED"
-      | "COMMERCIAL_EXECUTION_UNAVAILABLE",
+      | "COMMERCIAL_EXECUTION_UNAVAILABLE"
+      | "STORE_LOCATION_REVIEW_REQUIRED",
     readonly details?: {
       productId: string;
       fields?: Array<"category" | "nature" | "salesUnit">;
@@ -146,6 +147,8 @@ export class ProductClassificationError extends Error {
           "Cette information vient d’un document commercial. Elle ne peut pas être clôturée comme une observation terrain.",
         EVENT_ALREADY_CLOSED:
           "L’observation a déjà été clôturée à une autre date. Consultez son historique.",
+        STORE_LOCATION_REVIEW_REQUIRED:
+          "Une position GPS est enregistrée pour le magasin. Choisissez explicitement la localisation par commune pour modifier son adresse, ou capturez une nouvelle position depuis le téléphone.",
         COMMERCIAL_EXECUTION_UNAVAILABLE:
           "Cette tâche ne correspond plus au plan courant. Consultez sa liste actuelle avant de déclarer la mise en place.",
         COMMERCIAL_SOURCE_REVIEW_REQUIRED:
