@@ -269,7 +269,7 @@ export class CopilotConversationRepository {
   }
   async append(
     e: CopilotMessage,
-    ctx: { commandId: string; deviceId: string },
+    ctx: { commandId: string; deviceId: string; preserveDraft?: boolean },
   ) {
     e = copilotMessageSchema.parse(e);
     scoped(e, this.scope);
@@ -336,12 +336,13 @@ export class CopilotConversationRepository {
         payload: e,
         createdAt: e.createdAt,
       });
-      await tx.runAsync(
-        "DELETE FROM copilot_drafts WHERE store_id=? AND owner_id=? AND conversation_id=?",
-        e.storeId,
-        e.ownerId,
-        e.conversationId,
-      );
+      if (!ctx.preserveDraft)
+        await tx.runAsync(
+          "DELETE FROM copilot_drafts WHERE store_id=? AND owner_id=? AND conversation_id=?",
+          e.storeId,
+          e.ownerId,
+          e.conversationId,
+        );
     });
     return e;
   }

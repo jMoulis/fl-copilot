@@ -57,17 +57,49 @@ export const copilotFormDefinitionSchema = z.strictObject({
   prefill: copilotFormAnswersSchema,
 });
 export type CopilotFormDefinition = z.infer<typeof copilotFormDefinitionSchema>;
-export const copilotFormSchema = z.strictObject({
-  definition: copilotFormDefinitionSchema,
-  storeId: z.string().uuid(),
-  ownerId: z.string().uuid(),
-  conversationId: z.string().uuid(),
-  answers: copilotFormAnswersSchema,
-  status: z.enum(["OPEN", "READY", "POSTPONED", "CANCELLED", "STALE"]),
-  version: z.number().int().positive(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
-});
+export const copilotFormSchema = z
+  .strictObject({
+    definition: copilotFormDefinitionSchema,
+    storeId: z.string().uuid(),
+    ownerId: z.string().uuid(),
+    conversationId: z.string().uuid(),
+    answers: copilotFormAnswersSchema,
+    status: z.enum([
+      "OPEN",
+      "READY",
+      "POSTPONED",
+      "CANCELLED",
+      "STALE",
+      "ANSWERED",
+    ]),
+    submission: z
+      .strictObject({
+        messageId: z.string().uuid(),
+        commandId: z.string().uuid(),
+        fromVersion: z.number().int().positive(),
+        answeredAt: z.string().datetime(),
+        normalized: copilotFormAnswersSchema,
+      })
+      .nullable()
+      .default(null),
+    version: z.number().int().positive(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  })
+  .superRefine((form, ctx) => {
+    if ((form.status === "ANSWERED") !== (form.submission !== null))
+      ctx.addIssue({
+        code: "custom",
+        path: ["submission"],
+        message: "La réponse envoyée doit conserver son reçu.",
+      });
+    if (form.submission && form.submission.fromVersion !== form.version - 1)
+      ctx.addIssue({
+        code: "custom",
+        path: ["submission", "fromVersion"],
+        message: "Le reçu doit correspondre à la version répondue.",
+      });
+  });
 export type CopilotForm = z.infer<typeof copilotFormSchema>;
 export type CopilotFormAnswers = z.infer<typeof copilotFormAnswersSchema>;
 export type CopilotFormIssue = {
@@ -146,3 +178,39 @@ export const copilotFormEditSchema = z.strictObject({
   action: z.enum(["SAVE", "POSTPONE", "CANCEL"]),
   answers: copilotFormAnswersSchema,
 });
+
+export const copilotFormSubmitRequestSchema = z.strictObject({
+  formId: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+});
+/** Supplied only by app code after the user's submit action; not a model argument. */
+export const copilotFormSubmitAuthoritySchema = z.strictObject({
+  storeId: z.string().uuid(),
+  ownerId: z.string().uuid(),
+  conversationId: z.string().uuid(),
+  deviceId: z.string().uuid(),
+  canReadStore: z.boolean(),
+  canSubmitForm: z.boolean(),
+  confirmedFormId: z.string().uuid(),
+  confirmedFormVersion: z.number().int().positive(),
+  currentBasisToken: z.string().min(1).max(256),
+});
+export type CopilotFormSubmitAuthority = z.infer<
+  typeof copilotFormSubmitAuthoritySchema
+>;
+export class CopilotFormError extends Error {
+  constructor(
+    readonly code: "NOT_READY" | "STALE" | "VERSION_CONFLICT",
+    readonly issues: CopilotFormIssue[] = [],
+  ) {
+    super(
+      {
+        NOT_READY: "Complétez les champs indiqués avant d’envoyer la réponse.",
+        STALE:
+          "Cette question n’est plus à jour. Reprenez la demande avec le contexte actuel.",
+        VERSION_CONFLICT:
+          "La réponse a changé. Relisez sa dernière version avant de l’envoyer.",
+      }[code],
+    );
+  }
+}

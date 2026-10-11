@@ -13,7 +13,10 @@ import {
 } from "@fl-copilot/domain";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
-async function authorized(tx: OutboxDatabase, raw: CopilotToolScope) {
+export async function authorizeCopilotFormScope(
+  tx: OutboxDatabase,
+  raw: CopilotToolScope,
+) {
   const parsed = copilotToolScopeSchema.safeParse(raw);
   if (!parsed.success || !parsed.data.canReadStore)
     throw new CopilotToolError("FORBIDDEN");
@@ -37,7 +40,11 @@ async function authorized(tx: OutboxDatabase, raw: CopilotToolScope) {
     throw new CopilotToolError("FORBIDDEN");
   return scope;
 }
-async function read(tx: OutboxDatabase, id: string, scope: CopilotToolScope) {
+export async function readScopedCopilotForm(
+  tx: OutboxDatabase,
+  id: string,
+  scope: CopilotToolScope,
+) {
   const row = await tx.getFirstAsync<{
     payload_json: string;
     request_json: string;
@@ -59,7 +66,10 @@ async function read(tx: OutboxDatabase, id: string, scope: CopilotToolScope) {
     throw new CopilotToolError("FORBIDDEN");
   return { form, requestJson: row.request_json };
 }
-async function evaluation(tx: OutboxDatabase, form: CopilotForm) {
+export async function evaluateSavedCopilotForm(
+  tx: OutboxDatabase,
+  form: CopilotForm,
+) {
   const e = evaluateCopilotForm(form.definition, form.answers);
   for (const f of form.definition.fields) {
     const value = e.normalized[f.key];
@@ -105,7 +115,7 @@ export class CopilotFormRepository {
     const definition = parsed.data;
     return this.transaction(async (tx) => {
       if (signal?.aborted) throw new CopilotToolError("CANCELLED");
-      const scope = await authorized(tx, rawScope),
+      const scope = await authorizeCopilotFormScope(tx, rawScope),
         message = await tx.getFirstAsync<{ payload_json: string }>(
           "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
           definition.parentUserMessageId,
@@ -125,7 +135,7 @@ export class CopilotFormRepository {
         m.conversationId !== scope.conversationId
       )
         throw new CopilotToolError("FORBIDDEN");
-      const old = await read(tx, definition.id, scope),
+      const old = await readScopedCopilotForm(tx, definition.id, scope),
         requestJson = JSON.stringify(definition);
       if (old) {
         if (old.requestJson !== requestJson)
@@ -146,6 +156,7 @@ export class CopilotFormRepository {
           conversationId: scope.conversationId,
           answers: definition.prefill,
           status: "OPEN",
+          submission: null,
           version: 1,
           createdAt: now,
           updatedAt: now,
@@ -166,8 +177,8 @@ export class CopilotFormRepository {
   }
   async get(id: string, rawScope: CopilotToolScope) {
     return this.transaction(async (tx) => {
-      const scope = await authorized(tx, rawScope),
-        row = await read(tx, id, scope);
+      const scope = await authorizeCopilotFormScope(tx, rawScope),
+        row = await readScopedCopilotForm(tx, id, scope);
       return row?.form ?? null;
     });
   }
@@ -183,12 +194,12 @@ export class CopilotFormRepository {
     const input = parsed.data;
     return this.transaction(async (tx) => {
       if (signal?.aborted) throw new CopilotToolError("CANCELLED");
-      const scope = await authorized(tx, rawScope),
-        old = await read(tx, input.id, scope);
+      const scope = await authorizeCopilotFormScope(tx, rawScope),
+        old = await readScopedCopilotForm(tx, input.id, scope);
       if (!old) throw new CopilotToolError("FORBIDDEN");
       if (old.form.version !== input.expectedVersion)
         throw new CopilotToolError("OPERATION_CONFLICT");
-      if (["CANCELLED", "STALE"].includes(old.form.status))
+      if (["CANCELLED", "STALE", "ANSWERED"].includes(old.form.status))
         throw new CopilotToolError("OPERATION_CONFLICT");
       const form = {
           ...old.form,
@@ -207,7 +218,7 @@ export class CopilotFormRepository {
         )
           throw new CopilotToolError("INVALID_INPUT");
         form.answers = { ...form.answers, ...input.answers };
-        const e = await evaluation(tx, form);
+        const e = await evaluateSavedCopilotForm(tx, form);
         issues.push(...e.issues);
         form.status =
           input.action === "POSTPONE"
