@@ -28,11 +28,11 @@ Inventory every existing manual business operation. Give each tool a versioned s
 
 ### 3. Read facts and apply store expertise (T19, T26)
 
-Expose shared analytics for available periods/products/categories, quality/coverage, sales/margin/waste, operations, ruptures, substitutions/evidence, commercial plans, weather/calendar and action history. Open original documents through authorized source services; source intake/vision and official numeric calculation remain distinct. Use the existing original-PDF understanding rather than reducing the commercial brief to a few isolated labels.
+Expose shared analytics for available periods/products/categories, quality/coverage, sales/margin/waste, operations, ruptures, substitutions/evidence, commercial plans, weather/calendar and action history. Include an authorized public-web search/read tool for relevant retail, shopper, produce, merchandising, market and calendar questions; retain external provenance and freshness separately from store facts. Open original documents through authorized source services; source intake/vision and official numeric calculation remain distinct. Use the existing original-PDF understanding rather than reducing the commercial brief to a few isolated labels.
 
 Add a curated/versioned produce-retail/shopper reference: purchase needs, complementarities, substitution, offer visibility, merchandising and seasonality. The assistant identifies contributors and competing explanations, asks for discriminating facts and proposes checks. Correlation is not established causality, aggregate article/day data is not individual shopper tracking, and missing stock/cost/history stays unknown. Flexible quantitative period requests need explicit data coverage and the shared calculation service, not handwritten model arithmetic; agree supported presets/references during implementation.
 
-**Gate:** explain a CA/margin evolution and a rich Dramat/prospectus with cited facts and missing-data qualifiers; open the originals.
+**Gate:** explain a CA/margin evolution and a rich Dramat/prospectus with cited facts and missing-data qualifiers; open the originals. Answer a relevant web-research question with usable source links/date context and no contamination of official store KPIs.
 
 ### 4. Make current manual business actions accessible (T20–T21)
 
@@ -105,3 +105,13 @@ The immediate next action is block 1: inspect representative user journeys, prop
 ## Required manual-function coverage inventory
 
 Before T18 is accepted, map each current screen/repository action to a tool and its domain policy. Include existing read, create/update, publish/reconcile, close/retire, validate/reject, revert/cancel and history operations. Do not invent a physical DELETE where the domain only supports retirement or immutable history. Track inventory gaps as explicit tasks; “all CRUD” must not be claimed from a few representative tools alone. Existing operational authority/conflict policies and source privacy apply to chat as well as manual screens.
+
+## Natural interaction and web research — confirmed 11 October 2026
+
+The conversation must feel natural: understand ordinary wording, follow topic changes, retain pending goals, answer concisely and deepen on request. Do not force every exchange into a form, recommendation card or three-priority format. Start with an ordinary question; offer a small inline form when structured dates, amounts/units, choices, dimensions or files make the answer easier. Prefill confirmed facts, accept partial responses and ask only what is materially needed. Do not repeat known facts or ask permission for every ordinary read/search; respect explicit business authority and critical-change gates.
+
+Public-web research is required V1 tool coverage within T19, not an optional afterthought. The assistant may search/read relevant sources when the question benefits from external or current information, then synthesize and link them naturally. Prefer primary sources for factual/technical claims; show publication/event/access dates where freshness matters, reconcile conflicting sources and state unresolved uncertainty. External offers/prices must retain applicable location, dates and conditions; they are not measured store sales/cost/stock. Search results cannot replace the deterministic application engines or become confirmed store observations silently.
+
+Web pages, documents and results are untrusted source data, never tool authority or instructions to disclose secrets/change rules/write business records. Keep store/user scope, query purpose, source URLs and timestamps traceable; minimize private store data sent in searches and never send credentials or private-source URLs. Retrieved facts and any durable web-derived memory retain provenance, expiry/revalidation and uncertainty. No external site login/action, order or price change is authorized by a search request. Research failure yields an explicit limit and useful available-context answer, not invented results. Agree search-provider, latency/cost bounds and source-opening UX during T19 implementation.
+
+UX acceptance adds a free-text business question, a targeted optional form and a source-backed web answer. The user can open the cited page and continue the conversation without losing context.

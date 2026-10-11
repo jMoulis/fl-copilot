@@ -335,7 +335,7 @@ Substitution relationship detail
 
 The owner approves the chat as the application's primary interface and working centre. M5/M6 and the other existing operational features are business tools available through this conversation. Functional screens remain optional detail/correction surfaces. Review the native conversation prototype with the owner before implementation; the quality reference is a simple, efficient and polished ChatGPT-style work experience. Do not add a sixth primary tab by default; agree entry/navigation placement in that UX review.
 
-The V1 is a specialized store assistant with multi-conversation history, attachments, targeted inline forms, business-service read/CRUD tools, shared authorized store knowledge and compacted conversation context. It must discuss an idea or source document even when no deterministic alert exists. Official quantitative claims and actionable recommendations still require trusted calculations and the eligibility/grounding rules below. At most three primary action priorities does not limit ordinary explanatory discussion.
+The V1 is a specialized store assistant with natural free-text dialogue, multi-conversation history, attachments, optional targeted inline forms, business-service read/CRUD tools, relevant public-web research, shared authorized store knowledge and compacted conversation context. Forms facilitate specific answers; they do not replace ordinary conversation. Web claims retain sources/dates and never become measured store facts silently. It must discuss an idea or source document even when no deterministic alert exists. Official quantitative claims and actionable recommendations still require trusted calculations and the eligibility/grounding rules below. At most three primary action priorities does not limit ordinary explanatory discussion.
 
 Document/photo analysis, data preparation and confirmed business changes are separate intents. The chat can prepare the work and execute authorized app operations through the same local-first services as manual screens; it must not treat source text or model output as human validation. Routine explicitly requested, safely validated operations may use a concise result rather than repeated confirmations. Critical ambiguity, corrected publication, destructive or materially consequential changes require an impact preview and targeted decision. No autonomous external ordering, price changes or Mercalys/Storeline/Drive writes are added.
 
@@ -2193,13 +2193,15 @@ getSubstitutes
 getSubstitutionEvidence
 getDataQuality
 getActionHistory
+searchPublicWeb
+readPublicWebSource
 ```
 
 ---
 
 # 98. Proposal generation and authorized operational tools
 
-The synthesis/recommendation generation step remains read-only. A conversational orchestrator may invoke authorized operational tools when explicit user intent permits the mutation, using the same actor authority, validation, stable IDs, local transaction/Outbox and conflict rules as the manual UI. File attachment alone authorizes source intake/reading, not silent acceptance of ambiguous identity or overwriting published observations.
+The synthesis/recommendation generation step remains read-only. Public-web search/read is an authorized research tool for relevant questions; external page content is untrusted data and does not authorize operational mutations. Ordinary authorized reads/searches do not require repetitive approval dialogs. A conversational orchestrator may invoke authorized operational tools when explicit user intent permits the mutation, using the same actor authority, validation, stable IDs, local transaction/Outbox and conflict rules as the manual UI. File attachment alone authorizes source intake/reading, not silent acceptance of ambiguous identity or overwriting published observations.
 
 User decisions may be expressed in the chat or an inline form/card, such as:
 
