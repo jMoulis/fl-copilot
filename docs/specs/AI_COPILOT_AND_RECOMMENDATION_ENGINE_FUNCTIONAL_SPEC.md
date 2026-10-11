@@ -2,8 +2,8 @@
 
 **Product:** Fruits & Vegetables Copilot  
 **Document:** `I_COPILOT_AND_RECOMMENDATION_ENGINE_FUNCTIONAL_SPEC.md`  
-**Version:** 0.1  
-**Date:** 16 September 2026  
+**Version:** 0.2\
+**Date:** 11 October 2026\
 **Specification language:** English  
 **Application language:** French (`fr-FR`)  
 **Primary user:** Fruits & Vegetables Department Manager — Intermarché  
@@ -312,7 +312,7 @@ Renforcer la visibilité de la Turino comme substitut.
 
 # 9. Primary Copilot surfaces
 
-The Copilot appears in four primary functional contexts.
+The primary Copilot surface is the conversational workspace. It retrieves and discusses these four functional contexts through business tools; their dedicated screens remain optional detail/correction surfaces.
 
 ```text
 Aujourd’hui
@@ -321,7 +321,7 @@ Fiche produit
 Bilan d’opération
 ```
 
-It may also appear in:
+The conversation also supports these contexts and their optional detail surfaces:
 
 ```text
 Analyses
@@ -331,31 +331,15 @@ Substitution relationship detail
 
 ---
 
-# 10. No general autonomous chat requirement in MVP
+# 10. Primary conversational workspace — approved V1 scope
 
-The MVP does not require a fully open-ended autonomous chat agent.
+The owner approves the chat as the application's primary interface and working centre. M5/M6 and the other existing operational features are business tools available through this conversation. Functional screens remain optional detail/correction surfaces. Review the native conversation prototype with the owner before implementation; the quality reference is a simple, efficient and polished ChatGPT-style work experience. Do not add a sixth primary tab by default; agree entry/navigation placement in that UX review.
 
-The preferred model is:
+The V1 is a specialized store assistant with multi-conversation history, attachments, targeted inline forms, business-service read/CRUD tools, shared authorized store knowledge and compacted conversation context. It must discuss an idea or source document even when no deterministic alert exists. Official quantitative claims and actionable recommendations still require trusted calculations and the eligibility/grounding rules below. At most three primary action priorities does not limit ordinary explanatory discussion.
 
-```text
-contextual guided analysis
-+
-structured questions
-+
-bounded free-text follow-up
-```
+Document/photo analysis, data preparation and confirmed business changes are separate intents. The chat can prepare the work and execute authorized app operations through the same local-first services as manual screens; it must not treat source text or model output as human validation. Routine explicitly requested, safely validated operations may use a concise result rather than repeated confirmations. Critical ambiguity, corrected publication, destructive or materially consequential changes require an impact preview and targeted decision. No autonomous external ordering, price changes or Mercalys/Storeline/Drive writes are added.
 
-Examples:
-
-```text
-Pourquoi les ventes baissent ?
-Pourquoi la casse augmente ?
-Quels substituts pour ce produit ?
-Que dois-je préparer pour la semaine prochaine ?
-Cette promotion semble-t-elle fonctionner ?
-```
-
-A fully general agent capable of arbitrary external actions is out of scope.
+The detailed delivery and acceptance sequence is in `docs/M7_CONVERSATIONAL_DELIVERY_PLAN.md`. This approved scope supersedes the initial guided-follow-up-only preference; existing numeric, source, ownership, execution and offline invariants remain canonical.
 
 ---
 
@@ -2161,9 +2145,9 @@ Quelles contre-promos éviter ?
 
 ---
 
-# 95. Free-text follow-up
+# 95. Primary conversation and free-text input
 
-A bounded free-text field may be supported.
+The approved V1 requires a primary native conversation with topic history, attachments and contextual inline forms. Free-text requests can explore available store data and expertise, not only follow a pre-existing recommendation. Missing facts should trigger a targeted question/form/file request, with resumption after the answer. See the approved conversational delivery plan.
 
 The Copilot must restrict itself to:
 
@@ -2195,7 +2179,7 @@ scope.
 
 # 97. Tool / data access principle
 
-The Copilot should call application business services, not raw database collections directly where a business service exists.
+The Copilot must call versioned, authorized application business services for reads and all supported app CRUD, not raw database collections or model-generated SQL. Existing manual operations must have a tool-equivalent or an explicit documented coverage gap. Tool coverage includes product units/nature, aliases, memberships, directed relations, field observations, commercial preparation/plans/tasks, import review/publication/reconciliation, and supported store settings. Never mutate derived KPI/score audits or immutable originals as editable business records.
 
 Conceptual tools:
 
@@ -2213,11 +2197,11 @@ getActionHistory
 
 ---
 
-# 98. Read-only AI by default
+# 98. Proposal generation and authorized operational tools
 
-The AI generation step is read-only.
+The synthesis/recommendation generation step remains read-only. A conversational orchestrator may invoke authorized operational tools when explicit user intent permits the mutation, using the same actor authority, validation, stable IDs, local transaction/Outbox and conflict rules as the manual UI. File attachment alone authorizes source intake/reading, not silent acceptance of ambiguous identity or overwriting published observations.
 
-Writes occur only after explicit user actions such as:
+User decisions may be expressed in the chat or an inline form/card, such as:
 
 ```text
 Accept recommendation
