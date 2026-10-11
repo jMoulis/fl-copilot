@@ -1772,6 +1772,9 @@ offline stockout event
 
 **Goal:** Add bounded AI recommendations on top of deterministic candidates.
 
+
+**Approved scope update — 11 October 2026:** Chat is the primary workspace; current manual business functions are tools. The revised delivery sequence, explicit CRUD coverage, inline missing-information forms, multi-chat/shared knowledge, compaction and constrained implantation images are in `../M7_CONVERSATIONAL_DELIVERY_PLAN.md`. T01–T05 are completed. Retain T06–T15, deliver additional T16–T29 below, and run the expanded M7 exit gate before M8. This supersedes the initial guided-follow-up-only MVP preference, while preserving canonical architecture/invariants.
+
 ---
 
 # 111. M7-T01 — Candidate aggregator
@@ -1878,9 +1881,11 @@ show structured deterministic recommendations/templates.
 
 ---
 
-# 119. M7-T09 — Recommendation detail UX
+# 119. M7-T09 — Primary native chat and progressive recommendation detail UX
 
-Implement sections:
+Implement the approved primary conversation (composer, attachments, progress/retry, forms, history and topic switching) and progressively revealed recommendation detail. Prototype approval T16 precedes implementation. No new primary tab without owner UX agreement.
+
+Detail sections:
 
 ```text
 Faits
@@ -2775,3 +2780,24 @@ Create useful business data offline
 ```
 
 Once that foundation is reliable, all higher-level business intelligence becomes safe to build.
+
+# M7 scope extension — T16 through T29 (approved 11 October 2026)
+
+Deliver in the dependency order in `../M7_CONVERSATIONAL_DELIVERY_PLAN.md`, not numeric order alone.
+
+- **M7-T16 — Native chat UX prototype and owner gate:** approve file-to-discussion, targeted form, bulk correction, source detail and interruption/retry journeys before production UI.
+- **M7-T17 — Conversation/message/attachment persistence:** stable IDs, local-first history/drafts, durable remote restoration, pagination, conflict/idempotency and store/user access rules.
+- **M7-T18 — Versioned business-tool registry and authority:** typed inputs/results, per-tool read/write/confirmation rules, complete manual-function coverage inventory; no raw SQL/Mongo or model-controlled scope.
+- **M7-T19 — Contextual read/calculation tools:** daily/product/period/operation numbers, sources/PDF/photo analysis, stockouts/substitution, commercial and calendar/weather context; all official calculations via shared engines.
+- **M7-T20 — Product/catalogue CRUD tools:** products, units/nature, identifiers/aliases, needs/memberships/directed relations; safe batch preparation, review, existing validators, history and explicit authority.
+- **M7-T21 — Field/commercial/workflow CRUD tools:** observations and closure, drafts/choices/plans/TG/tasks, decisions/executions and supported store settings; local transaction/Outbox and version conflicts unchanged.
+- **M7-T22 — Missing-information dialogue and inline forms:** typed targeted date/number/unit/choice/dimension/file fields; partial answers, cancel, offline draft and resumption; no full-catalogue mandatory campaign.
+- **M7-T23 — Conversation-bound source intake:** receive Mercalys/PDF/receipt/other authorized photos; persist immutable originals and processing state; use existing parse/match/reconcile/publish services; per-item batch progress/retry and critical ambiguity review.
+- **M7-T24 — Shared authorized memory:** distinct store facts, confirmed preferences/decisions, source-derived hypotheses and conversation-private data; provenance, correction/forgetting and invalidation without rewriting canonical history.
+- **M7-T25 — Context budgeting/compaction:** versioned summaries preserve intent/decisions/open questions/source IDs, retrieve exact facts with tools, paginated original history; no invented numbers or silent loss of constraints.
+- **M7-T26 — Produce-retail/shopper expertise reference:** curated versioned knowledge and explainable hypotheses; distinguish expertise from measured store facts and aggregate behaviour from individual customers.
+- **M7-T27 — Constrained implantation scenario model:** collect actual/declared island/TG geometry, capacities and passages; validate placements/counts/collisions through deterministic checks; mark unknown dimensions explicitly.
+- **M7-T28 — Implantation visual generation:** produce a canonical schematic plus generated illustrative view anchored to T27; original/photo provenance, source retrieval, private asset storage, revision/constraint comparison and configured provider/cost limits.
+- **M7-T29 — Complete primary-Copilot acceptance:** file → persisted trusted numbers → discussion → targeted clarification → correction/plan → explicit decision/execution → review; two conversations share authorized knowledge without context leakage; compacted/offline/restart/retry flows and constrained visual scenario.
+
+Expanded M7 exit: all current manual business-function tools have coverage or an explicit owner-approved deferral, chat UX is accepted on the pilot iPhone, grounding/authority/privacy gates pass, source imports persist correctly, shared memory/compaction are inspectable and one constrained implantation scenario is accepted. No silent operational write from source text/model output.

@@ -1,0 +1,107 @@
+# M7 — Primary conversational Copilot delivery plan
+
+**Approved product direction:** 11 October 2026. **Language:** French in the application; English specifications. **Owner:** Julien. This plan updates the original M7 scope without changing React Native/Expo, SQLite local-first, Fastify/Vercel, MongoDB, private Blob or the shared deterministic engines.
+
+## Product contract
+
+The chat is the principal workspace and centre of the application. The manager sends documents/photos, asks questions and discusses strategy. The Copilot retrieves facts, prepares work, asks targeted missing-information questions and invokes authorized business tools. Existing screens remain useful details/corrections, not a compulsory sequence of configuration forms. M5/M6 are tools within this assistant, as are the other manual business functions.
+
+V1 must cover quantitative daily/product/period analysis; sales/margin/waste evolution and plausible explanations; ruptures, shopper needs, associations/substitutes; rich commercial PDFs, photos and weekly strategy; product units/nature and other supported CRUD; tasks, decisions and execution; multiple conversations, shared authorized knowledge and compaction; constrained implantation scenarios and illustrations. Official calculations remain deterministic. The assistant can explore an idea without a pre-existing alert, while separating hypothetical discussion from grounded operational recommendations. Three main priorities limits the action brief, not the conversation length.
+
+**Reference journey:** “What should I prepare this week?” → identify missing Mercalys days → ask for the appropriate export in an attachment/form card → persist and process it → show any material ambiguity/corrected-overlap decision → publish trusted observations through existing services under the user's intent → refresh calculations → resume the discussion → propose a plan and tasks → user decides → execution is recorded separately.
+
+## Delivery sequence — eleven blocks
+
+### 1. Agree the native conversation UX (T16)
+
+Before production chat UI, review a native prototype with Julien. One clear composer, easy files/photos, concise replies, topic history, inline forms/action cards and progressively revealed sources/details. Keep the current five-tab constraint until navigation is explicitly agreed; determine how the chat is the default entry in that review. Include keyboard, one-handed use, accessibility, streaming/interruption and understandable offline/retry states.
+
+**Gate:** owner approves five journeys: file-to-discussion, missing-data form, product batch correction, source/detail opening and restart/retry. Do not equate functional tests with UX acceptance.
+
+### 2. Persist conversations and establish tool authority (T17–T18)
+
+Store conversations, messages, drafts, attachments and operation/result references locally with stable IDs; provide authorized durable restoration through the existing sync architecture. Define deletion/archive/recovery and append/edit conflict behaviour explicitly. Paginate history and preserve drafts/source files offline. Keep personal conversation content separate from shared store knowledge.
+
+Inventory every existing manual business operation. Give each tool a versioned schema, authorized store/actor, validator, confirmation rule, idempotency identity, read/write classification and French progress/result/error contract. The model selects intentions; trusted services resolve scope/IDs and enforce permissions. Never accept model-generated SQL, database commands, credentials or actor authority.
+
+**Gate:** history/draft survive restart and one tool retry runs exactly once; the coverage inventory lists every manual operation and any explicit proposed deferral.
+
+### 3. Read facts and apply store expertise (T19, T26)
+
+Expose shared analytics for available periods/products/categories, quality/coverage, sales/margin/waste, operations, ruptures, substitutions/evidence, commercial plans, weather/calendar and action history. Open original documents through authorized source services; source intake/vision and official numeric calculation remain distinct. Use the existing original-PDF understanding rather than reducing the commercial brief to a few isolated labels.
+
+Add a curated/versioned produce-retail/shopper reference: purchase needs, complementarities, substitution, offer visibility, merchandising and seasonality. The assistant identifies contributors and competing explanations, asks for discriminating facts and proposes checks. Correlation is not established causality, aggregate article/day data is not individual shopper tracking, and missing stock/cost/history stays unknown. Flexible quantitative period requests need explicit data coverage and the shared calculation service, not handwritten model arithmetic; agree supported presets/references during implementation.
+
+**Gate:** explain a CA/margin evolution and a rich Dramat/prospectus with cited facts and missing-data qualifiers; open the originals.
+
+### 4. Make current manual business actions accessible (T20–T21)
+
+Product/catalogue tools cover supported create/read/update/retire operations, units/nature, identifiers/aliases, needs/memberships and directed substitutions. Field/commercial tools cover observations/closure, choices/drafts/plans, TG assignments, tasks, decisions/executions and supported store settings. Use current actor rules, entity versions, canonical validation, atomic local transaction/history/Outbox and domain-specific conflict handling. No parallel business implementation or arbitrary remote-only writer.
+
+Use batched proposed corrections so the manager does not type every unit/nature. Explain the basis and changed fields; preserve prior human confirmations/refusals and distinguish an inference from a validated fact. A clear user request may authorize routine validated changes without repeated modals; critical ambiguity, materially consequential/corrected publication and destructive changes require a targeted preview/decision. All actions remain traceable, and reversal is explicit where the domain supports it. “All CRUD” applies to supported business records, never rewriting immutable original documents, derived audits or historical facts in place.
+
+**Gate:** perform representative manual tasks from the chat; retry without duplicates, preserve a human refusal, show a meaningful conflict and support a valid reversal/retirement.
+
+### 5. Ask for missing facts naturally (T22)
+
+Translate unavailable/ambiguous data into a small contextual question. Render typed inline forms for dates, numbers with units, product/option choices, dimensions, notes and files/photos. Explain why the information matters and prefill reliable existing facts. Ask only the fields relevant to this decision, accept partial answers, allow cancel/postpone, keep offline drafts and resume after answers or a new file. Do not request the whole catalogue or every supporting row when a useful answer is already possible.
+
+Examples: “The last two business days are missing; add your daily Mercalys export”; “What is the purchase cost for this promotion scenario?”; “What are this TG's usable width and depth?” The form/file response is bound to the question, scope and operation; changes invalidate obsolete follow-ups.
+
+**Gate:** a missing-number answer and an attachment answer both unblock their original question without losing the conversation or asking the same fact again.
+
+### 6. Orchestrate source files from the chat (T23)
+
+Persist immutable local originals and per-file processing state first. Route Mercalys, commercial PDFs, waste photos and rayon photos through their proper existing/approved adapters; never classify a rayon photo as a waste receipt by guessing. Parse/normalize/match/reconcile/publish using current engines and actor rules. Receiving a file does not silently validate ambiguous identities or overwrite a corrected overlapping import.
+
+Support a request containing several authorized sources with item-level progress, retry and bounded concurrency; one failure does not roll back completed items. Independent ticket batches and several photos of one long ticket need explicit grouping semantics. Raw intake/drafts, trusted published observations and remote AI processing remain separate states. Once required data is saved/published, recompute through shared engines and resume the pending analysis automatically. Explain blocking ambiguity with a targeted card rather than an opaque error.
+
+**Gate:** chat request → Mercalys saved locally → validated publication → unchanged official lineage/parity → discussion resumes; exact duplicate/corrected file/restart/offline/failed-item scenarios are handled.
+
+### 7. Share knowledge and compact context (T24–T25)
+
+Allow named topic conversations (weekly planning, margin/waste, implantation) that share authorized store facts and curated memory. Memory separates canonical data, confirmed preferences/constraints/decisions, source-derived claims and hypotheses. Record provenance, date, scope, status and version; provide correction/forgetting and invalidation. Raw private messages are not silently published to another user or store. Establish which memory is user-private versus store-shared before adding multi-user sharing.
+
+Manage context budgets and versioned compaction. Preserve user objectives, confirmed constraints, decisions, unresolved questions, tool/result/source IDs and attachment references. Retrieve exact current figures from tools instead of trusting a conversational summary. Keep paginated original history accessible and mark stale summaries. Never silently change financial precision, product IDs, periods or validation authority during compaction.
+
+**Gate:** two chats reuse a confirmed store constraint while remaining context-isolated; correct/forget memory; compact a long discussion and recover exact sources, decisions and open questions after restart.
+
+### 8. Deliver French generation and the primary chat (T06–T09)
+
+T01–T05 are already implemented. Complete the structured French synthesis, hard grounding checks and deterministic outage fallback; wire the approved primary native conversation to the tool/history/form/source pipeline. Recommendations preserve facts, interpretation, options, risk, confidence, missing information and a measurement plan. Detail is progressive, not a dense compulsory form. Respect eligible candidates, canonical scores and trade-offs, while supporting contextual exploration and targeted clarification.
+
+Choose/configure the generation model and budget at activation, reusing the existing authorized server key. Distinguish generation success from factual grounding. Reject unsupported figures/IDs/dates/fourth priorities; expose useful fallback when AI is unavailable. No secret or raw provider error enters the conversation/logs.
+
+**Gate:** complete approved conversation journeys on the pilot iPhone with grounded sources and useful outage behaviour. Group EAS testing into a substantial acceptance build, not every ticket.
+
+### 9. Decide, execute and review (T10–T13, T15)
+
+Support accept/modify/postpone/refuse through chat cards, preserve decision intent offline and stale/context-conflict handling, and record execution as a separate explicit action. Review before/during/after through existing analytical services and qualify confounders. Do not auto-execute an accepted recommendation or overwrite a decision after model regeneration.
+
+**Gate:** offline decision → restart → synchronized changed-context reconciliation → explicit execution → source-grounded review; all actor/action history is inspectable.
+
+### 10. Simulate commercial and implantation scenarios (T14, T27–T28)
+
+Commercial scenarios use deterministic numbers and explicit assumptions; known purchase cost and required facts gate margin-based figures. Break-even is not a sales forecast.
+
+For implantation, collect declared/measured island/TG shapes, usable dimensions/heights/capacities, positions/orientation, entrances/passages, fixed obstacles and owner constraints. Existing-rayon photos are context, not automatic exact dimensions or stock counts. Ask missing measures in an inline form; provisional assumptions stay visible and cannot become confirmed store constraints silently.
+
+Build a versioned scenario with deterministic checks for counts, bounds, collisions, declared capacity and passages. Produce an authoritative schematic and a generated illustrative image anchored to that same scenario. Preserve the input photo/original, layout revision and constraint references; keep assets private and locally recoverable. Compare the illustration against the validated layout and flag deviations: attractive pixels are not proof of measured feasibility or actual implementation. Configure image provider/model, cost limits and regeneration separately at activation; no paid images are generated by this planning change.
+
+**Gate:** one real pilot layout with declared constraints → targeted questions → valid schematic → useful illustrative image; an impossible placement is identified, and changed dimensions cause a new version rather than a silent replacement.
+
+### 11. Accept the complete V1 Copilot (T29, golden suite, M7 exit)
+
+Run file → trusted figures → explanation → missing-data form → correction/plan → decision → execution → review, plus multi-chat memory/compaction and constrained implantation. Include complete offline/restart/reconnect, tenant isolation, idempotency/conflict, source/grounding failure, cancelled tool call, model outage and critical human-validation scenarios. All current manual business operations have tool coverage or an explicit owner-approved exception. UX acceptance is separate from numeric/infrastructure checks.
+
+Then run M8 security, accessibility, recovery, performance, backup and release acceptance; M7 completion alone is not a production pilot certificate.
+
+## Scope/count and next action
+
+Original M7-T01–T05 are completed. Ten original implementation tickets T06–T15 remain, plus the original golden/exit acceptance. Fourteen additional work packages T16–T29 describe the approved chat/tool/memory/forms/source/expertise/visual scope. M8 retains its fourteen tickets. This is a planning inventory, not 38 compulsory PRs or a duration estimate; regroup delivery around the eleven blocks and split risky changes appropriately.
+
+The immediate next action is block 1: inspect representative user journeys, propose the native chat prototype and agree the entry/composer/forms/source UX with Julien. In parallel implementation phases, use already built business services; do not redesign the architecture or repeat completed deterministic M7 work. Voice and unrelated external browsing/integrations are optional extensions to prioritize explicitly; direct ordering, external price/Storeline/Mercalys changes and unattended business execution remain outside this V1.
+
+## Required manual-function coverage inventory
+
+Before T18 is accepted, map each current screen/repository action to a tool and its domain policy. Include existing read, create/update, publish/reconcile, close/retire, validate/reject, revert/cancel and history operations. Do not invent a physical DELETE where the domain only supports retirement or immutable history. Track inventory gaps as explicit tasks; “all CRUD” must not be claimed from a few representative tools alone. Existing operational authority/conflict policies and source privacy apply to chat as well as manual screens.
