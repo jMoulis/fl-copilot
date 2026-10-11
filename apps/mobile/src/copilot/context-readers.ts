@@ -1,3 +1,4 @@
+import { SourceDocumentRepository } from "../documents/source-document-repository";
 import { StoreProductEventRepository } from "../needs/store-event-repository";
 import { readSubstituteSnapshot } from "../needs/lookup-repository";
 import { StoreContextRepository } from "../store/context-repository";
@@ -218,6 +219,34 @@ export async function readCopilotContext(
         message: context
           ? "Contexte local consulté avec sa validité et ses sources. La météo est une prévision, pas une explication certaine des ventes."
           : "Aucun contexte disponible pour cette semaine et cette configuration. Aucune recherche réseau n’a été lancée.",
+      };
+    }
+    case "source.reference": {
+      const document = await new SourceDocumentRepository(
+        readOnlyToolDatabase(tx),
+      ).getDocument(request.input.sourceDocumentId);
+      const d =
+        document?.storeId === storeId && !document.deletedAt ? document : null;
+      return {
+        source: d
+          ? {
+              sourceDocumentId: d.id,
+              sourceType: d.sourceType,
+              filename: d.originalFilename ?? null,
+              businessPeriodStart: d.businessPeriodStart ?? null,
+              businessPeriodEnd: d.businessPeriodEnd ?? null,
+              processingStatus: d.localProcessingStatus,
+              uploadStatus: d.remoteUploadStatus,
+              syncState: d.syncState,
+              openAction:
+                d.sourceType === "WEEKLY_COMMERCIAL_PDF"
+                  ? { kind: "COMMERCIAL_ORIGINAL", sourceDocumentId: d.id }
+                  : null,
+            }
+          : null,
+        message: d
+          ? "Source retrouvée. L’ouverture du PDF utilise le service autorisé et renouvelle le lien à la demande."
+          : "Source introuvable dans ce magasin.",
       };
     }
     default:

@@ -505,3 +505,104 @@ it("reads only settings-matching weekly cache offline, marks expired forecasts s
     x.db.close();
   }
 });
+it("exposes only an owned source reference for original opening, with no private URI or signed link in tool history", async () => {
+  const x = await setup();
+  try {
+    const { SourceDocumentRepository } =
+      await import("../documents/source-document-repository");
+    const { sourceReferenceResultSchema } = await import("@fl-copilot/domain");
+    const document = {
+      id: randomUUID(),
+      storeId: x.f.storeId,
+      sourceType: "WEEKLY_COMMERCIAL_PDF" as const,
+      originalFilename: "S41.pdf",
+      localFileUri: "file:///private/secret.pdf",
+      checksum: "sha256:fixture",
+      localProcessingStatus: "PENDING" as const,
+      remoteUploadStatus: "LOCAL_ONLY" as const,
+      version: 1,
+      createdAt: x.f.conversation.createdAt,
+      updatedAt: x.f.conversation.createdAt,
+      syncState: "LOCAL_ONLY" as const,
+      dirty: true,
+    };
+    await new SourceDocumentRepository(x.a).createWithFile({
+      document,
+      file: {
+        id: randomUUID(),
+        storeId: x.f.storeId,
+        sourceDocumentId: document.id,
+        localUri: document.localFileUri,
+        mimeType: "application/pdf",
+        sizeBytes: 100,
+        checksum: "sha256:fixture",
+        retentionStatus: "RETAINED",
+        uploadStatus: "LOCAL_ONLY",
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
+      },
+    });
+    const op = randomUUID(),
+      input = { sourceDocumentId: document.id },
+      r = sourceReferenceResultSchema.parse(
+        await x.call("source.reference", input, op),
+      );
+    expect(r.source?.openAction).toEqual({
+      kind: "COMMERCIAL_ORIGINAL",
+      sourceDocumentId: document.id,
+    });
+    expect(r.source?.filename).toBe("S41.pdf");
+    expect(JSON.stringify(r)).not.toContain("file://");
+    expect(JSON.stringify(r)).not.toContain("secret");
+    expect(await x.call("source.reference", input, op)).toEqual(r);
+    const otherStore = randomUUID(),
+      foreignDocument = { ...document, id: randomUUID(), storeId: otherStore };
+    await new SourceDocumentRepository(x.a).createWithFile({
+      document: foreignDocument,
+      file: {
+        id: randomUUID(),
+        storeId: otherStore,
+        sourceDocumentId: foreignDocument.id,
+        localUri: document.localFileUri,
+        mimeType: "application/pdf",
+        sizeBytes: 100,
+        checksum: "sha256:fixture",
+        retentionStatus: "RETAINED",
+        uploadStatus: "LOCAL_ONLY",
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt,
+      },
+    });
+    expect(
+      sourceReferenceResultSchema.parse(
+        await x.call("source.reference", {
+          sourceDocumentId: foreignDocument.id,
+        }),
+      ).source,
+    ).toBeNull();
+    expect(
+      x.db
+        .prepare(
+          "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+        )
+        .get(op)?.result_json,
+    ).not.toContain("file://");
+    const foreign = await setup();
+    try {
+      expect(
+        sourceReferenceResultSchema.parse(
+          await foreign.call("source.reference", input),
+        ).source,
+      ).toBeNull();
+    } finally {
+      foreign.db.close();
+    }
+    expect(
+      sourceReferenceResultSchema.parse(
+        await x.call("source.reference", { sourceDocumentId: randomUUID() }),
+      ).source,
+    ).toBeNull();
+  } finally {
+    x.db.close();
+  }
+});
