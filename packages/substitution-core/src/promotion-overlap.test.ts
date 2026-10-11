@@ -269,3 +269,56 @@ it("does not infer transitive substitutes or fabricate complementarity from unre
     }).warnings,
   ).toEqual([]);
 });
+
+it("provides structured weekly context to M7 without converting declared fit into a learned score or invented impact", async () => {
+  const { weeklyPromotionOverlapCandidates } =
+    await import("./copilot-overlaps");
+  const { aggregateCopilotCandidates } =
+    await import("@fl-copilot/analytics-core");
+  const f = await fixture();
+  const before = JSON.stringify(f.input);
+  const weekly = weeklyPromotionOverlapCandidates({
+    ...f.input,
+    relations: [{ entity: f.relation, syncState: "SYNCED" }],
+  });
+  const r = aggregateCopilotCandidates({
+    storeId: f.storeId,
+    analyticalCandidates: [],
+    weeklyCommercialCandidates: weekly,
+  });
+  expect(r.candidates).toHaveLength(1);
+  const c = r.candidates[0]!;
+  expect(c).toMatchObject({
+    sourceType: "PROMOTION_OVERLAP",
+    status: "TO_REVIEW",
+    relationshipScore: null,
+    economicImpactScore: null,
+    deadlineAt: null,
+    context: { availability: "UNKNOWN", planRevisionId: f.plan.revisionId },
+  });
+  expect(c.context.relationshipIds).toEqual([f.relation.id]);
+  expect(c.evidence.filter((e) => e.factKind === "PLANNED")).toHaveLength(2);
+  const support = JSON.parse(
+    c.evidence.find((e) => e.label === "promotion-overlap.v1")!.value as string,
+  );
+  expect(support.impact).toEqual({
+    salesTransfer: null,
+    lostSales: null,
+    marginImpact: null,
+  });
+  expect(
+    support.support.find(
+      (s: { kind: string }) => s.kind === "DIRECTED_SUBSTITUTION",
+    ).basis,
+  ).toBe("DECLARED");
+  expect(JSON.stringify(f.input)).toBe(before);
+  expect(
+    weeklyPromotionOverlapCandidates({
+      ...f.input,
+      memberships: [],
+      relations: [
+        { entity: { ...f.relation, status: "REJECTED" }, syncState: "SYNCED" },
+      ],
+    }),
+  ).toEqual([]);
+});
