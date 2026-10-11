@@ -16,6 +16,8 @@ V1 must cover quantitative daily/product/period analysis; sales/margin/waste evo
 
 Before production chat UI, review a native prototype with Julien. One clear composer, easy files/photos, concise replies, topic history, inline forms/action cards and progressively revealed sources/details. Keep the current five-tab constraint until navigation is explicitly agreed; determine how the chat is the default entry in that review. Include keyboard, one-handed use, accessibility, streaming/interruption and understandable offline/retry states.
 
+[Prototype 1](prototypes/copilot-chat/README.md) is available for owner review; this is not native UI approval.
+
 **Gate:** owner approves five journeys: file-to-discussion, missing-data form, product batch correction, source/detail opening and restart/retry. Do not equate functional tests with UX acceptance.
 
 ### 2. Persist conversations and establish tool authority (T17–T18)

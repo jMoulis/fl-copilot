@@ -63,3 +63,11 @@ After T05, Julien confirms the conversation is the heart of the application and 
 `docs/M7_CONVERSATIONAL_DELIVERY_PLAN.md` now defines eleven delivery blocks and T16–T29 additions. The functional specification's original guided-follow-up-only preference is superseded; read-only synthesis and authorized operational tools remain distinct, with existing local-first/validation/authority rules. Original T01–T05 implementations are retained. The immediate next step is the owner-reviewed native chat UX prototype, before proceeding to user-facing generation/UI. No new business code, image generation, paid API call or EAS build is part of this planning update.
 
 Julien subsequently confirms natural dialogue, sourced web research and Resend email document intake using the managed development receiving address. These requirements are recorded under T19/T23 in the revised plan; no receiving address/webhook/Gmail rule or live processing is configured by the planning changes. The next implementation work remains the owner-reviewed native chat prototype.
+
+## M7-T16 — First primary chat UX prototype, owner review pending
+
+A standalone interactive prototype is in `docs/prototypes/copilot-chat/`, shared at https://fl-copilot-ux-preview.vercel.app/. It keeps the existing forest/neutral palette and five-tab navigation while proposing chat as the Today entry. It demonstrates conversations/drafts, attachments by name, targeted forms, proposed grouped corrections/detail/back/undo, progressive source sheets, declared cross-topic memory, simulated interruption/offline retry and an explicitly indicative layout sketch. Data/replies are fictitious and no API, real file reading/upload, model/image generation, operational mutation or EAS build occurs.
+
+Browser inspection covered desktop and a 390-pixel mobile breakpoint with no horizontal overflow. Core interactions and local draft/history restart passed; zero browser errors were captured. Hosted HTML and screenshot evidence were verified. Prototype hosting is a separate static UX project, not the application API deployment. The readme records limitations, scenarios and open owner decisions.
+
+T16 is not marked complete: Julien must review the prototype's naturalness, navigation, forms and source/history access before native UI implementation.
