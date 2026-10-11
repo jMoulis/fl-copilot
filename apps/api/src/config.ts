@@ -41,6 +41,29 @@ const environmentSchema = z.object({
     .trim()
     .regex(/^[a-z0-9-]+\/[a-zA-Z0-9._-]+$/)
     .default("openai/gpt-6.1-sol"),
+  COPILOT_AI_MODEL: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/)
+    .optional(),
+  COPILOT_AI_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .max(180000)
+    .default(90000),
+  COPILOT_AI_MAX_OUTPUT_TOKENS: z.coerce
+    .number()
+    .int()
+    .min(128)
+    .max(16000)
+    .default(4000),
+  COPILOT_AI_MAX_INPUT_BYTES: z.coerce
+    .number()
+    .int()
+    .min(4096)
+    .max(1048576)
+    .default(524288),
   WASTE_RECEIPT_VISION_MODEL: z.string().trim().min(1).default("gpt-5.6-luna"),
   WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR: z
     .string()
