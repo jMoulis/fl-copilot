@@ -32,6 +32,7 @@ export class CopilotToolRuntime {
     const request = parsed.data,
       ctx = scope.data;
     let result: CopilotToolResult | undefined;
+    const observedAt = this.now();
     try {
       await this.db.withExclusiveTransactionAsync(async (tx) => {
         if (signal?.aborted) throw new CopilotToolError("CANCELLED");
@@ -90,7 +91,13 @@ export class CopilotToolRuntime {
               ? "Fiche produit consultée."
               : "Produit introuvable dans ce magasin.",
           };
-        } else content = await readCopilotContext(tx, ctx.storeId, request);
+        } else
+          content = await readCopilotContext(
+            tx,
+            ctx.storeId,
+            request,
+            observedAt,
+          );
         if (signal?.aborted) throw new CopilotToolError("CANCELLED");
         result = copilotToolResultSchema.parse({
           ...content,
@@ -98,7 +105,7 @@ export class CopilotToolRuntime {
           operationId: request.operationId,
           tool: request.tool,
           status: "COMPLETED",
-          observedAt: this.now(),
+          observedAt,
         });
         await tx.runAsync(
           `INSERT INTO copilot_tool_results

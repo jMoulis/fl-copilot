@@ -46,3 +46,4 @@ export * from "./copilot-conflict";
 export * from "./copilot-conversation";
 export * from "./copilot-tools";
 export * from "./copilot-context-tools";
+export * from "./copilot-store-tools";

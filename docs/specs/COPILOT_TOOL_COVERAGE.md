@@ -1,6 +1,6 @@
 # Copilot manual-operation coverage inventory
 
-Updated 11 October 2026. This inventory maps the current repository/service surface before chat activation. It is a wiring backlog, not a claim that all CRUD is available. `product.inspect`, `analytics.daily`, `waste.inspect` and `commercial.offers` are executable internally; the model-facing envelope accepts no store, actor, role, SQL or credentials.
+Updated 11 October 2026. This inventory maps the current repository/service surface before chat activation. It is a wiring backlog, not a claim that all CRUD is available. `product.inspect`, `analytics.daily`, `waste.inspect`, `commercial.offers`, `store.events`, `substitution.lookup` and `store.week` are executable internally; the model-facing envelope accepts no store, actor, role, SQL or credentials.
 
 ## Authority and execution contract
 
@@ -145,7 +145,7 @@ Operations: `list`, `get`, `states`, `applySubstitutionEvidence`, `applySubstitu
 
 Adapter source: [`lookup-repository.ts`](../../apps/mobile/src/needs/lookup-repository.ts). Target: **T20/T21**.
 
-Operations: `read`, `substituteReadOnlyReader`.
+Operations: `read`, `readSubstituteSnapshot`, `substituteReadOnlyReader`. The exported snapshot reader remains an internal read adapter for the lookup tool.
 
 ### needs.membership-repository
 
@@ -228,4 +228,4 @@ Operations: `evaluate`, `read`.
 
 ## Explicit remaining activation gates
 
-T19 remaining: flexible quantitative periods beyond daily/J−7, product/category analysis, context/events/evidence, public-web provider and authorized original-source opening. Daily/J−7 reads, receipt inspection and paginated retained-offer period reads now use the existing local services. T20/T21: write intents, canonical mutation adapters and durable versioned operation/Outbox identities, material confirmation previews and valid reversals. T22: inline missing-information forms. T23: local attachment/intake orchestration and Resend verified reception. T24/T25: memory/compaction. Generation/native UI are later delivery blocks. This inventory does not approve omissions from V1; unmapped new manual operations must update it before chat acceptance.
+T19 remaining: flexible quantitative periods beyond daily/J−7, product/category analysis, evidence/detail, public-web provider and authorized original-source opening. Daily/J−7 reads, receipt inspection, paginated retained-offer/event reads, directed substitution lookup and cached weekly context now use the existing local services. T20/T21: write intents, canonical mutation adapters and durable versioned operation/Outbox identities, material confirmation previews and valid reversals. T22: inline missing-information forms. T23: local attachment/intake orchestration and Resend verified reception. T24/T25: memory/compaction. Generation/native UI are later delivery blocks. This inventory does not approve omissions from V1; unmapped new manual operations must update it before chat acceptance.

@@ -1,3 +1,10 @@
+import { StoreProductEventRepository } from "../needs/store-event-repository";
+import { readSubstituteSnapshot } from "../needs/lookup-repository";
+import { StoreContextRepository } from "../store/context-repository";
+import {
+  WeeklyContextRepository,
+  contextIsStale,
+} from "../store/weekly-context-repository";
 import { z } from "zod";
 import { CopilotToolError, copilotToolRequestSchema } from "@fl-copilot/domain";
 import type { OutboxDatabase } from "../sync/outbox-repository";
@@ -22,6 +29,7 @@ export async function readCopilotContext(
   tx: OutboxDatabase,
   storeId: string,
   request: z.infer<typeof copilotToolRequestSchema>,
+  observedAt: string,
 ) {
   switch (request.tool) {
     case "analytics.daily": {
@@ -96,6 +104,120 @@ export async function readCopilotContext(
         nextAfterId: hasMore ? page.at(-1)!.entity.id : null,
         message:
           "Offres retenues consultées. Une offre retenue ou validée ne prouve pas son exécution en rayon.",
+      };
+    }
+    case "store.events": {
+      const rows = await new StoreProductEventRepository(
+        readOnlyToolDatabase(tx),
+      ).list(storeId);
+      const matches = rows
+        .filter(
+          (r) =>
+            r.entity.storeId === storeId &&
+            (!request.input.productId ||
+              r.entity.productId === request.input.productId) &&
+            r.entity.startedAt < request.input.endAt &&
+            (!r.entity.endedAt || r.entity.endedAt > request.input.startAt) &&
+            (!request.input.afterId || r.entity.id > request.input.afterId),
+        )
+        .sort((a, b) =>
+          a.entity.id < b.entity.id ? -1 : a.entity.id > b.entity.id ? 1 : 0,
+        );
+      const page = matches.slice(0, request.input.limit),
+        hasMore = matches.length > page.length;
+      return {
+        startAt: request.input.startAt,
+        endAt: request.input.endAt,
+        events: page.map((r) => ({ entity: r.entity, syncState: r.syncState })),
+        hasMore,
+        nextAfterId: hasMore ? page.at(-1)!.entity.id : null,
+        message:
+          "Observations consultées. Elles ne prouvent ni le stock actuel ni la cause d’une variation de ventes.",
+      };
+    }
+    case "substitution.lookup": {
+      const at = request.input.at ?? observedAt;
+      if (Date.parse(at) > Date.parse(observedAt))
+        throw new CopilotToolError("INVALID_INPUT");
+      const snapshot = await readSubstituteSnapshot(
+        tx,
+        storeId,
+        request.input.productId,
+        request.input.needUnitId,
+        at,
+      );
+      const r = snapshot.result,
+        page = r.candidates.slice(
+          request.input.offset,
+          request.input.offset + request.input.limit,
+        ),
+        hasMore = request.input.offset + page.length < r.candidates.length;
+      return {
+        productId: request.input.productId,
+        evaluatedAt: r.evaluatedAt,
+        ruleVersion: r.ruleVersion,
+        lookupStatus: r.status,
+        candidates: page.map((c) => ({
+          productId: c.productId,
+          label: snapshot.labels[c.productId] ?? "Produit",
+          availability: c.availability,
+          relationships: c.relationships,
+          events: c.events,
+        })),
+        candidateCount: r.candidates.length,
+        hasMore,
+        nextOffset: hasMore ? request.input.offset + page.length : null,
+        excluded: r.excluded.slice(0, 25),
+        excludedCount: r.excluded.length,
+        excludedHasMore: r.excluded.length > 25,
+        message:
+          "Substitutions consultées selon les règles partagées. La disponibilité réelle reste inconnue ; les relations refusées ne sont pas réactivées.",
+      };
+    }
+    case "store.week": {
+      const settings = await new StoreContextRepository(
+        readOnlyToolDatabase(tx),
+      ).get(storeId);
+      if (settings && settings.entity.storeId !== storeId)
+        throw new CopilotToolError("FORBIDDEN");
+      const context = settings
+        ? await new WeeklyContextRepository(tx).get(
+            settings.entity,
+            request.input.weekStart,
+          )
+        : null;
+      if (
+        context &&
+        (context.storeId !== storeId ||
+          context.weekStart !== request.input.weekStart)
+      )
+        throw new CopilotToolError("FORBIDDEN");
+      if (context)
+        for (const key of [
+          "weather",
+          "publicHolidays",
+          "schoolHolidays",
+        ] as const)
+          if (
+            contextIsStale(context[key], new Date(observedAt)) &&
+            context[key].status === "AVAILABLE"
+          )
+            context[key].status = "STALE";
+      return {
+        weekStart: request.input.weekStart,
+        settings: settings
+          ? {
+              city: settings.entity.city,
+              postalCode: settings.entity.postalCode,
+              timezone: settings.entity.timezone,
+              schoolZone: settings.entity.schoolZone,
+              syncState: settings.syncState,
+            }
+          : null,
+        context,
+        message: context
+          ? "Contexte local consulté avec sa validité et ses sources. La météo est une prévision, pas une explication certaine des ventes."
+          : "Aucun contexte disponible pour cette semaine et cette configuration. Aucune recherche réseau n’a été lancée.",
       };
     }
     default:

@@ -1,4 +1,11 @@
 import {
+  copilotStoreRequestSchemas,
+  eventsReadResultSchema,
+  substitutesReadResultSchema,
+  storeWeekReadResultSchema,
+  copilotStoreToolRegistry,
+} from "./copilot-store-tools";
+import {
   copilotContextRequestSchemas,
   dailyReadResultSchema,
   wasteReadResultSchema,
@@ -32,6 +39,7 @@ const productRequestSchema = z.strictObject({
 export const copilotToolRequestSchema = z.discriminatedUnion("tool", [
   productRequestSchema,
   ...copilotContextRequestSchemas,
+  ...copilotStoreRequestSchemas,
 ]);
 const record = <T extends z.ZodType>(entity: T) =>
   z.strictObject({
@@ -60,6 +68,9 @@ export const copilotToolResultSchema = z.discriminatedUnion("tool", [
   dailyReadResultSchema,
   wasteReadResultSchema,
   offersReadResultSchema,
+  eventsReadResultSchema,
+  substitutesReadResultSchema,
+  storeWeekReadResultSchema,
 ]);
 export type CopilotToolResult = z.infer<typeof copilotToolResultSchema>;
 export type InspectProductResult = z.infer<typeof inspectProductResultSchema>;
@@ -78,6 +89,7 @@ export class CopilotToolError extends Error {
 }
 export const copilotToolRegistry = [
   ...copilotContextToolRegistry,
+  ...copilotStoreToolRegistry,
   {
     name: "product.inspect",
     schemaVersion: 1,
