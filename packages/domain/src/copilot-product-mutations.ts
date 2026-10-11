@@ -93,7 +93,11 @@ export class ProductClassificationError extends Error {
       | "NEED_UNAVAILABLE"
       | "NEED_CODE_CONFLICT"
       | "NEED_CODE_IMMUTABLE"
-      | "RELATION_REFUSAL_REQUIRED",
+      | "RELATION_REFUSAL_REQUIRED"
+      | "EVENT_UNAVAILABLE"
+      | "EVENT_SOURCE_READ_ONLY"
+      | "EVENT_ALREADY_CLOSED"
+      | "EVENT_DATE_INVALID",
     readonly details?: {
       productId: string;
       fields?: Array<"category" | "nature" | "salesUnit">;
@@ -129,6 +133,14 @@ export class ProductClassificationError extends Error {
           "Le code d’un besoin existant ne peut pas être remplacé.",
         RELATION_REFUSAL_REQUIRED:
           "Cette association a été refusée. Une décision explicite de réactivation est nécessaire.",
+        EVENT_UNAVAILABLE:
+          "Cette observation n’est pas disponible dans ce magasin.",
+        EVENT_SOURCE_READ_ONLY:
+          "Cette information vient d’un document commercial. Elle ne peut pas être clôturée comme une observation terrain.",
+        EVENT_ALREADY_CLOSED:
+          "L’observation a déjà été clôturée à une autre date. Consultez son historique.",
+        EVENT_DATE_INVALID:
+          "Vérifiez les dates : elles doivent correspondre à une observation déjà faite et la fin doit suivre le début.",
         ALIAS_REFUSED:
           "Cet alias a déjà été refusé. La sauvegarde ne peut pas le réactiver.",
         UNAVAILABLE:
