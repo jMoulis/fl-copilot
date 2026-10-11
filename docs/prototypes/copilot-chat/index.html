@@ -1,0 +1,1522 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'"
+    />
+    <title>Fruits & Légumes — maquette du copilote</title>
+    <style>
+      :root {
+        --bg: #f5f6f0;
+        --ink: #192d25;
+        --muted: #59685f;
+        --line: #dfe6dd;
+        --accent: #235c3d;
+        --soft: #e7f1ea;
+        --surface: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--ink);
+        font-synthesis: none;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+      }
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        color: inherit;
+      }
+      button:focus-visible,
+      input:focus-visible,
+      textarea:focus-visible,
+      select:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.5;
+      }
+      .demo {
+        height: 40px;
+        padding: 0 18px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 12px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+      }
+      .demo strong {
+        font-weight: 500;
+      }
+      .demo select {
+        max-width: 190px;
+        background: transparent;
+        border: 0;
+        font-size: 12px;
+        color: var(--ink);
+      }
+      .demo .spacer {
+        flex: 1;
+      }
+      .demo button {
+        border: 0;
+        background: none;
+        font-size: 12px;
+      }
+      .app {
+        display: flex;
+        background: var(--surface);
+        height: calc(100dvh - 40px);
+        min-height: 500px;
+      }
+      .sidebar {
+        width: 242px;
+        flex: none;
+        background: var(--bg);
+        padding: 24px 14px;
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--line);
+        gap: 14px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 14px;
+        font-weight: 650;
+        padding: 0 10px;
+        letter-spacing: 0.02em;
+      }
+      .brand svg {
+        color: var(--accent);
+      }
+      .new {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        text-align: left;
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 15px;
+        font-size: 14px;
+      }
+      .nav-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        color: var(--muted);
+        padding: 12px 10px 0;
+      }
+      .conversation {
+        display: block;
+        width: 100%;
+        background: transparent;
+        border: 0;
+        text-align: left;
+        padding: 12px 10px;
+        border-radius: 9px;
+        font-size: 14px;
+        margin: 2px 0;
+      }
+      .conversation.active {
+        background: var(--soft);
+      }
+      .sidebar-bottom {
+        margin-top: auto;
+      }
+      .sidebar-bottom button {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border: 0;
+        background: none;
+        padding: 12px 10px;
+        font-size: 13px;
+      }
+      .profile {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 12px 10px;
+        font-size: 13px;
+      }
+      .initials {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--soft);
+        font-size: 12px;
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 65px;
+        padding: 0 24px;
+      }
+      .top h1 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0;
+      }
+      .top .spacer {
+        flex: 1;
+      }
+      .store {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .icon {
+        width: 40px;
+        height: 40px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: none;
+      }
+      .icon:hover {
+        background: var(--bg);
+      }
+      svg {
+        width: 20px;
+        height: 20px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .menu-toggle {
+        display: none;
+      }
+      .status {
+        font-size: 11px;
+        color: #8a5600;
+        background: #fff2d8;
+        padding: 6px 9px;
+        border-radius: 20px;
+      }
+      .stream {
+        flex: 1;
+        overflow: auto;
+        scroll-behavior: smooth;
+        padding: 16px 24px 24px;
+      }
+      .thread {
+        max-width: 710px;
+        margin: auto;
+      }
+      .welcome {
+        max-width: 620px;
+        margin: clamp(35px, 12vh, 120px) auto 30px;
+        text-align: center;
+      }
+      .welcome .mark {
+        width: 42px;
+        height: 42px;
+        color: var(--accent);
+        margin-bottom: 20px;
+      }
+      .welcome h2 {
+        font-size: 28px;
+        letter-spacing: -0.03em;
+        font-weight: 600;
+        margin: 0 0 12px;
+      }
+      .welcome p {
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.55;
+        margin: 0 auto 25px;
+        max-width: 370px;
+      }
+      .suggestions {
+        display: flex;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .suggestions button,
+      .soft-button {
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 18px;
+        padding: 10px 13px;
+        font-size: 13px;
+      }
+      .message {
+        margin: 0 0 26px;
+        font-size: 15px;
+        line-height: 1.65;
+        overflow-wrap: anywhere;
+      }
+      .message.user {
+        display: flex;
+        justify-content: flex-end;
+        margin-top: 8px;
+      }
+      .bubble {
+        max-width: 85%;
+        padding: 11px 17px;
+        border-radius: 20px 20px 4px 20px;
+        background: var(--soft);
+        white-space: pre-wrap;
+      }
+      .message.assistant {
+        padding-left: 32px;
+        position: relative;
+      }
+      .assistant .avatar {
+        position: absolute;
+        left: 0;
+        top: 3px;
+        color: var(--accent);
+      }
+      .message p {
+        margin: 0 0 12px;
+      }
+      .message p:last-child {
+        margin-bottom: 0;
+      }
+      .message h3 {
+        font-size: 15px;
+        margin: 18px 0 7px;
+      }
+      .message ul {
+        padding-left: 20px;
+        margin: 7px 0 16px;
+      }
+      .sources {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        border: 0;
+        background: none;
+        font-size: 12px;
+        color: var(--muted);
+        padding: 5px 0;
+      }
+      .sources svg {
+        width: 14px;
+        height: 14px;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 13px;
+      }
+      .primary {
+        background: var(--accent);
+        color: white;
+        border: 1px solid var(--accent);
+        padding: 10px 15px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      .secondary {
+        background: white;
+        border: 1px solid var(--line);
+        padding: 10px 13px;
+        border-radius: 10px;
+        font-size: 13px;
+      }
+      .attachment {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 13px;
+        margin: 7px 0;
+        font-size: 13px;
+        background: white;
+        max-width: 100%;
+      }
+      .attachment svg {
+        color: var(--accent);
+        flex: none;
+      }
+      .attachment small {
+        color: var(--muted);
+        display: block;
+        font-size: 11px;
+      }
+      .question {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 18px;
+        margin: 14px 0;
+        max-width: 460px;
+        background: #fafbf8;
+      }
+      .question h3 {
+        margin: 0 0 5px;
+      }
+      .question p {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 14px;
+        font-size: 13px;
+      }
+      .field input,
+      .field select {
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 10px;
+        min-width: 0;
+        color: var(--ink);
+        width: 100%;
+      }
+      .two-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .check {
+        font-size: 12px;
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        margin-top: 13px;
+        line-height: 1.5;
+      }
+      .check input {
+        accent-color: var(--accent);
+        margin-top: 3px;
+      }
+      .change-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-bottom: 1px solid var(--line);
+        padding: 11px 0;
+        font-size: 13px;
+      }
+      .change-row:last-of-type {
+        border-bottom: 0;
+      }
+      .change-row span {
+        flex: 1;
+      }
+      .change-row small {
+        display: block;
+        color: var(--muted);
+      }
+      .change-row input {
+        accent-color: var(--accent);
+      }
+      .composer-wrap {
+        padding: 5px 24px 15px;
+      }
+      .composer {
+        max-width: 710px;
+        margin: auto;
+        border: 1px solid #ccd6cb;
+        border-radius: 24px;
+        background: #fafbf8;
+        padding: 13px 14px 9px;
+      }
+      .composer textarea {
+        display: block;
+        width: 100%;
+        min-height: 28px;
+        max-height: 130px;
+        resize: none;
+        background: transparent;
+        border: 0;
+        outline: none;
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--ink);
+        padding: 0 4px;
+      }
+      .composer textarea::placeholder {
+        color: #7b887f;
+      }
+      .composer-bottom {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin-top: 7px;
+      }
+      .composer-bottom .spacer {
+        flex: 1;
+      }
+      .send {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 0;
+        background: var(--accent);
+        color: white;
+        display: grid;
+        place-items: center;
+      }
+      .send svg {
+        width: 17px;
+        height: 17px;
+      }
+      .composer-note {
+        font-size: 10px;
+        color: #7b887f;
+        text-align: center;
+        margin: 7px 0 0;
+      }
+      .draft-file {
+        max-width: 710px;
+        margin: 0 auto 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .tabs {
+        display: none;
+        justify-content: space-around;
+        padding: 10px 4px max(10px, env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line);
+        background: white;
+        gap: 2px;
+      }
+      .tabs button {
+        border: 0;
+        background: transparent;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        font-size: 9px;
+        color: var(--muted);
+        min-width: 50px;
+      }
+      .tabs button.active {
+        color: var(--accent);
+      }
+      .overlay {
+        position: fixed;
+        inset: 40px 0 0;
+        background: #192d252d;
+        display: flex;
+        justify-content: flex-end;
+        z-index: 20;
+      }
+      .sheet {
+        width: 400px;
+        max-width: 100%;
+        height: 100%;
+        background: white;
+        overflow: auto;
+        padding: 24px;
+        animation: enter 0.18s ease;
+      }
+      .sheet header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 22px;
+      }
+      .sheet h2 {
+        font-size: 19px;
+        margin: 0;
+        font-weight: 600;
+      }
+      .sheet h3 {
+        font-size: 14px;
+      }
+      .sheet p {
+        font-size: 14px;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+      .source-block {
+        padding: 16px 0;
+        border-top: 1px solid var(--line);
+      }
+      .source-block a {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 13px;
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .small-label {
+        font-size: 11px;
+        letter-spacing: 0.04em;
+        color: var(--muted);
+      }
+      .doc-preview {
+        padding: 23px;
+        background: var(--bg);
+        border-radius: 12px;
+      }
+      .doc-preview h3 {
+        font-size: 18px;
+        margin: 10px 0;
+      }
+      .doc-preview p {
+        font-size: 13px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 120px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--ink);
+        color: white;
+        padding: 11px 17px;
+        border-radius: 12px;
+        font-size: 12px;
+        z-index: 40;
+        max-width: 90%;
+        text-align: center;
+      }
+      .pending {
+        font-size: 13px;
+        color: var(--muted);
+        padding-left: 32px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .dots {
+        display: inline-flex;
+        gap: 3px;
+      }
+      .dots i {
+        height: 4px;
+        width: 4px;
+        border-radius: 50%;
+        background: var(--muted);
+        animation: pulse 1s infinite;
+      }
+      .dots i:nth-child(2) {
+        animation-delay: 0.15s;
+      }
+      .dots i:nth-child(3) {
+        animation-delay: 0.3s;
+      }
+      .plan {
+        margin: 14px 0;
+        max-width: 440px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--bg);
+        padding: 15px;
+      }
+      .plan svg {
+        height: auto;
+        width: 100%;
+        stroke: none;
+      }
+      .plan p {
+        font-size: 11px;
+        color: var(--muted);
+        margin: 8px 0 0;
+      }
+      .mobile-preview.app {
+        width: 430px;
+        max-width: 100%;
+        height: calc(100dvh - 65px);
+        max-height: 880px;
+        margin: 12px auto;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        overflow: hidden;
+      }
+      .mobile-preview .sidebar {
+        display: none;
+      }
+      .mobile-preview .menu-toggle {
+        display: inline-flex;
+      }
+      .mobile-preview .tabs {
+        display: flex;
+      }
+      .mobile-preview .top {
+        padding: 0 10px;
+        min-height: 58px;
+      }
+      .mobile-preview .store {
+        display: none;
+      }
+      .mobile-preview .stream {
+        padding: 12px 17px 16px;
+      }
+      .mobile-preview .composer-wrap {
+        padding: 5px 13px 10px;
+      }
+      .mobile-preview .welcome {
+        margin-top: 60px;
+      }
+      .mobile-preview .welcome h2 {
+        font-size: 26px;
+      }
+      .mobile-preview .message {
+        font-size: 14px;
+      }
+      .mobile-preview .message.assistant {
+        padding-left: 27px;
+      }
+      .mobile-preview .sidebar.shown {
+        display: flex;
+        position: fixed;
+        left: 0;
+        top: 40px;
+        bottom: 0;
+        z-index: 30;
+        width: 260px;
+      }
+      .mobile-preview .message.user .bubble {
+        max-width: 93%;
+      }
+      .mobile-preview .question {
+        padding: 15px;
+      }
+      .mobile-preview .two-fields {
+        gap: 8px;
+      }
+      @keyframes pulse {
+        50% {
+          opacity: 0.25;
+        }
+      }
+      @keyframes enter {
+        from {
+          transform: translateX(15px);
+          opacity: 0.5;
+        }
+        to {
+          transform: translateX(0);
+          opacity: 1;
+        }
+      }
+      @media (max-width: 700px) {
+        .demo {
+          padding: 0 9px;
+          gap: 5px;
+        }
+        .demo strong {
+          max-width: 145px;
+          font-size: 10px;
+        }
+        .demo select {
+          max-width: 110px;
+          font-size: 10px;
+        }
+        .demo button {
+          font-size: 10px;
+        }
+        .sidebar {
+          display: none;
+        }
+        .sidebar.shown {
+          display: flex;
+          position: fixed;
+          left: 0;
+          top: 40px;
+          bottom: 0;
+          z-index: 30;
+          width: 260px;
+        }
+        .menu-toggle {
+          display: inline-flex;
+        }
+        .top {
+          padding: 0 10px;
+          min-height: 58px;
+        }
+        .store {
+          display: none;
+        }
+        .tabs {
+          display: flex;
+        }
+        .stream {
+          padding: 12px 17px 16px;
+        }
+        .composer-wrap {
+          padding: 5px 13px 10px;
+        }
+        .message {
+          font-size: 14px;
+        }
+        .message.assistant {
+          padding-left: 27px;
+        }
+        .welcome {
+          margin-top: 55px;
+        }
+        .welcome h2 {
+          font-size: 26px;
+        }
+        .question {
+          padding: 15px;
+        }
+        .mobile-preview.app {
+          border: 0;
+          border-radius: 0;
+          margin: 0;
+          height: calc(100dvh - 40px);
+          max-height: none;
+          width: 100%;
+        }
+        .composer-note {
+          font-size: 9px;
+        }
+        .two-fields {
+          gap: 8px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation: none !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="demo">
+      <strong>Maquette · données fictives · sans IA</strong
+      ><span class="spacer"></span><label for="scenario">Parcours</label
+      ><select id="scenario">
+        <option value="start">Accueil</option>
+        <option value="week">Fichier manquant</option>
+        <option value="form">Petit formulaire</option>
+        <option value="products">Correction produits</option>
+        <option value="email">Réception email</option>
+        <option value="web">Recherche web</option>
+        <option value="layout">Implantation</option></select
+      ><button id="mobile">Vue mobile</button
+      ><button id="reset">Recommencer</button>
+    </div>
+    <div id="app" class="app">
+      <aside id="sidebar" class="sidebar">
+        <div class="brand"><span data-icon="leaf"></span>Fruits & Légumes</div>
+        <button class="new" id="new">
+          <span data-icon="plus"></span>Nouvelle conversation
+        </button>
+        <div class="nav-title">Conversations</div>
+        <div id="conversations"></div>
+        <div class="sidebar-bottom">
+          <button id="memory">
+            <span data-icon="spark"></span>Mémoire du magasin
+          </button>
+          <div class="profile">
+            <span class="initials">JM</span
+            ><span
+              >Julien<small
+                style="display: block; color: var(--muted); font-size: 11px"
+                >Asnières-sur-Seine</small
+              ></span
+            >
+          </div>
+        </div>
+      </aside>
+      <main class="main">
+        <header class="top">
+          <button
+            class="icon menu-toggle"
+            id="menu"
+            aria-label="Ouvrir les conversations"
+          >
+            <span data-icon="menu"></span>
+          </button>
+          <h1>Copilote</h1>
+          <span class="spacer"></span
+          ><span class="store">Asnières-sur-Seine · 92600</span
+          ><span id="connection"></span
+          ><button
+            class="icon"
+            id="offline"
+            aria-label="Simuler le mode hors connexion"
+            title="Tester hors connexion"
+          >
+            <span data-icon="wifi"></span></button
+          ><button
+            class="icon"
+            id="more"
+            aria-label="Détails de la conversation"
+          >
+            <span data-icon="more"></span>
+          </button>
+        </header>
+        <div id="stream" class="stream" aria-live="polite">
+          <div id="thread" class="thread"></div>
+        </div>
+        <div class="composer-wrap">
+          <div id="draft-file" class="draft-file"></div>
+          <form id="composer" class="composer">
+            <textarea
+              id="input"
+              rows="1"
+              aria-label="Message au copilote"
+              placeholder="Demande au copilote…"
+            ></textarea>
+            <div class="composer-bottom">
+              <button
+                class="icon"
+                type="button"
+                id="attach"
+                aria-label="Joindre un fichier ou une photo"
+              >
+                <span data-icon="plus"></span></button
+              ><span class="spacer"></span
+              ><button
+                class="send"
+                type="submit"
+                id="send"
+                aria-label="Envoyer le message"
+              >
+                <span data-icon="up"></span>
+              </button>
+            </div>
+          </form>
+          <p class="composer-note">
+            Maquette interactive. Aucun fichier lu ou transmis, aucune donnée
+            métier modifiée.
+          </p>
+        </div>
+        <nav class="tabs" aria-label="Navigation principale">
+          <button class="active" data-nav="today">
+            <span data-icon="chat"></span>Aujourd’hui</button
+          ><button data-nav="week">
+            <span data-icon="calendar"></span>Ma semaine</button
+          ><button data-nav="analysis">
+            <span data-icon="chart"></span>Analyses</button
+          ><button data-nav="waste">
+            <span data-icon="camera"></span>Casse</button
+          ><button data-nav="more"><span data-icon="menu"></span>Plus</button>
+        </nav>
+      </main>
+    </div>
+    <div id="modal"></div>
+    <input
+      type="file"
+      id="file"
+      multiple
+      hidden
+      accept=".xlsx,.xls,.csv,.pdf,image/*"
+    />
+    <div id="toast" hidden class="toast" role="status"></div>
+    <script>
+      const icons = {
+        leaf: '<path d="M20 4C10 2 3 6 4 14c4 6 12 4 16-10Z"/><path d="M5 19 15 9"/>',
+        plus: '<path d="M12 5v14M5 12h14"/>',
+        up: '<path d="m6 11 6-6 6 6M12 5v14"/>',
+        menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+        more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+        wifi: '<path d="M3 8a15 15 0 0 1 18 0M6 12a10 10 0 0 1 12 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="20" r=".5"/>',
+        file: '<path d="M6 3h8l4 4v14H6Z"/><path d="M14 3v5h4M9 12h6M9 16h6"/>',
+        close: '<path d="m6 6 12 12M18 6 6 18"/>',
+        chat: '<path d="M4 4h16v12H8l-4 4Z"/>',
+        calendar:
+          '<rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 3v4M16 3v4M4 10h16M8 14h2M14 14h2"/>',
+        chart: '<path d="M4 20h16M6 17V9M12 17V4M18 17v-6"/>',
+        camera:
+          '<path d="M3 7h5l2-3h4l2 3h5v13H3Z"/><circle cx="12" cy="13" r="4"/>',
+        spark:
+          '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z"/>',
+        source:
+          '<path d="M10 14 14 10M8 16l-1 1a4 4 0 0 1-6-6l4-4a4 4 0 0 1 6 0M16 8l1-1a4 4 0 0 1 6 6l-4 4a4 4 0 0 1-6 0"/>',
+        check: '<path d="m5 12 4 4 10-10"/>',
+      };
+      const svg = (k) =>
+        `<svg viewBox="0 0 24 24" aria-hidden="true">${icons[k] || icons.leaf}</svg>`;
+      document
+        .querySelectorAll("[data-icon]")
+        .forEach((el) => (el.innerHTML = svg(el.dataset.icon)));
+      const $ = (s) => document.querySelector(s),
+        escape = (s) =>
+          String(s).replace(
+            /[&<>"']/g,
+            (c) =>
+              ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              })[c],
+          );
+      let state = {
+        chats: [
+          {
+            id: "start",
+            title: "Nouvelle conversation",
+            messages: [],
+            draft: "",
+          },
+          { id: "margin", title: "Marge & casse", messages: [], draft: "" },
+          {
+            id: "layout",
+            title: "Implantation du rayon",
+            messages: [],
+            draft: "",
+          },
+        ],
+        current: "start",
+        memory: { width: "", depth: "", tg: "", note: "" },
+        units: { banana: "À préciser", apple: "À préciser" },
+        offline: false,
+      };
+      try {
+        const saved = JSON.parse(localStorage.getItem("fl-copilot-ux-v1"));
+        if (
+          saved &&
+          Array.isArray(saved.chats) &&
+          saved.current &&
+          saved.memory &&
+          saved.units
+        )
+          state = saved;
+      } catch {}
+      let files = [],
+        timer = null,
+        pending = null;
+      const chat = () =>
+        state.chats.find((c) => c.id === state.current) || state.chats[0];
+      const save = () => {
+        try {
+          localStorage.setItem("fl-copilot-ux-v1", JSON.stringify(state));
+        } catch {}
+      };
+      const sourcesButton = (kind) =>
+        `<button class="sources" data-action="sources" data-kind="${kind}">${svg("source")}${kind === "web" ? "2 sources web" : "Source originale"} · voir les détails</button>`;
+      const attachment = (name) =>
+        `<div class="attachment">${svg("file")}<span>${escape(name)}<small>Document de démonstration</small></span></div>`;
+      function render() {
+        $("#conversations").innerHTML = state.chats
+          .map(
+            (c) =>
+              `<button class="conversation ${c.id === state.current ? "active" : ""}" data-chat="${escape(c.id)}">${escape(c.title)}</button>`,
+          )
+          .join("");
+        $("#connection").innerHTML = state.offline
+          ? '<span class="status">Hors connexion</span>'
+          : "";
+        $("#input").value = chat().draft || "";
+        $("#input").style.height = "auto";
+        $("#input").style.height =
+          Math.min($("#input").scrollHeight, 130) + "px";
+        $("#draft-file").innerHTML = files.length
+          ? `${files.length} fichier(s) sélectionné(s) · nom seulement, aucun contenu lu <button class="sources" data-action="remove-files">Retirer</button>`
+          : "";
+        $("#thread").innerHTML = chat().messages.length
+          ? chat()
+              .messages.map(
+                (m, index) =>
+                  `<article class="message ${m.role}" data-message-index="${index}">${m.role === "user" ? `<div class="bubble">${escape(m.text)}</div>` : `<div class="avatar">${svg("leaf")}</div><div class="message-content">${m.html}</div>`}</article>`,
+              )
+              .join("")
+          : `<section class="welcome">${svg("leaf").replace("<svg", '<svg class="mark"')}<h2>On prépare le rayon ?</h2><p>Une question, un fichier, une idée.<br>On avance ensemble.</p><div class="suggestions"><button data-prompt="Aide-moi à préparer cette semaine.">Préparer ma semaine</button><button data-prompt="Pourquoi la marge baisse-t-elle ?">Comprendre la marge</button><button data-prompt="Aide-moi à imaginer une implantation.">Imaginer une implantation</button></div></section>`;
+        if (pending && pending.chatId === state.current)
+          $("#thread").insertAdjacentHTML(
+            "beforeend",
+            `<div class="pending"><span class="dots"><i></i><i></i><i></i></span>${pending.label}</div>`,
+          );
+        $("#send").innerHTML = svg(pending ? "close" : "up");
+        $("#send").setAttribute(
+          "aria-label",
+          pending ? "Arrêter la réponse" : "Envoyer le message",
+        );
+        save();
+      }
+      function bottom() {
+        requestAnimationFrame(() =>
+          $("#stream").scrollTo({
+            top: $("#stream").scrollHeight,
+            behavior: "smooth",
+          }),
+        );
+      }
+      function add(role, content, id = state.current) {
+        const c = state.chats.find((c) => c.id === id);
+        if (!c) return;
+        c.messages.push(
+          role === "user" ? { role, text: content } : { role, html: content },
+        );
+        render();
+        bottom();
+      }
+      function answer(html, label = "Je prépare la réponse…") {
+        const id = state.current;
+        pending = { chatId: id, label };
+        render();
+        bottom();
+        timer = setTimeout(() => {
+          pending = null;
+          timer = null;
+          add("assistant", html, id);
+        }, 700);
+      }
+      function stop() {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        const id = pending?.chatId;
+        pending = null;
+        if (id)
+          add(
+            "assistant",
+            "<p>Réponse interrompue. Tu peux préciser ta demande ou continuer.</p>",
+            id,
+          );
+        render();
+      }
+      function toast(text) {
+        $("#toast").textContent = text;
+        $("#toast").hidden = false;
+        setTimeout(() => ($("#toast").hidden = true), 2600);
+      }
+      function week() {
+        return `<p>Oui. Commençons par les offres importantes, puis les mises en avant et les affiches à préparer.</p><p>J’ai le pense-bête de démonstration. Pour relier les offres aux ventes, il me manque ton export Mercalys récent.</p>${attachment("Pense-bête — semaine 41.pdf")}<div class="actions"><button class="primary" data-action="file">Joindre l’export</button><button class="secondary" data-action="demo-import">Utiliser un fichier de démonstration</button><button class="sources" data-action="skip-import">Avancer sans ces chiffres</button></div>`;
+      }
+      function weekResult(withSales = true) {
+        return `<p>${withSales ? "Les ventes sont maintenant disponibles dans ce parcours de démonstration. Je peux les rapprocher des offres du pense-bête." : "Je pars du PDF de démonstration. Les conclusions sur les ventes et la marge resteront en attente."}</p><h3>Je te propose de commencer ici</h3><ul><li>Préparer la mise en avant Dramat en premier.</li><li>Organiser les TG autour des offres prospectus.</li><li>Regrouper les affiches des lots et prix dégressifs.</li></ul><p>Veux-tu qu’on travaille d’abord les TG, ou le détail des offres ?</p><div class="actions"><button class="secondary" data-prompt="Aide-moi à imaginer une implantation.">Travailler les TG</button><button class="secondary" data-action="source-detail">Voir le pense-bête</button></div>${sourcesButton("pdf")}`;
+      }
+      function costForm() {
+        return `<p>La baisse de marge peut venir du prix de vente, du coût d’achat ou du mix des produits vendus. Ici, il me manque le coût d’achat pour approfondir le cas de la banane.</p><form class="question" data-form="cost"><h3>Coût d’achat de la banane</h3><p>Un seul renseignement pour continuer.</p><label class="field">Coût d’achat HT (€ / kg)<input name="cost" inputmode="decimal" placeholder="Ex. 1,20" required aria-label="Coût d’achat HT en euros par kilogramme"></label><div class="actions"><button class="primary" type="submit">Continuer</button><button class="sources" type="button" data-action="cancel-form">Je ne l’ai pas encore</button></div></form><p>On peut aussi explorer le mix des ventes sans ce chiffre.</p>`;
+      }
+      function productForm() {
+        return `<p>Je peux préparer les corrections en groupe. Voici deux propositions de démonstration à partir des libellés ; tu peux les ajuster avant de les appliquer.</p><form class="question" data-form="products"><h3>Unités et nature</h3><label class="change-row"><input type="checkbox" name="banana" checked><span>Banane vrac<small>Vrac · kilogramme</small></span></label><label class="change-row"><input type="checkbox" name="apple" checked><span>Pomme vrac<small>Vrac · kilogramme</small></span></label><label class="field">Melon : vendu comment ?<select name="melon"><option value="">À préciser plus tard</option><option value="Vrac · pièce">Vrac · à la pièce</option><option value="Vrac · kilogramme">Vrac · au kilogramme</option><option value="Conditionné · unité">Conditionné · à l’unité</option></select></label><div class="actions"><button class="primary" type="submit">Appliquer les corrections</button><button class="sources" type="button" data-action="cancel-form">Annuler</button></div></form>`;
+      }
+      function layoutForm() {
+        return `<p>On peut organiser les mises en avant autour des îlots et des TG. Pour éviter une proposition qui ne rentre pas, j’ai besoin de quelques dimensions.</p><form class="question" data-form="layout"><h3>Espace disponible</h3><div class="two-fields"><label class="field">Largeur (m)<input name="width" inputmode="decimal" value="${escape(state.memory.width)}" placeholder="Ex. 6" required></label><label class="field">Profondeur (m)<input name="depth" inputmode="decimal" value="${escape(state.memory.depth)}" placeholder="Ex. 4" required></label></div><label class="field">Nombre de TG à représenter<select name="tg">${[2, 3, 4].map((n) => `<option ${String(n) === state.memory.tg ? "selected" : ""}>${n}</option>`).join("")}</select></label><label class="check"><input type="checkbox" name="remember">Mémoriser ces contraintes pour les autres conversations</label><div class="actions"><button class="primary" type="submit">Préparer un plan indicatif</button><button class="sources" type="button" data-action="cancel-form">Préciser plus tard</button></div></form><p>Les dimensions des meubles et des passages seront également nécessaires pour valider une implantation réelle.</p>`;
+      }
+      function web() {
+        return `<p>Pour recevoir tes documents automatiquement, une adresse dédiée Resend pourra recevoir les pièces jointes. Tu pourras lui transférer seulement les emails concernés depuis Gmail.</p><p>Dans cette maquette, la recherche est simulée ; les liens ci-dessous ouvrent les documentations réelles.</p>${sourcesButton("web")}<div class="actions"><button class="secondary" data-action="email-demo">Voir une réception email</button></div>`;
+      }
+      function submit(text, retry = false) {
+        if (pending) {
+          stop();
+          return;
+        }
+        const attached = retry ? [] : [...files];
+        if (!retry) {
+          files = [];
+          chat().draft = "";
+        }
+        if (!text.trim() && !attached.length) return;
+        if (!retry)
+          add(
+            "user",
+            text.trim() +
+              (attached.length
+                ? "\n" + attached.map((f) => f.name).join("\n")
+                : ""),
+          );
+        if (chat().title === "Nouvelle conversation")
+          chat().title = text.slice(0, 36) || "Documents reçus";
+        if (state.offline) {
+          add(
+            "assistant",
+            `<p>Ta demande est conservée sur cet appareil de démonstration. On reprendra l’analyse au retour du réseau.</p><div class="actions"><button class="secondary" data-action="retry" data-text="${escape(text)}">Réessayer</button></div>`,
+          );
+          return;
+        }
+        if (attached.length) {
+          answer(
+            attachment(attached[0].name) +
+              `<p>Pièce jointe sélectionnée. Son contenu n’est pas lu dans cette maquette ; le traitement ci-dessous est une simulation.</p><div class="actions"><button class="primary" data-action="demo-import">Voir le résultat simulé</button></div>`,
+            "Réception du fichier…",
+          );
+          return;
+        }
+        const t = text.toLowerCase();
+        if (/unit|nature|produit|corrig/.test(t)) answer(productForm());
+        else if (/implant|îlot|tg|meuble/.test(t)) answer(layoutForm());
+        else if (/marge|coût|cout|baisse/.test(t)) answer(costForm());
+        else if (/mail|resend|web|recherch/.test(t))
+          answer(web(), "Recherche de démonstration…");
+        else if (/semaine|offre|prépar|prepar|prospectus/.test(t))
+          answer(week());
+        else
+          answer(
+            '<p>Je garde ta question dans la conversation.</p><p>Cette maquette n’est pas reliée à une IA. Pour explorer les parcours prévus, tu peux essayer les propositions ci-dessous.</p><div class="actions"><button class="secondary" data-prompt="Aide-moi à préparer cette semaine.">Préparer la semaine</button><button class="secondary" data-prompt="Complète les unités des produits.">Corriger les produits</button></div>',
+          );
+      }
+      function retireForm(form, label) {
+        if (!form) return;
+        const article = form.closest("article");
+        const content = form.closest(".message-content");
+        if (!article || !content) return;
+        const note = document.createElement("p");
+        note.className = "small-label";
+        note.textContent = label;
+        form.replaceWith(note);
+        chat().messages[Number(article.dataset.messageIndex)].html =
+          content.innerHTML;
+        save();
+      }
+      let modalFocus = null;
+      function closeSheet() {
+        const focus = modalFocus;
+        $("#modal").innerHTML = "";
+        if (focus?.isConnected) focus.focus();
+        else $("#input").focus();
+      }
+      function showSheet(title, body) {
+        modalFocus = document.activeElement;
+        $("#modal").innerHTML =
+          `<div class="overlay" id="overlay"><section class="sheet" role="dialog" aria-modal="true" aria-label="${escape(title)}"><header><h2>${escape(title)}</h2><button class="icon" data-action="close" aria-label="Retour à la conversation">${svg("close")}</button></header>${body}</section></div>`;
+        $("#modal button").focus();
+      }
+      function sourceSheet(kind) {
+        if (kind === "cost") {
+          showSheet(
+            "Informations utilisées",
+            `<p>Coût fourni par toi dans cette conversation de démonstration : ${escape((chat().cost || "à préciser").replace(".", ","))} € HT / kg.</p><p>Prix de vente comparable et mix détaillé : non renseignés ici. Une conclusion chiffrée reste donc en attente.</p>`,
+          );
+          return;
+        }
+        if (kind === "web")
+          showSheet(
+            "Sources de la réponse",
+            `<p>Recherche simulée ; documentations publiques réelles.</p><div class="source-block"><h3>Recevoir des emails et pièces jointes</h3><p>Resend · documentation officielle</p><a href="https://resend.com/docs/dashboard/receiving/introduction" target="_blank" rel="noopener noreferrer">Ouvrir la source ${svg("source")}</a></div><div class="source-block"><h3>Transférer certains emails automatiquement</h3><p>Gmail · aide officielle</p><a href="https://support.google.com/mail/answer/10957?hl=fr" target="_blank" rel="noopener noreferrer">Ouvrir la source ${svg("source")}</a></div>`,
+          );
+        else
+          showSheet(
+            "Pense-bête de démonstration",
+            `<p>Le document reste accessible depuis la réponse. Cet aperçu est fictif et n’est pas un PDF réel.</p><div class="doc-preview"><span class="small-label">SEMAINE 41 · DOCUMENT FICTIF</span><h3>Les mises en avant</h3><p>Dramat : une mise en avant prioritaire.</p><p>Prospectus : offres à répartir sur les TG.</p><p>Basiques : lots et prix dégressifs, avec affiches dédiées.</p></div><button class="secondary" style="margin-top:20px" data-action="close">Revenir à la discussion</button>`,
+          );
+      }
+      function memorySheet() {
+        showSheet(
+          "Mémoire du magasin",
+          `<p>Des repères partagés entre les conversations. Tu gardes la main sur ce qui est mémorisé.</p><form data-form="memory"><div class="two-fields"><label class="field">Largeur disponible (m)<input name="width" value="${escape(state.memory.width)}" inputmode="decimal" placeholder="À préciser"></label><label class="field">Profondeur (m)<input name="depth" value="${escape(state.memory.depth)}" inputmode="decimal" placeholder="À préciser"></label></div><label class="field">Repère pour le rayon<input name="note" value="${escape(state.memory.note)}" placeholder="Ex. réserver l’entrée aux offres majeures"></label><div class="actions"><button class="primary">Enregistrer ce repère</button><button type="button" class="sources" data-action="forget-memory">Oublier ces repères</button></div></form><p class="small-label">Mémoire locale de démonstration uniquement.</p>`,
+        );
+      }
+      function emailDemo() {
+        add(
+          "assistant",
+          `${attachment("Ventes quotidiennes — exemple.xlsx")}${attachment("Pense-bête — semaine 41.pdf")}<p>Deux documents reçus par email dans ce parcours de démonstration. Je les rattache à la préparation de ta semaine.</p><div class="actions"><button class="primary" data-action="demo-import">Voir l’analyse préparée</button></div>`,
+        );
+      }
+      $("#composer").addEventListener("submit", (e) => {
+        e.preventDefault();
+        submit($("#input").value);
+      });
+      $("#input").addEventListener("input", () => {
+        chat().draft = $("#input").value;
+        save();
+        $("#input").style.height = "auto";
+        $("#input").style.height =
+          Math.min($("#input").scrollHeight, 130) + "px";
+      });
+      $("#input").addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          submit($("#input").value);
+        }
+      });
+      $("#attach").onclick = () => $("#file").click();
+      $("#file").onchange = (e) => {
+        files = [...e.target.files].map((f) => ({ name: f.name }));
+        e.target.value = "";
+        render();
+        $("#input").focus();
+      };
+      $("#menu").onclick = () => $("#sidebar").classList.toggle("shown");
+      $("#memory").onclick = () => {
+        $("#sidebar").classList.remove("shown");
+        memorySheet();
+      };
+      $("#more").onclick = () =>
+        showSheet(
+          "Cette conversation",
+          `<p>Historique et brouillon sont conservés dans ce navigateur de démonstration.</p><button class="secondary" data-action="rename">Renommer la conversation</button><button class="secondary" style="margin-top:12px" data-action="memory">Voir la mémoire du magasin</button>`,
+        );
+      $("#new").onclick = () => {
+        if (pending) stop();
+        state.current = "chat-" + Date.now();
+        state.chats.unshift({
+          id: state.current,
+          title: "Nouvelle conversation",
+          messages: [],
+          draft: "",
+        });
+        files = [];
+        $("#sidebar").classList.remove("shown");
+        render();
+      };
+      $("#offline").onclick = () => {
+        state.offline = !state.offline;
+        render();
+        toast(
+          state.offline
+            ? "Mode hors connexion simulé"
+            : "Connexion rétablie dans la maquette",
+        );
+      };
+      $("#mobile").onclick = () => {
+        const mobile = $("#app").classList.toggle("mobile-preview");
+        $("#mobile").textContent = mobile ? "Vue large" : "Vue mobile";
+      };
+      $("#reset").onclick = () => {
+        stop();
+        state.chats.forEach((c) => {
+          c.messages = [];
+          c.draft = "";
+        });
+        state.current = state.chats[0].id;
+        state.offline = false;
+        files = [];
+        render();
+      };
+      $("#scenario").onchange = (e) => {
+        const s = e.target.value;
+        if (s === "start") {
+          $("#new").click();
+          return;
+        }
+        if (s === "email") {
+          emailDemo();
+          return;
+        }
+        submit(
+          {
+            week: "Aide-moi à préparer cette semaine.",
+            form: "Pourquoi la marge baisse-t-elle ?",
+            products: "Complète les unités et la nature des produits.",
+            web: "Comment t’envoyer mes fichiers par email ?",
+            layout: "Aide-moi à imaginer une implantation.",
+          }[s],
+        );
+      };
+      document.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if (b.dataset.chat) {
+          if (pending) stop();
+          state.current = b.dataset.chat;
+          files = [];
+          $("#sidebar").classList.remove("shown");
+          render();
+          return;
+        }
+        if (b.dataset.prompt) {
+          submit(b.dataset.prompt);
+          return;
+        }
+        if (b.dataset.nav) {
+          if (b.dataset.nav === "today") return;
+          showSheet(
+            {
+              week: "Ma semaine",
+              analysis: "Analyses",
+              waste: "Casse",
+              more: "Plus",
+            }[b.dataset.nav],
+            '<p>Dans l’application, cet écran métier restera accessible pour consulter ou corriger les détails. Le chat sera le parcours principal.</p><button class="secondary" data-action="close">Retour au copilote</button>',
+          );
+          return;
+        }
+        const action = b.dataset.action;
+        if (action === "close") closeSheet();
+        if (action === "file") $("#file").click();
+        if (action === "sources") sourceSheet(b.dataset.kind);
+        if (action === "source-detail") sourceSheet("pdf");
+        if (action === "demo-import") {
+          add("user", "Importer les ventes de démonstration.");
+          answer(weekResult(), "Lecture du fichier de démonstration…");
+        }
+        if (action === "skip-import") answer(weekResult(false));
+        if (action === "cancel-form") {
+          retireForm(b.closest("form"), "Information à préciser plus tard.");
+          add(
+            "assistant",
+            "<p>D’accord. On garde ce point ouvert et on peut avancer sur le reste.</p>",
+          );
+        }
+        if (action === "email-demo") emailDemo();
+        if (action === "memory") memorySheet();
+        if (action === "forget-memory") {
+          state.memory = { width: "", depth: "", tg: "", note: "" };
+          save();
+          $("#modal").innerHTML = "";
+          toast("Repères de démonstration oubliés");
+        }
+        if (action === "remove-files") {
+          files = [];
+          render();
+        }
+        if (action === "retry") {
+          if (state.offline) {
+            toast(
+              "Rétablis la connexion avec le bouton réseau de la maquette.",
+            );
+            return;
+          }
+          const original = b.dataset.text;
+          retireForm(b, "Demande reprise.");
+          submit(original || "Aide-moi à préparer cette semaine.", true);
+        }
+        if (action === "undo") {
+          state.units = JSON.parse(b.dataset.previous);
+          save();
+          retireForm(b, "Corrections annulées.");
+          add(
+            "assistant",
+            "<p>Les corrections de démonstration ont été annulées.</p>",
+          );
+        }
+        if (action === "product-detail")
+          showSheet(
+            "Fiche produit",
+            `<p>Banane vrac</p><div class="source-block"><p>Nature : ${state.units.banana === "À préciser" ? "à préciser" : "vrac"}<br>Unité : ${escape(state.units.banana)}</p></div><button class="secondary" data-action="close">Retour à la conversation</button>`,
+          );
+        if (action === "rename")
+          showSheet(
+            "Renommer",
+            `<form data-form="rename"><label class="field">Nom de la conversation<input name="title" value="${escape(chat().title)}" required maxlength="60"></label><div class="actions"><button class="primary">Enregistrer</button></div></form>`,
+          );
+      });
+      document.addEventListener("submit", (e) => {
+        const f = e.target;
+        if (!f.dataset.form) return;
+        e.preventDefault();
+        const data = new FormData(f),
+          type = f.dataset.form;
+        if (type === "cost") {
+          const raw = String(data.get("cost")).replace(",", ".");
+          if (!Number.isFinite(Number(raw)) || Number(raw) < 0) {
+            toast("Saisis un montant positif ou nul.");
+            return;
+          }
+          chat().cost = raw;
+          retireForm(f, "Coût renseigné dans la démonstration.");
+          add(
+            "user",
+            `Le coût d’achat est de ${raw.replace(".", ",")} € HT / kg.`,
+          );
+          answer(
+            '<p>Merci, ce coût est renseigné pour la démonstration.</p><p>Pour conclure sur la marge, je rapprocherai ce montant du prix de vente comparable et du mix des ventes. Je ne peux pas comparer directement un coût HT et un prix TTC.</p><div class="actions"><button class="secondary" data-action="sources" data-kind="cost">Voir les informations</button></div>',
+          );
+        }
+        if (type === "products") {
+          const n =
+            Number(data.has("banana")) +
+            Number(data.has("apple")) +
+            Number(Boolean(data.get("melon")));
+          if (!n) {
+            toast("Choisis au moins une correction.");
+            return;
+          }
+          const previousUnits = { ...state.units };
+          if (data.has("banana")) state.units.banana = "Kilogramme";
+          if (data.has("apple")) state.units.apple = "Kilogramme";
+          retireForm(f, "Corrections appliquées dans la démonstration.");
+          add("user", `Appliquer ${n} correction(s).`);
+          answer(
+            `<p>${n} correction(s) appliquée(s) dans la démonstration.</p><div class="actions"><button class="secondary" data-action="product-detail">Voir la fiche produit</button><button class="sources" data-action="undo" data-previous="${escape(JSON.stringify(previousUnits))}">Annuler les corrections</button></div>`,
+          );
+        }
+        if (type === "layout") {
+          const w = Number(String(data.get("width")).replace(",", ".")),
+            d = Number(String(data.get("depth")).replace(",", ".")),
+            n = Number(data.get("tg"));
+          if (!(w > 0 && d > 0 && w <= 50 && d <= 50)) {
+            toast("Saisis des dimensions entre 0 et 50 mètres.");
+            return;
+          }
+          if (data.has("remember")) {
+            state.memory.width = String(data.get("width"));
+            state.memory.depth = String(data.get("depth"));
+            state.memory.tg = String(n);
+          }
+          retireForm(f, "Dimensions renseignées dans la démonstration.");
+          add("user", `L’espace fait ${w} × ${d} m, avec ${n} TG.`);
+          const boxes = Array.from(
+            { length: n },
+            (_, i) =>
+              `<rect x="${32 + i * 68}" y="38" width="52" height="48" rx="5" fill="#e7f1ea" stroke="#235c3d"/><text x="${58 + i * 68}" y="66" font-size="11" fill="#235c3d" text-anchor="middle">TG ${i + 1}</text>`,
+          ).join("");
+          answer(
+            `<p>Je pars sur ${n} TG dans cet espace. Voici un schéma pour discuter de leur répartition.</p><div class="plan"><svg viewBox="0 0 340 150" aria-label="Schéma indicatif de démonstration avec ${n} TG"><rect x="8" y="8" width="324" height="126" rx="8" fill="white" stroke="#dfe6dd"/>${boxes}<text x="170" y="116" text-anchor="middle" font-size="10" fill="#59685f">Passage à confirmer</text></svg><p>Schéma fictif, pas à l’échelle. Aucune image IA générée. Les dimensions des meubles et passages restent à valider.</p></div><p>Tu préfères regrouper les offres fortes à l’entrée, ou les répartir dans le rayon ?</p>`,
+          );
+        }
+        if (type === "memory") {
+          state.memory.width = String(data.get("width"));
+          state.memory.depth = String(data.get("depth"));
+          state.memory.note = String(data.get("note"));
+          save();
+          $("#modal").innerHTML = "";
+          toast(
+            "Repère conservé pour les autres conversations de démonstration",
+          );
+        }
+        if (type === "rename") {
+          chat().title = String(data.get("title"));
+          $("#modal").innerHTML = "";
+          render();
+        }
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          closeSheet();
+          $("#sidebar").classList.remove("shown");
+        }
+        if (e.key === "Tab" && $("#modal").firstChild) {
+          const nodes = [
+            ...$("#modal").querySelectorAll(
+              "button,input,select,textarea,a[href]",
+            ),
+          ].filter((n) => !n.disabled);
+          if (nodes.length) {
+            if (e.shiftKey && document.activeElement === nodes[0]) {
+              e.preventDefault();
+              nodes[nodes.length - 1].focus();
+            } else if (
+              !e.shiftKey &&
+              document.activeElement === nodes[nodes.length - 1]
+            ) {
+              e.preventDefault();
+              nodes[0].focus();
+            }
+          }
+        }
+      });
+      render();
+    </script>
+  </body>
+</html>
