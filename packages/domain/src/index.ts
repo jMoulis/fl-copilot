@@ -61,3 +61,5 @@ export * from "./copilot-commercial-choice";
 export * from "./copilot-commercial-plan";
 
 export * from "./copilot-offer-validation";
+
+export * from "./copilot-commercial-execution";
