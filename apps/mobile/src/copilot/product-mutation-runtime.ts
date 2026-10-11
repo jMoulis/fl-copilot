@@ -1,3 +1,4 @@
+import { productMutationExpectedRemoteVersion } from "../products/product-editor-service";
 import {
   enqueueAnalyticsRecomputationJob,
   type ProductDateScope,
@@ -169,7 +170,8 @@ export class CopilotProductMutationRuntime {
             await repo.upsertProduct(after, {
               commandId,
               deviceId: ctx.deviceId,
-              expectedRemoteVersion: current.remoteVersion,
+              expectedRemoteVersion:
+                productMutationExpectedRemoteVersion(current),
             });
           if (commandId) {
             const dates = await tx.getAllAsync<{ business_date: string }>(

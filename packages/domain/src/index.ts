@@ -50,3 +50,4 @@ export * from "./copilot-store-tools";
 export * from "./copilot-source-tools";
 export * from "./copilot-web-research";
 export * from "./copilot-product-mutations";
+export * from "./copilot-product-catalogue";

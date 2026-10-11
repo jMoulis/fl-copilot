@@ -88,7 +88,8 @@ export async function saveProductEditor(
   await repository.upsertProduct(product, {
     commandId: options.generateId(),
     deviceId: options.deviceId,
-    expectedRemoteVersion: expectedRemoteVersion(existingProduct),
+    expectedRemoteVersion:
+      productMutationExpectedRemoteVersion(existingProduct),
   });
 
   const existingIdentifiers = new Map(
@@ -119,7 +120,7 @@ export async function saveProductEditor(
       {
         commandId: options.generateId(),
         deviceId: options.deviceId,
-        expectedRemoteVersion: expectedRemoteVersion(existing),
+        expectedRemoteVersion: productMutationExpectedRemoteVersion(existing),
       },
     );
   }
@@ -133,7 +134,7 @@ export async function saveProductEditor(
         {
           commandId: options.generateId(),
           deviceId: options.deviceId,
-          expectedRemoteVersion: expectedRemoteVersion(existing),
+          expectedRemoteVersion: productMutationExpectedRemoteVersion(existing),
         },
       );
     }
@@ -167,7 +168,7 @@ export async function saveProductEditor(
       {
         commandId: options.generateId(),
         deviceId: options.deviceId,
-        expectedRemoteVersion: expectedRemoteVersion(existing),
+        expectedRemoteVersion: productMutationExpectedRemoteVersion(existing),
       },
     );
   }
@@ -181,7 +182,7 @@ export async function saveProductEditor(
         {
           commandId: options.generateId(),
           deviceId: options.deviceId,
-          expectedRemoteVersion: expectedRemoteVersion(existing),
+          expectedRemoteVersion: productMutationExpectedRemoteVersion(existing),
         },
       );
     }
@@ -225,7 +226,7 @@ export const emptyProductDraft: ProductEditorDraft = {
   aliases: [],
 };
 
-function expectedRemoteVersion<
+export function productMutationExpectedRemoteVersion<
   T extends Product | ProductIdentifier | ProductAlias,
 >(record: LocalProductMasterRecord<T> | undefined) {
   if (!record) return null;

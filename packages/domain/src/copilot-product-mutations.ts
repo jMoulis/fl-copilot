@@ -86,7 +86,10 @@ export class ProductClassificationError extends Error {
       | "SYNC_CONFLICT"
       | "REVIEW_REQUIRED"
       | "CANCELLED"
-      | "UNAVAILABLE",
+      | "UNAVAILABLE"
+      | "CHILD_CONFLICT"
+      | "IDENTIFIER_CONFLICT"
+      | "ALIAS_REFUSED",
     readonly details?: {
       productId: string;
       fields?: Array<"category" | "nature" | "salesUnit">;
@@ -110,6 +113,12 @@ export class ProductClassificationError extends Error {
         REVIEW_REQUIRED:
           "La correction remplace une information déjà renseignée. Examinez les valeurs avant de confirmer.",
         CANCELLED: "La correction a été annulée.",
+        CHILD_CONFLICT:
+          "Les identifiants ou alias ont changé. Relisez la fiche avant de confirmer.",
+        IDENTIFIER_CONFLICT:
+          "Un identifiant appartient déjà à un autre produit. Choisissez la fiche concernée.",
+        ALIAS_REFUSED:
+          "Cet alias a déjà été refusé. La sauvegarde ne peut pas le réactiver.",
         UNAVAILABLE:
           "La correction n’a pas été enregistrée. Vous pouvez réessayer.",
       }[code],
