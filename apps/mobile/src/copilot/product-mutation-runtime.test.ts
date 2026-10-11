@@ -343,6 +343,13 @@ it("requires reviewed authority for known-value replacement, preserves sync conf
       decisionLevel: "REVIEWED" as const,
     };
     await x.runtime.execute(overwrite, approved);
+    expect(
+      x.db
+        .prepare(
+          "SELECT expected_remote_version FROM sync_outbox WHERE entity_id=? ORDER BY local_sequence DESC LIMIT 1",
+        )
+        .get(x.products[0]!.id)?.expected_remote_version,
+    ).toBe(2);
     const conflict = {
       ...x.request,
       operationId: randomUUID(),
