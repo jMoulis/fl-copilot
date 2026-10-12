@@ -1,3 +1,4 @@
+import { CopilotTurnDelivery } from "./turn-delivery";
 import { receiveCopilotReply } from "./response-receiver";
 import { CopilotLocalChatController } from "./local-chat-controller";
 import { MobileSyncService } from "../sync/sync-service";
@@ -463,6 +464,68 @@ it("receives a scoped server reply atomically without creating a second Outbox c
         alreadyApplied: false,
       }),
     ).rejects.toThrow("COPILOT_REPLY_SCOPE_INVALID");
+  } finally {
+    db.close();
+  }
+});
+
+it("delivers only synchronized questions and keeps the same pending identity after network failure", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    const controller = new CopilotLocalChatController(repo, f, randomUUID);
+    const conversation = await controller.create();
+    await controller.edit(conversation.id, {
+      text: "Question hors connexion",
+      attachments: [],
+    });
+    const parent = await controller.send(conversation.id);
+    const request = (await controller.open(conversation.id)).pendingTurns[0]!;
+    let count = 0,
+      fail = true;
+    const dependencies = {
+      sync: async () => {},
+      ask: async (input: typeof request) => {
+        count++;
+        expect(input).toEqual(request);
+        if (fail) throw Error("NETWORK_DOWN");
+        return {
+          message: {
+            ...parent,
+            id: request.replyId,
+            role: "ASSISTANT",
+            text: "Réponse reçue",
+            replyToMessageId: parent.id,
+          },
+          alreadyApplied: false,
+        };
+      },
+    };
+    const delivery = new CopilotTurnDelivery(adapter, f, dependencies);
+    expect(await delivery.deliver(conversation.id)).toBe("WAITING");
+    expect(count).toBe(0);
+    await adapter.runAsync(
+      "UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?",
+      parent.id,
+    );
+    await expect(delivery.deliver(conversation.id)).rejects.toThrow(
+      "NETWORK_DOWN",
+    );
+    expect((await controller.open(conversation.id)).pendingTurns[0]).toEqual(
+      request,
+    );
+    fail = false;
+    const restored = new CopilotTurnDelivery(adapter, f, dependencies);
+    const first = restored.deliver(conversation.id),
+      second = restored.deliver(conversation.id);
+    expect(first).toBe(second);
+    expect(await first).toBe("RECEIVED");
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual([]);
+    expect(await restored.deliver(conversation.id)).toBe("NONE");
+    expect(count).toBe(2);
   } finally {
     db.close();
   }
