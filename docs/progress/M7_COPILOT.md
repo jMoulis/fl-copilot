@@ -287,3 +287,9 @@ The HTTP-to-Atlas test now verifies an actual shared-engine-produced daily snaps
 ### T09 — Shared mobile turn transport
 
 The existing ApiClient now sends strict turn IDs with bearer/store headers and validates the returned assistant's reply ID, owner, store, conversation and USER parent before handing data to native consumers. Wrong-scope responses are rejected with a safe French error; retryable server pending errors are preserved. Shared turn contracts are re-exported through sync-contracts without adding dependencies. Two transport tests pass; full local checks total 740 passed. No native screen, automatic history synchronization or live chat activation is introduced in this increment.
+
+### T09 — Controlled native conversation view (initial)
+
+Added a native conversation view with virtualized stable-ID messages, selectable assistant prose, distinct user bubbles, attachment filenames, conversation action, multiline composer and optional attachment/retry actions. Pending generation/queued state prevents another send without destroying the next draft. Offline retains messages and permits the host to queue a question. Automatic following stops while reading older content. Existing visual tokens and accessible labels/disabled states are used; tool implementation messages are not displayed as user-facing prose.
+
+Typecheck passes. This is a controlled view, not an activated route: the host must provide safe-area/navigation, scoped SQLite history, draft persistence, upload handling, inline forms and pending/retry orchestration. Visual/native acceptance remains pending. No EAS or paid generation.
