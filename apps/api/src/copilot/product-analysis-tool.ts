@@ -123,7 +123,6 @@ export async function readProductAnalysis(
   const catalog = await db
     .collection<{
       _id: string;
-      id: string;
       storeId: string;
       label: string;
       deletedAt?: string | null;
@@ -134,7 +133,7 @@ export async function readProductAnalysis(
     .toArray();
   const products = result.changes.map((c) => {
     const row = catalog.find((p) => p._id === c.productId);
-    if (row && (row.id !== c.productId || row.storeId !== storeId))
+    if (row && (row._id !== c.productId || row.storeId !== storeId))
       throw new Error("COPILOT_PRODUCT_SCOPE_INVALID");
     const label = row
       ? z.string().trim().min(1).max(240).parse(row.label)
