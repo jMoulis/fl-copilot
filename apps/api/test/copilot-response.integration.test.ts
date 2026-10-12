@@ -295,6 +295,25 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
     });
     it("serves an authenticated turn through HTTP with real Mongo persistence and retry", async () => {
       const f = await fixture();
+      const day = buildDepartmentDailyPerformance({
+        storeId: f.storeId,
+        businessDate: "2026-10-01",
+        computedAt: "2026-10-02T12:00:00.000Z",
+        productPerformances: [],
+      });
+      await db
+        .collection<{
+          _id: string;
+          storeId: string;
+          date: string;
+          performance: unknown;
+        }>("departmentDailyPerformance")
+        .insertOne({
+          _id: randomUUID(),
+          storeId: f.storeId,
+          date: day.date,
+          performance: day,
+        });
       const context = detectCopilotConflicts({
         batch: scoreCopilotPriorities({
           storeId: f.storeId,
@@ -343,6 +362,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       try {
         const first = await app.inject(options);
         expect(first.statusCode, failure).toBe(200);
+        expect(first.json().message.text).toContain(
+          "Chiffre d’affaires net (€) — 2026-10-01 : indisponible",
+        );
         expect(first.json().message.replyToMessageId).toBe(f.message.id);
         const retry = await app.inject(options);
         expect(retry.statusCode).toBe(200);

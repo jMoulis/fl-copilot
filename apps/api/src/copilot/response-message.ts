@@ -5,6 +5,7 @@ import {
 } from "./ai-provider.js";
 import {
   validateCopilotResponse,
+  copilotRequestEvidence,
   copilotResponseFallback,
   type generateCopilotResponse,
 } from "./response-service.js";
@@ -36,9 +37,7 @@ export function buildCopilotResponseMessage(input: {
       ? validateCopilotResponse(input.generation.response, request)
       : copilotResponseFallback(request);
   const evidence = new Map(
-    request.context.batch.candidates.flatMap((c) =>
-      c.evidence.map((e) => [e.id, e] as const),
-    ),
+    copilotRequestEvidence(request).map((e) => [e.id, e] as const),
   );
   const referenced = [
     ...new Set([

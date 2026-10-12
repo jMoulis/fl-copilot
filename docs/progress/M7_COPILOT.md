@@ -277,3 +277,9 @@ HTTP-to-real-Mongo acceptance now passes for fallback generation, canonical assi
 ### T07/T17 — Canonical remote daily evidence adapter
 
 Added a read-only adapter for the latest stored department performance, scoped by store and rechecking embedded payload store/date. Sales, margin and sales-valued waste retain decimal strings and business-date labels; missing values remain null and availability is emitted separately. No KPI is recalculated, and the latest observed day is never labelled today. Evidence IDs bind source identity and a hashed canonical input revision. Seven isolated Atlas tests pass, including a shared-engine-produced empty-day fixture, tenant isolation and empty store results. This adapter is not yet wired into generation context; date selection/comparison and native activation remain pending.
+
+### T07/T17 — Daily facts connected to the turn pipeline
+
+Server generation requests can now carry a bounded standalone evidence pool independently of recommendation candidates. The turn service reads latest canonical department evidence under its active lease and supplies it to generation. Grounding validates standalone fact IDs and divergent duplicate IDs across the complete pool; recommendation evidence remains restricted to each eligible candidate. Fallback and message rendering resolve the same pool, enabling useful dated facts without fabricated recommendations.
+
+The HTTP-to-Atlas test now verifies an actual shared-engine-produced daily snapshot appears in the stored reply with its business date and unavailable value. Seven Atlas tests pass; a new unit test covers facts without candidates and duplicate evidence rejection. Production still has no trusted recommendation context loader/native chat activation. No live AI call or EAS build.

@@ -1,3 +1,4 @@
+import { readLatestDepartmentEvidence } from "./daily-evidence.js";
 import { acquireTurnLease } from "./turn-lease.js";
 import { randomUUID } from "node:crypto";
 import {
@@ -108,10 +109,16 @@ export async function runCopilotTurn(
       return { message: afterLease.cached, alreadyApplied: true };
     const context = await dependencies.loadContext(initial.parent);
     cancelled();
+    const evidence = await readLatestDepartmentEvidence(
+      dependencies.db,
+      authority.storeId,
+    );
+    cancelled();
     const request = {
       requestId: randomUUID(),
       storeId: authority.storeId,
       context,
+      evidence,
       userQuestion: initial.parent.text || null,
     };
     const generation = await generateCopilotResponse(
