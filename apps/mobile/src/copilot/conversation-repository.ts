@@ -113,6 +113,22 @@ export class CopilotConversationRepository {
     private db: OutboxDatabase & AtomicMutationDatabase,
     private scope: Scope,
   ) {}
+  async get(conversationId: string) {
+    const row = await this.db.getFirstAsync<Row>(
+      "SELECT * FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
+      conversationId,
+      this.scope.storeId,
+      this.scope.ownerId,
+    );
+    if (!row) return null;
+    const entity = copilotConversationSchema.parse(
+      JSON.parse(row.payload_json),
+    );
+    scoped(entity, this.scope);
+    if (entity.id !== conversationId)
+      throw Error("COPILOT_HISTORY_IDENTITY_INVALID");
+    return entity;
+  }
   async list(limit = 50) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw Error("COPILOT_PAGE_LIMIT_INVALID");

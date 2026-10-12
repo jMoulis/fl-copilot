@@ -1,3 +1,4 @@
+import { CopilotLocalChatController } from "./local-chat-controller";
 import { MobileSyncService } from "../sync/sync-service";
 import type { BootstrapResponse } from "@fl-copilot/sync-contracts";
 import { DatabaseSync } from "node:sqlite";
@@ -306,6 +307,74 @@ it("bootstraps a capable second device, pulls server-authored history and reject
     expect(
       db.prepare("SELECT count(*) AS n FROM sync_outbox").get(),
     ).toMatchObject({ n: 0 });
+  } finally {
+    db.close();
+  }
+});
+
+it("serializes draft edits/send, keeps failed drafts, and restores local questions", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    const controller = new CopilotLocalChatController(
+      repo,
+      f,
+      randomUUID,
+      () => f.message.createdAt,
+    );
+    const conversation = await controller.create("Analyser les ventes");
+    const edit = controller.edit(conversation.id, {
+      text: "Ma question",
+      attachments: [],
+    });
+    const send = controller.send(conversation.id);
+    await edit;
+    const message = await send;
+    expect(message.text).toBe("Ma question");
+    expect((await controller.open(conversation.id)).draft).toBeNull();
+    expect(
+      (await controller.open(conversation.id)).messages[0]!.entity.id,
+    ).toBe(message.id);
+    await expect(controller.send(conversation.id)).rejects.toThrow(
+      "COPILOT_DRAFT_EMPTY",
+    );
+    await controller.edit(conversation.id, {
+      text: "Question suivante",
+      attachments: [],
+    });
+    adapter.fail = true;
+    await expect(controller.send(conversation.id)).rejects.toThrow(
+      "COMMIT_FAILED",
+    );
+    adapter.fail = false;
+    expect((await controller.open(conversation.id)).draft!.text).toBe(
+      "Question suivante",
+    );
+    const restored = new CopilotLocalChatController(
+      new CopilotConversationRepository(adapter, f),
+      f,
+      randomUUID,
+    );
+    await restored.send(conversation.id);
+    expect((await restored.open(conversation.id)).messages).toHaveLength(2);
+    const foreign = { ...f, ownerId: randomUUID() };
+    await expect(
+      new CopilotLocalChatController(
+        new CopilotConversationRepository(adapter, foreign),
+        foreign,
+        randomUUID,
+      ).open(conversation.id),
+    ).rejects.toThrow("COPILOT_CONVERSATION_UNAVAILABLE");
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_type='copilot_message'",
+        )
+        .get()!.n,
+    ).toBe(2);
   } finally {
     db.close();
   }
