@@ -19,6 +19,8 @@ import {
   NoOutputGeneratedError,
 } from "ai";
 import {
+  copilotOffersReadInputSchema,
+  copilotOffersReadResultSchema,
   dailyReadInputSchema,
   periodAnalysisInputSchema,
   productChangesReadInputSchema,
@@ -153,6 +155,9 @@ export function createCopilotAiProvider(
   >,
   transport?: typeof fetch,
   reads?: {
+    commercialOffers?(
+      input: z.infer<typeof copilotOffersReadInputSchema>,
+    ): Promise<z.infer<typeof copilotOffersReadResultSchema>>;
     daily(
       input: z.infer<typeof dailyReadInputSchema>,
     ): Promise<DailyAnalysisResult>;
@@ -232,7 +237,7 @@ export function createCopilotAiProvider(
           const unavailable = {
             unavailable: true as const,
             message:
-              "Les chiffres demandés ne peuvent pas être consultés maintenant. Ne les inventez pas.",
+              "Les données demandées ne peuvent pas être consultées maintenant. Ne les inventez pas.",
           };
           if (++readCalls > 5 || abortSignal.aborted) return unavailable;
           let work = pending.get(key);
@@ -278,13 +283,46 @@ export function createCopilotAiProvider(
               ...settings,
               instructions:
                 copilotGenerationInstructions +
-                "\nanalytics_daily retrieves one explicit business day and its same-weekday reference. Use it when the user asks about a specific day or comparison not already supplied. Do not guess an ambiguous period. You may retrieve at most three distinct read requests. Europe/Paris is the store time zone. analytics_daily does not aggregate periods. Use analytics_period for requested ranges, totals and averages. Never describe sampled days or partial amounts as complete weekly, monthly or annual totals. Qualify partial coverage and different period lengths. Retrieve a known product ID first if needed, or ask for identification instead of inventing one.",
-              stopWhen: isStepCount(reads.period ? 3 : 2),
+                "\nanalytics_daily retrieves one explicit business day and its same-weekday reference. Use it when the user asks about a specific day or comparison not already supplied. Do not guess an ambiguous period. You may retrieve at most three distinct read requests. Europe/Paris is the store time zone. analytics_daily does not aggregate periods. Use analytics_period for requested ranges, totals and averages. Never describe sampled days or partial amounts as complete weekly, monthly or annual totals. Qualify partial coverage and different period lengths. Retrieve a known product ID first if needed, or ask for identification instead of inventing one. commercial_offers reads retained store offers overlapping an explicit period, not all original PDF instructions. Resolve the requested week from the reference instant in Europe/Paris; do not silently use another week. Follow nextAfterId when relevant; disclose remaining pages if the read budget prevents completion. Only a current validationId proves commercial validation. Retained/validated is not installed or executed. Preserve price ceiling operators, units, card conditions and lots separately. No returned offer alone authorizes a recommendation candidate or business write.",
+              stopWhen: isStepCount(
+                reads.period || reads.commercialOffers ? 3 : 2,
+              ),
               prepareStep: ({ stepNumber }) =>
-                stepNumber >= (reads.period ? 2 : 1)
+                stepNumber >= (reads.period || reads.commercialOffers ? 2 : 1)
                   ? { toolChoice: "none" as const }
                   : {},
               tools: {
+                ...(reads.commercialOffers
+                  ? {
+                      commercial_offers: tool({
+                        description:
+                          "Read one page of retained store offers overlapping explicit inclusive dates. Includes mechanisms, original source references and current commercial validation. Not all PDF instructions, not execution. Paginate with nextAfterId; no mutations.",
+                        inputSchema: copilotOffersReadInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["offers", input]),
+                            async () => {
+                              const value = copilotOffersReadResultSchema.parse(
+                                await reads.commercialOffers!(input),
+                              );
+                              if (
+                                value.start !== input.start ||
+                                value.end !== input.end ||
+                                value.offers.some(
+                                  (o) =>
+                                    o.choice.storeId !== request.storeId ||
+                                    o.choice.status !== "RETAINED" ||
+                                    o.choice.saleStart > input.end ||
+                                    o.choice.saleEnd < input.start,
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              return value;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
                 ...(reads.period
                   ? {
                       analytics_period: tool({

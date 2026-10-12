@@ -455,3 +455,63 @@ it("lets the model calculate an explicit month without inventing a J-7 reference
   expect(daily).not.toHaveBeenCalled();
   expect(result.toolEvidence?.[0]?.value).toBe("1234.50");
 });
+
+it("lets the model read commercial offers and preserves their canonical evidence", async () => {
+  const f = fixture();
+  const input = { start: "2026-10-12", end: "2026-10-18", limit: 10 };
+  const commercialOffers = vi.fn(async () => ({
+    start: input.start,
+    end: input.end,
+    offers: [],
+    hasMore: false,
+    nextAfterId: null,
+    evidence: [
+      {
+        id: "commercial-page",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: f.request.storeId,
+        sourceVersion: null,
+        label: "Couverture des offres",
+        value: "Aucune offre retenue ; instructions non retenues non incluses.",
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "commercial_offers",
+        ),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_offers",
+          call_id: "call_offers",
+          name: "commercial_offers",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("commercial-page");
+    return response();
+  };
+  const daily = vi.fn();
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily,
+    commercialOffers,
+  }).generate(f.request, schema);
+  expect(commercialOffers).toHaveBeenCalledWith(input);
+  expect(daily).not.toHaveBeenCalled();
+  expect(result.toolEvidence?.[0]?.id).toBe("commercial-page");
+});
