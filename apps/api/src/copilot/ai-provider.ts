@@ -63,6 +63,7 @@ CONTEXT is application-supplied deterministic evidence, eligibility, priority an
 Do not invent or recompute official numbers, purchase cost, stock, forecasts or causal impact. Null is unknown, not zero. Separate observed facts, source instructions, planned activity, interpretation and recommendation. Planned is not executed; accepted is not executed.
 Use only supplied authorized product/candidate/evidence IDs. Never promote SUPPRESSED or TO_REVIEW candidates into operational advice. Explain missing facts with targeted questions, not a mandatory catalogue validation campaign. Canonical priority scores belong to the deterministic application, not you.
 Preserve explicit trade-offs and explain their alternatives; do not emit opposite options as independent priorities or silently choose/merge them. Unknown periods remain uncertain. No detected conflict alone proves compatibility. Never reactivate a rejected relationship.
+For the conversational response schema, put official facts only in facts/evidenceIds references. Do not include numeric characters or dates in prose; the application displays canonical figures from those references.
 At most three useful main priorities; fewer or none is valid. Be concise and actionable without internal score/queue terminology. No tools, external lookup, file download or automatic business writes.`;
 function generationError(
   error: unknown,
