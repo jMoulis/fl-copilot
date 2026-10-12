@@ -1,4 +1,8 @@
 import {
+  periodAnalysisResultSchema,
+  type PeriodAnalysisResult,
+} from "./period-analysis-tool.js";
+import {
   productAnalysisResultSchema,
   type ProductAnalysisResult,
 } from "./product-analysis-tool.js";
@@ -16,6 +20,7 @@ import {
 } from "ai";
 import {
   dailyReadInputSchema,
+  periodAnalysisInputSchema,
   productChangesReadInputSchema,
   copilotConflictReportSchema,
   copilotEvidenceSchema,
@@ -151,6 +156,9 @@ export function createCopilotAiProvider(
     daily(
       input: z.infer<typeof dailyReadInputSchema>,
     ): Promise<DailyAnalysisResult>;
+    period?(
+      input: z.infer<typeof periodAnalysisInputSchema>,
+    ): Promise<PeriodAnalysisResult>;
     productChanges?(
       input: z.infer<typeof productChangesReadInputSchema>,
     ): Promise<ProductAnalysisResult>;
@@ -208,14 +216,18 @@ export function createCopilotAiProvider(
         >();
         const pending = new Map<
           string,
-          Promise<DailyAnalysisResult | { unavailable: true; message: string }>
+          Promise<
+            | { evidence: NonNullable<CopilotGenerationRequest["evidence"]> }
+            | { unavailable: true; message: string }
+          >
         >();
         let readCalls = 0;
         let usedBytes = Buffer.byteLength(prompt, "utf8");
         const executeRead = async (
           key: string,
-          businessDate: string,
-          load: () => Promise<DailyAnalysisResult>,
+          load: () => Promise<{
+            evidence: NonNullable<CopilotGenerationRequest["evidence"]>;
+          }>,
         ) => {
           const unavailable = {
             unavailable: true as const,
@@ -229,10 +241,7 @@ export function createCopilotAiProvider(
             work = Promise.resolve().then(async () => {
               try {
                 const value = await load();
-                return value.businessDate === businessDate &&
-                  !abortSignal.aborted
-                  ? value
-                  : unavailable;
+                return !abortSignal.aborted ? value : unavailable;
               } catch {
                 return unavailable;
               }
@@ -269,11 +278,44 @@ export function createCopilotAiProvider(
               ...settings,
               instructions:
                 copilotGenerationInstructions +
-                "\nanalytics_daily retrieves one explicit business day and its same-weekday reference. Use it when the user asks about a specific day or comparison not already supplied. Do not guess an ambiguous period. You may retrieve at most three distinct read requests. Europe/Paris is the store time zone. This tool does not aggregate periods: never describe sampled days as complete weekly, monthly or annual totals. Ask for a suitable period/report when a complete-period analysis is unavailable.",
-              stopWhen: isStepCount(2),
+                "\nanalytics_daily retrieves one explicit business day and its same-weekday reference. Use it when the user asks about a specific day or comparison not already supplied. Do not guess an ambiguous period. You may retrieve at most three distinct read requests. Europe/Paris is the store time zone. analytics_daily does not aggregate periods. Use analytics_period for requested ranges, totals and averages. Never describe sampled days or partial amounts as complete weekly, monthly or annual totals. Qualify partial coverage and different period lengths. Retrieve a known product ID first if needed, or ask for identification instead of inventing one.",
+              stopWhen: isStepCount(reads.period ? 3 : 2),
               prepareStep: ({ stepNumber }) =>
-                stepNumber >= 1 ? { toolChoice: "none" as const } : {},
+                stepNumber >= (reads.period ? 2 : 1)
+                  ? { toolChoice: "none" as const }
+                  : {},
               tools: {
+                ...(reads.period
+                  ? {
+                      analytics_period: tool({
+                        description:
+                          "Calculate totals or daily averages for arbitrary inclusive calendar periods (day/week/month/year/custom) and optional independent reference period. Use productId null for the department, or only an authorized known product UUID. Missing days are unknown; partial totals/comparisons are explicitly qualified. SUM compares period totals; AVERAGE compares available-day averages. Query limit: ten years per period. Never guess a product UUID or silently select an ambiguous product.",
+                        inputSchema: periodAnalysisInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify([
+                              "period",
+                              { ...input, metrics: [...input.metrics].sort() },
+                            ]),
+                            async () => {
+                              const value = periodAnalysisResultSchema.parse(
+                                await reads.period!(input),
+                              );
+                              if (
+                                JSON.stringify(value.currentPeriod) !==
+                                  JSON.stringify(input.currentPeriod) ||
+                                JSON.stringify(value.referencePeriod) !==
+                                  JSON.stringify(input.referencePeriod) ||
+                                value.aggregation !== input.aggregation ||
+                                value.target.productId !== input.productId
+                              )
+                                throw new Error("READ_SCOPE_INVALID");
+                              return value;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
                 analytics_daily: tool({
                   description:
                     "Read canonical department sales, margin, waste sales-value and deterministic J-7 comparison for an explicit business date. Null means unavailable; no mutations.",
@@ -281,11 +323,14 @@ export function createCopilotAiProvider(
                   execute: (input) =>
                     executeRead(
                       JSON.stringify(["daily", input.businessDate]),
-                      input.businessDate,
-                      async () =>
-                        dailyAnalysisResultSchema.parse(
+                      async () => {
+                        const value = dailyAnalysisResultSchema.parse(
                           await reads.daily(input),
-                        ),
+                        );
+                        if (value.businessDate !== input.businessDate)
+                          throw new Error("READ_SCOPE_INVALID");
+                        return value;
+                      },
                     ),
                 }),
                 ...(reads.productChanges
@@ -302,11 +347,14 @@ export function createCopilotAiProvider(
                               input.metric,
                               input.direction,
                             ]),
-                            input.businessDate,
-                            async () =>
-                              productAnalysisResultSchema.parse(
+                            async () => {
+                              const value = productAnalysisResultSchema.parse(
                                 await reads.productChanges!(input),
-                              ),
+                              );
+                              if (value.businessDate !== input.businessDate)
+                                throw new Error("READ_SCOPE_INVALID");
+                              return value;
+                            },
                           ),
                       }),
                     }

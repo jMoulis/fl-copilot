@@ -12,3 +12,4 @@ export * from "./copilot-eligibility";
 export * from "./copilot-priority";
 export * from "./copilot-conflicts";
 export * from "./product-change-ranking";
+export * from "./calendar-period-comparison";

@@ -173,3 +173,30 @@ export const productChangesReadInputSchema = dailyReadInputSchema.extend({
   metric: z.enum(["sales", "margin"]),
   direction: z.enum(["INCREASE", "DECREASE"]),
 });
+
+export const copilotAnalysisPeriodSchema = z
+  .strictObject({
+    start: copilotBusinessDateSchema,
+    end: copilotBusinessDateSchema,
+  })
+  .refine(
+    (p) =>
+      p.start <= p.end &&
+      (Date.parse(p.end) - Date.parse(p.start)) / 86400000 < 3660,
+    "Période invalide ou trop longue.",
+  );
+export const periodAnalysisInputSchema = z
+  .strictObject({
+    productId: z.string().uuid().nullable(),
+    currentPeriod: copilotAnalysisPeriodSchema,
+    referencePeriod: copilotAnalysisPeriodSchema.nullable(),
+    aggregation: z.enum(["SUM", "AVERAGE"]),
+    metrics: z
+      .array(z.enum(["sales", "margin", "waste"]))
+      .min(1)
+      .max(3),
+  })
+  .refine(
+    (v) => new Set(v.metrics).size === v.metrics.length,
+    "Indicateurs dupliqués.",
+  );
