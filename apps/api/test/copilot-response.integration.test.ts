@@ -1,3 +1,5 @@
+import { readLatestDepartmentEvidence } from "../src/copilot/daily-evidence";
+import { buildDepartmentDailyPerformance } from "@fl-copilot/analytics-core";
 import { buildApp } from "../src/build-app";
 import { parseEnvironment } from "../src/config";
 import type { AuthService } from "../src/auth/service";
@@ -356,6 +358,51 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       } finally {
         await app.close();
       }
+    });
+    it("reads scoped dated canonical evidence without converting missing values to zero", async () => {
+      const storeId = randomUUID(),
+        foreign = randomUUID();
+      const performance = buildDepartmentDailyPerformance({
+        storeId,
+        businessDate: "2026-10-01",
+        computedAt: "2026-10-02T12:00:00.000Z",
+        productPerformances: [],
+      });
+      await db
+        .collection<{
+          _id: string;
+          storeId: string;
+          date: string;
+          performance: unknown;
+        }>("departmentDailyPerformance")
+        .insertOne({
+          _id: randomUUID(),
+          storeId,
+          date: performance.date,
+          performance,
+        });
+      await db
+        .collection<{
+          _id: string;
+          storeId: string;
+          date: string;
+          performance: unknown;
+        }>("departmentDailyPerformance")
+        .insertOne({
+          _id: randomUUID(),
+          storeId: foreign,
+          date: "2026-10-12",
+          performance: { ...performance, storeId: foreign, date: "2026-10-12" },
+        });
+      const evidence = await readLatestDepartmentEvidence(db, storeId);
+      expect(evidence).toHaveLength(6);
+      expect(
+        evidence
+          .filter((e) => e.sourceType === "KPI")
+          .every((e) => e.value === null),
+      ).toBe(true);
+      expect(evidence.every((e) => e.label.includes("2026-10-01"))).toBe(true);
+      expect(await readLatestDepartmentEvidence(db, randomUUID())).toEqual([]);
     });
   },
 );
