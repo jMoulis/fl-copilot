@@ -1,3 +1,7 @@
+import {
+  readCommercialDocuments,
+  readCommercialPdf,
+} from "./copilot/commercial-documents-tool.js";
 import { readCommercialOffers } from "./copilot/commercial-offers-tool.js";
 import { readPeriodAnalysis } from "./copilot/period-analysis-tool.js";
 import { readProductAnalysis } from "./copilot/product-analysis-tool.js";
@@ -448,6 +452,22 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              commercialDocuments: async (input) => {
+                await authorize();
+                const result = await readCommercialDocuments(
+                  db,
+                  storeId,
+                  input,
+                );
+                await authorize();
+                return result;
+              },
+              commercialPdf: async (input) => {
+                await authorize();
+                const result = await readCommercialPdf(db, storeId, input);
                 await authorize();
                 return result;
               },

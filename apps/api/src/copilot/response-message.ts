@@ -1,4 +1,8 @@
-import { copilotMessageSchema, type CopilotMessage } from "@fl-copilot/domain";
+import {
+  copilotAttachmentReferenceSchema,
+  copilotMessageSchema,
+  type CopilotMessage,
+} from "@fl-copilot/domain";
 import {
   copilotGenerationRequestSchema,
   type CopilotGenerationRequest,
@@ -53,6 +57,29 @@ export function buildCopilotResponseMessage(input: {
       ]),
     ]),
   ];
+  // Resolve only server-produced commercial source metadata; never store a model URL.
+  const citedDocuments = new Set(
+    referenced.map((id) => evidence.get(id)?.sourceId),
+  );
+  const originals = new Map<
+    string,
+    ReturnType<typeof copilotAttachmentReferenceSchema.parse>
+  >();
+  for (const item of evidence.values()) {
+    if (
+      item.id.startsWith("commercial-pdf-source/") &&
+      item.sourceType === "SOURCE_DOCUMENT" &&
+      citedDocuments.has(item.sourceId)
+    ) {
+      const source = copilotAttachmentReferenceSchema.safeParse({
+        sourceDocumentId: item.sourceId,
+        filename: item.value,
+        mediaType: "application/pdf",
+      });
+      if (source.success)
+        originals.set(source.data.sourceDocumentId, source.data);
+    }
+  }
   const facts = referenced.map((id) => {
     const item = evidence.get(id);
     if (!item) throw new Error("COPILOT_REPLY_EVIDENCE_INVALID");
@@ -85,7 +112,7 @@ export function buildCopilotResponseMessage(input: {
     conversationId: parent.conversationId,
     role: "ASSISTANT",
     text,
-    attachments: [],
+    attachments: [...originals.values()],
     replyToMessageId: parent.id,
     supersedesMessageId: null,
     version: 1,

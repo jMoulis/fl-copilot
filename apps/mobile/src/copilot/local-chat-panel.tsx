@@ -1,3 +1,5 @@
+import { CommercialOriginalButton } from "../commercial/original-button";
+import type { CopilotMessage } from "@fl-copilot/domain";
 import { ApiClientError } from "@fl-copilot/api-client";
 import type { CopilotTurnDelivery } from "./turn-delivery";
 import { useEffect, useRef, useState } from "react";
@@ -182,6 +184,7 @@ function LocalChatPanel({
           : undefined
       }
       onConversations={onConversations}
+      renderAttachment={renderCommercialOriginal}
     />
   );
 }
@@ -190,4 +193,14 @@ function replyError(error: unknown) {
   return error instanceof ApiClientError
     ? error.response.messageFr
     : "La réponse n’a pas pu être reçue. Votre question est conservée.";
+}
+
+function renderCommercialOriginal(
+  attachment: CopilotMessage["attachments"][number],
+  message: CopilotMessage,
+) {
+  return message.role === "ASSISTANT" &&
+    attachment.mediaType === "application/pdf" ? (
+    <CommercialOriginalButton sourceDocumentId={attachment.sourceDocumentId} />
+  ) : null;
 }

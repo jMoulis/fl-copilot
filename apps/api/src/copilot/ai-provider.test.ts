@@ -515,3 +515,107 @@ it("lets the model read commercial offers and preserves their canonical evidence
   expect(daily).not.toHaveBeenCalled();
   expect(result.toolEvidence?.[0]?.id).toBe("commercial-page");
 });
+
+it("lets the model discover a PDF then read its week-scoped extraction with cited source evidence", async () => {
+  const f = fixture(),
+    sourceId = randomUUID();
+  const source = {
+    id: "commercial-pdf-source/test",
+    sourceType: "SOURCE_DOCUMENT" as const,
+    sourceId,
+    sourceVersion: null,
+    label: "PDF original",
+    value: "brief.pdf",
+    factKind: "QUALITY" as const,
+  };
+  const commercialDocuments = vi.fn(async () => ({
+    documents: [
+      {
+        sourceDocumentId: sourceId,
+        filename: "brief.pdf",
+        createdAt: "2026-10-08T08:00:00Z",
+      },
+    ],
+    nextCursor: null,
+    evidence: [source],
+  }));
+  const input = {
+    sourceDocumentId: sourceId,
+    businessDate: "2026-10-08",
+    pageNumber: 1,
+    offset: 0,
+    limit: 16,
+  };
+  const commercialPdf = vi.fn(async () => ({
+    sourceDocumentId: sourceId,
+    businessDate: input.businessDate,
+    pageNumber: 1,
+    pageCount: 1,
+    status: "READY" as const,
+    week: {
+      date: input.businessDate,
+      year: 2026,
+      number: 41,
+      start: "2026-10-05",
+      end: "2026-10-11",
+    },
+    entries: [],
+    nextOffset: null,
+    excludedOperations: 0,
+    unknownOperations: 0,
+    evidence: [
+      source,
+      {
+        ...source,
+        id: "extracted-price",
+        label: "Prix enseigne à confirmer",
+        value: "2,20€",
+        factKind: "SOURCE_INSTRUCTION" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)),
+      step = calls++;
+    if (step < 2) {
+      const name = step === 0 ? "commercial_documents" : "commercial_pdf";
+      if (step === 1) expect(JSON.stringify(body)).toContain(sourceId);
+      expect(body.tools.some((t: { name: string }) => t.name === name)).toBe(
+        true,
+      );
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: `fc_${step}`,
+          call_id: `call_${step}`,
+          name,
+          arguments: JSON.stringify(
+            step === 0 ? { cursor: null, limit: 5 } : input,
+          ),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    expect(JSON.stringify(body)).toContain("extracted-price");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    commercialDocuments,
+    commercialPdf,
+  }).generate(f.request, schema);
+  expect(commercialPdf).toHaveBeenCalledWith(input);
+  expect(result.toolEvidence?.map((e) => e.id)).toEqual([
+    source.id,
+    "extracted-price",
+  ]);
+  expect(calls).toBe(3);
+});

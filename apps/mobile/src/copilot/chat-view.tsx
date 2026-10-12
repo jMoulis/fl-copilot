@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -33,6 +33,7 @@ export function CopilotChatView({
   onConversations,
   onAttach,
   onRetry,
+  renderAttachment,
 }: {
   title: string;
   messages: readonly CopilotMessage[];
@@ -44,6 +45,10 @@ export function CopilotChatView({
   onConversations(): void;
   onAttach?(): void;
   onRetry?(): void;
+  renderAttachment?(
+    attachment: CopilotMessage["attachments"][number],
+    message: CopilotMessage,
+  ): ReactNode;
 }) {
   const list = useRef<FlatList<CopilotMessage>>(null);
   const followLatest = useRef(true);
@@ -113,9 +118,10 @@ export function CopilotChatView({
               {item.text}
             </Text>
             {item.attachments.map((attachment) => (
-              <Text key={attachment.sourceDocumentId} style={styles.attachment}>
-                {attachment.filename}
-              </Text>
+              <View key={attachment.sourceDocumentId}>
+                <Text style={styles.attachment}>{attachment.filename}</Text>
+                {renderAttachment?.(attachment, item)}
+              </View>
             ))}
           </View>
         )}

@@ -71,3 +71,5 @@ export * from "./copilot-forms";
 export * from "./copilot-response";
 
 export * from "./copilot-turn";
+
+export * from "./copilot-commercial-documents";

@@ -1,3 +1,7 @@
+import {
+  readCommercialDocuments,
+  readCommercialPdf,
+} from "../src/copilot/commercial-documents-tool";
 import { readCommercialOffers } from "../src/copilot/commercial-offers-tool";
 import { commercialChoiceFixture } from "../../../scripts/test-commercial-choice-fixtures";
 import { commercialOfferValidationSource } from "@fl-copilot/commercial-core";
@@ -72,6 +76,120 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("discovers owned PDFs, scopes visual reading to the requested week and preserves citations without private URLs", async () => {
+      const f = await commercialChoiceFixture();
+      const stamp = new Date("2026-10-08T08:00:00Z");
+      const source = {
+        _id: f.sourceDocumentId,
+        storeId: f.storeId,
+        originalFilename: "pense-bete.pdf",
+        checksum: f.reading.checksum,
+        createdAt: stamp,
+        sourceType: "WEEKLY_COMMERCIAL_PDF",
+        remoteUploadStatus: "CONFIRMED",
+        objectKey: "private-secret-key",
+        blobUrl: "https://private.invalid",
+      };
+      await db.collection<typeof source>("sourceDocuments").insertOne(source);
+      const second = {
+        ...source,
+        _id: randomUUID(),
+        createdAt: new Date("2026-10-07T08:00:00Z"),
+      };
+      await db.collection<typeof source>("sourceDocuments").insertOne(second);
+      await db
+        .collection<typeof source>("sourceDocuments")
+        .insertOne({ ...source, _id: randomUUID(), storeId: randomUUID() });
+      await db.collection<typeof source>("sourceDocuments").insertOne({
+        ...source,
+        _id: randomUUID(),
+        remoteUploadStatus: "PENDING",
+      });
+      await db
+        .collection<{ _id: string; updatedAt: Date }>(
+          "commercialVisualReadings",
+        )
+        .insertOne({ _id: f.reading.id, ...f.reading, updatedAt: stamp });
+      const docs = await readCommercialDocuments(db, f.storeId, {
+        cursor: null,
+        limit: 1,
+      });
+      expect(docs.documents[0]?.sourceDocumentId).toBe(f.sourceDocumentId);
+      expect(docs.nextCursor).not.toBeNull();
+      const rest = await readCommercialDocuments(db, f.storeId, {
+        cursor: docs.nextCursor,
+        limit: 5,
+      });
+      expect(rest.documents.map((d) => d.sourceDocumentId)).toEqual([
+        second._id,
+      ]);
+      expect(rest.nextCursor).toBeNull();
+      expect(JSON.stringify(docs)).not.toMatch(
+        /private-secret-key|private.invalid/,
+      );
+      const input = {
+        sourceDocumentId: f.sourceDocumentId,
+        businessDate: "2026-10-08",
+        pageNumber: 1,
+        offset: 0,
+        limit: 16,
+      };
+      const result = await readCommercialPdf(db, f.storeId, input);
+      expect(result.status).toBe("READY");
+      expect(result.week.number).toBe(41);
+      expect(
+        result.entries.some(
+          (e) => e.label.includes("sellingPrice") && e.value === "2,20€",
+        ),
+      ).toBe(true);
+      expect(
+        result.entries.some((e) =>
+          e.citations.some((c) => c.quote === "2,20€"),
+        ),
+      ).toBe(true);
+      expect(
+        result.evidence.some((e) => e.factKind === "SOURCE_INSTRUCTION"),
+      ).toBe(true);
+      expect(result.evidence.at(-1)?.value).toContain("non validée");
+      const segment = await readCommercialPdf(db, f.storeId, {
+        ...input,
+        limit: 1,
+      });
+      expect(segment.nextOffset).toBe(1);
+      expect(
+        (
+          await readCommercialPdf(db, f.storeId, {
+            ...input,
+            offset: segment.nextOffset!,
+            limit: 1,
+          })
+        ).entries[0]?.id,
+      ).not.toBe(segment.entries[0]?.id);
+      const outside = await readCommercialPdf(db, f.storeId, {
+        ...input,
+        businessDate: "2026-10-15",
+      });
+      expect(outside.entries).toEqual([]);
+      expect(outside.excludedOperations).toBe(1);
+      const pending = await readCommercialPdf(db, f.storeId, {
+        ...input,
+        pageNumber: 2,
+      });
+      expect(pending.status).toBe("NOT_READY");
+      expect(pending.entries).toEqual([]);
+      await expect(readCommercialPdf(db, randomUUID(), input)).rejects.toThrow(
+        "COPILOT_DOCUMENT_UNAVAILABLE",
+      );
+      await db
+        .collection<typeof source>("sourceDocuments")
+        .updateOne(
+          { _id: f.sourceDocumentId },
+          { $set: { checksum: "changed" } },
+        );
+      expect((await readCommercialPdf(db, f.storeId, input)).status).toBe(
+        "NOT_READY",
+      );
+    });
     it("reads only retained scoped offers, paginates without pretending completeness and rejects stale validation", async () => {
       const f = await commercialChoiceFixture();
       const c = f.choice;
