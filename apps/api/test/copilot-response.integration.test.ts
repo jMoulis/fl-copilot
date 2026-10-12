@@ -343,7 +343,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await current.release();
       }
     });
-    it("serves an authenticated turn through HTTP with real Mongo persistence and retry", async () => {
+    it("serves the default read-only context through authenticated HTTP with real Mongo persistence and retry", async () => {
       const f = await fixture();
       const day = buildDepartmentDailyPerformance({
         storeId: f.storeId,
@@ -364,14 +364,6 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           date: day.date,
           performance: day,
         });
-      const context = detectCopilotConflicts({
-        batch: scoreCopilotPriorities({
-          storeId: f.storeId,
-          evaluatedAt: f.message.createdAt,
-          candidates: [],
-        }),
-        intents: [],
-      });
       const auth = {
         requestChallenge: vi.fn(),
         verifyChallenge: vi.fn(),
@@ -386,15 +378,17 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           role: "MANAGER",
         })),
       } as AuthService;
-      const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
-        database: {
-          getDb: async () => db,
-          checkHealth: async () => "connected",
-          close: async () => {},
+      const app = buildApp(
+        parseEnvironment({ NODE_ENV: "test", COPILOT_AI_MODEL: "test-model" }),
+        {
+          database: {
+            getDb: async () => db,
+            checkHealth: async () => "connected",
+            close: async () => {},
+          },
+          auth,
         },
-        auth,
-        copilotContext: async () => context,
-      });
+      );
       const options = {
         method: "POST" as const,
         url: "/api/v1/copilot/turn",
