@@ -117,10 +117,7 @@ function LocalChatPanel({
       if (isCurrent()) setSending(false);
     }
   };
-  const queued = snapshot.messages.some(
-    (message) =>
-      message.entity.role === "USER" && message.syncState !== "SYNCED",
-  );
+  const queued = snapshot.pendingTurns.length > 0;
   return (
     <CopilotChatView
       title={snapshot.conversation.title}

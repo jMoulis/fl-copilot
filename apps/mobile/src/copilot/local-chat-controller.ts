@@ -50,7 +50,8 @@ export class CopilotLocalChatController {
       const conversation = await this.active(conversationId);
       const page = await this.repo.messages(conversationId);
       const draft = await this.repo.draft(conversationId);
-      return { conversation, ...page, draft };
+      const pendingTurns = await this.repo.pendingTurns(conversationId);
+      return { conversation, ...page, draft, pendingTurns };
     });
   }
   edit(
@@ -86,7 +87,11 @@ export class CopilotLocalChatController {
           version: 1,
           createdAt: this.now(),
         },
-        { commandId: this.id(), deviceId: this.scope.deviceId },
+        {
+          commandId: this.id(),
+          deviceId: this.scope.deviceId,
+          replyId: this.id(),
+        },
       );
     });
   }

@@ -318,8 +318,16 @@ it("serializes draft edits/send, keeps failed drafts, and restores local questio
     f = chatFixture(randomUUID);
   try {
     const adapter = new Adapter(db);
-    await runLocalMigrations(adapter);
+    await runLocalMigrations(adapter, localMigrations.slice(0, 36));
     const repo = new CopilotConversationRepository(adapter, f);
+    await repo.save(f.conversation, command());
+    await repo.saveDraft(f.conversation.id, {
+      text: "Avant migration",
+      attachments: [],
+      updatedAt: f.message.createdAt,
+    });
+    await runLocalMigrations(adapter);
+    expect((await repo.draft(f.conversation.id))!.text).toBe("Avant migration");
     const controller = new CopilotLocalChatController(
       repo,
       f,
@@ -335,6 +343,9 @@ it("serializes draft edits/send, keeps failed drafts, and restores local questio
     await edit;
     const message = await send;
     expect(message.text).toBe("Ma question");
+    const queued = (await controller.open(conversation.id)).pendingTurns;
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.userMessageId).toBe(message.id);
     expect((await controller.open(conversation.id)).draft).toBeNull();
     expect(
       (await controller.open(conversation.id)).messages[0]!.entity.id,
@@ -359,8 +370,22 @@ it("serializes draft edits/send, keeps failed drafts, and restores local questio
       f,
       randomUUID,
     );
+    expect((await restored.open(conversation.id)).pendingTurns).toEqual(queued);
     await restored.send(conversation.id);
     expect((await restored.open(conversation.id)).messages).toHaveLength(2);
+    await receiveCopilotReply(adapter, f, queued[0]!, {
+      message: {
+        ...message,
+        id: queued[0]!.replyId,
+        role: "ASSISTANT",
+        text: "Réponse enregistrée",
+        replyToMessageId: message.id,
+      },
+      alreadyApplied: false,
+    });
+    const remaining = (await restored.open(conversation.id)).pendingTurns;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.replyId).not.toBe(queued[0]!.replyId);
     const foreign = { ...f, ownerId: randomUUID() };
     await expect(
       new CopilotLocalChatController(
