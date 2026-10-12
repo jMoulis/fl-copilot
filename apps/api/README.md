@@ -54,3 +54,5 @@ TEST_MONGODB_URI='mongodb://127.0.0.1:27017/?directConnection=true' pnpm test
 ```
 
 It creates a uniquely named database, verifies a real write/read and migration idempotency, then drops that test database. CI supplies MongoDB 7 as a service.
+
+`POST /api/v1/copilot/turn` accepts `{ replyId, conversationId, userMessageId }` with bearer authentication and `x-store-id`. It resolves private message ownership in Mongo and returns a canonical assistant message plus `alreadyApplied`. `buildApp` requires an explicitly supplied trusted `copilotContext` loader; until runtime wiring is completed, authorized requests return `COPILOT_NOT_READY` (503). No client-authored actor, AI context or model name is accepted. Active concurrent generation returns retryable `COPILOT_TURN_PENDING` (409); changed/expired identity requires refresh. The native chat is not yet activated.

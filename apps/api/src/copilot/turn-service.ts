@@ -1,7 +1,8 @@
 import { acquireTurnLease } from "./turn-lease.js";
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 import {
+  copilotTurnRequestSchema,
+  type CopilotTurnRequest,
   copilotConversationSchema,
   copilotMessageSchema,
   type CopilotConversation,
@@ -17,13 +18,6 @@ import { buildCopilotResponseMessage } from "./response-message.js";
 import { appendCopilotResponse } from "./response-store.js";
 import { createMongoSyncChangeService } from "../sync/sync-change-service.js";
 
-const inputSchema = z
-  .object({
-    replyId: z.string().uuid(),
-    conversationId: z.string().uuid(),
-    userMessageId: z.string().uuid(),
-  })
-  .strict();
 export class CopilotTurnError extends Error {
   constructor(
     readonly code:
@@ -48,10 +42,10 @@ export async function runCopilotTurn(
     ) => Promise<CopilotGenerationRequest["context"]>;
     now?: () => Date;
   },
-  raw: z.infer<typeof inputSchema>,
+  raw: CopilotTurnRequest,
   signal?: AbortSignal,
 ): Promise<{ message: CopilotMessage; alreadyApplied: boolean }> {
-  const input = inputSchema.parse(raw);
+  const input = copilotTurnRequestSchema.parse(raw);
   const cancelled = () => {
     if (signal?.aborted) throw new CopilotTurnError("CANCELLED");
   };
