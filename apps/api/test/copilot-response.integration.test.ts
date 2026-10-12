@@ -85,14 +85,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           createdAt: new Date(base + 1000).toISOString(),
         },
       ];
-      await db
-        .collection<{ _id: string }>("copilotMessages")
-        .insertMany(
-          [...previous, ...hidden].map((message) => ({
-            _id: message.id,
-            ...message,
-          })),
-        );
+      await db.collection<{ _id: string }>("copilotMessages").insertMany(
+        [...previous, ...hidden].map((message) => ({
+          _id: message.id,
+          ...message,
+        })),
+      );
       const history = await readConversationGenerationHistory(db, f.message);
       expect(history.messages.map((message) => message.id)).toEqual(
         previous.slice(2).map((message) => message.id),
