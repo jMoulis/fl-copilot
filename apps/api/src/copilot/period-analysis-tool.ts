@@ -64,7 +64,6 @@ export async function readPeriodAnalysis(
     const product = await db
       .collection<{
         _id: string;
-        id: string;
         storeId: string;
         label: string;
         deletedAt?: string | null;
@@ -72,7 +71,7 @@ export async function readPeriodAnalysis(
       .findOne({ _id: input.productId, storeId });
     if (
       !product ||
-      product.id !== input.productId ||
+      product._id !== input.productId ||
       product.storeId !== storeId
     )
       throw new Error("COPILOT_PERIOD_PRODUCT_UNAVAILABLE");

@@ -1,3 +1,4 @@
+import { readProductSearch } from "../src/copilot/product-search-tool";
 import {
   readCommercialDocuments,
   readCommercialPdf,
@@ -76,6 +77,139 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("searches real Mongo product records with string codes, validated aliases and explicit name ambiguity", async () => {
+      const f = await commercialChoiceFixture(),
+        stamp = new Date(f.product.createdAt);
+      const { id, ...data } = f.product;
+      const product = {
+        ...data,
+        _id: id,
+        label: "BANANE VRAC",
+        schemaVersion: 1,
+        createdAt: stamp,
+        updatedAt: stamp,
+        deletedAt: null,
+      };
+      const second = {
+        ...product,
+        _id: randomUUID(),
+        label: "BANANE BIO VRAC",
+      };
+      await db
+        .collection<
+          Omit<typeof product, "deletedAt"> & { deletedAt: Date | null }
+        >("products")
+        .insertMany([
+          product,
+          second,
+          { ...product, _id: randomUUID(), storeId: randomUUID() },
+          {
+            ...product,
+            _id: randomUUID(),
+            label: "BANANE RETIREE",
+            deletedAt: stamp,
+          },
+        ]);
+      const identifier = {
+        _id: randomUUID(),
+        storeId: f.storeId,
+        productId: id,
+        type: "PLU",
+        value: "000123",
+        source: "USER",
+        status: "VALIDATED",
+        version: 1,
+        schemaVersion: 1,
+        createdAt: stamp,
+        updatedAt: stamp,
+        deletedAt: null,
+      };
+      await db
+        .collection<typeof identifier>("productIdentifiers")
+        .insertOne(identifier);
+      const alias = {
+        _id: randomUUID(),
+        storeId: f.storeId,
+        productId: id,
+        alias: "Fruit jaune",
+        normalizedAlias: "FRUIT JAUNE",
+        source: "USER",
+        status: "VALIDATED",
+        version: 1,
+        schemaVersion: 1,
+        createdAt: stamp,
+        updatedAt: stamp,
+        deletedAt: null,
+      };
+      await db.collection<typeof alias>("productAliases").insertMany([
+        alias,
+        {
+          ...alias,
+          _id: randomUUID(),
+          alias: "Ne pas apprendre",
+          normalizedAlias: "NE PAS APPRENDRE",
+          status: "REJECTED",
+        },
+      ]);
+      const code = await readProductSearch(db, f.storeId, {
+        label: null,
+        identifiers: [{ type: "PLU", value: "000123" }],
+      });
+      expect(code.state).toBe("AUTO_MATCH");
+      expect(code.matchedProductId).toBe(id);
+      expect(code.candidates[0]?.basis).toBe("EXACT_IDENTIFIER");
+      const text = await readProductSearch(db, f.storeId, {
+        label: "banane",
+        identifiers: [],
+      });
+      expect(text.state).toBe("AMBIGUOUS");
+      expect(text.matchedProductId).toBeNull();
+      expect(text.candidateCount).toBe(2);
+      expect(
+        text.candidates.every((c) => c.product.storeId === f.storeId),
+      ).toBe(true);
+      expect(
+        (
+          await readProductSearch(db, f.storeId, {
+            label: "fruit jaune",
+            identifiers: [],
+          })
+        ).matchedProductId,
+      ).toBe(id);
+      const missing = await readProductSearch(db, f.storeId, {
+        label: null,
+        identifiers: [{ type: "PLU", value: "123" }],
+      });
+      expect(missing.state).toBe("NO_MATCH");
+      expect(missing.missingIdentifiers[0]?.value).toBe("123");
+      expect(
+        (
+          await readProductSearch(db, f.storeId, {
+            label: "Ne pas apprendre",
+            identifiers: [],
+          })
+        ).matchedProductId,
+      ).toBeNull();
+      await db
+        .collection<
+          Omit<typeof product, "deletedAt"> & { deletedAt: Date | null }
+        >("products")
+        .insertMany(
+          Array.from({ length: 1000 }, (_, i) => ({
+            ...product,
+            _id: randomUUID(),
+            label: `Autre article ${i}`,
+          })),
+        );
+      const limited = await readProductSearch(db, f.storeId, {
+        label: "banane",
+        identifiers: [],
+      });
+      expect(limited.status).toBe("LIMIT_EXCEEDED");
+      expect(limited.state).toBeNull();
+      expect(limited.candidates).toEqual([]);
+      expect(limited.evidence[0]?.value).toContain("échantillon");
+    });
     it("discovers owned PDFs, scopes visual reading to the requested week and preserves citations without private URLs", async () => {
       const f = await commercialChoiceFixture();
       const stamp = new Date("2026-10-08T08:00:00Z");
@@ -393,13 +527,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       await db
         .collection<{
           _id: string;
-          id: string;
           storeId: string;
           label: string;
         }>("products")
         .insertOne({
           _id: productId,
-          id: productId,
           storeId,
           label: "BANANE VRAC",
         });
@@ -513,16 +645,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       await db
         .collection<{
           _id: string;
-          id: string;
           storeId: string;
           label: string;
           deletedAt?: string;
         }>("products")
         .insertMany([
-          { _id: banana, id: banana, storeId, label: "BANANE VRAC" },
+          { _id: banana, storeId, label: "BANANE VRAC" },
           {
             _id: pear,
-            id: pear,
             storeId,
             label: "POIRE VRAC",
             deletedAt: "2026-10-10T10:00:00Z",

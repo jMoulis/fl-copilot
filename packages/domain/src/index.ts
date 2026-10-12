@@ -73,3 +73,5 @@ export * from "./copilot-response";
 export * from "./copilot-turn";
 
 export * from "./copilot-commercial-documents";
+
+export * from "./copilot-product-search";

@@ -619,3 +619,99 @@ it("lets the model discover a PDF then read its week-scoped extraction with cite
   ]);
   expect(calls).toBe(3);
 });
+
+it("lets the model resolve an exact product before its period calculation", async () => {
+  const f = fixture(),
+    productId = randomUUID(),
+    searchInput = { label: "BANANE VRAC", identifiers: [] };
+  const product = {
+    id: productId,
+    storeId: f.request.storeId,
+    label: "BANANE VRAC",
+    category: "FRUIT" as const,
+    nature: "BULK" as const,
+    salesUnit: "KG" as const,
+    status: "ACTIVE" as const,
+    version: 1,
+    createdAt: "2026-10-12T12:00:00Z",
+    updatedAt: "2026-10-12T12:00:00Z",
+    deletedAt: null,
+  };
+  const productSearch = vi.fn(async () => ({
+    status: "COMPLETE_CATALOG" as const,
+    state: "AUTO_MATCH" as const,
+    matchedProductId: productId,
+    candidateCount: 1,
+    hasMoreCandidates: false,
+    candidates: [
+      {
+        product,
+        basis: "CANONICAL_LABEL" as const,
+        score: 1,
+        reasons: ["CANONICAL_LABEL"],
+      },
+    ],
+    missingIdentifiers: [],
+    evidence: [],
+  }));
+  const periodInput = {
+    productId,
+    currentPeriod: { start: "2026-09-01", end: "2026-09-30" },
+    referencePeriod: null,
+    aggregation: "SUM" as const,
+    metrics: ["sales" as const],
+  };
+  const period = vi.fn(async () => ({
+    target: { type: "PRODUCT" as const, productId, label: product.label },
+    currentPeriod: periodInput.currentPeriod,
+    referencePeriod: null,
+    aggregation: "SUM" as const,
+    coverage: [],
+    evidence: [
+      {
+        id: "product-month",
+        sourceType: "KPI" as const,
+        sourceId: productId,
+        sourceVersion: null,
+        label: "Ventes du produit",
+        value: "123.00",
+        factKind: "DERIVED" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)),
+      step = calls++;
+    if (step < 2) {
+      const name = step === 0 ? "product_search" : "analytics_period";
+      if (step === 1) expect(JSON.stringify(body)).toContain(productId);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: `fc_search_${step}`,
+          call_id: `call_search_${step}`,
+          name,
+          arguments: JSON.stringify(step === 0 ? searchInput : periodInput),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    productSearch,
+    period,
+  }).generate(f.request, schema);
+  expect(productSearch).toHaveBeenCalledWith(searchInput);
+  expect(period).toHaveBeenCalledWith(periodInput);
+  expect(result.toolEvidence?.[0]?.id).toBe("product-month");
+});

@@ -1,3 +1,4 @@
+import { readProductSearch } from "./copilot/product-search-tool.js";
 import {
   readCommercialDocuments,
   readCommercialPdf,
@@ -452,6 +453,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              productSearch: async (input) => {
+                await authorize();
+                const result = await readProductSearch(db, storeId, input);
                 await authorize();
                 return result;
               },
