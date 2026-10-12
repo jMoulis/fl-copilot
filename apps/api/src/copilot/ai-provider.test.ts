@@ -323,3 +323,71 @@ it("executes scoped read capabilities once per date, caps distinct reads and fee
   ]);
   expect(transport).toHaveBeenCalledTimes(2);
 });
+
+it("keeps daily, sales and margin read identities separate for the same business day", async () => {
+  const f = fixture();
+  const evidence = (id: string) => ({
+    id,
+    sourceType: "KPI" as const,
+    sourceId: "canonical",
+    sourceVersion: null,
+    label: id,
+    value: "10",
+    factKind: "DERIVED" as const,
+  });
+  const daily = vi.fn(async () => ({
+    businessDate: "2026-10-08",
+    referenceDate: "2026-10-01",
+    evidence: [evidence("daily")],
+  }));
+  const productChanges = vi.fn(async ({ metric }: { metric: string }) => ({
+    businessDate: "2026-10-08",
+    referenceDate: "2026-10-01",
+    evidence: [evidence(metric)],
+    products: [],
+    coverage: {
+      status: "COMPARED_PRODUCTS" as const,
+      comparedProductCount: 2,
+      excludedProductCount: 0,
+    },
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        { name: "analytics_daily", input: { businessDate: "2026-10-08" } },
+        ...["sales", "margin"].map((metric) => ({
+          name: "analytics_product_changes",
+          input: { businessDate: "2026-10-08", metric, direction: "DECREASE" },
+        })),
+      ].map((call, index) => ({
+        type: "function_call",
+        id: `fc_${index}`,
+        call_id: `call_${index}`,
+        name: call.name,
+        arguments: JSON.stringify(call.input),
+        status: "completed",
+      }));
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily,
+    productChanges,
+  }).generate(f.request, schema);
+  expect(daily).toHaveBeenCalledTimes(1);
+  expect(productChanges).toHaveBeenCalledTimes(2);
+  expect(result.toolEvidence?.map((e) => e.id).sort()).toEqual([
+    "daily",
+    "margin",
+    "sales",
+  ]);
+});

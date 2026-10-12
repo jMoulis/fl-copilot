@@ -1,3 +1,4 @@
+import { readProductAnalysis } from "./copilot/product-analysis-tool.js";
 import { readDailyAnalysis } from "./copilot/daily-analysis-tool.js";
 import { loadCopilotReadContext } from "./copilot/read-context.js";
 import {
@@ -445,6 +446,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              productChanges: async (input) => {
+                await authorize();
+                const result = await readProductAnalysis(db, storeId, input);
                 await authorize();
                 return result;
               },
