@@ -82,7 +82,10 @@ it("returns safe evidence fallback for unavailable or ungrounded generation", as
     const result = await generateCopilotResponse(provider, request());
     expect(result.mode).toBe("FALLBACK");
     expect(result.response.facts).toEqual([{ evidenceId: "sales" }]);
-    expect(result.response.recommendations).toEqual([]);
+    expect(result.response.recommendations).toHaveLength(1);
+    expect(result.response.recommendations[0]?.candidateId).toBe(
+      request().context.batch.candidates[0]!.id,
+    );
     expect(result.metadata).toBeNull();
     expect(JSON.stringify(result)).not.toContain(error.code);
   }

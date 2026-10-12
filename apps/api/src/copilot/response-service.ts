@@ -114,13 +114,72 @@ export function copilotResponseFallback(
     .filter((id) => evidenceValues.get(id)?.size === 1)
     .slice(0, 24)
     .map((evidenceId) => ({ evidenceId }));
+  const templates: Partial<
+    Record<CopilotResponse["recommendations"][number]["type"], string>
+  > = {
+    INVESTIGATE_SALES_DROP: "Examiner l’évolution des ventes",
+    INVESTIGATE_MARGIN_DROP: "Examiner l’évolution de la marge",
+    CHECK_STOCK: "Vérifier la disponibilité en rayon",
+    CHECK_PRICE: "Vérifier le prix affiché",
+    CHECK_PLU: "Vérifier le code de vente",
+    CHECK_QUALITY: "Vérifier la qualité en rayon",
+    MONITOR_HIGH_WASTE: "Examiner la casse observée",
+  };
+  const blocked = new Set(
+    request.context.tradeOffs.flatMap((t) => [
+      ...t.candidateIds,
+      ...t.sourceCandidateIds,
+    ]),
+  );
+  const recommendations: CopilotResponse["recommendations"] =
+    request.context.batch.candidates
+      .filter(
+        (c) =>
+          c.status === "ELIGIBLE" &&
+          c.priority.score !== null &&
+          templates[c.type] &&
+          !blocked.has(c.id),
+      )
+      .sort(
+        (a, b) =>
+          b.priority.score! - a.priority.score! || a.id.localeCompare(b.id),
+      )
+      .flatMap((c) => {
+        const ids = [...new Set(c.evidence.map((e) => e.id))]
+          .filter((id) => evidenceValues.get(id)?.size === 1)
+          .slice(0, 16);
+        if (!ids.length) return [];
+        return [
+          {
+            candidateId: c.id,
+            type: c.type,
+            title: templates[c.type]!,
+            explanation:
+              "Ce signal provient des données calculées par l’application. Vérifiez les observations avant de décider.",
+            evidenceIds: ids,
+            confidence: "LOW" as const,
+            risks: [
+              "Ce signal ne démontre pas la cause de l’évolution observée.",
+            ],
+            missingData: c.context.missingData.slice(0, 8),
+            measurement: {
+              objective:
+                "Comparer les observations sur des périodes complètes et compatibles.",
+              evidenceIds: ids,
+              reviewWhen:
+                "Après vérification des informations et réception des prochaines données.",
+            },
+          },
+        ];
+      })
+      .slice(0, 3);
   return copilotResponseSchema.parse({
     language: "fr-FR",
     summary:
       "L’analyse du copilote est momentanément indisponible. Les données disponibles restent consultables.",
     facts,
     interpretation: [],
-    recommendations: [],
+    recommendations,
     questions: [],
   });
 }
