@@ -684,6 +684,15 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 32,
+    name: "copilot-turn-generation-leases",
+    async up(database) {
+      await database
+        .collection("copilotTurnLeases")
+        .createIndex({ storeId: 1, ownerId: 1, expiresAt: 1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(
