@@ -1,3 +1,6 @@
+import { readCommercialOffers } from "../src/copilot/commercial-offers-tool";
+import { commercialChoiceFixture } from "../../../scripts/test-commercial-choice-fixtures";
+import { commercialOfferValidationSource } from "@fl-copilot/commercial-core";
 import { readPeriodAnalysis } from "../src/copilot/period-analysis-tool";
 import { mongoMigrations } from "../src/database/migrations";
 import { readProductAnalysis } from "../src/copilot/product-analysis-tool";
@@ -69,6 +72,118 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("reads only retained scoped offers, paginates without pretending completeness and rejects stale validation", async () => {
+      const f = await commercialChoiceFixture();
+      const c = f.choice;
+      const save = async (choice: typeof c) =>
+        db
+          .collection<{ _id: string; duplicateKey: string }>(
+            "commercialOfferChoices",
+          )
+          .insertOne({ _id: choice.id, duplicateKey: choice.id, ...choice });
+      await save(c);
+      const another = {
+        ...c,
+        id: randomUUID(),
+        rawProductLabel: "Autre offre",
+        productId: randomUUID(),
+      };
+      await save(another);
+      await save({ ...c, id: randomUUID(), storeId: randomUUID() });
+      await save({ ...c, id: randomUUID(), status: "WITHDRAWN" });
+      await save({
+        ...c,
+        id: randomUUID(),
+        saleStart: "2025-01-01",
+        saleEnd: "2025-01-07",
+      });
+      const validation = {
+        id: randomUUID(),
+        storeId: f.storeId,
+        choice: c,
+        ...commercialOfferValidationSource(c, [f.reading]),
+        status: "VALIDATED",
+        sourceReviewed: true,
+        version: 1,
+        createdAt: c.createdAt,
+      };
+      await db
+        .collection<{ _id: string }>("commercialValidatedOffers")
+        .insertOne({ _id: validation.id, ...validation });
+      const input = { start: c.saleStart, end: c.saleEnd, limit: 1 };
+      const first = await readCommercialOffers(db, f.storeId, input);
+      expect(first.hasMore).toBe(true);
+      expect(first.offers).toHaveLength(1);
+      expect(first.nextAfterId).toBe(first.offers[0]!.choice.id);
+      const second = await readCommercialOffers(db, f.storeId, {
+        ...input,
+        afterId: first.nextAfterId,
+      });
+      expect(second.hasMore).toBe(false);
+      expect(second.nextAfterId).toBeNull();
+      const combined = [...first.offers, ...second.offers];
+      expect(combined.map((o) => o.choice.id).sort()).toEqual(
+        [c.id, another.id].sort(),
+      );
+      expect(combined.find((o) => o.choice.id === c.id)?.validationId).toBe(
+        validation.id,
+      );
+      expect(
+        combined.find((o) => o.choice.id === another.id)?.validationId,
+      ).toBeNull();
+      expect(first.evidence.at(-1)?.value).toContain("d’autres offres");
+      expect(first.evidence[0]?.factKind).toBe("PLANNED");
+      expect(first.evidence[0]?.sourceId).toBe(c.source.sourceDocumentId);
+      const oldEvidence = [...first.evidence, ...second.evidence].find(
+        (e) =>
+          e.sourceId === c.source.sourceDocumentId &&
+          e.label.includes("Offre retenue") &&
+          e.label.includes(c.rawProductLabel),
+      )!.id;
+      await db
+        .collection<{ _id: string }>("commercialOfferChoices")
+        .updateOne(
+          { _id: c.id },
+          { $set: { note: "Révision de la portée", version: 2 } },
+        );
+      const changed = await readCommercialOffers(db, f.storeId, {
+        ...input,
+        limit: 10,
+      });
+      expect(
+        changed.offers.find((o) => o.choice.id === c.id)?.validationId,
+      ).toBeNull();
+      expect(
+        changed.evidence.find(
+          (e) =>
+            e.label.includes(c.rawProductLabel) &&
+            e.label.includes("Offre retenue"),
+        )!.id,
+      ).not.toBe(oldEvidence);
+      // Same revision number alone cannot attest a changed snapshot.
+      await db
+        .collection<{ _id: string }>("commercialValidatedOffers")
+        .updateOne({ _id: validation.id }, { $set: { "choice.version": 2 } });
+      expect(
+        (
+          await readCommercialOffers(db, f.storeId, { ...input, limit: 10 })
+        ).offers.find((o) => o.choice.id === c.id)?.validationId,
+      ).toBeNull();
+      const empty = await readCommercialOffers(db, f.storeId, {
+        start: "2024-01-01",
+        end: "2024-01-07",
+      });
+      expect(empty.offers).toEqual([]);
+      expect(empty.evidence[0]?.value).toContain(
+        "instructions PDF non retenues",
+      );
+      await expect(
+        readCommercialOffers(db, f.storeId, {
+          start: "2026-02-30",
+          end: "2026-03-01",
+        }),
+      ).rejects.toThrow();
+    });
     it("calculates arbitrary calendar periods with gaps, annual coverage, product scope and no implicit reference", async () => {
       const storeId = randomUUID();
       const save = async (

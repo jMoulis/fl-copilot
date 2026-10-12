@@ -21,3 +21,5 @@ export * from "./week-plan";
 export * from "./execution-checklist";
 
 export * from "./market-tensions";
+
+export { commercialMechanismDescription } from "./mechanism-description";

@@ -1,3 +1,4 @@
+import { readCommercialOffers } from "./copilot/commercial-offers-tool.js";
 import { readPeriodAnalysis } from "./copilot/period-analysis-tool.js";
 import { readProductAnalysis } from "./copilot/product-analysis-tool.js";
 import { readDailyAnalysis } from "./copilot/daily-analysis-tool.js";
@@ -447,6 +448,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              commercialOffers: async (input) => {
+                await authorize();
+                const result = await readCommercialOffers(db, storeId, input);
                 await authorize();
                 return result;
               },

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { copilotEvidenceSchema } from "./copilot-candidate";
 import { wasteReceiptSchema, wasteLineSchema } from "./waste-receipts";
 import { commercialOfferChoiceSchema } from "./commercial-offer-choice";
 import { commercialValidatedOfferSchema } from "./commercial-validated-offer";
@@ -200,3 +201,23 @@ export const periodAnalysisInputSchema = z
     (v) => new Set(v.metrics).size === v.metrics.length,
     "Indicateurs dupliqués.",
   );
+
+/** Small pages for model context; the native read retains its existing page size. */
+export const copilotOffersReadInputSchema = offersReadInputSchema.safeExtend({
+  limit: z.number().int().min(1).max(10).default(10),
+});
+export const copilotOffersReadResultSchema = z.strictObject({
+  start: copilotBusinessDateSchema,
+  end: copilotBusinessDateSchema,
+  offers: z
+    .array(
+      z.strictObject({
+        choice: commercialOfferChoiceSchema,
+        validationId: z.string().uuid().nullable(),
+      }),
+    )
+    .max(10),
+  hasMore: z.boolean(),
+  nextAfterId: z.string().uuid().nullable(),
+  evidence: z.array(copilotEvidenceSchema).max(21),
+});
