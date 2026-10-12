@@ -1,3 +1,4 @@
+import { readConversationGenerationHistory } from "../src/copilot/generation-history";
 import { readLatestDepartmentEvidence } from "../src/copilot/daily-evidence";
 import { buildDepartmentDailyPerformance } from "@fl-copilot/analytics-core";
 import { buildApp } from "../src/build-app";
@@ -64,6 +65,54 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("bounds private generation history and excludes other topics, actors and later messages", async () => {
+      const f = await fixture();
+      const base = Date.parse(f.message.createdAt);
+      const previous = Array.from({ length: 22 }, (_, index) => ({
+        ...f.message,
+        id: randomUUID(),
+        text: `Échange ${index}`,
+        createdAt: new Date(base - (22 - index) * 1000).toISOString(),
+      }));
+      const hidden = [
+        { ...previous[0]!, id: randomUUID(), ownerId: randomUUID() },
+        { ...previous[0]!, id: randomUUID(), storeId: randomUUID() },
+        { ...previous[0]!, id: randomUUID(), conversationId: randomUUID() },
+        { ...previous[0]!, id: randomUUID(), role: "TOOL" as const },
+        {
+          ...previous[0]!,
+          id: randomUUID(),
+          createdAt: new Date(base + 1000).toISOString(),
+        },
+      ];
+      await db
+        .collection<{ _id: string }>("copilotMessages")
+        .insertMany(
+          [...previous, ...hidden].map((message) => ({
+            _id: message.id,
+            ...message,
+          })),
+        );
+      const history = await readConversationGenerationHistory(db, f.message);
+      expect(history.messages.map((message) => message.id)).toEqual(
+        previous.slice(2).map((message) => message.id),
+      );
+      expect(history.earlierMessagesOmitted).toBe(true);
+      const recent = previous.at(-1)!;
+      await db
+        .collection("copilotMessages")
+        .updateOne({ id: recent.id }, { $set: { text: "a".repeat(16000) } });
+      await db
+        .collection("copilotMessages")
+        .updateOne(
+          { id: previous.at(-2)!.id },
+          { $set: { text: "b".repeat(16000) } },
+        );
+      const bounded = await readConversationGenerationHistory(db, f.message);
+      expect(bounded.messages).toHaveLength(1);
+      expect(bounded.messages[0]!.text).toHaveLength(16000);
+      expect(bounded.earlierMessagesOmitted).toBe(true);
+    });
     it("rolls back both reply and change, then persists exactly once across retry", async () => {
       const f = await fixture(),
         session = client.startSession(),
@@ -187,6 +236,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       const retry = await runCopilotTurn(dependencies, input);
       expect(retry).toEqual({ message: first.message, alreadyApplied: true });
       expect(generate).toHaveBeenCalledTimes(1);
+      expect(generate.mock.calls[0]?.[0]).toMatchObject({
+        history: { messages: [], earlierMessagesOmitted: false },
+      });
       expect(loadContext).toHaveBeenCalledTimes(1);
       await expect(
         runCopilotTurn(

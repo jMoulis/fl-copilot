@@ -1,3 +1,4 @@
+import { readConversationGenerationHistory } from "./generation-history.js";
 import { readLatestDepartmentEvidence } from "./daily-evidence.js";
 import { acquireTurnLease } from "./turn-lease.js";
 import { randomUUID } from "node:crypto";
@@ -114,11 +115,17 @@ export async function runCopilotTurn(
       authority.storeId,
     );
     cancelled();
+    const history = await readConversationGenerationHistory(
+      dependencies.db,
+      initial.parent,
+    );
+    cancelled();
     const request = {
       requestId: randomUUID(),
       storeId: authority.storeId,
       context,
       evidence,
+      history,
       userQuestion: initial.parent.text || null,
     };
     const generation = await generateCopilotResponse(
