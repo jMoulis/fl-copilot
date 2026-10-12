@@ -1,3 +1,5 @@
+import { mongoMigrations } from "../src/database/migrations";
+import { readProductAnalysis } from "../src/copilot/product-analysis-tool";
 import { readDailyAnalysis } from "../src/copilot/daily-analysis-tool";
 import { readConversationGenerationHistory } from "../src/copilot/generation-history";
 import { readLatestDepartmentEvidence } from "../src/copilot/daily-evidence";
@@ -66,6 +68,150 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("ranks only comparable scoped product changes, retains historical labels and refuses truncated rankings", async () => {
+      const storeId = randomUUID(),
+        banana = randomUUID(),
+        pear = randomUUID(),
+        partial = randomUUID();
+      const save = async (
+        productId: string,
+        date: string,
+        value: string,
+        status = "AVAILABLE",
+        scopedStore = storeId,
+      ) => {
+        const base = buildDepartmentDailyPerformance({
+          storeId: scopedStore,
+          businessDate: date,
+          computedAt: "2026-10-12T12:00:00.000Z",
+          productPerformances: [],
+        });
+        const performance = {
+          ...base,
+          productId,
+          formulaVersion: "product-daily-v1",
+          inputRevision: `${productId}/${date}/${value}`,
+          sales: { ...base.sales, salesValue: value },
+          availability: {
+            ...base.availability,
+            salesValue: {
+              status,
+              inputCount: 1,
+              availableInputCount: 1,
+              missingInputCount: 0,
+            },
+          },
+        };
+        const id = randomUUID();
+        await db
+          .collection<{
+            _id: string;
+            storeId: string;
+            productId: string;
+            date: string;
+            performance: unknown;
+          }>("productDailyPerformance")
+          .insertOne({
+            _id: id,
+            storeId: scopedStore,
+            productId,
+            date,
+            performance,
+          });
+        return id;
+      };
+      await save(banana, "2026-10-08", "80");
+      await save(banana, "2026-10-01", "100");
+      const changed = await save(pear, "2026-10-08", "60");
+      await save(pear, "2026-10-01", "100");
+      await save(partial, "2026-10-08", "1", "PARTIAL");
+      await save(partial, "2026-10-01", "999");
+      await save(
+        randomUUID(),
+        "2026-10-08",
+        "99999",
+        "AVAILABLE",
+        randomUUID(),
+      );
+      await db
+        .collection<{
+          _id: string;
+          id: string;
+          storeId: string;
+          label: string;
+          deletedAt?: string;
+        }>("products")
+        .insertMany([
+          { _id: banana, id: banana, storeId, label: "BANANE VRAC" },
+          {
+            _id: pear,
+            id: pear,
+            storeId,
+            label: "POIRE VRAC",
+            deletedAt: "2026-10-10T10:00:00Z",
+          },
+        ]);
+      await mongoMigrations.find((m) => m.version === 33)!.up(db);
+      const input = {
+        businessDate: "2026-10-08",
+        metric: "sales",
+        direction: "DECREASE",
+      };
+      const result = await readProductAnalysis(db, storeId, input);
+      expect(result.products.map((p) => p.productId)).toEqual([pear, banana]);
+      expect(result.products[0]?.label).toContain("Produit retiré");
+      expect(result.coverage).toEqual({
+        status: "COMPARED_PRODUCTS",
+        comparedProductCount: 2,
+        excludedProductCount: 1,
+      });
+      expect(
+        result.evidence.find((e) => e.label.startsWith("Écart (€) — POIRE"))
+          ?.value,
+      ).toBe("-40");
+      const oldId = result.evidence[0]?.id;
+      await db.collection<{ _id: string }>("productDailyPerformance").updateOne(
+        { _id: changed },
+        {
+          $set: {
+            "performance.inputRevision": "corrected",
+            "performance.sales.salesValue": "50",
+          },
+        },
+      );
+      expect(
+        (await readProductAnalysis(db, storeId, input)).evidence[0]?.id,
+      ).not.toBe(oldId);
+      expect(
+        (await readProductAnalysis(db, storeId, { ...input, metric: "margin" }))
+          .coverage.comparedProductCount,
+      ).toBe(0);
+      const largeStore = randomUUID();
+      await db
+        .collection<{
+          _id: string;
+          storeId: string;
+          date: string;
+          productId: string;
+          performance: unknown;
+        }>("productDailyPerformance")
+        .insertMany(
+          Array.from({ length: 1001 }, () => ({
+            _id: randomUUID(),
+            storeId: largeStore,
+            date: "2026-10-08",
+            productId: randomUUID(),
+            performance: null,
+          })),
+        );
+      const limited = await readProductAnalysis(db, largeStore, input);
+      expect(limited.products).toEqual([]);
+      expect(limited.coverage).toEqual({
+        status: "LIMIT_EXCEEDED",
+        comparedProductCount: null,
+        excludedProductCount: null,
+      });
+    });
     it("reads only the explicit day and computes J-7 through the shared engine, preserving missing and zero reference", async () => {
       const storeId = randomUUID();
       const save = async (

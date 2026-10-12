@@ -693,6 +693,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, ownerId: 1, expiresAt: 1 });
     },
   },
+  {
+    version: 33,
+    name: "product-analysis-date-index",
+    async up(database) {
+      await database
+        .collection("productDailyPerformance")
+        .createIndex(
+          { storeId: 1, date: 1, productId: 1 },
+          { name: "product_daily_store_date" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

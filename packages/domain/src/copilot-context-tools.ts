@@ -168,3 +168,8 @@ export const copilotContextToolRegistry = [
   runtime: "LOCAL" as const,
   confirmation: "NONE" as const,
 }));
+
+export const productChangesReadInputSchema = dailyReadInputSchema.extend({
+  metric: z.enum(["sales", "margin"]),
+  direction: z.enum(["INCREASE", "DECREASE"]),
+});
