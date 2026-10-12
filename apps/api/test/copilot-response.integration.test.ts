@@ -1,3 +1,4 @@
+import { readPeriodAnalysis } from "../src/copilot/period-analysis-tool";
 import { mongoMigrations } from "../src/database/migrations";
 import { readProductAnalysis } from "../src/copilot/product-analysis-tool";
 import { readDailyAnalysis } from "../src/copilot/daily-analysis-tool";
@@ -68,6 +69,149 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("calculates arbitrary calendar periods with gaps, annual coverage, product scope and no implicit reference", async () => {
+      const storeId = randomUUID();
+      const save = async (
+        date: string,
+        value: string,
+        scopedStore = storeId,
+      ) => {
+        const p = buildDepartmentDailyPerformance({
+          storeId: scopedStore,
+          businessDate: date,
+          computedAt: "2026-10-12T12:00:00Z",
+          productPerformances: [],
+        });
+        const performance = {
+          ...p,
+          inputRevision: `${date}/${value}`,
+          sales: { ...p.sales, salesValue: value },
+          availability: {
+            ...p.availability,
+            salesValue: {
+              status: "AVAILABLE",
+              inputCount: 1,
+              availableInputCount: 1,
+              missingInputCount: 0,
+            },
+          },
+        };
+        await db
+          .collection<{
+            _id: string;
+            storeId: string;
+            date: string;
+            performance: unknown;
+          }>("departmentDailyPerformance")
+          .insertOne({
+            _id: randomUUID(),
+            storeId: scopedStore,
+            date,
+            performance,
+          });
+        return performance;
+      };
+      const current = await save("2026-09-01", "100.00");
+      await save("2026-09-02", "50.00");
+      await save("2026-08-01", "25.00");
+      await save("2026-08-02", "25.00");
+      await save("2026-09-01", "99999", randomUUID());
+      const input = {
+        productId: null,
+        currentPeriod: { start: "2026-09-01", end: "2026-09-03" },
+        referencePeriod: { start: "2026-08-01", end: "2026-08-02" },
+        aggregation: "SUM",
+        metrics: ["sales"],
+      };
+      const result = await readPeriodAnalysis(db, storeId, input);
+      expect(
+        result.evidence.find((e) => e.label.startsWith("Total partiel"))?.value,
+      ).toBe("150.00");
+      expect(
+        result.evidence.find((e) => e.label.startsWith("Écart partiel"))?.value,
+      ).toBe("100.00");
+      expect(result.coverage[0]?.current).toMatchObject({
+        expectedDays: 3,
+        availableDays: 2,
+        missingDays: 1,
+        missingDateExamples: ["2026-09-03"],
+      });
+      expect(result.evidence.some((e) => e.value === "99999")).toBe(false);
+      expect(
+        (
+          await readPeriodAnalysis(db, storeId, {
+            ...input,
+            aggregation: "AVERAGE",
+          })
+        ).evidence.find((e) =>
+          e.label.startsWith("Moyenne journalière partielle"),
+        )?.value,
+      ).toBe("75.00");
+      const year = await readPeriodAnalysis(db, storeId, {
+        ...input,
+        currentPeriod: { start: "2024-01-01", end: "2024-12-31" },
+        referencePeriod: null,
+      });
+      expect(year.coverage[0]?.current.expectedDays).toBe(366);
+      expect(year.evidence[0]?.value).toBeNull();
+      expect(year.referencePeriod).toBeNull();
+      expect(year.evidence).toHaveLength(2);
+      const productId = randomUUID();
+      await db
+        .collection<{
+          _id: string;
+          id: string;
+          storeId: string;
+          label: string;
+        }>("products")
+        .insertOne({
+          _id: productId,
+          id: productId,
+          storeId,
+          label: "BANANE VRAC",
+        });
+      await db
+        .collection<{
+          _id: string;
+          storeId: string;
+          productId: string;
+          date: string;
+          performance: unknown;
+        }>("productDailyPerformance")
+        .insertOne({
+          _id: randomUUID(),
+          storeId,
+          productId,
+          date: "2026-09-01",
+          performance: {
+            ...current,
+            productId,
+            formulaVersion: "product-daily-v1",
+            sales: { ...current.sales, salesValue: "7.00" },
+          },
+        });
+      const product = await readPeriodAnalysis(db, storeId, {
+        ...input,
+        productId,
+        referencePeriod: null,
+        currentPeriod: { start: "2026-09-01", end: "2026-09-01" },
+      });
+      expect(product.target).toMatchObject({
+        type: "PRODUCT",
+        productId,
+        label: "BANANE VRAC",
+      });
+      expect(product.evidence[0]?.value).toBe("7.00");
+      await expect(
+        readPeriodAnalysis(db, randomUUID(), { ...input, productId }),
+      ).rejects.toThrow("COPILOT_PERIOD_PRODUCT_UNAVAILABLE");
+      await expect(
+        readPeriodAnalysis(db, storeId, {
+          ...input,
+          currentPeriod: { start: "2026-02-30", end: "2026-03-01" },
+        }),
+      ).rejects.toThrow();
+    });
     it("ranks only comparable scoped product changes, retains historical labels and refuses truncated rankings", async () => {
       const storeId = randomUUID(),
         banana = randomUUID(),

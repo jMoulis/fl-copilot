@@ -391,3 +391,67 @@ it("keeps daily, sales and margin read identities separate for the same business
     "sales",
   ]);
 });
+
+it("lets the model calculate an explicit month without inventing a J-7 reference", async () => {
+  const f = fixture();
+  const input = {
+    productId: null,
+    currentPeriod: { start: "2026-09-01", end: "2026-09-30" },
+    referencePeriod: null,
+    aggregation: "SUM" as const,
+    metrics: ["sales" as const],
+  };
+  const period = vi.fn(async () => ({
+    target: { type: "DEPARTMENT" as const, productId: null, label: "Rayon" },
+    currentPeriod: input.currentPeriod,
+    referencePeriod: null,
+    aggregation: "SUM" as const,
+    coverage: [],
+    evidence: [
+      {
+        id: "month-total",
+        sourceType: "KPI" as const,
+        sourceId: "canonical-month",
+        sourceVersion: null,
+        label: "Total septembre",
+        value: "1234.50",
+        factKind: "DERIVED" as const,
+      },
+    ],
+  }));
+  const daily = vi.fn();
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "analytics_period"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_period",
+          call_id: "call_period",
+          name: "analytics_period",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("month-total");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily,
+    period,
+  }).generate(f.request, schema);
+  expect(period).toHaveBeenCalledWith(input);
+  expect(daily).not.toHaveBeenCalled();
+  expect(result.toolEvidence?.[0]?.value).toBe("1234.50");
+});
