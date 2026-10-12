@@ -231,3 +231,19 @@ The paired controller invokes the canonical form draft/submission services, eval
 Visual verification used the actual component in a temporary isolated Expo web harness at 390×844 with synthetic data: field errors, French decimal entry, the existing calendar, radio selection, postpone/resume preserving entries and collapsed confirmation. The harness/root layout and temporary theme workaround were removed/restored afterward; no test route/menu is shipped. Native exports and normal project checks validate the production tree. The browser fixture tests rendering only; SQLite service tests cover persistence separately. This is not full native-chat acceptance, and automatic generation/resumption/file intake remain pending. No EAS build or paid AI call was used.
 
 ![Native inline card — synthetic local verification](assets/m7-inline-form.jpg)
+
+### T06a — French conversational response contract
+
+Added a runtime-neutral strict response schema separating evidence references, interpretation, recommendations and targeted questions. Ordinary clarification may contain zero recommendations; recommendation detail includes confidence, risk, missing information and a measurement plan. At most three priorities are accepted. Facts contain evidence references rather than model-authored official values.
+
+Three contract tests pass, as does domain typecheck. This is the first part of block 1 (French generation, grounding and fallback), not activation of the chat. Language declaration does not prove French prose, and structural evidence references do not prove factual grounding. T07 must validate references and unsupported assertions against trusted context before any generated response is displayed. Provider wiring, deterministic fallback, orchestration, native chat and grouped iPhone acceptance remain pending. No paid AI call or EAS build was run.
+
+### T06b/T07a/T08a — Generation service and evidence fallback
+
+The server now invokes the existing provider with the French response contract, validates evidence references and eligible candidate/type bindings, rejects duplicate candidate recommendations and unresolved trade-off candidates, and rejects numeric characters in prose. Official numbers and dates must be rendered from canonical evidence references, not generated prose. Known provider failures and rejected output return a deterministic evidence-only fallback; cancellation and invalid store scope remain errors. No automatic retry, paid call, API route or native activation is introduced.
+
+This is a conservative first-stage gate, not proof of arbitrary semantic grounding: number words, unsupported causal claims, French prose quality and priority-order preservation still need acceptance work. The fallback deliberately offers available evidence without inventing template actions; richer deterministic recommendation templates remain pending. Tests cover invalid references/numeric assertions, provider outages/unconfigured state, rejected generation, cancellation and cross-store scope. Full block 1 remains open before chat activation.
+
+T07a follow-up: recommendations must preserve descending canonical priority scores; unscored and ineligible candidates are rejected. Evidence IDs with conflicting payloads are rejected by the generation gate and omitted from fallback, preventing an ambiguous ID from displaying the wrong canonical value. Two additional tests exercise both protections. Semantic grounding and richer fallback templates remain open.
+
+T08a follow-up: outage fallback now supplies at most three deterministic verification templates for sales, margin, stock, price, PLU, quality and waste signals. Only eligible, scored, evidenced candidates outside unresolved trade-offs are included, ordered by canonical score. Unsupported types remain absent. These templates are explicitly non-causal checks, not model-generated explanations or automatic decisions. The outage test verifies candidate identity.
