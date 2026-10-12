@@ -1,3 +1,4 @@
+import { readDailyAnalysis } from "./copilot/daily-analysis-tool.js";
 import { loadCopilotReadContext } from "./copilot/read-context.js";
 import {
   copilotTurnRequestSchema,
@@ -436,10 +437,18 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "Le chat du copilote n’est pas encore disponible.",
         );
       try {
+        const db = await dependencies.database.getDb();
         return await runCopilotTurn(
           {
-            db: await dependencies.database.getDb(),
-            provider: createCopilotAiProvider(config),
+            db,
+            provider: createCopilotAiProvider(config, undefined, {
+              daily: async (input) => {
+                await authorize();
+                const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+            }),
             authorize,
             loadContext: (parent) => loadContext(storeId, parent),
           },

@@ -258,3 +258,68 @@ it("validates independent server model and bounded limits without changing other
       "Invalid environment",
     );
 });
+
+it("executes scoped read capabilities once per date, caps distinct reads and feeds their canonical evidence into the next model step", async () => {
+  const f = fixture();
+  const daily = vi.fn(async ({ businessDate }: { businessDate: string }) => ({
+    businessDate,
+    referenceDate: "2026-10-01",
+    evidence: [
+      {
+        id: `tool-${businessDate}`,
+        sourceType: "KPI" as const,
+        sourceId: "canonical-day",
+        sourceVersion: null,
+        label: `Ventes — ${businessDate}`,
+        value: "12.50",
+        factKind: "DERIVED" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    expect(body.store).toBe(false);
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "analytics_daily"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        "2026-10-08",
+        "2026-10-08",
+        "2026-10-09",
+        "2026-10-10",
+        "2026-10-11",
+      ].map((businessDate, index) => ({
+        type: "function_call",
+        id: `fc_${index}`,
+        call_id: `call_${index}`,
+        name: "analytics_daily",
+        arguments: JSON.stringify({ businessDate }),
+        status: "completed",
+      }));
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    const sent = JSON.stringify(body);
+    expect(sent).toContain("tool-2026-10-08");
+    expect(sent).toContain("12.50");
+    expect(sent).toContain("Ne les inventez pas");
+    return response();
+  });
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily,
+  }).generate(f.request, schema);
+  expect(daily).toHaveBeenCalledTimes(3);
+  expect(result.toolEvidence?.map((e) => e.id).sort()).toEqual([
+    "tool-2026-10-08",
+    "tool-2026-10-09",
+    "tool-2026-10-10",
+  ]);
+  expect(transport).toHaveBeenCalledTimes(2);
+});
