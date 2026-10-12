@@ -1,4 +1,15 @@
 import {
+  copilotTurnRequestSchema,
+  copilotTurnResultSchema,
+  type CopilotMessage,
+} from "@fl-copilot/domain";
+import { runCopilotTurn, CopilotTurnError } from "./copilot/turn-service.js";
+import { CopilotTurnLeaseError } from "./copilot/turn-lease.js";
+import {
+  createCopilotAiProvider,
+  type CopilotGenerationRequest,
+} from "./copilot/ai-provider.js";
+import {
   historyQuerySchema,
   historyPageSchema,
   readCopilotHistory,
@@ -89,6 +100,10 @@ import { createMongoWasteReceiptProductMatchingService } from "./uploads/waste-r
 
 type AppDependencies = {
   database: DatabaseService;
+  copilotContext?: (
+    storeId: string,
+    parent: CopilotMessage,
+  ) => Promise<CopilotGenerationRequest["context"]>;
   weekContext?: WeekContextService;
   auth?: AuthService;
   sendAuthCode?: AuthCodeSender;
@@ -380,6 +395,73 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       )
         ? syncPush.push(request.body, request.id, principal.userId)
         : syncPush.push(request.body, request.id);
+    },
+  );
+  app.post(
+    "/api/v1/copilot/turn",
+    {
+      schema: {
+        body: copilotTurnRequestSchema,
+        response: { 200: copilotTurnResultSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization;
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      const storeId = request.headers["x-store-id"];
+      if (typeof storeId !== "string")
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      const authorize = async () => {
+        const principal = await auth.authorizeStore(token.slice(7), storeId);
+        return {
+          storeId: principal.storeId,
+          ownerId: principal.userId,
+          canRespond: true,
+        };
+      };
+      await authorize();
+      const loadContext = dependencies.copilotContext;
+      if (!loadContext)
+        throw new AuthError(
+          503,
+          "COPILOT_NOT_READY",
+          "Le chat du copilote n’est pas encore disponible.",
+        );
+      try {
+        return await runCopilotTurn(
+          {
+            db: await dependencies.database.getDb(),
+            provider: createCopilotAiProvider(config),
+            authorize,
+            loadContext: (parent) => loadContext(storeId, parent),
+          },
+          request.body,
+        );
+      } catch (error) {
+        if (error instanceof CopilotTurnLeaseError)
+          throw new AuthError(
+            409,
+            error.code === "IN_PROGRESS"
+              ? "COPILOT_TURN_PENDING"
+              : "COPILOT_TURN_STALE",
+            error.code === "IN_PROGRESS"
+              ? "Une réponse est déjà en préparation. Réessayez dans un instant."
+              : "Cette demande doit être actualisée.",
+            error.code === "IN_PROGRESS",
+          );
+        if (error instanceof CopilotTurnError)
+          throw new AuthError(
+            error.code === "ACCESS_INVALID" ? 403 : 409,
+            "COPILOT_TURN_INVALID",
+            "Cette conversation doit être actualisée avant de continuer.",
+          );
+        throw error;
+      }
     },
   );
   app.get(

@@ -1,3 +1,6 @@
+import { buildApp } from "../src/build-app";
+import { parseEnvironment } from "../src/config";
+import type { AuthService } from "../src/auth/service";
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db } from "mongodb";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
@@ -286,6 +289,72 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       } finally {
         await session.endSession();
         await current.release();
+      }
+    });
+    it("serves an authenticated turn through HTTP with real Mongo persistence and retry", async () => {
+      const f = await fixture();
+      const context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: f.storeId,
+          evaluatedAt: f.message.createdAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const auth = {
+        requestChallenge: vi.fn(),
+        verifyChallenge: vi.fn(),
+        refreshSession: vi.fn(),
+        logout: vi.fn(),
+        authorizeStore: vi.fn(async () => ({
+          storeId: f.storeId,
+          userId: f.ownerId,
+          deviceId: f.deviceId,
+          sessionId: randomUUID(),
+          storeName: "Test",
+          role: "MANAGER",
+        })),
+      } as AuthService;
+      const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
+        database: {
+          getDb: async () => db,
+          checkHealth: async () => "connected",
+          close: async () => {},
+        },
+        auth,
+        copilotContext: async () => context,
+      });
+      const options = {
+        method: "POST" as const,
+        url: "/api/v1/copilot/turn",
+        headers: { authorization: "Bearer test", "x-store-id": f.storeId },
+        payload: {
+          replyId: f.response.id,
+          conversationId: f.conversation.id,
+          userMessageId: f.message.id,
+        },
+      };
+      let failure = "";
+      app.addHook("onError", async (_request, _reply, error) => {
+        failure = `${error.name}: ${error.message}`;
+      });
+      try {
+        const first = await app.inject(options);
+        expect(first.statusCode, failure).toBe(200);
+        expect(first.json().message.replyToMessageId).toBe(f.message.id);
+        const retry = await app.inject(options);
+        expect(retry.statusCode).toBe(200);
+        expect(retry.json()).toEqual({
+          message: first.json().message,
+          alreadyApplied: true,
+        });
+        expect(
+          await db
+            .collection("syncChanges")
+            .countDocuments({ entityId: f.response.id }),
+        ).toBe(1);
+      } finally {
+        await app.close();
       }
     });
   },
