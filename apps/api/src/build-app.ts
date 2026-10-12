@@ -1,3 +1,4 @@
+import { loadCopilotReadContext } from "./copilot/read-context.js";
 import {
   copilotTurnRequestSchema,
   copilotTurnResultSchema,
@@ -425,7 +426,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         };
       };
       await authorize();
-      const loadContext = dependencies.copilotContext;
+      const loadContext =
+        dependencies.copilotContext ??
+        (config.COPILOT_AI_MODEL ? loadCopilotReadContext : undefined);
       if (!loadContext)
         throw new AuthError(
           503,
