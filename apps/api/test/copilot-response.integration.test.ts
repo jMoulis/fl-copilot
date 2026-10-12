@@ -1,9 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db } from "mongodb";
-import { beforeAll, afterAll, describe, it, expect } from "vitest";
+import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { chatFixture } from "../../../scripts/test-chat-fixtures";
 import { appendCopilotResponse } from "../src/copilot/response-store";
 import { createMongoSyncChangeService } from "../src/sync/sync-change-service";
+import { runCopilotTurn } from "../src/copilot/turn-service";
+import {
+  CopilotAiError,
+  type CopilotAiProvider,
+} from "../src/copilot/ai-provider";
+import {
+  detectCopilotConflicts,
+  scoreCopilotPriorities,
+} from "@fl-copilot/analytics-core";
 const uri = process.env.TEST_MONGODB_URI;
 describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
   "assistant response transactions",
@@ -138,6 +147,60 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       } finally {
         await Promise.all(sessions.map((session) => session.endSession()));
       }
+    });
+    it("runs generation outside transaction and restores persisted reply without a second provider call", async () => {
+      const f = await fixture();
+      const generate = vi
+        .fn()
+        .mockRejectedValue(
+          new CopilotAiError("COPILOT_AI_NOT_CONFIGURED", false),
+        );
+      const context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: f.storeId,
+          evaluatedAt: f.message.createdAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const authorize = vi.fn(async () => f.authority);
+      const loadContext = vi.fn(async () => context);
+      const dependencies = {
+        db,
+        provider: { model: null, generate } as CopilotAiProvider,
+        authorize,
+        loadContext,
+      };
+      const input = {
+        replyId: f.response.id,
+        conversationId: f.conversation.id,
+        userMessageId: f.message.id,
+      };
+      const first = await runCopilotTurn(dependencies, input);
+      expect(first.alreadyApplied).toBe(false);
+      const retry = await runCopilotTurn(dependencies, input);
+      expect(retry).toEqual({ message: first.message, alreadyApplied: true });
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(loadContext).toHaveBeenCalledTimes(1);
+      await expect(
+        runCopilotTurn(
+          {
+            ...dependencies,
+            authorize: async () => ({ ...f.authority, canRespond: false }),
+          },
+          input,
+        ),
+      ).rejects.toThrow("ACCESS_INVALID");
+      const controller = new AbortController();
+      controller.abort();
+      await expect(
+        runCopilotTurn(dependencies, input, controller.signal),
+      ).rejects.toThrow("CANCELLED");
+      expect(
+        await db
+          .collection("syncChanges")
+          .countDocuments({ entityId: input.replyId }),
+      ).toBe(1);
     });
   },
 );
