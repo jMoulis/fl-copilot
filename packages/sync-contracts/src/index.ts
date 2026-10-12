@@ -96,3 +96,9 @@ export * from "./substitution-score-history";
 export * from "./copilot-conversation";
 
 export * from "./copilot-history";
+
+export {
+  copilotTurnRequestSchema,
+  copilotTurnResultSchema,
+  type CopilotTurnRequest,
+} from "@fl-copilot/domain";
