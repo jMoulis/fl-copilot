@@ -25,6 +25,12 @@ export class CopilotGroundingError extends Error {
     this.name = "CopilotGroundingError";
   }
 }
+export function copilotRequestEvidence(request: CopilotGenerationRequest) {
+  return [
+    ...(request.evidence ?? []),
+    ...request.context.batch.candidates.flatMap((c) => c.evidence),
+  ];
+}
 /** Strict first-stage grounding: figures stay in application-rendered evidence. */
 export function validateCopilotResponse(
   raw: unknown,
@@ -35,18 +41,14 @@ export function validateCopilotResponse(
   const result = parsed.data;
   const candidates = request.context.batch.candidates;
   const byEvidence = new Map<string, string>();
-  for (const candidate of candidates) {
-    for (const item of candidate.evidence) {
-      const serialized = JSON.stringify(item);
-      const previous = byEvidence.get(item.id);
-      if (previous !== undefined && previous !== serialized)
-        throw new CopilotGroundingError("AMBIGUOUS_EVIDENCE");
-      byEvidence.set(item.id, serialized);
-    }
+  for (const item of copilotRequestEvidence(request)) {
+    const serialized = JSON.stringify(item);
+    const previous = byEvidence.get(item.id);
+    if (previous !== undefined && previous !== serialized)
+      throw new CopilotGroundingError("AMBIGUOUS_EVIDENCE");
+    byEvidence.set(item.id, serialized);
   }
-  const evidence = new Set(
-    candidates.flatMap((c) => c.evidence.map((e) => e.id)),
-  );
+  const evidence = new Set(byEvidence.keys());
   if (result.facts.some((f) => !evidence.has(f.evidenceId)))
     throw new CopilotGroundingError("UNKNOWN_EVIDENCE");
   const seen = new Set<string>();
@@ -97,20 +99,12 @@ export function copilotResponseFallback(
   request: CopilotGenerationRequest,
 ): CopilotResponse {
   const evidenceValues = new Map<string, Set<string>>();
-  for (const candidate of request.context.batch.candidates) {
-    for (const item of candidate.evidence) {
-      const values = evidenceValues.get(item.id) ?? new Set<string>();
-      values.add(JSON.stringify(item));
-      evidenceValues.set(item.id, values);
-    }
+  for (const item of copilotRequestEvidence(request)) {
+    const values = evidenceValues.get(item.id) ?? new Set<string>();
+    values.add(JSON.stringify(item));
+    evidenceValues.set(item.id, values);
   }
-  const facts = [
-    ...new Set(
-      request.context.batch.candidates.flatMap((c) =>
-        c.evidence.map((e) => e.id),
-      ),
-    ),
-  ]
+  const facts = [...evidenceValues.keys()]
     .filter((id) => evidenceValues.get(id)?.size === 1)
     .slice(0, 24)
     .map((evidenceId) => ({ evidenceId }));

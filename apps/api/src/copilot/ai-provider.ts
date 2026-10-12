@@ -7,13 +7,17 @@ import {
   NoObjectGeneratedError,
   NoOutputGeneratedError,
 } from "ai";
-import { copilotConflictReportSchema } from "@fl-copilot/domain";
+import {
+  copilotConflictReportSchema,
+  copilotEvidenceSchema,
+} from "@fl-copilot/domain";
 import type { ApiConfig } from "../config.js";
 export const copilotGenerationRequestSchema = z
   .object({
     requestId: z.string().uuid(),
     storeId: z.string().uuid(),
     context: copilotConflictReportSchema,
+    evidence: z.array(copilotEvidenceSchema).max(100).optional(),
     userQuestion: z.string().trim().min(1).max(6000).nullable(),
   })
   .strict();
@@ -137,6 +141,7 @@ export function createCopilotAiProvider(
         REFERENCE_INSTANT: batch.evaluatedAt,
         USER_QUESTION: request.userQuestion,
         CONTEXT: request.context,
+        EVIDENCE: request.evidence ?? [],
       });
       if (Buffer.byteLength(prompt, "utf8") > config.COPILOT_AI_MAX_INPUT_BYTES)
         throw new CopilotAiError("COPILOT_AI_INPUT_TOO_LARGE", false);

@@ -191,3 +191,23 @@ it("preserves deterministic priority order and rejects ineligible recommendation
     ),
   ).toThrow("INVALID_CANDIDATE");
 });
+
+it("uses standalone trusted facts without inventing a recommendation candidate", async () => {
+  const r = request();
+  r.evidence = r.context.batch.candidates[0]!.evidence;
+  r.context.batch.candidates = [];
+  expect(validateCopilotResponse(answer, r).facts).toEqual(answer.facts);
+  const provider = {
+    model: null,
+    generate: vi
+      .fn()
+      .mockRejectedValue(new CopilotAiError("COPILOT_AI_UNAVAILABLE", true)),
+  } as CopilotAiProvider;
+  const result = await generateCopilotResponse(provider, r);
+  expect(result.response.facts).toEqual([{ evidenceId: "sales" }]);
+  expect(result.response.recommendations).toEqual([]);
+  r.evidence.push({ ...r.evidence[0]!, value: 999 });
+  expect(() => validateCopilotResponse(answer, r)).toThrow(
+    "AMBIGUOUS_EVIDENCE",
+  );
+});
