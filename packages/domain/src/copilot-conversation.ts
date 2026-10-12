@@ -1,9 +1,9 @@
 import { z } from "zod";
 const id = z.string().uuid(),
-  time = z
-    .string()
-    .datetime()
-    .transform((value) => new Date(value).toISOString());
+  time = z.codec(z.string().datetime(), z.string().datetime(), {
+    decode: (value) => new Date(value).toISOString(),
+    encode: (value) => value,
+  });
 export const copilotAttachmentReferenceSchema = z
   .object({
     sourceDocumentId: id,

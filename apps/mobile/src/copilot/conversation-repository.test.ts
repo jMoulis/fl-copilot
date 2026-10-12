@@ -1,3 +1,6 @@
+import { CopilotTurnDelivery } from "./turn-delivery";
+import { receiveCopilotReply } from "./response-receiver";
+import { CopilotLocalChatController } from "./local-chat-controller";
 import { MobileSyncService } from "../sync/sync-service";
 import type { BootstrapResponse } from "@fl-copilot/sync-contracts";
 import { DatabaseSync } from "node:sqlite";
@@ -306,6 +309,223 @@ it("bootstraps a capable second device, pulls server-authored history and reject
     expect(
       db.prepare("SELECT count(*) AS n FROM sync_outbox").get(),
     ).toMatchObject({ n: 0 });
+  } finally {
+    db.close();
+  }
+});
+
+it("serializes draft edits/send, keeps failed drafts, and restores local questions", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter, localMigrations.slice(0, 36));
+    const repo = new CopilotConversationRepository(adapter, f);
+    await repo.save(f.conversation, command());
+    await repo.saveDraft(f.conversation.id, {
+      text: "Avant migration",
+      attachments: [],
+      updatedAt: f.message.createdAt,
+    });
+    await runLocalMigrations(adapter);
+    expect((await repo.draft(f.conversation.id))!.text).toBe("Avant migration");
+    const controller = new CopilotLocalChatController(
+      repo,
+      f,
+      randomUUID,
+      () => f.message.createdAt,
+    );
+    const conversation = await controller.create("Analyser les ventes");
+    const edit = controller.edit(conversation.id, {
+      text: "Ma question",
+      attachments: [],
+    });
+    const send = controller.send(conversation.id);
+    await edit;
+    const message = await send;
+    expect(message.text).toBe("Ma question");
+    const queued = (await controller.open(conversation.id)).pendingTurns;
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.userMessageId).toBe(message.id);
+    expect((await controller.open(conversation.id)).draft).toBeNull();
+    expect(
+      (await controller.open(conversation.id)).messages[0]!.entity.id,
+    ).toBe(message.id);
+    await expect(controller.send(conversation.id)).rejects.toThrow(
+      "COPILOT_DRAFT_EMPTY",
+    );
+    await controller.edit(conversation.id, {
+      text: "Question suivante",
+      attachments: [],
+    });
+    adapter.fail = true;
+    await expect(controller.send(conversation.id)).rejects.toThrow(
+      "COMMIT_FAILED",
+    );
+    adapter.fail = false;
+    expect((await controller.open(conversation.id)).draft!.text).toBe(
+      "Question suivante",
+    );
+    const restored = new CopilotLocalChatController(
+      new CopilotConversationRepository(adapter, f),
+      f,
+      randomUUID,
+    );
+    expect((await restored.open(conversation.id)).pendingTurns).toEqual(queued);
+    await restored.send(conversation.id);
+    expect((await restored.open(conversation.id)).messages).toHaveLength(2);
+    await receiveCopilotReply(adapter, f, queued[0]!, {
+      message: {
+        ...message,
+        id: queued[0]!.replyId,
+        role: "ASSISTANT",
+        text: "Réponse enregistrée",
+        replyToMessageId: message.id,
+      },
+      alreadyApplied: false,
+    });
+    const remaining = (await restored.open(conversation.id)).pendingTurns;
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]!.replyId).not.toBe(queued[0]!.replyId);
+    const foreign = { ...f, ownerId: randomUUID() };
+    await expect(
+      new CopilotLocalChatController(
+        new CopilotConversationRepository(adapter, foreign),
+        foreign,
+        randomUUID,
+      ).open(conversation.id),
+    ).rejects.toThrow("COPILOT_CONVERSATION_UNAVAILABLE");
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_type='copilot_message'",
+        )
+        .get()!.n,
+    ).toBe(2);
+  } finally {
+    db.close();
+  }
+});
+
+it("receives a scoped server reply atomically without creating a second Outbox command", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    await repo.save(f.conversation, command());
+    await repo.append(f.message, command());
+    const message = {
+      ...f.message,
+      id: randomUUID(),
+      role: "ASSISTANT" as const,
+      text: "Les données sont disponibles.",
+      attachments: [],
+      replyToMessageId: f.message.id,
+    };
+    const request = {
+      replyId: message.id,
+      conversationId: f.conversation.id,
+      userMessageId: f.message.id,
+    };
+    adapter.fail = true;
+    await expect(
+      receiveCopilotReply(adapter, f, request, {
+        message,
+        alreadyApplied: false,
+      }),
+    ).rejects.toThrow("COMMIT_FAILED");
+    adapter.fail = false;
+    expect((await repo.messages(f.conversation.id)).messages).toHaveLength(1);
+    await receiveCopilotReply(adapter, f, request, {
+      message,
+      alreadyApplied: false,
+    });
+    await receiveCopilotReply(adapter, f, request, {
+      message,
+      alreadyApplied: true,
+    });
+    const page = await repo.messages(f.conversation.id);
+    expect(page.messages).toHaveLength(2);
+    expect(
+      page.messages.find((m) => m.entity.id === message.id)!.syncState,
+    ).toBe("SYNCED");
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_type='copilot_message'",
+        )
+        .get()!.n,
+    ).toBe(1);
+    await expect(
+      receiveCopilotReply(adapter, f, request, {
+        message: { ...message, ownerId: randomUUID() },
+        alreadyApplied: false,
+      }),
+    ).rejects.toThrow("COPILOT_REPLY_SCOPE_INVALID");
+  } finally {
+    db.close();
+  }
+});
+
+it("delivers only synchronized questions and keeps the same pending identity after network failure", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    const controller = new CopilotLocalChatController(repo, f, randomUUID);
+    const conversation = await controller.create();
+    await controller.edit(conversation.id, {
+      text: "Question hors connexion",
+      attachments: [],
+    });
+    const parent = await controller.send(conversation.id);
+    const request = (await controller.open(conversation.id)).pendingTurns[0]!;
+    let count = 0,
+      fail = true;
+    const dependencies = {
+      sync: async () => {},
+      ask: async (input: typeof request) => {
+        count++;
+        expect(input).toEqual(request);
+        if (fail) throw Error("NETWORK_DOWN");
+        return {
+          message: {
+            ...parent,
+            id: request.replyId,
+            role: "ASSISTANT",
+            text: "Réponse reçue",
+            replyToMessageId: parent.id,
+          },
+          alreadyApplied: false,
+        };
+      },
+    };
+    const delivery = new CopilotTurnDelivery(adapter, f, dependencies);
+    expect(await delivery.deliver(conversation.id)).toBe("WAITING");
+    expect(count).toBe(0);
+    await adapter.runAsync(
+      "UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?",
+      parent.id,
+    );
+    await expect(delivery.deliver(conversation.id)).rejects.toThrow(
+      "NETWORK_DOWN",
+    );
+    expect((await controller.open(conversation.id)).pendingTurns[0]).toEqual(
+      request,
+    );
+    fail = false;
+    const restored = new CopilotTurnDelivery(adapter, f, dependencies);
+    const first = restored.deliver(conversation.id),
+      second = restored.deliver(conversation.id);
+    expect(first).toBe(second);
+    expect(await first).toBe("RECEIVED");
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual([]);
+    expect(await restored.deliver(conversation.id)).toBe("NONE");
+    expect(count).toBe(2);
   } finally {
     db.close();
   }

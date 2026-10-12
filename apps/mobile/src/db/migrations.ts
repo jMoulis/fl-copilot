@@ -757,6 +757,13 @@ export const localMigrations: readonly LocalMigration[] = [
     sql: `CREATE TABLE copilot_forms(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,request_json TEXT NOT NULL,payload_json TEXT NOT NULL,updated_at TEXT NOT NULL);
  CREATE INDEX copilot_forms_scope ON copilot_forms(store_id,owner_id,conversation_id,updated_at,id);`,
   },
+  {
+    version: 37,
+    name: "copilot_pending_turns",
+    sql: `CREATE TABLE copilot_pending_turns(reply_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,user_message_id TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING' CHECK(status IN ('PENDING','APPLIED')),updated_at TEXT NOT NULL);
+CREATE UNIQUE INDEX copilot_pending_turns_parent ON copilot_pending_turns(store_id,owner_id,user_message_id);
+CREATE INDEX copilot_pending_turns_scope ON copilot_pending_turns(store_id,owner_id,status);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

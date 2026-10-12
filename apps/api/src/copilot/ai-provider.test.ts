@@ -71,6 +71,17 @@ function response(
 }
 it("uses configured Responses transport with typed output, safe metadata, no tools, no provider storage and one request", async () => {
   const f = fixture();
+  f.request.history = {
+    messages: [
+      {
+        id: randomUUID(),
+        role: "USER",
+        text: "Reprenons notre discussion sur la marge.",
+        createdAt: evaluatedAt,
+      },
+    ],
+    earlierMessagesOmitted: true,
+  };
   let body: Record<string, unknown> | undefined;
   const transport = vi.fn<typeof fetch>(async (url, init) => {
     expect(String(url)).toBe("https://api.openai.com/v1/responses");
@@ -102,6 +113,9 @@ it("uses configured Responses transport with typed output, safe metadata, no too
   expect(sent).toContain("SUPPRESSED");
   expect(sent).toContain("untrusted data");
   expect(sent).toContain(f.request.requestId);
+  expect(sent).toContain("Reprenons notre discussion sur la marge.");
+  expect(sent).toContain("earlierMessagesOmitted");
+  expect(sent).toContain("not official evidence");
 });
 it("fails missing model/key, invalid scope and oversized input before transport without truncating evidence", async () => {
   const f = fixture(),

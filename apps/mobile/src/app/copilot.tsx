@@ -1,0 +1,210 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
+import { randomUUID } from "expo-crypto";
+import { ApiClient } from "@fl-copilot/api-client";
+import { useAuth } from "@/auth/auth-provider";
+import { useLocalDatabase } from "@/providers/database-provider";
+import { useSync } from "@/sync/sync-provider";
+import { getApiBaseUrl } from "@/config/environment";
+import { CopilotConversationRepository } from "@/copilot/conversation-repository";
+import { CopilotLocalChatController } from "@/copilot/local-chat-controller";
+import { CopilotLocalChatPanel } from "@/copilot/local-chat-panel";
+import { CopilotTurnDelivery } from "@/copilot/turn-delivery";
+import {
+  AppScreen,
+  AppHeader,
+  PrimaryButton,
+  SecondaryButton,
+  BottomSheet,
+  MenuRow,
+  InlineAlert,
+} from "@/components/ui";
+import { colors } from "@/design/tokens";
+
+export default function CopilotScreen() {
+  const { session } = useAuth();
+  const storeId = session?.stores[0]?.storeId,
+    ownerId = session?.user.id;
+  if (!storeId || !ownerId)
+    return (
+      <AppScreen>
+        <AppHeader title="Copilote" />
+        <InlineAlert
+          title="Connexion nécessaire"
+          message="Connectez-vous à votre magasin pour retrouver vos conversations."
+        />
+        <PrimaryButton
+          label="Se connecter"
+          onPress={() => router.replace("/login")}
+        />
+      </AppScreen>
+    );
+  return (
+    <StoreChat
+      key={`${storeId}/${ownerId}`}
+      storeId={storeId}
+      ownerId={ownerId}
+    />
+  );
+}
+function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
+  const { sqlite, deviceId } = useLocalDatabase();
+  const { withAccessToken } = useAuth();
+  const { syncNow } = useSync();
+  const repo = useMemo(
+    () => new CopilotConversationRepository(sqlite, { storeId, ownerId }),
+    [sqlite, storeId, ownerId],
+  );
+  const controller = useMemo(
+    () =>
+      new CopilotLocalChatController(
+        repo,
+        { storeId, ownerId, deviceId },
+        randomUUID,
+      ),
+    [repo, storeId, ownerId, deviceId],
+  );
+  const delivery = useMemo(() => {
+    const api = new ApiClient(getApiBaseUrl());
+    return new CopilotTurnDelivery(
+      sqlite,
+      { storeId, ownerId },
+      {
+        sync: () => syncNow(storeId),
+        ask: (input) =>
+          withAccessToken((token) =>
+            api.copilotTurn(token, storeId, ownerId, input),
+          ),
+      },
+    );
+  }, [sqlite, storeId, ownerId, syncNow, withAccessToken]);
+  const [conversations, setConversations] = useState<
+    Awaited<ReturnType<CopilotConversationRepository["list"]>>
+  >([]);
+  const [active, setActive] = useState<string>();
+  const [menu, setMenu] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string>();
+  const createLocked = useRef(false);
+  const topicRevision = useRef(0);
+  useEffect(() => {
+    let alive = true;
+    const revision = ++topicRevision.current;
+    void repo
+      .list()
+      .then((rows) => {
+        if (alive && revision === topicRevision.current)
+          setConversations(
+            rows.filter((row) => row.entity.status === "ACTIVE"),
+          );
+      })
+      .catch(() => {
+        if (alive)
+          setError("Les conversations locales ne peuvent pas être lues.");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [repo]);
+  const refreshMenu = useCallback(() => {
+    setMenu(true);
+    const revision = ++topicRevision.current;
+    void repo
+      .list()
+      .then((rows) => {
+        if (revision === topicRevision.current)
+          setConversations(
+            rows.filter((row) => row.entity.status === "ACTIVE"),
+          );
+      })
+      .catch(() =>
+        setError("Les conversations locales ne peuvent pas être lues."),
+      );
+  }, [repo]);
+  const create = async () => {
+    if (createLocked.current) return;
+    createLocked.current = true;
+    topicRevision.current++;
+    setCreating(true);
+    setError(undefined);
+    try {
+      const conversation = await controller.create();
+      setConversations(await repo.list());
+      setActive(conversation.id);
+      setMenu(false);
+    } catch {
+      setError("La conversation n’a pas pu être créée. Réessayez.");
+    } finally {
+      createLocked.current = false;
+      setCreating(false);
+    }
+  };
+  const topics = (
+    <View className="gap-3">
+      <PrimaryButton
+        label="Nouvelle conversation"
+        disabled={creating}
+        onPress={() => {
+          void create();
+        }}
+      />
+      {error ? (
+        <InlineAlert title="Conversation indisponible" message={error} />
+      ) : null}
+      {conversations
+        .filter((row) => row.entity.status === "ACTIVE")
+        .map((row) => (
+          <MenuRow
+            key={row.entity.id}
+            title={row.entity.title}
+            description={`Créée le ${new Date(row.entity.createdAt).toLocaleString("fr-FR")}`}
+            icon="chatbubble-outline"
+            onPress={() => {
+              setActive(row.entity.id);
+              setMenu(false);
+            }}
+          />
+        ))}
+      <SecondaryButton
+        label="Retour à l’application"
+        onPress={() => router.back()}
+      />
+    </View>
+  );
+  if (!active)
+    return (
+      <AppScreen>
+        <AppHeader
+          title="Copilote"
+          subtitle="Vos conversations et brouillons restent disponibles sur ce téléphone."
+        />
+        {topics}
+      </AppScreen>
+    );
+  return (
+    <SafeAreaView
+      edges={["top", "bottom", "left", "right"]}
+      style={{ flex: 1, backgroundColor: colors.canvas }}
+    >
+      <CopilotLocalChatPanel
+        controller={controller}
+        conversationId={active}
+        scopeKey={`${storeId}/${ownerId}`}
+        delivery={delivery}
+        onConversations={refreshMenu}
+      />
+      <BottomSheet
+        visible={menu}
+        title="Conversations"
+        onClose={() => setMenu(false)}
+      >
+        {topics}
+        <Text className="text-sm text-muted">
+          Chaque conversation garde son propre brouillon.
+        </Text>
+      </BottomSheet>
+    </SafeAreaView>
+  );
+}

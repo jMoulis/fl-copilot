@@ -1,5 +1,6 @@
 import { ConflictRepository } from "../sync/conflict-repository";
 import {
+  copilotTurnRequestSchema,
   copilotConversationSchema,
   copilotMessageSchema,
   copilotDraftSchema,
@@ -113,6 +114,22 @@ export class CopilotConversationRepository {
     private db: OutboxDatabase & AtomicMutationDatabase,
     private scope: Scope,
   ) {}
+  async get(conversationId: string) {
+    const row = await this.db.getFirstAsync<Row>(
+      "SELECT * FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
+      conversationId,
+      this.scope.storeId,
+      this.scope.ownerId,
+    );
+    if (!row) return null;
+    const entity = copilotConversationSchema.parse(
+      JSON.parse(row.payload_json),
+    );
+    scoped(entity, this.scope);
+    if (entity.id !== conversationId)
+      throw Error("COPILOT_HISTORY_IDENTITY_INVALID");
+    return entity;
+  }
   async list(limit = 50) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw Error("COPILOT_PAGE_LIMIT_INVALID");
@@ -269,11 +286,23 @@ export class CopilotConversationRepository {
   }
   async append(
     e: CopilotMessage,
-    ctx: { commandId: string; deviceId: string; preserveDraft?: boolean },
+    ctx: {
+      commandId: string;
+      deviceId: string;
+      preserveDraft?: boolean;
+      replyId?: string;
+    },
   ) {
     e = copilotMessageSchema.parse(e);
     scoped(e, this.scope);
     if (e.role !== "USER") throw Error("COPILOT_MESSAGE_ROLE_INVALID");
+    const pending = ctx.replyId
+      ? copilotTurnRequestSchema.parse({
+          replyId: ctx.replyId,
+          conversationId: e.conversationId,
+          userMessageId: e.id,
+        })
+      : null;
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       const parent = await tx.getFirstAsync<Row>(
         "SELECT * FROM copilot_conversations WHERE id=?",
@@ -336,6 +365,16 @@ export class CopilotConversationRepository {
         payload: e,
         createdAt: e.createdAt,
       });
+      if (pending)
+        await tx.runAsync(
+          "INSERT INTO copilot_pending_turns(reply_id,store_id,owner_id,conversation_id,user_message_id,status,updated_at) VALUES(?,?,?,?,?,'PENDING',?)",
+          pending.replyId,
+          e.storeId,
+          e.ownerId,
+          e.conversationId,
+          e.id,
+          e.createdAt,
+        );
       if (!ctx.preserveDraft)
         await tx.runAsync(
           "DELETE FROM copilot_drafts WHERE store_id=? AND owner_id=? AND conversation_id=?",
@@ -345,6 +384,25 @@ export class CopilotConversationRepository {
         );
     });
     return e;
+  }
+  async pendingTurns(conversationId: string) {
+    const rows = await this.db.getAllAsync<{
+      reply_id: string;
+      conversation_id: string;
+      user_message_id: string;
+    }>(
+      "SELECT reply_id,conversation_id,user_message_id FROM copilot_pending_turns WHERE store_id=? AND owner_id=? AND conversation_id=? AND status='PENDING' ORDER BY updated_at,reply_id",
+      this.scope.storeId,
+      this.scope.ownerId,
+      conversationId,
+    );
+    return rows.map((row) =>
+      copilotTurnRequestSchema.parse({
+        replyId: row.reply_id,
+        conversationId: row.conversation_id,
+        userMessageId: row.user_message_id,
+      }),
+    );
   }
   async messages(
     conversationId: string,
