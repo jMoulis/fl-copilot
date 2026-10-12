@@ -366,6 +366,18 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           "Chiffre d’affaires net (€) — 2026-10-01 : indisponible",
         );
         expect(first.json().message.replyToMessageId).toBe(f.message.id);
+        const history = await app.inject({
+          url: `/api/v1/copilot/history?conversationId=${f.conversation.id}`,
+          headers: options.headers,
+        });
+        expect(history.statusCode, failure).toBe(200);
+        expect(
+          history
+            .json()
+            .messages.some(
+              (message: { id: string }) => message.id === f.response.id,
+            ),
+        ).toBe(true);
         const retry = await app.inject(options);
         expect(retry.statusCode).toBe(200);
         expect(retry.json()).toEqual({

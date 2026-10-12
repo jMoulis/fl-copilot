@@ -1,3 +1,4 @@
+import { receiveCopilotReply } from "./response-receiver";
 import { CopilotLocalChatController } from "./local-chat-controller";
 import { MobileSyncService } from "../sync/sync-service";
 import type { BootstrapResponse } from "@fl-copilot/sync-contracts";
@@ -375,6 +376,68 @@ it("serializes draft edits/send, keeps failed drafts, and restores local questio
         )
         .get()!.n,
     ).toBe(2);
+  } finally {
+    db.close();
+  }
+});
+
+it("receives a scoped server reply atomically without creating a second Outbox command", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    await repo.save(f.conversation, command());
+    await repo.append(f.message, command());
+    const message = {
+      ...f.message,
+      id: randomUUID(),
+      role: "ASSISTANT" as const,
+      text: "Les données sont disponibles.",
+      attachments: [],
+      replyToMessageId: f.message.id,
+    };
+    const request = {
+      replyId: message.id,
+      conversationId: f.conversation.id,
+      userMessageId: f.message.id,
+    };
+    adapter.fail = true;
+    await expect(
+      receiveCopilotReply(adapter, f, request, {
+        message,
+        alreadyApplied: false,
+      }),
+    ).rejects.toThrow("COMMIT_FAILED");
+    adapter.fail = false;
+    expect((await repo.messages(f.conversation.id)).messages).toHaveLength(1);
+    await receiveCopilotReply(adapter, f, request, {
+      message,
+      alreadyApplied: false,
+    });
+    await receiveCopilotReply(adapter, f, request, {
+      message,
+      alreadyApplied: true,
+    });
+    const page = await repo.messages(f.conversation.id);
+    expect(page.messages).toHaveLength(2);
+    expect(
+      page.messages.find((m) => m.entity.id === message.id)!.syncState,
+    ).toBe("SYNCED");
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_type='copilot_message'",
+        )
+        .get()!.n,
+    ).toBe(1);
+    await expect(
+      receiveCopilotReply(adapter, f, request, {
+        message: { ...message, ownerId: randomUUID() },
+        alreadyApplied: false,
+      }),
+    ).rejects.toThrow("COPILOT_REPLY_SCOPE_INVALID");
   } finally {
     db.close();
   }
