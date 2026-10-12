@@ -211,3 +211,35 @@ it("uses standalone trusted facts without inventing a recommendation candidate",
     "AMBIGUOUS_EVIDENCE",
   );
 });
+
+it("grounds a tool-derived fact against the trusted returned evidence pool, not model prose", async () => {
+  const r = request();
+  const evidence = {
+    id: "queried-day",
+    sourceType: "COMPARISON" as const,
+    sourceId: "canonical-comparison",
+    sourceVersion: null,
+    label: "Écart de ventes daté",
+    value: "25.50",
+    factKind: "DERIVED" as const,
+  };
+  const provider = {
+    model: "test",
+    generate: vi.fn().mockResolvedValue({
+      output: { ...answer, facts: [{ evidenceId: evidence.id }] },
+      toolEvidence: [evidence],
+      metadata: {
+        requestedModel: "test",
+        resolvedModel: "test",
+        responseId: "test",
+        inputTokens: 1,
+        outputTokens: 1,
+      },
+    }),
+  } as CopilotAiProvider;
+  const result = await generateCopilotResponse(provider, r);
+  expect(result.mode).toBe("AI");
+  expect(result.evidence).toContainEqual(evidence);
+  expect(result.response.facts).toEqual([{ evidenceId: "queried-day" }]);
+  expect(r.evidence).toBeUndefined();
+});

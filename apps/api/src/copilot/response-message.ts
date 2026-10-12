@@ -20,7 +20,12 @@ export function buildCopilotResponseMessage(input: {
   generation: Generation;
 }): CopilotMessage {
   const parent = copilotMessageSchema.parse(input.parent);
-  const request = copilotGenerationRequestSchema.parse(input.request);
+  const request = copilotGenerationRequestSchema.parse({
+    ...input.request,
+    ...(input.generation.evidence
+      ? { evidence: input.generation.evidence }
+      : {}),
+  });
   if (
     parent.role !== "USER" ||
     parent.storeId !== request.storeId ||

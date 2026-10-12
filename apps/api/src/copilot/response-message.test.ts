@@ -110,3 +110,32 @@ it("rejects foreign scope, wrong parent role, stale timestamp and mismatched que
     }),
   ).toThrow("COPILOT_REPLY_CONTEXT_INVALID");
 });
+
+it("renders canonical numbers retrieved during generation even when absent from initial context", () => {
+  const f = fixture();
+  const evidence = {
+    id: "queried-day",
+    sourceType: "COMPARISON" as const,
+    sourceId: "comparison",
+    sourceVersion: null,
+    label: "Écart de ventes daté (€)",
+    value: "25.50",
+    factKind: "DERIVED" as const,
+  };
+  const message = buildCopilotResponseMessage({
+    ...f,
+    generation: {
+      ...f.generation,
+      evidence: [evidence],
+      response: {
+        language: "fr-FR",
+        summary: "Voici la comparaison disponible.",
+        facts: [{ evidenceId: evidence.id }],
+        interpretation: [],
+        recommendations: [],
+        questions: [],
+      },
+    },
+  });
+  expect(message.text).toContain("Écart de ventes daté (€) : 25.50");
+});

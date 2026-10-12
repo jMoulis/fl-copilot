@@ -12,7 +12,7 @@ const metricAvailability = z.object({
   availableInputCount: z.number().int().nonnegative(),
   missingInputCount: z.number().int().nonnegative(),
 });
-const performanceSchema = z.object({
+export const departmentEvidencePerformanceSchema = z.object({
   storeId: z.string().uuid(),
   date: z.string().date(),
   formulaVersion: z.literal("department-daily-v1"),
@@ -41,9 +41,39 @@ export async function readLatestDepartmentEvidence(db: Db, storeId: string) {
     .limit(1)
     .next();
   if (!row) return [];
-  const p = performanceSchema.parse(row.performance);
+  return departmentSnapshotEvidence(validateDepartmentSnapshot(row, storeId));
+}
+
+type Row = { _id: string; storeId: string; date: string; performance: unknown };
+function validateDepartmentSnapshot(row: Row, storeId: string) {
+  const p = departmentEvidencePerformanceSchema.parse(row.performance);
   if (p.storeId !== storeId || p.date !== row.date)
     throw new Error("COPILOT_DAILY_EVIDENCE_SCOPE_INVALID");
+  return { sourceId: row._id, performance: p };
+}
+
+export async function readDepartmentDailySnapshot(
+  db: Db,
+  storeId: string,
+  date: string,
+) {
+  z.string().uuid().parse(storeId);
+  z.string().date().parse(date);
+  const row = await db
+    .collection<Row>("departmentDailyPerformance")
+    .findOne({ storeId, date });
+  if (!row) return null;
+  if (row.date !== date)
+    throw new Error("COPILOT_DAILY_EVIDENCE_SCOPE_INVALID");
+  return validateDepartmentSnapshot(row, storeId);
+}
+
+export function departmentSnapshotEvidence(
+  snapshot: NonNullable<
+    Awaited<ReturnType<typeof readDepartmentDailySnapshot>>
+  >,
+) {
+  const p = snapshot.performance;
   const revision = createHash("sha256").update(p.inputRevision).digest("hex");
   const metrics = [
     {
@@ -67,9 +97,14 @@ export async function readLatestDepartmentEvidence(db: Db, storeId: string) {
   ];
   return metrics.flatMap((m) => [
     copilotEvidenceSchema.parse({
-      id: JSON.stringify(["department-daily", row._id, revision, m.key]),
+      id: JSON.stringify([
+        "department-daily",
+        snapshot.sourceId,
+        revision,
+        m.key,
+      ]),
       sourceType: "KPI",
-      sourceId: row._id,
+      sourceId: snapshot.sourceId,
       sourceVersion: null,
       label: `${m.label} (€) — ${p.date}`,
       value: m.status.status === "UNAVAILABLE" ? null : m.value,
@@ -78,13 +113,13 @@ export async function readLatestDepartmentEvidence(db: Db, storeId: string) {
     copilotEvidenceSchema.parse({
       id: JSON.stringify([
         "department-daily",
-        row._id,
+        snapshot.sourceId,
         revision,
         m.key,
         "availability",
       ]),
       sourceType: "DATA_QUALITY",
-      sourceId: row._id,
+      sourceId: snapshot.sourceId,
       sourceVersion: null,
       label: `Disponibilité — ${m.label} — ${p.date}`,
       value: m.status.status,

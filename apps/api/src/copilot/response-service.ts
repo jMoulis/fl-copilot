@@ -185,6 +185,7 @@ export async function generateCopilotResponse(
   mode: "AI" | "FALLBACK";
   response: CopilotResponse;
   metadata: CopilotGenerationMetadata | null;
+  evidence?: CopilotGenerationRequest["evidence"];
 }> {
   const request = copilotGenerationRequestSchema.parse(raw);
   if (
@@ -204,12 +205,22 @@ export async function generateCopilotResponse(
       copilotResponseSchema,
       signal,
     );
+    if (generated.toolEvidence) {
+      const updated = copilotGenerationRequestSchema.safeParse({
+        ...request,
+        evidence: [...(request.evidence ?? []), ...generated.toolEvidence],
+      });
+      if (!updated.success)
+        throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
+      request.evidence = updated.data.evidence;
+    }
     if (signal?.aborted)
       throw new CopilotAiError("COPILOT_AI_CANCELLED", false);
     return {
       mode: "AI",
       response: validateCopilotResponse(generated.output, request),
       metadata: generated.metadata,
+      evidence: request.evidence,
     };
   } catch (error) {
     if (
@@ -226,6 +237,7 @@ export async function generateCopilotResponse(
       mode: "FALLBACK",
       response: copilotResponseFallback(request),
       metadata: null,
+      evidence: request.evidence,
     };
   }
 }

@@ -1,3 +1,4 @@
+import { readDailyAnalysis } from "../src/copilot/daily-analysis-tool";
 import { readConversationGenerationHistory } from "../src/copilot/generation-history";
 import { readLatestDepartmentEvidence } from "../src/copilot/daily-evidence";
 import { buildDepartmentDailyPerformance } from "@fl-copilot/analytics-core";
@@ -65,6 +66,122 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("reads only the explicit day and computes J-7 through the shared engine, preserving missing and zero reference", async () => {
+      const storeId = randomUUID();
+      const save = async (
+        date: string,
+        salesValue: string,
+        id = randomUUID(),
+        scopedStore = storeId,
+      ) => {
+        const performance = buildDepartmentDailyPerformance({
+          storeId: scopedStore,
+          businessDate: date,
+          computedAt: "2026-10-12T12:00:00.000Z",
+          productPerformances: [],
+        });
+        const snapshot = {
+          ...performance,
+          sales: { ...performance.sales, salesValue },
+          availability: {
+            ...performance.availability,
+            salesValue: {
+              status: "AVAILABLE",
+              inputCount: 1,
+              availableInputCount: 1,
+              missingInputCount: 0,
+            },
+          },
+        };
+        await db
+          .collection<{
+            _id: string;
+            storeId: string;
+            date: string;
+            performance: unknown;
+          }>("departmentDailyPerformance")
+          .insertOne({
+            _id: id,
+            storeId: scopedStore,
+            date,
+            performance: snapshot,
+          });
+        return id;
+      };
+      await save("2026-10-08", "125.50");
+      const referenceId = await save("2026-10-01", "100.00");
+      await save("2026-10-08", "99999", randomUUID(), randomUUID());
+      await save("2026-10-12", "88888");
+      const value = await readDailyAnalysis(db, storeId, {
+        businessDate: "2026-10-08",
+      });
+      expect(value.referenceDate).toBe("2026-10-01");
+      const difference = value.evidence.find((e) =>
+        e.label.startsWith("Écart (€) — Chiffre"),
+      );
+      const percentage = value.evidence.find((e) =>
+        e.label.startsWith("Évolution (%) — Chiffre"),
+      );
+      expect(difference?.value).toBe("25.50");
+      expect(percentage?.value).toBe("25.50");
+      expect(
+        value.evidence.some((e) => e.value === "99999" || e.value === "88888"),
+      ).toBe(false);
+      expect(
+        value.evidence.find((e) => e.label.startsWith("Marge (€) — 2026-10-08"))
+          ?.value,
+      ).toBeNull();
+      await db
+        .collection<{ _id: string }>("departmentDailyPerformance")
+        .updateOne(
+          { _id: referenceId },
+          { $set: { "performance.sales.salesValue": "0" } },
+        );
+      const zero = await readDailyAnalysis(db, storeId, {
+        businessDate: "2026-10-08",
+      });
+      expect(
+        zero.evidence.find((e) => e.label.startsWith("Évolution (%) — Chiffre"))
+          ?.value,
+      ).toBeNull();
+      expect(
+        zero.evidence.some((e) => String(e.value).includes("ZERO_REFERENCE")),
+      ).toBe(true);
+      expect(
+        zero.evidence.find((e) => e.label.startsWith("Écart (€) — Chiffre"))
+          ?.id,
+      ).toBe(difference?.id);
+      // Revisions, rather than mutable values alone, identify canonical evidence.
+      await db
+        .collection<{ _id: string }>("departmentDailyPerformance")
+        .updateOne(
+          { _id: referenceId },
+          { $set: { "performance.inputRevision": "corrected" } },
+        );
+      const corrected = await readDailyAnalysis(db, storeId, {
+        businessDate: "2026-10-08",
+      });
+      expect(
+        corrected.evidence.find((e) =>
+          e.label.startsWith("Écart (€) — Chiffre"),
+        )?.id,
+      ).not.toBe(difference?.id);
+      const absent = await readDailyAnalysis(db, storeId, {
+        businessDate: "2026-09-01",
+      });
+      expect(
+        absent.evidence.find(
+          (e) => e.label === "Chiffres du rayon — 2026-09-01",
+        )?.value,
+      ).toBeNull();
+      expect(
+        absent.evidence.find((e) => e.label.startsWith("Écart (€) — Chiffre"))
+          ?.value,
+      ).toBeNull();
+      await expect(
+        readDailyAnalysis(db, storeId, { businessDate: "2026-02-30" }),
+      ).rejects.toThrow();
+    });
     it("bounds private generation history and excludes other topics, actors and later messages", async () => {
       const f = await fixture();
       const base = Date.parse(f.message.createdAt);
