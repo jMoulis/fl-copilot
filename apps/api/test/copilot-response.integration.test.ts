@@ -4,6 +4,7 @@ import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { chatFixture } from "../../../scripts/test-chat-fixtures";
 import { appendCopilotResponse } from "../src/copilot/response-store";
 import { createMongoSyncChangeService } from "../src/sync/sync-change-service";
+import { acquireTurnLease } from "../src/copilot/turn-lease";
 import { runCopilotTurn } from "../src/copilot/turn-service";
 import {
   CopilotAiError,
@@ -201,6 +202,91 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .collection("syncChanges")
           .countDocuments({ entityId: input.replyId }),
       ).toBe(1);
+    });
+    it("blocks concurrent turn generation and allows retry after completion", async () => {
+      const f = await fixture();
+      const generate = vi
+        .fn()
+        .mockRejectedValue(
+          new CopilotAiError("COPILOT_AI_NOT_CONFIGURED", false),
+        );
+      const context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: f.storeId,
+          evaluatedAt: f.message.createdAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      let release!: () => void, entered!: () => void;
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const dependencies = {
+        db,
+        provider: { model: null, generate } as CopilotAiProvider,
+        authorize: async () => f.authority,
+        loadContext: async () => {
+          entered();
+          await hold;
+          return context;
+        },
+      };
+      const input = {
+        replyId: f.response.id,
+        conversationId: f.conversation.id,
+        userMessageId: f.message.id,
+      };
+      const first = runCopilotTurn(dependencies, input);
+      await ready;
+      try {
+        await expect(runCopilotTurn(dependencies, input)).rejects.toThrow(
+          "IN_PROGRESS",
+        );
+      } finally {
+        release();
+      }
+      await first;
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect((await runCopilotTurn(dependencies, input)).alreadyApplied).toBe(
+        true,
+      );
+      expect(generate).toHaveBeenCalledTimes(1);
+    });
+    it("expired workers cannot commit after lease takeover", async () => {
+      const f = await fixture();
+      const identity = {
+        replyId: f.response.id,
+        conversationId: f.conversation.id,
+        userMessageId: f.message.id,
+        storeId: f.storeId,
+        ownerId: f.ownerId,
+      };
+      const old = await acquireTurnLease(db, identity);
+      await db
+        .collection<{ _id: string }>("copilotTurnLeases")
+        .updateOne(
+          { _id: identity.replyId },
+          { $set: { expiresAt: new Date(0) } },
+        );
+      const current = await acquireTurnLease(db, identity);
+      const session = client.startSession();
+      try {
+        await expect(
+          session.withTransaction(() => old.fence(session)),
+        ).rejects.toThrow("LEASE_EXPIRED");
+        await old.release();
+        await session.withTransaction(() => current.fence(session));
+        await expect(
+          acquireTurnLease(db, { ...identity, ownerId: randomUUID() }),
+        ).rejects.toThrow("IDENTITY_CONFLICT");
+      } finally {
+        await session.endSession();
+        await current.release();
+      }
     });
   },
 );

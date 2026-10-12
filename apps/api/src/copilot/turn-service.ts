@@ -1,3 +1,4 @@
+import { acquireTurnLease } from "./turn-lease.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
@@ -101,51 +102,65 @@ export async function runCopilotTurn(
   const initial = await read();
   cancelled();
   if (initial.cached) return { message: initial.cached, alreadyApplied: true };
-  const context = await dependencies.loadContext(initial.parent);
-  cancelled();
-  const request = {
-    requestId: randomUUID(),
+  const lease = await acquireTurnLease(dependencies.db, {
+    ...input,
     storeId: authority.storeId,
-    context,
-    userQuestion: initial.parent.text || null,
-  };
-  const generation = await generateCopilotResponse(
-    dependencies.provider,
-    request,
-    signal,
-  );
-  cancelled();
-  const renewed = await dependencies.authorize();
-  if (
-    !renewed.canRespond ||
-    renewed.storeId !== authority.storeId ||
-    renewed.ownerId !== authority.ownerId
-  )
-    throw new CopilotTurnError("ACCESS_INVALID");
-  const latest = await read();
-  cancelled();
-  if (latest.cached) return { message: latest.cached, alreadyApplied: true };
-  const message = buildCopilotResponseMessage({
-    id: input.replyId,
-    createdAt: (dependencies.now?.() ?? new Date()).toISOString(),
-    parent: latest.parent,
-    request,
-    generation,
+    ownerId: authority.ownerId,
   });
-  const session = dependencies.db.client.startSession();
   try {
-    const result = await session.withTransaction(async () => {
-      cancelled();
-      return appendCopilotResponse(
-        { database: dependencies.db, session },
-        renewed,
-        message,
-        createMongoSyncChangeService(),
-      );
+    const afterLease = await read();
+    cancelled();
+    if (afterLease.cached)
+      return { message: afterLease.cached, alreadyApplied: true };
+    const context = await dependencies.loadContext(initial.parent);
+    cancelled();
+    const request = {
+      requestId: randomUUID(),
+      storeId: authority.storeId,
+      context,
+      userQuestion: initial.parent.text || null,
+    };
+    const generation = await generateCopilotResponse(
+      dependencies.provider,
+      request,
+      signal,
+    );
+    cancelled();
+    const renewed = await dependencies.authorize();
+    if (
+      !renewed.canRespond ||
+      renewed.storeId !== authority.storeId ||
+      renewed.ownerId !== authority.ownerId
+    )
+      throw new CopilotTurnError("ACCESS_INVALID");
+    const latest = await read();
+    cancelled();
+    if (latest.cached) return { message: latest.cached, alreadyApplied: true };
+    const message = buildCopilotResponseMessage({
+      id: input.replyId,
+      createdAt: (dependencies.now?.() ?? new Date()).toISOString(),
+      parent: latest.parent,
+      request,
+      generation,
     });
-    if (!result) throw new Error("COPILOT_REPLY_COMMIT_FAILED");
-    return result;
+    const session = dependencies.db.client.startSession();
+    try {
+      const result = await session.withTransaction(async () => {
+        cancelled();
+        await lease.fence(session);
+        return appendCopilotResponse(
+          { database: dependencies.db, session },
+          renewed,
+          message,
+          createMongoSyncChangeService(),
+        );
+      });
+      if (!result) throw new Error("COPILOT_REPLY_COMMIT_FAILED");
+      return result;
+    } finally {
+      await session.endSession();
+    }
   } finally {
-    await session.endSession();
+    await lease.release();
   }
 }
