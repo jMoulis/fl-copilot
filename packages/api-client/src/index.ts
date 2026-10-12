@@ -1,4 +1,9 @@
 import {
+  copilotTurnRequestSchema,
+  copilotTurnResultSchema,
+  type CopilotTurnRequest,
+} from "@fl-copilot/sync-contracts";
+import {
   copilotHistoryPageSchema,
   type CopilotHistoryPage,
 } from "@fl-copilot/sync-contracts";
@@ -50,6 +55,39 @@ export class ApiClientError extends Error {
 export class ApiClient {
   constructor(private readonly baseUrl: string) {}
 
+  async copilotTurn(
+    accessToken: string,
+    storeId: string,
+    ownerId: string,
+    raw: CopilotTurnRequest,
+  ) {
+    const input = copilotTurnRequestSchema.parse(raw);
+    const result = await this.request(
+      "/api/v1/copilot/turn",
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      copilotTurnResultSchema,
+    );
+    const message = result.message;
+    if (
+      message.id !== input.replyId ||
+      message.storeId !== storeId ||
+      message.ownerId !== ownerId ||
+      message.conversationId !== input.conversationId ||
+      message.replyToMessageId !== input.userMessageId ||
+      message.role !== "ASSISTANT"
+    )
+      throw new ApiClientError(200, {
+        code: "COPILOT_REPLY_SCOPE_INVALID",
+        messageFr:
+          "La réponse du copilote ne correspond pas à cette conversation.",
+        retryable: false,
+      });
+    return result;
+  }
   weeklyContext(accessToken: string, storeId: string, weekStart: string) {
     return this.request(
       `/api/v1/store/context?${new URLSearchParams({ weekStart })}`,
