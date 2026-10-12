@@ -139,3 +139,59 @@ it("renders canonical numbers retrieved during generation even when absent from 
   });
   expect(message.text).toContain("Écart de ventes daté (€) : 25.50");
 });
+
+it("attaches only cited server-resolved original PDF references, never a model URL", () => {
+  const f = fixture(),
+    sourceId = randomUUID(),
+    otherId = randomUUID();
+  const evidence = [
+    {
+      id: "commercial-pdf-source/test",
+      sourceType: "SOURCE_DOCUMENT" as const,
+      sourceId,
+      sourceVersion: null,
+      label: "PDF original",
+      value: "pense-bete.pdf",
+      factKind: "QUALITY" as const,
+    },
+    {
+      id: "pdf-price",
+      sourceType: "SOURCE_DOCUMENT" as const,
+      sourceId,
+      sourceVersion: 1,
+      label: "Prix enseigne à confirmer",
+      value: "2,20€",
+      factKind: "SOURCE_INSTRUCTION" as const,
+    },
+    {
+      id: "commercial-pdf-source/other",
+      sourceType: "SOURCE_DOCUMENT" as const,
+      sourceId: otherId,
+      sourceVersion: null,
+      label: "Autre PDF",
+      value: "other.pdf",
+      factKind: "QUALITY" as const,
+    },
+  ];
+  const response = {
+    language: "fr-FR" as const,
+    summary: "La source précise un prix à confirmer.",
+    facts: [{ evidenceId: "pdf-price" }],
+    interpretation: [],
+    recommendations: [],
+    questions: [],
+  };
+  const result = buildCopilotResponseMessage({
+    ...f,
+    generation: { mode: "AI", metadata: null, response, evidence },
+  });
+  expect(result.attachments).toEqual([
+    {
+      sourceDocumentId: sourceId,
+      filename: "pense-bete.pdf",
+      mediaType: "application/pdf",
+    },
+  ]);
+  expect(JSON.stringify(result)).not.toContain("https://");
+  expect(result.text).toContain("2,20€");
+});
