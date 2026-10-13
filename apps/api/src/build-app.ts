@@ -1,3 +1,5 @@
+import { readWasteReceipt } from "./copilot/waste-receipt-tool.js";
+import { readStoreSourceDocuments } from "./copilot/commercial-documents-tool.js";
 import { readCopilotWeek } from "./copilot/week-context-tool.js";
 import { readSubstitutes } from "./copilot/substitutes-tool.js";
 import { readFieldEvents } from "./copilot/field-events-tool.js";
@@ -456,6 +458,28 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              receiptDocuments: async (input) => {
+                await authorize();
+                const result = await readStoreSourceDocuments(
+                  db,
+                  storeId,
+                  input,
+                  "WASTE_RECEIPT",
+                );
+                await authorize();
+                return result;
+              },
+              receipt: async (input) => {
+                await authorize();
+                const result = await readWasteReceipt(
+                  db,
+                  storeId,
+                  input,
+                  createMongoWasteReceiptDraftReader(dependencies.database),
+                );
                 await authorize();
                 return result;
               },

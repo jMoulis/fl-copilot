@@ -907,3 +907,85 @@ it("exposes configured weekly context with trusted evidence and explicit missing
   expect(weekContext).toHaveBeenCalledWith(input);
   expect(result.toolEvidence?.[0]?.id).toBe("week-unconfigured");
 });
+
+it("lets the model discover and inspect a receipt without treating unavailable extraction as an empty publication", async () => {
+  const f = fixture(),
+    sourceId = randomUUID(),
+    docInput = { cursor: null, limit: 1 },
+    receiptInput = { sourceDocumentId: sourceId, offset: 0, limit: 10 };
+  const receiptDocuments = vi.fn(async () => ({
+    documents: [
+      {
+        sourceDocumentId: sourceId,
+        filename: "ticket.jpg",
+        createdAt: "2026-10-11T08:00:00.000Z",
+      },
+    ],
+    nextCursor: null,
+    evidence: [],
+  }));
+  const receipt = vi.fn(async () => ({
+    source: {
+      sourceDocumentId: sourceId,
+      filename: "ticket.jpg",
+      createdAt: "2026-10-11T08:00:00.000Z",
+    },
+    status: "NOT_READY" as const,
+    published: null,
+    extracted: null,
+    lineCount: null,
+    nextOffset: null,
+    evidence: [
+      {
+        id: "receipt-pending",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId,
+        sourceVersion: null,
+        label: "Ticket en cours de traitement",
+        value:
+          "Extraction indisponible ; aucune publication ne peut être déduite.",
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    const step = calls++;
+    if (step < 2) {
+      const name = step === 0 ? "waste_documents" : "waste_receipt";
+      expect(body.tools.some((t: { name: string }) => t.name === name)).toBe(
+        true,
+      );
+      if (step === 1) expect(JSON.stringify(body)).toContain(sourceId);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: `fc_receipt_${step}`,
+          call_id: `call_receipt_${step}`,
+          name,
+          arguments: JSON.stringify(step === 0 ? docInput : receiptInput),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    expect(JSON.stringify(body)).toContain("receipt-pending");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    receiptDocuments,
+    receipt,
+  }).generate(f.request, schema);
+  expect(receiptDocuments).toHaveBeenCalledWith(docInput);
+  expect(receipt).toHaveBeenCalledWith(receiptInput);
+  expect(result.toolEvidence?.[0]?.id).toBe("receipt-pending");
+  expect(calls).toBe(3);
+});

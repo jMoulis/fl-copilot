@@ -75,3 +75,6 @@ export * from "./copilot-turn";
 export * from "./copilot-commercial-documents";
 
 export * from "./copilot-product-search";
+
+export * from "./waste-receipt-draft";
+export * from "./copilot-waste-receipts";

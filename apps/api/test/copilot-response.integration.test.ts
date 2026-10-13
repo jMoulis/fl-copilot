@@ -1,3 +1,7 @@
+import { wasteReceiptDraftSchema } from "@fl-copilot/sync-contracts";
+import { readWasteReceipt } from "../src/copilot/waste-receipt-tool";
+import { readStoreSourceDocuments } from "../src/copilot/commercial-documents-tool";
+import { wastePublicationFixture } from "../../../scripts/test-waste-publication-fixtures";
 import { readSubstitutes } from "../src/copilot/substitutes-tool";
 import { substitutionFixture } from "../../../scripts/test-substitution-fixtures";
 import { readFieldEvents } from "../src/copilot/field-events-tool";
@@ -206,6 +210,165 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           (e) => e.sourceId === late.id,
         )!.id,
       ).not.toBe(before);
+    });
+    it("reads receipt sources and immutable publication pages without mistaking extraction or exclusions for official waste", async () => {
+      const p = wastePublicationFixture(),
+        storeId = p.receipt.storeId,
+        sourceId = p.source.id;
+      const source = {
+        _id: sourceId,
+        storeId,
+        sourceType: "WASTE_RECEIPT",
+        remoteUploadStatus: "CONFIRMED",
+        originalFilename: "ticket.jpg",
+        checksum: p.source.checksum,
+        createdAt: new Date(p.source.createdAt),
+        objectKey: "private-never-expose",
+      };
+      await db.collection("sourceDocuments").insertOne(source as never);
+      await db.collection("sourceDocuments").insertOne({
+        ...source,
+        _id: randomUUID(),
+        storeId: randomUUID(),
+      } as never);
+      const discovery = await readStoreSourceDocuments(
+        db,
+        storeId,
+        { cursor: null, limit: 1 },
+        "WASTE_RECEIPT",
+      );
+      expect(discovery.documents).toHaveLength(1);
+      expect(discovery.documents[0]!.sourceDocumentId).toBe(sourceId);
+      expect(JSON.stringify(discovery)).not.toContain("private-never-expose");
+      const reader = {
+        read: vi.fn(async () => {
+          throw Error("WASTE_RECEIPT_DRAFT_NOT_READY");
+        }),
+      };
+      const input = { sourceDocumentId: sourceId, offset: 0, limit: 1 };
+      expect(await readWasteReceipt(db, storeId, input, reader)).toMatchObject({
+        status: "NOT_READY",
+        lineCount: null,
+        nextOffset: null,
+      });
+      await expect(
+        readWasteReceipt(db, randomUUID(), input, reader),
+      ).rejects.toThrow("UNAVAILABLE");
+      const draft = wasteReceiptDraftSchema.parse({
+        detectedReceiptDate: "2026-10-11",
+        detectedCashierNumber: "000009",
+        extractionModelVersion: "fixture",
+        arithmeticValidatorVersion: "receipt-arithmetic-v1",
+        productMatcherVersion: "product-matcher-v1",
+        lines: [
+          {
+            lineId: randomUUID(),
+            sourceLineIndex: 0,
+            rawLabel: "FIGUE VRAC",
+            quantity: null,
+            weight: "1.5",
+            quantityUnit: "KG",
+            unitPrice: "2",
+            totalPrice: "4",
+            extractionConfidence: { label: 0.4 },
+            sourceRegion: null,
+            arithmeticStatus: "MISMATCH",
+            arithmeticExpectedTotal: "3",
+            arithmeticDifference: "1",
+            arithmeticWarningCode: "AMOUNT_TO_REVIEW",
+            matchState: "AMBIGUOUS",
+            matchedProductId: null,
+            matchedProductLabel: null,
+            matchConfidence: 0.4,
+            productNature: "UNKNOWN",
+            candidates: [],
+            validationStatus: "TO_REVIEW",
+          },
+        ],
+      });
+      const draftResult = await readWasteReceipt(db, storeId, input, {
+        read: async () => draft,
+      });
+      expect(draftResult).toMatchObject({
+        status: "EXTRACTED",
+        published: null,
+        lineCount: 1,
+        extracted: {
+          header: { detectedCashierNumber: "000009" },
+          lines: [
+            {
+              arithmeticStatus: "MISMATCH",
+              validationStatus: "TO_REVIEW",
+              matchState: "AMBIGUOUS",
+            },
+          ],
+        },
+      });
+      expect(draftResult.evidence[0]!.factKind).toBe("QUALITY");
+      expect(draftResult.evidence[0]!.value).toContain("non publié");
+      await expect(
+        readWasteReceipt(db, storeId, input, {
+          read: async () => {
+            throw Error("PRIVATE_FAILURE");
+          },
+        }),
+      ).rejects.toThrow("PRIVATE_FAILURE");
+
+      await db.collection("wasteReceiptPublications").insertOne({
+        _id: p.receipt.id,
+        id: p.receipt.id,
+        storeId,
+        remoteVersion: 1,
+        version: 1,
+        publication: p,
+      } as never);
+      reader.read.mockClear();
+      const result = await readWasteReceipt(db, storeId, input, reader);
+      expect(result).toMatchObject({
+        status: "PUBLISHED",
+        lineCount: 2,
+        nextOffset: 1,
+        published: {
+          receipt: {
+            confirmedWasteDate: "2026-10-12",
+            detectedReceiptDate: "2026-10-11",
+            confirmedCashierNumber: "000007",
+            detectedCashierNumber: "000009",
+          },
+        },
+      });
+      expect(result.published!.observations[0]).toMatchObject({
+        quantity: null,
+        productNature: "UNKNOWN",
+        purchaseValueKnown: null,
+        salesValue: "3",
+      });
+      expect(reader.read).not.toHaveBeenCalled();
+      const excluded = await readWasteReceipt(
+        db,
+        storeId,
+        { ...input, offset: 1 },
+        reader,
+      );
+      expect(excluded.published!.observations).toEqual([]);
+      expect(excluded.evidence[0]!.value).toContain("explicitement exclue");
+      const prior = result.evidence[0]!.id;
+      await db
+        .collection("wasteReceiptPublications")
+        .updateOne({ _id: p.receipt.id } as never, {
+          $set: { "publication.receipt.confirmedCashierNumber": "000010" },
+        });
+      expect(
+        (await readWasteReceipt(db, storeId, input, reader)).evidence[0]!.id,
+      ).not.toBe(prior);
+      await db
+        .collection("sourceDocuments")
+        .updateOne({ _id: sourceId } as never, {
+          $set: { checksum: "changed" },
+        });
+      await expect(
+        readWasteReceipt(db, storeId, input, reader),
+      ).rejects.toThrow("SCOPE");
     });
     it("reads scoped directed alternatives with canonical ranking, refusal, field exclusions and complete coverage", async () => {
       const f = await substitutionFixture(),
