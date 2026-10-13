@@ -1752,6 +1752,60 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(bounded.messages[0]!.text).toHaveLength(16000);
       expect(bounded.earlierMessagesOmitted).toBe(true);
     });
+    it("keeps only deduplicated recent source references from included private messages, with current files taking precedence", async () => {
+      const f = await fixture();
+      const base = Date.parse(f.message.createdAt);
+      const refs = Array.from({ length: 12 }, () => ({
+        sourceDocumentId: randomUUID(),
+        filename: "Ancien.pdf",
+        mediaType: "application/pdf",
+      }));
+      const earlier = Array.from({ length: 12 }, (_, index) => ({
+        ...f.message,
+        id: randomUUID(),
+        text: "Discussion du document",
+        attachments: [refs[index]!, ...f.message.attachments],
+        createdAt: new Date(base - (12 - index) * 1000).toISOString(),
+      }));
+      const hidden = {
+        ...earlier[0]!,
+        id: randomUUID(),
+        ownerId: randomUUID(),
+        attachments: [{ ...refs[0]!, sourceDocumentId: randomUUID() }],
+      };
+      await db.collection<{ _id: string }>("copilotMessages").insertMany(
+        [...earlier, hidden].map((message) => ({
+          _id: message.id,
+          ...message,
+        })),
+      );
+      const history = await readConversationGenerationHistory(db, f.message);
+      expect(
+        history.recentAttachmentReferences.map((ref) => ref.sourceDocumentId),
+      ).toEqual(
+        refs
+          .slice(2)
+          .reverse()
+          .map((ref) => ref.sourceDocumentId),
+      );
+      expect(history.recentSourcesOmitted).toBe(true);
+      await db
+        .collection("copilotMessages")
+        .updateOne(
+          { id: earlier.at(-1)!.id },
+          { $set: { text: "a".repeat(16000) } },
+        );
+      await db
+        .collection("copilotMessages")
+        .updateOne(
+          { id: earlier.at(-2)!.id },
+          { $set: { text: "b".repeat(16000) } },
+        );
+      const bounded = await readConversationGenerationHistory(db, f.message);
+      expect(bounded.recentAttachmentReferences).toEqual([refs.at(-1)!]);
+      expect(bounded.earlierMessagesOmitted).toBe(true);
+      expect(bounded.recentSourcesOmitted).toBe(false);
+    });
     it("rolls back both reply and change, then persists exactly once across retry", async () => {
       const f = await fixture(),
         session = client.startSession(),
@@ -1904,6 +1958,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(generate).toHaveBeenCalledTimes(1);
       expect(generate.mock.calls[0]?.[0]).toMatchObject({
         history: { messages: [], earlierMessagesOmitted: false },
+        recentSources: [],
+        recentSourcesOmitted: false,
         attachedSources: [
           {
             sourceDocumentId: f.message.attachments[0]!.sourceDocumentId,

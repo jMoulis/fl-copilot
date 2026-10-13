@@ -123,15 +123,19 @@ export async function runCopilotTurn(
       authority.storeId,
     );
     cancelled();
-    const history = await readConversationGenerationHistory(
-      dependencies.db,
-      initial.parent,
-    );
+    const { recentAttachmentReferences, recentSourcesOmitted, ...history } =
+      await readConversationGenerationHistory(dependencies.db, initial.parent);
     cancelled();
     const attachedSources = await readAttachedSources(
       dependencies.db,
       authority.storeId,
       initial.parent.attachments,
+    );
+    cancelled();
+    const recentSources = await readAttachedSources(
+      dependencies.db,
+      authority.storeId,
+      recentAttachmentReferences,
     );
     cancelled();
     const request = {
@@ -141,6 +145,8 @@ export async function runCopilotTurn(
       evidence,
       history,
       attachedSources,
+      recentSources,
+      recentSourcesOmitted,
       userQuestion: initial.parent.text || null,
     };
     const generation = await generateCopilotResponse(
