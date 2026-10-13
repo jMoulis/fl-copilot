@@ -1,3 +1,4 @@
+import { readAttachedSources } from "./attached-sources.js";
 import { readConversationGenerationHistory } from "./generation-history.js";
 import { readLatestDepartmentEvidence } from "./daily-evidence.js";
 import { acquireTurnLease } from "./turn-lease.js";
@@ -75,7 +76,14 @@ export async function runCopilotTurn(
     const { _id: parentKey, ...parentPayload } = row;
     void parentKey;
     const parent = copilotMessageSchema.parse(parentPayload);
-    if (parent.role !== "USER") throw new CopilotTurnError("PARENT_INVALID");
+    if (
+      parent.role !== "USER" ||
+      parent.id !== input.userMessageId ||
+      parent.storeId !== authority.storeId ||
+      parent.ownerId !== authority.ownerId ||
+      parent.conversationId !== input.conversationId
+    )
+      throw new CopilotTurnError("PARENT_INVALID");
     const cached = await dependencies.db
       .collection<CopilotMessage & { _id: string }>("copilotMessages")
       .findOne({ _id: input.replyId });
@@ -120,12 +128,19 @@ export async function runCopilotTurn(
       initial.parent,
     );
     cancelled();
+    const attachedSources = await readAttachedSources(
+      dependencies.db,
+      authority.storeId,
+      initial.parent.attachments,
+    );
+    cancelled();
     const request = {
       requestId: randomUUID(),
       storeId: authority.storeId,
       context,
       evidence,
       history,
+      attachedSources,
       userQuestion: initial.parent.text || null,
     };
     const generation = await generateCopilotResponse(

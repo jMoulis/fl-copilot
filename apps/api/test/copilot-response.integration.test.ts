@@ -1,3 +1,4 @@
+import { readAttachedSources } from "../src/copilot/attached-sources";
 import { readCopilotStoreSettings } from "../src/copilot/store-settings-tool";
 import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
 import {
@@ -97,6 +98,83 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("binds current message attachments to owned upload metadata and withholds unavailable/private source fields", async () => {
+      const storeId = randomUUID();
+      const refs = Array.from({ length: 7 }, () => ({
+        sourceDocumentId: randomUUID(),
+        filename: "Nom capturé inexact.pdf",
+        mediaType: "image/jpeg",
+      }));
+      for (const [index, ref] of refs.slice(0, 6).entries()) {
+        await db.collection("sourceDocuments").insertOne({
+          _id: ref.sourceDocumentId,
+          storeId: index === 2 ? randomUUID() : storeId,
+          sourceType: "WEEKLY_COMMERCIAL_PDF",
+          originalFilename:
+            index === 2
+              ? "Confidentiel autre magasin.pdf"
+              : "Brief original.pdf",
+          mimeType: "application/pdf",
+          remoteUploadStatus:
+            index === 1 ? "PENDING" : index === 4 ? "INVALID" : "CONFIRMED",
+          createdAt: new Date("2026-10-13T08:00:00Z"),
+          ...(index === 3 ? { deletedAt: new Date() } : {}),
+          ...(index === 5 ? { mimeType: null } : {}),
+          objectKey: "private/secret-object-key",
+          blobUrl: "https://private.invalid/secret-token",
+          checksum: "private-checksum",
+        } as never);
+      }
+      const result = await readAttachedSources(db, storeId, refs);
+      expect(result.map((source) => source.sourceDocumentId)).toEqual(
+        refs.map((ref) => ref.sourceDocumentId),
+      );
+      expect(result.map((source) => source.status)).toEqual([
+        "CONFIRMED",
+        "PENDING_UPLOAD",
+        "UNAVAILABLE",
+        "UNAVAILABLE",
+        "UNAVAILABLE",
+        "UNAVAILABLE",
+        "UNAVAILABLE",
+      ]);
+      expect(result[0]).toMatchObject({
+        filename: "Brief original.pdf",
+        mediaType: "application/pdf",
+        registeredAt: "2026-10-13T08:00:00.000Z",
+        sourceType: "WEEKLY_COMMERCIAL_PDF",
+      });
+      expect(result[2]).toMatchObject({
+        filename: null,
+        mediaType: null,
+        sourceType: null,
+        registeredAt: null,
+      });
+      for (const secret of [
+        "secret-object-key",
+        "secret-token",
+        "private-checksum",
+        "Confidentiel",
+        "Nom capturé",
+      ])
+        expect(JSON.stringify(result)).not.toContain(secret);
+      await db
+        .collection("sourceDocuments")
+        .updateOne({ _id: refs[1]!.sourceDocumentId } as never, {
+          $set: { remoteUploadStatus: "CONFIRMED" },
+        });
+      expect(
+        (await readAttachedSources(db, storeId, [refs[1]!]))[0]!.status,
+      ).toBe("CONFIRMED");
+      expect(await readAttachedSources(db, storeId, [])).toEqual([]);
+      await expect(
+        readAttachedSources(
+          db,
+          storeId,
+          Array.from({ length: 11 }, () => refs[0]!),
+        ),
+      ).rejects.toThrow();
+    });
     it("reads only owned synchronized settings and withholds device coordinates/capture metadata", async () => {
       const entity = storeContextFixture();
       const storeId = entity.storeId;
@@ -1764,6 +1842,33 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await Promise.all(sessions.map((session) => session.endSession()));
       }
     });
+    it("rejects a mismatched persisted parent identity before loading sources or calling the provider", async () => {
+      const f = await fixture(),
+        generate = vi.fn(),
+        loadContext = vi.fn();
+      await db
+        .collection("copilotMessages")
+        .updateOne({ _id: f.message.id } as never, {
+          $set: { id: randomUUID() },
+        });
+      await expect(
+        runCopilotTurn(
+          {
+            db,
+            provider: { model: null, generate } as CopilotAiProvider,
+            authorize: async () => f.authority,
+            loadContext,
+          },
+          {
+            replyId: f.response.id,
+            conversationId: f.conversation.id,
+            userMessageId: f.message.id,
+          },
+        ),
+      ).rejects.toMatchObject({ code: "PARENT_INVALID" });
+      expect(generate).not.toHaveBeenCalled();
+      expect(loadContext).not.toHaveBeenCalled();
+    });
     it("runs generation outside transaction and restores persisted reply without a second provider call", async () => {
       const f = await fixture();
       const generate = vi
@@ -1799,6 +1904,16 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(generate).toHaveBeenCalledTimes(1);
       expect(generate.mock.calls[0]?.[0]).toMatchObject({
         history: { messages: [], earlierMessagesOmitted: false },
+        attachedSources: [
+          {
+            sourceDocumentId: f.message.attachments[0]!.sourceDocumentId,
+            status: "UNAVAILABLE",
+            filename: null,
+            mediaType: null,
+            sourceType: null,
+            registeredAt: null,
+          },
+        ],
       });
       expect(loadContext).toHaveBeenCalledTimes(1);
       await expect(
