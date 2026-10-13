@@ -1,3 +1,7 @@
+import {
+  readNeedCatalogue,
+  readNeedMemberships,
+} from "./copilot/need-tools.js";
 import { readCommercialPlan } from "./copilot/commercial-plan-tool.js";
 import { readWasteReceipt } from "./copilot/waste-receipt-tool.js";
 import { readStoreSourceDocuments } from "./copilot/commercial-documents-tool.js";
@@ -459,6 +463,18 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              needCatalogue: async (input) => {
+                await authorize();
+                const result = await readNeedCatalogue(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              needMemberships: async (input) => {
+                await authorize();
+                const result = await readNeedMemberships(db, storeId, input);
                 await authorize();
                 return result;
               },

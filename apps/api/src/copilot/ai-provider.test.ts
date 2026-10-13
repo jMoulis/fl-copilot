@@ -1,3 +1,4 @@
+import { needUnitFixture } from "../../../../scripts/test-need-unit-fixtures";
 import { randomUUID } from "node:crypto";
 import { it, expect, vi } from "vitest";
 import { z } from "zod";
@@ -1046,4 +1047,94 @@ it("exposes saved plan reads without turning missing plans into zero progress", 
   }).generate(f.request, schema);
   expect(commercialPlan).toHaveBeenCalledWith(input);
   expect(result.toolEvidence?.[0]?.id).toBe("commercial-plan-missing");
+});
+
+it("lets the model discover shopper needs then inspect memberships without exposing unrelated capabilities", async () => {
+  const f = fixture(),
+    need = { ...needUnitFixture(), storeId: f.request.storeId },
+    catalogueInput = { afterId: null, limit: 5 },
+    membershipInput = {
+      needUnitId: need.id,
+      productId: null,
+      afterId: null,
+      limit: 10,
+    };
+  const needCatalogue = vi.fn(async () => ({
+    needs: [need],
+    nextAfterId: null,
+    evidence: [
+      {
+        id: "need-registered",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: need.id,
+        sourceVersion: 1,
+        label: "Besoin enregistré",
+        value: need.name,
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  const needMemberships = vi.fn(async () => ({
+    needUnitId: need.id,
+    productId: null,
+    memberships: [],
+    nextAfterId: null,
+    evidence: [
+      {
+        id: "membership-empty",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: need.id,
+        sourceVersion: null,
+        label: "Associations enregistrées",
+        value:
+          "Aucune association enregistrée ; cela ne prouve pas l'absence d'un usage client.",
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)),
+      step = calls++;
+    expect(
+      body.tools.some((t: { name: string }) => t.name === "waste_documents"),
+    ).toBe(false);
+    if (step < 2) {
+      if (step === 1) expect(JSON.stringify(body)).toContain(need.id);
+      const name = step === 0 ? "need_catalogue" : "need_memberships";
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: `fc_need_${step}`,
+          call_id: `call_need_${step}`,
+          name,
+          arguments: JSON.stringify(
+            step === 0 ? catalogueInput : membershipInput,
+          ),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    expect(JSON.stringify(body)).toContain("membership-empty");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    needCatalogue,
+    needMemberships,
+  }).generate(f.request, schema);
+  expect(needCatalogue).toHaveBeenCalledWith(catalogueInput);
+  expect(needMemberships).toHaveBeenCalledWith(membershipInput);
+  expect(calls).toBe(3);
+  expect(result.toolEvidence?.map((e) => e.id)).toEqual([
+    "need-registered",
+    "membership-empty",
+  ]);
 });
