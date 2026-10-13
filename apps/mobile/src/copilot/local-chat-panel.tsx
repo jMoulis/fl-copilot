@@ -15,6 +15,7 @@ type PanelProps = {
   scopeKey: string;
   delivery?: CopilotTurnDelivery;
   onConversations(): void;
+  onAttachPdf?(signal: AbortSignal): Promise<string | undefined>;
 };
 /** Caller supplies actor/store scope identity; switching scope/topic resets all ephemeral UI. */
 export function CopilotLocalChatPanel(props: PanelProps) {
@@ -30,6 +31,7 @@ function LocalChatPanel({
   conversationId,
   onConversations,
   delivery,
+  onAttachPdf,
 }: PanelProps) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [loadedController, setLoadedController] =
@@ -37,6 +39,8 @@ function LocalChatPanel({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [attaching, setAttaching] = useState(false);
+  const attachmentAbort = useRef<AbortController | undefined>(undefined);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [historyError, setHistoryError] = useState<string>();
   const olderLocked = useRef(false);
@@ -101,6 +105,7 @@ function LocalChatPanel({
       });
     return () => {
       alive = false;
+      attachmentAbort.current?.abort();
       current.current = { controller: undefined, conversationId: "" };
     };
   }, [controller, conversationId, delivery]);
@@ -136,20 +141,15 @@ function LocalChatPanel({
   const change = (text: string) => {
     draftRevision.current++;
     setDraft(text);
-    void controller
-      .edit(conversationId, {
-        text,
-        attachments: snapshot.draft?.attachments ?? [],
-      })
-      .catch(() => {
-        if (isCurrent())
-          setError(
-            "Le brouillon n’a pas pu être enregistré. Votre texte reste affiché.",
-          );
-      });
+    void controller.editText(conversationId, text).catch(() => {
+      if (isCurrent())
+        setError(
+          "Le brouillon n’a pas pu être enregistré. Votre texte reste affiché.",
+        );
+    });
   };
   const send = async () => {
-    if (locked.current) return;
+    if (locked.current || attachmentAbort.current) return;
     locked.current = true;
     setSending(true);
     setError(undefined);
@@ -181,7 +181,7 @@ function LocalChatPanel({
     }
   };
   async function receive() {
-    if (!delivery) return;
+    if (!delivery || attachmentAbort.current) return;
     setSending(true);
     setError(undefined);
     try {
@@ -238,6 +238,48 @@ function LocalChatPanel({
       if (isCurrent()) setLoadingOlder(false);
     }
   }
+  async function attach() {
+    if (!onAttachPdf || attachmentAbort.current || locked.current) return;
+    const attempt = new AbortController();
+    attachmentAbort.current = attempt;
+    setAttaching(true);
+    setError(undefined);
+    try {
+      const sourceId = await onAttachPdf(attempt.signal);
+      if (!sourceId || !isCurrent() || attempt.signal.aborted) return;
+      const value = await controller.attachPdf(
+        conversationId,
+        sourceId,
+        attempt.signal,
+      );
+      if (isCurrent())
+        setSnapshot((previous) =>
+          previous ? { ...previous, draft: value } : previous,
+        );
+    } catch (reason) {
+      if (isCurrent() && !attempt.signal.aborted)
+        setError(attachmentError(reason));
+    } finally {
+      if (attachmentAbort.current === attempt)
+        attachmentAbort.current = undefined;
+      if (isCurrent()) setAttaching(false);
+    }
+  }
+  async function removeAttachment(sourceId: string) {
+    if (attachmentAbort.current || locked.current) return;
+    try {
+      const value = await controller.removeAttachment(conversationId, sourceId);
+      if (isCurrent())
+        setSnapshot((previous) =>
+          previous ? { ...previous, draft: value ?? null } : previous,
+        );
+    } catch {
+      if (isCurrent())
+        setError(
+          "La pièce jointe n’a pas pu être retirée du brouillon. Réessayez.",
+        );
+    }
+  }
   const queued = snapshot.pendingTurns.length > 0;
   return (
     <CopilotChatView
@@ -246,12 +288,24 @@ function LocalChatPanel({
       draft={draft}
       status={sending ? "GENERATING" : queued ? "QUEUED" : "IDLE"}
       error={error}
+      draftAttachments={snapshot.draft?.attachments ?? []}
+      attaching={attaching}
+      onAttach={
+        onAttachPdf
+          ? () => {
+              void attach();
+            }
+          : undefined
+      }
+      onRemoveAttachment={(sourceId) => {
+        void removeAttachment(sourceId);
+      }}
       onDraftChange={change}
       onSend={() => {
         void send();
       }}
       onRetry={
-        delivery && queued
+        delivery && queued && !attaching
           ? () => {
               void receive();
             }
@@ -282,8 +336,21 @@ function renderCommercialOriginal(
   attachment: CopilotMessage["attachments"][number],
   message: CopilotMessage,
 ) {
-  return message.role === "ASSISTANT" &&
+  return message.role !== "TOOL" &&
     attachment.mediaType === "application/pdf" ? (
     <CommercialOriginalButton sourceDocumentId={attachment.sourceDocumentId} />
   ) : null;
+}
+
+function attachmentError(error: unknown) {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "COPILOT_PDF_PICKER_UNAVAILABLE")
+    return "Le sélecteur de fichiers est indisponible dans cette version de l’application. Une version incluant ce module est nécessaire.";
+  if (code === "COPILOT_ATTACHMENT_LIMIT")
+    return "Vous pouvez joindre au maximum dix fichiers à une question.";
+  if (code.includes("SIZE_INVALID"))
+    return "Le PDF est vide ou dépasse la taille acceptée de 100 Mio.";
+  if (code.includes("PDF_INVALID"))
+    return "Choisissez un PDF commercial valide.";
+  return "Le PDF n’a pas pu être joint au brouillon. Un original déjà conservé reste disponible dans Ma semaine ; réessayez pour l’associer.";
 }

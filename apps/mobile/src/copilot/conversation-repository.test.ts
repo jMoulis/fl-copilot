@@ -1,3 +1,5 @@
+import { captureCommercialPdf } from "../documents/commercial-pdf-capture";
+import { SourceDocumentRepository } from "../documents/source-document-repository";
 import { CopilotTurnDelivery } from "./turn-delivery";
 import { receiveCopilotReply } from "./response-receiver";
 import { CopilotLocalChatController } from "./local-chat-controller";
@@ -800,6 +802,200 @@ it("refreshes through the previously displayed tail without a gap when more than
       parents.map((p) => p.id),
     );
     expect(recent.hasMore).toBe(false);
+  } finally {
+    db.close();
+  }
+});
+
+it("retains a PDF through the existing intake, preserves text while attaching, restores the draft and sends a file-only question", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-chat-pdf_")),
+    path = join(dir, "chat.db"),
+    f = chatFixture(randomUUID);
+  let db = new DatabaseSync(path);
+  try {
+    let adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    let repo = new CopilotConversationRepository(adapter, f);
+    let controller = new CopilotLocalChatController(repo, f, randomUUID);
+    const conversation = await controller.create();
+    const sources = new SourceDocumentRepository(adapter),
+      removed: string[] = [];
+    const storage = {
+      persist: async ({ filename }: { filename: string }) => ({
+        localUri: `file:///retained/${filename}`,
+        sizeBytes: 42,
+        checksum: `sha256:${"a".repeat(64)}`,
+      }),
+      remove: async (uri: string) => {
+        removed.push(uri);
+      },
+    };
+    const input = {
+      uri: "file:///selected/brief.pdf",
+      originalFilename: "Prospectus.pdf",
+      mimeType: "application/pdf",
+      storeId: f.storeId,
+      documentId: randomUUID(),
+      fileId: randomUUID(),
+      capturedAt: "2026-10-13T08:00:00Z",
+    };
+    const captured = await captureCommercialPdf(input, sources, storage);
+    const duplicate = await captureCommercialPdf(
+      { ...input, documentId: randomUUID(), fileId: randomUUID() },
+      sources,
+      storage,
+    );
+    expect(duplicate.document.id).toBe(captured.document.id);
+    expect(removed).toHaveLength(1);
+    const before = db.prepare("SELECT count(*) AS n FROM sync_outbox").get();
+    await controller.editText(conversation.id, "Pendant la copie");
+    const attach = controller.attachPdf(conversation.id, captured.document.id);
+    const typing = controller.editText(conversation.id, "Texte conservé");
+    await Promise.all([attach, typing]);
+    await controller.attachPdf(conversation.id, captured.document.id);
+    expect((await controller.open(conversation.id)).draft).toMatchObject({
+      text: "Texte conservé",
+      attachments: [
+        {
+          sourceDocumentId: captured.document.id,
+          filename: "Prospectus.pdf",
+          mediaType: "application/pdf",
+        },
+      ],
+    });
+    expect(db.prepare("SELECT count(*) AS n FROM sync_outbox").get()).toEqual(
+      before,
+    );
+    await controller.removeAttachment(conversation.id, captured.document.id);
+    expect((await controller.open(conversation.id)).draft?.attachments).toEqual(
+      [],
+    );
+    expect(await sources.getDocument(captured.document.id)).not.toBeNull();
+    expect(
+      await sources.getFileForDocument(captured.document.id),
+    ).toMatchObject({ retentionStatus: "RETAINED" });
+    await controller.attachPdf(conversation.id, captured.document.id);
+    await controller.editText(conversation.id, "");
+    db.close();
+    db = new DatabaseSync(path);
+    adapter = new Adapter(db);
+    repo = new CopilotConversationRepository(adapter, f);
+    controller = new CopilotLocalChatController(repo, f, randomUUID);
+    expect(
+      (await controller.open(conversation.id)).draft?.attachments,
+    ).toHaveLength(1);
+    const sent = await controller.send(conversation.id);
+    expect(sent.text).toBe("");
+    expect(sent.attachments[0]?.sourceDocumentId).toBe(captured.document.id);
+    expect((await controller.open(conversation.id)).draft).toBeNull();
+    expect((await controller.open(conversation.id)).pendingTurns).toHaveLength(
+      1,
+    );
+    await expect(
+      new SourceDocumentRepository(adapter).getDocument(captured.document.id),
+    ).resolves.not.toBeNull();
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("refuses missing/foreign/deleted PDFs, caps draft attachments and rolls back failed or cancelled binding while retaining the sources", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f),
+      controller = new CopilotLocalChatController(repo, f, randomUUID),
+      sources = new SourceDocumentRepository(adapter);
+    const conversation = await controller.create();
+    await controller.editText(conversation.id, "Brouillon sûr");
+    const ids: string[] = [];
+    for (let index = 0; index < 11; index++) {
+      const id = randomUUID();
+      ids.push(id);
+      await captureCommercialPdf(
+        {
+          uri: "file:///selected.pdf",
+          originalFilename: `Brief ${index}.pdf`,
+          storeId: f.storeId,
+          documentId: id,
+          fileId: randomUUID(),
+          capturedAt: "2026-10-13T08:00:00Z",
+        },
+        sources,
+        {
+          persist: async ({ filename }) => ({
+            localUri: `file:///retained/${filename}`,
+            sizeBytes: 42,
+            checksum: `sha256:${index.toString(16).padStart(64, "0")}`,
+          }),
+          remove: async () => {},
+        },
+      );
+    }
+    await expect(
+      controller.attachPdf(conversation.id, randomUUID()),
+    ).rejects.toThrow("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+    await adapter.runAsync(
+      "UPDATE source_documents SET store_id=? WHERE id=?",
+      randomUUID(),
+      ids[0]!,
+    );
+    await expect(
+      controller.attachPdf(conversation.id, ids[0]!),
+    ).rejects.toThrow("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+    await adapter.runAsync(
+      "UPDATE source_documents SET store_id=?,deleted_at=? WHERE id=?",
+      f.storeId,
+      "2026-10-13T09:00:00Z",
+      ids[0]!,
+    );
+    await expect(
+      controller.attachPdf(conversation.id, ids[0]!),
+    ).rejects.toThrow("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+    await adapter.runAsync(
+      "UPDATE source_documents SET deleted_at=NULL WHERE id=?",
+      ids[0]!,
+    );
+    adapter.fail = true;
+    await expect(
+      controller.attachPdf(conversation.id, ids[0]!),
+    ).rejects.toThrow("COMMIT_FAILED");
+    adapter.fail = false;
+    expect((await controller.open(conversation.id)).draft?.attachments).toEqual(
+      [],
+    );
+    expect(await sources.getDocument(ids[0]!)).not.toBeNull();
+    const abort = new AbortController(),
+      original = adapter.runAsync.bind(adapter);
+    adapter.runAsync = async (sql, ...params) => {
+      const result = await original(sql, ...params);
+      if (sql.startsWith("INSERT OR REPLACE INTO copilot_drafts"))
+        abort.abort();
+      return result;
+    };
+    await expect(
+      controller.attachPdf(conversation.id, ids[0]!, abort.signal),
+    ).rejects.toThrow("COPILOT_ATTACHMENT_CANCELLED");
+    adapter.runAsync = original;
+    expect((await controller.open(conversation.id)).draft?.attachments).toEqual(
+      [],
+    );
+    for (const id of ids.slice(0, 10))
+      await controller.attachPdf(conversation.id, id);
+    await expect(
+      controller.attachPdf(conversation.id, ids[10]!),
+    ).rejects.toThrow("COPILOT_ATTACHMENT_LIMIT");
+    expect((await controller.open(conversation.id)).draft).toMatchObject({
+      text: "Brouillon sûr",
+      attachments: expect.any(Array),
+    });
+    expect(
+      (await controller.open(conversation.id)).draft?.attachments,
+    ).toHaveLength(10);
+    expect(await sources.getDocument(ids[10]!)).not.toBeNull();
   } finally {
     db.close();
   }
