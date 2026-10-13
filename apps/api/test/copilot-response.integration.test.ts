@@ -1,3 +1,8 @@
+import {
+  readNeedCatalogue,
+  readNeedMemberships,
+} from "../src/copilot/need-tools";
+import { membershipFixture } from "../../../scripts/test-membership-fixtures";
 import { readCommercialPlan } from "../src/copilot/commercial-plan-tool";
 import { commercialExecutionFixture } from "../../../scripts/test-commercial-execution-fixtures";
 import { wasteReceiptDraftSchema } from "@fl-copilot/sync-contracts";
@@ -212,6 +217,185 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           (e) => e.sourceId === late.id,
         )!.id,
       ).not.toBe(before);
+    });
+    it("reads scoped shopper needs and memberships with review/refusal provenance and real Mongo product identities", async () => {
+      const f = await membershipFixture(),
+        storeId = f.need.storeId;
+      await mongoMigrations.find((m) => m.version === 34)!.up(db);
+      expect(
+        await db
+          .collection("needMemberships")
+          .indexExists("need_membership_need_cursor"),
+      ).toBe(true);
+      expect(
+        await db
+          .collection("needMemberships")
+          .indexExists("need_membership_product_cursor"),
+      ).toBe(true);
+      await db.collection("needUnits").insertMany([
+        { _id: f.need.id, ...f.need },
+        {
+          _id: randomUUID(),
+          ...f.need,
+          id: randomUUID(),
+          storeId: randomUUID(),
+        },
+      ] as never);
+      for (let i = 0; i < 5; i++) {
+        const id = randomUUID();
+        await db.collection("needUnits").insertOne({
+          ...f.need,
+          _id: id,
+          id,
+          code: `BESOIN_${i}`,
+          status: i % 2 ? "INACTIVE" : "TO_REVIEW",
+        } as never);
+      }
+      const toProduct = (p: typeof f.product) => {
+        const { id, ...data } = p;
+        return {
+          ...data,
+          _id: id,
+          schemaVersion: 1,
+          createdAt: new Date(p.createdAt),
+          updatedAt: new Date(p.updatedAt),
+          deletedAt: p.deletedAt ? new Date(p.deletedAt) : null,
+        };
+      };
+      await db.collection("products").insertOne(toProduct(f.product) as never);
+      const other = { ...f.product, id: randomUUID(), label: "Tomate ronde" };
+      await db.collection("products").insertOne(toProduct(other) as never);
+      const proposed = {
+        ...f.membership,
+        id: randomUUID(),
+        productId: other.id,
+        status: "PROPOSED",
+        humanConfirmed: false,
+        source: "AI_PROPOSED",
+      };
+      const rejected = {
+        ...f.membership,
+        id: randomUUID(),
+        productId: randomUUID(),
+        status: "REJECTED",
+      };
+      await db
+        .collection("needMemberships")
+        .insertMany(
+          [
+            f.membership,
+            proposed,
+            rejected,
+            { ...f.membership, id: randomUUID(), storeId: randomUUID() },
+          ].map((m) => ({ _id: m.id, ...m })) as never,
+        );
+      const catalogue = await readNeedCatalogue(db, storeId, {
+        afterId: null,
+        limit: 5,
+      });
+      expect(catalogue.needs).toHaveLength(5);
+      expect(catalogue.nextAfterId).not.toBeNull();
+      const remaining = await readNeedCatalogue(db, storeId, {
+        afterId: catalogue.nextAfterId,
+        limit: 5,
+      });
+      expect(remaining.needs).toHaveLength(1);
+      expect(remaining.nextAfterId).toBeNull();
+      const input = {
+        needUnitId: f.need.id,
+        productId: null,
+        afterId: null,
+        limit: 10,
+      };
+      const result = await readNeedMemberships(db, storeId, input);
+      expect(result.memberships.map((m) => m.entity.status).sort()).toEqual([
+        "PROPOSED",
+        "REJECTED",
+        "VALIDATED",
+      ]);
+      expect(
+        result.memberships.find((m) => m.entity.id === f.membership.id)!
+          .product,
+      ).toMatchObject({ id: f.product.id, nature: "UNKNOWN" });
+      expect(
+        result.memberships.find((m) => m.entity.id === rejected.id)!.product,
+      ).toBeNull();
+      expect(
+        result.evidence.find((e) => e.sourceId === proposed.id)!.value,
+      ).toContain("Proposée");
+      expect(
+        result.evidence.find((e) => e.sourceId === rejected.id)!.value,
+      ).toContain("Refusée");
+      const page = await readNeedMemberships(db, storeId, {
+        ...input,
+        limit: 1,
+      });
+      const next = await readNeedMemberships(db, storeId, {
+        ...input,
+        afterId: page.nextAfterId,
+      });
+      expect(next.memberships).toHaveLength(2);
+      expect(next.nextAfterId).toBeNull();
+      expect(
+        (
+          await readNeedMemberships(db, storeId, {
+            ...input,
+            productId: f.product.id,
+          })
+        ).memberships,
+      ).toHaveLength(1);
+      expect(
+        (
+          await readNeedMemberships(db, storeId, {
+            ...input,
+            needUnitId: null,
+            productId: f.product.id,
+          })
+        ).memberships,
+      ).toHaveLength(1);
+      await expect(
+        readNeedMemberships(db, randomUUID(), input),
+      ).rejects.toThrow("PARENT_UNAVAILABLE");
+      await expect(
+        readNeedMemberships(db, storeId, { ...input, needUnitId: null }),
+      ).rejects.toThrow();
+      const before = result.evidence.find(
+        (e) => e.sourceId === f.membership.id,
+      )!.id;
+      await db
+        .collection("needMemberships")
+        .updateOne({ _id: f.membership.id } as never, {
+          $set: { version: 2, strength: 0.9 },
+        });
+      await db
+        .collection("products")
+        .updateOne({ _id: f.product.id } as never, {
+          $set: { deletedAt: new Date(f.product.createdAt) },
+        });
+      const retired = await readNeedMemberships(db, storeId, input);
+      expect(
+        retired.evidence.find((e) => e.sourceId === f.membership.id)!.value,
+      ).toContain("retiré");
+      expect(
+        retired.evidence.find((e) => e.sourceId === f.membership.id)!.id,
+      ).not.toBe(before);
+      await db.collection("needUnits").updateOne({ _id: f.need.id } as never, {
+        $set: { status: "INACTIVE" },
+      });
+      expect(
+        (await readNeedMemberships(db, storeId, input)).memberships[0]!.need
+          ?.status,
+      ).toBe("INACTIVE");
+      await db
+        .collection("needUnits")
+        .updateOne({ _id: f.need.id } as never, { $set: { id: randomUUID() } });
+      await expect(readNeedMemberships(db, storeId, input)).rejects.toThrow(
+        "SCOPE",
+      );
+      expect(
+        (await readNeedCatalogue(db, randomUUID(), { afterId: null, limit: 5 }))
+          .needs,
+      ).toEqual([]);
     });
     it("reads the saved commercial plan and exact-target declarations with shared progress and page coverage", async () => {
       const f = await commercialExecutionFixture(),

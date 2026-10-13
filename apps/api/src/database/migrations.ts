@@ -705,6 +705,26 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 34,
+    name: "need-membership-read-indexes",
+    async up(database) {
+      await Promise.all([
+        database
+          .collection("needMemberships")
+          .createIndex(
+            { storeId: 1, needUnitId: 1, _id: 1 },
+            { name: "need_membership_need_cursor" },
+          ),
+        database
+          .collection("needMemberships")
+          .createIndex(
+            { storeId: 1, productId: 1, _id: 1 },
+            { name: "need_membership_product_cursor" },
+          ),
+      ]);
+    },
+  },
 ];
 
 export async function runMongoMigrations(
