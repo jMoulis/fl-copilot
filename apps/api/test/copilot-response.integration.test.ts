@@ -1,3 +1,5 @@
+import { readCopilotStoreSettings } from "../src/copilot/store-settings-tool";
+import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
 import {
   readNeedCatalogue,
   readNeedMemberships,
@@ -95,6 +97,55 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("reads only owned synchronized settings and withholds device coordinates/capture metadata", async () => {
+      const entity = storeContextFixture();
+      const storeId = entity.storeId;
+      const missing = await readCopilotStoreSettings(db, storeId, {});
+      expect(missing.settings).toBeNull();
+      expect(missing.evidence[0]!.value).toContain("non synchronisée");
+      const point = {
+        ...entity,
+        locationMode: "POINT" as const,
+        position: {
+          latitude: 48.91234567,
+          longitude: 2.28765432,
+          capturedAt: "2026-10-13T09:23:45Z",
+          source: "DEVICE" as const,
+        },
+      };
+      await db
+        .collection("storeContextSettings")
+        .insertOne({ _id: storeId, ...point } as never);
+      const result = await readCopilotStoreSettings(db, storeId, {});
+      expect(result.settings).toMatchObject({
+        city: entity.city,
+        postalCode: entity.postalCode,
+        schoolZone: "C",
+        locationMode: "POINT",
+      });
+      expect(result.settings).not.toHaveProperty("position");
+      expect(JSON.stringify(result)).not.toContain("48.91234567");
+      expect(JSON.stringify(result)).not.toContain("2.28765432");
+      expect(JSON.stringify(result)).not.toContain("09:23:45");
+      expect(
+        (await readCopilotStoreSettings(db, randomUUID(), {})).settings,
+      ).toBeNull();
+      await expect(
+        readCopilotStoreSettings(db, storeId, { storeId: randomUUID() }),
+      ).rejects.toThrow();
+      await db
+        .collection("storeContextSettings")
+        .updateOne({ _id: storeId } as never, {
+          $set: { city: "Paris", postalCode: "75001", version: 2 },
+        });
+      const changed = await readCopilotStoreSettings(db, storeId, {});
+      expect(changed.evidence[0]!.id).not.toBe(result.evidence[0]!.id);
+      expect(changed.evidence[0]!.sourceVersion).toBe(2);
+      await db
+        .collection("storeContextSettings")
+        .updateOne({ _id: storeId } as never, { $set: { id: randomUUID() } });
+      await expect(readCopilotStoreSettings(db, storeId, {})).rejects.toThrow();
+    });
     it("reads overlapping field episodes across a Paris DST day with source/status separation, pagination and historical labels", async () => {
       const storeId = randomUUID(),
         productId = randomUUID(),

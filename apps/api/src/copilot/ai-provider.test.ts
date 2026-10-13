@@ -1,3 +1,4 @@
+import { storeContextFixture } from "../../../../scripts/test-store-context-fixtures";
 import { needUnitFixture } from "../../../../scripts/test-need-unit-fixtures";
 import { randomUUID } from "node:crypto";
 import { it, expect, vi } from "vitest";
@@ -1138,3 +1139,73 @@ it("lets the model discover shopper needs then inspect memberships without expos
     "membership-empty",
   ]);
 });
+
+it.each(["valid", "foreign", "gps"] as const)(
+  "validates store-settings tool results before passing %s data to the model",
+  async (variant) => {
+    const f = fixture();
+    const entity = storeContextFixture();
+    const { position, ...visible } = entity;
+    void position;
+    const settings = {
+      ...visible,
+      id: f.request.storeId,
+      storeId: f.request.storeId,
+      ...(variant === "foreign" ? { storeId: randomUUID() } : {}),
+      ...(variant === "gps" ? { position: { latitude: 48.91234567 } } : {}),
+    };
+    const storeSettings = vi.fn(async () => ({
+      settings,
+      evidence: [
+        {
+          id: "settings-read",
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: f.request.storeId,
+          sourceVersion: 1,
+          label: "Réglages",
+          value: "Commune enregistrée",
+          factKind: "QUALITY" as const,
+        },
+      ],
+    }));
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (calls++ === 0) {
+        expect(
+          body.tools.some((t: { name: string }) => t.name === "store_settings"),
+        ).toBe(true);
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_settings",
+            call_id: "call_settings",
+            name: "store_settings",
+            arguments: "{}",
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(JSON.stringify(body)).not.toContain("48.91234567");
+      if (variant === "valid")
+        expect(JSON.stringify(body)).toContain("settings-read");
+      else {
+        expect(JSON.stringify(body)).toContain("unavailable");
+        expect(JSON.stringify(body)).not.toContain("settings-read");
+      }
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      storeSettings,
+    }).generate(f.request, schema);
+    expect(storeSettings).toHaveBeenCalledWith({});
+    expect(result.toolEvidence ?? []).toHaveLength(variant === "valid" ? 1 : 0);
+  },
+);

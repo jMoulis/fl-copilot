@@ -1,3 +1,4 @@
+import { readCopilotStoreSettings } from "./copilot/store-settings-tool.js";
 import {
   readNeedCatalogue,
   readNeedMemberships,
@@ -463,6 +464,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              storeSettings: async (input) => {
+                await authorize();
+                const result = await readCopilotStoreSettings(
+                  db,
+                  storeId,
+                  input,
+                );
                 await authorize();
                 return result;
               },
