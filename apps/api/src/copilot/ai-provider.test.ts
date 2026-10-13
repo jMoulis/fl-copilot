@@ -782,3 +782,75 @@ it("lets the model retrieve a normalized field-observation range without making 
   });
   expect(result.toolEvidence?.[0]?.id).toBe("events-missing");
 });
+
+it("lets the model consult directed alternatives and propagates only canonical read evidence", async () => {
+  const f = fixture(),
+    input = {
+      productId: randomUUID(),
+      needUnitId: null,
+      at: new Date(f.request.context.batch.evaluatedAt).toISOString(),
+      offset: 0,
+      limit: 5,
+    };
+  const substitutes = vi.fn(async () => ({
+    tool: "substitution.lookup" as const,
+    productId: input.productId,
+    needUnitId: null,
+    evaluatedAt: input.at,
+    ruleVersion: "substitute-lookup.v1",
+    lookupStatus: "READY" as const,
+    candidates: [],
+    candidateCount: 0,
+    hasMore: false,
+    nextOffset: null,
+    excluded: [],
+    excludedCount: 0,
+    excludedHasMore: false,
+    evidence: [
+      {
+        id: "substitutes-empty",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: input.productId,
+        sourceVersion: null,
+        label: "Alternatives enregistrées",
+        value: "Aucune relation enregistrée ; disponibilité inconnue.",
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "substitution_lookup",
+        ),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_sub",
+          call_id: "call_sub",
+          name: "substitution_lookup",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("substitutes-empty");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    substitutes,
+  }).generate(f.request, schema);
+  expect(substitutes).toHaveBeenCalledWith(input);
+  expect(result.toolEvidence?.[0]?.id).toBe("substitutes-empty");
+});
