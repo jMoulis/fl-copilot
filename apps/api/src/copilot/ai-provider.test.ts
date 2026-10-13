@@ -715,3 +715,70 @@ it("lets the model resolve an exact product before its period calculation", asyn
   expect(period).toHaveBeenCalledWith(periodInput);
   expect(result.toolEvidence?.[0]?.id).toBe("product-month");
 });
+
+it("lets the model retrieve a normalized field-observation range without making a stock claim", async () => {
+  const f = fixture(),
+    input = {
+      startAt: "2026-10-25T00:00:00+02:00",
+      endAt: "2026-10-26T00:00:00+01:00",
+      productId: null,
+      afterId: null,
+      limit: 10,
+    };
+  const fieldEvents = vi.fn(async () => ({
+    startAt: "2026-10-24T22:00:00.000Z",
+    endAt: "2026-10-25T23:00:00.000Z",
+    productId: null,
+    events: [],
+    hasMore: false,
+    nextAfterId: null,
+    evidence: [
+      {
+        id: "events-missing",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: f.request.storeId,
+        sourceVersion: null,
+        label: "Couverture des observations",
+        value: "Aucun signalement ; cela ne prouve pas une absence de rupture.",
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "store_events"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_events",
+          call_id: "call_events",
+          name: "store_events",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("events-missing");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    fieldEvents,
+  }).generate(f.request, schema);
+  expect(fieldEvents).toHaveBeenCalledWith({
+    ...input,
+    startAt: "2026-10-24T22:00:00.000Z",
+    endAt: "2026-10-25T23:00:00.000Z",
+  });
+  expect(result.toolEvidence?.[0]?.id).toBe("events-missing");
+});
