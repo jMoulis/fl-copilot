@@ -530,3 +530,160 @@ it("delivers only synchronized questions and keeps the same pending identity aft
     db.close();
   }
 });
+
+it("drains queued questions in insertion order even with equal timestamps, bounds each batch and shares concurrent retries", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    const controller = new CopilotLocalChatController(
+      repo,
+      f,
+      randomUUID,
+      () => "2026-10-13T08:00:00Z",
+    );
+    const conversation = await controller.create();
+    const parents: Awaited<ReturnType<CopilotLocalChatController["send"]>>[] =
+      [];
+    for (let i = 0; i < 7; i++) {
+      await controller.edit(conversation.id, {
+        text: `Question ${i}`,
+        attachments: [],
+      });
+      parents.push(await controller.send(conversation.id));
+    }
+    const requests = (await controller.open(conversation.id)).pendingTurns;
+    expect(requests.map((r) => r.userMessageId)).toEqual(
+      parents.map((p) => p.id),
+    );
+    const calls: string[] = [];
+    const delivery = new CopilotTurnDelivery(adapter, f, {
+      sync: async () => {
+        for (const parent of parents)
+          await adapter.runAsync(
+            "UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?",
+            parent.id,
+          );
+      },
+      ask: async (request) => {
+        calls.push(request.userMessageId);
+        const parent = parents.find((p) => p.id === request.userMessageId)!;
+        return {
+          message: {
+            ...parent,
+            id: request.replyId,
+            role: "ASSISTANT",
+            text: "Réponse",
+            replyToMessageId: parent.id,
+          },
+          alreadyApplied: false,
+        };
+      },
+    });
+    const first = delivery.deliver(conversation.id);
+    expect(delivery.deliver(conversation.id)).toBe(first);
+    expect(await first).toBe("RECEIVED");
+    expect(calls).toEqual(parents.slice(0, 5).map((p) => p.id));
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual(
+      requests.slice(5),
+    );
+    expect(await delivery.deliver(conversation.id)).toBe("RECEIVED");
+    expect(calls).toEqual(parents.map((p) => p.id));
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual([]);
+    expect(await delivery.deliver(conversation.id)).toBe("NONE");
+    expect(
+      (await repo.messages(conversation.id)).messages.filter(
+        (m) => m.entity.role === "ASSISTANT",
+      ),
+    ).toHaveLength(7);
+  } finally {
+    db.close();
+  }
+});
+
+it("keeps a received answer when the next call fails, resumes stable IDs after restart and never overtakes an unsynchronized parent", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    const controller = new CopilotLocalChatController(repo, f, randomUUID);
+    const conversation = await controller.create();
+    const parents: Awaited<ReturnType<CopilotLocalChatController["send"]>>[] =
+      [];
+    for (let i = 0; i < 3; i++) {
+      await controller.edit(conversation.id, {
+        text: `Question ${i}`,
+        attachments: [],
+      });
+      parents.push(await controller.send(conversation.id));
+    }
+    const requests = (await controller.open(conversation.id)).pendingTurns;
+    for (const parent of parents.slice(0, 2))
+      await adapter.runAsync(
+        "UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?",
+        parent.id,
+      );
+    let fail = true;
+    const calls: string[] = [];
+    const dependencies = {
+      sync: async () => {},
+      ask: async (request: (typeof requests)[number]) => {
+        calls.push(request.replyId);
+        if (request.replyId === requests[1]!.replyId && fail)
+          throw Error("NETWORK_DOWN");
+        const parent = parents.find((p) => p.id === request.userMessageId)!;
+        return {
+          message: {
+            ...parent,
+            id: request.replyId,
+            role: "ASSISTANT",
+            text: "Réponse",
+            replyToMessageId: parent.id,
+          },
+          alreadyApplied: false,
+        };
+      },
+    };
+    await expect(
+      new CopilotTurnDelivery(adapter, f, dependencies).deliver(
+        conversation.id,
+      ),
+    ).rejects.toThrow("NETWORK_DOWN");
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual(
+      requests.slice(1),
+    );
+    expect(
+      (await repo.messages(conversation.id)).messages.filter(
+        (m) => m.entity.role === "ASSISTANT",
+      ),
+    ).toHaveLength(1);
+    fail = false;
+    const restored = new CopilotTurnDelivery(adapter, f, dependencies);
+    expect(await restored.deliver(conversation.id)).toBe("WAITING");
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual(
+      requests.slice(2),
+    );
+    expect(calls).toEqual([
+      requests[0]!.replyId,
+      requests[1]!.replyId,
+      requests[1]!.replyId,
+    ]);
+    await adapter.runAsync(
+      "UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?",
+      parents[2]!.id,
+    );
+    expect(await restored.deliver(conversation.id)).toBe("RECEIVED");
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual([]);
+    expect(
+      (await repo.messages(conversation.id)).messages.filter(
+        (m) => m.entity.role === "ASSISTANT",
+      ),
+    ).toHaveLength(3);
+  } finally {
+    db.close();
+  }
+});

@@ -391,7 +391,7 @@ export class CopilotConversationRepository {
       conversation_id: string;
       user_message_id: string;
     }>(
-      "SELECT reply_id,conversation_id,user_message_id FROM copilot_pending_turns WHERE store_id=? AND owner_id=? AND conversation_id=? AND status='PENDING' ORDER BY updated_at,reply_id",
+      "SELECT reply_id,conversation_id,user_message_id FROM copilot_pending_turns WHERE store_id=? AND owner_id=? AND conversation_id=? AND status='PENDING' ORDER BY updated_at,rowid",
       this.scope.storeId,
       this.scope.ownerId,
       conversationId,

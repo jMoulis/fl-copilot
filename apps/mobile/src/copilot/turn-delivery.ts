@@ -22,7 +22,7 @@ export class CopilotTurnDelivery {
   deliver(conversationId: string) {
     const existing = this.running.get(conversationId);
     if (existing) return existing;
-    const work = this.perform(conversationId);
+    const work = this.drain(conversationId);
     this.running.set(conversationId, work);
     void work
       .finally(() => {
@@ -31,6 +31,19 @@ export class CopilotTurnDelivery {
       })
       .catch(() => undefined);
     return work;
+  }
+  /** Bounded sequential batch: stop at the first unsynchronized parent or failure. */
+  private async drain(
+    conversationId: string,
+  ): Promise<"NONE" | "WAITING" | "RECEIVED"> {
+    let received = false;
+    for (let index = 0; index < 5; index++) {
+      const result = await this.perform(conversationId);
+      if (result === "WAITING") return "WAITING";
+      if (result === "NONE") return received ? "RECEIVED" : "NONE";
+      received = true;
+    }
+    return "RECEIVED";
   }
   private async perform(
     conversationId: string,
