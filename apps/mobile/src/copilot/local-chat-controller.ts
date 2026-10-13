@@ -1,3 +1,4 @@
+import { mergeCopilotHistory } from "./history-window";
 import type { CopilotDraft } from "@fl-copilot/domain";
 import { CopilotConversationRepository } from "./conversation-repository";
 
@@ -45,13 +46,37 @@ export class CopilotLocalChatController {
       return conversation;
     });
   }
-  open(conversationId: string) {
+  open(conversationId: string, through?: { createdAt: string; id: string }) {
     return this.serial(async () => {
       const conversation = await this.active(conversationId);
-      const page = await this.repo.messages(conversationId);
+      let page = await this.repo.messages(conversationId);
+      while (
+        through &&
+        page.hasMore &&
+        page.before &&
+        (page.before.createdAt > through.createdAt ||
+          (page.before.createdAt === through.createdAt &&
+            page.before.id > through.id))
+      ) {
+        const older = await this.repo.messages(conversationId, 50, page.before);
+        if (
+          older.before &&
+          (older.before.createdAt > page.before.createdAt ||
+            (older.before.createdAt === page.before.createdAt &&
+              older.before.id >= page.before.id))
+        )
+          throw Error("COPILOT_HISTORY_CURSOR_INVALID");
+        page = mergeCopilotHistory(page, older, "OLDER");
+      }
       const draft = await this.repo.draft(conversationId);
       const pendingTurns = await this.repo.pendingTurns(conversationId);
       return { conversation, ...page, draft, pendingTurns };
+    });
+  }
+  older(conversationId: string, before: { createdAt: string; id: string }) {
+    return this.serial(async () => {
+      await this.active(conversationId);
+      return this.repo.messages(conversationId, 50, before);
     });
   }
   edit(
