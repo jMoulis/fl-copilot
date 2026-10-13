@@ -1,0 +1,100 @@
+import { randomUUID } from "node:crypto";
+import { wastePublicationSchema } from "../packages/sync-contracts/src/waste-publication";
+export function wastePublicationFixture() {
+  const storeId = randomUUID(),
+    sourceId = randomUUID(),
+    receiptId = randomUUID(),
+    productId = randomUUID(),
+    lineId = randomUUID(),
+    now = "2026-10-13T08:00:00.000Z";
+  const meta = {
+    version: 1,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    syncState: "PENDING",
+    remoteVersion: null,
+    dirty: true,
+  };
+  const source = {
+    ...meta,
+    id: sourceId,
+    storeId,
+    sourceType: "WASTE_RECEIPT",
+    originalFilename: "ticket.jpg",
+    localFileUri: null,
+    checksum: "sha256:receipt-fixture",
+    sourceGeneratedAt: null,
+    businessPeriodStart: null,
+    businessPeriodEnd: null,
+    localProcessingStatus: "PUBLISHED",
+    remoteUploadStatus: "CONFIRMED",
+    parserVersion: null,
+    extractionModelVersion: null,
+  };
+  const receipt = {
+    ...meta,
+    id: receiptId,
+    storeId,
+    sourceDocumentId: sourceId,
+    localFileId: null,
+    confirmedWasteDate: "2026-10-12",
+    detectedReceiptDate: "2026-10-11",
+    confirmedCashierNumber: "000007",
+    detectedCashierNumber: "000009",
+    cashierNumberConfirmedAt: now,
+    processingStatus: "PUBLISHED",
+    aiStatus: "COMPLETED",
+    duplicateStatus: "UNIQUE",
+  };
+  const line = {
+    ...meta,
+    id: lineId,
+    storeId,
+    receiptId,
+    sourceLineIndex: 0,
+    rawLabel: "FIGUE VRAC",
+    quantity: null,
+    weight: "1.5",
+    quantityUnit: "KG",
+    unitPrice: "2",
+    totalPrice: "3",
+    matchedProductId: productId,
+    matchStatus: "MATCHED",
+    productNature: "UNKNOWN",
+    validationStatus: "VALID",
+  };
+  const observation = {
+    ...meta,
+    id: lineId,
+    storeId,
+    productId,
+    businessDate: receipt.confirmedWasteDate,
+    sourceDocumentId: sourceId,
+    sourceRecordId: lineId,
+    validationStatus: "VALIDATED",
+    productNature: "UNKNOWN",
+    quantity: null,
+    purchaseValueKnown: null,
+    purchaseValueEstimated: null,
+    salesValue: "3",
+    costQuality: "UNAVAILABLE",
+    sourceType: "WASTE_RECEIPT",
+  };
+  return wastePublicationSchema.parse({
+    source,
+    receipt,
+    lines: [
+      line,
+      {
+        ...line,
+        id: randomUUID(),
+        sourceLineIndex: 1,
+        validationStatus: "EXCLUDED",
+        matchedProductId: null,
+        matchStatus: "UNMATCHED",
+      },
+    ],
+    observations: [observation],
+  });
+}

@@ -41,17 +41,20 @@ function sourceEvidence(s: Source) {
     factKind: "QUALITY",
   });
 }
-export async function readCommercialDocuments(
+export async function readStoreSourceDocuments(
   db: Db,
   storeId: string,
   raw: unknown,
+  sourceType: "WEEKLY_COMMERCIAL_PDF" | "WASTE_RECEIPT",
 ) {
   z.string().uuid().parse(storeId);
   const input = copilotDocumentsInputSchema.parse(raw);
   const rows = await db
     .collection<Source>("sourceDocuments")
     .find({
-      ...sourceFilter,
+      sourceType,
+      remoteUploadStatus: "CONFIRMED",
+      deletedAt: null,
       storeId,
       ...(input.cursor
         ? {
@@ -86,18 +89,40 @@ export async function readCommercialDocuments(
         ? { id: last._id, createdAt: last.createdAt.toISOString() }
         : null,
     evidence: [
-      ...page.map(sourceEvidence),
+      ...page.map((s) =>
+        sourceType === "WEEKLY_COMMERCIAL_PDF"
+          ? sourceEvidence(s)
+          : copilotEvidenceSchema.parse({
+              id: `waste-receipt-source/${hash([s.storeId, s._id, s.checksum])}`,
+              sourceType: "SOURCE_DOCUMENT",
+              sourceId: s._id,
+              sourceVersion: null,
+              label: "Photo du ticket de casse",
+              value: s.originalFilename,
+              factKind: "QUALITY",
+            }),
+      ),
       copilotEvidenceSchema.parse({
-        id: `commercial-documents-coverage/${hash([storeId, input, page.map((s) => s._id), hasMore])}`,
+        id: `source-documents-coverage/${hash([storeId, sourceType, input, page.map((s) => s._id), hasMore])}`,
         sourceType: "DATA_QUALITY",
         sourceId: storeId,
         sourceVersion: null,
-        label: "Documents commerciaux disponibles",
-        value: `${page.length} PDF dans cette page, triés par dépôt récent${hasMore ? " ; d’autres documents restent à consulter" : " ; fin de la liste"}. La date de dépôt ne détermine pas la semaine commerciale.`,
+        label:
+          sourceType === "WEEKLY_COMMERCIAL_PDF"
+            ? "Documents commerciaux disponibles"
+            : "Photos de casse disponibles",
+        value: `${page.length} ${sourceType === "WEEKLY_COMMERCIAL_PDF" ? "PDF" : "photos de ticket"} dans cette page, triés par dépôt récent${hasMore ? " ; d’autres documents restent à consulter" : " ; fin de la liste"}. La date de dépôt ne détermine pas ${sourceType === "WEEKLY_COMMERCIAL_PDF" ? "la semaine commerciale" : "la date de casse"}. Une source déposée n’est pas une publication validée.`,
         factKind: "QUALITY",
       }),
     ],
   });
+}
+export async function readCommercialDocuments(
+  db: Db,
+  storeId: string,
+  raw: unknown,
+) {
+  return readStoreSourceDocuments(db, storeId, raw, "WEEKLY_COMMERCIAL_PDF");
 }
 export async function readCommercialPdf(db: Db, storeId: string, raw: unknown) {
   z.string().uuid().parse(storeId);
