@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -37,6 +38,9 @@ export function CopilotChatView({
   onOlder,
   loadingOlder = false,
   historyError,
+  draftAttachments = [],
+  attaching = false,
+  onRemoveAttachment,
 }: {
   title: string;
   messages: readonly CopilotMessage[];
@@ -51,6 +55,9 @@ export function CopilotChatView({
   onOlder?(): void;
   loadingOlder?: boolean;
   historyError?: string;
+  draftAttachments?: CopilotMessage["attachments"];
+  attaching?: boolean;
+  onRemoveAttachment?(sourceDocumentId: string): void;
   renderAttachment?(
     attachment: CopilotMessage["attachments"][number],
     message: CopilotMessage,
@@ -60,7 +67,12 @@ export function CopilotChatView({
   const followLatest = useRef(true);
   const visible = messages.filter((message) => message.role !== "TOOL");
   const sending = status === "GENERATING" || status === "QUEUED";
-  const canSend = draft.trim().length > 0 && !sending;
+  const canSend =
+    (draft.trim().length > 0 || draftAttachments.length > 0) &&
+    !sending &&
+    !attaching;
+  const canAttach =
+    !attaching && status !== "GENERATING" && draftAttachments.length < 10;
   const onScroll = ({
     nativeEvent,
   }: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -192,15 +204,61 @@ export function CopilotChatView({
             </Text>
           </Pressable>
         ) : null}
+        {attaching ? (
+          <Text accessibilityLiveRegion="polite" style={styles.state}>
+            Conservation du PDF…
+          </Text>
+        ) : null}
+        {draftAttachments.length ? (
+          <ScrollView
+            horizontal
+            keyboardShouldPersistTaps="handled"
+            style={{ flexGrow: 0 }}
+            contentContainerStyle={{ gap: 8 }}
+          >
+            {draftAttachments.map((attachment) => (
+              <View
+                key={attachment.sourceDocumentId}
+                style={styles.draftAttachment}
+              >
+                <Text numberOfLines={2} style={styles.draftFilename}>
+                  {attachment.filename}
+                </Text>
+                {onRemoveAttachment ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retirer ${attachment.filename} du brouillon`}
+                    accessibilityState={{
+                      disabled: attaching || status === "GENERATING",
+                    }}
+                    disabled={attaching || status === "GENERATING"}
+                    style={styles.menu}
+                    onPress={() =>
+                      onRemoveAttachment(attachment.sourceDocumentId)
+                    }
+                  >
+                    <Text style={styles.retryText}>×</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ))}
+          </ScrollView>
+        ) : null}
+        {draftAttachments.length >= 10 ? (
+          <Text style={styles.state}>Dix fichiers maximum par question.</Text>
+        ) : null}
         <View style={styles.composer}>
           {onAttach ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Joindre un fichier ou une photo"
+              accessibilityLabel="Joindre un PDF commercial"
+              accessibilityState={{ disabled: !canAttach, busy: attaching }}
+              disabled={!canAttach}
               onPress={onAttach}
               style={styles.attach}
             >
               <Text style={styles.menuText}>＋</Text>
+              <Text style={styles.attachCaption}>PDF</Text>
             </Pressable>
           ) : null}
           <TextInput
@@ -278,6 +336,16 @@ const styles = StyleSheet.create({
   message: { color: colors.ink, fontSize: 17, lineHeight: 26 },
   attachment: { color: colors.muted, fontSize: 14, marginTop: 8 },
   footer: { padding: 12, gap: 10, backgroundColor: colors.canvas },
+  draftAttachment: {
+    width: 240,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 12,
+    paddingLeft: 12,
+  },
+  draftFilename: { flex: 1, color: colors.ink, fontSize: 14 },
+  attachCaption: { color: colors.muted, fontSize: 11 },
   state: { color: colors.muted, fontSize: 13, lineHeight: 19 },
   error: { color: colors.critical, fontSize: 14, lineHeight: 21 },
   retry: { minHeight: 44, justifyContent: "center" },

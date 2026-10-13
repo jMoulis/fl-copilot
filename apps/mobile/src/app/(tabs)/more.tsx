@@ -31,6 +31,15 @@ export default function MoreScreen() {
         subtitle="Données du rayon, synchronisation et réglages."
       />
 
+      <SectionCard title="Copilote">
+        <MenuRow
+          title="Discuter avec le copilote"
+          description="Chiffres du rayon et PDF commerciaux"
+          icon="chatbubbles-outline"
+          onPress={() => router.push("/copilot")}
+        />
+      </SectionCard>
+
       <SectionCard
         title="Données du rayon"
         description="Gérez les sources qui alimentent vos analyses."

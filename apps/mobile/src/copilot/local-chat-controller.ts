@@ -91,6 +91,48 @@ export class CopilotLocalChatController {
       });
     });
   }
+  editText(conversationId: string, text: string) {
+    return this.serial(async () => {
+      await this.active(conversationId);
+      const draft = await this.repo.draft(conversationId);
+      await this.repo.saveDraft(conversationId, {
+        text,
+        attachments: draft?.attachments ?? [],
+        updatedAt: this.now(),
+      });
+    });
+  }
+  attachPdf(
+    conversationId: string,
+    sourceDocumentId: string,
+    signal?: AbortSignal,
+  ) {
+    return this.serial(async () => {
+      await this.active(conversationId);
+      return this.repo.attachPdf(
+        conversationId,
+        sourceDocumentId,
+        this.now(),
+        signal,
+      );
+    });
+  }
+  removeAttachment(conversationId: string, sourceDocumentId: string) {
+    return this.serial(async () => {
+      await this.active(conversationId);
+      const draft = await this.repo.draft(conversationId);
+      if (!draft) return;
+      const updated = {
+        ...draft,
+        updatedAt: this.now(),
+        attachments: draft.attachments.filter(
+          (a) => a.sourceDocumentId !== sourceDocumentId,
+        ),
+      };
+      await this.repo.saveDraft(conversationId, updated);
+      return updated;
+    });
+  }
   send(conversationId: string) {
     return this.serial(async () => {
       await this.active(conversationId);

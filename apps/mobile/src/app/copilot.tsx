@@ -1,3 +1,7 @@
+import { requireOptionalNativeModule } from "expo-modules-core";
+import { captureCommercialPdf } from "@/documents/commercial-pdf-capture";
+import { SourceDocumentRepository } from "@/documents/source-document-repository";
+import { selectCopilotPdf } from "@/copilot/pdf-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -22,6 +26,23 @@ import {
   InlineAlert,
 } from "@/components/ui";
 import { colors } from "@/design/tokens";
+
+interface NativePdfPicker {
+  getDocumentAsync(options: {
+    type: string[];
+    copyToCacheDirectory: boolean;
+    multiple: boolean;
+    base64: boolean;
+  }): Promise<
+    | { canceled: true }
+    | {
+        canceled: false;
+        assets: Array<{ uri: string; name: string; mimeType?: string }>;
+      }
+  >;
+}
+const pdfPicker =
+  requireOptionalNativeModule<NativePdfPicker>("ExpoDocumentPicker");
 
 export default function CopilotScreen() {
   const { session } = useAuth();
@@ -80,6 +101,40 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       },
     );
   }, [sqlite, storeId, ownerId, syncNow, withAccessToken]);
+  const attachPdf = async (signal: AbortSignal) => {
+    if (!pdfPicker) throw Error("COPILOT_PDF_PICKER_UNAVAILABLE");
+    return selectCopilotPdf(
+      {
+        pick: async () => {
+          const result = await pdfPicker.getDocumentAsync({
+            type: ["application/pdf"],
+            copyToCacheDirectory: true,
+            multiple: false,
+            base64: false,
+          });
+          if (result.canceled) return undefined;
+          if (!result.assets[0]) throw Error("COMMERCIAL_PDF_INVALID");
+          return result.assets[0];
+        },
+        retain: async (asset) => {
+          const result = await captureCommercialPdf(
+            {
+              uri: asset.uri,
+              originalFilename: asset.name,
+              mimeType: asset.mimeType,
+              storeId,
+              documentId: randomUUID(),
+              fileId: randomUUID(),
+              capturedAt: new Date().toISOString(),
+            },
+            new SourceDocumentRepository(sqlite),
+          );
+          return result.document.id;
+        },
+      },
+      signal,
+    );
+  };
   const [conversations, setConversations] = useState<
     Awaited<ReturnType<CopilotConversationRepository["list"]>>
   >([]);
@@ -194,6 +249,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         scopeKey={`${storeId}/${ownerId}`}
         delivery={delivery}
         onConversations={refreshMenu}
+        onAttachPdf={attachPdf}
       />
       <BottomSheet
         visible={menu}
