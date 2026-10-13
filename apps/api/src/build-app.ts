@@ -1,3 +1,4 @@
+import { readCopilotWeek } from "./copilot/week-context-tool.js";
 import { readSubstitutes } from "./copilot/substitutes-tool.js";
 import { readFieldEvents } from "./copilot/field-events-tool.js";
 import { readProductSearch } from "./copilot/product-search-tool.js";
@@ -455,6 +456,17 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              weekContext: async (input) => {
+                await authorize();
+                const result = await readCopilotWeek(
+                  dependencies.weekContext ??
+                    createWeekContextService(dependencies.database),
+                  storeId,
+                  input,
+                );
                 await authorize();
                 return result;
               },

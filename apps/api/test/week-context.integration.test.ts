@@ -1,3 +1,4 @@
+import { readCopilotWeek } from "../src/copilot/week-context-tool";
 import { randomUUID } from "node:crypto";
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
 import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
@@ -84,6 +85,16 @@ describe.skipIf(!uri)("remote context cache", () => {
       "2026-10-05",
     );
     expect(calls).toHaveLength(4);
+    const copilot = await readCopilotWeek(
+      service,
+      settings.storeId,
+      { weekStart: "2026-10-05" },
+      at,
+    );
+    expect(copilot.context?.weather.status).toBe("AVAILABLE");
+    expect(copilot.context).not.toHaveProperty("settingsFingerprint");
+    expect(copilot.evidence).toHaveLength(4);
+    expect(calls).toHaveLength(4);
     at = new Date("2026-10-09T10:00:00Z");
     fail = true;
     const stale = await service.read(settings.storeId, "2026-10-05");
@@ -94,6 +105,14 @@ describe.skipIf(!uri)("remote context cache", () => {
       days: first.weather.days,
     });
     expect(stale.schoolHolidays.status).toBe("AVAILABLE");
+    const projected = await readCopilotWeek(
+      service,
+      settings.storeId,
+      { weekStart: "2026-10-05" },
+      at,
+    );
+    expect(projected.context?.weather.status).toBe("STALE");
+    expect(projected.context?.schoolHolidays.status).toBe("AVAILABLE");
     await expect(
       service.read(randomUUID(), "2026-10-05"),
     ).rejects.toMatchObject({ publicCode: "STORE_SETTINGS_NOT_SYNCED" });
