@@ -272,3 +272,41 @@ export const copilotSubstitutesResultSchema = substitutesReadResultSchema
       )
         ctx.addIssue({ code: "custom", message: "Invalid directed candidate" });
   });
+
+export const copilotWeekInputSchema = contextWeekQuerySchema;
+/** Only the useful provider projection is exposed, never the settings/GPS fingerprint. */
+export const copilotWeekResultSchema = z
+  .strictObject({
+    weekStart: contextWeekQuerySchema.shape.weekStart,
+    context: z
+      .strictObject({
+        storeId: weeklyContextSchema.shape.storeId,
+        weekStart: weeklyContextSchema.shape.weekStart,
+        weekEnd: weeklyContextSchema.shape.weekEnd,
+        locationLabel: weeklyContextSchema.shape.locationLabel,
+        retrievedAt: weeklyContextSchema.shape.retrievedAt,
+        weather: weeklyContextSchema.shape.weather,
+        publicHolidays: weeklyContextSchema.shape.publicHolidays,
+        schoolHolidays: weeklyContextSchema.shape.schoolHolidays,
+      })
+      .nullable(),
+    evidence: z.array(copilotEvidenceSchema).min(1).max(4),
+  })
+  .superRefine((r, ctx) => {
+    const c = r.context;
+    if (
+      c &&
+      (c.weekStart !== r.weekStart ||
+        !weeklyContextSchema.safeParse({
+          ...c,
+          settingsFingerprint: "withheld",
+        }).success ||
+        c.publicHolidays.days.some(
+          (d) => d.date < c.weekStart || d.date > c.weekEnd,
+        ) ||
+        c.schoolHolidays.periods.some(
+          (p) => p.startDate > c.weekEnd || p.resumeDate <= c.weekStart,
+        ))
+    )
+      ctx.addIssue({ code: "custom", message: "Invalid weekly context scope" });
+  });

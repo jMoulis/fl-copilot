@@ -854,3 +854,56 @@ it("lets the model consult directed alternatives and propagates only canonical r
   expect(substitutes).toHaveBeenCalledWith(input);
   expect(result.toolEvidence?.[0]?.id).toBe("substitutes-empty");
 });
+
+it("exposes configured weekly context with trusted evidence and explicit missing-location coverage", async () => {
+  const f = fixture(),
+    input = { weekStart: "2026-10-05" };
+  const weekContext = vi.fn(async () => ({
+    weekStart: input.weekStart,
+    context: null,
+    evidence: [
+      {
+        id: "week-unconfigured",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: f.request.storeId,
+        sourceVersion: null,
+        label: "Contexte du magasin",
+        value: "Réglages absents ; demander la commune et le code postal.",
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "store_week"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_week",
+          call_id: "call_week",
+          name: "store_week",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("week-unconfigured");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    weekContext,
+  }).generate(f.request, schema);
+  expect(weekContext).toHaveBeenCalledWith(input);
+  expect(result.toolEvidence?.[0]?.id).toBe("week-unconfigured");
+});
