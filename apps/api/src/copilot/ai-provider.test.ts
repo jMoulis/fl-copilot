@@ -989,3 +989,61 @@ it("lets the model discover and inspect a receipt without treating unavailable e
   expect(result.toolEvidence?.[0]?.id).toBe("receipt-pending");
   expect(calls).toBe(3);
 });
+
+it("exposes saved plan reads without turning missing plans into zero progress", async () => {
+  const f = fixture(),
+    input = { weekStart: "2026-10-05", offset: 0, limit: 10 };
+  const commercialPlan = vi.fn(async () => ({
+    weekStart: input.weekStart,
+    status: "NO_PLAN" as const,
+    plan: null,
+    tasks: [],
+    progress: null,
+    unmatchedDeclarations: null,
+    nextOffset: null,
+    evidence: [
+      {
+        id: "commercial-plan-missing",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: f.request.storeId,
+        sourceVersion: null,
+        label: "Plan enregistré",
+        value: "Aucun plan synchronisé ; progression inconnue.",
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "commercial_plan"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_plan",
+          call_id: "call_plan",
+          name: "commercial_plan",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("commercial-plan-missing");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    commercialPlan,
+  }).generate(f.request, schema);
+  expect(commercialPlan).toHaveBeenCalledWith(input);
+  expect(result.toolEvidence?.[0]?.id).toBe("commercial-plan-missing");
+});

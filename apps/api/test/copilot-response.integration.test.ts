@@ -1,3 +1,5 @@
+import { readCommercialPlan } from "../src/copilot/commercial-plan-tool";
+import { commercialExecutionFixture } from "../../../scripts/test-commercial-execution-fixtures";
 import { wasteReceiptDraftSchema } from "@fl-copilot/sync-contracts";
 import { readWasteReceipt } from "../src/copilot/waste-receipt-tool";
 import { readStoreSourceDocuments } from "../src/copilot/commercial-documents-tool";
@@ -210,6 +212,102 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           (e) => e.sourceId === late.id,
         )!.id,
       ).not.toBe(before);
+    });
+    it("reads the saved commercial plan and exact-target declarations with shared progress and page coverage", async () => {
+      const f = await commercialExecutionFixture(),
+        p = f.plan,
+        storeId = p.storeId,
+        input = { weekStart: p.weekStart, offset: 0, limit: 1 };
+      const missing = await readCommercialPlan(db, storeId, input);
+      expect(missing).toMatchObject({
+        status: "NO_PLAN",
+        plan: null,
+        progress: null,
+        tasks: [],
+      });
+      await db
+        .collection("commercialWeekPlans")
+        .insertOne({ _id: p.id, ...p } as never);
+      await db.collection("commercialExecutionTasks").insertMany([
+        { _id: f.task.id, ...f.task },
+        {
+          ...f.task,
+          _id: randomUUID(),
+          id: randomUUID(),
+          storeId: randomUUID(),
+        },
+      ] as never);
+      const first = await readCommercialPlan(db, storeId, input);
+      expect(first).toMatchObject({
+        status: "READY",
+        plan: {
+          id: p.id,
+          revisionId: p.revisionId,
+          version: p.version,
+          tgCapacity: 1,
+        },
+        progress: { total: 2, DONE: 1, TODO: 1 },
+        nextOffset: 1,
+        unmatchedDeclarations: 0,
+      });
+      expect(first.tasks[0]).toMatchObject({
+        record: { status: "DONE", completedAt: f.task.completedAt },
+        offer: { rawProductLabel: p.offers[0]!.rawProductLabel },
+      });
+      expect(first.evidence[0]!.value).toContain("pas une preuve automatique");
+      const next = await readCommercialPlan(db, storeId, {
+        ...input,
+        offset: 1,
+      });
+      expect(next.nextOffset).toBeNull();
+      expect(next.tasks[0]!.record).toBeNull();
+      expect(next.tasks[0]!.placementOffers[0]!.choiceId).toBe(
+        p.offers[0]!.choiceId,
+      );
+      expect(next.tasks[0]!.placement!.label).toBe("TG entrée");
+      expect((await readCommercialPlan(db, randomUUID(), input)).status).toBe(
+        "NO_PLAN",
+      );
+      const before = first.evidence[0]!.id;
+      await db
+        .collection("commercialExecutionTasks")
+        .updateOne({ _id: f.task.id } as never, {
+          $set: { note: "Déclaration corrigée", version: 2 },
+        });
+      expect(
+        (await readCommercialPlan(db, storeId, input)).evidence[0]!.id,
+      ).not.toBe(before);
+      await db
+        .collection("commercialExecutionTasks")
+        .updateOne({ _id: f.task.id } as never, {
+          $set: { planChecksum: "b".repeat(64) },
+        });
+      const mismatch = await readCommercialPlan(db, storeId, input);
+      expect(mismatch.progress).toMatchObject({ DONE: 0, TODO: 2 });
+      expect(mismatch.unmatchedDeclarations).toBe(1);
+      expect(mismatch.tasks[0]!.record).toBeNull();
+      await db
+        .collection("commercialExecutionTasks")
+        .updateOne({ _id: f.task.id } as never, {
+          $set: { planRevisionId: randomUUID() },
+        });
+      const old = await readCommercialPlan(db, storeId, input);
+      expect(old.progress?.DONE).toBe(0);
+      expect(old.unmatchedDeclarations).toBe(0);
+      await expect(
+        readCommercialPlan(db, storeId, { ...input, weekStart: "2026-10-06" }),
+      ).rejects.toThrow();
+      const many = Array.from({ length: 131 }, () => {
+        const id = randomUUID();
+        return { ...f.task, _id: id, id };
+      });
+      await db.collection("commercialExecutionTasks").insertMany(many as never);
+      expect(await readCommercialPlan(db, storeId, input)).toMatchObject({
+        status: "LIMIT_EXCEEDED",
+        progress: null,
+        tasks: [],
+        unmatchedDeclarations: null,
+      });
     });
     it("reads receipt sources and immutable publication pages without mistaking extraction or exclusions for official waste", async () => {
       const p = wastePublicationFixture(),

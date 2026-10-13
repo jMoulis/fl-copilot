@@ -78,3 +78,5 @@ export * from "./copilot-product-search";
 
 export * from "./waste-receipt-draft";
 export * from "./copilot-waste-receipts";
+
+export * from "./copilot-commercial-plan-read";
