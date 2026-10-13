@@ -210,3 +210,65 @@ export const copilotEventsReadResultSchema = z.strictObject({
   nextAfterId: z.string().uuid().nullable(),
   evidence: z.array(copilotEvidenceSchema).max(11),
 });
+
+/** Model-facing directed lookup, with explicit nullable scope and bounded pages. */
+export const copilotSubstitutesInputSchema = z.strictObject({
+  productId: z.string().uuid(),
+  needUnitId: z.string().uuid().nullable(),
+  at: instant,
+  offset: z.number().int().min(0).max(10000),
+  limit: z.number().int().min(1).max(5),
+});
+export const copilotSubstitutesResultSchema = substitutesReadResultSchema
+  .omit({
+    schemaVersion: true,
+    operationId: true,
+    status: true,
+    message: true,
+    observedAt: true,
+  })
+  .extend({
+    candidates: substitutesReadResultSchema.shape.candidates.max(5),
+    needUnitId: z.string().uuid().nullable(),
+    lookupStatus: z.enum(["SOURCE_UNAVAILABLE", "READY", "LIMIT_EXCEEDED"]),
+    candidateCount: z.number().int().nonnegative().nullable(),
+    excludedCount: z.number().int().nonnegative().nullable(),
+    evidence: z.array(copilotEvidenceSchema).max(6),
+  })
+  .superRefine((r, ctx) => {
+    const valid =
+      r.lookupStatus === "LIMIT_EXCEEDED"
+        ? r.candidateCount === null &&
+          r.excludedCount === null &&
+          !r.candidates.length &&
+          !r.excluded.length &&
+          !r.hasMore &&
+          !r.excludedHasMore &&
+          r.nextOffset === null
+        : r.candidateCount !== null &&
+          r.candidateCount >= r.candidates.length &&
+          r.excludedCount !== null &&
+          r.excludedCount >= r.excluded.length &&
+          r.excludedHasMore === r.excludedCount > r.excluded.length &&
+          r.hasMore === (r.nextOffset !== null) &&
+          (r.lookupStatus !== "SOURCE_UNAVAILABLE" ||
+            (r.candidateCount === 0 && r.excludedCount === 0 && !r.hasMore));
+    if (!valid)
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid substitution coverage",
+      });
+    for (const c of r.candidates)
+      if (
+        !c.relationships.length ||
+        c.relationships.some(
+          (v) =>
+            v.relation.sourceProductId !== r.productId ||
+            v.relation.substituteProductId !== c.productId ||
+            (r.needUnitId && v.relation.needUnitId !== r.needUnitId) ||
+            !v.relation.humanConfirmed ||
+            !["VALIDATED", "LEARNING"].includes(v.relation.status),
+        )
+      )
+        ctx.addIssue({ code: "custom", message: "Invalid directed candidate" });
+  });

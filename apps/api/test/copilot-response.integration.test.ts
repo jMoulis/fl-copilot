@@ -1,5 +1,10 @@
+import { readSubstitutes } from "../src/copilot/substitutes-tool";
+import { substitutionFixture } from "../../../scripts/test-substitution-fixtures";
 import { readFieldEvents } from "../src/copilot/field-events-tool";
-import { prepareStoreProductEvent } from "@fl-copilot/domain";
+import {
+  prepareStoreProductEvent,
+  storeProductEventSchema,
+} from "@fl-copilot/domain";
 import { readProductSearch } from "../src/copilot/product-search-tool";
 import {
   readCommercialDocuments,
@@ -201,6 +206,173 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           (e) => e.sourceId === late.id,
         )!.id,
       ).not.toBe(before);
+    });
+    it("reads scoped directed alternatives with canonical ranking, refusal, field exclusions and complete coverage", async () => {
+      const f = await substitutionFixture(),
+        at = "2026-10-13T10:00:00.000Z",
+        storeId = f.product.storeId;
+      const putProduct = async (p: typeof f.product) => {
+        const { id, ...data } = p;
+        await db.collection("products").insertOne({
+          ...data,
+          _id: id,
+          schemaVersion: 1,
+          createdAt: new Date(p.createdAt),
+          updatedAt: new Date(p.updatedAt),
+        } as never);
+      };
+      await putProduct(f.product);
+      await putProduct(f.substitute);
+      await db
+        .collection("needUnits")
+        .insertOne({ _id: f.need.id, ...f.need } as never);
+      const relations = [f.substitution];
+      for (let i = 0; i < 6; i++) {
+        const target = {
+          ...f.substitute,
+          id: randomUUID(),
+          label: `Alternative ${i}`,
+        };
+        await putProduct(target);
+        relations.push({
+          ...f.substitution,
+          id: randomUUID(),
+          substituteProductId: target.id,
+          needCompatibility: 0.1 + i * 0.1,
+          ...(i === 0
+            ? { status: "REJECTED" as const }
+            : i === 1
+              ? { status: "PROPOSED" as const, humanConfirmed: false }
+              : {}),
+        });
+        if (i === 2 || i === 3) {
+          const event = storeProductEventSchema.parse({
+            id: randomUUID(),
+            storeId,
+            productId: target.id,
+            source: "USER",
+            sourceDocumentId: null,
+            type: i === 2 ? "OUT_OF_STOCK" : "LOW_STOCK",
+            severity: null,
+            comment: null,
+            startedAt: "2026-10-12T10:00:00.000Z",
+            endedAt: null,
+            status: i === 3 ? "TO_REVIEW" : "ACTIVE",
+            clientCapturedAt: "2026-10-12T10:00:00.000Z",
+            version: 1,
+            createdAt: at,
+            updatedAt: at,
+          });
+          await db
+            .collection("storeProductEvents")
+            .insertOne({ _id: event.id, ...event } as never);
+        }
+      }
+      const foreign = {
+        ...f.substitution,
+        id: randomUUID(),
+        storeId: randomUUID(),
+        substituteProductId: randomUUID(),
+      };
+      await db
+        .collection("productSubstitutions")
+        .insertMany(
+          [...relations, foreign].map((r) => ({ _id: r.id, ...r })) as never,
+        );
+      const input = {
+        productId: f.product.id,
+        needUnitId: null,
+        at,
+        offset: 0,
+        limit: 1,
+      };
+      const result = await readSubstitutes(db, storeId, input, at);
+      expect(result.lookupStatus).toBe("READY");
+      expect(result.candidateCount).toBe(3);
+      expect(result.candidates[0]).toMatchObject({
+        productId: f.substitute.id,
+        availability: "UNKNOWN",
+      });
+      expect(result.candidates[0]!.relationships[0]).toMatchObject({
+        basis: "DECLARED",
+        syncState: "SYNCED",
+      });
+      expect(result.hasMore).toBe(true);
+      expect(result.nextOffset).toBe(1);
+      expect(result.excluded.map((e) => e.reason).sort()).toEqual([
+        "EVENT_UNRESOLVED",
+        "OUT_OF_STOCK",
+        "REJECTED",
+        "UNCONFIRMED",
+      ]);
+      expect(result.evidence[0]).toMatchObject({
+        sourceType: "SUBSTITUTION",
+        factKind: "DERIVED",
+      });
+      const next = await readSubstitutes(
+        db,
+        storeId,
+        { ...input, offset: 1, limit: 5 },
+        at,
+      );
+      expect(next.candidates).toHaveLength(2);
+      expect(next.hasMore).toBe(false);
+      expect(
+        (
+          await readSubstitutes(
+            db,
+            storeId,
+            { ...input, productId: f.substitute.id },
+            at,
+          )
+        ).candidateCount,
+      ).toBe(0);
+      expect(
+        (await readSubstitutes(db, foreign.storeId, input, at)).lookupStatus,
+      ).toBe("SOURCE_UNAVAILABLE");
+      expect(
+        (
+          await readSubstitutes(
+            db,
+            storeId,
+            { ...input, needUnitId: randomUUID() },
+            at,
+          )
+        ).candidateCount,
+      ).toBe(0);
+      await expect(
+        readSubstitutes(
+          db,
+          storeId,
+          { ...input, at: "2026-10-14T10:00:00.000Z" },
+          at,
+        ),
+      ).rejects.toThrow("FUTURE");
+      const prior = result.evidence[0]!.id;
+      await db
+        .collection("productSubstitutions")
+        .updateOne({ _id: f.substitution.id } as never, {
+          $set: { version: 2, needCompatibility: 0.9 },
+        });
+      expect(
+        (await readSubstitutes(db, storeId, input, at)).evidence[0]!.id,
+      ).not.toBe(prior);
+      const oversized = Array.from({ length: 251 }, () => ({
+        ...f.substitution,
+        _id: randomUUID(),
+        id: randomUUID(),
+      }));
+      // Use canonical IDs even for oversized records: incomplete sets are refused, not ranked.
+      for (const row of oversized) row.id = row._id;
+      await db
+        .collection("productSubstitutions")
+        .insertMany(oversized as never);
+      expect(await readSubstitutes(db, storeId, input, at)).toMatchObject({
+        lookupStatus: "LIMIT_EXCEEDED",
+        candidateCount: null,
+        candidates: [],
+        excludedCount: null,
+      });
     });
     it("searches real Mongo product records with string codes, validated aliases and explicit name ambiguity", async () => {
       const f = await commercialChoiceFixture(),

@@ -1,3 +1,4 @@
+import { readSubstitutes } from "./copilot/substitutes-tool.js";
 import { readFieldEvents } from "./copilot/field-events-tool.js";
 import { readProductSearch } from "./copilot/product-search-tool.js";
 import {
@@ -454,6 +455,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              substitutes: async (input) => {
+                await authorize();
+                const result = await readSubstitutes(db, storeId, input);
                 await authorize();
                 return result;
               },
