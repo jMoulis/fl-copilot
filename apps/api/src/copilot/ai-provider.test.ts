@@ -1210,92 +1210,95 @@ it.each(["valid", "foreign", "gps"] as const)(
   },
 );
 
-it("passes exact current attached-source identity to PDF reading without treating metadata as evidence", async () => {
-  const f = fixture(),
-    sourceDocumentId = randomUUID();
-  const request = {
-    ...f.request,
-    userQuestion: null,
-    attachedSources: [
-      {
-        sourceDocumentId,
-        status: "CONFIRMED" as const,
-        sourceType: "WEEKLY_COMMERCIAL_PDF" as const,
-        filename: "Brief joint.pdf",
-        mediaType: "application/pdf",
-        registeredAt: "2026-10-13T08:00:00.000Z",
-      },
-    ],
-  };
-  const input = {
-    sourceDocumentId,
-    businessDate: "2026-10-13",
-    pageNumber: 1,
-    offset: 0,
-    limit: 16,
-  };
-  const commercialPdf = vi.fn(async () => ({
-    sourceDocumentId,
-    businessDate: input.businessDate,
-    pageNumber: input.pageNumber,
-    status: "NOT_READY" as const,
-    pageCount: null,
-    week: {
-      date: "2026-10-13",
-      year: 2026,
-      number: 42,
-      start: "2026-10-12",
-      end: "2026-10-18",
-    },
-    entries: [],
-    nextOffset: null,
-    excludedOperations: 0,
-    unknownOperations: 0,
-    evidence: [
-      {
-        id: "attached-pdf-pending",
-        sourceType: "DATA_QUALITY" as const,
-        sourceId: sourceDocumentId,
-        sourceVersion: null,
-        label: "Lecture du fichier joint",
-        value: "Analyse non disponible.",
-        factKind: "QUALITY" as const,
-      },
-    ],
-  }));
-  let calls = 0;
-  const transport: typeof fetch = async (_url, init) => {
-    const body = JSON.parse(String(init?.body));
-    if (calls++ === 0) {
-      expect(JSON.stringify(body)).toContain("ATTACHED_SOURCES");
-      expect(JSON.stringify(body)).toContain("Brief joint.pdf");
-      expect(JSON.stringify(body)).toContain(sourceDocumentId);
-      const envelope = z
-        .record(z.string(), z.unknown())
-        .parse(await response().json());
-      envelope.output = [
+it.each(["attachedSources", "recentSources"] as const)(
+  "passes exact %s identity to PDF reading without treating metadata as evidence",
+  async (sourceContext) => {
+    const f = fixture(),
+      sourceDocumentId = randomUUID();
+    const request = {
+      ...f.request,
+      userQuestion: null,
+      [sourceContext]: [
         {
-          type: "function_call",
-          id: "fc_attachment",
-          call_id: "call_attachment",
-          name: "commercial_pdf",
-          arguments: JSON.stringify(input),
-          status: "completed",
+          sourceDocumentId,
+          status: "CONFIRMED" as const,
+          sourceType: "WEEKLY_COMMERCIAL_PDF" as const,
+          filename: "Brief joint.pdf",
+          mediaType: "application/pdf",
+          registeredAt: "2026-10-13T08:00:00.000Z",
         },
-      ];
-      return new Response(JSON.stringify(envelope), {
-        headers: { "content-type": "application/json" },
-      });
-    }
-    expect(JSON.stringify(body)).toContain("attached-pdf-pending");
-    return response();
-  };
-  const result = await createCopilotAiProvider(f.config, transport, {
-    daily: vi.fn(),
-    commercialPdf,
-  }).generate(request, schema);
-  expect(commercialPdf).toHaveBeenCalledWith(input);
-  expect(result.toolEvidence?.map((e) => e.id)).toEqual([
-    "attached-pdf-pending",
-  ]);
-});
+      ],
+    };
+    const input = {
+      sourceDocumentId,
+      businessDate: "2026-10-13",
+      pageNumber: 1,
+      offset: 0,
+      limit: 16,
+    };
+    const commercialPdf = vi.fn(async () => ({
+      sourceDocumentId,
+      businessDate: input.businessDate,
+      pageNumber: input.pageNumber,
+      status: "NOT_READY" as const,
+      pageCount: null,
+      week: {
+        date: "2026-10-13",
+        year: 2026,
+        number: 42,
+        start: "2026-10-12",
+        end: "2026-10-18",
+      },
+      entries: [],
+      nextOffset: null,
+      excludedOperations: 0,
+      unknownOperations: 0,
+      evidence: [
+        {
+          id: "attached-pdf-pending",
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: sourceDocumentId,
+          sourceVersion: null,
+          label: "Lecture du fichier joint",
+          value: "Analyse non disponible.",
+          factKind: "QUALITY" as const,
+        },
+      ],
+    }));
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (calls++ === 0) {
+        expect(JSON.stringify(body)).toContain("ATTACHED_SOURCES");
+        expect(JSON.stringify(body)).toContain("Brief joint.pdf");
+        expect(JSON.stringify(body)).toContain(sourceDocumentId);
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_attachment",
+            call_id: "call_attachment",
+            name: "commercial_pdf",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(JSON.stringify(body)).toContain("attached-pdf-pending");
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      commercialPdf,
+    }).generate(request, schema);
+    expect(commercialPdf).toHaveBeenCalledWith(input);
+    expect(result.toolEvidence?.map((e) => e.id)).toEqual([
+      "attached-pdf-pending",
+    ]);
+  },
+);

@@ -6,7 +6,12 @@ import type { CopilotGenerationRequest } from "./ai-provider.js";
 export async function readConversationGenerationHistory(
   db: Db,
   rawParent: CopilotMessage,
-): Promise<NonNullable<CopilotGenerationRequest["history"]>> {
+): Promise<
+  NonNullable<CopilotGenerationRequest["history"]> & {
+    recentAttachmentReferences: CopilotMessage["attachments"];
+    recentSourcesOmitted: boolean;
+  }
+> {
   const parent = copilotMessageSchema.parse(rawParent);
   if (parent.role !== "USER") throw new Error("COPILOT_HISTORY_PARENT_INVALID");
   const rows = await db
@@ -23,6 +28,10 @@ export async function readConversationGenerationHistory(
     .toArray();
   const messages: NonNullable<CopilotGenerationRequest["history"]>["messages"] =
     [];
+  const references = new Map<string, CopilotMessage["attachments"][number]>();
+  const currentIds = new Set(
+    parent.attachments.map((ref) => ref.sourceDocumentId),
+  );
   let remaining = 24000;
   for (const row of rows.slice(0, 20)) {
     const { _id, ...payload } = row;
@@ -39,6 +48,10 @@ export async function readConversationGenerationHistory(
     // Preserve whole messages; never silently cut a constraint or decimal value.
     if (message.text.length > remaining) break;
     remaining -= message.text.length;
+    for (const reference of message.attachments) {
+      if (!currentIds.has(reference.sourceDocumentId))
+        references.set(reference.sourceDocumentId, reference);
+    }
     messages.push({
       id: message.id,
       role: message.role,
@@ -49,5 +62,7 @@ export async function readConversationGenerationHistory(
   return {
     messages: messages.reverse(),
     earlierMessagesOmitted: rows.length > messages.length,
+    recentAttachmentReferences: [...references.values()].slice(0, 10),
+    recentSourcesOmitted: references.size > 10,
   };
 }
