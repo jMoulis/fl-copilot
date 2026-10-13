@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { copilotEvidenceSchema } from "./copilot-candidate";
 import {
   storeProductEventSchema,
   storeProductEventTypeSchema,
@@ -174,3 +175,38 @@ export const copilotStoreToolRegistry = [
   runtime: "LOCAL" as const,
   confirmation: "NONE" as const,
 }));
+
+/** Model context is paged independently of the native operational reader. */
+export const copilotEventsReadInputSchema = z
+  .strictObject({
+    startAt: eventsReadInputSchema.shape.startAt,
+    endAt: eventsReadInputSchema.shape.endAt,
+    productId: z.string().uuid().nullable(),
+    afterId: z.string().uuid().nullable(),
+    limit: z.number().int().min(1).max(10),
+  })
+  .refine(
+    (v) =>
+      eventsReadInputSchema.safeParse({
+        ...v,
+        productId: v.productId ?? undefined,
+        afterId: v.afterId ?? undefined,
+      }).success,
+    "Période d’observation invalide.",
+  );
+export const copilotEventsReadResultSchema = z.strictObject({
+  startAt: z.string().datetime(),
+  endAt: z.string().datetime(),
+  productId: z.string().uuid().nullable(),
+  events: z
+    .array(
+      z.strictObject({
+        event: storeProductEventSchema,
+        productLabel: z.string().min(1).max(280),
+      }),
+    )
+    .max(10),
+  hasMore: z.boolean(),
+  nextAfterId: z.string().uuid().nullable(),
+  evidence: z.array(copilotEvidenceSchema).max(11),
+});

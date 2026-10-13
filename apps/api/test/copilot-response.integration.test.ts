@@ -1,3 +1,5 @@
+import { readFieldEvents } from "../src/copilot/field-events-tool";
+import { prepareStoreProductEvent } from "@fl-copilot/domain";
 import { readProductSearch } from "../src/copilot/product-search-tool";
 import {
   readCommercialDocuments,
@@ -77,6 +79,129 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("reads overlapping field episodes across a Paris DST day with source/status separation, pagination and historical labels", async () => {
+      const storeId = randomUUID(),
+        productId = randomUUID(),
+        otherId = randomUUID();
+      const make = (startedAt: string, endedAt: string | null = null) =>
+        prepareStoreProductEvent(storeId, {
+          event: {
+            id: randomUUID(),
+            productId,
+            type: "OUT_OF_STOCK",
+            startedAt,
+            endedAt,
+            severity: "HIGH",
+            comment: "Constaté en rayon",
+            clientCapturedAt: "2026-10-26T12:00:00Z",
+          },
+        });
+      const old = make("2026-10-24T21:00:00Z", "2026-10-24T23:00:00Z"),
+        late = make("2026-10-25T22:30:00Z");
+      const pdf = {
+        ...make("2026-10-24T22:30:00Z"),
+        source: "COMMERCIAL_PDF" as const,
+        sourceDocumentId: randomUUID(),
+        status: "TO_REVIEW" as const,
+      };
+      const elsewhere = {
+        ...make("2026-10-25T12:00:00Z"),
+        productId: otherId,
+        type: "LOW_STOCK" as const,
+      };
+      await db
+        .collection<{ _id: string }>("storeProductEvents")
+        .insertMany(
+          [
+            old,
+            late,
+            pdf,
+            elsewhere,
+            make("2026-10-24T20:00:00Z", "2026-10-24T22:00:00Z"),
+            make("2026-10-25T23:00:00Z"),
+            { ...late, id: randomUUID(), storeId: randomUUID() },
+          ].map((e) => ({ _id: e.id, ...e })),
+        );
+      await db
+        .collection<{
+          _id: string;
+          storeId: string;
+          label: string;
+          deletedAt: Date;
+        }>("products")
+        .insertOne({
+          _id: productId,
+          storeId,
+          label: "BANANE VRAC",
+          deletedAt: new Date("2026-10-26T12:00:00Z"),
+        });
+      const input = {
+        startAt: "2026-10-25T00:00:00+02:00",
+        endAt: "2026-10-26T00:00:00+01:00",
+        productId: null,
+        afterId: null,
+        limit: 10,
+      };
+      const all = await readFieldEvents(db, storeId, input);
+      expect(all.startAt).toBe("2026-10-24T22:00:00.000Z");
+      expect(all.endAt).toBe("2026-10-25T23:00:00.000Z");
+      expect(all.events.map((r) => r.event.id).sort()).toEqual(
+        [old.id, late.id, pdf.id, elsewhere.id].sort(),
+      );
+      expect(
+        all.events.find((r) => r.event.id === old.id)?.productLabel,
+      ).toContain("Produit retiré");
+      expect(
+        all.events.find((r) => r.event.id === elsewhere.id)?.productLabel,
+      ).toBe("Produit à identifier");
+      expect(all.evidence.find((e) => e.sourceId === pdf.id)?.factKind).toBe(
+        "SOURCE_INSTRUCTION",
+      );
+      expect(all.evidence.find((e) => e.sourceId === late.id)?.factKind).toBe(
+        "OBSERVED",
+      );
+      expect(all.evidence.at(-1)?.value).toContain(
+        "ne prouve pas le stock actuel",
+      );
+      const selected = await readFieldEvents(db, storeId, {
+        ...input,
+        productId,
+      });
+      expect(selected.events).toHaveLength(3);
+      await expect(
+        readFieldEvents(db, storeId, { ...input, productId: randomUUID() }),
+      ).rejects.toThrow("COPILOT_EVENTS_PRODUCT_UNAVAILABLE");
+      const first = await readFieldEvents(db, storeId, { ...input, limit: 1 });
+      expect(first.hasMore).toBe(true);
+      const rest = await readFieldEvents(db, storeId, {
+        ...input,
+        afterId: first.nextAfterId,
+      });
+      expect(rest.events).toHaveLength(3);
+      expect(rest.hasMore).toBe(false);
+      expect(rest.nextAfterId).toBeNull();
+      const empty = await readFieldEvents(db, storeId, {
+        ...input,
+        startAt: "2026-01-01T00:00:00Z",
+        endAt: "2026-01-02T00:00:00Z",
+      });
+      expect(empty.events).toEqual([]);
+      expect(empty.evidence[0]?.value).toContain(
+        "ne prouve pas une absence de rupture",
+      );
+      const before = all.evidence.find((e) => e.sourceId === late.id)!.id;
+      await db
+        .collection<{ _id: string }>("storeProductEvents")
+        .updateOne(
+          { _id: late.id },
+          { $set: { version: 2, comment: "Correction du constat" } },
+        );
+      expect(
+        (await readFieldEvents(db, storeId, input)).evidence.find(
+          (e) => e.sourceId === late.id,
+        )!.id,
+      ).not.toBe(before);
+    });
     it("searches real Mongo product records with string codes, validated aliases and explicit name ambiguity", async () => {
       const f = await commercialChoiceFixture(),
         stamp = new Date(f.product.createdAt);
