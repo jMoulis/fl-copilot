@@ -17,7 +17,7 @@ import { colors } from "../design/tokens";
 export type CopilotChatStatus = "IDLE" | "QUEUED" | "GENERATING" | "OFFLINE";
 const statusLabels: Record<CopilotChatStatus, string> = {
   IDLE: "",
-  QUEUED: "Question enregistrée, en attente de synchronisation.",
+  QUEUED: "Questions conservées, en attente de réponse.",
   GENERATING: "Le copilote prépare sa réponse…",
   OFFLINE: "Hors connexion · vos messages restent disponibles.",
 };
@@ -137,16 +137,18 @@ export function CopilotChatView({
             <Text accessibilityRole="alert" style={styles.error}>
               {error}
             </Text>
-            {onRetry ? (
-              <Pressable
-                onPress={onRetry}
-                accessibilityRole="button"
-                style={styles.retry}
-              >
-                <Text style={styles.retryText}>Réessayer</Text>
-              </Pressable>
-            ) : null}
           </View>
+        ) : null}
+        {onRetry && status !== "GENERATING" ? (
+          <Pressable
+            onPress={onRetry}
+            accessibilityRole="button"
+            style={styles.retry}
+          >
+            <Text style={styles.retryText}>
+              {error ? "Réessayer" : "Reprendre les questions en attente"}
+            </Text>
+          </Pressable>
         ) : null}
         <View style={styles.composer}>
           {onAttach ? (

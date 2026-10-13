@@ -38,7 +38,10 @@ function LocalChatPanel({
   const [sending, setSending] = useState(false);
   const locked = useRef(false);
   const draftRevision = useRef(0);
-  const current = useRef({ controller, conversationId });
+  const current = useRef<{
+    controller: CopilotLocalChatController | undefined;
+    conversationId: string;
+  }>({ controller, conversationId });
   useEffect(() => {
     current.current = { controller, conversationId };
     let alive = true;
@@ -54,17 +57,23 @@ function LocalChatPanel({
             setSending(true);
             try {
               await delivery.deliver(conversationId);
-              const revision = draftRevision.current;
-              const refreshed = await controller.open(conversationId);
-              if (alive) {
-                setSnapshot(refreshed);
-                if (revision === draftRevision.current)
-                  setDraft(refreshed.draft?.text ?? "");
-              }
             } catch (reason) {
               if (alive) setError(replyError(reason));
             } finally {
-              if (alive) setSending(false);
+              try {
+                const revision = draftRevision.current;
+                const refreshed = await controller.open(conversationId);
+                if (alive) {
+                  setSnapshot(refreshed);
+                  if (revision === draftRevision.current)
+                    setDraft(refreshed.draft?.text ?? "");
+                }
+              } catch {
+                if (alive)
+                  setError("L’historique local ne peut pas être actualisé.");
+              } finally {
+                if (alive) setSending(false);
+              }
             }
           }
         }
@@ -74,6 +83,7 @@ function LocalChatPanel({
       });
     return () => {
       alive = false;
+      current.current = { controller: undefined, conversationId: "" };
     };
   }, [controller, conversationId, delivery]);
   const isCurrent = () =>
@@ -151,17 +161,23 @@ function LocalChatPanel({
     setError(undefined);
     try {
       await delivery.deliver(conversationId);
-      const revision = draftRevision.current;
-      const value = await controller.open(conversationId);
-      if (isCurrent()) {
-        setSnapshot(value);
-        if (revision === draftRevision.current)
-          setDraft(value.draft?.text ?? "");
-      }
     } catch (reason) {
       if (isCurrent()) setError(replyError(reason));
     } finally {
-      if (isCurrent()) setSending(false);
+      try {
+        const revision = draftRevision.current;
+        const value = await controller.open(conversationId);
+        if (isCurrent()) {
+          setSnapshot(value);
+          if (revision === draftRevision.current)
+            setDraft(value.draft?.text ?? "");
+        }
+      } catch {
+        if (isCurrent())
+          setError("L’historique local ne peut pas être actualisé.");
+      } finally {
+        if (isCurrent()) setSending(false);
+      }
     }
   }
   const queued = snapshot.pendingTurns.length > 0;
