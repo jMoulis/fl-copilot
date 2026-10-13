@@ -34,6 +34,9 @@ export function CopilotChatView({
   onAttach,
   onRetry,
   renderAttachment,
+  onOlder,
+  loadingOlder = false,
+  historyError,
 }: {
   title: string;
   messages: readonly CopilotMessage[];
@@ -45,6 +48,9 @@ export function CopilotChatView({
   onConversations(): void;
   onAttach?(): void;
   onRetry?(): void;
+  onOlder?(): void;
+  loadingOlder?: boolean;
+  historyError?: string;
   renderAttachment?(
     attachment: CopilotMessage["attachments"][number],
     message: CopilotMessage,
@@ -94,6 +100,42 @@ export function CopilotChatView({
           if (followLatest.current)
             list.current?.scrollToEnd({ animated: false });
         }}
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        ListHeaderComponent={
+          onOlder || historyError ? (
+            <View>
+              {historyError ? (
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {historyError}
+                </Text>
+              ) : null}
+              {onOlder ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{
+                    disabled: loadingOlder,
+                    busy: loadingOlder,
+                  }}
+                  disabled={loadingOlder}
+                  onPress={() => {
+                    followLatest.current = false;
+                    onOlder();
+                  }}
+                  style={styles.retry}
+                >
+                  <Text
+                    accessibilityLiveRegion="polite"
+                    style={styles.retryText}
+                  >
+                    {loadingOlder
+                      ? "Lecture de l’historique…"
+                      : "Voir les messages précédents"}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.welcome}>De quoi avez-vous besoin ?</Text>

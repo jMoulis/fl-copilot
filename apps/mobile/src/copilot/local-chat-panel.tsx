@@ -1,3 +1,4 @@
+import { mergeCopilotHistory } from "./history-window";
 import { CommercialOriginalButton } from "../commercial/original-button";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import { ApiClientError } from "@fl-copilot/api-client";
@@ -36,6 +37,9 @@ function LocalChatPanel({
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
   const [sending, setSending] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyError, setHistoryError] = useState<string>();
+  const olderLocked = useRef(false);
   const locked = useRef(false);
   const draftRevision = useRef(0);
   const current = useRef<{
@@ -50,7 +54,11 @@ function LocalChatPanel({
       .then(async (value) => {
         if (alive) {
           setLoadedController(controller);
-          setSnapshot(value);
+          setSnapshot((previous) =>
+            previous
+              ? { ...value, ...mergeCopilotHistory(previous, value) }
+              : value,
+          );
           setDraft(value.draft?.text ?? "");
           setError(undefined);
           if (delivery && value.pendingTurns.length) {
@@ -62,9 +70,19 @@ function LocalChatPanel({
             } finally {
               try {
                 const revision = draftRevision.current;
-                const refreshed = await controller.open(conversationId);
+                const refreshed = await controller.open(
+                  conversationId,
+                  value.messages.at(-1)?.entity,
+                );
                 if (alive) {
-                  setSnapshot(refreshed);
+                  setSnapshot((previous) =>
+                    previous
+                      ? {
+                          ...refreshed,
+                          ...mergeCopilotHistory(previous, refreshed),
+                        }
+                      : refreshed,
+                  );
                   if (revision === draftRevision.current)
                     setDraft(refreshed.draft?.text ?? "");
                 }
@@ -138,9 +156,16 @@ function LocalChatPanel({
     try {
       await controller.send(conversationId);
       const revision = draftRevision.current;
-      const value = await controller.open(conversationId);
+      const value = await controller.open(
+        conversationId,
+        snapshot?.messages.at(-1)?.entity,
+      );
       if (isCurrent()) {
-        setSnapshot(value);
+        setSnapshot((previous) =>
+          previous
+            ? { ...value, ...mergeCopilotHistory(previous, value) }
+            : value,
+        );
         if (revision === draftRevision.current)
           setDraft(value.draft?.text ?? "");
       }
@@ -166,9 +191,16 @@ function LocalChatPanel({
     } finally {
       try {
         const revision = draftRevision.current;
-        const value = await controller.open(conversationId);
+        const value = await controller.open(
+          conversationId,
+          snapshot?.messages.at(-1)?.entity,
+        );
         if (isCurrent()) {
-          setSnapshot(value);
+          setSnapshot((previous) =>
+            previous
+              ? { ...value, ...mergeCopilotHistory(previous, value) }
+              : value,
+          );
           if (revision === draftRevision.current)
             setDraft(value.draft?.text ?? "");
         }
@@ -178,6 +210,32 @@ function LocalChatPanel({
       } finally {
         if (isCurrent()) setSending(false);
       }
+    }
+  }
+  async function loadOlder() {
+    if (olderLocked.current || !snapshot?.hasMore || !snapshot.before) return;
+    olderLocked.current = true;
+    setLoadingOlder(true);
+    setHistoryError(undefined);
+    try {
+      const page = await controller.older(conversationId, snapshot.before);
+      if (isCurrent())
+        setSnapshot((previous) =>
+          previous
+            ? {
+                ...previous,
+                ...mergeCopilotHistory(previous, page, "OLDER"),
+              }
+            : previous,
+        );
+    } catch {
+      if (isCurrent())
+        setHistoryError(
+          "Les messages précédents ne peuvent pas être lus. Réessayez.",
+        );
+    } finally {
+      olderLocked.current = false;
+      if (isCurrent()) setLoadingOlder(false);
     }
   }
   const queued = snapshot.pendingTurns.length > 0;
@@ -200,6 +258,15 @@ function LocalChatPanel({
           : undefined
       }
       onConversations={onConversations}
+      onOlder={
+        snapshot.hasMore
+          ? () => {
+              void loadOlder();
+            }
+          : undefined
+      }
+      loadingOlder={loadingOlder}
+      historyError={historyError}
       renderAttachment={renderCommercialOriginal}
     />
   );

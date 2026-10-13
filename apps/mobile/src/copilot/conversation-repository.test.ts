@@ -687,3 +687,120 @@ it("keeps a received answer when the next call fails, resumes stable IDs after r
     db.close();
   }
 });
+
+it("reads older controller pages offline across tied timestamps without changing the draft, writes or conversation scope", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    const controller = new CopilotLocalChatController(
+      repo,
+      f,
+      randomUUID,
+      () => "2026-10-13T08:00:00Z",
+    );
+    const conversation = await controller.create();
+    for (let i = 0; i < 103; i++) {
+      await controller.edit(conversation.id, {
+        text: `Message ${i}`,
+        attachments: [],
+      });
+      await controller.send(conversation.id);
+    }
+    await controller.edit(conversation.id, {
+      text: "Brouillon conservé",
+      attachments: [],
+    });
+    const beforeCount = db
+      .prepare("SELECT count(*) AS n FROM sync_outbox")
+      .get();
+    const first = await controller.open(conversation.id);
+    const second = await controller.older(conversation.id, first.before!);
+    const third = await controller.older(conversation.id, second.before!);
+    expect([
+      first.messages.length,
+      second.messages.length,
+      third.messages.length,
+    ]).toEqual([50, 50, 3]);
+    expect([first.hasMore, second.hasMore, third.hasMore]).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    const ids = [...third.messages, ...second.messages, ...first.messages].map(
+      (m) => m.entity.id,
+    );
+    expect(new Set(ids).size).toBe(103);
+    expect(ids).toEqual([...ids].sort());
+    expect((await controller.open(conversation.id)).draft?.text).toBe(
+      "Brouillon conservé",
+    );
+    expect(db.prepare("SELECT count(*) AS n FROM sync_outbox").get()).toEqual(
+      beforeCount,
+    );
+    const foreign = new CopilotLocalChatController(
+      new CopilotConversationRepository(adapter, {
+        ...f,
+        ownerId: randomUUID(),
+      }),
+      f,
+      randomUUID,
+    );
+    await expect(foreign.older(conversation.id, first.before!)).rejects.toThrow(
+      "COPILOT_CONVERSATION_UNAVAILABLE",
+    );
+    await repo.save(
+      { ...conversation, status: "ARCHIVED", version: 2 },
+      command(),
+    );
+    await expect(
+      controller.older(conversation.id, first.before!),
+    ).rejects.toThrow("COPILOT_CONVERSATION_UNAVAILABLE");
+  } finally {
+    db.close();
+  }
+});
+
+it("refreshes through the previously displayed tail without a gap when more than one page arrives", async () => {
+  const db = new DatabaseSync(":memory:"),
+    f = chatFixture(randomUUID);
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    let time = 0;
+    const controller = new CopilotLocalChatController(repo, f, randomUUID, () =>
+      new Date(Date.UTC(2026, 9, 13, 8, 0, time++)).toISOString(),
+    );
+    const conversation = await controller.create();
+    const parents: Awaited<ReturnType<CopilotLocalChatController["send"]>>[] =
+      [];
+    for (let i = 0; i < 3; i++) {
+      await controller.edit(conversation.id, {
+        text: "Initial",
+        attachments: [],
+      });
+      parents.push(await controller.send(conversation.id));
+    }
+    const old = await controller.open(conversation.id);
+    for (let i = 0; i < 105; i++) {
+      await controller.edit(conversation.id, {
+        text: "Nouveau",
+        attachments: [],
+      });
+      parents.push(await controller.send(conversation.id));
+    }
+    const recent = await controller.open(
+      conversation.id,
+      old.messages.at(-1)!.entity,
+    );
+    expect(recent.messages.map((m) => m.entity.id)).toEqual(
+      parents.map((p) => p.id),
+    );
+    expect(recent.hasMore).toBe(false);
+  } finally {
+    db.close();
+  }
+});
