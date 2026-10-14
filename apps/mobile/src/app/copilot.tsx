@@ -1,3 +1,6 @@
+import { CopilotIntakeSummary } from "@/copilot/intake-summary";
+import { MercalysImportScreen } from "@/documents/mercalys-import-screen";
+import { MercalysBatchRepository } from "@/documents/mercalys-batch-repository";
 import { CopilotInformationFormController } from "@/copilot/information-form-controller";
 import { InformationFormCard } from "@/copilot/information-form-card";
 import { ProductProposalCard } from "@/copilot/product-proposal-card";
@@ -12,7 +15,7 @@ import { captureCommercialPdf } from "@/documents/commercial-pdf-capture";
 import { SourceDocumentRepository } from "@/documents/source-document-repository";
 import { selectCopilotPdfs } from "@/copilot/pdf-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { randomUUID } from "expo-crypto";
@@ -203,6 +206,10 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   >([]);
   const [active, setActive] = useState<string>();
   const [menu, setMenu] = useState(false);
+  const [intakeConversation, setIntakeConversation] = useState<string>();
+  const [draftRefresh, setDraftRefresh] = useState(0);
+  const [intakeRevision, setIntakeRevision] = useState(0);
+  const [intakeBusy, setIntakeBusy] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string>();
   const createLocked = useRef(false);
@@ -313,8 +320,57 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         delivery={delivery}
         onConversations={refreshMenu}
         onAttachPdf={attachPdf}
+        onOpenMercalys={() => setIntakeConversation(active)}
+        externalDraftRevision={draftRefresh}
+        intakeSummary={
+          <CopilotIntakeSummary
+            key={active}
+            db={sqlite}
+            storeId={storeId}
+            ownerId={ownerId}
+            conversationId={active}
+            revision={intakeRevision}
+            onOpen={() => setIntakeConversation(active)}
+          />
+        }
         renderToolMessage={renderProposal}
       />
+      <Modal
+        visible={!!intakeConversation}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => {
+          if (!intakeBusy) {
+            setIntakeConversation(undefined);
+            setIntakeRevision((revision) => revision + 1);
+          }
+        }}
+      >
+        {intakeConversation ? (
+          <MercalysImportScreen
+            key={`${storeId}/${ownerId}/${intakeConversation}`}
+            conversationId={intakeConversation}
+            onBusyChange={setIntakeBusy}
+            onClose={() => {
+              setIntakeConversation(undefined);
+              setIntakeRevision((revision) => revision + 1);
+            }}
+            onDiscuss={async (batchId) => {
+              const conversationId = intakeConversation;
+              const intake = new MercalysBatchRepository(sqlite, {
+                storeId,
+                ownerId,
+                conversationId,
+              });
+              const question = await intake.discussionQuestion(batchId);
+              await controller.appendIntakeQuestion(conversationId, question);
+              setDraftRefresh((revision) => revision + 1);
+              setIntakeRevision((revision) => revision + 1);
+              setIntakeConversation(undefined);
+            }}
+          />
+        ) : null}
+      </Modal>
       <BottomSheet
         visible={menu}
         title="Conversations"

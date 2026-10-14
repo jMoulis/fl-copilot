@@ -25,6 +25,9 @@ export function MercalysBatchPanel({
   db,
   storeId,
   ownerId,
+  conversationId,
+  onDiscuss,
+  onBusyChange,
   pick,
   pickZip,
   onReview,
@@ -33,6 +36,9 @@ export function MercalysBatchPanel({
   db: OutboxDatabase & AtomicMutationDatabase;
   storeId: string;
   ownerId: string;
+  conversationId?: string;
+  onDiscuss?(batchId: string): Promise<void>;
+  onBusyChange?(busy: boolean): void;
   pick(): Promise<MercalysSelectedFile[] | undefined>;
   pickZip?(): Promise<MercalysSelectedFile | undefined>;
   onReview(
@@ -41,12 +47,13 @@ export function MercalysBatchPanel({
   disabled?: boolean;
 }) {
   const repo = useMemo(
-    () => new MercalysBatchRepository(db, { storeId, ownerId }),
-    [db, storeId, ownerId],
+    () => new MercalysBatchRepository(db, { storeId, ownerId, conversationId }),
+    [db, storeId, ownerId, conversationId],
   );
   const archiveRepo = useMemo(
-    () => new MercalysArchiveRepository(db, { storeId, ownerId }),
-    [db, storeId, ownerId],
+    () =>
+      new MercalysArchiveRepository(db, { storeId, ownerId, conversationId }),
+    [db, storeId, ownerId, conversationId],
   );
   const [archives, setArchives] = useState<
     Awaited<ReturnType<MercalysArchiveRepository["recent"]>>["archives"]
@@ -182,6 +189,7 @@ export function MercalysBatchPanel({
     if (locked.current || disabled) return;
     locked.current = true;
     setBusy(true);
+    onBusyChange?.(true);
     setError(undefined);
     const a = new AbortController();
     abort.current = a;
@@ -190,9 +198,11 @@ export function MercalysBatchPanel({
     } catch (reason) {
       if (alive.current && !a.signal.aborted)
         setError(
-          reason instanceof Error && reason.message.includes("LIMIT")
-            ? "Le lot accepte au maximum 100 fichiers, 20 Mio par fichier et 100 Mio au total."
-            : "L’opération s’est interrompue. Les originaux conservés et les résultats déjà enregistrés restent disponibles ; reprenez le lot.",
+          reason instanceof Error && reason.message === "COPILOT_DRAFT_TOO_LONG"
+            ? "Votre brouillon est trop long pour ajouter la question d’analyse. Revenez au chat et raccourcissez-le ; le lot reste conservé."
+            : reason instanceof Error && reason.message.includes("LIMIT")
+              ? "Le lot accepte au maximum 100 fichiers, 20 Mio par fichier et 100 Mio au total."
+              : "L’opération s’est interrompue. Les originaux conservés et les résultats déjà enregistrés restent disponibles ; reprenez le lot.",
         );
     } finally {
       if (alive.current && a.signal.aborted)
@@ -209,6 +219,7 @@ export function MercalysBatchPanel({
       if (abort.current === a) abort.current = undefined;
       if (alive.current) {
         setBusy(false);
+        onBusyChange?.(false);
         setProgress(undefined);
       }
     }
@@ -250,7 +261,7 @@ export function MercalysBatchPanel({
             const files = await pick();
             if (!files?.length || signal.aborted) return;
             const captured = await captureMercalysBatch(
-              { files, storeId, ownerId },
+              { files, storeId, ownerId, conversationId },
               repo,
               nativeMercalysBatchStorage,
               randomUUID,
@@ -383,6 +394,13 @@ export function MercalysBatchPanel({
               await load(active);
             })
           }
+        />
+      ) : null}
+      {active && publications.length && onDiscuss ? (
+        <SecondaryButton
+          label="Préparer l’analyse dans le chat"
+          disabled={busy || disabled}
+          onPress={() => void run(async () => onDiscuss(active))}
         />
       ) : null}
       {items.map((item) => (

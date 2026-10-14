@@ -447,6 +447,55 @@ export class CopilotConversationRepository {
       JSON.stringify(draft),
     );
   }
+  async appendIntakeQuestion(
+    conversationId: string,
+    question: string,
+    updatedAt: string,
+  ) {
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      const row = await tx.getFirstAsync<Row>(
+        "SELECT * FROM copilot_conversations WHERE id=?",
+        conversationId,
+      );
+      if (!row) throw Error("COPILOT_CONVERSATION_UNAVAILABLE");
+      scoped({ storeId: row.store_id, ownerId: row.owner_id }, this.scope);
+      const conversation = copilotConversationSchema.parse(
+        JSON.parse(row.payload_json),
+      );
+      scoped(conversation, this.scope);
+      if (
+        conversation.id !== conversationId ||
+        conversation.status !== "ACTIVE"
+      )
+        throw Error("COPILOT_CONVERSATION_UNAVAILABLE");
+      const current = await tx.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM copilot_drafts WHERE store_id=? AND owner_id=? AND conversation_id=?",
+        this.scope.storeId,
+        this.scope.ownerId,
+        conversationId,
+      );
+      const draft = current
+        ? copilotDraftSchema.parse(JSON.parse(current.payload_json))
+        : null;
+      const text = draft?.text.trim()
+        ? `${draft.text}\n\n${question}`
+        : question;
+      if (!question.trim() || question.length > 1000 || text.length > 6000)
+        throw Error("COPILOT_DRAFT_TOO_LONG");
+      const next = copilotDraftSchema.parse({
+        text,
+        attachments: draft?.attachments ?? [],
+        updatedAt,
+      });
+      await tx.runAsync(
+        "INSERT OR REPLACE INTO copilot_drafts(store_id,owner_id,conversation_id,payload_json) VALUES(?,?,?,?)",
+        this.scope.storeId,
+        this.scope.ownerId,
+        conversationId,
+        JSON.stringify(next),
+      );
+    });
+  }
   attachPdf(
     conversationId: string,
     sourceDocumentId: string,

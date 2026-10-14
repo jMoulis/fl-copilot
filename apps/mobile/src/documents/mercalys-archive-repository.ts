@@ -1,3 +1,4 @@
+import { assertIntakeConversation } from "./intake-conversation";
 import {
   mercalysArchiveInputSchema,
   mercalysArchiveSchema,
@@ -10,8 +11,19 @@ import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 export class MercalysArchiveRepository {
   constructor(
     private db: OutboxDatabase & AtomicMutationDatabase,
-    readonly scope: { storeId: string; ownerId: string },
+    readonly scope: {
+      storeId: string;
+      ownerId: string;
+      conversationId?: string;
+    },
   ) {}
+  assertConversation() {
+    return assertIntakeConversation(
+      this.db,
+      this.scope,
+      this.scope.conversationId,
+    );
+  }
   private async read(tx: OutboxDatabase, id: string) {
     const row = await tx.getFirstAsync<{
       payload_json: string;
@@ -34,7 +46,9 @@ export class MercalysArchiveRepository {
     if (
       a.id !== id ||
       a.storeId !== this.scope.storeId ||
-      a.ownerId !== this.scope.ownerId
+      a.ownerId !== this.scope.ownerId ||
+      (this.scope.conversationId !== undefined &&
+        a.conversationId !== this.scope.conversationId)
     )
       throw Error("MERCALYS_ARCHIVE_SCOPE_INVALID");
     return a;
@@ -44,9 +58,15 @@ export class MercalysArchiveRepository {
   }
   async create(raw: MercalysArchiveInput) {
     const a = mercalysArchiveInputSchema.parse(raw);
-    if (a.storeId !== this.scope.storeId || a.ownerId !== this.scope.ownerId)
+    if (
+      a.storeId !== this.scope.storeId ||
+      a.ownerId !== this.scope.ownerId ||
+      (this.scope.conversationId !== undefined &&
+        a.conversationId !== this.scope.conversationId)
+    )
       throw Error("MERCALYS_ARCHIVE_SCOPE_INVALID");
     await this.db.withExclusiveTransactionAsync(async (tx) => {
+      await assertIntakeConversation(tx, this.scope, a.conversationId);
       const existing = await tx.getFirstAsync<{ id: string }>(
         "SELECT id FROM mercalys_intake_archives WHERE id=?",
         a.id,
@@ -98,9 +118,11 @@ export class MercalysArchiveRepository {
   }
   async recent(after?: { createdAt: string; id: string }) {
     const rows = await this.db.getAllAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM mercalys_intake_archives WHERE store_id=? AND owner_id=? AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",
+      "SELECT payload_json FROM mercalys_intake_archives WHERE store_id=? AND owner_id=? AND (? IS NULL OR json_extract(request_json, '$.conversationId')=?) AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",
       this.scope.storeId,
       this.scope.ownerId,
+      this.scope.conversationId ?? null,
+      this.scope.conversationId ?? null,
       after?.createdAt ?? null,
       after?.createdAt ?? null,
       after?.createdAt ?? null,
@@ -112,7 +134,10 @@ export class MercalysArchiveRepository {
     if (
       archives.some(
         (a) =>
-          a.storeId !== this.scope.storeId || a.ownerId !== this.scope.ownerId,
+          a.storeId !== this.scope.storeId ||
+          a.ownerId !== this.scope.ownerId ||
+          (this.scope.conversationId !== undefined &&
+            a.conversationId !== this.scope.conversationId),
       )
     )
       throw Error("MERCALYS_ARCHIVE_SCOPE_INVALID");

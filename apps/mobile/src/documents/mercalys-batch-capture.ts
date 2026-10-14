@@ -16,7 +16,12 @@ export interface MercalysBatchStorage {
 }
 /** Persist originals before parsing; cancellation still records the already retained prefix. */
 export async function captureMercalysBatch(
-  input: { files: MercalysSelectedFile[]; storeId: string; ownerId: string },
+  input: {
+    files: MercalysSelectedFile[];
+    storeId: string;
+    ownerId: string;
+    conversationId?: string;
+  },
   repository: MercalysBatchRepository,
   storage: MercalysBatchStorage,
   id: () => string,
@@ -28,6 +33,7 @@ export async function captureMercalysBatch(
     input.ownerId !== repository.ownerId
   )
     throw Error("MERCALYS_BATCH_SCOPE_INVALID");
+  await repository.assertConversation(input.conversationId);
   if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
   if (!input.files.length || input.files.length > MAX_MERCALYS_BATCH_FILES)
     throw Error("MERCALYS_BATCH_LIMIT");
@@ -50,7 +56,7 @@ export async function captureMercalysBatch(
     id: id(),
     storeId: input.storeId,
     ownerId: input.ownerId,
-    conversationId: null,
+    conversationId: input.conversationId ?? null,
     createdAt: new Date().toISOString(),
     files: [],
   };

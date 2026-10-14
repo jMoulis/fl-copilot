@@ -102,6 +102,16 @@ export class CopilotLocalChatController {
       });
     });
   }
+  appendIntakeQuestion(conversationId: string, question: string) {
+    return this.serial(async () => {
+      await this.active(conversationId);
+      await this.repo.appendIntakeQuestion(
+        conversationId,
+        question,
+        this.now(),
+      );
+    });
+  }
   attachPdf(
     conversationId: string,
     sourceDocumentId: string,

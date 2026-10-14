@@ -424,7 +424,11 @@ it("retains ZIP lineage, retries missing copies without duplicating reviewed chi
     { retainMercalysZip, extractRetainedMercalysZip } =
       await import("./mercalys-zip-capture");
   const s = await setup(1),
-    archives = new MercalysArchiveRepository(s.adapter, s.scope),
+    conversationId = addIntakeConversation(s),
+    archives = new MercalysArchiveRepository(s.adapter, {
+      ...s.scope,
+      conversationId,
+    }),
     raw = new Uint8Array(
       zipSync({
         "sales.xlsx": workbook("Vente Nette"),
@@ -470,6 +474,9 @@ it("retains ZIP lineage, retries missing copies without duplicating reviewed chi
     retainedCount: 1,
     failures: [{ path: "waste.xlsx", code: "MERCALYS_ZIP_COPY_FAILED" }],
   });
+  expect((await s.repo.recent()).batches[0]?.conversationId).toBe(
+    conversationId,
+  );
   const initial = (await s.repo.page(first.batchId)).items[0]!;
   await s.repo.finish(first.batchId, initial.id, 1, {
     status: "FAILED",
@@ -673,4 +680,183 @@ it("derives publication from committed sources across reopen, excluding foreign,
       ownerId: randomUUID(),
     }).publications(s.input.id),
   ).rejects.toThrow("UNAVAILABLE");
+});
+function addIntakeConversation(
+  s: Awaited<ReturnType<typeof setup>>,
+  overrides: { ownerId?: string; status?: string } = {},
+) {
+  const c = {
+    id: randomUUID(),
+    ...s.scope,
+    title: "Marge",
+    status: "ACTIVE",
+    version: 1,
+    createdAt: s.input.createdAt,
+    updatedAt: s.input.createdAt,
+    ...overrides,
+  };
+  s.db
+    .prepare(
+      "INSERT INTO copilot_conversations(id,store_id,owner_id,payload_json,sync_state) VALUES(?,?,?,?,'LOCAL_ONLY')",
+    )
+    .run(c.id, c.storeId, c.ownerId, JSON.stringify(c));
+  return c.id;
+}
+it("keeps Mercalys lots private to the selected conversation and rejects unavailable capture before copying", async () => {
+  const { captureMercalysBatch } = await import("./mercalys-batch-capture");
+  const s = await setup(1),
+    a = addIntakeConversation(s),
+    b = addIntakeConversation(s);
+  const repoA = new MercalysBatchRepository(s.adapter, {
+    ...s.scope,
+    conversationId: a,
+  });
+  await repoA.create({ ...s.input, conversationId: a });
+  await s.repo.create({
+    ...s.input,
+    id: randomUUID(),
+    conversationId: b,
+    files: [{ ...s.input.files[0]!, id: randomUUID() }],
+  });
+  expect((await repoA.recent()).batches.map((lot) => lot.id)).toEqual([
+    s.input.id,
+  ]);
+  await expect(
+    new MercalysBatchRepository(s.adapter, {
+      ...s.scope,
+      conversationId: b,
+    }).page(s.input.id),
+  ).rejects.toThrow("SCOPE_INVALID");
+  const size = vi.fn(async () => 1),
+    retain = vi.fn(async () => ({
+      localUri: "file:///kept",
+      sizeBytes: 1,
+      checksum: s.input.files[0]!.checksum,
+    }));
+  for (const conversationId of [
+    randomUUID(),
+    addIntakeConversation(s, { ownerId: randomUUID() }),
+    addIntakeConversation(s, { status: "ARCHIVED" }),
+  ]) {
+    await expect(
+      captureMercalysBatch(
+        {
+          files: [{ name: "source.xlsx", uri: "file:///selected" }],
+          ...s.scope,
+          conversationId,
+        },
+        new MercalysBatchRepository(s.adapter, { ...s.scope, conversationId }),
+        { size, retain },
+        randomUUID,
+      ),
+    ).rejects.toThrow("CONVERSATION_INVALID");
+  }
+  expect(size).not.toHaveBeenCalled();
+  expect(retain).not.toHaveBeenCalled();
+  s.db.close();
+  const reopened = new DatabaseSync(s.path);
+  databases.push(reopened);
+  expect(
+    (
+      await new MercalysBatchRepository(new Adapter(reopened), {
+        ...s.scope,
+        conversationId: a,
+      }).recent()
+    ).batches[0]?.conversationId,
+  ).toBe(a);
+});
+it("retains conversation-bound ZIP headers and child lineage without permitting rebind", async () => {
+  const { MercalysArchiveRepository } =
+    await import("./mercalys-archive-repository");
+  const { retainMercalysZip } = await import("./mercalys-zip-capture");
+  const s = await setup(1),
+    a = addIntakeConversation(s),
+    b = addIntakeConversation(s);
+  const scope = { ...s.scope, conversationId: a },
+    archives = new MercalysArchiveRepository(s.adapter, scope);
+  const root = {
+    id: randomUUID(),
+    batchId: s.input.id,
+    ...scope,
+    filename: "sources.zip",
+    localUri: "file:///root.zip",
+    sizeBytes: 1,
+    checksum: s.input.files[0]!.checksum,
+    createdAt: s.input.createdAt,
+  };
+  await archives.create(root);
+  const input = { ...s.input, archiveId: root.id, conversationId: a };
+  const batches = new MercalysBatchRepository(s.adapter, scope);
+  await batches.appendArchive(input);
+  await batches.appendArchive(input);
+  expect((await batches.page(input.id)).items).toHaveLength(1);
+  await expect(
+    s.repo.appendArchive({ ...input, conversationId: b }),
+  ).rejects.toThrow("SCOPE_INVALID");
+  expect(
+    (
+      await new MercalysArchiveRepository(s.adapter, {
+        ...s.scope,
+        conversationId: b,
+      }).recent()
+    ).archives,
+  ).toEqual([]);
+  await expect(
+    new MercalysArchiveRepository(s.adapter, {
+      ...s.scope,
+      conversationId: b,
+    }).get(root.id),
+  ).rejects.toThrow("SCOPE_INVALID");
+  const retain = vi.fn();
+  await expect(
+    retainMercalysZip(
+      { name: "other.zip", uri: "file:///selected" },
+      new MercalysArchiveRepository(s.adapter, {
+        ...s.scope,
+        conversationId: randomUUID(),
+      }),
+      {
+        retain,
+        read: async () => new Uint8Array(),
+        checksum: async () => s.input.files[0]!.checksum,
+        member: retain,
+        memberId: async () => randomUUID(),
+        pause: async () => {},
+      },
+      randomUUID,
+    ),
+  ).rejects.toThrow("CONVERSATION_INVALID");
+  expect(retain).not.toHaveBeenCalled();
+});
+it("only proposes an analysis question for canonical published periods from the bound lot", async () => {
+  const s = await setup(1),
+    conversationId = addIntakeConversation(s),
+    repo = new MercalysBatchRepository(s.adapter, {
+      ...s.scope,
+      conversationId,
+    });
+  await repo.create({ ...s.input, conversationId });
+  await expect(repo.discussionQuestion(s.input.id)).rejects.toThrow(
+    "NOT_PUBLISHED",
+  );
+  for (const sourceType of ["MERCALYS_SALES", "MERCALYS_WASTE"]) {
+    s.db
+      .prepare(
+        `INSERT INTO source_documents(id,store_id,source_type,checksum,business_period_start,business_period_end,local_processing_status,remote_upload_status,version,created_at,updated_at) VALUES(?,?,?,?,'2026-10-01','2026-10-07','PUBLISHED','PENDING',1,?,?)`,
+      )
+      .run(
+        randomUUID(),
+        s.scope.storeId,
+        sourceType,
+        s.input.files[0]!.checksum,
+        s.input.createdAt,
+        s.input.createdAt,
+      );
+  }
+  expect(await repo.discussionQuestion(s.input.id)).toBe(
+    "Analyse les données publiées de ventes du 01/10/2026 au 07/10/2026 et de casse du 01/10/2026 au 07/10/2026. Vérifie la couverture réelle et les éventuelles journées ou lignes manquantes, puis propose les points utiles à examiner.",
+  );
+  expect(s.db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()).toEqual({
+    n: 0,
+  });
 });

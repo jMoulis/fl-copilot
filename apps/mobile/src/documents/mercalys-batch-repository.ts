@@ -1,5 +1,5 @@
+import { assertIntakeConversation } from "./intake-conversation";
 import {
-  copilotConversationSchema,
   mercalysArchiveInputSchema,
   mercalysBatchInputSchema,
   mercalysBatchItemSchema,
@@ -10,7 +10,7 @@ import {
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 type Db = OutboxDatabase & AtomicMutationDatabase;
-type Scope = { storeId: string; ownerId: string };
+type Scope = { storeId: string; ownerId: string; conversationId?: string };
 /** Device-local working intake; canonical publication and its Outbox remain separate. */
 export class MercalysBatchRepository {
   constructor(
@@ -18,6 +18,14 @@ export class MercalysBatchRepository {
     private scope: Scope,
     private now: () => string = () => new Date().toISOString(),
   ) {}
+  assertConversation(conversationId?: string | null) {
+    if (
+      this.scope.conversationId &&
+      conversationId !== this.scope.conversationId
+    )
+      throw Error("MERCALYS_BATCH_SCOPE_INVALID");
+    return assertIntakeConversation(this.db, this.scope, conversationId);
+  }
   get ownerId() {
     return this.scope.ownerId;
   }
@@ -36,7 +44,9 @@ export class MercalysBatchRepository {
     if (
       batch.id !== batchId ||
       batch.storeId !== this.scope.storeId ||
-      batch.ownerId !== this.scope.ownerId
+      batch.ownerId !== this.scope.ownerId ||
+      (this.scope.conversationId !== undefined &&
+        batch.conversationId !== this.scope.conversationId)
     )
       throw Error("MERCALYS_BATCH_SCOPE_INVALID");
     return batch;
@@ -45,7 +55,9 @@ export class MercalysBatchRepository {
     const batch = mercalysBatchInputSchema.parse(raw);
     if (
       batch.storeId !== this.scope.storeId ||
-      batch.ownerId !== this.scope.ownerId
+      batch.ownerId !== this.scope.ownerId ||
+      (this.scope.conversationId !== undefined &&
+        batch.conversationId !== this.scope.conversationId)
     )
       throw Error("MERCALYS_BATCH_SCOPE_INVALID");
     await this.db.withExclusiveTransactionAsync(async (tx) => {
@@ -60,25 +72,7 @@ export class MercalysBatchRepository {
         return;
       }
       await this.archive(tx, batch);
-      if (batch.conversationId) {
-        const row = await tx.getFirstAsync<{ payload_json: string }>(
-          "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
-          batch.conversationId,
-          batch.storeId,
-          batch.ownerId,
-        );
-        const c = row
-          ? copilotConversationSchema.parse(JSON.parse(row.payload_json))
-          : null;
-        if (
-          !c ||
-          c.id !== batch.conversationId ||
-          c.storeId !== batch.storeId ||
-          c.ownerId !== batch.ownerId ||
-          c.status !== "ACTIVE"
-        )
-          throw Error("MERCALYS_BATCH_CONVERSATION_INVALID");
-      }
+      await assertIntakeConversation(tx, this.scope, batch.conversationId);
       await tx.runAsync(
         "INSERT INTO mercalys_intake_batches(id,store_id,owner_id,conversation_id,request_json,created_at,archive_id) VALUES(?,?,?,?,?,?,?)",
         batch.id,
@@ -126,7 +120,8 @@ export class MercalysBatchRepository {
       a.batchId !== batch.id ||
       a.storeId !== batch.storeId ||
       a.ownerId !== batch.ownerId ||
-      a.createdAt !== batch.createdAt
+      a.createdAt !== batch.createdAt ||
+      (a.conversationId ?? null) !== batch.conversationId
     )
       throw Error("MERCALYS_ARCHIVE_SCOPE_INVALID");
   }
@@ -136,11 +131,13 @@ export class MercalysBatchRepository {
       !input.archiveId ||
       input.storeId !== this.scope.storeId ||
       input.ownerId !== this.scope.ownerId ||
-      input.conversationId
+      (this.scope.conversationId !== undefined &&
+        input.conversationId !== this.scope.conversationId)
     )
       throw Error("MERCALYS_ARCHIVE_SCOPE_INVALID");
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       await this.archive(tx, input);
+      await assertIntakeConversation(tx, this.scope, input.conversationId);
       const existing = await tx.getFirstAsync<{ id: string }>(
         "SELECT id FROM mercalys_intake_batches WHERE id=?",
         input.id,
@@ -151,7 +148,7 @@ export class MercalysBatchRepository {
       if (
         current.archiveId !== input.archiveId ||
         current.createdAt !== input.createdAt ||
-        current.conversationId
+        current.conversationId !== input.conversationId
       )
         throw Error("MERCALYS_BATCH_ID_REUSED");
       if (!existing)
@@ -160,7 +157,7 @@ export class MercalysBatchRepository {
           input.id,
           input.storeId,
           input.ownerId,
-          null,
+          input.conversationId,
           JSON.stringify(input),
           input.createdAt,
           input.archiveId!,
@@ -222,11 +219,46 @@ export class MercalysBatchRepository {
     );
     return rows;
   }
+  async discussionQuestion(batchId: string) {
+    const batch = await this.owned(this.db, batchId);
+    if (!batch.conversationId)
+      throw Error("MERCALYS_BATCH_CONVERSATION_INVALID");
+    await assertIntakeConversation(this.db, this.scope, batch.conversationId);
+    const checksums = [...new Set(batch.files.map((file) => file.checksum))];
+    const periods = await this.db.getAllAsync<{
+      source_type: string;
+      start: string;
+      end: string;
+    }>(
+      `SELECT source_type, MIN(business_period_start) AS start, MAX(business_period_end) AS end
+       FROM source_documents WHERE store_id=? AND deleted_at IS NULL AND local_processing_status='PUBLISHED'
+       AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+       AND checksum IN (${checksums.map(() => "?").join(",")}) GROUP BY source_type`,
+      this.scope.storeId,
+      ...checksums,
+    );
+    if (
+      !periods.length ||
+      periods.some(
+        (p) =>
+          !/^\d{4}-\d{2}-\d{2}$/.test(p.start ?? "") ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(p.end ?? ""),
+      )
+    )
+      throw Error("MERCALYS_BATCH_NOT_PUBLISHED");
+    const labels = periods.map(
+      (p) =>
+        `${p.source_type === "MERCALYS_SALES" ? "ventes" : "casse"} du ${p.start.split("-").reverse().join("/")} au ${p.end.split("-").reverse().join("/")}`,
+    );
+    return `Analyse les données publiées de ${labels.join(" et de ")}. Vérifie la couverture réelle et les éventuelles journées ou lignes manquantes, puis propose les points utiles à examiner.`;
+  }
   async recent(after?: { createdAt: string; id: string }) {
     const rows = await this.db.getAllAsync<{ request_json: string }>(
-      "SELECT request_json FROM mercalys_intake_batches WHERE store_id=? AND owner_id=? AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",
+      "SELECT request_json FROM mercalys_intake_batches WHERE store_id=? AND owner_id=? AND (? IS NULL OR conversation_id=?) AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",
       this.scope.storeId,
       this.scope.ownerId,
+      this.scope.conversationId ?? null,
+      this.scope.conversationId ?? null,
       after?.createdAt ?? null,
       after?.createdAt ?? null,
       after?.createdAt ?? null,
@@ -240,7 +272,10 @@ export class MercalysBatchRepository {
     if (
       batches.some(
         (b) =>
-          b.storeId !== this.scope.storeId || b.ownerId !== this.scope.ownerId,
+          b.storeId !== this.scope.storeId ||
+          b.ownerId !== this.scope.ownerId ||
+          (this.scope.conversationId !== undefined &&
+            b.conversationId !== this.scope.conversationId),
       )
     )
       throw Error("MERCALYS_BATCH_SCOPE_INVALID");

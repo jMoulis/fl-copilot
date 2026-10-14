@@ -1,3 +1,4 @@
+import { BottomSheet, MenuRow } from "../components/ui";
 import type { CopilotPdfSelection } from "./pdf-selection";
 import type { ReactNode } from "react";
 import { mergeCopilotHistory } from "./history-window";
@@ -6,7 +7,13 @@ import type { CopilotMessage } from "@fl-copilot/domain";
 import { ApiClientError } from "@fl-copilot/api-client";
 import type { CopilotTurnDelivery } from "./turn-delivery";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  Text,
+  View,
+} from "react-native";
 import { CopilotChatView } from "./chat-view";
 import type { CopilotLocalChatController } from "./local-chat-controller";
 import { colors } from "../design/tokens";
@@ -21,6 +28,9 @@ type PanelProps = {
     message: CopilotMessage,
     onSubmitted: () => Promise<void>,
   ): ReactNode;
+  intakeSummary?: ReactNode;
+  onOpenMercalys?(): void;
+  externalDraftRevision?: number;
   onAttachPdf?(
     signal: AbortSignal,
     capacity: number,
@@ -42,7 +52,12 @@ function LocalChatPanel({
   delivery,
   onAttachPdf,
   renderToolMessage,
+  onOpenMercalys,
+  intakeSummary,
+  externalDraftRevision = 0,
 }: PanelProps) {
+  const [fileMenu, setFileMenu] = useState(false);
+  const queuedFileAction = useRef<"PDF" | "MERCALYS" | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [loadedController, setLoadedController] =
     useState<CopilotLocalChatController>();
@@ -120,6 +135,30 @@ function LocalChatPanel({
       current.current = { controller: undefined, conversationId: "" };
     };
   }, [controller, conversationId, delivery]);
+  useEffect(() => {
+    if (!externalDraftRevision) return;
+    let alive = true;
+    const revision = draftRevision.current;
+    void controller
+      .open(conversationId)
+      .then((value) => {
+        if (alive && revision === draftRevision.current) {
+          setDraft(value.draft?.text ?? "");
+          setSnapshot((previous) =>
+            previous ? { ...previous, draft: value.draft } : previous,
+          );
+        }
+      })
+      .catch(() => {
+        if (alive)
+          setError(
+            "Le brouillon d’analyse ne peut pas être relu. Il reste conservé ; rouvrez la conversation.",
+          );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [controller, conversationId, externalDraftRevision]);
   const isCurrent = () =>
     current.current.controller === controller &&
     current.current.conversationId === conversationId;
@@ -249,6 +288,17 @@ function LocalChatPanel({
       if (isCurrent()) setLoadingOlder(false);
     }
   }
+  function performFileAction(kind: "PDF" | "MERCALYS") {
+    if (!isCurrent()) return;
+    if (kind === "PDF") void attach();
+    else onOpenMercalys?.();
+  }
+  function selectFileAction(kind: "PDF" | "MERCALYS") {
+    setFileMenu(false);
+    // UIKit must finish dismissing this sheet before another modal/picker opens.
+    if (Platform.OS === "ios") queuedFileAction.current = kind;
+    else performFileAction(kind);
+  }
   async function attach() {
     if (!onAttachPdf || attachmentAbort.current || locked.current) return;
     const attempt = new AbortController();
@@ -310,68 +360,107 @@ function LocalChatPanel({
   }
   const queued = snapshot.pendingTurns.length > 0;
   return (
-    <CopilotChatView
-      title={snapshot.conversation.title}
-      messages={snapshot.messages.map((message) => message.entity)}
-      draft={draft}
-      status={sending ? "GENERATING" : queued ? "QUEUED" : "IDLE"}
-      error={error}
-      draftAttachments={snapshot.draft?.attachments ?? []}
-      attaching={attaching}
-      onAttach={
-        onAttachPdf
-          ? () => {
-              void attach();
-            }
-          : undefined
-      }
-      onRemoveAttachment={(sourceId) => {
-        void removeAttachment(sourceId);
-      }}
-      onDraftChange={change}
-      onSend={() => {
-        void send();
-      }}
-      onRetry={
-        delivery && queued && !attaching
-          ? () => {
-              void receive();
-            }
-          : undefined
-      }
-      onConversations={onConversations}
-      onOlder={
-        snapshot.hasMore
-          ? () => {
-              void loadOlder();
-            }
-          : undefined
-      }
-      loadingOlder={loadingOlder}
-      historyError={historyError}
-      renderAttachment={renderCommercialOriginal}
-      renderToolMessage={
-        renderToolMessage
-          ? (message) =>
-              renderToolMessage(message, async () => {
-                const refreshed = await controller.open(
-                  conversationId,
-                  snapshot.messages.at(-1)?.entity,
-                );
-                if (isCurrent())
-                  setSnapshot((previous) =>
-                    previous
-                      ? {
-                          ...refreshed,
-                          ...mergeCopilotHistory(previous, refreshed),
-                        }
-                      : refreshed,
+    <>
+      <CopilotChatView
+        intakeSummary={intakeSummary}
+        allowIntakeWithoutAttachmentCapacity={!!onOpenMercalys}
+        title={snapshot.conversation.title}
+        messages={snapshot.messages.map((message) => message.entity)}
+        draft={draft}
+        status={sending ? "GENERATING" : queued ? "QUEUED" : "IDLE"}
+        error={error}
+        draftAttachments={snapshot.draft?.attachments ?? []}
+        attaching={attaching}
+        onAttach={
+          onAttachPdf || onOpenMercalys
+            ? () => {
+                if (onOpenMercalys) setFileMenu(true);
+                else void attach();
+              }
+            : undefined
+        }
+        onRemoveAttachment={(sourceId) => {
+          void removeAttachment(sourceId);
+        }}
+        onDraftChange={change}
+        onSend={() => {
+          void send();
+        }}
+        onRetry={
+          delivery && queued && !attaching
+            ? () => {
+                void receive();
+              }
+            : undefined
+        }
+        onConversations={onConversations}
+        onOlder={
+          snapshot.hasMore
+            ? () => {
+                void loadOlder();
+              }
+            : undefined
+        }
+        loadingOlder={loadingOlder}
+        historyError={historyError}
+        renderAttachment={renderCommercialOriginal}
+        renderToolMessage={
+          renderToolMessage
+            ? (message) =>
+                renderToolMessage(message, async () => {
+                  const refreshed = await controller.open(
+                    conversationId,
+                    snapshot.messages.at(-1)?.entity,
                   );
-                if (isCurrent()) await receive();
-              })
-          : undefined
-      }
-    />
+                  if (isCurrent())
+                    setSnapshot((previous) =>
+                      previous
+                        ? {
+                            ...refreshed,
+                            ...mergeCopilotHistory(previous, refreshed),
+                          }
+                        : refreshed,
+                    );
+                  if (isCurrent()) await receive();
+                })
+            : undefined
+        }
+      />
+      <BottomSheet
+        visible={fileMenu}
+        title="Joindre des fichiers"
+        onClose={() => {
+          queuedFileAction.current = undefined;
+          setFileMenu(false);
+        }}
+        onDismiss={() => {
+          const kind = queuedFileAction.current;
+          queuedFileAction.current = undefined;
+          if (kind) performFileAction(kind);
+        }}
+      >
+        {onAttachPdf ? (
+          <MenuRow
+            title="PDF commerciaux"
+            description="Prospectus et opérations"
+            icon="document-text-outline"
+            onPress={() => {
+              selectFileAction("PDF");
+            }}
+          />
+        ) : null}
+        {onOpenMercalys ? (
+          <MenuRow
+            title="Exports Mercalys"
+            description="Plusieurs fichiers XLSX ou une archive ZIP"
+            icon="documents-outline"
+            onPress={() => {
+              selectFileAction("MERCALYS");
+            }}
+          />
+        ) : null}
+      </BottomSheet>
+    </>
   );
 }
 
