@@ -226,7 +226,7 @@ it("rejects authority flags, duplicate item IDs and aggregate size overflow befo
 function checksum(bytes: Uint8Array) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
-function workbook(flow: string): Uint8Array<ArrayBuffer> {
+function workbook(flow: string, unmatched = false): Uint8Array<ArrayBuffer> {
   const rows = [
     ["Edition du 28/09/2026 à 12:00:00"],
     [
@@ -254,6 +254,22 @@ function workbook(flow: string): Uint8Array<ArrayBuffer> {
     [],
     ["Nombre de Lignes : 1"],
   ];
+  if (unmatched) {
+    rows.splice(9, 0, [
+      "00000002",
+      "0000000000002",
+      "Autre",
+      1,
+      1,
+      0,
+      2,
+      0.1,
+      0.9,
+      45,
+    ]);
+    rows[10] = ["", "", "", 2, 2, 0, 4, 0.2, 1.8, 45];
+    rows[12] = ["Nombre de Lignes : 2"];
+  }
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Mercalys");
   return new Uint8Array(
@@ -859,4 +875,274 @@ it("only proposes an analysis question for canonical published periods from the 
   expect(s.db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()).toEqual({
     n: 0,
   });
+});
+async function publicationFixture(unmatched = false) {
+  const { MercalysImportPublicationRepository } =
+    await import("./mercalys-import-publication");
+  const { MercalysBatchPublication } =
+    await import("./mercalys-batch-publication");
+  const { productSchema, productIdentifierSchema } =
+    await import("@fl-copilot/domain");
+  const s = await setup(3),
+    productId = randomUUID();
+  const bytes = [
+    workbook("Vente Nette", unmatched),
+    workbook("Casse"),
+    new Uint8Array([0]),
+  ];
+  s.input.files = s.input.files.map((f, i) => ({
+    ...f,
+    sizeBytes: bytes[i]!.length,
+    checksum: checksum(bytes[i]!),
+  }));
+  await s.repo.create(s.input);
+  s.db
+    .prepare(
+      `INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at,sync_state,dirty) VALUES(?,?,'Article','VEGETABLE','BULK','KG','ACTIVE',1,?,?,'SYNCED',0)`,
+    )
+    .run(productId, s.scope.storeId, s.input.createdAt, s.input.createdAt);
+  const product = productSchema.parse({
+    id: productId,
+    storeId: s.scope.storeId,
+    label: "Article",
+    category: "VEGETABLE",
+    nature: "BULK",
+    salesUnit: "KG",
+    status: "ACTIVE",
+    version: 1,
+    createdAt: s.input.createdAt,
+    updatedAt: s.input.createdAt,
+  });
+  const identifier = productIdentifierSchema.parse({
+    id: randomUUID(),
+    storeId: s.scope.storeId,
+    productId,
+    type: "ITM8",
+    value: "00000001",
+    source: "MERCALYS",
+    status: "VALIDATED",
+    version: 1,
+    createdAt: s.input.createdAt,
+    updatedAt: s.input.createdAt,
+  });
+  let active = true;
+  const read = async (uri: string) =>
+    bytes[Number(uri.match(/(\d+)\.xlsx/)![1])]!;
+  const publication = new MercalysImportPublicationRepository(
+    s.adapter,
+    randomUUID,
+  );
+  const preparation = new MercalysBatchPreparation(s.repo, {
+    read,
+    checksum: async (b) => checksum(b),
+    catalog: async () => ({
+      products: [{ ...product, status: active ? "ACTIVE" : "INACTIVE" }],
+      identifiers: [identifier],
+      aliases: [],
+    }),
+    publication,
+  });
+  const publisher = new MercalysBatchPublication(
+    s.repo,
+    preparation,
+    publication,
+    async (text) => checksum(new TextEncoder().encode(text)),
+  );
+  return {
+    ...s,
+    bytes,
+    publisher,
+    publication,
+    preparation,
+    setActive: (value: boolean) => {
+      active = value;
+    },
+  };
+}
+it("publishes mixed sales/waste through canonical transactions, isolates a malformed sibling and skips replay after restart", async () => {
+  const s = await publicationFixture(),
+    plan = await s.publisher.preview(s.input.id);
+  expect(plan.items.map((i) => i.status)).toEqual(["READY", "READY", "FAILED"]);
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 0 });
+  await expect(
+    s.publisher.confirm(JSON.parse(JSON.stringify(plan))),
+  ).rejects.toThrow("PLAN_UNAVAILABLE");
+  const results = await s.publisher.confirm(plan);
+  expect(results.map((i) => i.status)).toEqual([
+    "PUBLISHED",
+    "PUBLISHED",
+    "FAILED",
+  ]);
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM sales_observations").get(),
+  ).toEqual({ n: 1 });
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM waste_observations").get(),
+  ).toEqual({ n: 1 });
+  expect(
+    s.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM local_jobs WHERE type='SOURCE_UPLOAD_AND_REGISTER'",
+      )
+      .get(),
+  ).toEqual({ n: 2 });
+  expect(
+    (await s.repo.publications(s.input.id)).map((p) => p.published_count),
+  ).toEqual([1, 1]);
+  await expect(s.publisher.confirm(plan)).rejects.toThrow("PLAN_UNAVAILABLE");
+  const retry = await s.publisher.preview(s.input.id);
+  expect(retry.items.map((i) => i.status)).toEqual([
+    "DUPLICATE",
+    "DUPLICATE",
+    "FAILED",
+  ]);
+  await s.publisher.confirm(retry);
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 2 });
+  s.db.close();
+  const reopened = new DatabaseSync(s.path);
+  databases.push(reopened);
+  expect(
+    await new MercalysBatchRepository(
+      new Adapter(reopened),
+      s.scope,
+    ).publications(s.input.id),
+  ).toHaveLength(2);
+});
+it("refuses changed catalogue, changed originals and changed review versions after preview", async () => {
+  const s = await publicationFixture();
+  const plan = await s.publisher.preview(s.input.id);
+  s.setActive(false);
+  expect(
+    (await s.publisher.confirm(plan)).slice(0, 2).map((i) => i.code),
+  ).toEqual(["MERCALYS_BATCH_PLAN_CHANGED", "MERCALYS_BATCH_PLAN_CHANGED"]);
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 0 });
+  s.setActive(true);
+  const next = await s.publisher.preview(s.input.id);
+  s.bytes[0] = new Uint8Array([1]);
+  await s.repo.refresh(s.input.id, s.input.files[1]!.id, 1);
+  const result = await s.publisher.confirm(next);
+  expect(result[0]?.code).toBe("MERCALYS_BATCH_FILE_CHANGED");
+  expect(result[1]?.code).toBe("MERCALYS_BATCH_PLAN_CHANGED");
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 0 });
+});
+it("preserves a published prefix on cancellation and retries a rolled-back publication without duplicate observations", async () => {
+  const s = await publicationFixture(),
+    { MercalysBatchPublication } = await import("./mercalys-batch-publication");
+  const a = new AbortController();
+  const publisher = new MercalysBatchPublication(
+    s.repo,
+    s.preparation,
+    {
+      findExactDuplicate: (...args) =>
+        s.publication.findExactDuplicate(...args),
+      analyzeOverlap: (...args) => s.publication.analyzeOverlap(...args),
+      publish: async (input) => {
+        const result = await s.publication.publish(input);
+        a.abort();
+        return result;
+      },
+    },
+    async (text) => checksum(new TextEncoder().encode(text)),
+  );
+  const plan = await publisher.preview(s.input.id);
+  await expect(publisher.confirm(plan, a.signal)).rejects.toThrow("CANCELLED");
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 1 });
+  const remaining = await s.publisher.preview(s.input.id);
+  s.adapter.fail = true;
+  expect((await s.publisher.confirm(remaining)).map((i) => i.status)).toEqual([
+    "DUPLICATE",
+    "FAILED",
+    "FAILED",
+  ]);
+  s.adapter.fail = false;
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 1 });
+  await s.publisher.confirm(await s.publisher.preview(s.input.id));
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 2 });
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM waste_observations").get(),
+  ).toEqual({ n: 1 });
+});
+it("marks conflicting files within the same planned lot before confirmation", async () => {
+  const s = await publicationFixture();
+  // Same retained file in two paths: it must not promise two additive observations.
+  await s.repo.create({
+    ...s.input,
+    id: randomUUID(),
+    files: [
+      { ...s.input.files[0]!, id: randomUUID() },
+      { ...s.input.files[0]!, id: randomUUID(), filename: "copy.xlsx" },
+    ],
+  });
+  const batch = (await s.repo.recent()).batches.find(
+    (b) => b.id !== s.input.id,
+  )!;
+  const plan = await s.publisher.preview(batch.id);
+  expect(plan.items.map((i) => i.status)).toEqual(["READY", "BLOCKED"]);
+  expect(plan.items[1]?.code).toBe("MERCALYS_BATCH_OVERLAPPING_FILES");
+});
+it("keeps unconfirmed product lines outside partial publication and reports their remaining count", async () => {
+  const s = await publicationFixture(true),
+    plan = await s.publisher.preview(s.input.id);
+  expect(plan.items[0]).toMatchObject({
+    status: "READY",
+    readyCount: 1,
+    remainingCount: 1,
+  });
+  const result = await s.publisher.confirm(plan);
+  expect(result[0]).toMatchObject({
+    status: "PUBLISHED",
+    publishedCount: 1,
+    remainingCount: 1,
+  });
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM sales_observations").get(),
+  ).toEqual({ n: 1 });
+  expect(
+    s.db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM source_records WHERE status='WARNING'",
+      )
+      .get(),
+  ).toEqual({ n: 1 });
+});
+it("refuses a new canonical overlap that appears after the manager reviews the plan", async () => {
+  const s = await publicationFixture(),
+    plan = await s.publisher.preview(s.input.id);
+  const { summary } = await s.preparation.readValidated(
+    s.input.id,
+    s.input.files[0]!.id,
+  );
+  await s.publication.publish({
+    storeId: s.scope.storeId,
+    filename: "another.xlsx",
+    localFileUri: "file:///another.xlsx",
+    sizeBytes: s.input.files[0]!.sizeBytes,
+    checksum: `sha256:${"b".repeat(64)}`,
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    summary,
+  });
+  const result = await s.publisher.confirm(plan);
+  expect(result[0]).toMatchObject({
+    status: "BLOCKED",
+    code: "MERCALYS_RECONCILIATION_REQUIRED",
+  });
+  expect(result[1]?.status).toBe("PUBLISHED");
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM sales_observations").get(),
+  ).toEqual({ n: 1 });
 });

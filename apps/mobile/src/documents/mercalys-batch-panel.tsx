@@ -1,3 +1,4 @@
+import { MercalysBatchPublication } from "./mercalys-batch-publication";
 import { MercalysArchiveRepository } from "./mercalys-archive-repository";
 import {
   retainMercalysZip,
@@ -6,9 +7,18 @@ import {
 } from "./mercalys-zip-capture";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
-import { randomUUID, CryptoDigestAlgorithm, digest } from "expo-crypto";
+import {
+  randomUUID,
+  CryptoDigestAlgorithm,
+  digest,
+  digestStringAsync,
+} from "expo-crypto";
 import { File } from "expo-file-system";
-import type { MercalysBatchInput, MercalysBatchItem } from "@fl-copilot/domain";
+import type {
+  MercalysBatchInput,
+  MercalysBatchItem,
+  MercalysBatchPublicationPlan,
+} from "@fl-copilot/domain";
 import { SectionCard, SecondaryButton, InlineAlert } from "../components/ui";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
@@ -28,6 +38,7 @@ export function MercalysBatchPanel({
   conversationId,
   onDiscuss,
   onBusyChange,
+  onPublished,
   pick,
   pickZip,
   onReview,
@@ -39,6 +50,7 @@ export function MercalysBatchPanel({
   conversationId?: string;
   onDiscuss?(batchId: string): Promise<void>;
   onBusyChange?(busy: boolean): void;
+  onPublished?(): Promise<void>;
   pick(): Promise<MercalysSelectedFile[] | undefined>;
   pickZip?(): Promise<MercalysSelectedFile | undefined>;
   onReview(
@@ -84,6 +96,21 @@ export function MercalysBatchPanel({
       }),
     [db, repo, storeId],
   );
+  const publisher = useMemo(
+    () =>
+      new MercalysBatchPublication(
+        repo,
+        service,
+        new MercalysImportPublicationRepository(db, randomUUID),
+        async (text) =>
+          `sha256:${await digestStringAsync(CryptoDigestAlgorithm.SHA256, text)}`,
+      ),
+    [repo, service, db],
+  );
+  const [publicationPlan, setPublicationPlan] =
+    useState<MercalysBatchPublicationPlan>();
+  const [publicationReport, setPublicationReport] =
+    useState<Awaited<ReturnType<MercalysBatchPublication["confirm"]>>>();
   const [batches, setBatches] = useState<MercalysBatchInput[]>([]),
     [moreBatches, setMoreBatches] = useState(false),
     [active, setActive] = useState<string>(),
@@ -148,6 +175,8 @@ export function MercalysBatchPanel({
     const committed = await repo.publications(batchId);
     if (alive.current) {
       setPublications(committed);
+      setPublicationPlan(undefined);
+      setPublicationReport(undefined);
       setActive(batchId);
       activeRef.current = batchId;
       setItems((old) => (older ? [...old, ...page.items] : page.items));
@@ -198,11 +227,15 @@ export function MercalysBatchPanel({
     } catch (reason) {
       if (alive.current && !a.signal.aborted)
         setError(
-          reason instanceof Error && reason.message === "COPILOT_DRAFT_TOO_LONG"
-            ? "Votre brouillon est trop long pour ajouter la question d’analyse. Revenez au chat et raccourcissez-le ; le lot reste conservé."
-            : reason instanceof Error && reason.message.includes("LIMIT")
-              ? "Le lot accepte au maximum 100 fichiers, 20 Mio par fichier et 100 Mio au total."
-              : "L’opération s’est interrompue. Les originaux conservés et les résultats déjà enregistrés restent disponibles ; reprenez le lot.",
+          reason instanceof Error &&
+            reason.message === "MERCALYS_BATCH_POST_PUBLICATION_PENDING"
+            ? "Les lignes sont publiées. Le recalcul ou la synchronisation reste à reprendre ; les fichiers ne doivent pas être publiés de nouveau."
+            : reason instanceof Error &&
+                reason.message === "COPILOT_DRAFT_TOO_LONG"
+              ? "Votre brouillon est trop long pour ajouter la question d’analyse. Revenez au chat et raccourcissez-le ; le lot reste conservé."
+              : reason instanceof Error && reason.message.includes("LIMIT")
+                ? "Le lot accepte au maximum 100 fichiers, 20 Mio par fichier et 100 Mio au total."
+                : "L’opération s’est interrompue. Les originaux conservés et les résultats déjà enregistrés restent disponibles ; reprenez le lot.",
         );
     } finally {
       if (alive.current && a.signal.aborted)
@@ -396,6 +429,81 @@ export function MercalysBatchPanel({
           }
         />
       ) : null}
+      {active ? (
+        <SecondaryButton
+          label="Préparer la publication du lot"
+          disabled={busy || disabled}
+          onPress={() =>
+            void run(async (signal) => {
+              setPublicationReport(undefined);
+              setProgress("Vérification des lignes à publier…");
+              const plan = await publisher.preview(active, signal);
+              if (alive.current) setPublicationPlan(plan);
+            })
+          }
+        />
+      ) : null}
+      {publicationPlan ? (
+        <View className="gap-2 rounded-xl border border-line p-3">
+          <Text className="font-semibold text-ink">Publication du lot</Text>
+          <Text>
+            {publicationPlan.items.filter((i) => i.status === "READY").length}{" "}
+            fichiers ·{" "}
+            {publicationPlan.items
+              .filter((i) => i.status === "READY")
+              .reduce((n, i) => n + i.readyCount, 0)}{" "}
+            lignes prêtes
+          </Text>
+          <Text>
+            {
+              publicationPlan.items.filter((i) => i.status === "DUPLICATE")
+                .length
+            }{" "}
+            fichiers déjà publiés ·{" "}
+            {
+              publicationPlan.items.filter(
+                (i) => i.status === "BLOCKED" || i.status === "FAILED",
+              ).length
+            }{" "}
+            fichiers à examiner
+          </Text>
+          <Text className="text-sm text-muted">
+            Seules les lignes prêtes seront publiées. Les produits à confirmer
+            et les fichiers nécessitant un rapprochement restent à examiner.
+          </Text>
+          <SecondaryButton
+            label="Publier les lignes prêtes du lot"
+            disabled={
+              busy ||
+              disabled ||
+              !publicationPlan.items.some((i) => i.status === "READY")
+            }
+            onPress={() =>
+              void run(async (signal) => {
+                const plan = publicationPlan;
+                setPublicationPlan(undefined);
+                setProgress("Publication des fichiers en cours…");
+                const report = await publisher.confirm(plan, signal);
+                await load(plan.batchId);
+                if (alive.current) setPublicationReport(report);
+                if (report.some((item) => item.status === "PUBLISHED"))
+                  await onPublished?.();
+              })
+            }
+          />
+          <SecondaryButton
+            label="Annuler la publication"
+            disabled={busy || disabled}
+            onPress={() => setPublicationPlan(undefined)}
+          />
+        </View>
+      ) : null}
+      {publicationReport ? (
+        <InlineAlert
+          title="Résultat du lot"
+          message={`${publicationReport.filter((i) => i.status === "PUBLISHED").length} fichiers publiés · ${publicationReport.reduce((n, i) => n + i.publishedCount, 0)} lignes publiées. ${publicationReport.filter((i) => i.status === "DUPLICATE").length} fichiers déjà publiés. ${publicationReport.filter((i) => i.status === "BLOCKED" || i.status === "FAILED").length} fichiers restent à examiner. Les lignes non publiées restent visibles dans le détail des fichiers.`}
+        />
+      ) : null}
       {active && publications.length && onDiscuss ? (
         <SecondaryButton
           label="Préparer l’analyse dans le chat"
@@ -406,10 +514,24 @@ export function MercalysBatchPanel({
       {items.map((item) => (
         <View key={item.id} className="gap-2 rounded-xl border border-line p-3">
           <Text className="font-semibold text-ink">{item.filename}</Text>
+          {(publicationReport ?? publicationPlan?.items)?.find(
+            (result) =>
+              result.itemId === item.id &&
+              (result.status === "BLOCKED" || result.status === "FAILED"),
+          ) ? (
+            <Text className="text-sm text-critical">
+              À examiner :{" "}
+              {publicationIssue(
+                (publicationReport ?? publicationPlan?.items)?.find(
+                  (result) => result.itemId === item.id,
+                )?.code,
+              )}
+            </Text>
+          ) : null}
           <Text
             className={
               publicationStatus(item, publications)
-                ? "rounded-xl bg-surface p-2 font-semibold text-primary"
+                ? "rounded-xl bg-surface p-2 font-semibold text-forest"
                 : undefined
             }
           >
@@ -492,9 +614,31 @@ function publicationStatus(
     result.status === "REVIEW" || result.status === "DUPLICATE"
       ? result.sourceType
       : undefined;
-  const publication = publications.find(
-    (p) => p.checksum === item.checksum && p.source_type === sourceType,
+  const matches = publications.filter(
+    (p) =>
+      p.checksum === item.checksum &&
+      (!sourceType || p.source_type === sourceType),
   );
+  const publication = matches.length === 1 ? matches[0] : undefined;
   if (!publication) return undefined;
   return `✓ Publié · ${publication.published_count} ligne${publication.published_count > 1 ? "s" : ""}${publication.remaining_count ? ` · ${publication.remaining_count} ligne${publication.remaining_count > 1 ? "s" : ""} non publiée${publication.remaining_count > 1 ? "s" : ""}` : ""}`;
+}
+
+function publicationIssue(code?: string) {
+  if (
+    code === "MERCALYS_RECONCILIATION_REQUIRED" ||
+    code === "MERCALYS_BATCH_OVERLAPPING_FILES"
+  )
+    return "ce fichier recouvre des données existantes ou un autre fichier du lot. Ouvrez-le pour choisir un rapprochement.";
+  if (code === "MERCALYS_BATCH_PLAN_CHANGED")
+    return "les produits ou la vérification ont changé. Préparez de nouveau la publication.";
+  if (code === "MERCALYS_NO_READY_LINES")
+    return "aucune ligne prête. Confirmez les produits dans le détail du fichier.";
+  if (code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES")
+    return "export agrégé : ce format reste à traiter séparément, sans inventer de journées.";
+  if (code === "FORMAT_UNRECOGNIZED")
+    return "format Mercalys non reconnu. Vérifiez le fichier sélectionné.";
+  if (code === "MERCALYS_BATCH_FILE_CHANGED")
+    return "l’original conservé a changé. Sélectionnez-le de nouveau.";
+  return "la publication de ce fichier n’a pas abouti. Les autres résultats sont conservés ; ouvrez le fichier ou reprenez le lot.";
 }
