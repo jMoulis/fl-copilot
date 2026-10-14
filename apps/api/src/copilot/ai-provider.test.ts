@@ -1471,3 +1471,128 @@ it.each(["valid", "partial", "foreign", "reordered", "zero-version"])(
       );
   },
 );
+
+it("prepares one targeted question without consuming the three distinct business reads", async () => {
+  const f = fixture();
+  const question = {
+    title: "Préciser la période",
+    reason: "Les dates manquent pour comparer les chiffres.",
+    fields: [
+      {
+        key: "start_date",
+        label: "Début de période",
+        type: "DATE" as const,
+        required: true,
+      },
+    ],
+  };
+  const changes = Array.from({ length: 3 }, () => ({
+    productId: randomUUID(),
+    patch: { nature: "BULK" },
+  }));
+  const productPreview = vi.fn(async (input: { productId: string }) => ({
+    productId: input.productId,
+    status: "UNAVAILABLE" as const,
+    preview: null,
+    evidence: [
+      {
+        id: `unavailable-${input.productId}`,
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: input.productId,
+        sourceVersion: null,
+        label: "Fiche indisponible",
+        value: null,
+        factKind: "QUALITY" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(body.tools.map((tool: { name: string }) => tool.name)).toContain(
+        "request_information",
+      );
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_info",
+          call_id: "call_info",
+          name: "request_information",
+          arguments: JSON.stringify(question),
+          status: "completed",
+        },
+        ...changes.map((input, index) => ({
+          type: "function_call",
+          id: `fc_read_${index}`,
+          call_id: `call_read_${index}`,
+          name: "product_classification_preview",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        })),
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("start_date");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    productPreview,
+  }).generate(f.request, schema);
+  expect(productPreview).toHaveBeenCalledTimes(3);
+  expect(result.informationRequests).toEqual([question]);
+  expect(result.toolEvidence).toHaveLength(3);
+});
+it("deduplicates one information request and refuses a different second form in the same turn", async () => {
+  const f = fixture(),
+    question = {
+      title: "Préciser le besoin",
+      reason: "Une information manque.",
+      fields: [
+        {
+          key: "note",
+          label: "Précision",
+          type: "TEXT",
+          maxLength: 120,
+          required: true,
+        },
+      ],
+    };
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        question,
+        question,
+        { ...question, title: "Autre question" },
+      ].map((input, index) => ({
+        type: "function_call",
+        id: `fc_info_${index}`,
+        call_id: `call_info_${index}`,
+        name: "request_information",
+        arguments: JSON.stringify(input),
+        status: "completed",
+      }));
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("unavailable");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+  }).generate(f.request, schema);
+  expect(result.informationRequests).toEqual([question]);
+  expect(result.toolEvidence ?? []).toEqual([]);
+});

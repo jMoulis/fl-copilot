@@ -1,6 +1,9 @@
+import { CopilotInformationFormController } from "@/copilot/information-form-controller";
+import { InformationFormCard } from "@/copilot/information-form-card";
 import { ProductProposalCard } from "@/copilot/product-proposal-card";
 import { CopilotProductProposalController } from "@/copilot/product-proposal-controller";
 import {
+  readCopilotInformationRequest,
   readCopilotProductProposal,
   type CopilotMessage,
 } from "@fl-copilot/domain";
@@ -92,7 +95,32 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
-  const renderProposal = (message: CopilotMessage) => {
+  const forms = useMemo(
+    () =>
+      new CopilotInformationFormController(
+        sqlite,
+        { storeId, ownerId, deviceId },
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId],
+  );
+  const renderProposal = (
+    message: CopilotMessage,
+    onSubmitted: () => Promise<void>,
+  ) => {
+    try {
+      readCopilotInformationRequest(message);
+      return (
+        <InformationFormCard
+          key={message.id}
+          message={message}
+          controller={forms}
+          onSubmitted={onSubmitted}
+        />
+      );
+    } catch {
+      /* Other supported tool artifacts are handled below. */
+    }
     try {
       readCopilotProductProposal(message);
     } catch {

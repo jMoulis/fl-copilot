@@ -39,7 +39,7 @@ export function CopilotInlineFormCard({
 }) {
   const ended = ["ANSWERED", "CANCELLED", "STALE"].includes(form.status);
   const summary = {
-    ANSWERED: "Réponse envoyée",
+    ANSWERED: "Réponse enregistrée",
     CANCELLED: "Question annulée",
     STALE: "Le contexte a changé. Une nouvelle question est nécessaire.",
     POSTPONED: "Question mise de côté",
@@ -65,6 +65,14 @@ export function CopilotInlineFormCard({
           >
             {summary}
           </Text>
+          {notice ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              className="text-sm text-muted"
+            >
+              {notice}
+            </Text>
+          ) : null}
           {form.status === "POSTPONED" ? (
             <SecondaryButton
               label="Répondre"

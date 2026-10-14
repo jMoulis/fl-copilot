@@ -1,3 +1,5 @@
+import { readAnsweredInformationContext } from "./answered-information.js";
+import { buildInformationRequestMessages } from "./information-request-messages.js";
 import { buildProductProposalMessages } from "./product-proposal-messages.js";
 import { readAttachedSources } from "./attached-sources.js";
 import { readConversationGenerationHistory } from "./generation-history.js";
@@ -21,7 +23,7 @@ import { generateCopilotResponse } from "./response-service.js";
 import { buildCopilotResponseMessage } from "./response-message.js";
 import {
   appendCopilotResponse,
-  appendProductProposal,
+  appendCopilotToolRecord,
 } from "./response-store.js";
 import { createMongoSyncChangeService } from "../sync/sync-change-service.js";
 
@@ -142,6 +144,11 @@ export async function runCopilotTurn(
       recentAttachmentReferences,
     );
     cancelled();
+    const answeredInformation = await readAnsweredInformationContext(
+      dependencies.db,
+      initial.parent,
+    );
+    cancelled();
     const request = {
       requestId: randomUUID(),
       storeId: authority.storeId,
@@ -151,6 +158,7 @@ export async function runCopilotTurn(
       attachedSources,
       recentSources,
       recentSourcesOmitted,
+      answeredInformation,
       userQuestion: initial.parent.text || null,
     };
     const generation = await generateCopilotResponse(
@@ -189,11 +197,17 @@ export async function runCopilotTurn(
           changes,
         );
         if (generation.mode === "AI")
-          for (const proposal of buildProductProposalMessages(
-            message,
-            generation.productPreviews ?? [],
-          ))
-            await appendProductProposal(
+          for (const proposal of [
+            ...buildProductProposalMessages(
+              message,
+              generation.productPreviews ?? [],
+            ),
+            ...buildInformationRequestMessages(
+              message,
+              generation.informationRequests ?? [],
+            ),
+          ])
+            await appendCopilotToolRecord(
               { database: dependencies.db, session },
               renewed,
               proposal,

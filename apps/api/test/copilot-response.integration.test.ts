@@ -1,5 +1,7 @@
+import { buildInformationRequestMessages } from "../src/copilot/information-request-messages";
+import { readAnsweredInformationContext } from "../src/copilot/answered-information";
 import { buildProductProposalMessages } from "../src/copilot/product-proposal-messages";
-import { appendProductProposal } from "../src/copilot/response-store";
+import { appendCopilotToolRecord } from "../src/copilot/response-store";
 import { compareProductClassification } from "@fl-copilot/domain";
 import {
   readProductClassificationPreview,
@@ -1997,7 +1999,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             f.response,
             changes,
           );
-          await appendProductProposal(
+          await appendCopilotToolRecord(
             { database: db, session },
             f.authority,
             proposal!,
@@ -2024,7 +2026,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ).toBe(2);
         await expect(
           session.withTransaction(() =>
-            appendProductProposal(
+            appendCopilotToolRecord(
               { database: db, session },
               { ...f.authority, ownerId: randomUUID() },
               proposal!,
@@ -2248,6 +2250,108 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .collection("copilotMessages")
           .countDocuments({ conversationId: f.conversation.id, role: "TOOL" }),
       ).toBe(1);
+    });
+    it("persists a generated private question and revalidates its original context for a later answer", async () => {
+      const f = await fixture();
+      const question = {
+        title: "Préciser la période",
+        reason: "Les dates manquent.",
+        fields: [
+          {
+            key: "start_date",
+            label: "Début",
+            type: "DATE" as const,
+            required: true,
+          },
+        ],
+      };
+      const context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: f.storeId,
+          evaluatedAt: f.message.createdAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Précisons la période à examiner.",
+          facts: [],
+          interpretation: [],
+          recommendations: [],
+          questions: ["Quelle période souhaites-tu examiner ?"],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "info-test",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        informationRequests: [question],
+      }));
+      const dependencies = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => f.authority,
+        loadContext: async () => context,
+      };
+      const turn = {
+        replyId: f.response.id,
+        userMessageId: f.message.id,
+        conversationId: f.conversation.id,
+      };
+      await runCopilotTurn(dependencies, turn);
+      await runCopilotTurn(dependencies, turn);
+      const tools = await db
+        .collection("copilotMessages")
+        .find({ conversationId: f.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(tools).toHaveLength(1);
+      expect(generate).toHaveBeenCalledTimes(1);
+      const payload = JSON.parse(String(tools[0]!.text));
+      expect(payload.kind).toBe("MISSING_INFORMATION_REQUEST");
+      expect(payload.definition.id).toBe(tools[0]!.id);
+      expect(
+        buildInformationRequestMessages(f.response, [question])[0]!.id,
+      ).toBe(tools[0]!.id);
+      const answer = {
+        ...f.message,
+        id: randomUUID(),
+        replyToMessageId: String(tools[0]!.id),
+        text: "Réponse — Début : 14/10/2026",
+      };
+      const original = await readAnsweredInformationContext(db, answer);
+      expect(original?.originalQuestion).toBe(f.message.text);
+      expect(original?.fields[0]?.type).toBe("DATE");
+      expect(original?.superseded).toBe(false);
+      expect(
+        await readAnsweredInformationContext(db, {
+          ...answer,
+          ownerId: randomUUID(),
+        }),
+      ).toBeUndefined();
+      const superseding = {
+        ...f.message,
+        id: randomUUID(),
+        supersedesMessageId: f.message.id,
+        text: "Une demande corrigée",
+      };
+      await db
+        .collection("copilotMessages")
+        .insertOne({ _id: superseding.id, ...superseding } as never);
+      expect(
+        (await readAnsweredInformationContext(db, answer))?.superseded,
+      ).toBe(true);
+      await db
+        .collection("copilotMessages")
+        .updateOne({ _id: f.message.id } as never, {
+          $set: { text: "a".repeat(16000) },
+        });
+      const omitted = await readAnsweredInformationContext(db, answer);
+      expect(omitted?.originalQuestion).toBeNull();
+      expect(omitted?.originalQuestionOmitted).toBe(true);
     });
     it("runs generation outside transaction and restores persisted reply without a second provider call", async () => {
       const f = await fixture();
