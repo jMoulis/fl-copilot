@@ -504,106 +504,115 @@ export function MercalysImportScreen({
           onReview={(asset) => chooseWorkbook(asset)}
         />
       ) : null}
-      {!conversationId ? (
-        <SectionCard title="Nouveau fichier">
-          <Text className="text-base leading-6 text-muted">
-            Le fichier est lu sur cet appareil. Aucune donnée n’est publiée ni
-            envoyée pendant cette vérification.
-          </Text>
-          <PrimaryButton
-            label={
-              summary
-                ? "Choisir un autre fichier XLSX"
-                : "Choisir un fichier XLSX"
-            }
-            disabled={!hasNativeFilePicker || !storeId}
-            loading={loading}
-            onPress={() => {
-              void chooseWorkbook();
+      <View
+        className="gap-6"
+        pointerEvents={batchBusy ? "none" : "auto"}
+        accessibilityElementsHidden={batchBusy}
+        importantForAccessibility={batchBusy ? "no-hide-descendants" : "auto"}
+      >
+        {!conversationId ? (
+          <SectionCard title="Nouveau fichier">
+            <Text className="text-base leading-6 text-muted">
+              Le fichier est lu sur cet appareil. Aucune donnée n’est publiée ni
+              envoyée pendant cette vérification.
+            </Text>
+            <PrimaryButton
+              label={
+                summary
+                  ? "Choisir un autre fichier XLSX"
+                  : "Choisir un fichier XLSX"
+              }
+              disabled={!hasNativeFilePicker || !storeId}
+              loading={loading}
+              onPress={() => {
+                void chooseWorkbook();
+              }}
+            />
+            {!storeId ? (
+              <InlineAlert
+                title="Aucun magasin actif"
+                message="Reconnectez-vous après l’ajout de votre magasin de développement."
+              />
+            ) : !hasNativeFilePicker ? (
+              <InlineAlert
+                title="Module natif absent"
+                message="Installez un build de développement récent pour choisir un fichier XLSX."
+              />
+            ) : null}
+          </SectionCard>
+        ) : null}
+
+        {stage !== "IDLE" ? (
+          <SectionCard title="Avancement">
+            {filename ? <SummaryLine label="Fichier" value={filename} /> : null}
+            <ProgressLine
+              label="Lecture du fichier"
+              state={progressState(stage, "READING")}
+            />
+            <ProgressLine
+              label="Identification des produits"
+              state={progressState(stage, "MATCHING")}
+            />
+            <ProgressLine
+              label="Vérification des données"
+              state={progressState(stage, "VALIDATING")}
+            />
+          </SectionCard>
+        ) : null}
+
+        {error ? (
+          <InlineAlert title="Import impossible" message={error} />
+        ) : null}
+
+        {summary && productResolutions.length > 0 ? (
+          <ProductResolutionSummary
+            resolutions={productResolutions}
+            products={productCatalog?.products ?? []}
+            loading={resolvingProducts}
+            progress={resolutionProgress}
+            onCreate={(resolutions) => {
+              void createMissingProducts(resolutions);
+            }}
+            onCreateDistinct={(resolution) => {
+              void createMissingProducts([resolution], true);
+            }}
+            onConfirm={(resolution, productId) => {
+              void confirmProductMapping(resolution, productId);
             }}
           />
-          {!storeId ? (
-            <InlineAlert
-              title="Aucun magasin actif"
-              message="Reconnectez-vous après l’ajout de votre magasin de développement."
-            />
-          ) : !hasNativeFilePicker ? (
-            <InlineAlert
-              title="Module natif absent"
-              message="Installez un build de développement récent pour choisir un fichier XLSX."
-            />
-          ) : null}
-        </SectionCard>
-      ) : null}
+        ) : null}
 
-      {stage !== "IDLE" ? (
-        <SectionCard title="Avancement">
-          {filename ? <SummaryLine label="Fichier" value={filename} /> : null}
-          <ProgressLine
-            label="Lecture du fichier"
-            state={progressState(stage, "READING")}
+        {summary && !reconciliation ? (
+          <ValidationSummary
+            summary={summary}
+            publication={publication}
+            publishing={publishing}
+            onPublish={() => {
+              void publishValidLines();
+            }}
+            onCancel={reset}
           />
-          <ProgressLine
-            label="Identification des produits"
-            state={progressState(stage, "MATCHING")}
+        ) : null}
+
+        {summary && reconciliation ? (
+          <ReconciliationSummary
+            reconciliation={reconciliation}
+            keptExisting={keptExisting}
+            loading={publishing}
+            onApply={() => {
+              void publishValidLines();
+            }}
+            onKeep={() => {
+              void keepExistingObservations();
+            }}
+            onCancel={reset}
           />
-          <ProgressLine
-            label="Vérification des données"
-            state={progressState(stage, "VALIDATING")}
-          />
-        </SectionCard>
-      ) : null}
+        ) : null}
 
-      {error ? <InlineAlert title="Import impossible" message={error} /> : null}
-
-      {summary && productResolutions.length > 0 ? (
-        <ProductResolutionSummary
-          resolutions={productResolutions}
-          products={productCatalog?.products ?? []}
-          loading={resolvingProducts}
-          progress={resolutionProgress}
-          onCreate={(resolutions) => {
-            void createMissingProducts(resolutions);
-          }}
-          onCreateDistinct={(resolution) => {
-            void createMissingProducts([resolution], true);
-          }}
-          onConfirm={(resolution, productId) => {
-            void confirmProductMapping(resolution, productId);
-          }}
-        />
-      ) : null}
-
-      {summary && !reconciliation ? (
-        <ValidationSummary
-          summary={summary}
-          publication={publication}
-          publishing={publishing}
-          onPublish={() => {
-            void publishValidLines();
-          }}
-          onCancel={reset}
-        />
-      ) : null}
-
-      {summary && reconciliation ? (
-        <ReconciliationSummary
-          reconciliation={reconciliation}
-          keptExisting={keptExisting}
-          loading={publishing}
-          onApply={() => {
-            void publishValidLines();
-          }}
-          onKeep={() => {
-            void keepExistingObservations();
-          }}
-          onCancel={reset}
-        />
-      ) : null}
-
-      {duplicate ? (
-        <DuplicateSummary duplicate={duplicate} onCancel={reset} />
-      ) : null}
+        {duplicate ? (
+          <DuplicateSummary duplicate={duplicate} onCancel={reset} />
+        ) : null}
+      </View>
     </AppScreen>
   );
 }
