@@ -49,3 +49,57 @@ it("an already retained source survives cancellation and is never bound to anoth
   ).rejects.toThrow("COPILOT_ATTACHMENT_CANCELLED");
   expect(retain).toHaveBeenCalledTimes(1);
 });
+
+it("keeps successful PDFs when another file fails, without duplicating retained identities", async () => {
+  const { selectCopilotPdfs } = await import("./pdf-selection");
+  const retained: string[] = [];
+  const result = await selectCopilotPdfs(
+    {
+      pick: async () => [
+        { name: "A.pdf" },
+        { name: "Invalid.pdf" },
+        { name: "Duplicate.pdf" },
+      ],
+      retain: async (asset) => {
+        retained.push(asset.name);
+        if (asset.name === "Invalid.pdf") throw Error("COMMERCIAL_PDF_INVALID");
+        return "owned-original";
+      },
+    },
+    new AbortController().signal,
+    3,
+  );
+  expect(result).toEqual({
+    sourceIds: ["owned-original"],
+    failures: [{ filename: "Invalid.pdf", code: "COMMERCIAL_PDF_INVALID" }],
+  });
+  expect(retained).toEqual(["A.pdf", "Invalid.pdf", "Duplicate.pdf"]);
+});
+it("refuses an oversized selection before retaining any file and never truncates it", async () => {
+  const { selectCopilotPdfs } = await import("./pdf-selection");
+  const retain = vi.fn();
+  await expect(
+    selectCopilotPdfs(
+      { pick: async () => [{ name: "A.pdf" }, { name: "B.pdf" }], retain },
+      new AbortController().signal,
+      1,
+    ),
+  ).rejects.toThrow("COPILOT_ATTACHMENT_LIMIT");
+  expect(retain).not.toHaveBeenCalled();
+});
+it("stops a PDF batch after cancellation without treating it as a per-file failure or retaining later files", async () => {
+  const { selectCopilotPdfs } = await import("./pdf-selection");
+  const abort = new AbortController();
+  const retain = vi.fn(async () => {
+    abort.abort();
+    return "already-retained";
+  });
+  await expect(
+    selectCopilotPdfs(
+      { pick: async () => [{ name: "A.pdf" }, { name: "B.pdf" }], retain },
+      abort.signal,
+      2,
+    ),
+  ).rejects.toThrow("COPILOT_ATTACHMENT_CANCELLED");
+  expect(retain).toHaveBeenCalledTimes(1);
+});

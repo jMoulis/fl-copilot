@@ -117,6 +117,21 @@ export class CopilotLocalChatController {
       );
     });
   }
+  attachPdfs(
+    conversationId: string,
+    sourceDocumentIds: string[],
+    signal?: AbortSignal,
+  ) {
+    return this.serial(async () => {
+      await this.active(conversationId);
+      return this.repo.attachPdfs(
+        conversationId,
+        sourceDocumentIds,
+        this.now(),
+        signal,
+      );
+    });
+  }
   removeAttachment(conversationId: string, sourceDocumentId: string) {
     return this.serial(async () => {
       await this.active(conversationId);

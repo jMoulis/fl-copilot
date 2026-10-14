@@ -1,3 +1,4 @@
+import type { CopilotPdfSelection } from "./pdf-selection";
 import type { ReactNode } from "react";
 import { mergeCopilotHistory } from "./history-window";
 import { CommercialOriginalButton } from "../commercial/original-button";
@@ -20,7 +21,10 @@ type PanelProps = {
     message: CopilotMessage,
     onSubmitted: () => Promise<void>,
   ): ReactNode;
-  onAttachPdf?(signal: AbortSignal): Promise<string | undefined>;
+  onAttachPdf?(
+    signal: AbortSignal,
+    capacity: number,
+  ): Promise<CopilotPdfSelection | undefined>;
 };
 /** Caller supplies actor/store scope identity; switching scope/topic resets all ephemeral UI. */
 export function CopilotLocalChatPanel(props: PanelProps) {
@@ -252,16 +256,33 @@ function LocalChatPanel({
     setAttaching(true);
     setError(undefined);
     try {
-      const sourceId = await onAttachPdf(attempt.signal);
-      if (!sourceId || !isCurrent() || attempt.signal.aborted) return;
-      const value = await controller.attachPdf(
+      const selection = await onAttachPdf(
+        attempt.signal,
+        10 - (snapshot?.draft?.attachments.length ?? 0),
+      );
+      if (!selection || !isCurrent() || attempt.signal.aborted) return;
+      if (!selection.sourceIds.length) {
+        setError(
+          selection.failures
+            .map((f) => `${f.filename} : ${attachmentError(new Error(f.code))}`)
+            .join("\n"),
+        );
+        return;
+      }
+      const value = await controller.attachPdfs(
         conversationId,
-        sourceId,
+        selection.sourceIds,
         attempt.signal,
       );
       if (isCurrent())
         setSnapshot((previous) =>
           previous ? { ...previous, draft: value } : previous,
+        );
+      if (isCurrent() && selection.failures.length)
+        setError(
+          selection.failures
+            .map((f) => `${f.filename} : ${attachmentError(new Error(f.code))}`)
+            .join("\n"),
         );
     } catch (reason) {
       if (isCurrent() && !attempt.signal.aborted)

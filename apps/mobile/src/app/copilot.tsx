@@ -10,7 +10,7 @@ import {
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { captureCommercialPdf } from "@/documents/commercial-pdf-capture";
 import { SourceDocumentRepository } from "@/documents/source-document-repository";
-import { selectCopilotPdf } from "@/copilot/pdf-selection";
+import { selectCopilotPdfs } from "@/copilot/pdf-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -163,20 +163,20 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       },
     );
   }, [sqlite, storeId, ownerId, syncNow, withAccessToken]);
-  const attachPdf = async (signal: AbortSignal) => {
+  const attachPdf = async (signal: AbortSignal, capacity: number) => {
     if (!pdfPicker) throw Error("COPILOT_PDF_PICKER_UNAVAILABLE");
-    return selectCopilotPdf(
+    return selectCopilotPdfs(
       {
         pick: async () => {
           const result = await pdfPicker.getDocumentAsync({
             type: ["application/pdf"],
             copyToCacheDirectory: true,
-            multiple: false,
+            multiple: true,
             base64: false,
           });
           if (result.canceled) return undefined;
           if (!result.assets[0]) throw Error("COMMERCIAL_PDF_INVALID");
-          return result.assets[0];
+          return result.assets;
         },
         retain: async (asset) => {
           const result = await captureCommercialPdf(
@@ -195,6 +195,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         },
       },
       signal,
+      capacity,
     );
   };
   const [conversations, setConversations] = useState<
