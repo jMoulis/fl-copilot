@@ -1,3 +1,4 @@
+import { readProductClassificationPreview } from "./copilot/product-preview-tool.js";
 import { readCopilotStoreSettings } from "./copilot/store-settings-tool.js";
 import {
   readNeedCatalogue,
@@ -464,6 +465,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              productPreview: async (input) => {
+                await authorize();
+                const result = await readProductClassificationPreview(
+                  db,
+                  storeId,
+                  input,
+                );
                 await authorize();
                 return result;
               },

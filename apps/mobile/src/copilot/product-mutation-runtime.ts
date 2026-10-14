@@ -4,6 +4,7 @@ import {
   type ProductDateScope,
 } from "../analytics/local-recomputation";
 import {
+  compareProductClassification,
   productClassificationRequestSchema,
   productClassificationAuthoritySchema,
   productClassificationResultSchema,
@@ -143,20 +144,16 @@ export class CopilotProductMutationRuntime {
               actualVersion: current.entity.version,
             });
           const before = current.entity;
-          let changed = false;
-          for (const key of ["category", "nature", "salesUnit"] as const) {
-            const next = change.patch[key];
-            if (next === undefined || next === before[key]) continue;
-            changed = true;
-            if (
-              before[key] !== "UNKNOWN" &&
-              !request.input.allowOverwriteConfirmed
-            )
-              throw new ProductClassificationError("REVIEW_REQUIRED", {
-                productId: change.productId,
-                fields: [key],
-              });
-          }
+          const preview = compareProductClassification(before, change.patch);
+          const changed = preview.changedFields.length > 0;
+          if (
+            preview.reviewFields.length &&
+            !request.input.allowOverwriteConfirmed
+          )
+            throw new ProductClassificationError("REVIEW_REQUIRED", {
+              productId: change.productId,
+              fields: preview.reviewFields,
+            });
           const after = changed
             ? productSchema.parse({
                 ...before,
