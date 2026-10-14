@@ -58,6 +58,8 @@ For user/device attachment intake, persist immutable local originals and per-fil
 
 Support a request containing several authorized sources with item-level progress, retry and bounded concurrency; one failure does not roll back completed items. Independent ticket batches and several photos of one long ticket need explicit grouping semantics. Raw intake/drafts, trusted published observations and remote AI processing remain separate states. Once required data is saved/published, recompute through shared engines and resume the pending analysis automatically. Explain blocking ambiguity with a targeted card rather than an opaque error.
 
+**Required bulk intake:** select multiple Mercalys sales/CA or waste workbooks, or a ZIP containing supported workbooks. Preserve each source/channel/business period and archive parent/child lineage; a ZIP is not a combined business observation. Support independent waste-photo ticket batches and explicit multi-photo grouping for one long ticket. Apply the detailed bulk-intake acceptance and archive limits in [the product roadmap](PRODUCT_ROADMAP.md#bulk-source-ingestion--m7-t23-requirement). Persist a paginated batch manifest and per-item outcomes; never silently truncate to the chat attachment cap, flatten source channels or manufacture daily observations from weekly/monthly aggregates. Duplicate/reconciliation/publication decisions remain those of the existing services.
+
 **Gate:** chat request → Mercalys saved locally → validated publication → unchanged official lineage/parity → discussion resumes; exact duplicate/corrected file/restart/offline/failed-item scenarios are handled.
 
 ### 7. Share knowledge and compact context (T24–T25)

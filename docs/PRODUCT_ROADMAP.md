@@ -92,17 +92,21 @@ An explicit `Mémoriser ce libellé` action is now implemented for a matched act
 
 This learning remains explicit and reversible. One correction must not silently retrain the Vision model, change matcher weights or create a trusted alias. Conflicting confirmations and explicit rejections prevent automatic reuse and require another human decision.
 
-### Batch source-ingestion follow-up
+### Bulk source ingestion — M7-T23 requirement
 
-A later usability increment should support selecting several Mercalys workbooks and several waste-receipt photos in one action. Every selected source must keep its own checksum, lineage, duplicate/reconciliation decision, processing state, error and retry action; one failed item must not roll back the successful items.
+The owner explicitly requests bulk intake as part of the Copilot source journey, rather than a deferred optional convenience:
 
-Before implementing multi-photo receipt import, validate the intended semantics with pilot users:
+- Mercalys sales/CA exports: select several supported workbooks together or one ZIP containing those workbooks.
+- Mercalys waste exports: the same multiple-file and ZIP modes, with source type and business periods retained per workbook.
+- Waste receipt photos: select several independent tickets in one batch, or explicitly group several views of one long ticket. Never infer that all selected photos belong to one ticket.
 
-- a batch of independent ticket photos, producing one receipt per image;
-- several photos or pages belonging to one receipt, producing one grouped receipt;
-- or both modes through an explicit choice that never guesses the grouping silently.
+The chat and contextual import surfaces must use the same intake orchestration. ZIP is a transport container, not one merged business observation: retain the original archive, its manifest and each immutable extracted source with parent/child lineage. Identify each workbook's supported format, sales versus waste channel and actual business period; ambiguous or unsupported content gets a targeted item-level decision. Mixed sales/waste archives must not combine channels or treat report generation dates as business dates. Aggregated weekly/monthly files must preserve their actual granularity, never manufacture daily observations.
 
-Batch processing must remain local-first, use bounded upload/extraction concurrency and expose item-level progress rather than one opaque global loader.
+Every item keeps stable IDs, checksum, processing state, duplicate/reconciliation outcome, error and retry. Show a concise batch summary with expandable items; already completed items remain completed if another fails. Preserve captured originals and batch state offline/across restart; use bounded upload/processing concurrency. Retries of the archive or loose duplicate files must not double-publish. Corrected overlaps follow the existing reconciliation/decision policy. Receiving or unpacking a batch does not approve uncertain product identity or grant publication authority. Photo-derived waste and Mercalys waste retain distinct source lineage and must not be blindly added for overlapping observations.
+
+ZIP handling must explicitly bound archive size, expanded size, entry count and accepted formats; define these limits during implementation and show clear French errors. Reject unsafe paths, nested/encrypted archives and unsupported members without executing archive content or silently importing it. Preserve reviewable failures and originals. Large batches need a persisted manifest with paginated summaries rather than silently truncating the current ten-attachment chat limit or placing every file's contents into model context.
+
+**Acceptance:** multiple sales workbooks, multiple waste workbooks, a mixed supported ZIP, archive/loose-file duplicates, corrected overlaps, one failed item, offline/restart/retry, independent photo tickets and one explicitly grouped multi-photo ticket. Confirm per-item lineage and official KPI parity; useful conversation resumes after the relevant validated observations become available. This requirement is planned, not delivered by the current single-PDF chat composer.
 
 ### Receipt controls, cashier metadata and long-ticket capture
 
@@ -321,7 +325,7 @@ The owner confirms all existing manual app CRUD must be accessible through Copil
 
 Multiple topic conversations share authorized store data and curated knowledge, with provenance, editable memory and compaction. V1 includes a produce-retail/shopper expertise reference and constrained implantation scenarios/images based on declared island/TG dimensions and layout constraints. A generated image is an illustration of a scenario, not measured proof that the physical installation is possible.
 
-Follow `docs/M7_CONVERSATIONAL_DELIVERY_PLAN.md` for eleven delivery blocks and owner acceptance gates. Original M7-T01–T05 remain completed; T06–T15 are retained and expanded, with T16–T29 defining conversation/tool/memory/form/source/visual coverage. This changes the earlier 25-ticket estimate: it is no longer a definitive remaining count or a number of required PRs. M8 hardening remains required; standalone flexible-period controls and non-core batch refinements stay tracked without silently expanding this V1 into external autonomous ordering/pricing.
+Follow `docs/M7_CONVERSATIONAL_DELIVERY_PLAN.md` for eleven delivery blocks and owner acceptance gates. Original M7-T01–T05 remain completed; T06–T15 are retained and expanded, with T16–T29 defining conversation/tool/memory/form/source/visual coverage. This changes the earlier 25-ticket estimate: it is no longer a definitive remaining count or a number of required PRs. M8 hardening remains required; standalone flexible-period controls and non-core refinements stay tracked without silently expanding this V1 into external autonomous ordering/pricing.
 
 ### Natural conversation and required web research — 2026-10-11
 
