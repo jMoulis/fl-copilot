@@ -88,3 +88,4 @@ export * from "./copilot-product-preview";
 export * from "./copilot-product-proposal";
 export * from "./copilot-information-request";
 export * from "./mercalys-batch";
+export * from "./mercalys-archive";

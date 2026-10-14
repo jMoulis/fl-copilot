@@ -1,3 +1,9 @@
+import { MercalysArchiveRepository } from "./mercalys-archive-repository";
+import {
+  retainMercalysZip,
+  extractRetainedMercalysZip,
+  nativeMercalysZipStorage,
+} from "./mercalys-zip-capture";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { randomUUID, CryptoDigestAlgorithm, digest } from "expo-crypto";
@@ -20,6 +26,7 @@ export function MercalysBatchPanel({
   storeId,
   ownerId,
   pick,
+  pickZip,
   onReview,
   disabled = false,
 }: {
@@ -27,6 +34,7 @@ export function MercalysBatchPanel({
   storeId: string;
   ownerId: string;
   pick(): Promise<MercalysSelectedFile[] | undefined>;
+  pickZip?(): Promise<MercalysSelectedFile | undefined>;
   onReview(
     asset: MercalysSelectedFile & { expectedChecksum: string },
   ): Promise<void>;
@@ -36,6 +44,14 @@ export function MercalysBatchPanel({
     () => new MercalysBatchRepository(db, { storeId, ownerId }),
     [db, storeId, ownerId],
   );
+  const archiveRepo = useMemo(
+    () => new MercalysArchiveRepository(db, { storeId, ownerId }),
+    [db, storeId, ownerId],
+  );
+  const [archives, setArchives] = useState<
+    Awaited<ReturnType<MercalysArchiveRepository["recent"]>>["archives"]
+  >([]);
+  const [moreArchives, setMoreArchives] = useState(false);
   const service = useMemo(
     () =>
       new MercalysBatchPreparation(repo, {
@@ -84,6 +100,36 @@ export function MercalysBatchPanel({
       setMoreBatches(page.hasMore);
     }
   }
+  async function loadArchives(older = false) {
+    const last = older ? archives.at(-1) : undefined;
+    const page = await archiveRepo.recent(
+      last ? { id: last.id, createdAt: last.createdAt } : undefined,
+    );
+    if (alive.current) {
+      setArchives((old) =>
+        older ? [...old, ...page.archives] : page.archives,
+      );
+      setMoreArchives(page.hasMore);
+    }
+  }
+  async function processArchive(id: string, signal: AbortSignal) {
+    if (alive.current) setProgress("Lecture de l’archive en cours…");
+    const result = await extractRetainedMercalysZip(
+      id,
+      archiveRepo,
+      repo,
+      nativeMercalysZipStorage,
+      signal,
+    );
+    await loadArchives();
+    await loadRecent();
+    if (result.outcome.status === "PROCESSED" && result.outcome.retainedCount) {
+      await load(result.batchId);
+      if (alive.current) setProgress("Vérification des fichiers extraits…");
+      await service.preparePending(result.batchId, signal);
+      await load(result.batchId);
+    }
+  }
   async function load(batchId: string, older = false) {
     const page = await repo.page(
       batchId,
@@ -98,6 +144,18 @@ export function MercalysBatchPanel({
   }
   useEffect(() => {
     alive.current = true;
+    void archiveRepo
+      .recent()
+      .then((page) => {
+        if (alive.current) {
+          setArchives(page.archives);
+          setMoreArchives(page.hasMore);
+        }
+      })
+      .catch(() => {
+        if (alive.current)
+          setError("Les archives conservées ne peuvent pas être ouvertes.");
+      });
     void repo
       .recent()
       .then((page) => {
@@ -114,7 +172,7 @@ export function MercalysBatchPanel({
       alive.current = false;
       abort.current?.abort();
     };
-  }, [repo]);
+  }, [repo, archiveRepo]);
   async function run(work: (signal: AbortSignal) => Promise<void>) {
     if (locked.current || disabled) return;
     locked.current = true;
@@ -135,6 +193,7 @@ export function MercalysBatchPanel({
       if (alive.current && a.signal.aborted)
         await (async () => {
           await loadRecent();
+          await loadArchives();
           if (activeRef.current) await load(activeRef.current);
         })().catch(() =>
           setError(
@@ -202,6 +261,74 @@ export function MercalysBatchPanel({
           })
         }
       />
+      {pickZip ? (
+        <SecondaryButton
+          label="Choisir une archive ZIP"
+          disabled={busy || disabled}
+          onPress={() =>
+            void run(async (signal) => {
+              const asset = await pickZip();
+              if (!asset || signal.aborted) return;
+              const id = await retainMercalysZip(
+                asset,
+                archiveRepo,
+                nativeMercalysZipStorage,
+                randomUUID,
+                signal,
+              );
+              await loadArchives();
+              await processArchive(id, signal);
+            })
+          }
+        />
+      ) : null}
+      {archives.map((a) => (
+        <View key={a.id} className="gap-2 rounded-xl border border-line p-3">
+          <Text className="font-semibold text-ink">{a.filename}</Text>
+          <Text>
+            {a.outcome.status === "RETAINED"
+              ? "Archive conservée — lecture à reprendre"
+              : a.outcome.status === "FAILED"
+                ? archiveError(a.outcome.code)
+                : `${a.outcome.retainedCount} fichiers conservés · ${a.outcome.failures.length} erreurs · ${a.outcome.ignored.length} fichiers système ignorés`}
+          </Text>
+          {a.outcome.status === "PROCESSED"
+            ? a.outcome.failures.map((f) => (
+                <Text key={f.path}>
+                  {f.path} : extraction impossible, sélectionnez l’original ou
+                  un ZIP corrigé.
+                </Text>
+              ))
+            : null}
+          {a.outcome.status !== "PROCESSED" || a.outcome.failures.length ? (
+            <SecondaryButton
+              label="Lire / reprendre cette archive"
+              disabled={busy || disabled}
+              onPress={() => void run((signal) => processArchive(a.id, signal))}
+            />
+          ) : null}
+          {a.outcome.status === "PROCESSED" && a.outcome.retainedCount ? (
+            <SecondaryButton
+              label="Ouvrir les fichiers extraits"
+              disabled={busy || disabled}
+              onPress={() => void run(async () => load(a.batchId))}
+            />
+          ) : null}
+        </View>
+      ))}
+      {moreArchives ? (
+        <SecondaryButton
+          label="Voir les archives précédentes"
+          disabled={busy || disabled}
+          onPress={() => void run(async () => loadArchives(true))}
+        />
+      ) : null}
+      {archives.length ? (
+        <Text className="text-sm text-muted">
+          L’archive originale reste sur cet appareil. Chaque fichier publié est
+          synchronisé.
+        </Text>
+      ) : null}
       <Text className="text-sm text-muted">
         Les originaux sont conservés sur cet appareil. La synchronisation du
         fichier commence après sa publication.
@@ -300,4 +427,19 @@ function status(item: MercalysBatchItem) {
         ? "Le fichier conservé a changé. Sélectionnez de nouveau l’original."
         : "Lecture impossible — reprendre ce fichier";
   return `${r.sourceType === "MERCALYS_SALES" ? "Ventes" : "Casse"} · ${r.businessPeriodStart.split("-").reverse().join("/")} → ${r.businessPeriodEnd.split("-").reverse().join("/")}\n${r.readyCount} lignes prêtes · ${r.productReviewCount} produits à confirmer · ${r.errorCount} erreurs${r.overlap ? " · rapprochement nécessaire" : ""}`;
+}
+
+function archiveError(code: string) {
+  if (code === "MERCALYS_ARCHIVE_FILE_CHANGED")
+    return "L’original conservé a changé. Sélectionnez de nouveau l’archive.";
+  if (code === "MERCALYS_ZIP_LIMIT")
+    return "L’archive dépasse les contrôles de taille ou de nombre de fichiers. Créez un lot plus petit.";
+  if (
+    code === "MERCALYS_ZIP_UNSAFE_PATH" ||
+    code === "MERCALYS_ZIP_DUPLICATE_PATH"
+  )
+    return "L’archive contient des noms ambigus ou des chemins non autorisés. Récréez le ZIP à partir des exports.";
+  if (code === "MERCALYS_ZIP_UNSUPPORTED")
+    return "Ce format ZIP n’est pas pris en charge. Utilisez un ZIP non chiffré contenant uniquement des XLSX.";
+  return "L’archive ne peut pas être lue. Sélectionnez un nouvel original ; les fichiers déjà conservés restent disponibles.";
 }
