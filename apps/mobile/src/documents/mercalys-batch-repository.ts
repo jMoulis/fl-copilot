@@ -200,6 +200,28 @@ export class MercalysBatchRepository {
     });
     return input.id;
   }
+  /** Derived from committed publication, never from the preparation snapshot. */
+  async publications(batchId: string) {
+    const batch = await this.owned(this.db, batchId);
+    const checksums = [...new Set(batch.files.map((file) => file.checksum))];
+    const rows = await this.db.getAllAsync<{
+      checksum: string;
+      source_type: string;
+      published_count: number;
+      remaining_count: number;
+    }>(
+      `SELECT d.checksum, d.source_type,
+        (SELECT COUNT(*) FROM source_records r WHERE r.source_document_id=d.id AND r.store_id=d.store_id AND r.deleted_at IS NULL AND r.status='PUBLISHED') AS published_count,
+        (SELECT COUNT(*) FROM source_records r WHERE r.source_document_id=d.id AND r.store_id=d.store_id AND r.deleted_at IS NULL AND r.status!='PUBLISHED') AS remaining_count
+       FROM source_documents d WHERE d.store_id=? AND d.deleted_at IS NULL
+        AND d.local_processing_status='PUBLISHED'
+        AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+        AND d.checksum IN (${checksums.map(() => "?").join(",")})`,
+      this.scope.storeId,
+      ...checksums,
+    );
+    return rows;
+  }
   async recent(after?: { createdAt: string; id: string }) {
     const rows = await this.db.getAllAsync<{ request_json: string }>(
       "SELECT request_json FROM mercalys_intake_batches WHERE store_id=? AND owner_id=? AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",

@@ -605,3 +605,72 @@ it("checks immutable archive metadata on replay and refuses parent binding from 
     "MERCALYS_ARCHIVE_SCOPE_INVALID",
   );
 });
+it("derives publication from committed sources across reopen, excluding foreign, deleted and uncommitted sources", async () => {
+  const s = await setup(1);
+  await s.repo.create(s.input);
+  const checksum = s.input.files[0]!.checksum;
+  const insert = (
+    storeId: string,
+    status: string,
+    deletedAt: string | null = null,
+  ) => {
+    const id = randomUUID();
+    s.db
+      .prepare(
+        `INSERT INTO source_documents(id,store_id,source_type,checksum,local_processing_status,remote_upload_status,version,created_at,updated_at,deleted_at) VALUES(?,?,'MERCALYS_WASTE',?,?,'PENDING',1,?,?,?)`,
+      )
+      .run(
+        id,
+        storeId,
+        checksum,
+        status,
+        s.input.createdAt,
+        s.input.createdAt,
+        deletedAt,
+      );
+    return id;
+  };
+  insert(randomUUID(), "PUBLISHED");
+  insert(s.scope.storeId, "VALIDATED");
+  insert(s.scope.storeId, "PUBLISHED", s.input.createdAt);
+  expect(await s.repo.publications(s.input.id)).toEqual([]);
+  const id = insert(s.scope.storeId, "PUBLISHED");
+  for (const status of ["PUBLISHED", "PUBLISHED", "WARNING"]) {
+    s.db
+      .prepare(
+        `INSERT INTO source_records(id,store_id,source_document_id,raw_payload_json,status,error_codes_json,warning_codes_json,version,created_at,updated_at) VALUES(?,?,?,'{}',?,'[]','[]',1,?,?)`,
+      )
+      .run(
+        randomUUID(),
+        s.scope.storeId,
+        id,
+        status,
+        s.input.createdAt,
+        s.input.createdAt,
+      );
+  }
+  const expected = [
+    {
+      checksum,
+      source_type: "MERCALYS_WASTE",
+      published_count: 2,
+      remaining_count: 1,
+    },
+  ];
+  expect(await s.repo.publications(s.input.id)).toEqual(expected);
+  s.db.close();
+  const reopened = new DatabaseSync(s.path);
+  databases.push(reopened);
+  expect(
+    await new MercalysBatchRepository(
+      new Adapter(reopened),
+      s.scope,
+    ).publications(s.input.id),
+  ).toEqual(expected);
+  await expect(
+    new MercalysBatchRepository(new Adapter(reopened), {
+      ...s.scope,
+      ownerId: randomUUID(),
+    }).publications(s.input.id),
+  ).rejects.toThrow("UNAVAILABLE");
+});
