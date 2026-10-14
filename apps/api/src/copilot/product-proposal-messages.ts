@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   copilotMessageSchema,
-  copilotProductProposalSchema,
+  copilotProductProposalContentSchema,
+  productSchema,
   compareProductClassification,
   copilotProductPreviewInputSchema,
   copilotProductPreviewResultSchema,
@@ -17,6 +18,7 @@ export function buildProductProposalMessages(
   const latest = new Map<string, (typeof previews)[number]>();
   for (const raw of previews) {
     const entry = {
+      group: raw.group,
       input: copilotProductPreviewInputSchema.parse(raw.input),
       result: copilotProductPreviewResultSchema.parse(raw.result),
     };
@@ -43,14 +45,36 @@ export function buildProductProposalMessages(
       continue;
     latest.set(before.id, entry);
   }
-  return [...latest.values()].slice(0, 3).map((entry) => {
-    const proposal = copilotProductProposalSchema.parse({
-      kind: "PRODUCT_CLASSIFICATION_PROPOSAL",
-      schemaVersion: 1,
-      assistantMessageId: assistant.id,
-      before: entry.result.preview!.before,
+  const groups = new Map<string, Array<(typeof previews)[number]>>();
+  for (const entry of latest.values()) {
+    const key = entry.group ?? entry.input.productId;
+    const group = groups.get(key) ?? [];
+    group.push(entry);
+    groups.set(key, group);
+  }
+  if (groups.size > 3) throw Error("COPILOT_PROPOSAL_LIMIT");
+  return [...groups.values()].map((group) => {
+    const items = group.map((entry) => ({
+      before: productSchema
+        .omit({ packaging: true, familyId: true, subfamilyId: true })
+        .parse(entry.result.preview!.before),
       patch: entry.input.patch,
-    });
+    }));
+    const proposal = copilotProductProposalContentSchema.parse(
+      items.length === 1
+        ? {
+            kind: "PRODUCT_CLASSIFICATION_PROPOSAL",
+            schemaVersion: 1,
+            assistantMessageId: assistant.id,
+            ...items[0],
+          }
+        : {
+            kind: "PRODUCT_CLASSIFICATION_BATCH_PROPOSAL",
+            schemaVersion: 1,
+            assistantMessageId: assistant.id,
+            items,
+          },
+    );
     const hex = createHash("sha256")
       .update(assistant.id + JSON.stringify(proposal))
       .digest("hex");

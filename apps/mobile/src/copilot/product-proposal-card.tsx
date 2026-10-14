@@ -88,25 +88,31 @@ export function ProductProposalCard({
       }}
     >
       <Text style={{ color: colors.forest, fontWeight: "700" }}>
-        Correction proposée
+        {state && state.items.length > 1
+          ? `Lot de ${state.items.length} corrections proposées`
+          : "Correction proposée"}
       </Text>
       {state ? (
         <>
-          <Text style={{ fontWeight: "600" }}>
-            {state.proposal.before.label}
-          </Text>
-          {state.preview.changedFields.map((key) => (
-            <Text key={key}>
-              {labels[key]} : {values[state.preview.before[key]]} →{" "}
-              {values[state.preview.proposed[key]]}
-            </Text>
+          {state.items.map((item) => (
+            <View key={item.before.id} style={{ gap: 6 }}>
+              <Text style={{ fontWeight: "600" }}>{item.before.label}</Text>
+              {item.preview.changedFields.map((key) => (
+                <Text key={key}>
+                  {labels[key]} : {values[item.preview.before[key]]} →{" "}
+                  {values[item.preview.proposed[key]]}
+                </Text>
+              ))}
+            </View>
           ))}
           <Text>
             {state.status === "COMPLETED"
               ? "Correction enregistrée localement. La synchronisation peut rester en attente."
               : state.status === "STALE"
-                ? "La fiche a changé ou présente un conflit. Demandez un nouvel aperçu avant de confirmer."
-                : state.preview.reviewFields.length
+                ? `À actualiser : ${state.staleLabels.join(", ")}. Aucune partie du lot ne sera modifiée ; demandez un nouvel aperçu.`
+                : state.items.some(
+                      (item) => item.preview.reviewFields.length > 0,
+                    )
                   ? "Cette correction remplace une information déjà renseignée. Vérifiez les valeurs avant de confirmer."
                   : "Ces valeurs seront enregistrées après votre confirmation."}
           </Text>
@@ -131,7 +137,11 @@ export function ProductProposalCard({
                   fontWeight: "600",
                 }}
               >
-                {saving ? "Enregistrement…" : "Confirmer ces changements"}
+                {saving
+                  ? "Enregistrement…"
+                  : state.items.length > 1
+                    ? "Confirmer tout le lot"
+                    : "Confirmer ces changements"}
               </Text>
             </Pressable>
           ) : null}

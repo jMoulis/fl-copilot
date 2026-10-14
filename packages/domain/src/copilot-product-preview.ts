@@ -47,3 +47,37 @@ export const copilotProductPreviewResultSchema = z
     if ((value.status === "PREVIEW") !== (value.preview !== null))
       ctx.addIssue({ code: "custom", message: "Invalid preview availability" });
   });
+
+export const copilotProductBatchPreviewInputSchema = z.strictObject({
+  changes: z
+    .array(copilotProductPreviewInputSchema)
+    .min(1)
+    .max(10)
+    .refine(
+      (items) =>
+        new Set(items.map((item) => item.productId)).size === items.length,
+    ),
+});
+export const copilotProductBatchPreviewResultSchema = z
+  .strictObject({
+    status: z.enum(["COMPLETE", "BLOCKED"]),
+    items: z.array(copilotProductPreviewResultSchema).min(1).max(10),
+    evidence: z.array(copilotEvidenceSchema).min(1).max(10),
+  })
+  .superRefine((result, ctx) => {
+    if (
+      (result.status === "COMPLETE") !==
+        result.items.every(
+          (item) =>
+            item.status === "PREVIEW" && item.preview!.before.version > 0,
+        ) ||
+      new Set(result.items.map((item) => item.productId)).size !==
+        result.items.length ||
+      JSON.stringify(result.evidence) !==
+        JSON.stringify(result.items.flatMap((item) => item.evidence))
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid batch preview coverage",
+      });
+  });

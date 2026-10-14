@@ -21,7 +21,8 @@ export class CopilotProductProposalController {
     private id: () => string,
   ) {}
   async open(raw: CopilotMessage) {
-    const { message, proposal, preview } = readCopilotProductProposal(raw);
+    const { message, proposal, preview, items } =
+      readCopilotProductProposal(raw);
     if (
       message.storeId !== this.scope.storeId ||
       message.ownerId !== this.scope.ownerId
@@ -83,29 +84,45 @@ export class CopilotProductProposalController {
         result.userMessageId !== message.replyToMessageId
       )
         throw Error("COPILOT_PROPOSAL_SCOPE_INVALID");
-      return { message, proposal, preview, status: "COMPLETED" as const };
+      return {
+        message,
+        proposal,
+        preview,
+        items,
+        staleLabels: [] as string[],
+        status: "COMPLETED" as const,
+      };
     }
-    const current = await new ProductMasterRepository(this.db).getProduct(
-      proposal.before.id,
+    const repo = new ProductMasterRepository(this.db);
+    const current = await Promise.all(
+      items.map((item) => repo.getProduct(item.before.id)),
     );
-    const stale =
-      !current ||
-      current.entity.storeId !== message.storeId ||
-      current.entity.deletedAt ||
-      current.entity.status === "INACTIVE" ||
-      current.entity.version !== proposal.before.version ||
-      current.syncState === "CONFLICT" ||
-      current.syncState === "ERROR" ||
-      ["category", "nature", "salesUnit"].some(
-        (key) =>
-          current.entity[key as "category"] !==
-          proposal.before[key as "category"],
-      );
+    const staleLabels = items
+      .filter((item, index) => {
+        const product = current[index];
+        return (
+          !product ||
+          product.entity.storeId !== message.storeId ||
+          product.entity.deletedAt ||
+          product.entity.status === "INACTIVE" ||
+          product.entity.version !== item.before.version ||
+          product.syncState === "CONFLICT" ||
+          product.syncState === "ERROR" ||
+          ["category", "nature", "salesUnit"].some(
+            (key) =>
+              product.entity[key as "category"] !==
+              item.before[key as "category"],
+          )
+        );
+      })
+      .map((item) => item.before.label);
     return {
       message,
       proposal,
       preview,
-      status: stale ? ("STALE" as const) : ("READY" as const),
+      items,
+      staleLabels,
+      status: staleLabels.length ? ("STALE" as const) : ("READY" as const),
     };
   }
   /** Invoked only by the explicit native confirmation button. */
@@ -120,14 +137,14 @@ export class CopilotProductProposalController {
       schemaVersion: 1,
       tool: "product.classify",
       input: {
-        changes: [
-          {
-            productId: state.proposal.before.id,
-            expectedVersion: state.proposal.before.version,
-            patch: state.proposal.patch,
-          },
-        ],
-        allowOverwriteConfirmed: state.preview.reviewFields.length > 0,
+        changes: state.items.map((item) => ({
+          productId: item.before.id,
+          expectedVersion: item.before.version,
+          patch: item.patch,
+        })),
+        allowOverwriteConfirmed: state.items.some(
+          (item) => item.preview.reviewFields.length > 0,
+        ),
       },
     };
     await new CopilotProductMutationRuntime(this.db, this.id).execute(

@@ -396,7 +396,10 @@ it("requires reviewed authority for known-value replacement, preserves sync conf
   }
 });
 
-async function savedProposal(x: Awaited<ReturnType<typeof setup>>) {
+async function savedProposal(
+  x: Awaited<ReturnType<typeof setup>>,
+  batch = false,
+) {
   const assistant = copilotMessageSchema.parse({
     ...x.f.message,
     id: randomUUID(),
@@ -409,13 +412,25 @@ async function savedProposal(x: Awaited<ReturnType<typeof setup>>) {
     ...assistant,
     id: randomUUID(),
     role: "TOOL",
-    text: JSON.stringify({
-      kind: "PRODUCT_CLASSIFICATION_PROPOSAL",
-      schemaVersion: 1,
-      assistantMessageId: assistant.id,
-      before: x.products[0],
-      patch: { nature: "BULK", salesUnit: "KG" },
-    }),
+    text: JSON.stringify(
+      batch
+        ? {
+            kind: "PRODUCT_CLASSIFICATION_BATCH_PROPOSAL",
+            schemaVersion: 1,
+            assistantMessageId: assistant.id,
+            items: x.products.map((before) => ({
+              before,
+              patch: { nature: "BULK", salesUnit: "KG" },
+            })),
+          }
+        : {
+            kind: "PRODUCT_CLASSIFICATION_PROPOSAL",
+            schemaVersion: 1,
+            assistantMessageId: assistant.id,
+            before: x.products[0],
+            patch: { nature: "BULK", salesUnit: "KG" },
+          },
+    ),
   });
   await x.a.withExclusiveTransactionAsync(async (tx) => {
     await applyCopilotRecord(tx, x.f, "copilot_message", assistant);
@@ -526,6 +541,84 @@ it("refuses stale, unsynchronized and foreign proposal records before any produc
     );
     expect((await controller.open(message)).status).toBe("STALE");
     await expect(controller.confirm(message)).rejects.toThrow("STALE");
+    expect(
+      x.db.prepare("SELECT COUNT(*) AS n FROM copilot_tool_results").get()!.n,
+    ).toBe(0);
+  } finally {
+    x.db.close();
+  }
+});
+
+it("confirms one complete batch atomically and keeps no partial correction after commit failure", async () => {
+  const x = await setup();
+  try {
+    const message = await savedProposal(x, true);
+    const controller = new CopilotProductProposalController(
+      x.a,
+      x.authority(),
+      randomUUID,
+    );
+    expect((await controller.open(message)).items).toHaveLength(2);
+    x.a.fail = true;
+    await expect(controller.confirm(message)).rejects.toThrow();
+    x.a.fail = false;
+    for (const product of x.products)
+      expect(
+        (await new ProductMasterRepository(x.a).getProduct(product.id))?.entity
+          .nature,
+      ).toBe("UNKNOWN");
+    expect(
+      x.db.prepare("SELECT COUNT(*) AS n FROM copilot_tool_results").get()!.n,
+    ).toBe(0);
+    expect((await controller.confirm(message)).status).toBe("COMPLETED");
+    expect((await controller.confirm(message)).status).toBe("COMPLETED");
+    for (const product of x.products) {
+      expect(
+        (await new ProductMasterRepository(x.a).getProduct(product.id))?.entity
+          .version,
+      ).toBe(2);
+      expect(
+        x.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_id=? AND status='PENDING'",
+          )
+          .get(product.id)!.n,
+      ).toBe(1);
+    }
+    expect(
+      x.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM copilot_tool_results WHERE operation_id=?",
+        )
+        .get(message.id)!.n,
+    ).toBe(1);
+  } finally {
+    x.db.close();
+  }
+});
+it("identifies the stale member and blocks the whole batch without altering another product", async () => {
+  const x = await setup();
+  try {
+    const message = await savedProposal(x, true),
+      controller = new CopilotProductProposalController(
+        x.a,
+        x.authority(),
+        randomUUID,
+      );
+    const repo = new ProductMasterRepository(x.a);
+    await repo.upsertProduct(
+      { ...x.products[1]!, version: 2, nature: "PACKAGED" },
+      {
+        commandId: randomUUID(),
+        deviceId: x.authority().deviceId,
+        expectedRemoteVersion: 1,
+      },
+    );
+    const state = await controller.open(message);
+    expect(state.status).toBe("STALE");
+    expect(state.staleLabels).toEqual([x.products[1]!.label]);
+    await expect(controller.confirm(message)).rejects.toThrow("STALE");
+    expect((await repo.getProduct(x.products[0]!.id))?.entity.version).toBe(1);
     expect(
       x.db.prepare("SELECT COUNT(*) AS n FROM copilot_tool_results").get()!.n,
     ).toBe(0);
