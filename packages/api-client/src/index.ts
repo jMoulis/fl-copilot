@@ -60,11 +60,13 @@ export class ApiClient {
     storeId: string,
     ownerId: string,
     raw: CopilotTurnRequest,
+    signal?: AbortSignal,
   ) {
     const input = copilotTurnRequestSchema.parse(raw);
     const result = await this.request(
       "/api/v1/copilot/turn",
       {
+        signal,
         method: "POST",
         headers: authorizedStoreHeaders(accessToken, storeId),
         body: JSON.stringify(input),

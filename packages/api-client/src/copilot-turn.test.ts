@@ -90,3 +90,26 @@ it("preserves safe retryable pending errors without inventing an assistant reply
     response: { code: "COPILOT_TURN_PENDING", retryable: true },
   });
 });
+
+it("forwards cancellation to the turn transport without changing its stable IDs", async () => {
+  const abort = new AbortController();
+  const transport = vi.fn(
+    async (_url: unknown, init: RequestInit | undefined) => {
+      expect(init?.signal).toBe(abort.signal);
+      expect(init?.body).toBe(JSON.stringify(input));
+      abort.abort();
+      throw new Error("REQUEST_ABORTED");
+    },
+  );
+  vi.stubGlobal("fetch", transport);
+  await expect(
+    new ApiClient("https://test.invalid").copilotTurn(
+      "test",
+      id(4),
+      id(5),
+      input,
+      abort.signal,
+    ),
+  ).rejects.toThrow();
+  expect(transport).toHaveBeenCalledTimes(1);
+});
