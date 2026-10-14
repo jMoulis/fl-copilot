@@ -990,8 +990,25 @@ it("refuses missing/foreign/deleted PDFs, caps draft attachments and rolls back 
     expect((await controller.open(conversation.id)).draft?.attachments).toEqual(
       [],
     );
-    for (const id of ids.slice(0, 10))
-      await controller.attachPdf(conversation.id, id);
+    await expect(
+      controller.attachPdfs(conversation.id, [ids[0]!, randomUUID()]),
+    ).rejects.toThrow("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+    expect((await controller.open(conversation.id)).draft?.attachments).toEqual(
+      [],
+    );
+    adapter.fail = true;
+    await expect(
+      controller.attachPdfs(conversation.id, ids.slice(0, 3)),
+    ).rejects.toThrow("COMMIT_FAILED");
+    adapter.fail = false;
+    expect((await controller.open(conversation.id)).draft?.attachments).toEqual(
+      [],
+    );
+    await controller.attachPdfs(conversation.id, [
+      ...ids.slice(0, 10),
+      ids[0]!,
+    ]);
+    await controller.attachPdfs(conversation.id, [ids[0]!, ids[1]!]);
     await expect(
       controller.attachPdf(conversation.id, ids[10]!),
     ).rejects.toThrow("COPILOT_ATTACHMENT_LIMIT");

@@ -447,13 +447,28 @@ export class CopilotConversationRepository {
       JSON.stringify(draft),
     );
   }
-  /** Bind a retained owned PDF to a local draft; removing it later never removes the source. */
-  async attachPdf(
+  attachPdf(
     conversationId: string,
     sourceDocumentId: string,
     updatedAt: string,
     signal?: AbortSignal,
   ) {
+    return this.attachPdfs(
+      conversationId,
+      [sourceDocumentId],
+      updatedAt,
+      signal,
+    );
+  }
+  /** Bind a retained owned PDF to a local draft; removing it later never removes the source. */
+  async attachPdfs(
+    conversationId: string,
+    sourceDocumentIds: string[],
+    updatedAt: string,
+    signal?: AbortSignal,
+  ) {
+    const ids = [...new Set(sourceDocumentIds)];
+    if (!ids.length || ids.length > 10) throw Error("COPILOT_ATTACHMENT_LIMIT");
     let result: CopilotDraft | undefined;
     const cancelled = () => {
       if (signal?.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
@@ -481,18 +496,6 @@ export class CopilotConversationRepository {
         conversation.status !== "ACTIVE"
       )
         throw Error("COPILOT_CONVERSATION_UNAVAILABLE");
-      const source = await tx.getFirstAsync<{ original_filename: string }>(
-        "SELECT original_filename FROM source_documents WHERE id=? AND store_id=? AND source_type='WEEKLY_COMMERCIAL_PDF' AND deleted_at IS NULL",
-        sourceDocumentId,
-        this.scope.storeId,
-      );
-      const file = await tx.getFirstAsync<{ id: string }>(
-        "SELECT id FROM local_files WHERE source_document_id=? AND store_id=? AND mime_type='application/pdf' AND retention_status='RETAINED' LIMIT 1",
-        sourceDocumentId,
-        this.scope.storeId,
-      );
-      if (!source || !file)
-        throw Error("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
       const row = await tx.getFirstAsync<{ payload_json: string }>(
         "SELECT payload_json FROM copilot_drafts WHERE store_id=? AND owner_id=? AND conversation_id=?",
         this.scope.storeId,
@@ -502,25 +505,36 @@ export class CopilotConversationRepository {
       const draft = row
         ? copilotDraftSchema.parse(JSON.parse(row.payload_json))
         : { text: "", attachments: [], updatedAt };
-      const exists = draft.attachments.some(
-        (a) => a.sourceDocumentId === sourceDocumentId,
-      );
-      if (!exists && draft.attachments.length >= 10)
+      const attachments = [...draft.attachments];
+      if (
+        attachments.length +
+          ids.filter(
+            (id) => !attachments.some((a) => a.sourceDocumentId === id),
+          ).length >
+        10
+      )
         throw Error("COPILOT_ATTACHMENT_LIMIT");
-      result = copilotDraftSchema.parse({
-        ...draft,
-        updatedAt,
-        attachments: exists
-          ? draft.attachments
-          : [
-              ...draft.attachments,
-              {
-                sourceDocumentId,
-                filename: source.original_filename,
-                mediaType: "application/pdf",
-              },
-            ],
-      });
+      for (const sourceDocumentId of ids) {
+        const source = await tx.getFirstAsync<{ original_filename: string }>(
+          "SELECT original_filename FROM source_documents WHERE id=? AND store_id=? AND source_type='WEEKLY_COMMERCIAL_PDF' AND deleted_at IS NULL",
+          sourceDocumentId,
+          this.scope.storeId,
+        );
+        const file = await tx.getFirstAsync<{ id: string }>(
+          "SELECT id FROM local_files WHERE source_document_id=? AND store_id=? AND mime_type='application/pdf' AND retention_status='RETAINED' LIMIT 1",
+          sourceDocumentId,
+          this.scope.storeId,
+        );
+        if (!source || !file)
+          throw Error("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+        if (!attachments.some((a) => a.sourceDocumentId === sourceDocumentId))
+          attachments.push({
+            sourceDocumentId,
+            filename: source.original_filename,
+            mediaType: "application/pdf",
+          });
+      }
+      result = copilotDraftSchema.parse({ ...draft, updatedAt, attachments });
       cancelled();
       await tx.runAsync(
         "INSERT OR REPLACE INTO copilot_drafts(store_id,owner_id,conversation_id,payload_json) VALUES(?,?,?,?)",

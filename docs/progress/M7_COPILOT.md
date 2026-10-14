@@ -517,3 +517,11 @@ Validation includes input/authority/credential bounds, preparation/read-budget i
 ### Owner-approved delivery cadence
 
 On 14 October 2026 the owner authorizes chaining the remaining atomic Copilot increments without requiring a “continue” after each PR. Continue implementation, checks and previously authorized green-PR direct merges autonomously. Request owner input only for a material product/UX decision, unavailable required access or a genuinely useful grouped physical-device acceptance. Paid EAS builds remain reserved for substantial test groups requiring that feedback.
+
+### Bounded multiple-PDF selection in the chat composer
+
+The native file picker accepts several commercial PDFs in one selection. The complete selection is checked against the remaining ten-attachment composer capacity before any original is retained; oversize selections are refused explicitly rather than truncated. Each retained original uses the existing immutable PDF capture, checksum duplicate detection and upload job. A failed file is named and does not discard successful siblings; scope cancellation stops later retention and never binds already retained originals to another conversation.
+
+Successful source identities are deduplicated and bound to the current owned draft in one exclusive SQLite transaction. Missing/foreign/deleted sources, capacity changes, cancellation and commit failure roll back the complete draft binding; retained originals survive. Existing single-source callers remain compatible, and typed text is preserved. The draft and existing upload jobs persist after restart; removing a draft attachment does not delete an original.
+
+Validation: 817 local tests, including per-file isolation, pre-retention capacity refusal, cancellation, multi-source unavailable/commit rollback and duplicate binding, plus formatting and existing native export release checks. No paid model call or EAS build. This is bounded PDF composer selection, not the larger persisted Mercalys/ZIP/photo intake manifest; those remain M7-T23 requirements.
