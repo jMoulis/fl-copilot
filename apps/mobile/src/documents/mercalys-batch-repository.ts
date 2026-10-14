@@ -51,6 +51,9 @@ export class MercalysBatchRepository {
       throw Error("MERCALYS_BATCH_SCOPE_INVALID");
     return batch;
   }
+  header(batchId: string) {
+    return this.owned(this.db, batchId);
+  }
   async create(raw: MercalysBatchInput) {
     const batch = mercalysBatchInputSchema.parse(raw);
     if (

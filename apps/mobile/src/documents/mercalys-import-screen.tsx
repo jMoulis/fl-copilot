@@ -470,6 +470,16 @@ export function MercalysImportScreen({
           conversationId={conversationId}
           onDiscuss={onDiscuss}
           onBusyChange={setBatchBusy}
+          onPublished={async () => {
+            if (storeId) {
+              try {
+                await analyticsScheduler.process(storeId);
+                await syncNow(storeId);
+              } catch {
+                throw Error("MERCALYS_BATCH_POST_PUBLICATION_PENDING");
+              }
+            }
+          }}
           disabled={loading || publishing || resolvingProducts}
           pick={async () => {
             const result = await nativeDocumentPicker.getDocumentAsync({

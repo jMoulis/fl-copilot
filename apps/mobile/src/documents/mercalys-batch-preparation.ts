@@ -24,6 +24,31 @@ export class MercalysBatchPreparation {
       >;
     },
   ) {}
+  async readValidated(batchId: string, itemId: string, signal?: AbortSignal) {
+    const cancel = () => {
+      if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
+    };
+    cancel();
+    const item = await this.batches.get(batchId, itemId);
+    const bytes = await this.dependencies.read(item.localUri);
+    cancel();
+    if (
+      !bytes.byteLength ||
+      bytes.byteLength > MAX_MERCALYS_BATCH_FILE_BYTES ||
+      bytes.byteLength !== item.sizeBytes ||
+      (await this.dependencies.checksum(bytes)) !== item.checksum
+    )
+      throw Error("MERCALYS_BATCH_FILE_CHANGED");
+    cancel();
+    const workbook = new SheetJsSpreadsheetParser().parse(bytes);
+    const summary = validateMercalysImport(
+      workbook,
+      this.batches.storeId,
+      await this.dependencies.catalog(),
+    );
+    cancel();
+    return { item, summary };
+  }
   async prepare(batchId: string, itemId: string, signal?: AbortSignal) {
     const cancel = () => {
       if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
@@ -33,24 +58,7 @@ export class MercalysBatchPreparation {
     if (!["QUEUED", "FAILED"].includes(item.result.status)) return item;
     let result: MercalysBatchResult;
     try {
-      const bytes = await this.dependencies.read(item.localUri);
-      cancel();
-      if (
-        !bytes.byteLength ||
-        bytes.byteLength > MAX_MERCALYS_BATCH_FILE_BYTES ||
-        bytes.byteLength !== item.sizeBytes
-      )
-        throw Error("MERCALYS_BATCH_FILE_CHANGED");
-      if ((await this.dependencies.checksum(bytes)) !== item.checksum)
-        throw Error("MERCALYS_BATCH_FILE_CHANGED");
-      cancel();
-      const workbook = new SheetJsSpreadsheetParser().parse(bytes);
-      const summary = validateMercalysImport(
-        workbook,
-        this.batches.storeId,
-        await this.dependencies.catalog(),
-      );
-      cancel();
+      const { summary } = await this.readValidated(batchId, itemId, signal);
       const duplicate = await this.dependencies.publication.findExactDuplicate(
         this.batches.storeId,
         summary.sourceType,
