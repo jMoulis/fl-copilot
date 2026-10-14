@@ -412,7 +412,7 @@ it("upgrades schema 35 without losing private history or pending sync work", asy
       { commandId: randomUUID(), deviceId },
     );
     const pending = db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
-    expect(await runLocalMigrations(a)).toBe(37);
+    expect(await runLocalMigrations(a)).toBe(localMigrations.length);
     expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
       pending,
     );

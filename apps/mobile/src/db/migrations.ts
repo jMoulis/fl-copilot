@@ -764,6 +764,14 @@ export const localMigrations: readonly LocalMigration[] = [
 CREATE UNIQUE INDEX copilot_pending_turns_parent ON copilot_pending_turns(store_id,owner_id,user_message_id);
 CREATE INDEX copilot_pending_turns_scope ON copilot_pending_turns(store_id,owner_id,status);`,
   },
+  {
+    version: 38,
+    name: "mercalys-intake-batches",
+    sql: `CREATE TABLE mercalys_intake_batches(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT,request_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX mercalys_intake_batches_scope ON mercalys_intake_batches(store_id,owner_id,created_at,id);
+CREATE TABLE mercalys_intake_items(id TEXT PRIMARY KEY NOT NULL,batch_id TEXT NOT NULL REFERENCES mercalys_intake_batches(id),position INTEGER NOT NULL,payload_json TEXT NOT NULL);
+CREATE UNIQUE INDEX mercalys_intake_items_page ON mercalys_intake_items(batch_id,position);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {
