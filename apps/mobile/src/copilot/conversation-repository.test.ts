@@ -1113,3 +1113,49 @@ it.each(["sync", "ask"])(
     }
   },
 );
+it("appends a publication analysis question to the private draft without sending, losing attachments or crossing topics", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const adapter = new Adapter(db);
+    await runLocalMigrations(adapter);
+    const f = chatFixture(randomUUID),
+      repo = new CopilotConversationRepository(adapter, f);
+    await repo.save(f.conversation, command());
+    const controller = new CopilotLocalChatController(repo, f, randomUUID);
+    await repo.saveDraft(f.conversation.id, {
+      text: "Ma question actuelle",
+      attachments: f.message.attachments,
+      updatedAt: f.message.createdAt,
+    });
+    const before = db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get();
+    adapter.fail = true;
+    await expect(
+      controller.appendIntakeQuestion(f.conversation.id, "Analyse les ventes."),
+    ).rejects.toThrow("COMMIT_FAILED");
+    adapter.fail = false;
+    expect((await repo.draft(f.conversation.id))?.text).toBe(
+      "Ma question actuelle",
+    );
+    await controller.appendIntakeQuestion(
+      f.conversation.id,
+      "Analyse les ventes.",
+    );
+    expect(await repo.draft(f.conversation.id)).toMatchObject({
+      text: "Ma question actuelle\n\nAnalyse les ventes.",
+      attachments: f.message.attachments,
+    });
+    await expect(
+      controller.appendIntakeQuestion(randomUUID(), "Autre question"),
+    ).rejects.toThrow("UNAVAILABLE");
+    await expect(
+      controller.appendIntakeQuestion(f.conversation.id, "a".repeat(1001)),
+    ).rejects.toThrow("TOO_LONG");
+    expect((await repo.messages(f.conversation.id)).messages).toEqual([]);
+    expect(await repo.pendingTurns(f.conversation.id)).toEqual([]);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()).toEqual(
+      before,
+    );
+  } finally {
+    db.close();
+  }
+});

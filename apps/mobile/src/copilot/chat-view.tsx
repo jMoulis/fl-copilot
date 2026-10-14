@@ -42,7 +42,11 @@ export function CopilotChatView({
   draftAttachments = [],
   attaching = false,
   onRemoveAttachment,
+  intakeSummary,
+  allowIntakeWithoutAttachmentCapacity = false,
 }: {
+  intakeSummary?: ReactNode;
+  allowIntakeWithoutAttachmentCapacity?: boolean;
   title: string;
   messages: readonly CopilotMessage[];
   draft: string;
@@ -76,7 +80,9 @@ export function CopilotChatView({
     !sending &&
     !attaching;
   const canAttach =
-    !attaching && status !== "GENERATING" && draftAttachments.length < 10;
+    !attaching &&
+    status !== "GENERATING" &&
+    (allowIntakeWithoutAttachmentCapacity || draftAttachments.length < 10);
   const onScroll = ({
     nativeEvent,
   }: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -118,8 +124,9 @@ export function CopilotChatView({
         }}
         maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
         ListHeaderComponent={
-          onOlder || historyError ? (
+          onOlder || historyError || intakeSummary ? (
             <View>
+              {intakeSummary}
               {historyError ? (
                 <Text accessibilityRole="alert" style={styles.error}>
                   {historyError}
@@ -261,14 +268,16 @@ export function CopilotChatView({
           {onAttach ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Joindre un PDF commercial"
+              accessibilityLabel="Joindre des fichiers"
               accessibilityState={{ disabled: !canAttach, busy: attaching }}
               disabled={!canAttach}
               onPress={onAttach}
               style={styles.attach}
             >
               <Text style={styles.menuText}>＋</Text>
-              <Text style={styles.attachCaption}>PDF</Text>
+              <Text style={styles.attachCaption}>
+                {allowIntakeWithoutAttachmentCapacity ? "Fichiers" : "PDF"}
+              </Text>
             </Pressable>
           ) : null}
           <TextInput

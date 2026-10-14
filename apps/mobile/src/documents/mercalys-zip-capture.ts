@@ -32,6 +32,7 @@ export async function retainMercalysZip(
   id: () => string,
   signal?: AbortSignal,
 ) {
+  await archives.assertConversation();
   if (signal?.aborted) throw new MercalysZipError("CANCELLED");
   mercalysArchiveInputSchema.shape.filename.parse(asset.name);
   const archiveId = mercalysArchiveInputSchema.shape.id.parse(id()),
@@ -126,7 +127,7 @@ export async function extractRetainedMercalysZip(
       storeId: a.storeId,
       ownerId: a.ownerId,
       archiveId: a.id,
-      conversationId: null,
+      conversationId: a.conversationId ?? null,
       createdAt: a.createdAt,
       files,
     });

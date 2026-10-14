@@ -361,11 +361,13 @@ export function BottomSheet({
   visible,
   title,
   onClose,
+  onDismiss,
   children,
 }: PropsWithChildren<{
   visible: boolean;
   title: string;
   onClose: () => void;
+  onDismiss?: () => void;
 }>) {
   const heading = useRef<Text>(null);
   useEffect(() => {
@@ -382,6 +384,7 @@ export function BottomSheet({
       transparent
       animationType="slide"
       onRequestClose={onClose}
+      onDismiss={onDismiss}
     >
       <View
         style={{

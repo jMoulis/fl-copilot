@@ -5,6 +5,7 @@ export const mercalysArchiveInputSchema = z.strictObject({
   batchId: z.string().uuid(),
   storeId: z.string().uuid(),
   ownerId: z.string().uuid(),
+  conversationId: z.string().uuid().nullable().optional(),
   filename: z.string().trim().min(1).max(240),
   localUri: z.string().max(2048).startsWith("file://"),
   sizeBytes: z.number().int().positive().max(MAX_MERCALYS_BATCH_BYTES),
