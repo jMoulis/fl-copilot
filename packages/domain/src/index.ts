@@ -86,3 +86,4 @@ export * from "./copilot-store-settings-read";
 export * from "./copilot-attached-sources";
 export * from "./copilot-product-preview";
 export * from "./copilot-product-proposal";
+export * from "./copilot-information-request";

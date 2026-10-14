@@ -1,3 +1,9 @@
+import { CopilotInformationFormController } from "./information-form-controller";
+import { applyCopilotRecord } from "./conversation-repository";
+import { copilotMessageSchema } from "@fl-copilot/domain";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   CopilotFormCardController,
   CopilotFormCardActionError,
@@ -251,6 +257,171 @@ it("refreshes basis before sending and exposes an obsolete question instead of a
     expect(
       s.db.prepare("SELECT COUNT(*) n FROM copilot_messages").get(),
     ).toEqual({ n: 1 });
+  } finally {
+    s.db.close();
+  }
+});
+
+async function informationArtifact(s: Awaited<ReturnType<typeof setup>>) {
+  const definition = { ...s.definition, id: randomUUID() };
+  definition.operationId = definition.id;
+  const assistant = copilotMessageSchema.parse({
+    ...s.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: s.f.message.id,
+    attachments: [],
+    text: "Précisons cette offre.",
+  });
+  const source = copilotMessageSchema.parse({
+    ...assistant,
+    id: definition.id,
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "MISSING_INFORMATION_REQUEST",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      definition,
+    }),
+  });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", source);
+  });
+  const actor = {
+    storeId: s.f.storeId,
+    ownerId: s.f.ownerId,
+    deviceId: s.authority.deviceId,
+  };
+  return {
+    source,
+    actor,
+    controller: new CopilotInformationFormController(s.a, actor, randomUUID),
+  };
+}
+it("persists partial form answers, postpones across unrelated messages and resumes one queued reply after restart", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "fl-info-form-")),
+    path = join(directory, "db.sqlite"),
+    s = await setup(path);
+  let db = s.db;
+  try {
+    const { source, actor, controller } = await informationArtifact(s);
+    await s.c.saveDraft(s.f.conversation.id, {
+      text: "Mon prochain message",
+      attachments: [],
+      updatedAt: "2026-10-14T10:00:00Z",
+    });
+    await controller.open(source);
+    await controller.save(source, { cost: "0004,500000" });
+    await expect(
+      controller.perform(source, "SUBMIT", { cost: "0004,500000" }),
+    ).rejects.toMatchObject({
+      issues: [expect.objectContaining({ key: "date" })],
+    });
+    expect(await s.c.pendingTurns(s.f.conversation.id)).toEqual([]);
+    expect(
+      (await controller.perform(source, "POSTPONE", { cost: "0004,500000" }))
+        .form.status,
+    ).toBe("POSTPONED");
+    await s.a.withExclusiveTransactionAsync((tx) =>
+      applyCopilotRecord(tx, s.f, "copilot_message", {
+        ...s.f.message,
+        id: randomUUID(),
+        text: "Une autre question",
+        attachments: [],
+        createdAt: "2026-10-14T10:01:00Z",
+      }),
+    );
+    expect(
+      (await controller.perform(source, "RESUME", { cost: "0004,500000" })).form
+        .status,
+    ).toBe("OPEN");
+    const answered = await controller.perform(source, "SUBMIT", {
+      cost: "0004,500000",
+      date: "2026-10-14",
+    });
+    expect(answered.form.status).toBe("ANSWERED");
+    expect(answered.form.submission?.normalized.cost).toBe("0004.500000");
+    expect(answered.responseMessage?.replyToMessageId).toBe(source.id);
+    expect(answered.responseMessage?.text).toContain("14/10/2026");
+    const pending = await s.c.pendingTurns(s.f.conversation.id);
+    expect(pending).toHaveLength(1);
+    expect(pending[0]?.userMessageId).toBe(answered.responseMessage?.id);
+    expect((await s.c.draft(s.f.conversation.id))?.text).toBe(
+      "Mon prochain message",
+    );
+    db.close();
+    db = new DatabaseSync(path);
+    const restored = new CopilotInformationFormController(
+      new Adapter(db),
+      actor,
+      randomUUID,
+    );
+    expect((await restored.open(source)).form.status).toBe("ANSWERED");
+    await restored.perform(source, "SUBMIT", {
+      cost: "999",
+      date: "2026-10-15",
+    });
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM copilot_pending_turns WHERE user_message_id=?",
+        )
+        .get(answered.responseMessage!.id)!.n,
+    ).toBe(1);
+    expect(
+      db
+        .prepare("SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_id=?")
+        .get(answered.responseMessage!.id)!.n,
+    ).toBe(1);
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+it("refuses altered/private/superseded forms and persists explicit cancellation without a new question", async () => {
+  const s = await setup();
+  try {
+    const { source, controller, actor } = await informationArtifact(s);
+    await expect(
+      controller.open({ ...source, ownerId: randomUUID() }),
+    ).rejects.toThrow();
+    await expect(
+      controller.open({
+        ...source,
+        text: source.text.replace(
+          "Le coût et la date manquent.",
+          "Remplacer la demande.",
+        ),
+      }),
+    ).rejects.toThrow();
+    expect((await controller.perform(source, "CANCEL", {})).form.status).toBe(
+      "CANCELLED",
+    );
+    expect(await s.c.pendingTurns(s.f.conversation.id)).toEqual([]);
+    const second = await informationArtifact(s);
+    await second.controller.open(second.source);
+    await s.c.append(
+      {
+        ...s.f.message,
+        id: randomUUID(),
+        text: "Corrige ma demande",
+        attachments: [],
+        supersedesMessageId: s.f.message.id,
+        createdAt: "2026-10-14T10:01:00Z",
+      },
+      { commandId: randomUUID(), deviceId: actor.deviceId },
+    );
+    expect((await second.controller.open(second.source)).form.status).toBe(
+      "STALE",
+    );
+    await expect(
+      second.controller.perform(second.source, "SUBMIT", {
+        cost: "4",
+        date: "2026-10-14",
+      }),
+    ).rejects.toThrow();
+    expect(await s.c.pendingTurns(s.f.conversation.id)).toEqual([]);
   } finally {
     s.db.close();
   }

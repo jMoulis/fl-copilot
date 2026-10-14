@@ -1,8 +1,10 @@
+import { informationQuestionBasis } from "./information-question-basis";
 import {
   copilotFormSubmitRequestSchema,
   copilotFormSubmitAuthoritySchema,
   copilotFormSchema,
   copilotMessageSchema,
+  readCopilotInformationRequest,
   CopilotToolError,
   CopilotFormError,
   type CopilotFormSubmitAuthority,
@@ -29,6 +31,7 @@ export class CopilotFormSubmissionService {
     private db: OutboxDatabase & AtomicMutationDatabase,
     private generateId: () => string,
     private now: () => string = () => new Date().toISOString(),
+    private options: { scheduleReply?: boolean; replyToTool?: boolean } = {},
   ) {}
   async submit(
     raw: unknown,
@@ -64,6 +67,38 @@ export class CopilotFormSubmissionService {
           row = await readScopedCopilotForm(tx, input.formId, scope);
         if (!row) throw new CopilotToolError("FORBIDDEN");
         const before = row.form;
+        const replyToMessageId = this.options.replyToTool
+          ? before.definition.id
+          : before.definition.parentUserMessageId;
+        if (this.options.replyToTool) {
+          const source = await tx.getFirstAsync<{
+            payload_json: string;
+            sync_state: string;
+          }>(
+            "SELECT payload_json,sync_state FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+            before.definition.id,
+            ctx.storeId,
+            ctx.ownerId,
+            ctx.conversationId,
+          );
+          if (!source || source.sync_state !== "SYNCED")
+            throw new CopilotToolError("FORBIDDEN");
+          const artifact = readCopilotInformationRequest(
+            JSON.parse(source.payload_json),
+          );
+          if (
+            JSON.stringify(artifact.definition) !==
+            JSON.stringify(before.definition)
+          )
+            throw new CopilotToolError("FORBIDDEN");
+          if (
+            before.status !== "ANSWERED" &&
+            (await informationQuestionBasis(tx, scope, before.definition)) !==
+              before.definition.basisToken
+          )
+            throw new CopilotFormError("STALE");
+        }
+
         if (
           before.definition.basisToken !== ctx.currentBasisToken ||
           before.status === "STALE"
@@ -93,7 +128,7 @@ export class CopilotFormSubmissionService {
             message.ownerId !== ctx.ownerId ||
             message.conversationId !== ctx.conversationId ||
             message.role !== "USER" ||
-            message.replyToMessageId !== before.definition.parentUserMessageId
+            message.replyToMessageId !== replyToMessageId
           )
             throw new CopilotToolError("FORBIDDEN");
           result = { form: before, message, syncState: m.sync_state };
@@ -138,7 +173,7 @@ export class CopilotFormSubmissionService {
             text:
               "Réponse — " + before.definition.title + "\n" + lines.join("\n"),
             attachments: [...attachments.values()],
-            replyToMessageId: before.definition.parentUserMessageId,
+            replyToMessageId,
             supersedesMessageId: null,
             version: 1,
             createdAt: answeredAt,
@@ -151,6 +186,7 @@ export class CopilotFormSubmissionService {
           commandId,
           deviceId: ctx.deviceId,
           preserveDraft: true,
+          ...(this.options.scheduleReply ? { replyId: this.generateId() } : {}),
         });
         const form = copilotFormSchema.parse({
           ...before,

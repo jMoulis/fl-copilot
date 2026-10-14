@@ -16,7 +16,10 @@ type PanelProps = {
   scopeKey: string;
   delivery?: CopilotTurnDelivery;
   onConversations(): void;
-  renderToolMessage?(message: CopilotMessage): ReactNode;
+  renderToolMessage?(
+    message: CopilotMessage,
+    onSubmitted: () => Promise<void>,
+  ): ReactNode;
   onAttachPdf?(signal: AbortSignal): Promise<string | undefined>;
 };
 /** Caller supplies actor/store scope identity; switching scope/topic resets all ephemeral UI. */
@@ -326,7 +329,27 @@ function LocalChatPanel({
       loadingOlder={loadingOlder}
       historyError={historyError}
       renderAttachment={renderCommercialOriginal}
-      renderToolMessage={renderToolMessage}
+      renderToolMessage={
+        renderToolMessage
+          ? (message) =>
+              renderToolMessage(message, async () => {
+                const refreshed = await controller.open(
+                  conversationId,
+                  snapshot.messages.at(-1)?.entity,
+                );
+                if (isCurrent())
+                  setSnapshot((previous) =>
+                    previous
+                      ? {
+                          ...refreshed,
+                          ...mergeCopilotHistory(previous, refreshed),
+                        }
+                      : refreshed,
+                  );
+                if (isCurrent()) await receive();
+              })
+          : undefined
+      }
     />
   );
 }

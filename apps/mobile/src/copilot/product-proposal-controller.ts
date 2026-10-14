@@ -1,8 +1,8 @@
+import { verifyPrivateToolRecord } from "./private-tool-record";
 import {
   readCopilotProductProposal,
   productClassificationIntent,
   productClassificationResultSchema,
-  copilotMessageSchema,
   type CopilotMessage,
 } from "@fl-copilot/domain";
 import { ProductMasterRepository } from "../products/product-master-repository";
@@ -28,44 +28,12 @@ export class CopilotProductProposalController {
       message.ownerId !== this.scope.ownerId
     )
       throw Error("COPILOT_PROPOSAL_SCOPE_INVALID");
-    const persisted = await this.db.getFirstAsync<{
-      payload_json: string;
-      sync_state: string;
-    }>(
-      "SELECT payload_json,sync_state FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-      message.id,
-      message.storeId,
-      message.ownerId,
-      message.conversationId,
-    );
-    if (
-      !persisted ||
-      persisted.sync_state !== "SYNCED" ||
-      JSON.stringify(
-        copilotMessageSchema.parse(JSON.parse(persisted.payload_json)),
-      ) !== JSON.stringify(message)
-    )
-      throw Error("COPILOT_PROPOSAL_UNAVAILABLE");
-    const assistant = await this.db.getFirstAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+    await verifyPrivateToolRecord(
+      this.db,
+      this.scope,
+      message,
       proposal.assistantMessageId,
-      message.storeId,
-      message.ownerId,
-      message.conversationId,
     );
-    const parent = assistant
-      ? copilotMessageSchema.parse(JSON.parse(assistant.payload_json))
-      : null;
-    if (
-      !parent ||
-      parent.role !== "ASSISTANT" ||
-      parent.storeId !== message.storeId ||
-      parent.ownerId !== message.ownerId ||
-      parent.conversationId !== message.conversationId ||
-      parent.id !== proposal.assistantMessageId ||
-      parent.replyToMessageId !== message.replyToMessageId
-    )
-      throw Error("COPILOT_PROPOSAL_PARENT_INVALID");
     const previous = await this.db.getFirstAsync<{
       result_json: string;
       store_id: string;

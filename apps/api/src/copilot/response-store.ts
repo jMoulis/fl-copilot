@@ -1,4 +1,7 @@
-import { readCopilotProductProposal } from "@fl-copilot/domain";
+import {
+  readCopilotProductProposal,
+  readCopilotInformationRequest,
+} from "@fl-copilot/domain";
 import {
   copilotConversationSchema,
   copilotMessageSchema,
@@ -84,7 +87,7 @@ export async function appendCopilotResponse(
 }
 
 /** Atomic server tool producer; client push remains USER-only. */
-export async function appendProductProposal(
+export async function appendCopilotToolRecord(
   ctx: MongoCommandMutationContext,
   authority: { storeId: string; ownerId: string; canRespond: boolean },
   raw: CopilotMessage,
@@ -92,7 +95,17 @@ export async function appendProductProposal(
 ) {
   if (!ctx.session.inTransaction() || !authority.canRespond)
     throw Error("COPILOT_PROPOSAL_FORBIDDEN");
-  const { message, proposal } = readCopilotProductProposal(raw);
+  const decoded = copilotMessageSchema.parse(raw);
+  const kind = JSON.parse(decoded.text).kind;
+  const artifact =
+    kind === "MISSING_INFORMATION_REQUEST"
+      ? readCopilotInformationRequest(decoded)
+      : readCopilotProductProposal(decoded);
+  const message = artifact.message;
+  const assistantMessageId =
+    "content" in artifact
+      ? artifact.content.assistantMessageId
+      : artifact.proposal.assistantMessageId;
   if (
     message.storeId !== authority.storeId ||
     message.ownerId !== authority.ownerId
@@ -102,7 +115,7 @@ export async function appendProductProposal(
     .collection<CopilotMessage & { _id: string }>("copilotMessages")
     .findOne(
       {
-        _id: proposal.assistantMessageId,
+        _id: assistantMessageId,
         storeId: message.storeId,
         ownerId: message.ownerId,
         conversationId: message.conversationId,
