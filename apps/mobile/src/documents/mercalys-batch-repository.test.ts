@@ -417,3 +417,191 @@ it("paginates recent lots with identical timestamps and rejects foreign capture 
   ).rejects.toThrow("MERCALYS_BATCH_SCOPE_INVALID");
   expect(retain).not.toHaveBeenCalled();
 });
+it("retains ZIP lineage, retries missing copies without duplicating reviewed children, and scopes the original", async () => {
+  const { zipSync } = await import("fflate"),
+    { MercalysArchiveRepository } =
+      await import("./mercalys-archive-repository"),
+    { retainMercalysZip, extractRetainedMercalysZip } =
+      await import("./mercalys-zip-capture");
+  const s = await setup(1),
+    archives = new MercalysArchiveRepository(s.adapter, s.scope),
+    raw = new Uint8Array(
+      zipSync({
+        "sales.xlsx": workbook("Vente Nette"),
+        "waste.xlsx": workbook("Casse"),
+      }),
+    );
+  const files = new Map<string, Uint8Array<ArrayBuffer>>(),
+    ids = new Map<string, string>(),
+    paths = new Map<string, string>();
+  let fail = true;
+  const storage = {
+    retain: async (_uri: string, id: string) => {
+      const localUri = `file:///archives/${id}.zip`;
+      files.set(localUri, raw);
+      return { localUri, sizeBytes: raw.length, checksum: checksum(raw) };
+    },
+    read: async (uri: string) => new Uint8Array(files.get(uri)!),
+    checksum: async (bytes: Uint8Array) => checksum(bytes),
+    memberId: async (parent: string, path: string) => {
+      const key = `${parent}/${path}`;
+      if (!ids.has(key)) ids.set(key, randomUUID());
+      const id = ids.get(key)!;
+      paths.set(id, path);
+      return id;
+    },
+    member: async (bytes: Uint8Array<ArrayBuffer>, id: string) => {
+      if (paths.get(id) === "waste.xlsx" && fail) throw Error("DISK_FULL");
+      const localUri = `file:///members/${id}.xlsx`;
+      files.set(localUri, bytes);
+      return { localUri, sizeBytes: bytes.length, checksum: checksum(bytes) };
+    },
+    pause: async () => {},
+  };
+  const id = await retainMercalysZip(
+    { name: "Exports.zip", uri: "file:///selected" },
+    archives,
+    storage,
+    randomUUID,
+  );
+  const first = await extractRetainedMercalysZip(id, archives, s.repo, storage);
+  expect(first.outcome).toMatchObject({
+    status: "PROCESSED",
+    retainedCount: 1,
+    failures: [{ path: "waste.xlsx", code: "MERCALYS_ZIP_COPY_FAILED" }],
+  });
+  const initial = (await s.repo.page(first.batchId)).items[0]!;
+  await s.repo.finish(first.batchId, initial.id, 1, {
+    status: "FAILED",
+    code: "PRESERVED_REVIEW",
+  });
+  fail = false;
+  const resumed = await extractRetainedMercalysZip(
+    id,
+    archives,
+    s.repo,
+    storage,
+  );
+  expect(resumed.outcome).toMatchObject({ retainedCount: 2, failures: [] });
+  const page = await s.repo.page(first.batchId);
+  expect(page.items).toHaveLength(2);
+  expect(page.items[0]).toMatchObject({
+    id: initial.id,
+    version: 2,
+    result: { code: "PRESERVED_REVIEW" },
+  });
+  await extractRetainedMercalysZip(id, archives, s.repo, storage);
+  expect((await s.repo.page(first.batchId)).items).toHaveLength(2);
+  await expect(
+    new MercalysArchiveRepository(s.adapter, {
+      ...s.scope,
+      ownerId: randomUUID(),
+    }).get(id),
+  ).rejects.toThrow("MERCALYS_ARCHIVE_UNAVAILABLE");
+  files.set(first.localUri, new Uint8Array([1]));
+  expect(
+    (await extractRetainedMercalysZip(id, archives, s.repo, storage)).outcome,
+  ).toEqual({ status: "FAILED", code: "MERCALYS_ARCHIVE_FILE_CHANGED" });
+  expect(s.db.prepare("SELECT count(*) AS n FROM sync_outbox").get()).toEqual({
+    n: 0,
+  });
+});
+it("records a retained archive and copied prefix when extraction is interrupted, then appends only remaining stable IDs", async () => {
+  const { zipSync } = await import("fflate"),
+    { MercalysArchiveRepository } =
+      await import("./mercalys-archive-repository"),
+    { retainMercalysZip, extractRetainedMercalysZip } =
+      await import("./mercalys-zip-capture");
+  const s = await setup(1),
+    archives = new MercalysArchiveRepository(s.adapter, s.scope),
+    raw = new Uint8Array(
+      zipSync({
+        "a.xlsx": new Uint8Array([1, 2]),
+        "b.xlsx": new Uint8Array([3, 4]),
+      }),
+    ),
+    ids = new Map<string, string>(),
+    abort = new AbortController();
+  let interrupt = true;
+  const storage = {
+    retain: async (_uri: string, id: string) => ({
+      localUri: `file:///archives/${id}.zip`,
+      sizeBytes: raw.length,
+      checksum: checksum(raw),
+    }),
+    read: async () => raw,
+    checksum: async (b: Uint8Array) => checksum(b),
+    memberId: async (_parent: string, path: string) => {
+      if (!ids.has(path)) ids.set(path, randomUUID());
+      return ids.get(path)!;
+    },
+    member: async (b: Uint8Array<ArrayBuffer>, id: string) => {
+      if (interrupt) abort.abort();
+      return {
+        localUri: `file:///members/${id}.xlsx`,
+        sizeBytes: b.length,
+        checksum: checksum(b),
+      };
+    },
+    pause: async () => {},
+  };
+  const id = await retainMercalysZip(
+    { name: "Batch.zip", uri: "file:///selected" },
+    archives,
+    storage,
+    randomUUID,
+  );
+  await expect(
+    extractRetainedMercalysZip(id, archives, s.repo, storage, abort.signal),
+  ).rejects.toThrow("MERCALYS_ZIP_CANCELLED");
+  const record = await archives.get(id);
+  expect(record.outcome.status).toBe("RETAINED");
+  expect((await s.repo.page(record.batchId)).items).toHaveLength(1);
+  interrupt = false;
+  await extractRetainedMercalysZip(id, archives, s.repo, storage);
+  expect((await s.repo.page(record.batchId)).items).toHaveLength(2);
+  s.db.close();
+  const reopened = new DatabaseSync(s.path);
+  databases.push(reopened);
+  expect(
+    (
+      await new MercalysArchiveRepository(new Adapter(reopened), s.scope).get(
+        id,
+      )
+    ).outcome,
+  ).toMatchObject({ status: "PROCESSED", retainedCount: 2 });
+});
+it("checks immutable archive metadata on replay and refuses parent binding from another owner", async () => {
+  const { MercalysArchiveRepository } =
+      await import("./mercalys-archive-repository"),
+    s = await setup(1),
+    repo = new MercalysArchiveRepository(s.adapter, s.scope);
+  const input = {
+    id: randomUUID(),
+    batchId: randomUUID(),
+    ...s.scope,
+    filename: "Original.zip",
+    localUri: "file:///archive.zip",
+    sizeBytes: 10,
+    checksum: `sha256:${"a".repeat(64)}`,
+    createdAt: s.input.createdAt,
+  };
+  await repo.create(input);
+  await repo.create(input);
+  await expect(
+    s.repo.appendArchive({
+      ...s.input,
+      id: input.batchId,
+      archiveId: input.id,
+      ownerId: randomUUID(),
+    }),
+  ).rejects.toThrow("MERCALYS_ARCHIVE_SCOPE_INVALID");
+  await s.adapter.runAsync(
+    "UPDATE mercalys_intake_archives SET payload_json=json_set(payload_json,'$.localUri',?) WHERE id=?",
+    "file:///other.zip",
+    input.id,
+  );
+  await expect(repo.get(input.id)).rejects.toThrow(
+    "MERCALYS_ARCHIVE_SCOPE_INVALID",
+  );
+});

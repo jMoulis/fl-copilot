@@ -457,6 +457,15 @@ export default function MercalysImportsScreen() {
             });
             return result.canceled ? undefined : result.assets;
           }}
+          pickZip={async () => {
+            const result = await nativeDocumentPicker.getDocumentAsync({
+              type: ["application/zip", "application/x-zip-compressed"],
+              copyToCacheDirectory: true,
+              multiple: false,
+              base64: false,
+            });
+            return result.canceled ? undefined : result.assets[0];
+          }}
           onReview={(asset) => chooseWorkbook(asset)}
         />
       ) : null}

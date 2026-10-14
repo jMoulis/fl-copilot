@@ -1,5 +1,6 @@
 import {
   copilotConversationSchema,
+  mercalysArchiveInputSchema,
   mercalysBatchInputSchema,
   mercalysBatchItemSchema,
   mercalysBatchResultSchema,
@@ -58,6 +59,7 @@ export class MercalysBatchRepository {
           throw Error("MERCALYS_BATCH_ID_REUSED");
         return;
       }
+      await this.archive(tx, batch);
       if (batch.conversationId) {
         const row = await tx.getFirstAsync<{ payload_json: string }>(
           "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
@@ -78,13 +80,14 @@ export class MercalysBatchRepository {
           throw Error("MERCALYS_BATCH_CONVERSATION_INVALID");
       }
       await tx.runAsync(
-        "INSERT INTO mercalys_intake_batches(id,store_id,owner_id,conversation_id,request_json,created_at) VALUES(?,?,?,?,?,?)",
+        "INSERT INTO mercalys_intake_batches(id,store_id,owner_id,conversation_id,request_json,created_at,archive_id) VALUES(?,?,?,?,?,?,?)",
         batch.id,
         batch.storeId,
         batch.ownerId,
         batch.conversationId,
         JSON.stringify(batch),
         batch.createdAt,
+        batch.archiveId ?? null,
       );
       for (let position = 0; position < batch.files.length; position++) {
         const item = mercalysBatchItemSchema.parse({
@@ -105,6 +108,97 @@ export class MercalysBatchRepository {
       }
     });
     return batch.id;
+  }
+  private async archive(tx: OutboxDatabase, batch: MercalysBatchInput) {
+    if (!batch.archiveId) return;
+    const row = await tx.getFirstAsync<{ request_json: string }>(
+      "SELECT request_json FROM mercalys_intake_archives WHERE id=? AND store_id=? AND owner_id=?",
+      batch.archiveId,
+      this.scope.storeId,
+      this.scope.ownerId,
+    );
+    const a = row
+      ? mercalysArchiveInputSchema.parse(JSON.parse(row.request_json))
+      : null;
+    if (
+      !a ||
+      a.id !== batch.archiveId ||
+      a.batchId !== batch.id ||
+      a.storeId !== batch.storeId ||
+      a.ownerId !== batch.ownerId ||
+      a.createdAt !== batch.createdAt
+    )
+      throw Error("MERCALYS_ARCHIVE_SCOPE_INVALID");
+  }
+  async appendArchive(raw: MercalysBatchInput) {
+    const input = mercalysBatchInputSchema.parse(raw);
+    if (
+      !input.archiveId ||
+      input.storeId !== this.scope.storeId ||
+      input.ownerId !== this.scope.ownerId ||
+      input.conversationId
+    )
+      throw Error("MERCALYS_ARCHIVE_SCOPE_INVALID");
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      await this.archive(tx, input);
+      const existing = await tx.getFirstAsync<{ id: string }>(
+        "SELECT id FROM mercalys_intake_batches WHERE id=?",
+        input.id,
+      );
+      const current = existing
+        ? await this.owned(tx, input.id)
+        : { ...input, files: [] };
+      if (
+        current.archiveId !== input.archiveId ||
+        current.createdAt !== input.createdAt ||
+        current.conversationId
+      )
+        throw Error("MERCALYS_BATCH_ID_REUSED");
+      if (!existing)
+        await tx.runAsync(
+          "INSERT INTO mercalys_intake_batches(id,store_id,owner_id,conversation_id,request_json,created_at,archive_id) VALUES(?,?,?,?,?,?,?)",
+          input.id,
+          input.storeId,
+          input.ownerId,
+          null,
+          JSON.stringify(input),
+          input.createdAt,
+          input.archiveId!,
+        );
+      const files = [...current.files];
+      for (const file of input.files) {
+        const previous = files.find((f) => f.id === file.id);
+        if (previous) {
+          if (JSON.stringify(previous) !== JSON.stringify(file))
+            throw Error("MERCALYS_BATCH_ID_REUSED");
+          continue;
+        }
+        const position = files.length;
+        files.push(file);
+        const item = mercalysBatchItemSchema.parse({
+          ...file,
+          batchId: input.id,
+          position,
+          version: 1,
+          updatedAt: input.createdAt,
+          result: { status: "QUEUED" },
+        });
+        await tx.runAsync(
+          "INSERT INTO mercalys_intake_items(id,batch_id,position,payload_json) VALUES(?,?,?,?)",
+          file.id,
+          input.id,
+          position,
+          JSON.stringify(item),
+        );
+      }
+      const batch = mercalysBatchInputSchema.parse({ ...current, files });
+      await tx.runAsync(
+        "UPDATE mercalys_intake_batches SET request_json=? WHERE id=?",
+        JSON.stringify(batch),
+        batch.id,
+      );
+    });
+    return input.id;
   }
   async recent(after?: { createdAt: string; id: string }) {
     const rows = await this.db.getAllAsync<{ request_json: string }>(

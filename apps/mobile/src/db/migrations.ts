@@ -772,6 +772,13 @@ CREATE INDEX mercalys_intake_batches_scope ON mercalys_intake_batches(store_id,o
 CREATE TABLE mercalys_intake_items(id TEXT PRIMARY KEY NOT NULL,batch_id TEXT NOT NULL REFERENCES mercalys_intake_batches(id),position INTEGER NOT NULL,payload_json TEXT NOT NULL);
 CREATE UNIQUE INDEX mercalys_intake_items_page ON mercalys_intake_items(batch_id,position);`,
   },
+  {
+    version: 39,
+    name: "mercalys-intake-archives",
+    sql: `CREATE TABLE mercalys_intake_archives(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,request_json TEXT NOT NULL,payload_json TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX mercalys_intake_archives_scope ON mercalys_intake_archives(store_id,owner_id,created_at,id);
+ALTER TABLE mercalys_intake_batches ADD COLUMN archive_id TEXT REFERENCES mercalys_intake_archives(id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -17,6 +17,7 @@ export const mercalysBatchInputSchema = z
     storeId: uuid,
     ownerId: uuid,
     conversationId: uuid.nullable(),
+    archiveId: uuid.optional(),
     createdAt: z.string().datetime({ offset: true }),
     files: z
       .array(retainedMercalysBatchFileSchema)
