@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import {
+  copilotProductBatchPreviewInputSchema,
   compareProductClassification,
   copilotProductPreviewInputSchema,
 } from "./copilot-product-preview";
@@ -43,6 +44,27 @@ it("rejects empty patches, price fields and injected authority", () => {
       productId: product.id,
       patch: { nature: "BULK" },
       confirmed: true,
+    }),
+  ).toThrow();
+});
+
+it("bounds batch identities without allowing duplicate products or authority arguments", () => {
+  const change = { productId: product.id, patch: { nature: "BULK" } };
+  expect(() =>
+    copilotProductBatchPreviewInputSchema.parse({ changes: [change, change] }),
+  ).toThrow();
+  expect(() =>
+    copilotProductBatchPreviewInputSchema.parse({
+      changes: Array.from({ length: 11 }, (_, n) => ({
+        ...change,
+        productId: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
+      })),
+    }),
+  ).toThrow();
+  expect(() =>
+    copilotProductBatchPreviewInputSchema.parse({
+      changes: [change],
+      allowOverwriteConfirmed: true,
     }),
   ).toThrow();
 });

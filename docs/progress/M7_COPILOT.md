@@ -495,3 +495,11 @@ Validation: complete local checks, targeted SDK accepted/foreign/drifted artifac
 ![Product correction proposal card using synthetic data](assets/m7-product-proposal-ready.png)
 
 No paid AI request or EAS build. Actual iPhone chat navigation/confirmation/synchronization acceptance remains a grouped test. This increment covers one classification correction per card, not arbitrary CRUD, editable/batch corrections, persistent dismissal, automatic execution or cross-device synchronization of the private local operation journal.
+
+### Grouped classification proposal review
+
+A bounded batch-preview read prepares up to ten explicitly identified product patches in one scoped Mongo query. Results preserve requested order and per-product availability. Any unavailable or non-writable-version member blocks preparation of the whole actionable group; no partial correction is silently proposed. Duplicate IDs and injected authority flags are rejected. Existing read budgets/cache/actor checks remain in force, and tools are advertised only when their callbacks exist.
+
+Accepted batches become one typed private TOOL card, using the same compatible message envelope and native classification runtime as single-product proposals. Cards display every proposed difference and one explicit whole-lot confirmation. Fresh local profile checks identify stale members by name and refuse the entire operation; the existing exclusive transaction/journal/Outbox makes rollback and replay atomic. Unchanged profiles are not rewritten. Proposal snapshots omit unrelated packaging/family metadata, while the canonical writer preserves those fields. Legacy single-product cards remain supported.
+
+Validation covers input/coverage bounds, unavailable/foreign/reordered/version-zero SDK results, callback capability isolation, ordered scoped Mongo snapshots, bounded persisted card payloads, SQLite commit-failure rollback, whole-lot stale refusal and one-journal/two-product replay. Actual phone batch review is grouped with the forthcoming forms/intake acceptance; no paid AI call or EAS build for this increment. Selective editing, mass catalogue auto-classification and unattended writes remain outside this card.

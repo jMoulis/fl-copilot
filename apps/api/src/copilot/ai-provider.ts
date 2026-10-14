@@ -19,6 +19,8 @@ import {
   NoOutputGeneratedError,
 } from "ai";
 import {
+  copilotProductBatchPreviewInputSchema,
+  copilotProductBatchPreviewResultSchema,
   copilotProductPreviewInputSchema,
   copilotProductPreviewResultSchema,
   compareProductClassification,
@@ -132,6 +134,7 @@ export interface CopilotAiProvider {
     metadata: CopilotGenerationMetadata;
     toolEvidence?: CopilotGenerationRequest["evidence"];
     productPreviews?: Array<{
+      group?: string;
       input: z.infer<typeof copilotProductPreviewInputSchema>;
       result: z.infer<typeof copilotProductPreviewResultSchema>;
     }>;
@@ -215,6 +218,9 @@ export function createCopilotAiProvider(
     fieldEvents?(
       input: z.infer<typeof copilotEventsReadInputSchema>,
     ): Promise<z.infer<typeof copilotEventsReadResultSchema>>;
+    productBatchPreview?(
+      input: z.infer<typeof copilotProductBatchPreviewInputSchema>,
+    ): Promise<z.infer<typeof copilotProductBatchPreviewResultSchema>>;
     productPreview?(
       input: z.infer<typeof copilotProductPreviewInputSchema>,
     ): Promise<z.infer<typeof copilotProductPreviewResultSchema>>;
@@ -368,7 +374,8 @@ export function createCopilotAiProvider(
                   reads.commercialPdf ||
                   reads.receiptDocuments ||
                   reads.needCatalogue ||
-                  reads.productPreview
+                  reads.productPreview ||
+                  reads.productBatchPreview
                   ? 3
                   : 2,
               ),
@@ -379,12 +386,61 @@ export function createCopilotAiProvider(
                 reads.commercialPdf ||
                 reads.receiptDocuments ||
                 reads.needCatalogue ||
-                reads.productPreview
+                reads.productPreview ||
+                reads.productBatchPreview
                   ? 2
                   : 1)
                   ? { toolChoice: "none" as const }
                   : {},
               tools: {
+                ...(reads.productBatchPreview
+                  ? {
+                      product_classification_batch_preview: tool({
+                        description:
+                          "Prepare up to ten explicitly identified product classification corrections as one read-only batch. Each patch is explicit; no guessed bulk weight unit or automatic fuzzy identity. Any unavailable item blocks the complete batch; no silently prepared partial selection. COMPLETE means this selection was read, not the entire catalogue or an applied correction. Confirmation is all-or-none with fresh local version/conflict checks. No writes or authority.",
+                        inputSchema: copilotProductBatchPreviewInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["product-batch-preview", input]),
+                            async () => {
+                              const result =
+                                copilotProductBatchPreviewResultSchema.parse(
+                                  await reads.productBatchPreview!(input),
+                                );
+                              if (
+                                result.items.length !== input.changes.length ||
+                                result.items.some((item, index) => {
+                                  const change = input.changes[index]!;
+                                  return (
+                                    item.productId !== change.productId ||
+                                    (item.preview &&
+                                      (item.preview.before.storeId !==
+                                        request.storeId ||
+                                        JSON.stringify(item.preview) !==
+                                          JSON.stringify(
+                                            compareProductClassification(
+                                              item.preview.before,
+                                              change.patch,
+                                            ),
+                                          )))
+                                  );
+                                })
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              if (result.status === "COMPLETE")
+                                result.items.forEach((item, index) =>
+                                  productPreviews.push({
+                                    group: JSON.stringify(input),
+                                    input: input.changes[index]!,
+                                    result: item,
+                                  }),
+                                );
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
                 ...(reads.productPreview
                   ? {
                       product_classification_preview: tool({
@@ -451,7 +507,7 @@ export function createCopilotAiProvider(
                       }),
                     }
                   : {}),
-                ...(reads.needCatalogue || reads.productPreview
+                ...(reads.needCatalogue
                   ? {
                       need_catalogue: tool({
                         description:

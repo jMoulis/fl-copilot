@@ -1371,3 +1371,103 @@ it.each(["valid", "foreign", "wrong-patch"])(
     );
   },
 );
+
+it.each(["valid", "partial", "foreign", "reordered", "zero-version"])(
+  "validates %s classification batch coverage without exposing unsupported tools",
+  async (variant) => {
+    const f = fixture(),
+      data = await membershipFixture();
+    const products = [0, 1].map(() => ({
+      ...data.product,
+      id: randomUUID(),
+      storeId: f.request.storeId,
+    }));
+    if (variant === "zero-version") products[1]!.version = 0;
+    const input = {
+      changes: products.map((p) => ({
+        productId: p.id,
+        patch: { nature: "BULK" as const },
+      })),
+    };
+    let items = products.map((before, index) => ({
+      productId: before.id,
+      status: "PREVIEW" as const,
+      preview: compareProductClassification(
+        variant === "foreign" && index === 1
+          ? { ...before, storeId: randomUUID() }
+          : before,
+        input.changes[index]!.patch,
+      ),
+      evidence: [
+        {
+          id: `batch-item-${index}`,
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: before.id,
+          sourceVersion: before.version > 0 ? before.version : null,
+          label: "Aperçu non enregistré",
+          value: "Aucune modification.",
+          factKind: "QUALITY" as const,
+        },
+      ],
+    }));
+    if (variant === "reordered") items = items.reverse();
+    const batchItems =
+      variant === "partial"
+        ? items.map((item, index) =>
+            index
+              ? { ...item, status: "UNAVAILABLE" as const, preview: null }
+              : item,
+          )
+        : items;
+    const productBatchPreview = vi.fn(async () => ({
+      status: ["partial", "zero-version"].includes(variant)
+        ? ("BLOCKED" as const)
+        : ("COMPLETE" as const),
+      items: batchItems,
+      evidence: batchItems.flatMap((item) => item.evidence),
+    }));
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (calls++ === 0) {
+        const names = body.tools.map((tool: { name: string }) => tool.name);
+        expect(names).toContain("product_classification_batch_preview");
+        expect(names).not.toContain("need_catalogue");
+        expect(names).not.toContain("product_classification_preview");
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_batch",
+            call_id: "call_batch",
+            name: "product_classification_batch_preview",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(JSON.stringify(body)).toContain(
+        ["valid", "partial", "zero-version"].includes(variant)
+          ? "batch-item-0"
+          : "unavailable",
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      productBatchPreview,
+    }).generate(f.request, schema);
+    expect(result.productPreviews ?? []).toHaveLength(
+      variant === "valid" ? 2 : 0,
+    );
+    if (variant === "valid")
+      expect(result.productPreviews?.[0]?.group).toBe(
+        result.productPreviews?.[1]?.group,
+      );
+  },
+);

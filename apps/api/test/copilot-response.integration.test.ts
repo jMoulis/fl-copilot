@@ -1,7 +1,10 @@
 import { buildProductProposalMessages } from "../src/copilot/product-proposal-messages";
 import { appendProductProposal } from "../src/copilot/response-store";
 import { compareProductClassification } from "@fl-copilot/domain";
-import { readProductClassificationPreview } from "../src/copilot/product-preview-tool";
+import {
+  readProductClassificationPreview,
+  readProductClassificationBatchPreview,
+} from "../src/copilot/product-preview-tool";
 import { readAttachedSources } from "../src/copilot/attached-sources";
 import { readCopilotStoreSettings } from "../src/copilot/store-settings-tool";
 import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
@@ -1764,6 +1767,88 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         (await readProductClassificationPreview(db, f.product.storeId, input))
           .status,
       ).toBe("UNAVAILABLE");
+    });
+    it("prepares ordered batch cards without exposing foreign records or persisting unrelated packaging metadata", async () => {
+      const f = await membershipFixture(),
+        ids = [randomUUID(), randomUUID()];
+      for (const id of ids) {
+        const { id: unused, ...data } = f.product;
+        void unused;
+        await db.collection("products").insertOne({
+          ...data,
+          _id: id,
+          nature: "UNKNOWN",
+          packaging: {
+            quantity: "1",
+            unit: "KG",
+            sourceLabel: "unrelated-packaging-".repeat(1000),
+          },
+          schemaVersion: 1,
+          createdAt: new Date(data.createdAt),
+          updatedAt: new Date(data.updatedAt),
+          deletedAt: null,
+        } as never);
+      }
+      const input = {
+        changes: ids
+          .slice()
+          .reverse()
+          .map((productId) => ({
+            productId,
+            patch: { nature: "BULK" as const },
+          })),
+      };
+      const result = await readProductClassificationBatchPreview(
+        db,
+        f.product.storeId,
+        input,
+      );
+      expect(result.status).toBe("COMPLETE");
+      expect(result.items.map((item) => item.productId)).toEqual(
+        ids.slice().reverse(),
+      );
+      const replyFixture = await fixture();
+      const assistant = {
+        ...replyFixture.response,
+        storeId: f.product.storeId,
+      };
+      const cards = buildProductProposalMessages(
+        assistant,
+        result.items.map((item, index) => ({
+          group: JSON.stringify(input),
+          input: input.changes[index]!,
+          result: item,
+        })),
+      );
+      expect(cards).toHaveLength(1);
+      const payload = JSON.parse(cards[0]!.text);
+      expect(payload.kind).toBe("PRODUCT_CLASSIFICATION_BATCH_PROPOSAL");
+      expect(payload.items).toHaveLength(2);
+      expect(cards[0]!.text).not.toContain("unrelated-packaging");
+      expect(
+        await db
+          .collection("products")
+          .countDocuments({ _id: { $in: ids }, nature: "UNKNOWN" } as never),
+      ).toBe(2);
+      const missing = await readProductClassificationBatchPreview(
+        db,
+        f.product.storeId,
+        {
+          changes: [
+            input.changes[0]!,
+            { productId: randomUUID(), patch: { nature: "BULK" } },
+          ],
+        },
+      );
+      expect(missing.status).toBe("BLOCKED");
+      expect(missing.items[1]?.preview).toBeNull();
+      const foreign = await readProductClassificationBatchPreview(
+        db,
+        randomUUID(),
+        input,
+      );
+      expect(foreign.status).toBe("BLOCKED");
+      expect(JSON.stringify(foreign)).not.toContain(f.product.label);
     });
     it("bounds private generation history and excludes other topics, actors and later messages", async () => {
       const f = await fixture();
