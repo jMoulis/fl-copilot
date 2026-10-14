@@ -473,3 +473,13 @@ Leaving the conversation panel or switching its controller/topic now aborts the 
 The API client forwards an optional AbortSignal to fetch. Cancellation is checked before/after awaited delivery boundaries using the portable signal.aborted property. In-flight deduplication remains until the cancelled promise settles, preventing overlapping same-instance requests. No source, question, Outbox command or pending identity is deleted.
 
 Validation covers cancellation while synchronization is blocked and while a transport ignores abort and returns late, no late local receipt, preserved pending identity, successful exact-ID resume and API transport signal forwarding. Existing native exports run in CI. Actual iPhone navigation/cancellation acceptance remains part of grouped chat testing; no paid EAS build is requested for this increment.
+
+### Model-accessible product classification preview
+
+The model can now prepare a read-only single-product classification comparison using an explicit owned product ID and a bounded category/nature/sales-unit patch. Canonical synchronized product values are read again, and a shared runtime-neutral comparison identifies changed fields and replacement of already known values. The existing trusted local classification writer now uses this same comparison while retaining its version/sync-conflict/authority checks, atomic Outbox writes and analytics recomputation.
+
+The preview preserves the current product version and timestamps: proposed values are not represented as a committed product. The rendered French evidence states before/after, no-op versus missing-field completion versus review-required replacement, and the local-unsynchronized-state limitation. Missing, foreign, inactive or deleted products remain unavailable. The provider validates returned store/product identity and exact patch comparison, with existing read budgets/cache and actor checks before/after retrieval. Product identification remains explicit; ambiguous matching must be clarified and no unit is inferred solely from “vrac”.
+
+This increment is proposal preparation, not a business mutation or confirmation card. The native exact-intent review binding and persistence of actionable proposals remain the next integration gate; free-text/model/tool output never grants write authority. No migration, source import, paid model call or EAS build is needed.
+
+Validation includes shared completion/replacement/clear/no-op comparisons, invalid patch/authority rejection, existing local mutation regression tests, mocked SDK valid/foreign/drifted preview outputs and isolated Mongo read-only scope/version/deletion tests. Full repository checks, API bundle and release gates accompany the PR.

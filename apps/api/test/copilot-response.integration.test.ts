@@ -1,3 +1,4 @@
+import { readProductClassificationPreview } from "../src/copilot/product-preview-tool";
 import { readAttachedSources } from "../src/copilot/attached-sources";
 import { readCopilotStoreSettings } from "../src/copilot/store-settings-tool";
 import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
@@ -1705,6 +1706,61 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       await expect(
         readDailyAnalysis(db, storeId, { businessDate: "2026-02-30" }),
       ).rejects.toThrow();
+    });
+    it("prepares classification differences from owned canonical products without writing or revealing unavailable records", async () => {
+      const f = await membershipFixture();
+      const { id, ...data } = f.product;
+      await db.collection("products").insertOne({
+        ...data,
+        _id: id,
+        schemaVersion: 1,
+        nature: "UNKNOWN",
+        createdAt: new Date(data.createdAt),
+        updatedAt: new Date(data.updatedAt),
+        deletedAt: null,
+      } as never);
+      const original = await db
+        .collection("products")
+        .findOne({ _id: id } as never);
+      const input = { productId: id, patch: { nature: "BULK" } };
+      const preview = await readProductClassificationPreview(
+        db,
+        f.product.storeId,
+        input,
+      );
+      expect(preview.preview?.changedFields).toEqual(["nature"]);
+      expect(preview.preview?.reviewFields).toEqual([]);
+      expect(preview.preview?.proposed.version).toBe(f.product.version);
+      expect(preview.evidence[0]?.value).toContain(
+        "aucune modification enregistrée",
+      );
+      expect(
+        await db.collection("products").findOne({ _id: id } as never),
+      ).toEqual(original);
+      const foreign = await readProductClassificationPreview(
+        db,
+        randomUUID(),
+        input,
+      );
+      expect(foreign.preview).toBeNull();
+      expect(JSON.stringify(foreign)).not.toContain(f.product.label);
+      await db.collection("products").updateOne({ _id: id } as never, {
+        $set: { nature: "PACKAGED", version: f.product.version + 1 },
+      });
+      const revised = await readProductClassificationPreview(
+        db,
+        f.product.storeId,
+        input,
+      );
+      expect(revised.preview?.reviewFields).toEqual(["nature"]);
+      expect(revised.evidence[0]?.id).not.toBe(preview.evidence[0]?.id);
+      await db
+        .collection("products")
+        .updateOne({ _id: id } as never, { $set: { deletedAt: new Date() } });
+      expect(
+        (await readProductClassificationPreview(db, f.product.storeId, input))
+          .status,
+      ).toBe("UNAVAILABLE");
     });
     it("bounds private generation history and excludes other topics, actors and later messages", async () => {
       const f = await fixture();

@@ -1,3 +1,5 @@
+import { compareProductClassification } from "@fl-copilot/domain";
+import { membershipFixture } from "../../../../scripts/test-membership-fixtures";
 import { storeContextFixture } from "../../../../scripts/test-store-context-fixtures";
 import { needUnitFixture } from "../../../../scripts/test-need-unit-fixtures";
 import { randomUUID } from "node:crypto";
@@ -1300,5 +1302,69 @@ it.each(["attachedSources", "recentSources"] as const)(
     expect(result.toolEvidence?.map((e) => e.id)).toEqual([
       "attached-pdf-pending",
     ]);
+  },
+);
+
+it.each(["valid", "foreign", "wrong-patch"])(
+  "prepares a read-only classification preview and rejects %s result drift",
+  async (variant) => {
+    const f = fixture(),
+      data = await membershipFixture();
+    const before = { ...data.product, storeId: f.request.storeId };
+    const input = { productId: before.id, patch: { nature: "BULK" as const } };
+    const productPreview = vi.fn(async () => ({
+      productId: before.id,
+      status: "PREVIEW" as const,
+      preview: compareProductClassification(
+        variant === "foreign" ? { ...before, storeId: randomUUID() } : before,
+        variant === "wrong-patch" ? { nature: "PACKAGED" } : input.patch,
+      ),
+      evidence: [
+        {
+          id: "preview-test",
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: before.id,
+          sourceVersion: before.version,
+          label: "Aperçu non enregistré",
+          value: "Aucune donnée modifiée.",
+          factKind: "QUALITY" as const,
+        },
+      ],
+    }));
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (calls++ === 0) {
+        expect(JSON.stringify(body)).toContain(
+          "product_classification_preview",
+        );
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_preview",
+            call_id: "call_preview",
+            name: "product_classification_preview",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(JSON.stringify(body)).toContain(
+        variant === "valid" ? "preview-test" : "unavailable",
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      productPreview,
+    }).generate(f.request, schema);
+    expect(productPreview).toHaveBeenCalledWith(input);
+    expect(result.toolEvidence ?? []).toHaveLength(variant === "valid" ? 1 : 0);
   },
 );
