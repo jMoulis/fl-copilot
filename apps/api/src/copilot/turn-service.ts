@@ -1,3 +1,4 @@
+import { buildProductProposalMessages } from "./product-proposal-messages.js";
 import { readAttachedSources } from "./attached-sources.js";
 import { readConversationGenerationHistory } from "./generation-history.js";
 import { readLatestDepartmentEvidence } from "./daily-evidence.js";
@@ -18,7 +19,10 @@ import type {
 } from "./ai-provider.js";
 import { generateCopilotResponse } from "./response-service.js";
 import { buildCopilotResponseMessage } from "./response-message.js";
-import { appendCopilotResponse } from "./response-store.js";
+import {
+  appendCopilotResponse,
+  appendProductProposal,
+} from "./response-store.js";
 import { createMongoSyncChangeService } from "../sync/sync-change-service.js";
 
 export class CopilotTurnError extends Error {
@@ -177,12 +181,25 @@ export async function runCopilotTurn(
       const result = await session.withTransaction(async () => {
         cancelled();
         await lease.fence(session);
-        return appendCopilotResponse(
+        const changes = createMongoSyncChangeService();
+        const reply = await appendCopilotResponse(
           { database: dependencies.db, session },
           renewed,
           message,
-          createMongoSyncChangeService(),
+          changes,
         );
+        if (generation.mode === "AI")
+          for (const proposal of buildProductProposalMessages(
+            message,
+            generation.productPreviews ?? [],
+          ))
+            await appendProductProposal(
+              { database: dependencies.db, session },
+              renewed,
+              proposal,
+              changes,
+            );
+        return reply;
       });
       if (!result) throw new Error("COPILOT_REPLY_COMMIT_FAILED");
       return result;

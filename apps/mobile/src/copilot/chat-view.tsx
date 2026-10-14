@@ -35,6 +35,7 @@ export function CopilotChatView({
   onAttach,
   onRetry,
   renderAttachment,
+  renderToolMessage,
   onOlder,
   loadingOlder = false,
   historyError,
@@ -58,6 +59,7 @@ export function CopilotChatView({
   draftAttachments?: CopilotMessage["attachments"];
   attaching?: boolean;
   onRemoveAttachment?(sourceDocumentId: string): void;
+  renderToolMessage?(message: CopilotMessage): ReactNode;
   renderAttachment?(
     attachment: CopilotMessage["attachments"][number],
     message: CopilotMessage,
@@ -65,7 +67,9 @@ export function CopilotChatView({
 }) {
   const list = useRef<FlatList<CopilotMessage>>(null);
   const followLatest = useRef(true);
-  const visible = messages.filter((message) => message.role !== "TOOL");
+  const visible = messages.filter(
+    (message) => message.role !== "TOOL" || !!renderToolMessage?.(message),
+  );
   const sending = status === "GENERATING" || status === "QUEUED";
   const canSend =
     (draft.trim().length > 0 || draftAttachments.length > 0) &&
@@ -157,28 +161,34 @@ export function CopilotChatView({
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
-          <View
-            style={
-              item.role === "USER"
-                ? styles.userMessage
-                : styles.assistantMessage
-            }
-          >
-            <Text style={styles.author}>
-              {item.role === "USER" ? "Vous" : "Copilote"}
-            </Text>
-            <Text selectable style={styles.message}>
-              {item.text}
-            </Text>
-            {item.attachments.map((attachment) => (
-              <View key={attachment.sourceDocumentId}>
-                <Text style={styles.attachment}>{attachment.filename}</Text>
-                {renderAttachment?.(attachment, item)}
-              </View>
-            ))}
-          </View>
-        )}
+        renderItem={({ item }) =>
+          item.role === "TOOL" ? (
+            <View style={styles.assistantMessage}>
+              {renderToolMessage?.(item)}
+            </View>
+          ) : (
+            <View
+              style={
+                item.role === "USER"
+                  ? styles.userMessage
+                  : styles.assistantMessage
+              }
+            >
+              <Text style={styles.author}>
+                {item.role === "USER" ? "Vous" : "Copilote"}
+              </Text>
+              <Text selectable style={styles.message}>
+                {item.text}
+              </Text>
+              {item.attachments.map((attachment) => (
+                <View key={attachment.sourceDocumentId}>
+                  <Text style={styles.attachment}>{attachment.filename}</Text>
+                  {renderAttachment?.(attachment, item)}
+                </View>
+              ))}
+            </View>
+          )
+        }
       />
       <View style={styles.footer}>
         {statusLabels[status] ? (

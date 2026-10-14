@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { mergeCopilotHistory } from "./history-window";
 import { CommercialOriginalButton } from "../commercial/original-button";
 import type { CopilotMessage } from "@fl-copilot/domain";
@@ -15,6 +16,7 @@ type PanelProps = {
   scopeKey: string;
   delivery?: CopilotTurnDelivery;
   onConversations(): void;
+  renderToolMessage?(message: CopilotMessage): ReactNode;
   onAttachPdf?(signal: AbortSignal): Promise<string | undefined>;
 };
 /** Caller supplies actor/store scope identity; switching scope/topic resets all ephemeral UI. */
@@ -32,6 +34,7 @@ function LocalChatPanel({
   onConversations,
   delivery,
   onAttachPdf,
+  renderToolMessage,
 }: PanelProps) {
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [loadedController, setLoadedController] =
@@ -323,6 +326,7 @@ function LocalChatPanel({
       loadingOlder={loadingOlder}
       historyError={historyError}
       renderAttachment={renderCommercialOriginal}
+      renderToolMessage={renderToolMessage}
     />
   );
 }

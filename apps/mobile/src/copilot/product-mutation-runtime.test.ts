@@ -1,3 +1,6 @@
+import { CopilotProductProposalController } from "./product-proposal-controller";
+import { applyCopilotRecord } from "./conversation-repository";
+import { copilotMessageSchema } from "@fl-copilot/domain";
 import { buildProductDailyPerformance } from "@fl-copilot/analytics-core";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
@@ -388,6 +391,144 @@ it("requires reviewed authority for known-value replacement, preserves sync conf
       (await new ProductMasterRepository(x.a).getProduct(x.products[1]!.id))
         ?.entity.category,
     ).toBe("UNKNOWN");
+  } finally {
+    x.db.close();
+  }
+});
+
+async function savedProposal(x: Awaited<ReturnType<typeof setup>>) {
+  const assistant = copilotMessageSchema.parse({
+    ...x.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    text: "Voici la correction proposée.",
+    replyToMessageId: x.f.message.id,
+    attachments: [],
+  });
+  const proposal = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "PRODUCT_CLASSIFICATION_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      before: x.products[0],
+      patch: { nature: "BULK", salesUnit: "KG" },
+    }),
+  });
+  await x.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, x.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, x.f, "copilot_message", proposal);
+  });
+  return proposal;
+}
+it("confirms only a persisted server proposal and recovers its completion once after SQLite restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-proposal-")),
+    path = join(dir, "db.sqlite"),
+    x = await setup(path);
+  let db = x.db;
+  try {
+    const message = await savedProposal(x);
+    const scope = {
+      ...x.f,
+      deviceId: x.authority().deviceId,
+      canManageProducts: true,
+    };
+    const controller = new CopilotProductProposalController(
+      x.a,
+      {
+        storeId: scope.storeId,
+        ownerId: scope.ownerId,
+        deviceId: scope.deviceId,
+        canManageProducts: true,
+      },
+      randomUUID,
+    );
+    expect((await controller.open(message)).status).toBe("READY");
+    await expect(
+      controller.confirm({
+        ...message,
+        text: message.text.replace('"KG"', '"PIECE"'),
+      }),
+    ).rejects.toThrow();
+    const denied = new CopilotProductProposalController(
+      x.a,
+      { ...scope, canManageProducts: false },
+      randomUUID,
+    );
+    await expect(denied.confirm(message)).rejects.toThrow("FORBIDDEN");
+    expect((await controller.confirm(message)).status).toBe("COMPLETED");
+    const current = await new ProductMasterRepository(x.a).getProduct(
+      x.products[0]!.id,
+    );
+    expect(current?.entity.salesUnit).toBe("KG");
+    expect(current?.entity.version).toBe(2);
+    expect(current?.syncState).toBe("PENDING");
+    db.close();
+    db = new DatabaseSync(path);
+    const restored = new CopilotProductProposalController(
+      new Adapter(db),
+      scope,
+      randomUUID,
+    );
+    expect((await restored.open(message)).status).toBe("COMPLETED");
+    expect((await restored.confirm(message)).status).toBe("COMPLETED");
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM copilot_tool_results WHERE operation_id=?",
+        )
+        .get(message.id)!.n,
+    ).toBe(1);
+    expect(
+      db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_id=? AND status='PENDING'",
+        )
+        .get(x.products[0]!.id)!.n,
+    ).toBe(1);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("refuses stale, unsynchronized and foreign proposal records before any product correction", async () => {
+  const x = await setup();
+  try {
+    const message = await savedProposal(x),
+      scope = { ...x.authority(), deviceId: x.authority().deviceId };
+    const controller = new CopilotProductProposalController(
+      x.a,
+      scope,
+      randomUUID,
+    );
+    await expect(
+      controller.confirm({ ...message, ownerId: randomUUID() }),
+    ).rejects.toThrow();
+    x.db
+      .prepare("UPDATE copilot_messages SET sync_state='PENDING' WHERE id=?")
+      .run(message.id);
+    await expect(controller.confirm(message)).rejects.toThrow("UNAVAILABLE");
+    x.db
+      .prepare("UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?")
+      .run(message.id);
+    const existing = (await new ProductMasterRepository(x.a).getProduct(
+      x.products[0]!.id,
+    ))!;
+    await new ProductMasterRepository(x.a).upsertProduct(
+      { ...existing.entity, nature: "PACKAGED", version: 2 },
+      {
+        commandId: randomUUID(),
+        deviceId: scope.deviceId,
+        expectedRemoteVersion: 1,
+      },
+    );
+    expect((await controller.open(message)).status).toBe("STALE");
+    await expect(controller.confirm(message)).rejects.toThrow("STALE");
+    expect(
+      x.db.prepare("SELECT COUNT(*) AS n FROM copilot_tool_results").get()!.n,
+    ).toBe(0);
   } finally {
     x.db.close();
   }

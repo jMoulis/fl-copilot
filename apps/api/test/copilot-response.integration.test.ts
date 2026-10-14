@@ -1,3 +1,6 @@
+import { buildProductProposalMessages } from "../src/copilot/product-proposal-messages";
+import { appendProductProposal } from "../src/copilot/response-store";
+import { compareProductClassification } from "@fl-copilot/domain";
 import { readProductClassificationPreview } from "../src/copilot/product-preview-tool";
 import { readAttachedSources } from "../src/copilot/attached-sources";
 import { readCopilotStoreSettings } from "../src/copilot/store-settings-tool";
@@ -1862,6 +1865,92 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(bounded.earlierMessagesOmitted).toBe(true);
       expect(bounded.recentSourcesOmitted).toBe(false);
     });
+    it("commits server proposal TOOL records atomically with a private reply and replays without duplicates", async () => {
+      const f = await fixture(),
+        data = await membershipFixture();
+      const before = {
+        ...data.product,
+        storeId: f.authority.storeId,
+        nature: "UNKNOWN" as const,
+      };
+      const input = {
+        productId: before.id,
+        patch: { nature: "BULK" as const },
+      };
+      const previews = [
+        {
+          input,
+          result: {
+            productId: before.id,
+            status: "PREVIEW" as const,
+            preview: compareProductClassification(before, input.patch),
+            evidence: [
+              {
+                id: "proposal-evidence",
+                sourceType: "DATA_QUALITY" as const,
+                sourceId: before.id,
+                sourceVersion: before.version,
+                label: "Aperçu",
+                value: "Non enregistré",
+                factKind: "QUALITY" as const,
+              },
+            ],
+          },
+        },
+      ];
+      const [proposal] = buildProductProposalMessages(f.response, previews);
+      expect(buildProductProposalMessages(f.response, previews)[0]?.id).toBe(
+        proposal!.id,
+      );
+      const session = client.startSession(),
+        changes = createMongoSyncChangeService();
+      try {
+        const write = async () => {
+          await appendCopilotResponse(
+            { database: db, session },
+            f.authority,
+            f.response,
+            changes,
+          );
+          await appendProductProposal(
+            { database: db, session },
+            f.authority,
+            proposal!,
+            changes,
+          );
+        };
+        await expect(
+          session.withTransaction(async () => {
+            await write();
+            throw Error("rollback proposal");
+          }),
+        ).rejects.toThrow();
+        expect(
+          await db
+            .collection("copilotMessages")
+            .countDocuments({ id: { $in: [f.response.id, proposal!.id] } }),
+        ).toBe(0);
+        await session.withTransaction(write);
+        await session.withTransaction(write);
+        expect(
+          await db
+            .collection("copilotMessages")
+            .countDocuments({ id: { $in: [f.response.id, proposal!.id] } }),
+        ).toBe(2);
+        await expect(
+          session.withTransaction(() =>
+            appendProductProposal(
+              { database: db, session },
+              { ...f.authority, ownerId: randomUUID() },
+              proposal!,
+              changes,
+            ),
+          ),
+        ).rejects.toThrow("FORBIDDEN");
+      } finally {
+        await session.endSession();
+      }
+    });
     it("rolls back both reply and change, then persists exactly once across retry", async () => {
       const f = await fixture(),
         session = client.startSession(),
@@ -1978,6 +2067,102 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       ).rejects.toMatchObject({ code: "PARENT_INVALID" });
       expect(generate).not.toHaveBeenCalled();
       expect(loadContext).not.toHaveBeenCalled();
+    });
+    it("persists generated proposal cards through the real turn service and restores them on cached retry", async () => {
+      const f = await fixture(),
+        data = await membershipFixture();
+      const before = {
+        ...data.product,
+        storeId: f.storeId,
+        nature: "UNKNOWN" as const,
+      };
+      const input = {
+        productId: before.id,
+        patch: { nature: "BULK" as const },
+      };
+      const evidence = {
+        id: "generated-preview",
+        sourceType: "DATA_QUALITY" as const,
+        sourceId: before.id,
+        sourceVersion: before.version,
+        label: "Correction proposée",
+        value: "Aucune modification enregistrée.",
+        factKind: "QUALITY" as const,
+      };
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Voici une correction proposée, à confirmer.",
+          facts: [{ evidenceId: evidence.id }],
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "test-proposal",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        toolEvidence: [evidence],
+        productPreviews: [
+          {
+            input,
+            result: {
+              productId: before.id,
+              status: "PREVIEW",
+              preview: compareProductClassification(before, input.patch),
+              evidence: [evidence],
+            },
+          },
+        ],
+      }));
+      const context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: f.storeId,
+          evaluatedAt: f.message.createdAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const dependencies = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => f.authority,
+        loadContext: async () => context,
+      };
+      const turn = {
+        replyId: f.response.id,
+        userMessageId: f.message.id,
+        conversationId: f.conversation.id,
+      };
+      const first = await runCopilotTurn(dependencies, turn);
+      expect(first.alreadyApplied).toBe(false);
+      expect(first.message.text).toContain("à confirmer");
+      const cards = await db
+        .collection("copilotMessages")
+        .find({ conversationId: f.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(cards).toHaveLength(1);
+      expect(cards[0]?.replyToMessageId).toBe(f.message.id);
+      expect(JSON.parse(String(cards[0]?.text)).assistantMessageId).toBe(
+        f.response.id,
+      );
+      expect(
+        await db
+          .collection("syncChanges")
+          .countDocuments({ entityId: cards[0]?.id }),
+      ).toBe(1);
+      expect((await runCopilotTurn(dependencies, turn)).alreadyApplied).toBe(
+        true,
+      );
+      expect(generate).toHaveBeenCalledTimes(1);
+      expect(
+        await db
+          .collection("copilotMessages")
+          .countDocuments({ conversationId: f.conversation.id, role: "TOOL" }),
+      ).toBe(1);
     });
     it("runs generation outside transaction and restores persisted reply without a second provider call", async () => {
       const f = await fixture();

@@ -1,3 +1,9 @@
+import { ProductProposalCard } from "@/copilot/product-proposal-card";
+import { CopilotProductProposalController } from "@/copilot/product-proposal-controller";
+import {
+  readCopilotProductProposal,
+  type CopilotMessage,
+} from "@fl-copilot/domain";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { captureCommercialPdf } from "@/documents/commercial-pdf-capture";
 import { SourceDocumentRepository } from "@/documents/source-document-repository";
@@ -72,7 +78,35 @@ export default function CopilotScreen() {
 }
 function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   const { sqlite, deviceId } = useLocalDatabase();
-  const { withAccessToken } = useAuth();
+  const { withAccessToken, session } = useAuth();
+  const canManageProducts =
+    session?.stores.some(
+      (store) => store.storeId === storeId && store.role === "MANAGER",
+    ) ?? false;
+  const proposals = useMemo(
+    () =>
+      new CopilotProductProposalController(
+        sqlite,
+        { storeId, ownerId, deviceId, canManageProducts },
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const renderProposal = (message: CopilotMessage) => {
+    try {
+      readCopilotProductProposal(message);
+    } catch {
+      return null;
+    }
+    return (
+      <ProductProposalCard
+        key={message.id}
+        message={message}
+        controller={proposals}
+        canConfirm={canManageProducts}
+      />
+    );
+  };
   const { syncNow } = useSync();
   const repo = useMemo(
     () => new CopilotConversationRepository(sqlite, { storeId, ownerId }),
@@ -250,6 +284,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         delivery={delivery}
         onConversations={refreshMenu}
         onAttachPdf={attachPdf}
+        renderToolMessage={renderProposal}
       />
       <BottomSheet
         visible={menu}

@@ -131,6 +131,10 @@ export interface CopilotAiProvider {
     output: T;
     metadata: CopilotGenerationMetadata;
     toolEvidence?: CopilotGenerationRequest["evidence"];
+    productPreviews?: Array<{
+      input: z.infer<typeof copilotProductPreviewInputSchema>;
+      result: z.infer<typeof copilotProductPreviewResultSchema>;
+    }>;
   }>;
 }
 export const copilotGenerationInstructions = `You assist a French produce-department manager. Reply in French using only the supplied output schema. This is a proposal, never a business decision or execution.
@@ -297,6 +301,9 @@ export function createCopilotAiProvider(
             | { unavailable: true; message: string }
           >
         >();
+        const productPreviews: NonNullable<
+          Awaited<ReturnType<CopilotAiProvider["generate"]>>["productPreviews"]
+        > = [];
         let readCalls = 0;
         let usedBytes = Buffer.byteLength(prompt, "utf8");
         const executeRead = async (
@@ -409,6 +416,7 @@ export function createCopilotAiProvider(
                                       )))
                               )
                                 throw Error("READ_SCOPE_INVALID");
+                              productPreviews.push({ input, result: value });
                               return value;
                             },
                           ),
@@ -875,7 +883,14 @@ export function createCopilotAiProvider(
           throw new CopilotAiError("COPILOT_AI_OUTPUT_LIMIT", false);
         return {
           output: schema.parse(result.output),
-          ...(reads ? { toolEvidence: [...evidence.values()] } : {}),
+          ...(reads
+            ? {
+                toolEvidence: [...evidence.values()],
+                productPreviews: productPreviews.filter((p) =>
+                  p.result.evidence.every((e) => evidence.has(e.id)),
+                ),
+              }
+            : {}),
           metadata: metadataSchema.parse({
             requestedModel: config.COPILOT_AI_MODEL,
             resolvedModel: result.response.modelId,

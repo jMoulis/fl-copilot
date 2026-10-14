@@ -1,3 +1,4 @@
+import { readCopilotProductProposal } from "@fl-copilot/domain";
 import {
   copilotConversationSchema,
   copilotMessageSchema,
@@ -80,4 +81,67 @@ export async function appendCopilotResponse(
     operation: "UPSERT",
   });
   return { message, alreadyApplied: false };
+}
+
+/** Atomic server tool producer; client push remains USER-only. */
+export async function appendProductProposal(
+  ctx: MongoCommandMutationContext,
+  authority: { storeId: string; ownerId: string; canRespond: boolean },
+  raw: CopilotMessage,
+  changes: ReturnType<typeof createMongoSyncChangeService>,
+) {
+  if (!ctx.session.inTransaction() || !authority.canRespond)
+    throw Error("COPILOT_PROPOSAL_FORBIDDEN");
+  const { message, proposal } = readCopilotProductProposal(raw);
+  if (
+    message.storeId !== authority.storeId ||
+    message.ownerId !== authority.ownerId
+  )
+    throw Error("COPILOT_PROPOSAL_FORBIDDEN");
+  const assistantRow = await ctx.database
+    .collection<CopilotMessage & { _id: string }>("copilotMessages")
+    .findOne(
+      {
+        _id: proposal.assistantMessageId,
+        storeId: message.storeId,
+        ownerId: message.ownerId,
+        conversationId: message.conversationId,
+      },
+      { session: ctx.session },
+    );
+  if (
+    !assistantRow ||
+    assistantRow.role !== "ASSISTANT" ||
+    assistantRow.replyToMessageId !== message.replyToMessageId ||
+    Date.parse(assistantRow.createdAt) > Date.parse(message.createdAt)
+  )
+    throw Error("COPILOT_PROPOSAL_PARENT_INVALID");
+  const messages = ctx.database.collection<CopilotMessage & { _id: string }>(
+    "copilotMessages",
+  );
+  const existing = await messages.findOne(
+    { _id: message.id },
+    { session: ctx.session },
+  );
+  if (existing) {
+    const { _id, ...saved } = existing;
+    void _id;
+    if (
+      JSON.stringify(copilotMessageSchema.parse(saved)) !==
+      JSON.stringify(message)
+    )
+      throw Error("COPILOT_PROPOSAL_IDENTITY_CONFLICT");
+    return;
+  }
+  await messages.insertOne(
+    { _id: message.id, ...message },
+    { session: ctx.session },
+  );
+  await changes.append(ctx, {
+    storeId: message.storeId,
+    entityType: "copilot_message",
+    entityId: message.id,
+    entityVersion: 1,
+    operation: "UPSERT",
+  });
 }
