@@ -5,3 +5,4 @@ export * from "./mercalys-article-parser";
 export * from "./mercalys-sales-parser";
 export * from "./mercalys-waste-parser";
 export * from "./normalized-records";
+export * from "./mercalys-zip";
