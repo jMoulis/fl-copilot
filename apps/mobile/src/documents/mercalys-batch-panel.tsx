@@ -85,6 +85,9 @@ export function MercalysBatchPanel({
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [progress, setProgress] = useState<string>();
+  const [publications, setPublications] = useState<
+    Awaited<ReturnType<MercalysBatchRepository["publications"]>>
+  >([]);
   const [reviewing, setReviewing] = useState<string>();
   const activeRef = useRef<string | undefined>(undefined);
   const alive = useRef(true),
@@ -135,7 +138,9 @@ export function MercalysBatchPanel({
       batchId,
       older ? (items.at(-1)?.position ?? -1) : -1,
     );
+    const committed = await repo.publications(batchId);
     if (alive.current) {
+      setPublications(committed);
       setActive(batchId);
       activeRef.current = batchId;
       setItems((old) => (older ? [...old, ...page.items] : page.items));
@@ -218,7 +223,15 @@ export function MercalysBatchPanel({
         <SecondaryButton
           label="Revenir aux fichiers du lot"
           disabled={busy || disabled}
-          onPress={() => setReviewing(undefined)}
+          onPress={() =>
+            void run(async () => {
+              if (activeRef.current) {
+                const committed = await repo.publications(activeRef.current);
+                if (alive.current) setPublications(committed);
+              }
+              if (alive.current) setReviewing(undefined);
+            })
+          }
         />
       </SectionCard>
     );
@@ -375,7 +388,15 @@ export function MercalysBatchPanel({
       {items.map((item) => (
         <View key={item.id} className="gap-2 rounded-xl border border-line p-3">
           <Text className="font-semibold text-ink">{item.filename}</Text>
-          <Text>{status(item)}</Text>
+          <Text
+            className={
+              publicationStatus(item, publications)
+                ? "rounded-xl bg-surface p-2 font-semibold text-primary"
+                : undefined
+            }
+          >
+            {publicationStatus(item, publications) ?? status(item)}
+          </Text>
           {item.result.status === "REVIEW" ? (
             <SecondaryButton
               label="Examiner ce fichier"
@@ -442,4 +463,20 @@ function archiveError(code: string) {
   if (code === "MERCALYS_ZIP_UNSUPPORTED")
     return "Ce format ZIP n’est pas pris en charge. Utilisez un ZIP non chiffré contenant uniquement des XLSX.";
   return "L’archive ne peut pas être lue. Sélectionnez un nouvel original ; les fichiers déjà conservés restent disponibles.";
+}
+
+function publicationStatus(
+  item: MercalysBatchItem,
+  publications: Awaited<ReturnType<MercalysBatchRepository["publications"]>>,
+) {
+  const result = item.result;
+  const sourceType =
+    result.status === "REVIEW" || result.status === "DUPLICATE"
+      ? result.sourceType
+      : undefined;
+  const publication = publications.find(
+    (p) => p.checksum === item.checksum && p.source_type === sourceType,
+  );
+  if (!publication) return undefined;
+  return `✓ Publié · ${publication.published_count} ligne${publication.published_count > 1 ? "s" : ""}${publication.remaining_count ? ` · ${publication.remaining_count} ligne${publication.remaining_count > 1 ? "s" : ""} non publiée${publication.remaining_count > 1 ? "s" : ""}` : ""}`;
 }
