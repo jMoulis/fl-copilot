@@ -17,6 +17,9 @@ export class MercalysBatchRepository {
     private scope: Scope,
     private now: () => string = () => new Date().toISOString(),
   ) {}
+  get ownerId() {
+    return this.scope.ownerId;
+  }
   get storeId() {
     return this.scope.storeId;
   }
@@ -102,6 +105,49 @@ export class MercalysBatchRepository {
       }
     });
     return batch.id;
+  }
+  async recent(after?: { createdAt: string; id: string }) {
+    const rows = await this.db.getAllAsync<{ request_json: string }>(
+      "SELECT request_json FROM mercalys_intake_batches WHERE store_id=? AND owner_id=? AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",
+      this.scope.storeId,
+      this.scope.ownerId,
+      after?.createdAt ?? null,
+      after?.createdAt ?? null,
+      after?.createdAt ?? null,
+      after?.id ?? null,
+    );
+    const batches = rows
+      .slice(0, 10)
+      .map((row) =>
+        mercalysBatchInputSchema.parse(JSON.parse(row.request_json)),
+      );
+    if (
+      batches.some(
+        (b) =>
+          b.storeId !== this.scope.storeId || b.ownerId !== this.scope.ownerId,
+      )
+    )
+      throw Error("MERCALYS_BATCH_SCOPE_INVALID");
+    return { batches, hasMore: rows.length > 10 };
+  }
+  async refresh(batchId: string, itemId: string, expectedVersion: number) {
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      const current = await this.readItem(tx, batchId, itemId);
+      if (current.version !== expectedVersion)
+        throw Error("MERCALYS_BATCH_ITEM_CHANGED");
+      const next = mercalysBatchItemSchema.parse({
+        ...current,
+        result: { status: "QUEUED" },
+        version: current.version + 1,
+        updatedAt: this.now(),
+      });
+      await tx.runAsync(
+        "UPDATE mercalys_intake_items SET payload_json=? WHERE id=? AND batch_id=?",
+        JSON.stringify(next),
+        itemId,
+        batchId,
+      );
+    });
   }
   async page(batchId: string, after = -1, limit = 20) {
     await this.owned(this.db, batchId);

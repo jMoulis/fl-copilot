@@ -1,3 +1,4 @@
+import { MercalysBatchPanel } from "@/documents/mercalys-batch-panel";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -128,7 +129,9 @@ export default function MercalysImportsScreen() {
     if (storeId) void analyticsScheduler.process(storeId);
   }, [analyticsScheduler, storeId]);
 
-  async function chooseWorkbook() {
+  async function chooseWorkbook(
+    retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string },
+  ) {
     if (!hasNativeFilePicker || !storeId) return;
     setFilename(undefined);
     setSummary(undefined);
@@ -143,20 +146,25 @@ export default function MercalysImportsScreen() {
     setError(undefined);
 
     try {
-      const selection = await nativeDocumentPicker.getDocumentAsync({
-        type: [
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        ],
-        copyToCacheDirectory: true,
-        multiple: false,
-        base64: false,
-      });
-      if (selection.canceled) {
-        setStage("IDLE");
-        return;
+      let asset:
+        | (NativeDocumentPickerAsset & { expectedChecksum?: string })
+        | undefined = retainedAsset;
+      if (!asset) {
+        const selection = await nativeDocumentPicker.getDocumentAsync({
+          type: [
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          ],
+          copyToCacheDirectory: true,
+          multiple: false,
+          base64: false,
+        });
+        if (selection.canceled) {
+          setStage("IDLE");
+          return;
+        }
+        asset = selection.assets[0];
+        if (!asset) throw new Error("Aucun fichier sélectionné.");
       }
-      const asset = selection.assets[0];
-      if (!asset) throw new Error("Aucun fichier sélectionné.");
       setFilename(asset.name);
 
       setStage("READING");
@@ -164,6 +172,11 @@ export default function MercalysImportsScreen() {
       const bytes = await new nativeFileSystem.FileSystemFile(
         asset.uri,
       ).bytes();
+      if (
+        asset.expectedChecksum &&
+        `sha256:${await sha256Hex(bytes)}` !== asset.expectedChecksum
+      )
+        throw new Error("MERCALYS_BATCH_FILE_CHANGED");
       const workbook = new SheetJsSpreadsheetParser().parse(bytes);
 
       setStage("MATCHING");
@@ -343,6 +356,8 @@ export default function MercalysImportsScreen() {
         summary,
         reconciliationApproval,
       });
+      // The publication transaction now owns this original. Later failures must never delete it.
+      durableFile = undefined;
       setPublication(result);
       setReconciliation(undefined);
       const analyticsRun = await analyticsScheduler.process(storeId);
@@ -424,6 +439,27 @@ export default function MercalysImportsScreen() {
         subtitle="Vérifiez les ventes ou la casse avant toute publication locale."
       />
 
+      {storeId && actorUserId && hasNativeFilePicker ? (
+        <MercalysBatchPanel
+          key={`${storeId}/${actorUserId}`}
+          db={sqlite}
+          storeId={storeId}
+          ownerId={actorUserId}
+          disabled={loading || publishing || resolvingProducts}
+          pick={async () => {
+            const result = await nativeDocumentPicker.getDocumentAsync({
+              type: [
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              ],
+              copyToCacheDirectory: true,
+              multiple: true,
+              base64: false,
+            });
+            return result.canceled ? undefined : result.assets;
+          }}
+          onReview={(asset) => chooseWorkbook(asset)}
+        />
+      ) : null}
       <SectionCard title="Nouveau fichier">
         <Text className="text-base leading-6 text-muted">
           Le fichier est lu sur cet appareil. Aucune donnée n’est publiée ni
@@ -992,6 +1028,8 @@ function progressState(stage: ImportStage, target: ImportStage) {
 }
 
 function importErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message === "MERCALYS_BATCH_FILE_CHANGED")
+    return "L’original conservé a changé. Sélectionnez de nouveau le fichier avant de l’examiner.";
   if (error instanceof MercalysImportValidationError) {
     return error.code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
       ? "Cet export regroupe plusieurs jours sans dates journalières. Dans Mercalys, choisissez un seul jour ou activez le détail « Par Jour » avec la colonne Date."

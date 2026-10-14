@@ -310,3 +310,110 @@ it("records an exact existing duplicate without overlap or publication, and roll
     s.db.prepare("SELECT count(*) AS n FROM sales_observations").get(),
   ).toEqual({ n: 0 });
 });
+it("retains successful file copies despite sibling failure and records a cancelled copied prefix before restart", async () => {
+  const { captureMercalysBatch } = await import("./mercalys-batch-capture");
+  const s = await setup(1),
+    copies: string[] = [];
+  const storage = {
+    size: async () => 1,
+    retain: async (uri: string, id: string) => {
+      if (uri.endsWith("bad")) throw Error("NO_COPY");
+      copies.push(uri);
+      return {
+        localUri: `file:///owned/${id}.xlsx`,
+        sizeBytes: 1,
+        checksum: `sha256:${"a".repeat(64)}`,
+      };
+    },
+  };
+  const input = {
+    storeId: s.scope.storeId,
+    ownerId: s.scope.ownerId,
+    files: [
+      { name: "good.xlsx", uri: "file:///good" },
+      { name: "bad.xlsx", uri: "file:///bad" },
+    ],
+  };
+  const captured = await captureMercalysBatch(
+    input,
+    s.repo,
+    storage,
+    randomUUID,
+  );
+  expect(captured.failures).toEqual(["bad.xlsx"]);
+  expect(
+    (await s.repo.page(captured.batchId!)).items.map((i) => i.filename),
+  ).toEqual(["good.xlsx"]);
+  const abort = new AbortController();
+  await expect(
+    captureMercalysBatch(
+      { ...input, files: [input.files[0]!, input.files[0]!] },
+      s.repo,
+      storage,
+      randomUUID,
+      abort.signal,
+      () => abort.abort(),
+    ),
+  ).rejects.toThrow("MERCALYS_BATCH_CANCELLED");
+  const recent = await s.repo.recent();
+  expect(recent.batches).toHaveLength(2);
+  expect(recent.batches.every((b) => b.files.length === 1)).toBe(true);
+  expect(copies).toHaveLength(2);
+  const retain = vi.fn(storage.retain);
+  await expect(
+    captureMercalysBatch(
+      { ...input, files: Array.from({ length: 101 }, () => input.files[0]!) },
+      s.repo,
+      { ...storage, retain },
+      randomUUID,
+    ),
+  ).rejects.toThrow("MERCALYS_BATCH_LIMIT");
+  expect(retain).not.toHaveBeenCalled();
+});
+it("allows explicit rechecking without overwriting a concurrent item result", async () => {
+  const s = await setup(1);
+  await s.repo.create(s.input);
+  const file = s.input.files[0]!;
+  await s.repo.finish(s.input.id, file.id, 1, {
+    status: "DUPLICATE",
+    sourceDocumentId: randomUUID(),
+    sourceType: "MERCALYS_SALES",
+  });
+  await s.repo.refresh(s.input.id, file.id, 2);
+  expect((await s.repo.get(s.input.id, file.id)).result.status).toBe("QUEUED");
+  await expect(s.repo.refresh(s.input.id, file.id, 2)).rejects.toThrow(
+    "MERCALYS_BATCH_ITEM_CHANGED",
+  );
+});
+it("paginates recent lots with identical timestamps and rejects foreign capture before copying", async () => {
+  const { captureMercalysBatch } = await import("./mercalys-batch-capture");
+  const s = await setup(1);
+  for (let n = 0; n < 12; n++)
+    await s.repo.create({
+      ...s.input,
+      id: randomUUID(),
+      files: [{ ...s.input.files[0]!, id: randomUUID() }],
+    });
+  const first = await s.repo.recent(),
+    last = first.batches.at(-1)!;
+  const next = await s.repo.recent({ id: last.id, createdAt: last.createdAt });
+  expect(first.hasMore).toBe(true);
+  expect(next.hasMore).toBe(false);
+  expect(
+    new Set([...first.batches, ...next.batches].map((b) => b.id)).size,
+  ).toBe(12);
+  const retain = vi.fn();
+  await expect(
+    captureMercalysBatch(
+      {
+        storeId: s.scope.storeId,
+        ownerId: randomUUID(),
+        files: [{ name: "File.xlsx", uri: "file:///selected" }],
+      },
+      s.repo,
+      { size: async () => 1, retain },
+      randomUUID,
+    ),
+  ).rejects.toThrow("MERCALYS_BATCH_SCOPE_INVALID");
+  expect(retain).not.toHaveBeenCalled();
+});
