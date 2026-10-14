@@ -309,3 +309,5 @@ Visual verification used the actual component in a temporary isolated Expo web h
 ### Classification proposal preparation
 
 `product_classification_preview` is now an authorized server read/preparation tool for one exact owned product: category, nature and sales-unit before/after, current synchronized version, changed fields and fields requiring review. It uses the same shared comparison as `product.classify`, never writes or produces trusted user authority, and cannot replace local version/conflict checks. Native persisted proposal cards and exact user-intent confirmation remain pending; the internal WRITE adapter is not directly callable by the model.
+
+The first native intent/review binding now supports typed persisted `product.classify` proposal TOOL cards for one product each. Explicit MANAGER confirmation uses the current SQLite profile and canonical mutation runtime, with version/conflict refusal and journal-based local replay. Model output, received tool messages and preview generation remain preparation only. Batch/partial editing, persistent dismissal, broader catalogue writes and cross-device operation-journal restoration remain separate gates.

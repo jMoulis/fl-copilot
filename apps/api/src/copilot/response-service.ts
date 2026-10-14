@@ -186,6 +186,9 @@ export async function generateCopilotResponse(
   response: CopilotResponse;
   metadata: CopilotGenerationMetadata | null;
   evidence?: CopilotGenerationRequest["evidence"];
+  productPreviews?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["productPreviews"];
 }> {
   const request = copilotGenerationRequestSchema.parse(raw);
   if (
@@ -220,6 +223,7 @@ export async function generateCopilotResponse(
       mode: "AI",
       response: validateCopilotResponse(generated.output, request),
       metadata: generated.metadata,
+      productPreviews: generated.productPreviews,
       evidence: request.evidence,
     };
   } catch (error) {

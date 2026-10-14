@@ -487,13 +487,20 @@ it("delivers only synchronized questions and keeps the same pending identity aft
     const parent = await controller.send(conversation.id);
     const request = (await controller.open(conversation.id)).pendingTurns[0]!;
     let count = 0,
-      fail = true;
+      fail = true,
+      replyReturned = false;
     const dependencies = {
-      sync: async () => {},
+      sync: async () => {
+        if (replyReturned) {
+          replyReturned = false;
+          throw Error("PULL_AFTER_REPLY_FAILED");
+        }
+      },
       ask: async (input: typeof request) => {
         count++;
         expect(input).toEqual(request);
         if (fail) throw Error("NETWORK_DOWN");
+        replyReturned = true;
         return {
           message: {
             ...parent,

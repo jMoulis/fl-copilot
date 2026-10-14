@@ -1366,5 +1366,8 @@ it.each(["valid", "foreign", "wrong-patch"])(
     }).generate(f.request, schema);
     expect(productPreview).toHaveBeenCalledWith(input);
     expect(result.toolEvidence ?? []).toHaveLength(variant === "valid" ? 1 : 0);
+    expect(result.productPreviews ?? []).toHaveLength(
+      variant === "valid" ? 1 : 0,
+    );
   },
 );

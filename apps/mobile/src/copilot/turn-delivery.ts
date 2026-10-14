@@ -112,6 +112,14 @@ export class CopilotTurnDelivery {
     const result = await this.dependencies.ask(request, signal);
     cancelled(signal);
     await receiveCopilotReply(this.db, this.scope, request, result);
+    cancelled(signal);
+    try {
+      await this.dependencies.sync();
+    } catch {
+      // The reply is already durable locally; the shared sync service owns its retry state.
+      cancelled(signal);
+    }
+    cancelled(signal);
     return "RECEIVED";
   }
 }
