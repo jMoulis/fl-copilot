@@ -6,7 +6,13 @@ import {
 export class MercalysZipError extends Error {
   constructor(
     readonly code:
-      "INVALID" | "LIMIT" | "UNSAFE_PATH" | "UNSUPPORTED" | "DUPLICATE_PATH",
+      | "INVALID"
+      | "LIMIT"
+      | "UNSAFE_PATH"
+      | "UNSUPPORTED"
+      | "DUPLICATE_PATH"
+      | "CORRUPT"
+      | "CANCELLED",
   ) {
     super(`MERCALYS_ZIP_${code}`);
     this.name = "MercalysZipError";
