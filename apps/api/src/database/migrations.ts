@@ -725,6 +725,31 @@ export const mongoMigrations: readonly MongoMigration[] = [
       ]);
     },
   },
+  {
+    version: 35,
+    name: "mercalys-canonical-publications",
+    async up(database) {
+      await database
+        .collection("mercalysPublications")
+        .createIndex(
+          { storeId: 1, _id: 1 },
+          { name: "mercalys_publications_store" },
+        );
+      for (const name of ["salesObservations", "wasteObservations"])
+        await database
+          .collection(name)
+          .createIndex(
+            { storeId: 1, sourceRecordId: 1 },
+            { unique: true, name: "observation_source_record_unique" },
+          );
+      await database
+        .collection("sourceRecords")
+        .createIndex(
+          { storeId: 1, sourceDocumentId: 1, sourceIndex: 1 },
+          { name: "mercalys_source_lineage" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

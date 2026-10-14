@@ -379,6 +379,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
   app.post(
     "/api/v1/sync/push",
     {
+      bodyLimit: 4 * 1024 * 1024,
       schema: {
         body: syncPushRequestSchema,
         response: { 200: syncPushResponseSchema },

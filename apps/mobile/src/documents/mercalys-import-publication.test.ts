@@ -266,7 +266,11 @@ describe("MercalysImportPublicationRepository", () => {
       );
 
       await expect(
-        repository.findExactDuplicate(storeId, "MERCALYS_SALES", "sha256:test"),
+        repository.findExactDuplicate(
+          storeId,
+          "MERCALYS_SALES",
+          "sha256:cf16da1864acaf650d969fe8eb470ac1c442324921eaff19a77692f7ec4ff542",
+        ),
       ).resolves.toBeNull();
       await expect(
         repository.publish(input(summary("MERCALYS_SALES"))),
@@ -295,7 +299,12 @@ describe("MercalysImportPublicationRepository", () => {
       matchedLine(9, productIds[1], 2),
       matchedLine(10, productIds[2], 3),
     ]);
-    await repository.publish(input(initial, "sha256:initial"));
+    await repository.publish(
+      input(
+        initial,
+        "sha256:f116abe9beabcda5cc0a94a433e6a0c17209aed12cb06cbfada03bc1a111c205",
+      ),
+    );
     const corrected = reconciliationSummary([
       matchedLine(8, productIds[0], 1),
       matchedLine(9, productIds[1], 2.5),
@@ -314,7 +323,10 @@ describe("MercalysImportPublicationRepository", () => {
       safeToApply: true,
     });
     const result = await repository.publish({
-      ...input(corrected, "sha256:corrected"),
+      ...input(
+        corrected,
+        "sha256:9f17a7cb5faba30708db707f07c6e3db4d40e67b788ca2c545e2f1f6823e2c31",
+      ),
       reconciliationApproval: {
         fingerprint: reconciliation!.fingerprint,
         actorUserId: "99999999-9999-4999-8999-999999999999",
@@ -361,7 +373,7 @@ describe("MercalysImportPublicationRepository", () => {
     await repository.publish(
       input(
         reconciliationSummary([matchedLine(8, productId, 1)]),
-        "sha256:initial",
+        "sha256:f116abe9beabcda5cc0a94a433e6a0c17209aed12cb06cbfada03bc1a111c205",
       ),
     );
     const ambiguous = reconciliationSummary([
@@ -370,7 +382,12 @@ describe("MercalysImportPublicationRepository", () => {
     ]);
 
     await expect(
-      repository.publish(input(ambiguous, "sha256:ambiguous")),
+      repository.publish(
+        input(
+          ambiguous,
+          "sha256:5ccc45d48869f6f9031993bd144969d579452fe16da458e13469648221c9b984",
+        ),
+      ),
     ).rejects.toBeInstanceOf(MercalysOverlapReconciliationError);
     const reconciliation = await repository.analyzeOverlap(storeId, ambiguous);
     expect(reconciliation).toMatchObject({
@@ -379,7 +396,10 @@ describe("MercalysImportPublicationRepository", () => {
     });
     await expect(
       repository.publish({
-        ...input(ambiguous, "sha256:ambiguous"),
+        ...input(
+          ambiguous,
+          "sha256:5ccc45d48869f6f9031993bd144969d579452fe16da458e13469648221c9b984",
+        ),
         reconciliationApproval: {
           fingerprint: reconciliation!.fingerprint,
           actorUserId: "99999999-9999-4999-8999-999999999999",
@@ -407,7 +427,7 @@ describe("MercalysImportPublicationRepository", () => {
     await repository.publish(
       input(
         reconciliationSummary([matchedLine(8, productId, 1)]),
-        "sha256:initial",
+        "sha256:f116abe9beabcda5cc0a94a433e6a0c17209aed12cb06cbfada03bc1a111c205",
       ),
     );
     const corrected = reconciliationSummary([matchedLine(8, productId, 5)]);
@@ -416,7 +436,8 @@ describe("MercalysImportPublicationRepository", () => {
     await repository.keepExisting({
       storeId,
       filename: "corrected.xlsx",
-      checksum: "sha256:kept",
+      checksum:
+        "sha256:6304f6e31c3d0e7e18ed7eb925b63a8fe470c114cabfb9ae0d27636139a15885",
       summary: corrected,
       reconciliation: reconciliation!,
       actorUserId: "99999999-9999-4999-8999-999999999999",
@@ -473,6 +494,11 @@ async function openDatabase() {
   const database = new DatabaseSync(path);
   const adapter = new NodeDatabase(database);
   await runLocalMigrations(adapter);
+  await adapter.runAsync(
+    "INSERT INTO app_metadata(key,value,updated_at) VALUES('device_id',?,?)",
+    "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    timestamp,
+  );
   return { adapter, database, path };
 }
 
@@ -511,7 +537,7 @@ function insertFailedSourceDocument(database: DatabaseSync, status: string) {
           id, store_id, source_type, original_filename, checksum,
           local_processing_status, remote_upload_status, version,
           created_at, updated_at, sync_state, dirty
-        ) VALUES (?, ?, 'MERCALYS_SALES', 'failed.xlsx', 'sha256:test', ?, 'FAILED', 1, ?, ?, 'ERROR', 1)
+        ) VALUES (?, ?, 'MERCALYS_SALES', 'failed.xlsx', 'sha256:cf16da1864acaf650d969fe8eb470ac1c442324921eaff19a77692f7ec4ff542', ?, 'FAILED', 1, ?, ?, 'ERROR', 1)
       `,
     )
     .run(
@@ -525,7 +551,7 @@ function insertFailedSourceDocument(database: DatabaseSync, status: string) {
 
 function input(
   summaryValue: MercalysImportValidationSummary,
-  checksum = "sha256:test",
+  checksum = "sha256:cf16da1864acaf650d969fe8eb470ac1c442324921eaff19a77692f7ec4ff542",
 ) {
   return {
     storeId,

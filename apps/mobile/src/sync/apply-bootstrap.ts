@@ -1,3 +1,4 @@
+import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
 import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applySubstitutionScoreHistory } from "../needs/score-repository";
 import {
@@ -232,6 +233,15 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.mercalysPublications)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `mercalys-publications:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    for (const entity of bootstrap.entities.mercalysPublications ?? [])
+      await applyMercalysPublication(transaction, storeId, entity);
     for (const entity of bootstrap.entities.wasteReceiptPublications ?? [])
       await applyWastePublication(transaction, storeId, entity);
     await transaction.runAsync(
@@ -303,6 +313,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "productIdentifiers",
     "productAliases",
     "wasteReceiptPublications",
+    "mercalysPublications",
   ]);
   if (
     Object.entries(bootstrap.entities).some(

@@ -146,7 +146,7 @@ describe("remote import verification", () => {
       verificationStatus: "MATCH",
       remoteRecordCount: 1,
       remoteParserVersion: "mercalys-sales.article.v1",
-      remoteProcessingStatus: "PUBLISHED",
+      remoteProcessingStatus: "VALIDATED",
       verificationFailureCode: null,
     });
   });

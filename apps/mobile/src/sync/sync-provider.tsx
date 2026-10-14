@@ -1,3 +1,5 @@
+import { randomUUID } from "expo-crypto";
+import { repairMercalysPublications } from "../documents/mercalys-publication-sync";
 import { OutboxRepository } from "./outbox-repository";
 import {
   createContext,
@@ -77,6 +79,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         push: (request) =>
@@ -88,6 +91,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -126,6 +130,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         substitutionEvidence: true,
         substitutionScores: true,
         copilotHistory: true,
+        mercalysPublications: true,
         copilotOwnerId: session?.user.id,
       },
     );
@@ -178,8 +183,10 @@ export function SyncProvider({ children }: PropsWithChildren) {
       }
       setState((current) => ({ ...current, status: "syncing" }));
       try {
+        await repairMercalysPublications(database.sqlite, storeId, randomUUID);
         await uploadQueue?.process(storeId);
         const summary = await service.sync(storeId);
+        await repairMercalysPublications(database.sqlite, storeId, randomUUID);
         await new LocalAnalyticsRecomputationScheduler(
           database.sqlite,
           new SQLiteProductDateRecomputer(database.sqlite),

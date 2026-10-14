@@ -152,7 +152,7 @@ export function createMongoImportVerificationService(
             remoteParserVersion: parserVersion,
             remoteProcessingStatus:
               result.status === "MATCH"
-                ? "PUBLISHED"
+                ? "VALIDATED"
                 : result.status === "DIFFERENCE"
                   ? "RECONCILING"
                   : "FAILED",

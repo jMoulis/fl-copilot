@@ -614,9 +614,9 @@ describe("source upload queue", () => {
         .get(sourceDocumentId),
     ).toEqual({
       remote_upload_status: "CONFIRMED",
-      remote_processing_status: "PUBLISHED",
-      sync_state: "SYNCED",
-      dirty: 0,
+      remote_processing_status: "VALIDATED",
+      sync_state: "PENDING",
+      dirty: 1,
     });
     expect(
       database
@@ -626,7 +626,7 @@ describe("source upload queue", () => {
         .get(localFileId),
     ).toEqual({
       upload_status: "CONFIRMED",
-      retention_status: "CLEANUP_ELIGIBLE",
+      retention_status: "RETAINED",
     });
     database.close();
   });

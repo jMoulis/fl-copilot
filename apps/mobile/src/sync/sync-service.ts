@@ -1,3 +1,4 @@
+import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
 import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applyNeedMembership } from "../needs/membership-repository";
 import { applyProductSubstitution } from "../needs/substitution-repository";
@@ -76,6 +77,7 @@ export interface MobileSyncServiceOptions {
   commercialPlans?: boolean;
   appVersion: string;
   deviceId: string;
+  mercalysPublications?: boolean;
   maxRetries?: number;
   baseRetryDelayMs?: number;
   now?: () => string;
@@ -201,6 +203,12 @@ export class MobileSyncService {
       : true;
     if (this.options.copilotHistory && !this.options.copilotOwnerId)
       throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+    const mercalysAdopted = this.options.mercalysPublications
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `mercalys-publications:${storeId}`,
+        )
+      : true;
     const chatAdopted = this.options.copilotHistory
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -259,6 +267,7 @@ export class MobileSyncService {
       !evidenceAdopted ||
       !scoresAdopted ||
       !chatAdopted ||
+      !mercalysAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {
@@ -287,6 +296,7 @@ export class MobileSyncService {
 
   private async pushUnlocked(storeId: string): Promise<PushSummary> {
     const summary = { pushed: 0, conflicts: 0, failed: 0 };
+    const deferred = new Set<string>();
     for (let retry = 0; retry <= this.maxRetries; retry += 1) {
       const commands = await new OutboxRepository(
         this.database,
@@ -301,15 +311,60 @@ export class MobileSyncService {
             c.payload.ownerId === this.options.copilotOwnerId),
       );
       if (ownedCommands.length === 0) return summary;
-      const batch = await this.pushBatch(storeId, ownedCommands);
+      const ready = ownedCommands.filter((c) => !deferred.has(c.commandId));
+      if (!ready.length) {
+        if (retry >= this.maxRetries) {
+          summary.failed += ownedCommands.length;
+          return summary;
+        }
+        deferred.clear();
+        await this.sleep(this.baseRetryDelayMs * 2 ** retry);
+        continue;
+      }
+      // Full import packets use one request each; ordinary commands stay bounded below Fastify's 1 MiB limit.
+      const bounded: typeof ownedCommands = [];
+      let bytes = 1024;
+      for (const item of ready) {
+        const size = JSON.stringify(item).length * 3;
+        if (
+          bounded.length &&
+          (item.entityType === "mercalys_publication" ||
+            bounded[0]?.entityType === "mercalys_publication" ||
+            bytes + size > 900_000)
+        )
+          break;
+        bounded.push(item);
+        bytes += size;
+      }
+      const batch = await this.pushBatch(storeId, bounded);
       summary.pushed += batch.pushed;
       summary.conflicts += batch.conflicts;
       summary.failed += batch.failed;
+      if (
+        batch.retryable > 0 &&
+        (deferred.size > 0 ||
+          bounded.some((c) => c.entityType === "mercalys_publication"))
+      ) {
+        const outbox = new OutboxRepository(this.database, this.now);
+        for (const c of bounded)
+          if ((await outbox.getById(c.commandId))?.status === "PENDING")
+            deferred.add(c.commandId);
+        retry -= 1;
+        continue;
+      }
       if (batch.retryable === 0) {
+        if (bounded.length < ready.length || deferred.size > 0) {
+          retry -= 1;
+          continue;
+        }
         const next = await new OutboxRepository(
           this.database,
           this.now,
         ).listPending(storeId);
+        if (next.some((c) => c.entityType === "mercalys_publication")) {
+          retry -= 1;
+          continue;
+        }
         if (
           !next.some(
             (item) =>
@@ -436,6 +491,13 @@ export class MobileSyncService {
               v,
             );
           }
+          if (command.entityType === "mercalys_publication")
+            await applyMercalysPublication(
+              transaction,
+              storeId,
+              result.remoteEntity,
+              true,
+            );
           if (command.entityType === "waste_receipt_publication")
             await applyWastePublication(
               transaction,
@@ -550,6 +612,12 @@ export class MobileSyncService {
           }
           pushed += 1;
         } else if (result.status === "CONFLICT") {
+          if (command.entityType === "mercalys_publication")
+            await transaction.runAsync(
+              "UPDATE source_documents SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (
             command.entityType === "commercial_review_decision" &&
             result.remoteEntity
@@ -649,6 +717,12 @@ export class MobileSyncService {
           await outbox.markConflict(command.commandId, code);
           conflicts += 1;
         } else {
+          if (command.entityType === "mercalys_publication")
+            await transaction.runAsync(
+              "UPDATE source_documents SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "commercial_offer_choice")
             await transaction.runAsync(
               "UPDATE commercial_offer_choices SET sync_state='ERROR' WHERE id=? AND store_id=?",

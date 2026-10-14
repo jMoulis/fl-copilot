@@ -120,6 +120,7 @@ describe("local SQLite migrations", () => {
       "mercalys_intake_archives",
       "mercalys_intake_batches",
       "mercalys_intake_items",
+      "mercalys_publication_sync",
       "need_membership_history",
       "need_memberships",
       "need_unit_history",

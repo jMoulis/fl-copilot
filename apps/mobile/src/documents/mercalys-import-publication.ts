@@ -1,3 +1,4 @@
+import { enqueueMercalysPublications } from "./mercalys-publication-sync";
 import {
   salesObservationSchema,
   sourceRecordSchema,
@@ -330,6 +331,12 @@ export class MercalysImportPublicationRepository {
           resolvedAt: createdAt,
         });
       }
+      await enqueueMercalysPublications(
+        transaction,
+        input.storeId,
+        this.generateId,
+        createdAt,
+      );
     });
 
     return {

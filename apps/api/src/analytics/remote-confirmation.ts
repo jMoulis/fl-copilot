@@ -55,15 +55,21 @@ export class RemoteAnalyticsConfirmationService {
     }
 
     const products: ProductDailyPerformance[] = [];
-    for (const scope of normalized) {
-      const input = await this.repository.loadProductDay(storeId, scope);
-      const performance = buildProductDailyPerformance({
-        ...input,
-        businessDate: scope.businessDate,
-        computedAt: this.now(),
-      });
-      await this.repository.saveProductDay(performance);
-      products.push(performance);
+    // Independent product/date computations are bounded; aggregate the department only after every save.
+    for (let offset = 0; offset < normalized.length; offset += 8) {
+      const batch = await Promise.all(
+        normalized.slice(offset, offset + 8).map(async (scope) => {
+          const input = await this.repository.loadProductDay(storeId, scope);
+          const performance = buildProductDailyPerformance({
+            ...input,
+            businessDate: scope.businessDate,
+            computedAt: this.now(),
+          });
+          await this.repository.saveProductDay(performance);
+          return performance;
+        }),
+      );
+      products.push(...batch);
     }
 
     const departments: DepartmentDailyPerformance[] = [];
@@ -174,7 +180,6 @@ export function createMongoRemoteAnalyticsRepository(
       const product = await db.collection<ProductDocument>("products").findOne({
         _id: scope.productId,
         storeId,
-        deletedAt: null,
       });
       if (!product) {
         throw new Error(
@@ -189,6 +194,7 @@ export function createMongoRemoteAnalyticsRepository(
             productId: scope.productId,
             date: scope.businessDate,
             validationStatus: "VALIDATED",
+            deletedAt: null,
           })
           .sort({ _id: 1 })
           .toArray(),
@@ -199,6 +205,7 @@ export function createMongoRemoteAnalyticsRepository(
             productId: scope.productId,
             date: scope.businessDate,
             validationStatus: "VALIDATED",
+            deletedAt: null,
           })
           .sort({ _id: 1 })
           .toArray(),
