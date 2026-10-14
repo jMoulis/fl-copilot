@@ -1,3 +1,4 @@
+import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
 import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applySubstitutionScoreHistory } from "../needs/score-repository";
 import {
@@ -308,6 +309,10 @@ export async function applyPullPage(
           change.entityType,
           change.entity,
         );
+        continue;
+      }
+      if (change.entityType === "mercalys_publication") {
+        await applyMercalysPublication(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "waste_receipt_publication") {

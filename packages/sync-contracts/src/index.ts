@@ -102,3 +102,5 @@ export {
   copilotTurnResultSchema,
   type CopilotTurnRequest,
 } from "@fl-copilot/domain";
+
+export * from "./mercalys-publication";

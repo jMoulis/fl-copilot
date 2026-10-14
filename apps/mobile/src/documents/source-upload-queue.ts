@@ -284,15 +284,15 @@ export class SourceUploadQueue {
           `UPDATE source_documents
            SET remote_upload_status = 'CONFIRMED',
                remote_processing_status = ?, sync_state = ?,
-               dirty = 0, updated_at = ?
+               dirty = 1, updated_at = ?
            WHERE id = ? AND store_id = ?`,
           verification.status === "MATCH"
-            ? "PUBLISHED"
+            ? "VALIDATED"
             : verification.status === "DIFFERENCE"
               ? "RECONCILING"
               : "FAILED",
           verification.status === "MATCH"
-            ? "SYNCED"
+            ? "PENDING"
             : verification.status === "DIFFERENCE"
               ? "CONFLICT"
               : "ERROR",
@@ -305,7 +305,7 @@ export class SourceUploadQueue {
            SET upload_status = 'CONFIRMED',
                retention_status = ?, updated_at = ?
            WHERE id = ? AND store_id = ?`,
-          verification.status === "MATCH" ? "CLEANUP_ELIGIBLE" : "RETAINED",
+          "RETAINED",
           completedAt,
           payload.localFileId,
           storeId,

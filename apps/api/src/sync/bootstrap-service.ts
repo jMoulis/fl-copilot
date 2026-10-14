@@ -324,12 +324,19 @@ export function createMongoSyncBootstrapService(
                 role: store.role,
               },
               snapshotRevision: generateRevision(),
-              cursor: encodeSyncCursor(store.storeId, sequence),
+              // New canonical channel is replayed through bounded pull pages, including historical imports.
+              cursor: encodeSyncCursor(
+                store.storeId,
+                query.mercalysPublications === "true" ? Long.ZERO : sequence,
+              ),
               historyPolicy: {
                 rawObservationDays: query.rawObservationDays,
               },
               entities: {
                 ...copilotHistory,
+                ...(query.mercalysPublications === "true"
+                  ? { mercalysPublications: [] }
+                  : {}),
                 syncTestEntities: syncTestEntities.map(serializeSyncTestEntity),
                 products: products.map(serializeProductDocument),
                 productIdentifiers: productIdentifiers.map(

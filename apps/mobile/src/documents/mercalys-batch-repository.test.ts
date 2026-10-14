@@ -62,6 +62,11 @@ async function setup(count = 25) {
   databases.push(db);
   const adapter = new Adapter(db);
   await runLocalMigrations(adapter);
+  await adapter.runAsync(
+    "INSERT INTO app_metadata(key,value,updated_at) VALUES('device_id',?,?)",
+    randomUUID(),
+    new Date().toISOString(),
+  );
   const scope = { storeId: randomUUID(), ownerId: randomUUID() };
   const input = mercalysBatchInputSchema.parse({
     id: randomUUID(),

@@ -1,3 +1,5 @@
+import { synchronizedMercalysPublicationSchema } from "@fl-copilot/sync-contracts";
+import type { MercalysPublicationDocument } from "../imports/mercalys-publication-sync.js";
 import {
   isChatType,
   serializeChat,
@@ -164,6 +166,8 @@ export function createMongoSyncPullService(
         selected
           .filter(
             (change) =>
+              (query.mercalysPublications === "true" ||
+                change.entityType !== "mercalys_publication") &&
               (!isChatType(change.entityType) ||
                 (query.copilotHistory === "true" && !!ownerId)) &&
               (query.commercialReview === "true" ||
@@ -509,6 +513,21 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: 1,
                 entity,
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "mercalys_publication") {
+              const entity = await mongoDatabase
+                .collection<MercalysPublicationDocument>("mercalysPublications")
+                .findOne({ _id: change.entityId, storeId });
+              if (!entity) throw Error("MERCALYS_PUBLICATION_MISSING");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: entity.version,
+                entity: synchronizedMercalysPublicationSchema.parse(entity),
                 changedAt: change.changedAt.toISOString(),
               };
             }

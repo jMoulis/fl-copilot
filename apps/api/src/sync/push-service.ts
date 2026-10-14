@@ -1,3 +1,6 @@
+import type { PrivateSourceReader } from "../imports/import-verification-service.js";
+import { applyMercalysPublicationCommand } from "../imports/mercalys-publication-sync.js";
+import { mercalysPublicationSchema } from "@fl-copilot/sync-contracts";
 import {
   applyChatCommand,
   canAccessChatCommand,
@@ -71,6 +74,7 @@ export interface SyncPushService {
 export function createMongoSyncPushService(
   database: DatabaseService,
   now: () => Date = () => new Date(),
+  mercalysReader?: PrivateSourceReader,
 ): SyncPushService {
   const processedCommands = createMongoProcessedCommandService(database, now);
   const syncChanges = createMongoSyncChangeService(now);
@@ -126,6 +130,7 @@ export function createMongoSyncPushService(
                 now,
                 syncChanges,
                 ownerId,
+                mercalysReader,
               ),
           );
           if (
@@ -138,6 +143,21 @@ export function createMongoSyncPushService(
             ).confirm(
               input.storeId,
               publication.observations.map((o) => ({
+                productId: o.productId,
+                businessDate: o.businessDate,
+              })),
+            );
+          }
+          if (
+            command.type === "MERCALYS_PUBLISH" &&
+            outcome.command.resultStatus === "APPLIED"
+          ) {
+            const p = mercalysPublicationSchema.parse(command.payload);
+            await createMongoRemoteAnalyticsConfirmationService(
+              database,
+            ).confirm(
+              input.storeId,
+              [...p.sales, ...p.waste].map((o) => ({
                 productId: o.productId,
                 businessDate: o.businessDate,
               })),
@@ -181,6 +201,7 @@ async function applyCommand(
   now: () => Date,
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
   ownerId?: string,
+  mercalysReader?: PrivateSourceReader,
 ) {
   if (isChatType(command.entityType))
     return applyChatCommand(
@@ -190,6 +211,15 @@ async function applyCommand(
       command,
       requestId,
       syncChanges,
+    );
+  if (command.type === "MERCALYS_PUBLISH")
+    return applyMercalysPublicationCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+      mercalysReader,
     );
   if (command.type === "COMMERCIAL_WEEK_PLAN_UPSERT")
     return applyCommercialPlanCommand(
