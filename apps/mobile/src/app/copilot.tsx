@@ -94,9 +94,9 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       { storeId, ownerId },
       {
         sync: () => syncNow(storeId),
-        ask: (input) =>
+        ask: (input, signal) =>
           withAccessToken((token) =>
-            api.copilotTurn(token, storeId, ownerId, input),
+            api.copilotTurn(token, storeId, ownerId, input, signal),
           ),
       },
     );

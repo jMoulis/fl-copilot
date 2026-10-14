@@ -105,6 +105,7 @@ function LocalChatPanel({
       });
     return () => {
       alive = false;
+      delivery?.cancel(conversationId);
       attachmentAbort.current?.abort();
       current.current = { controller: undefined, conversationId: "" };
     };

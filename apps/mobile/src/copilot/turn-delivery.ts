@@ -11,23 +11,31 @@ import { receiveCopilotReply } from "./response-receiver";
 /** One in-flight delivery per conversation and instance; persisted request IDs survive instance/app restart. */
 export class CopilotTurnDelivery {
   private running = new Map<string, Promise<"NONE" | "WAITING" | "RECEIVED">>();
+  private aborts = new Map<string, AbortController>();
+  cancel(conversationId: string) {
+    this.aborts.get(conversationId)?.abort();
+  }
   constructor(
     private readonly db: OutboxDatabase & AtomicMutationDatabase,
     private readonly scope: { storeId: string; ownerId: string },
     private readonly dependencies: {
       sync(): Promise<unknown>;
-      ask(request: CopilotTurnRequest): Promise<unknown>;
+      ask(request: CopilotTurnRequest, signal: AbortSignal): Promise<unknown>;
     },
   ) {}
   deliver(conversationId: string) {
     const existing = this.running.get(conversationId);
     if (existing) return existing;
-    const work = this.drain(conversationId);
+    const abort = new AbortController();
+    this.aborts.set(conversationId, abort);
+    const work = this.drain(conversationId, abort.signal);
     this.running.set(conversationId, work);
     void work
       .finally(() => {
         if (this.running.get(conversationId) === work)
           this.running.delete(conversationId);
+        if (this.aborts.get(conversationId) === abort)
+          this.aborts.delete(conversationId);
       })
       .catch(() => undefined);
     return work;
@@ -35,10 +43,12 @@ export class CopilotTurnDelivery {
   /** Bounded sequential batch: stop at the first unsynchronized parent or failure. */
   private async drain(
     conversationId: string,
+    signal: AbortSignal,
   ): Promise<"NONE" | "WAITING" | "RECEIVED"> {
     let received = false;
     for (let index = 0; index < 5; index++) {
-      const result = await this.perform(conversationId);
+      cancelled(signal);
+      const result = await this.perform(conversationId, signal);
       if (result === "WAITING") return "WAITING";
       if (result === "NONE") return received ? "RECEIVED" : "NONE";
       received = true;
@@ -47,6 +57,7 @@ export class CopilotTurnDelivery {
   }
   private async perform(
     conversationId: string,
+    signal: AbortSignal,
   ): Promise<"NONE" | "WAITING" | "RECEIVED"> {
     const repo = new CopilotConversationRepository(this.db, this.scope);
     const conversation = await repo.get(conversationId);
@@ -55,7 +66,9 @@ export class CopilotTurnDelivery {
     const pending = await repo.pendingTurns(conversationId);
     if (!pending.length) return "NONE";
     const request = copilotTurnRequestSchema.parse(pending[0]);
+    cancelled(signal);
     await this.dependencies.sync();
+    cancelled(signal);
     const parent = await this.db.getFirstAsync<{
       sync_state: string;
       payload_json: string;
@@ -83,6 +96,7 @@ export class CopilotTurnDelivery {
       this.scope.ownerId,
       conversationId,
     );
+    cancelled(signal);
     if (existing) {
       await receiveCopilotReply(this.db, this.scope, request, {
         message: copilotMessageSchema.parse(JSON.parse(existing.payload_json)),
@@ -94,8 +108,14 @@ export class CopilotTurnDelivery {
     const current = await repo.get(conversationId);
     if (!current || current.status !== "ACTIVE")
       throw new Error("COPILOT_CONVERSATION_UNAVAILABLE");
-    const result = await this.dependencies.ask(request);
+    cancelled(signal);
+    const result = await this.dependencies.ask(request, signal);
+    cancelled(signal);
     await receiveCopilotReply(this.db, this.scope, request, result);
     return "RECEIVED";
   }
+}
+
+function cancelled(signal: AbortSignal) {
+  if (signal.aborted) throw new Error("COPILOT_DELIVERY_CANCELLED");
 }

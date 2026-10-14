@@ -1000,3 +1000,92 @@ it("refuses missing/foreign/deleted PDFs, caps draft attachments and rolls back 
     db.close();
   }
 });
+
+it.each(["sync", "ask"])(
+  "cancels delivery during %s without losing the pending reply identity",
+  async (stage) => {
+    const db = new DatabaseSync(":memory:"),
+      f = chatFixture(randomUUID);
+    try {
+      const adapter = new Adapter(db);
+      await runLocalMigrations(adapter);
+      const repo = new CopilotConversationRepository(adapter, f);
+      const controller = new CopilotLocalChatController(repo, f, randomUUID);
+      const conversation = await controller.create();
+      await controller.edit(conversation.id, {
+        text: "Question conservée",
+        attachments: [],
+      });
+      const parent = await controller.send(conversation.id);
+      const request = (await controller.open(conversation.id)).pendingTurns[0]!;
+      await adapter.runAsync(
+        "UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?",
+        parent.id,
+      );
+      let enter!: () => void, release!: () => void;
+      const entered = new Promise<void>((resolve) => {
+        enter = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let asks = 0;
+      let captured: AbortSignal | undefined;
+      const reply = {
+        message: {
+          ...parent,
+          id: request.replyId,
+          role: "ASSISTANT",
+          text: "Réponse",
+          replyToMessageId: parent.id,
+        },
+        alreadyApplied: true,
+      };
+      const delivery = new CopilotTurnDelivery(adapter, f, {
+        sync: async () => {
+          if (stage === "sync") {
+            enter();
+            await gate;
+          }
+        },
+        ask: async (_request, signal) => {
+          asks++;
+          captured = signal;
+          if (stage === "ask") {
+            enter();
+            await gate;
+          }
+          return reply;
+        },
+      });
+      const pending = delivery.deliver(conversation.id);
+      await entered;
+      delivery.cancel(conversation.id);
+      expect(delivery.deliver(conversation.id)).toBe(pending);
+      const failure = expect(pending).rejects.toThrow(
+        "COPILOT_DELIVERY_CANCELLED",
+      );
+      release();
+      await failure;
+      expect(asks).toBe(stage === "ask" ? 1 : 0);
+      if (captured) expect(captured.aborted).toBe(true);
+      expect((await controller.open(conversation.id)).pendingTurns).toEqual([
+        request,
+      ]);
+      expect((await repo.messages(conversation.id)).messages).toHaveLength(1);
+      const resumed = new CopilotTurnDelivery(adapter, f, {
+        sync: async () => {},
+        ask: async (input, signal) => {
+          expect(input).toEqual(request);
+          expect(signal.aborted).toBe(false);
+          return reply;
+        },
+      });
+      expect(await resumed.deliver(conversation.id)).toBe("RECEIVED");
+      expect((await controller.open(conversation.id)).pendingTurns).toEqual([]);
+      expect((await repo.messages(conversation.id)).messages).toHaveLength(2);
+    } finally {
+      db.close();
+    }
+  },
+);

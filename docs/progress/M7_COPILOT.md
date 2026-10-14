@@ -465,3 +465,11 @@ Follow-up generation now includes up to ten distinct source references from the 
 The provider receives separate current and recent source metadata and explicit source/history omission flags. It must clarify ambiguous document references and use exact available source IDs, without claiming complete memory, file contents from metadata, or permission to import/publish. This is bounded conversation continuity, not shared memory or compaction. No schema migration, native dependency, paid AI request or EAS build is needed.
 
 Validation: mocked SDK current-attachment and historical-source PDF tool calls; isolated Mongo integration for private scope, current-file precedence, newest-first cap and whole-message truncation; existing source resolver coverage rechecks deleted, foreign, pending and confirmed sources. Full lint/typecheck/unit suite and release checks recorded with the PR.
+
+### Native turn delivery lifecycle cancellation
+
+Leaving the conversation panel or switching its controller/topic now aborts the current client turn request and prevents that delivery batch from issuing subsequent questions or applying a late reply. Cancellation during shared synchronization stops only the chat continuation; it does not abort the store's shared sync or discard captured data. The persisted pending turn and stable parent/reply IDs remain available for reopening/manual retry. A server reply already generated may still be committed remotely and is recovered through the existing cached reply/sync path; client cancellation is not a server-generation stop or a billing guarantee.
+
+The API client forwards an optional AbortSignal to fetch. Cancellation is checked before/after awaited delivery boundaries using the portable signal.aborted property. In-flight deduplication remains until the cancelled promise settles, preventing overlapping same-instance requests. No source, question, Outbox command or pending identity is deleted.
+
+Validation covers cancellation while synchronization is blocked and while a transport ignores abort and returns late, no late local receipt, preserved pending identity, successful exact-ID resume and API transport signal forwarding. Existing native exports run in CI. Actual iPhone navigation/cancellation acceptance remains part of grouped chat testing; no paid EAS build is requested for this increment.
