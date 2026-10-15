@@ -37,31 +37,33 @@ export function AssistantAnswer({
     }
   }
   function inline(value: string): ReactNode[] {
-    return value
-      .split(/(\*\*[^*]+\*\*|(?<!\\)\[[^\]]+\]\(copilot-source:[^)]+\))/g)
-      .filter(Boolean)
-      .map((part, i) => {
-        const link = /^\[([^\]]+)\]\(copilot-source:([^)]+)\)$/.exec(part);
-        if (link)
-          return (
-            <Text
-              key={i}
-              accessibilityRole="link"
-              accessibilityLabel="Consulter la source"
-              onPress={() => openSource(link[2]!)}
-              style={styles.link}
-            >
-              {link[1]}
-            </Text>
-          );
-        if (part.startsWith("**") && part.endsWith("**"))
-          return (
-            <Text key={i} style={styles.bold}>
-              {part.slice(2, -2)}
-            </Text>
-          );
-        return part.replace(/\\([\\`*_[\]|<>])/g, "$1");
-      });
+    const parts = value.split(
+      /(\*\*[^*]+\*\*|\[[^\]]+\]\(copilot-source:[^)]+\))/g,
+    );
+    return parts.map((part, i) => {
+      const link = parts[i - 1]?.endsWith("\\")
+        ? null
+        : /^\[([^\]]+)\]\(copilot-source:([^)]+)\)$/.exec(part);
+      if (link)
+        return (
+          <Text
+            key={i}
+            accessibilityRole="link"
+            accessibilityLabel="Consulter la source"
+            onPress={() => openSource(link[2]!)}
+            style={styles.link}
+          >
+            {link[1]}
+          </Text>
+        );
+      if (part.startsWith("**") && part.endsWith("**"))
+        return (
+          <Text key={i} style={styles.bold}>
+            {part.slice(2, -2)}
+          </Text>
+        );
+      return part.replace(/\\([\\`*_[\]|<>])/g, "$1");
+    });
   }
   return (
     <View style={styles.answer}>

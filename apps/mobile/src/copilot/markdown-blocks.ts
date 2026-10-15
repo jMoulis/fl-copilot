@@ -2,12 +2,17 @@ export type MarkdownBlock =
   | { type: "paragraph" | "heading" | "list"; text: string }
   | { type: "table"; rows: string[][] };
 function cells(line: string) {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split(/(?<!\\)\|/)
-    .map((c) => c.trim());
+  let value = line.trim().replace(/^\|/, "");
+  if (value.endsWith("|") && !value.endsWith("\\|")) value = value.slice(0, -1);
+  const result = [""];
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i]!;
+    if (char === "\\" && i + 1 < value.length)
+      result[result.length - 1] += char + value[++i]!;
+    else if (char === "|") result.push("");
+    else result[result.length - 1] += char;
+  }
+  return result.map((cell) => cell.trim());
 }
 export function markdownBlocks(text: string): MarkdownBlock[] {
   const lines = text.split(/\r?\n/),
