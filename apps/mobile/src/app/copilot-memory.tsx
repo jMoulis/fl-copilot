@@ -1,3 +1,7 @@
+import {
+  confirmKnowledgeSuggestion,
+  loadKnowledgeSuggestion,
+} from "@/copilot/knowledge-suggestion";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Alert } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -32,7 +36,7 @@ function CopilotMemoryScreenContent() {
   const storeId = session?.stores[0]?.storeId,
     ownerId = session?.user.id;
   const writeLock = useRef(false);
-  const params = useLocalSearchParams<{ source?: string }>();
+  const params = useLocalSearchParams<{ source?: string; proposal?: string }>();
   const repo = useMemo(
     () =>
       storeId && ownerId
@@ -44,6 +48,8 @@ function CopilotMemoryScreenContent() {
     [selected, setSelected] = useState<CopilotKnowledge>(),
     [statement, setStatement] = useState(""),
     [sourceId, setSourceId] = useState<string | null>(null),
+    [proposalId, setProposalId] = useState<string>(),
+    [proposalCompleted, setProposalCompleted] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>();
@@ -53,12 +59,36 @@ function CopilotMemoryScreenContent() {
       if (repo)
         void (async () => {
           const rows = await repo.list();
-          const source = params.source
-            ? await repo.source(params.source)
-            : null;
+          const proposal =
+            params.proposal && storeId && ownerId
+              ? await loadKnowledgeSuggestion(
+                  sqlite,
+                  { storeId, ownerId },
+                  params.proposal,
+                )
+              : null;
+          const source =
+            params.source && !proposal
+              ? await repo.source(params.source)
+              : null;
           if (active) {
             setEntries(rows);
-            if (source) {
+            if (proposal) {
+              const existing = rows.find(
+                (e) => e.entity.id === proposal.content.knowledgeId,
+              );
+              setProposalId(proposal.content.knowledgeId);
+              setProposalCompleted(!!existing);
+              setSelected(undefined);
+              setSourceId(proposal.message.replyToMessageId);
+              setStatement(proposal.content.suggestion.statement);
+              if (existing)
+                setNotice(
+                  existing.entity.status === "FORGOTTEN"
+                    ? "Cette proposition a déjà été traitée puis oubliée. Elle ne sera pas réactivée."
+                    : "Cette proposition a déjà été mémorisée. Retrouvez-la dans la liste pour la modifier.",
+                );
+            } else if (source) {
               const existing = rows.find(
                 (e) =>
                   e.entity.status === "ACTIVE" &&
@@ -73,12 +103,16 @@ function CopilotMemoryScreenContent() {
           }
         })().catch(() => {
           if (active)
-            setError("La mémoire ne peut pas être lue sur cet appareil.");
+            setError(
+              params.proposal
+                ? "Cette proposition ne peut pas être ouverte : synchronisez le chat et vérifiez si un message a été corrigé."
+                : "La mémoire ne peut pas être lue sur cet appareil.",
+            );
         });
       return () => {
         active = false;
       };
-    }, [repo, params.source]),
+    }, [repo, params.source, params.proposal, sqlite, storeId, ownerId]),
   );
   async function commit(forget = false, target = selected) {
     if (!repo || !storeId || !ownerId || writeLock.current) return;
@@ -87,31 +121,45 @@ function CopilotMemoryScreenContent() {
     setError(undefined);
     try {
       const now = new Date().toISOString();
-      await repo.save(
-        {
-          id: target?.id ?? randomUUID(),
-          storeId,
-          ownerId,
-          scope: "USER_STORE",
-          kind: "OPERATING_PRACTICE",
-          statement: forget ? "Oublié" : statement,
-          status: forget ? "FORGOTTEN" : "ACTIVE",
-          sourceMessageId: target ? target.sourceMessageId : sourceId,
-          confirmedBy: ownerId,
-          version: (target?.version ?? 0) + 1,
-          createdAt: target?.createdAt ?? now,
-          updatedAt: now,
-        },
-        { commandId: randomUUID(), deviceId },
-      );
+      let alreadyApplied = false;
+      if (!target && proposalId && params.proposal) {
+        const result = await confirmKnowledgeSuggestion(
+          sqlite,
+          { storeId, ownerId },
+          params.proposal,
+          statement,
+          { commandId: randomUUID(), deviceId, now },
+        );
+        alreadyApplied = result.alreadyApplied;
+      } else
+        await repo.save(
+          {
+            id: target?.id ?? proposalId ?? randomUUID(),
+            storeId,
+            ownerId,
+            scope: "USER_STORE",
+            kind: "OPERATING_PRACTICE",
+            statement: forget ? "Oublié" : statement,
+            status: forget ? "FORGOTTEN" : "ACTIVE",
+            sourceMessageId: target ? target.sourceMessageId : sourceId,
+            confirmedBy: ownerId,
+            version: (target?.version ?? 0) + 1,
+            createdAt: target?.createdAt ?? now,
+            updatedAt: now,
+          },
+          { commandId: randomUUID(), deviceId },
+        );
       setEntries(await repo.list());
       setStatement("");
       setSelected(undefined);
       setSourceId(null);
+      if (!target && proposalId) setProposalCompleted(true);
       setNotice(
-        forget
-          ? "Cette pratique ne sera plus utilisée après synchronisation. Le message d’origine reste dans son historique."
-          : "Pratique confirmée sur cet appareil. Elle sera disponible dans vos autres conversations après synchronisation.",
+        alreadyApplied
+          ? "Cette proposition a déjà été traitée. La mémoire existante n’a pas été remplacée."
+          : forget
+            ? "Cette pratique ne sera plus utilisée après synchronisation. Le message d’origine reste dans son historique."
+            : "Pratique confirmée sur cet appareil. Elle sera disponible dans vos autres conversations après synchronisation.",
       );
       void syncNow(storeId)
         .then(async () => setEntries(await repo.list()))
@@ -150,6 +198,8 @@ function CopilotMemoryScreenContent() {
   }
   function edit(e: CopilotKnowledge) {
     setSelected(e);
+    setProposalId(undefined);
+    setProposalCompleted(false);
     setStatement(e.statement);
     setSourceId(e.sourceMessageId);
     setNotice(undefined);
@@ -175,7 +225,11 @@ function CopilotMemoryScreenContent() {
           maxLength={800}
           value={statement}
           onChangeText={setStatement}
-          editable={!busy}
+          editable={
+            !busy &&
+            !proposalCompleted &&
+            !(params.proposal && !proposalId && !selected)
+          }
           placeholder="Ex. La casse est scannée chaque jour et comptabilisée à la date de saisie, plusieurs fois par semaine."
           style={{
             minHeight: 120,
@@ -191,7 +245,12 @@ function CopilotMemoryScreenContent() {
           label={
             selected ? "Confirmer la modification" : "Confirmer et mémoriser"
           }
-          disabled={busy || !statement.trim()}
+          disabled={
+            busy ||
+            proposalCompleted ||
+            (!!params.proposal && !proposalId && !selected) ||
+            !statement.trim()
+          }
           onPress={() => {
             void commit();
           }}

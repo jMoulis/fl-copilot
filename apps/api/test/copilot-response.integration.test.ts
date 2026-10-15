@@ -2258,6 +2258,87 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .countDocuments({ conversationId: f.conversation.id, role: "TOOL" }),
       ).toBe(1);
     });
+    it("persists an opted-in source-grounded memory proposal once without creating knowledge, and rolls back invented quotations", async () => {
+      for (const invalid of [false, true]) {
+        const f = await fixture();
+        const suggestion = {
+          statement: "La casse est comptabilisée à la date de saisie.",
+          sources: [
+            {
+              messageId: f.message.id,
+              quote: invalid ? "Citation inventée" : f.message.text,
+            },
+          ],
+        };
+        const context = detectCopilotConflicts({
+          batch: scoreCopilotPriorities({
+            storeId: f.storeId,
+            evaluatedAt: f.message.createdAt,
+            candidates: [],
+          }),
+          intents: [],
+        });
+        const generate = vi.fn(async () => ({
+          output: {
+            language: "fr-FR",
+            summary: "Je peux proposer de retenir cette pratique.",
+            facts: [],
+            interpretation: [],
+            recommendations: [],
+            questions: [],
+          },
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: "memory-test",
+            inputTokens: null,
+            outputTokens: null,
+          },
+          knowledgeSuggestions: [suggestion],
+        }));
+        const dependencies = {
+          db,
+          provider: { model: "test", generate } as CopilotAiProvider,
+          authorize: async () => f.authority,
+          loadContext: async () => context,
+          allowMemorySuggestions: true,
+        };
+        const turn = {
+          replyId: f.response.id,
+          userMessageId: f.message.id,
+          conversationId: f.conversation.id,
+        };
+        if (invalid) {
+          await expect(runCopilotTurn(dependencies, turn)).rejects.toThrow(
+            "QUOTE",
+          );
+          expect(
+            await db.collection("copilotMessages").countDocuments({
+              conversationId: f.conversation.id,
+              role: { $in: ["ASSISTANT", "TOOL"] },
+            }),
+          ).toBe(0);
+        } else {
+          await runCopilotTurn(dependencies, turn);
+          await runCopilotTurn(dependencies, turn);
+          expect(generate).toHaveBeenCalledTimes(1);
+          const tools = await db
+            .collection("copilotMessages")
+            .find({ conversationId: f.conversation.id, role: "TOOL" })
+            .toArray();
+          expect(tools).toHaveLength(1);
+          expect(JSON.parse(String(tools[0]!.text))).toMatchObject({
+            kind: "KNOWLEDGE_SUGGESTION",
+            knowledgeId: tools[0]!.id,
+          });
+        }
+        expect(
+          await db
+            .collection("copilotKnowledge")
+            .countDocuments({ storeId: f.storeId, ownerId: f.ownerId }),
+        ).toBe(0);
+      }
+    });
     it("persists a generated private question and revalidates its original context for a later answer", async () => {
       const f = await fixture();
       const question = {

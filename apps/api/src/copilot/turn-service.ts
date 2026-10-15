@@ -1,3 +1,4 @@
+import { buildKnowledgeSuggestionMessages } from "./knowledge-suggestion-messages";
 import { readKnowledge } from "./knowledge-store";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { readAnsweredInformationContext } from "./answered-information.js";
@@ -54,6 +55,7 @@ export async function runCopilotTurn(
     now?: () => Date;
     onProgress?: (text: string) => void;
     onActivity?: (activity: CopilotActivity) => void;
+    allowMemorySuggestions?: boolean;
   },
   raw: CopilotTurnRequest,
   signal?: AbortSignal,
@@ -180,6 +182,9 @@ export async function runCopilotTurn(
       answeredInformation,
       storeKnowledge,
       userQuestion: initial.parent.text || null,
+      ...(dependencies.allowMemorySuggestions
+        ? { memorySuggestion: { currentUserMessageId: initial.parent.id } }
+        : {}),
     };
     dependencies.onActivity?.({
       id: "preparing",
@@ -225,6 +230,11 @@ export async function runCopilotTurn(
         );
         if (generation.mode === "AI")
           for (const proposal of [
+            ...buildKnowledgeSuggestionMessages(
+              message,
+              generation.knowledgeSuggestions ?? [],
+              request,
+            ),
             ...buildProductProposalMessages(
               message,
               generation.productPreviews ?? [],

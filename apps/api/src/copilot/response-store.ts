@@ -1,4 +1,8 @@
 import {
+  readKnowledgeSuggestion,
+  validateKnowledgeSuggestionSources,
+} from "@fl-copilot/domain";
+import {
   readCopilotProductProposal,
   readCopilotInformationRequest,
 } from "@fl-copilot/domain";
@@ -100,7 +104,9 @@ export async function appendCopilotToolRecord(
   const artifact =
     kind === "MISSING_INFORMATION_REQUEST"
       ? readCopilotInformationRequest(decoded)
-      : readCopilotProductProposal(decoded);
+      : kind === "KNOWLEDGE_SUGGESTION"
+        ? readKnowledgeSuggestion(decoded)
+        : readCopilotProductProposal(decoded);
   const message = artifact.message;
   const assistantMessageId =
     "content" in artifact
@@ -132,6 +138,45 @@ export async function appendCopilotToolRecord(
   const messages = ctx.database.collection<CopilotMessage & { _id: string }>(
     "copilotMessages",
   );
+  if (kind === "KNOWLEDGE_SUGGESTION") {
+    const suggestion = readKnowledgeSuggestion(decoded).content.suggestion;
+    const sources = [];
+    for (const reference of suggestion.sources) {
+      const row = await messages.findOne(
+        {
+          _id: reference.messageId,
+          storeId: message.storeId,
+          ownerId: message.ownerId,
+          conversationId: message.conversationId,
+          role: "USER",
+        },
+        { session: ctx.session },
+      );
+      if (!row) throw Error("COPILOT_KNOWLEDGE_QUOTE_INVALID");
+      const { _id, ...payload } = row;
+      const source = copilotMessageSchema.parse(payload);
+      if (_id !== source.id) throw Error("COPILOT_KNOWLEDGE_QUOTE_INVALID");
+      if (
+        await messages.findOne(
+          {
+            storeId: message.storeId,
+            ownerId: message.ownerId,
+            conversationId: message.conversationId,
+            role: "USER",
+            supersedesMessageId: source.id,
+          },
+          { session: ctx.session },
+        )
+      )
+        throw Error("COPILOT_KNOWLEDGE_SOURCE_SUPERSEDED");
+      sources.push(source);
+    }
+    validateKnowledgeSuggestionSources(
+      suggestion,
+      message.replyToMessageId!,
+      sources,
+    );
+  }
   const existing = await messages.findOne(
     { _id: message.id },
     { session: ctx.session },

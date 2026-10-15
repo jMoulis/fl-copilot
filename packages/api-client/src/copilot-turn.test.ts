@@ -258,3 +258,30 @@ it("negotiates and scopes public activity events without persisting them in the 
   );
   expect(result.message).toEqual(message);
 });
+it("opts into memory proposals only when the client can render their confirmation card", async () => {
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          type: "result",
+          result: { message, alreadyApplied: false },
+        }) + "\n",
+        { headers: { "content-type": "application/x-ndjson" } },
+      ),
+  );
+  vi.stubGlobal("fetch", transport);
+  for (const enabled of [false, true]) {
+    await new ApiClient("https://test.invalid").copilotTurn(
+      "test",
+      id(4),
+      id(5),
+      input,
+      undefined,
+      { onProgress: vi.fn(), memorySuggestions: enabled },
+    );
+    const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-memory-suggestions", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-memory-suggestions");
+  }
+});
