@@ -181,7 +181,9 @@ export function createMongoSyncPushService(
                     error: {
                       code: error.message,
                       messageFr:
-                        "Synchronisez d’abord les produits et le besoin client.",
+                        error instanceof KnowledgeParentPendingError
+                          ? "Synchronisez d’abord le message à l’origine de cette pratique."
+                          : "Synchronisez d’abord les produits et le besoin client.",
                       retryable: true,
                       requestId,
                     },

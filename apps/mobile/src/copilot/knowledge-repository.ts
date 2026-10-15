@@ -126,6 +126,15 @@ export class CopilotKnowledgeRepository {
         (before && !same(before, e))
       )
         throw Error("COPILOT_KNOWLEDGE_REVISION_INVALID");
+      if (
+        !before &&
+        (await tx.getFirstAsync<{ n: number }>(
+          "SELECT COUNT(*) AS n FROM copilot_knowledge WHERE store_id=? AND owner_id=?",
+          e.storeId,
+          e.ownerId,
+        ))!.n >= 200
+      )
+        throw Error("COPILOT_KNOWLEDGE_LIMIT");
       if (e.sourceMessageId && !before) {
         const source = await tx.getFirstAsync<{ payload_json: string }>(
           "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=?",
@@ -133,11 +142,12 @@ export class CopilotKnowledgeRepository {
           e.storeId,
           e.ownerId,
         );
-        if (
-          !source ||
-          copilotMessageSchema.parse(JSON.parse(source.payload_json)).role !==
-            "USER"
-        )
+        if (!source) throw Error("COPILOT_KNOWLEDGE_SOURCE_UNAVAILABLE");
+        const message = copilotMessageSchema.parse(
+          JSON.parse(source.payload_json),
+        );
+        scoped(message, this.scope);
+        if (message.id !== e.sourceMessageId || message.role !== "USER")
           throw Error("COPILOT_KNOWLEDGE_SOURCE_UNAVAILABLE");
       }
       await tx.runAsync(

@@ -141,3 +141,24 @@ it("keeps conflicting versions for human choice and can adopt the synchronized v
     db.db.close();
   }
 });
+it("requires an owned user message as provenance only at creation, while restored practices remain editable", async () => {
+  const db = new MercalysTestDatabase(),
+    s = scope(),
+    e = record(s);
+  try {
+    await runLocalMigrations(db);
+    const repo = new CopilotKnowledgeRepository(db, s);
+    await expect(
+      repo.save({ ...e, sourceMessageId: randomUUID() }, command()),
+    ).rejects.toThrow("SOURCE");
+    const restored = { ...e, sourceMessageId: randomUUID() };
+    await applyKnowledgeRecord(db, s, restored);
+    await repo.save(
+      { ...restored, version: 2, statement: "Pratique corrigée explicitement" },
+      command(),
+    );
+    expect((await repo.list())[0]?.entity.statement).toContain("corrigée");
+  } finally {
+    db.db.close();
+  }
+});
