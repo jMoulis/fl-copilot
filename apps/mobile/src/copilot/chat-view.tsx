@@ -1,3 +1,4 @@
+import { CopyMessage } from "./copy-message";
 import { CopilotActivityTrail } from "./activity-trail";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { AssistantAnswer } from "./assistant-answer";
@@ -216,6 +217,10 @@ export function CopilotChatView({
                   {item.text}
                 </Text>
               )}
+              <CopyMessage
+                text={item.text}
+                assistant={item.role === "ASSISTANT"}
+              />
               {(item.role === "ASSISTANT" &&
               item.text.includes("copilot-source:")
                 ? []
