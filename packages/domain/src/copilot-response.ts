@@ -9,6 +9,7 @@ export const copilotResponseSchema = z
     language: z.literal("fr-FR"),
     summary: prose,
     facts: z.array(z.object({ evidenceId: reference }).strict()).max(24),
+    narrative: z.string().trim().min(1).max(12000).optional(),
     interpretation: z.array(prose).max(8),
     recommendations: z
       .array(
@@ -34,7 +35,6 @@ export const copilotResponseSchema = z
       )
       .max(3),
     questions: z.array(prose).max(4),
-    narrative: z.string().trim().min(1).max(12000).optional(),
   })
   .strict();
 export type CopilotResponse = z.infer<typeof copilotResponseSchema>;
