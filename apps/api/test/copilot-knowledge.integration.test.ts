@@ -1,3 +1,5 @@
+import { CopilotConversationRepository } from "../../mobile/src/copilot/conversation-repository";
+import { chatFixture } from "../../../scripts/test-chat-fixtures";
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db } from "mongodb";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
@@ -90,6 +92,24 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await runLocalMigrations(b);
         const repo = new CopilotKnowledgeRepository(a, scope),
           other = new CopilotKnowledgeRepository(b, scope);
+        const original = chatFixture(randomUUID);
+        const conversationRepo = new CopilotConversationRepository(a, scope);
+        await conversationRepo.save(
+          { ...original.conversation, storeId, ownerId },
+          { commandId: randomUUID(), deviceId },
+        );
+        const source = {
+          ...original.message,
+          storeId,
+          ownerId,
+          attachments: [],
+          text: "La casse est scannée tous les jours mais saisie à la date de saisie quelques fois par semaine.",
+        };
+        await conversationRepo.append(source, {
+          commandId: randomUUID(),
+          deviceId,
+          preserveDraft: true,
+        });
         const entry: CopilotKnowledge = {
           id: randomUUID(),
           ...scope,
@@ -98,7 +118,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           statement:
             "La casse est comptabilisée à la date de saisie, plusieurs fois par semaine.",
           status: "ACTIVE",
-          sourceMessageId: null,
+          sourceMessageId: source.id,
           confirmedBy: ownerId,
           version: 1,
           createdAt: now,
