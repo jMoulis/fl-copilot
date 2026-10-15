@@ -2313,12 +2313,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             "QUOTE",
           );
           expect(
-            await db
-              .collection("copilotMessages")
-              .countDocuments({
-                conversationId: f.conversation.id,
-                role: { $in: ["ASSISTANT", "TOOL"] },
-              }),
+            await db.collection("copilotMessages").countDocuments({
+              conversationId: f.conversation.id,
+              role: { $in: ["ASSISTANT", "TOOL"] },
+            }),
           ).toBe(0);
         } else {
           await runCopilotTurn(dependencies, turn);
