@@ -122,7 +122,6 @@ export function MercalysBatchPanel({
   const [publications, setPublications] = useState<
     Awaited<ReturnType<MercalysBatchRepository["publications"]>>
   >([]);
-  const [reviewing, setReviewing] = useState<string>();
   const activeRef = useRef<string | undefined>(undefined);
   const alive = useRef(true),
     locked = useRef(false),
@@ -149,6 +148,13 @@ export function MercalysBatchPanel({
       setMoreArchives(page.hasMore);
     }
   }
+  async function automaticallyPublish(batchId: string, signal: AbortSignal) {
+    if (alive.current) setProgress("Publication des fichiers sans ambiguïté…");
+    const report = await publisher.publishUnambiguous(batchId, signal);
+    await load(batchId);
+    if (alive.current) setPublicationReport(report);
+    if (report.some((r) => r.status === "PUBLISHED")) await onPublished?.();
+  }
   async function processArchive(id: string, signal: AbortSignal) {
     if (alive.current) setProgress("Lecture de l’archive en cours…");
     const result = await extractRetainedMercalysZip(
@@ -164,7 +170,7 @@ export function MercalysBatchPanel({
       await load(result.batchId);
       if (alive.current) setProgress("Vérification des fichiers extraits…");
       await service.preparePending(result.batchId, signal);
-      await load(result.batchId);
+      await automaticallyPublish(result.batchId, signal);
     }
   }
   async function load(batchId: string, older = false) {
@@ -257,33 +263,12 @@ export function MercalysBatchPanel({
       }
     }
   }
-  if (reviewing)
-    return (
-      <SectionCard title="Fichier du lot">
-        <Text>{reviewing}</Text>
-        <Text className="text-sm text-muted">
-          L’examen du fichier est affiché ci-dessous.
-        </Text>
-        <SecondaryButton
-          label="Revenir aux fichiers du lot"
-          disabled={busy || disabled}
-          onPress={() =>
-            void run(async () => {
-              if (activeRef.current) {
-                const committed = await repo.publications(activeRef.current);
-                if (alive.current) setPublications(committed);
-              }
-              if (alive.current) setReviewing(undefined);
-            })
-          }
-        />
-      </SectionCard>
-    );
   return (
     <SectionCard title="Imports en lot">
       <Text className="text-sm text-muted">
         Sélectionnez plusieurs exports de ventes ou de casse. Chaque fichier
-        conserve sa période et sera examiné avant publication.
+        conserve sa période. Les fichiers sans ambiguïté sont publiés
+        automatiquement ; les autres restent à examiner.
       </Text>
       <SecondaryButton
         label="Choisir plusieurs fichiers XLSX"
@@ -309,7 +294,7 @@ export function MercalysBatchPanel({
               await load(captured.batchId);
               if (alive.current) setProgress("Vérification du lot en cours…");
               await service.preparePending(captured.batchId, signal);
-              await load(captured.batchId);
+              await automaticallyPublish(captured.batchId, signal);
             }
             if (captured.failures.length && alive.current)
               setError(
@@ -543,12 +528,21 @@ export function MercalysBatchPanel({
               disabled={busy || disabled}
               onPress={() =>
                 void run(async () => {
-                  setReviewing(item.filename);
                   await onReview({
                     name: item.filename,
                     uri: item.localUri,
                     expectedChecksum: item.checksum,
                   });
+                  setPublicationPlan(undefined);
+                  setPublicationReport((old) =>
+                    old?.filter((r) => r.itemId !== item.id),
+                  );
+                  if (activeRef.current) {
+                    const committed = await repo.publications(
+                      activeRef.current,
+                    );
+                    if (alive.current) setPublications(committed);
+                  }
                 })
               }
             />
@@ -560,7 +554,7 @@ export function MercalysBatchPanel({
               void run(async (signal) => {
                 await repo.refresh(item.batchId, item.id, item.version);
                 await service.prepare(item.batchId, item.id, signal);
-                await load(item.batchId);
+                await automaticallyPublish(item.batchId, signal);
               })
             }
           />
@@ -625,6 +619,8 @@ function publicationStatus(
 }
 
 function publicationIssue(code?: string) {
+  if (code === "MERCALYS_PRODUCT_REVIEW_REQUIRED")
+    return "Des produits restent à confirmer. Aucune publication automatique pour ce fichier.";
   if (
     code === "MERCALYS_RECONCILIATION_REQUIRED" ||
     code === "MERCALYS_BATCH_OVERLAPPING_FILES"

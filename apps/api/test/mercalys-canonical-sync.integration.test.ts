@@ -26,6 +26,7 @@ import {
   syncPullQuerySchema,
 } from "@fl-copilot/sync-contracts";
 import { fingerprintMercalysRecords } from "@fl-copilot/import-core";
+import { readMercalysPeriodAudit } from "../src/copilot/mercalys-period-audit";
 import { readPeriodAnalysis } from "../src/copilot/period-analysis-tool";
 import { runMongoMigrations } from "../src/database/migrations";
 import { SQLiteProductDateRecomputer } from "../../mobile/src/analytics/local-recomputation";
@@ -243,6 +244,22 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             aggregation: "SUM",
             metrics: [metric],
           });
+          expect(analysis.coverage[0]!.availablePeriods).toEqual([
+            { start: date, end: date },
+          ]);
+          const audit = await readMercalysPeriodAudit(
+            db,
+            storeId,
+            { start: date, end: date },
+            metric === "sales" ? "MERCALYS_SALES" : "MERCALYS_WASTE",
+          );
+          expect(audit.files).toBe(1);
+          expect(audit.publishedRows).toBe(1);
+          expect(
+            analysis.evidence.some((e) =>
+              e.label.startsWith("Publications Mercalys consultées"),
+            ),
+          ).toBe(true);
           expect(
             analysis.coverage[0]!.current.availableDays +
               analysis.coverage[0]!.current.partialDays,
@@ -399,6 +416,22 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             .collection("salesObservations")
             .countDocuments({ storeId, deletedAt: null }),
         ).toBe(1);
+        expect(
+          await readMercalysPeriodAudit(
+            db,
+            storeId,
+            { start: "2026-10-07", end: "2026-10-07" },
+            "MERCALYS_SALES",
+          ),
+        ).toEqual({ files: 1, publishedRows: 1, reviewRows: 0 });
+        expect(
+          await readMercalysPeriodAudit(
+            db,
+            randomUUID(),
+            { start: "2026-10-07", end: "2026-10-07" },
+            "MERCALYS_SALES",
+          ),
+        ).toEqual({ files: 0, publishedRows: 0, reviewRows: 0 });
         const correctedAnalysis = await readPeriodAnalysis(db, storeId, {
           productId: null,
           currentPeriod: { start: "2026-10-07", end: "2026-10-07" },

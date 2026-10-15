@@ -1,3 +1,5 @@
+import { readMercalysPeriodAudit } from "./mercalys-period-audit.js";
+import { mergeBusinessPeriods } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db } from "mongodb";
@@ -41,10 +43,14 @@ export const periodAnalysisResultSchema = z.strictObject({
           .enum(["AVAILABLE", "PARTIAL", "UNAVAILABLE"])
           .nullable(),
         warnings: z.array(z.string()).max(10),
+        availablePeriods: z
+          .array(copilotAnalysisPeriodSchema)
+          .max(24)
+          .optional(),
       }),
     )
     .max(3),
-  evidence: z.array(copilotEvidenceSchema).max(24),
+  evidence: z.array(copilotEvidenceSchema).max(36),
 });
 export type PeriodAnalysisResult = z.infer<typeof periodAnalysisResultSchema>;
 /** Explicit arbitrary calendar ranges. Missing dates are materialized as unknown, never zero. */
@@ -186,12 +192,24 @@ export async function readPeriodAnalysis(
       aggregation: input.aggregation,
       points,
     });
+    const availablePeriods = mergeBusinessPeriods(
+      points
+        .filter(
+          (p) =>
+            p.status !== "UNAVAILABLE" &&
+            p.value !== null &&
+            p.businessDate >= input.currentPeriod.start &&
+            p.businessDate <= input.currentPeriod.end,
+        )
+        .map((p) => ({ start: p.businessDate, end: p.businessDate })),
+    );
     coverage.push({
       metric,
       current: c,
       reference: r,
       comparisonStatus: input.referencePeriod ? comparison.status : null,
       warnings,
+      availablePeriods: availablePeriods.slice(0, 24),
     });
     const add = (
       key: string,
@@ -227,6 +245,41 @@ export async function readPeriodAnalysis(
       `${input.aggregation === "SUM" ? "Total" + (cov.availableDays !== cov.expectedDays ? " partiel" : "") : "Moyenne journalière" + (cov.availableDays !== cov.expectedDays ? " partielle sur les jours renseignés" : "")} (€) — ${describe(period)}`;
     const coverageText = (cov: typeof c) =>
       `${cov.availableDays} jours complets, ${cov.partialDays} partiels, ${cov.missingDays} absents ou indisponibles, sur ${cov.expectedDays} jours calendaires${cov.missingDateExamples.length ? "; dates à compléter (extraits) : " + cov.missingDateExamples.join(", ") : ""}`;
+    add(
+      "available-periods",
+      "Périodes renseignées — " + label,
+      availablePeriods.length
+        ? availablePeriods
+            .slice(0, 24)
+            .map((p) => describe(p))
+            .join(" ; ") +
+            (availablePeriods.length > 24
+              ? " ; autres périodes non affichées"
+              : "")
+        : "Aucune période renseignée",
+      true,
+    );
+    if (!input.productId && metric !== "margin") {
+      const audit = await readMercalysPeriodAudit(
+        db,
+        storeId,
+        input.currentPeriod,
+        metric === "sales" ? "MERCALYS_SALES" : "MERCALYS_WASTE",
+      );
+      add(
+        "published-imports",
+        "Publications Mercalys consultées — " + label,
+        `${audit.files} fichiers actifs ; ${audit.publishedRows} lignes publiées actives ; ${audit.reviewRows} lignes non publiées à examiner dans ces sources. Les données d’autres sources restent distinctes. Ce contrôle porte sur les imports synchronisés connus, pas sur les fichiers jamais déposés.`,
+        true,
+      );
+    }
+    if (c.partialDays)
+      add(
+        "partial-meaning",
+        "Qualité de l’indicateur — " + label,
+        "Le statut partiel concerne des valeurs d’indicateur indisponibles parmi les produits. Il ne prouve pas que des lignes d’import manquent. Les montants renseignés restent exploitables dans leur périmètre.",
+        true,
+      );
     add(
       "current",
       amountLabel(c, input.currentPeriod),

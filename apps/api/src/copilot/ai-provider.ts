@@ -900,7 +900,7 @@ export function createCopilotAiProvider(
                   ? {
                       analytics_period: tool({
                         description:
-                          "Calculate totals or daily averages for arbitrary inclusive calendar periods (day/week/month/year/custom) and optional independent reference period. Use productId null for the department, or only an authorized known product UUID. Missing days are unknown; partial totals/comparisons are explicitly qualified. SUM compares period totals; AVERAGE compares available-day averages. Query limit: ten years per period. Never guess a product UUID or silently select an ambiguous product.",
+                          "Calculate totals or daily averages for arbitrary inclusive calendar periods (day/week/month/year/custom) and optional independent reference period. Use productId null for the department, or only an authorized known product UUID. Returns available date ranges and an audit of synchronized Mercalys publications; consult these before requesting files. Partial KPI values do not prove missing import lines. SUM compares totals; AVERAGE compares available-day averages. Missing days stay unknown. Limit: ten years per period. Never guess a product UUID or silently select an ambiguous product.",
                         inputSchema: periodAnalysisInputSchema,
                         execute: (input) =>
                           executeRead(

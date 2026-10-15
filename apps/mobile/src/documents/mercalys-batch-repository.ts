@@ -1,3 +1,4 @@
+import { mergeBusinessPeriods } from "@fl-copilot/domain";
 import { assertIntakeConversation } from "./intake-conversation";
 import {
   mercalysArchiveInputSchema,
@@ -233,10 +234,10 @@ export class MercalysBatchRepository {
       start: string;
       end: string;
     }>(
-      `SELECT source_type, MIN(business_period_start) AS start, MAX(business_period_end) AS end
+      `SELECT source_type, business_period_start AS start, business_period_end AS end
        FROM source_documents WHERE store_id=? AND deleted_at IS NULL AND local_processing_status='PUBLISHED'
        AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
-       AND checksum IN (${checksums.map(() => "?").join(",")}) GROUP BY source_type`,
+       AND checksum IN (${checksums.map(() => "?").join(",")}) ORDER BY source_type,business_period_start,business_period_end`,
       this.scope.storeId,
       ...checksums,
     );
@@ -249,11 +250,17 @@ export class MercalysBatchRepository {
       )
     )
       throw Error("MERCALYS_BATCH_NOT_PUBLISHED");
-    const labels = periods.map(
-      (p) =>
-        `${p.source_type === "MERCALYS_SALES" ? "ventes" : "casse"} du ${p.start.split("-").reverse().join("/")} au ${p.end.split("-").reverse().join("/")}`,
-    );
-    return `Analyse les données publiées de ${labels.join(" et de ")}. Vérifie la couverture réelle et les éventuelles journées ou lignes manquantes, puis propose les points utiles à examiner.`;
+    const labels = ["MERCALYS_SALES", "MERCALYS_WASTE"].flatMap((type) => {
+      const ranges = mergeBusinessPeriods(
+        periods.filter((p) => p.source_type === type),
+      );
+      return ranges.length
+        ? [
+            `${type === "MERCALYS_SALES" ? "ventes" : "casse"} : ${ranges.map((p) => `du ${p.start.split("-").reverse().join("/")} au ${p.end.split("-").reverse().join("/")}`).join(", ")}`,
+          ]
+        : [];
+    });
+    return `Analyse les imports publiés de ${labels.join(" ; ")}. Fais ressortir les résultats, les évolutions comparables et les actions utiles au rayon à partir des périodes disponibles.`;
   }
   async recent(after?: { createdAt: string; id: string }) {
     const rows = await this.db.getAllAsync<{ request_json: string }>(

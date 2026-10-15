@@ -1,6 +1,6 @@
 import { MercalysBatchPanel } from "@/documents/mercalys-batch-panel";
-import { useEffect, useMemo, useState } from "react";
-import { Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Modal, Platform, Text, View } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { CryptoDigestAlgorithm, digest, randomUUID } from "expo-crypto";
 import { Directory, File as ExpoFile, Paths } from "expo-file-system";
@@ -84,13 +84,40 @@ export function MercalysImportScreen({
   onClose,
   onDiscuss,
   onBusyChange,
+  retainedAsset,
 }: {
+  retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string };
   conversationId?: string;
   onClose?(): void;
   onDiscuss?(batchId: string): Promise<void>;
   onBusyChange?(busy: boolean): void;
 } = {}) {
   const [batchBusy, setBatchBusy] = useState(false);
+  const [reviewAsset, setReviewAsset] = useState<
+    NativeDocumentPickerAsset & { expectedChecksum: string }
+  >();
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const reviewDone = useRef<(() => void) | undefined>(undefined);
+  const closeReview = useCallback(() => {
+    if (!reviewBusy) {
+      setReviewAsset(undefined);
+      if (Platform.OS !== "ios") {
+        reviewDone.current?.();
+        reviewDone.current = undefined;
+      }
+    }
+  }, [reviewBusy]);
+  const finishReview = useCallback(() => {
+    reviewDone.current?.();
+    reviewDone.current = undefined;
+  }, []);
+  useEffect(
+    () => () => {
+      reviewDone.current?.();
+    },
+    [],
+  );
+
   const { sqlite, deviceId } = useLocalDatabase();
   const { session } = useAuth();
   const { syncNow } = useSync();
@@ -144,89 +171,100 @@ export function MercalysImportScreen({
     if (storeId) void analyticsScheduler.process(storeId);
   }, [analyticsScheduler, storeId]);
 
-  async function chooseWorkbook(
-    retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string },
-  ) {
-    if (!hasNativeFilePicker || !storeId) return;
-    setFilename(undefined);
-    setSummary(undefined);
-    setProductCatalog(undefined);
-    setSelectedBytes(undefined);
-    setSelectedChecksum(undefined);
-    setDuplicate(undefined);
-    setReconciliation(undefined);
-    setKeptExisting(false);
-    setPublication(undefined);
-    setResolutionProgress(undefined);
-    setError(undefined);
+  const chooseWorkbook = useCallback(
+    async (
+      retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string },
+    ) => {
+      if (!hasNativeFilePicker || !storeId) return;
+      setFilename(undefined);
+      setSummary(undefined);
+      setProductCatalog(undefined);
+      setSelectedBytes(undefined);
+      setSelectedChecksum(undefined);
+      setDuplicate(undefined);
+      setReconciliation(undefined);
+      setKeptExisting(false);
+      setPublication(undefined);
+      setResolutionProgress(undefined);
+      setError(undefined);
 
-    try {
-      let asset:
-        | (NativeDocumentPickerAsset & { expectedChecksum?: string })
-        | undefined = retainedAsset;
-      if (!asset) {
-        const selection = await nativeDocumentPicker.getDocumentAsync({
-          type: [
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          ],
-          copyToCacheDirectory: true,
-          multiple: false,
-          base64: false,
-        });
-        if (selection.canceled) {
-          setStage("IDLE");
+      try {
+        let asset:
+          | (NativeDocumentPickerAsset & { expectedChecksum?: string })
+          | undefined = retainedAsset;
+        if (!asset) {
+          const selection = await nativeDocumentPicker.getDocumentAsync({
+            type: [
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ],
+            copyToCacheDirectory: true,
+            multiple: false,
+            base64: false,
+          });
+          if (selection.canceled) {
+            setStage("IDLE");
+            return;
+          }
+          asset = selection.assets[0];
+          if (!asset) throw new Error("Aucun fichier sélectionné.");
+        }
+        setFilename(asset.name);
+
+        setStage("READING");
+        await yieldToInterface();
+        const bytes = await new nativeFileSystem.FileSystemFile(
+          asset.uri,
+        ).bytes();
+        if (
+          asset.expectedChecksum &&
+          `sha256:${await sha256Hex(bytes)}` !== asset.expectedChecksum
+        )
+          throw new Error("MERCALYS_BATCH_FILE_CHANGED");
+        const workbook = new SheetJsSpreadsheetParser().parse(bytes);
+
+        setStage("MATCHING");
+        await yieldToInterface();
+        const catalog = await loadProductCatalog(repository, storeId);
+        const nextSummary = validateMercalysImport(workbook, storeId, catalog);
+        setProductCatalog(catalog);
+
+        setStage("VALIDATING");
+        await yieldToInterface();
+        const checksum = `sha256:${await sha256Hex(bytes)}`;
+        const priorImport = await publicationRepository.findExactDuplicate(
+          storeId,
+          nextSummary.sourceType,
+          checksum,
+        );
+        setSelectedChecksum(checksum);
+        if (priorImport) {
+          setDuplicate(priorImport);
+          setStage("COMPLETE");
           return;
         }
-        asset = selection.assets[0];
-        if (!asset) throw new Error("Aucun fichier sélectionné.");
-      }
-      setFilename(asset.name);
-
-      setStage("READING");
-      await yieldToInterface();
-      const bytes = await new nativeFileSystem.FileSystemFile(
-        asset.uri,
-      ).bytes();
-      if (
-        asset.expectedChecksum &&
-        `sha256:${await sha256Hex(bytes)}` !== asset.expectedChecksum
-      )
-        throw new Error("MERCALYS_BATCH_FILE_CHANGED");
-      const workbook = new SheetJsSpreadsheetParser().parse(bytes);
-
-      setStage("MATCHING");
-      await yieldToInterface();
-      const catalog = await loadProductCatalog(repository, storeId);
-      const nextSummary = validateMercalysImport(workbook, storeId, catalog);
-      setProductCatalog(catalog);
-
-      setStage("VALIDATING");
-      await yieldToInterface();
-      const checksum = `sha256:${await sha256Hex(bytes)}`;
-      const priorImport = await publicationRepository.findExactDuplicate(
-        storeId,
-        nextSummary.sourceType,
-        checksum,
-      );
-      setSelectedChecksum(checksum);
-      if (priorImport) {
-        setDuplicate(priorImport);
+        const overlap = await publicationRepository.analyzeOverlap(
+          storeId,
+          nextSummary,
+        );
+        setSummary(nextSummary);
+        setSelectedBytes(bytes);
+        setReconciliation(overlap ?? undefined);
         setStage("COMPLETE");
-        return;
+      } catch (caught) {
+        setError(importErrorMessage(caught));
+        setStage("ERROR");
       }
-      const overlap = await publicationRepository.analyzeOverlap(
-        storeId,
-        nextSummary,
-      );
-      setSummary(nextSummary);
-      setSelectedBytes(bytes);
-      setReconciliation(overlap ?? undefined);
-      setStage("COMPLETE");
-    } catch (caught) {
-      setError(importErrorMessage(caught));
-      setStage("ERROR");
+    },
+    [storeId, repository, publicationRepository],
+  );
+
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (retainedAsset && storeId && !seeded.current) {
+      seeded.current = true;
+      void chooseWorkbook(retainedAsset);
     }
-  }
+  }, [retainedAsset, storeId, chooseWorkbook]);
 
   function reset() {
     setStage("IDLE");
@@ -323,7 +361,7 @@ export function MercalysImportScreen({
     }
   }
 
-  async function publishValidLines() {
+  const publishValidLines = useCallback(async () => {
     if (
       !storeId ||
       !filename ||
@@ -402,7 +440,65 @@ export function MercalysImportScreen({
     } finally {
       setPublishing(false);
     }
-  }
+  }, [
+    storeId,
+    filename,
+    summary,
+    selectedBytes,
+    selectedChecksum,
+    reconciliation,
+    actorUserId,
+    publicationRepository,
+    analyticsScheduler,
+    syncNow,
+  ]);
+  const autoAttempts = useRef(new Set<string>());
+  useEffect(() => {
+    if (
+      retainedAsset ||
+      stage !== "COMPLETE" ||
+      loading ||
+      publishing ||
+      resolvingProducts ||
+      batchBusy ||
+      reconciliation ||
+      duplicate ||
+      publication ||
+      keptExisting ||
+      !summary?.readyCount ||
+      summary.productReviewCount ||
+      summary.errorCount ||
+      !selectedBytes ||
+      !selectedChecksum
+    )
+      return;
+    const key = JSON.stringify([
+      selectedChecksum,
+      summary.lines.map((l) => [
+        l.record.sourceIndex,
+        l.match.state,
+        l.match.matchedProductId,
+      ]),
+    ]);
+    if (autoAttempts.current.has(key)) return;
+    autoAttempts.current.add(key);
+    void publishValidLines();
+  }, [
+    retainedAsset,
+    stage,
+    loading,
+    publishing,
+    resolvingProducts,
+    batchBusy,
+    reconciliation,
+    duplicate,
+    publication,
+    keptExisting,
+    summary,
+    selectedBytes,
+    selectedChecksum,
+    publishValidLines,
+  ]);
 
   async function keepExistingObservations() {
     if (
@@ -451,17 +547,17 @@ export function MercalysImportScreen({
     <AppScreen>
       <AppHeader
         title="Imports Mercalys"
-        subtitle="Vérifiez les ventes ou la casse avant toute publication locale."
+        subtitle="Les lignes sans ambiguïté sont publiées automatiquement. Les points à confirmer restent à examiner."
       />
 
       {onClose ? (
         <SecondaryButton
-          label="Retour au chat"
+          label={retainedAsset ? "Fermer le fichier" : "Retour au chat"}
           disabled={loading || publishing || resolvingProducts || batchBusy}
           onPress={onClose}
         />
       ) : null}
-      {storeId && actorUserId && hasNativeFilePicker ? (
+      {!retainedAsset && storeId && actorUserId && hasNativeFilePicker ? (
         <MercalysBatchPanel
           key={`${storeId}/${actorUserId}`}
           db={sqlite}
@@ -474,7 +570,7 @@ export function MercalysImportScreen({
             if (storeId) {
               try {
                 await analyticsScheduler.process(storeId);
-                await syncNow(storeId);
+                void syncNow(storeId);
               } catch {
                 throw Error("MERCALYS_BATCH_POST_PUBLICATION_PENDING");
               }
@@ -501,7 +597,12 @@ export function MercalysImportScreen({
             });
             return result.canceled ? undefined : result.assets[0];
           }}
-          onReview={(asset) => chooseWorkbook(asset)}
+          onReview={(asset) =>
+            new Promise<void>((resolve) => {
+              reviewDone.current = resolve;
+              setReviewAsset(asset);
+            })
+          }
         />
       ) : null}
       <View
@@ -510,7 +611,7 @@ export function MercalysImportScreen({
         accessibilityElementsHidden={batchBusy}
         importantForAccessibility={batchBusy ? "no-hide-descendants" : "auto"}
       >
-        {!conversationId ? (
+        {!conversationId && !retainedAsset ? (
           <SectionCard title="Nouveau fichier">
             <Text className="text-base leading-6 text-muted">
               Le fichier est lu sur cet appareil. Aucune donnée n’est publiée ni
@@ -613,6 +714,24 @@ export function MercalysImportScreen({
           <DuplicateSummary duplicate={duplicate} onCancel={reset} />
         ) : null}
       </View>
+      <Modal
+        visible={!!reviewAsset}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        allowSwipeDismissal={!reviewBusy}
+        onRequestClose={closeReview}
+        onDismiss={finishReview}
+      >
+        {reviewAsset ? (
+          <MercalysImportScreen
+            key={reviewAsset.uri}
+            retainedAsset={reviewAsset}
+            conversationId={conversationId}
+            onClose={closeReview}
+            onBusyChange={setReviewBusy}
+          />
+        ) : null}
+      </Modal>
     </AppScreen>
   );
 }

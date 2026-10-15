@@ -1400,9 +1400,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         referencePeriod: null,
       });
       expect(year.coverage[0]?.current.expectedDays).toBe(366);
-      expect(year.evidence[0]?.value).toBeNull();
+      expect(
+        year.evidence.find((e) => e.sourceType === "KPI")?.value,
+      ).toBeNull();
       expect(year.referencePeriod).toBeNull();
-      expect(year.evidence).toHaveLength(2);
+      expect(year.evidence.filter((e) => e.sourceType === "KPI")).toHaveLength(
+        1,
+      );
+      expect(year.coverage[0]?.availablePeriods).toEqual([]);
       const productId = randomUUID();
       await db
         .collection<{
@@ -1446,7 +1451,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         productId,
         label: "BANANE VRAC",
       });
-      expect(product.evidence[0]?.value).toBe("7.00");
+      expect(product.evidence.find((e) => e.sourceType === "KPI")?.value).toBe(
+        "7.00",
+      );
       await expect(
         readPeriodAnalysis(db, randomUUID(), { ...input, productId }),
       ).rejects.toThrow("COPILOT_PERIOD_PRODUCT_UNAVAILABLE");

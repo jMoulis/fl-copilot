@@ -33,15 +33,22 @@ export class MercalysBatchPublication {
     >,
     private fingerprint: (text: string) => Promise<string>,
   ) {}
+  /** User-enabled native import automation; no model-controlled authority. Whole files must be unambiguous. */
+  async publishUnambiguous(batchId: string, signal?: AbortSignal) {
+    const plan = await this.preview(batchId, signal, true);
+    return this.confirm(plan, signal);
+  }
   private cancel(signal?: AbortSignal) {
     if (signal?.aborted) throw Error("MERCALYS_BATCH_CANCELLED");
   }
-  async preview(batchId: string, signal?: AbortSignal) {
+  async preview(batchId: string, signal?: AbortSignal, automatic = false) {
     this.pending = undefined;
     const header = await this.batches.header(batchId);
     await this.batches.assertConversation(header.conversationId);
     const items: MercalysBatchPublicationPlan["items"] = [];
     const reserved = new Set<string>();
+    const owners = new Map<string, string>();
+    const seenOriginals = new Set<string>();
     const proof = new Map<string, { version: number; fingerprint: string }>();
     let after = -1,
       more = true;
@@ -76,6 +83,12 @@ export class MercalysBatchPublication {
             items.push({ ...base, status: "DUPLICATE" });
             continue;
           }
+          const originalKey = `${summary.sourceType}/${item.checksum}`;
+          if (automatic && seenOriginals.has(originalKey)) {
+            items.push({ ...base, status: "DUPLICATE" });
+            continue;
+          }
+          if (automatic) seenOriginals.add(originalKey);
           if (
             !summary.readyCount ||
             (await this.publication.analyzeOverlap(
@@ -104,6 +117,23 @@ export class MercalysBatchPublication {
                 `${summary.sourceType}/${line.match.matchedProductId}/${line.record.businessDate}`,
             );
           if (keys.some((key) => reserved.has(key))) {
+            if (automatic) {
+              for (const key of keys) {
+                const prior = items.find((i) => i.itemId === owners.get(key));
+                if (prior) {
+                  prior.status = "BLOCKED";
+                  prior.code = "MERCALYS_BATCH_OVERLAPPING_FILES";
+                  proof.delete(prior.itemId);
+                }
+              }
+            }
+
+            if (automatic) {
+              keys.forEach((key) => {
+                reserved.add(key);
+                if (!owners.has(key)) owners.set(key, item.id);
+              });
+            }
             items.push({
               ...base,
               ...count,
@@ -112,9 +142,25 @@ export class MercalysBatchPublication {
             });
             continue;
           }
+          if (automatic && count.remainingCount) {
+            keys.forEach((key) => {
+              reserved.add(key);
+              owners.set(key, item.id);
+            });
+            items.push({
+              ...base,
+              ...count,
+              status: "BLOCKED",
+              code: "MERCALYS_PRODUCT_REVIEW_REQUIRED",
+            });
+            continue;
+          }
           const fingerprint = await this.fingerprint(JSON.stringify(summary));
           this.cancel(signal);
-          keys.forEach((key) => reserved.add(key));
+          keys.forEach((key) => {
+            reserved.add(key);
+            owners.set(key, item.id);
+          });
           proof.set(item.id, { version: item.version, fingerprint });
           items.push({ ...base, ...count, status: "READY" });
         } catch (reason) {
