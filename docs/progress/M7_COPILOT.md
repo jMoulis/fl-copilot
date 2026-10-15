@@ -623,3 +623,9 @@ Evidence now separates concise qualifications from optional source details. Cale
 New clients can opt into typed public activity events in the existing scoped NDJSON stream. Preparation corresponds to real context loading; read steps wrap actual uncached authorized tool executions; writing begins with actual narrative output. Tool names/arguments, private source text, raw errors and internal reasoning are never emitted. A compact native activity row can expand into completed/running/unavailable steps. These records are ephemeral and do not become assistant messages, Outbox commands or business state. An explicit capability header preserves existing streaming clients; no database migration or extra model call is introduced.
 
 Validation includes exact decimal ranking with partial/missing observations, duplicate/scope rejection, bounds, citation-detail separation, actual tool invocation/cache activity counts and real HTTP activity negotiation alongside streamed text. A disposable Atlas proof covers SQLite publication → synchronized historical observations → period totals and product drivers. The combined native activity surface requires one grouped iPhone acceptance build; source data does not need reimporting.
+
+### Copy chat messages
+
+- Completed user and assistant messages offer an explicit French Copy action with success/failure feedback; the composer retains native paste and message text remains selectable.
+- Copying retains readable Markdown (including tables), strips internal citation payloads from assistant answers, works offline, and neither reads the clipboard nor writes business data.
+- Expo Clipboard is aligned with SDK 57; a new native binary is required for the one-tap action. Its lazy import protects older binaries from a startup module error.
