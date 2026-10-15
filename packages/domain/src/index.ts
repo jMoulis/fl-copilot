@@ -90,3 +90,4 @@ export * from "./copilot-information-request";
 export * from "./mercalys-batch";
 export * from "./mercalys-archive";
 export * from "./mercalys-batch-publication";
+export * from "./business-periods";

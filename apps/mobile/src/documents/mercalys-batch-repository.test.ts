@@ -875,7 +875,7 @@ it("only proposes an analysis question for canonical published periods from the 
       );
   }
   expect(await repo.discussionQuestion(s.input.id)).toBe(
-    "Analyse les données publiées de ventes du 01/10/2026 au 07/10/2026 et de casse du 01/10/2026 au 07/10/2026. Vérifie la couverture réelle et les éventuelles journées ou lignes manquantes, puis propose les points utiles à examiner.",
+    "Analyse les imports publiés de ventes : du 01/10/2026 au 07/10/2026 ; casse : du 01/10/2026 au 07/10/2026. Fais ressortir les résultats, les évolutions comparables et les actions utiles au rayon à partir des périodes disponibles.",
   );
   expect(s.db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()).toEqual({
     n: 0,
@@ -1147,6 +1147,97 @@ it("refuses a new canonical overlap that appears after the manager reviews the p
     code: "MERCALYS_RECONCILIATION_REQUIRED",
   });
   expect(result[1]?.status).toBe("PUBLISHED");
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM sales_observations").get(),
+  ).toEqual({ n: 1 });
+});
+
+it("automatically publishes only complete unambiguous files and leaves review/failed siblings untouched", async () => {
+  const s = await publicationFixture(true);
+  const result = await s.publisher.publishUnambiguous(s.input.id);
+  expect(result.map((r) => r.status)).toEqual([
+    "BLOCKED",
+    "PUBLISHED",
+    "FAILED",
+  ]);
+  expect(result[0]?.code).toBe("MERCALYS_PRODUCT_REVIEW_REQUIRED");
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM sales_observations").get(),
+  ).toEqual({ n: 0 });
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM waste_observations").get(),
+  ).toEqual({ n: 1 });
+  expect((await s.publisher.publishUnambiguous(s.input.id))[1]?.status).toBe(
+    "DUPLICATE",
+  );
+});
+it("does not turn separated years into one artificial year-long analysis range", async () => {
+  const s = await setup(2),
+    conversationId = addIntakeConversation(s);
+  const repo = new MercalysBatchRepository(s.adapter, {
+    ...s.scope,
+    conversationId,
+  });
+  await repo.create({ ...s.input, conversationId });
+  for (const year of ["2025", "2026"]) {
+    await s.adapter.runAsync(
+      `INSERT INTO source_documents(id,store_id,source_type,checksum,business_period_start,business_period_end,local_processing_status,remote_upload_status,version,created_at,updated_at) VALUES(?,?,'MERCALYS_SALES',?,?,?,'PUBLISHED','PENDING',1,?,?)`,
+      randomUUID(),
+      s.scope.storeId,
+      s.input.files[0]!.checksum,
+      `${year}-10-01`,
+      `${year}-10-10`,
+      s.input.createdAt,
+      s.input.createdAt,
+    );
+  }
+  const q = await repo.discussionQuestion(s.input.id);
+  expect(q).toContain(
+    "du 01/10/2025 au 10/10/2025, du 01/10/2026 au 10/10/2026",
+  );
+  expect(q).not.toContain("lignes manquantes");
+});
+it("does not automatically choose a winner between different overlapping originals", async () => {
+  const s = await publicationFixture();
+  const different = XLSX.read(s.bytes[0]!, { type: "array" });
+  different.Sheets[different.SheetNames[0]!]!["D9"] = { t: "n", v: 2 };
+  s.bytes[1] = new Uint8Array(
+    XLSX.write(different, { type: "array", bookType: "xlsx" }),
+  );
+  const id = randomUUID();
+  await s.repo.create({
+    ...s.input,
+    id,
+    files: s.input.files.slice(0, 2).map((f, i) => ({
+      ...f,
+      id: randomUUID(),
+      checksum: checksum(s.bytes[i]!),
+      sizeBytes: s.bytes[i]!.length,
+    })),
+  });
+  const results = await s.publisher.publishUnambiguous(id);
+  expect(results.map((r) => r.status)).toEqual(["BLOCKED", "BLOCKED"]);
+  expect(
+    results.every((r) => r.code === "MERCALYS_BATCH_OVERLAPPING_FILES"),
+  ).toBe(true);
+  expect(
+    s.db.prepare("SELECT COUNT(*) AS n FROM source_documents").get(),
+  ).toEqual({ n: 0 });
+});
+it("automatically publishes an identical original only once across two paths", async () => {
+  const s = await publicationFixture();
+  const id = randomUUID();
+  await s.repo.create({
+    ...s.input,
+    id,
+    files: [
+      { ...s.input.files[0]!, id: randomUUID() },
+      { ...s.input.files[0]!, id: randomUUID(), filename: "copy.xlsx" },
+    ],
+  });
+  expect(
+    (await s.publisher.publishUnambiguous(id)).map((r) => r.status),
+  ).toEqual(["PUBLISHED", "DUPLICATE"]);
   expect(
     s.db.prepare("SELECT COUNT(*) AS n FROM sales_observations").get(),
   ).toEqual({ n: 1 });
