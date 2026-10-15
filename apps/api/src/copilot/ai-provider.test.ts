@@ -75,6 +75,26 @@ function response(
 }
 it("uses configured Responses transport with typed output, safe metadata, no tools, no provider storage and one request", async () => {
   const f = fixture();
+  f.request.storeKnowledge = {
+    status: "AVAILABLE",
+    partial: false,
+    entries: [
+      {
+        id: randomUUID(),
+        storeId: f.request.storeId,
+        ownerId: "00000000-0000-4000-8000-000000000001",
+        confirmedBy: "00000000-0000-4000-8000-000000000001",
+        scope: "USER_STORE",
+        kind: "OPERATING_PRACTICE",
+        statement: "La casse est saisie par regroupements à la date de saisie.",
+        status: "ACTIVE",
+        sourceMessageId: null,
+        version: 1,
+        createdAt: evaluatedAt,
+        updatedAt: evaluatedAt,
+      },
+    ],
+  };
   f.request.history = {
     messages: [
       {
@@ -120,6 +140,10 @@ it("uses configured Responses transport with typed output, safe metadata, no too
   expect(sent).toContain("Reprenons notre discussion sur la marge.");
   expect(sent).toContain("earlierMessagesOmitted");
   expect(sent).toContain("not official evidence");
+  expect(sent).toContain("STORE_KNOWLEDGE");
+  expect(sent).toContain(
+    "La casse est saisie par regroupements à la date de saisie.",
+  );
 });
 it("fails missing model/key, invalid scope and oversized input before transport without truncating evidence", async () => {
   const f = fixture(),

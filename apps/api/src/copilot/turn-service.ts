@@ -1,3 +1,4 @@
+import { readKnowledge } from "./knowledge-store";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { readAnsweredInformationContext } from "./answered-information.js";
 import { buildInformationRequestMessages } from "./information-request-messages.js";
@@ -157,6 +158,16 @@ export async function runCopilotTurn(
       initial.parent,
     );
     cancelled();
+    const storeKnowledge = await readKnowledge(
+      dependencies.db,
+      authority.storeId,
+      authority.ownerId,
+    ).catch(() => ({
+      status: "UNAVAILABLE" as const,
+      partial: true,
+      entries: [],
+    }));
+    cancelled();
     const request = {
       requestId: randomUUID(),
       storeId: authority.storeId,
@@ -167,6 +178,7 @@ export async function runCopilotTurn(
       recentSources,
       recentSourcesOmitted,
       answeredInformation,
+      storeKnowledge,
       userQuestion: initial.parent.text || null,
     };
     dependencies.onActivity?.({

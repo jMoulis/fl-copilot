@@ -324,6 +324,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         scopeKey={`${storeId}/${ownerId}`}
         delivery={delivery}
         onConversations={refreshMenu}
+        onRemember={(message) =>
+          router.push({
+            pathname: "/copilot-memory",
+            params: { source: message.id },
+          })
+        }
         onAttachPdf={attachPdf}
         onOpenMercalys={() => setIntakeConversation(active)}
         externalDraftRevision={draftRefresh}

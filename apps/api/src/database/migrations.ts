@@ -750,6 +750,24 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 36,
+    name: "copilot-confirmed-knowledge",
+    async up(database) {
+      await database
+        .collection("copilotKnowledge")
+        .createIndex(
+          { storeId: 1, ownerId: 1, status: 1, updatedAt: -1 },
+          { name: "copilot_knowledge_private_scope" },
+        );
+      await database
+        .collection("copilotKnowledgeHistory")
+        .createIndex(
+          { storeId: 1, ownerId: 1, knowledgeId: 1, version: 1 },
+          { unique: true, name: "copilot_knowledge_revision" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

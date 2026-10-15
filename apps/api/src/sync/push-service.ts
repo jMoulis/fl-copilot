@@ -1,3 +1,4 @@
+import { KnowledgeParentPendingError } from "../copilot/knowledge-store";
 import type { PrivateSourceReader } from "../imports/import-verification-service.js";
 import { applyMercalysPublicationCommand } from "../imports/mercalys-publication-sync.js";
 import { mercalysPublicationSchema } from "@fl-copilot/sync-contracts";
@@ -170,7 +171,8 @@ export function createMongoSyncPushService(
           results.push(
             error instanceof ProcessedCommandIdentityError
               ? rejectedIdentityResult(command, requestId)
-              : error instanceof ChatParentPendingError ||
+              : error instanceof KnowledgeParentPendingError ||
+                  error instanceof ChatParentPendingError ||
                   error instanceof NeedMembershipParentPendingError ||
                   error instanceof ProductSubstitutionParentPendingError ||
                   error instanceof StoreEventParentPendingError

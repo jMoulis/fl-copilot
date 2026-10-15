@@ -40,7 +40,8 @@ export async function applyPullPage(
     for (const change of page.changes) {
       if (
         change.entityType === "copilot_conversation" ||
-        change.entityType === "copilot_message"
+        change.entityType === "copilot_message" ||
+        change.entityType === "copilot_knowledge"
       ) {
         if (
           !ownerId ||
