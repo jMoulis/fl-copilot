@@ -150,7 +150,12 @@ export function createMongoSyncPullService(
             const ids = selected
               .filter((change) => change.entityType === type)
               .map((change) => change.entityId);
-            if (!ids.length) return;
+            if (
+              !ids.length ||
+              (type === "copilot_knowledge" &&
+                query.copilotKnowledge !== "true")
+            )
+              return;
             const rows = await mongoDatabase
               .collection<
                 import("../copilot/conversation-store").ChatRecordDocument
@@ -168,6 +173,8 @@ export function createMongoSyncPullService(
             (change) =>
               (query.mercalysPublications === "true" ||
                 change.entityType !== "mercalys_publication") &&
+              (change.entityType !== "copilot_knowledge" ||
+                query.copilotKnowledge === "true") &&
               (!isChatType(change.entityType) ||
                 (query.copilotHistory === "true" && !!ownerId)) &&
               (query.commercialReview === "true" ||

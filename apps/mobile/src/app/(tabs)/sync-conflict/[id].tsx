@@ -70,6 +70,17 @@ export default function SyncConflictDetailScreen() {
             <NeedMembershipConflict conflict={conflict} />
           ) : conflict.entityType === "need_unit" ? (
             <NeedUnitConflict conflict={conflict} />
+          ) : conflict.entityType === "copilot_knowledge" ? (
+            <SectionCard title="Pratique mémorisée">
+              <Text>
+                Comparez et résolvez les deux versions dans la mémoire du
+                copilote.
+              </Text>
+              <SecondaryButton
+                label="Ouvrir la mémoire"
+                onPress={() => router.push("/copilot-memory")}
+              />
+            </SectionCard>
           ) : conflict.entityType === "store_context_settings" ? (
             <StoreContextConflict conflict={conflict} />
           ) : conflict.entityType === "commercial_execution_task" ? (

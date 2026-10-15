@@ -785,6 +785,11 @@ ALTER TABLE mercalys_intake_batches ADD COLUMN archive_id TEXT REFERENCES mercal
     sql: `CREATE TABLE mercalys_publication_sync(source_document_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,remote_version INTEGER,last_payload_json TEXT NOT NULL);
 CREATE INDEX mercalys_publication_sync_store ON mercalys_publication_sync(store_id);`,
   },
+  {
+    version: 41,
+    name: "copilot-confirmed-knowledge",
+    sql: `CREATE TABLE copilot_knowledge(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX copilot_knowledge_scope ON copilot_knowledge(store_id,owner_id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

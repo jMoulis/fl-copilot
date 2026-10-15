@@ -1,3 +1,7 @@
+import {
+  serializeKnowledge,
+  type KnowledgeDocument,
+} from "../copilot/knowledge-store";
 import { chatBootstrap } from "../copilot/conversation-store";
 import {
   serializeScoreHistory,
@@ -120,6 +124,19 @@ export function createMongoSyncBootstrapService(
                 { _id: store.storeId },
                 { session, promoteLongs: false },
               );
+            const knowledge =
+              query.copilotKnowledge === "true"
+                ? await mongoDatabase
+                    .collection<KnowledgeDocument>("copilotKnowledge")
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .limit(501)
+                    .toArray()
+                : null;
+            if (knowledge && knowledge.length > 500)
+              throw Error("COPILOT_KNOWLEDGE_LIMIT");
             const copilotHistory =
               query.copilotHistory === "true"
                 ? await chatBootstrap(
@@ -334,6 +351,12 @@ export function createMongoSyncBootstrapService(
               },
               entities: {
                 ...copilotHistory,
+                ...(knowledge
+                  ? {
+                      copilotKnowledgeOwnerId: store.userId,
+                      copilotKnowledge: knowledge.map(serializeKnowledge),
+                    }
+                  : {}),
                 ...(query.mercalysPublications === "true"
                   ? { mercalysPublications: [] }
                   : {}),

@@ -105,6 +105,7 @@ describe("local SQLite migrations", () => {
       "copilot_conversations",
       "copilot_drafts",
       "copilot_forms",
+      "copilot_knowledge",
       "copilot_messages",
       "copilot_pending_turns",
       "copilot_priority_snapshots",

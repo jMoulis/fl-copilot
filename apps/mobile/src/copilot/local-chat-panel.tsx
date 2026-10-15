@@ -25,6 +25,7 @@ type PanelProps = {
   scopeKey: string;
   delivery?: CopilotTurnDelivery;
   onConversations(): void;
+  onRemember?(message: CopilotMessage): void;
   renderToolMessage?(
     message: CopilotMessage,
     onSubmitted: () => Promise<void>,
@@ -50,6 +51,7 @@ function LocalChatPanel({
   controller,
   conversationId,
   onConversations,
+  onRemember,
   delivery,
   onAttachPdf,
   renderToolMessage,
@@ -420,6 +422,7 @@ function LocalChatPanel({
             : undefined
         }
         onConversations={onConversations}
+        onRemember={onRemember}
         onOlder={
           snapshot.hasMore
             ? () => {

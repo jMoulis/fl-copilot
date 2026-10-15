@@ -38,6 +38,12 @@ export default function MoreScreen() {
           icon="chatbubbles-outline"
           onPress={() => router.push("/copilot")}
         />
+        <MenuRow
+          title="Mémoire du copilote"
+          description="Pratiques confirmées, correction et oubli"
+          icon="bookmark-outline"
+          onPress={() => router.push("/copilot-memory")}
+        />
       </SectionCard>
 
       <SectionCard

@@ -1,3 +1,4 @@
+import { applyKnowledgeRecord } from "./knowledge-repository";
 import { ConflictRepository } from "../sync/conflict-repository";
 import {
   copilotTurnRequestSchema,
@@ -43,10 +44,12 @@ function scoped(e: Scope, s: Scope) {
 export async function applyCopilotRecord(
   db: OutboxDatabase,
   scope: Scope,
-  type: keyof typeof schemas,
+  type: keyof typeof schemas | "copilot_knowledge",
   payload: unknown,
   ackVersion?: number,
 ) {
+  if (type === "copilot_knowledge")
+    return applyKnowledgeRecord(db, scope, payload, ackVersion);
   const e = schemas[type].parse(payload);
   scoped(e, scope);
   const table = tables[type],

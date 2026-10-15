@@ -1,3 +1,5 @@
+import { useAuth } from "@/auth/auth-provider";
+import { canDisplayConflict } from "./private-conflict-scope";
 import { useEffect, useState } from "react";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { ConflictRepository, type SyncConflict } from "./conflict-repository";
@@ -7,6 +9,7 @@ export function useOpenSyncConflicts(
   refreshKey: unknown,
 ) {
   const { sqlite } = useLocalDatabase();
+  const { session } = useAuth();
   const [conflicts, setConflicts] = useState<SyncConflict[]>([]);
 
   useEffect(() => {
@@ -25,11 +28,14 @@ export function useOpenSyncConflicts(
     };
   }, [refreshKey, sqlite, storeId]);
 
-  return conflicts;
+  return conflicts.filter((c) =>
+    canDisplayConflict(c, storeId, session?.user.id),
+  );
 }
 
 export function useSyncConflict(id: string | undefined) {
   const { sqlite } = useLocalDatabase();
+  const { session } = useAuth();
   const [conflict, setConflict] = useState<SyncConflict | null>();
 
   useEffect(() => {
@@ -48,5 +54,14 @@ export function useSyncConflict(id: string | undefined) {
     };
   }, [id, sqlite]);
 
-  return conflict;
+  return conflict === undefined
+    ? undefined
+    : conflict &&
+        canDisplayConflict(
+          conflict,
+          session?.stores[0]?.storeId,
+          session?.user.id,
+        )
+      ? conflict
+      : null;
 }

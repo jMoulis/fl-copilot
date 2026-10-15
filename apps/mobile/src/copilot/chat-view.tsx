@@ -38,6 +38,7 @@ export function CopilotChatView({
   onDraftChange,
   onSend,
   onConversations,
+  onRemember,
   onAttach,
   onRetry,
   renderAttachment,
@@ -63,6 +64,7 @@ export function CopilotChatView({
   onDraftChange(value: string): void;
   onSend(): void;
   onConversations(): void;
+  onRemember?(message: CopilotMessage): void;
   onAttach?(): void;
   onRetry?(): void;
   onOlder?(): void;
@@ -217,10 +219,29 @@ export function CopilotChatView({
                   {item.text}
                 </Text>
               )}
-              <CopyMessage
-                text={item.text}
-                assistant={item.role === "ASSISTANT"}
-              />
+              <View
+                style={{
+                  flexDirection: "row",
+                  gap: 12,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                {item.role === "USER" && item.text.trim() && onRemember ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Mémoriser une pratique à partir de ce message"
+                    style={styles.retry}
+                    onPress={() => onRemember(item)}
+                  >
+                    <Text style={styles.retryText}>Mémoriser</Text>
+                  </Pressable>
+                ) : null}
+                <CopyMessage
+                  text={item.text}
+                  assistant={item.role === "ASSISTANT"}
+                />
+              </View>
               {(item.role === "ASSISTANT" &&
               item.text.includes("copilot-source:")
                 ? []
