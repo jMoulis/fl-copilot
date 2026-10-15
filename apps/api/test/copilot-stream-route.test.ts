@@ -5,7 +5,7 @@ import { ApiClient } from "../../../packages/api-client/src/index";
 import { buildApp } from "../src/build-app";
 import { parseEnvironment } from "../src/config";
 import { AuthError, type AuthService } from "../src/auth/service";
-import { runCopilotTurn } from "../src/copilot/turn-service";
+import { runCopilotTurn, CopilotTurnError } from "../src/copilot/turn-service";
 vi.mock("../src/copilot/turn-service", async (original) => ({
   ...(await original<typeof import("../src/copilot/turn-service")>()),
   runCopilotTurn: vi.fn(),
@@ -67,6 +67,7 @@ it("streams scoped progress over HTTP before the committed reply and preserves o
     },
     copilotContext: vi.fn(),
   });
+  let finishCancelled: (() => void) | undefined;
   let result: ReturnType<ApiClient["copilotTurn"]> | undefined;
   try {
     const url = await app.listen({ port: 0, host: "127.0.0.1" });
@@ -96,9 +97,42 @@ it("streams scoped progress over HTTP before the committed reply and preserves o
     });
     expect(denied.status).toBe(401);
     expect(denied.headers.get("content-type")).toContain("application/json");
+    let entered!: () => void, cancelled: AbortSignal | undefined;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    vi.mocked(runCopilotTurn).mockImplementation(
+      async (_dependencies, _input, signal) => {
+        cancelled = signal;
+        entered();
+        await new Promise<void>((resolve) => {
+          finishCancelled = resolve;
+          signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        throw new CopilotTurnError("CANCELLED");
+      },
+    );
+    const abort = new AbortController();
+    const interrupted = fetch(`${url}/api/v1/copilot/turn`, {
+      method: "POST",
+      signal: abort.signal,
+      headers: {
+        authorization: "Bearer valid",
+        "x-store-id": storeId,
+        "content-type": "application/json",
+        accept: "application/x-ndjson",
+      },
+      body: JSON.stringify(input),
+    });
+    await ready;
+    abort.abort();
+    await expect(interrupted).rejects.toThrow();
+    await vi.waitFor(() => expect(cancelled?.aborted).toBe(true));
   } finally {
     release();
+    finishCancelled?.();
     await result?.catch(() => undefined);
+    app.server.closeAllConnections();
     await app.close();
   }
 });

@@ -464,6 +464,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         );
       const streaming = request.headers.accept === "application/x-ndjson";
       const abort = new AbortController();
+      if (streaming && reply.raw.destroyed) abort.abort();
+      if (streaming)
+        reply.raw.once("close", () => {
+          if (!reply.raw.writableEnded) abort.abort();
+        });
       let stream: PassThrough | undefined;
       const emit = (event: unknown) => {
         if (!stream) {
@@ -473,9 +478,6 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             .header("cache-control", "no-store")
             .header("x-accel-buffering", "no")
             .send(stream);
-          reply.raw.on("close", () => {
-            if (!reply.raw.writableEnded) abort.abort();
-          });
         }
         if (!abort.signal.aborted) {
           if (stream.writableLength > 256000) {
