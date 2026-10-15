@@ -14,3 +14,4 @@ export * from "./copilot-conflicts";
 export * from "./product-change-ranking";
 export * from "./calendar-period-comparison";
 export * from "./period-contributors";
+export * from "./period-waste-rate";

@@ -245,6 +245,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             metrics: [metric],
           });
           if (metric === "waste") {
+            expect(analysis.wasteRates?.[0]).toMatchObject({
+              basis: "RECORDED_WASTE_SALES_VALUE_OVER_NET_SALES",
+              wasteTotal: "12.40",
+              percentage: null,
+              reason: "MISSING_INPUT",
+            });
             expect(analysis.wasteDrivers?.products[0]?.productId).toBe(
               productId,
             );

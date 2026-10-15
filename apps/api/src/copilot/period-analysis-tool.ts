@@ -14,6 +14,7 @@ import {
 } from "@fl-copilot/domain";
 import {
   calculateCalendarPeriodComparison,
+  calculatePeriodWasteRate,
   type DatedKpiValue,
 } from "@fl-copilot/analytics-core";
 import { departmentEvidencePerformanceSchema } from "./daily-evidence.js";
@@ -54,8 +55,24 @@ export const periodAnalysisResultSchema = z.strictObject({
       }),
     )
     .max(3),
+  wasteRates: z
+    .array(
+      z.strictObject({
+        period: copilotAnalysisPeriodSchema,
+        basis: z.literal("RECORDED_WASTE_SALES_VALUE_OVER_NET_SALES"),
+        salesTotal: z.string().nullable(),
+        wasteTotal: z.string().nullable(),
+        percentage: z.string().nullable(),
+        status: z.enum(["AVAILABLE", "PARTIAL", "UNAVAILABLE"]),
+        reason: z.enum(["MISSING_INPUT", "NON_POSITIVE_SALES"]).nullable(),
+        salesCoverage: coverageSchema,
+        wasteCoverage: coverageSchema,
+      }),
+    )
+    .max(2)
+    .optional(),
   wasteDrivers: wasteDriversSchema.optional(),
-  evidence: z.array(copilotEvidenceSchema).max(36),
+  evidence: z.array(copilotEvidenceSchema).max(42),
 });
 export type PeriodAnalysisResult = z.infer<typeof periodAnalysisResultSchema>;
 /** Explicit arbitrary calendar ranges. Missing dates are materialized as unknown, never zero. */
@@ -335,6 +352,56 @@ export async function readPeriodAnalysis(
       );
     }
   }
+  const wasteRates = input.metrics.includes("waste")
+    ? ranges.map((period) => {
+        const points = [...snapshots.values()].filter(
+          (p) => p.date >= period.start && p.date <= period.end,
+        );
+        const rate = calculatePeriodWasteRate({
+          period,
+          sales: points.map((p) => ({
+            businessDate: p.date,
+            value: p.sales.salesValue,
+            status: p.availability.salesValue.status,
+          })),
+          waste: points.map((p) => ({
+            businessDate: p.date,
+            value: p.waste.salesValue,
+            status: p.availability.wasteSalesValue.status,
+          })),
+        });
+        const frenchDate = (date: string) =>
+          date.split("-").reverse().join("/");
+        const periodLabel = `${frenchDate(period.start)} au ${frenchDate(period.end)}`;
+        evidence.push(
+          copilotEvidenceSchema.parse({
+            id: JSON.stringify(["period-label", rangeId, period]),
+            sourceType: "DATA_QUALITY",
+            sourceId: rangeId,
+            sourceVersion: null,
+            label: "Période étudiée",
+            value: periodLabel,
+            factKind: "QUALITY",
+          }),
+          copilotEvidenceSchema.parse({
+            id: JSON.stringify([
+              "period-waste-rate",
+              rangeId,
+              revision,
+              period,
+            ]),
+            sourceType: "KPI",
+            sourceId: rangeId,
+            sourceVersion: null,
+            label: `Taux de casse comptabilisée${rate.status === "PARTIAL" ? " sur montants connus" : ""} (%) — ${periodLabel} — ${target.label}`,
+            value: rate.percentage,
+            factKind: "DERIVED",
+            detail: `Casse comptabilisée valorisée au prix de vente / CA net de la même période × 100. Casse connue : ${rate.wasteTotal ?? "indisponible"} € ; CA connu : ${rate.salesTotal ?? "indisponible"} €. Ratio des cumuls, pas moyenne des taux journaliers. Les dates de vente et de saisie de casse ne doivent pas nécessairement coïncider. Les journées sans observation restent inconnues, sans être remplacées par zéro ; elles ne prouvent pas non plus une absence de saisie ou une casse réellement quotidienne. Les regroupements et reports de saisie peuvent décaler le ratio entre périodes. ${rate.reason === "NON_POSITIVE_SALES" ? "CA nul ou négatif : taux indisponible." : rate.reason === "MISSING_INPUT" ? "Un cumul manque : taux indisponible." : rate.status === "PARTIAL" ? "Ratio descriptif sur les montants connus ; exhaustivité non établie." : "Tous les montants journaliers de la période sont disponibles."}`,
+          }),
+        );
+        return rate;
+      })
+    : undefined;
   const waste =
     !input.productId && input.metrics.includes("waste")
       ? await readPeriodWasteDrivers(db, storeId, input.currentPeriod).catch(
@@ -356,6 +423,7 @@ export async function readPeriodAnalysis(
     aggregation: input.aggregation,
     ...(waste ? { wasteDrivers: waste.drivers } : {}),
     coverage,
+    ...(wasteRates ? { wasteRates } : {}),
     evidence,
   });
 }
