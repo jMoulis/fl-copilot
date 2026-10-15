@@ -60,3 +60,15 @@ it("withholds ambiguous evidence versions even before the final response", () =>
     ),
   ).toThrow("AMBIGUOUS_ANSWER_EVIDENCE");
 });
+it("keeps a concise qualification in the answer and the calendar inventory behind its source link", () => {
+  const detail =
+    "0 jours complets, 7 partiels ; journées absentes : 2026-10-01, 2026-10-08";
+  const text = renderAnswerText("{{value:0}} {{source:0}}", facts, [
+    { ...e[0]!, value: "Ce cumul est partiel.", detail },
+  ]);
+  expect(text.startsWith("Ce cumul est partiel.")).toBe(true);
+  expect(
+    JSON.parse(decodeURIComponent(/copilot-source:([^)]*)/.exec(text)![1]!))
+      .value,
+  ).toBe(detail);
+});

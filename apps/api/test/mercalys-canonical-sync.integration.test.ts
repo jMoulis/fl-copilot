@@ -244,6 +244,21 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             aggregation: "SUM",
             metrics: [metric],
           });
+          if (metric === "waste") {
+            expect(analysis.wasteDrivers?.products[0]?.productId).toBe(
+              productId,
+            );
+            const driver = analysis.evidence.find(
+              (e) => e.id === analysis.wasteDrivers?.products[0]?.evidenceId,
+            );
+            expect(Number(driver?.value)).toBe(12.4);
+            expect(driver?.detail).toContain("pas une estimation");
+            const quality = analysis.evidence.find((e) =>
+              e.label.startsWith("Couverture"),
+            );
+            expect(quality?.detail).toContain("jours calendaires");
+            expect(quality?.value).not.toContain("jours calendaires");
+          }
           expect(analysis.coverage[0]!.availablePeriods).toEqual([
             { start: date, end: date },
           ]);

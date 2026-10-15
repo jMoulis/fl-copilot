@@ -1,3 +1,4 @@
+import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { readAnsweredInformationContext } from "./answered-information.js";
 import { buildInformationRequestMessages } from "./information-request-messages.js";
 import { buildProductProposalMessages } from "./product-proposal-messages.js";
@@ -51,6 +52,7 @@ export async function runCopilotTurn(
     ) => Promise<CopilotGenerationRequest["context"]>;
     now?: () => Date;
     onProgress?: (text: string) => void;
+    onActivity?: (activity: CopilotActivity) => void;
   },
   raw: CopilotTurnRequest,
   signal?: AbortSignal,
@@ -123,6 +125,11 @@ export async function runCopilotTurn(
     cancelled();
     if (afterLease.cached)
       return { message: afterLease.cached, alreadyApplied: true };
+    dependencies.onActivity?.({
+      id: "preparing",
+      stage: "PREPARING",
+      status: "RUNNING",
+    });
     const context = await dependencies.loadContext(initial.parent);
     cancelled();
     const evidence = await readLatestDepartmentEvidence(
@@ -162,11 +169,17 @@ export async function runCopilotTurn(
       answeredInformation,
       userQuestion: initial.parent.text || null,
     };
+    dependencies.onActivity?.({
+      id: "preparing",
+      stage: "PREPARING",
+      status: "DONE",
+    });
     const generation = await generateCopilotResponse(
       dependencies.provider,
       request,
       signal,
       dependencies.onProgress,
+      dependencies.onActivity,
     );
     cancelled();
     const renewed = await dependencies.authorize();

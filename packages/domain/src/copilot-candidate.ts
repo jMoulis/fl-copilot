@@ -40,6 +40,7 @@ export const copilotEvidenceSchema = z
     sourceVersion: z.number().int().positive().nullable(),
     label: z.string().min(1).max(1000),
     value: z.union([z.string().max(10000), z.number().finite(), z.null()]),
+    detail: z.string().max(10000).optional(),
     factKind: z.enum([
       "OBSERVED",
       "SOURCE_INSTRUCTION",

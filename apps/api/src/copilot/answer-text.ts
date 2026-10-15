@@ -50,7 +50,7 @@ export function renderAnswerText(
     const source = encodeURIComponent(
       JSON.stringify({
         label: item.label,
-        value: item.value,
+        value: item.detail ?? item.value,
         sourceType: item.sourceType,
         sourceId: item.sourceId,
       }),

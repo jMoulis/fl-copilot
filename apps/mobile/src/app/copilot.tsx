@@ -160,10 +160,11 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       { storeId, ownerId },
       {
         sync: () => syncNow(storeId),
-        ask: (input, signal, onProgress) =>
+        ask: (input, signal, onProgress, onActivity) =>
           withAccessToken((token) =>
             api.copilotTurn(token, storeId, ownerId, input, signal, {
               onProgress,
+              onActivity,
               fetch: expoFetch as typeof fetch,
             }),
           ),

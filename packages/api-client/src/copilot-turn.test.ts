@@ -221,3 +221,40 @@ it("cancels an idle stream promptly when leaving the conversation", async () => 
   await expect(task).rejects.toThrow("COPILOT_STREAM_CANCELLED");
   expect(cancel).toHaveBeenCalled();
 });
+it("negotiates and scopes public activity events without persisting them in the reply", async () => {
+  const activity = { id: "read-0", stage: "ANALYTICS", status: "RUNNING" };
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          type: "activity",
+          replyId: input.replyId,
+          conversationId: input.conversationId,
+          activity,
+        }) +
+          "\n" +
+          JSON.stringify({
+            type: "result",
+            result: { message, alreadyApplied: false },
+          }) +
+          "\n",
+        { headers: { "content-type": "application/x-ndjson" } },
+      ),
+  );
+  vi.stubGlobal("fetch", transport);
+  const onActivity = vi.fn();
+  const result = await new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { onProgress: vi.fn(), onActivity },
+  );
+  expect(onActivity).toHaveBeenCalledWith(activity);
+  expect(transport.mock.calls[0]![1]!.headers).toHaveProperty(
+    "x-copilot-activity",
+    "1",
+  );
+  expect(result.message).toEqual(message);
+});

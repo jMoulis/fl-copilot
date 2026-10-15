@@ -636,6 +636,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
             }),
             authorize,
+            onActivity:
+              streaming && request.headers["x-copilot-activity"] === "1"
+                ? (activity) =>
+                    emit({
+                      type: "activity",
+                      replyId: request.body.replyId,
+                      conversationId: request.body.conversationId,
+                      activity,
+                    })
+                : undefined,
             onProgress: streaming
               ? (text) => {
                   if (

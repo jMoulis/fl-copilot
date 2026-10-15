@@ -1,3 +1,5 @@
+import { CopilotActivityTrail } from "./activity-trail";
+import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { AssistantAnswer } from "./assistant-answer";
 import { useRef, type ReactNode } from "react";
 import {
@@ -28,6 +30,7 @@ export function CopilotChatView({
   title,
   messages,
   streamingText,
+  activities = [],
   draft,
   status,
   error,
@@ -48,6 +51,7 @@ export function CopilotChatView({
   allowIntakeWithoutAttachmentCapacity = false,
 }: {
   streamingText?: string;
+  activities?: readonly CopilotActivity[];
   intakeSummary?: ReactNode;
   allowIntakeWithoutAttachmentCapacity?: boolean;
   title: string;
@@ -172,9 +176,12 @@ export function CopilotChatView({
           </View>
         }
         ListFooterComponent={
-          streamingText ? (
-            <View style={{ padding: 20 }}>
-              <AssistantAnswer text={streamingText} />
+          streamingText || status === "GENERATING" ? (
+            <View style={{ padding: 20, gap: 12 }}>
+              {status === "GENERATING" ? (
+                <CopilotActivityTrail activities={activities} />
+              ) : null}
+              {streamingText ? <AssistantAnswer text={streamingText} /> : null}
             </View>
           ) : null
         }
@@ -224,7 +231,7 @@ export function CopilotChatView({
         }
       />
       <View style={styles.footer}>
-        {statusLabels[status] && !streamingText ? (
+        {statusLabels[status] && !streamingText && status !== "GENERATING" ? (
           <Text accessibilityLiveRegion="polite" style={styles.state}>
             {statusLabels[status]}
           </Text>

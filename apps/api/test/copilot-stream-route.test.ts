@@ -36,7 +36,17 @@ it("streams scoped progress over HTTP before the committed reply and preserves o
     release = resolve;
   });
   vi.mocked(runCopilotTurn).mockImplementation(async (dependencies) => {
+    dependencies.onActivity?.({
+      id: "preparing",
+      stage: "PREPARING",
+      status: "RUNNING",
+    });
     dependencies.onProgress?.("Voici le début de la réponse…");
+    dependencies.onActivity?.({
+      id: "preparing",
+      stage: "PREPARING",
+      status: "DONE",
+    });
     await gate;
     return { message, alreadyApplied: false };
   });
@@ -71,20 +81,42 @@ it("streams scoped progress over HTTP before the committed reply and preserves o
   let result: ReturnType<ApiClient["copilotTurn"]> | undefined;
   try {
     const url = await app.listen({ port: 0, host: "127.0.0.1" });
-    const progress = vi.fn();
+    const progress = vi.fn(),
+      activity = vi.fn();
     result = new ApiClient(url).copilotTurn(
       "valid",
       storeId,
       ownerId,
       input,
       undefined,
-      { onProgress: progress },
+      { onProgress: progress, onActivity: activity },
     );
     await vi.waitFor(() =>
       expect(progress).toHaveBeenCalledWith("Voici le début de la réponse…"),
     );
+    expect(activity).toHaveBeenCalledWith({
+      id: "preparing",
+      stage: "PREPARING",
+      status: "RUNNING",
+    });
+    expect(activity).toHaveBeenCalledWith({
+      id: "preparing",
+      stage: "PREPARING",
+      status: "DONE",
+    });
     release();
     expect((await result).message).toEqual(message);
+    await new ApiClient(url).copilotTurn(
+      "valid",
+      storeId,
+      ownerId,
+      input,
+      undefined,
+      { onProgress: vi.fn() },
+    );
+    expect(
+      vi.mocked(runCopilotTurn).mock.calls.at(-1)![0].onActivity,
+    ).toBeUndefined();
     const denied = await fetch(`${url}/api/v1/copilot/turn`, {
       method: "POST",
       headers: {
