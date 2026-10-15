@@ -1596,3 +1596,101 @@ it("deduplicates one information request and refuses a different second form in 
   expect(result.informationRequests).toEqual([question]);
   expect(result.toolEvidence ?? []).toEqual([]);
 });
+it("consumes real Responses SSE incrementally rather than animating a completed answer", async () => {
+  const f = fixture();
+  let send!: (event: unknown) => void, close!: () => void;
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      send = (event) =>
+        controller.enqueue(
+          new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`),
+        );
+      close = () => controller.close();
+    },
+  });
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(body, { headers: { "content-type": "text/event-stream" } }),
+  );
+  const partial = vi.fn();
+  const task = createCopilotAiProvider(f.config, transport).generate(
+    f.request,
+    schema,
+    undefined,
+    partial,
+  );
+  send({
+    type: "response.created",
+    response: {
+      id: "resp-stream",
+      model: "resolved-test-model",
+      created_at: 1,
+    },
+  });
+  send({
+    type: "response.output_item.added",
+    output_index: 0,
+    item: { type: "message", id: "msg-stream" },
+  });
+  send({
+    type: "response.output_text.delta",
+    item_id: "msg-stream",
+    output_index: 0,
+    delta: '{"answer":"Bonjour, voici le bilan',
+  });
+  await vi.waitFor(() => expect(partial).toHaveBeenCalled());
+  expect(
+    partial.mock.calls.some(([value]) => value.answer?.includes("Bonjour")),
+  ).toBe(true);
+  send({
+    type: "response.output_text.delta",
+    item_id: "msg-stream",
+    output_index: 0,
+    delta: '."}',
+  });
+  send({
+    type: "response.output_item.done",
+    output_index: 0,
+    item: { type: "message", id: "msg-stream" },
+  });
+  send({
+    type: "response.completed",
+    response: {
+      usage: {
+        input_tokens: 10,
+        output_tokens: 20,
+        total_tokens: 30,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 0 },
+      },
+    },
+  });
+  close();
+  expect((await task).output).toEqual({ answer: "Bonjour, voici le bilan." });
+  expect(JSON.parse(String(transport.mock.calls[0]?.[1]?.body)).stream).toBe(
+    true,
+  );
+});
+it("requires a natural body in the OpenAI strict schema without breaking legacy stored responses", async () => {
+  const { copilotResponseSchema } = await import("@fl-copilot/domain");
+  const f = fixture();
+  const answer = {
+    language: "fr-FR",
+    summary: "Bonjour.",
+    facts: [],
+    interpretation: [],
+    recommendations: [],
+    questions: [],
+    narrative: "Bonjour, que souhaites-tu regarder ?",
+  };
+  const transport = vi.fn<typeof fetch>(async () =>
+    response(JSON.stringify(answer)),
+  );
+  const result = await createCopilotAiProvider(f.config, transport).generate(
+    f.request,
+    copilotResponseSchema,
+  );
+  const body = JSON.parse(String(transport.mock.calls[0]![1]!.body));
+  expect(body.text.format.schema.required).toContain("narrative");
+  expect(result.output.narrative).toBe(answer.narrative);
+});

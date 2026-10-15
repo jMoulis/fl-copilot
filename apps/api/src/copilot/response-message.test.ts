@@ -195,3 +195,28 @@ it("attaches only cited server-resolved original PDF references, never a model U
   expect(JSON.stringify(result)).not.toContain("https://");
   expect(result.text).toContain("2,20€");
 });
+it("keeps the model's conversational Markdown without appending a diagnostic report", () => {
+  const f = fixture();
+  const result = buildCopilotResponseMessage({
+    ...f,
+    generation: {
+      ...f.generation,
+      mode: "AI",
+      response: {
+        language: "fr-FR",
+        summary: "Voici le bilan.",
+        facts: [{ evidenceId: "sales" }],
+        interpretation: [],
+        recommendations: [],
+        questions: [],
+        narrative:
+          "Voici les ventes : **{{value:0}} €**. {{source:0}}\n\nQue veux-tu approfondir ?",
+      },
+    },
+  });
+  expect(result.text).toContain("**25 €**");
+  expect(result.text).toContain("[Source](copilot-source:");
+  expect(result.text).not.toMatch(
+    /Faits disponibles|Confiance :|Lecture\n|Suivi :/,
+  );
+});

@@ -34,6 +34,7 @@ export const copilotResponseSchema = z
       )
       .max(3),
     questions: z.array(prose).max(4),
+    narrative: z.string().trim().min(1).max(12000).optional(),
   })
   .strict();
 export type CopilotResponse = z.infer<typeof copilotResponseSchema>;

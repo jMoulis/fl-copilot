@@ -1,3 +1,5 @@
+import type { FastifyReply } from "fastify";
+import { PassThrough } from "node:stream";
 import {
   readProductClassificationPreview,
   readProductClassificationBatchPreview,
@@ -431,7 +433,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         response: { 200: copilotTurnResultSchema },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const token = request.headers.authorization;
       if (!token?.startsWith("Bearer "))
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
@@ -460,9 +462,34 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "COPILOT_NOT_READY",
           "Le chat du copilote n’est pas encore disponible.",
         );
+      const streaming = request.headers.accept === "application/x-ndjson";
+      const abort = new AbortController();
+      let stream: PassThrough | undefined;
+      const emit = (event: unknown) => {
+        if (!stream) {
+          stream = new PassThrough();
+          (reply as FastifyReply)
+            .header("content-type", "application/x-ndjson; charset=utf-8")
+            .header("cache-control", "no-store")
+            .header("x-accel-buffering", "no")
+            .send(stream);
+          reply.raw.on("close", () => {
+            if (!reply.raw.writableEnded) abort.abort();
+          });
+        }
+        if (!abort.signal.aborted) {
+          if (stream.writableLength > 256000) {
+            abort.abort();
+            return;
+          }
+          stream.write(JSON.stringify(event) + "\n");
+        }
+      };
+      let lastText = "",
+        lastSent = 0;
       try {
         const db = await dependencies.database.getDb();
-        return await runCopilotTurn(
+        const result = await runCopilotTurn(
           {
             db,
             provider: createCopilotAiProvider(config, undefined, {
@@ -607,11 +634,41 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
             }),
             authorize,
+            onProgress: streaming
+              ? (text) => {
+                  if (
+                    text === lastText ||
+                    (lastText && text.length - lastText.length < 48) ||
+                    Date.now() - lastSent < 40
+                  )
+                    return;
+                  lastText = text;
+                  lastSent = Date.now();
+                  emit({
+                    type: "text",
+                    replyId: request.body.replyId,
+                    conversationId: request.body.conversationId,
+                    text,
+                  });
+                }
+              : undefined,
             loadContext: (parent) => loadContext(storeId, parent),
           },
           request.body,
+          abort.signal,
         );
+        if (streaming) {
+          emit({ type: "result", result });
+          stream?.end();
+          return reply;
+        }
+        return result;
       } catch (error) {
+        if (stream) {
+          if (!abort.signal.aborted) emit({ type: "error" });
+          stream.end();
+          return reply;
+        }
         if (error instanceof CopilotTurnLeaseError)
           throw new AuthError(
             409,

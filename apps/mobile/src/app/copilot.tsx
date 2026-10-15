@@ -1,3 +1,4 @@
+import { fetch as expoFetch } from "expo/fetch";
 import { CopilotIntakeSummary } from "@/copilot/intake-summary";
 import { MercalysImportScreen } from "@/documents/mercalys-import-screen";
 import { MercalysBatchRepository } from "@/documents/mercalys-batch-repository";
@@ -159,9 +160,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       { storeId, ownerId },
       {
         sync: () => syncNow(storeId),
-        ask: (input, signal) =>
+        ask: (input, signal, onProgress) =>
           withAccessToken((token) =>
-            api.copilotTurn(token, storeId, ownerId, input, signal),
+            api.copilotTurn(token, storeId, ownerId, input, signal, {
+              onProgress,
+              fetch: expoFetch as typeof fetch,
+            }),
           ),
       },
     );

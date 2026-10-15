@@ -113,3 +113,111 @@ it("forwards cancellation to the turn transport without changing its stable IDs"
   ).rejects.toThrow();
   expect(transport).toHaveBeenCalledTimes(1);
 });
+it("receives actual chunked UTF-8 snapshots before the final scoped durable result", async () => {
+  let enqueue!: (text: string) => void, close!: () => void;
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      enqueue = (s) => c.enqueue(new TextEncoder().encode(s));
+      close = () => c.close();
+    },
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(body, {
+          headers: { "content-type": "application/x-ndjson" },
+        }),
+    ),
+  );
+  const progress = vi.fn();
+  const task = new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { onProgress: progress },
+  );
+  enqueue(
+    JSON.stringify({
+      type: "text",
+      replyId: input.replyId,
+      conversationId: input.conversationId,
+      text: "Voici le début…",
+    }) + "\n",
+  );
+  await vi.waitFor(() =>
+    expect(progress).toHaveBeenCalledWith("Voici le début…"),
+  );
+  enqueue(
+    JSON.stringify({
+      type: "result",
+      result: { message, alreadyApplied: false },
+    }) + "\n",
+  );
+  close();
+  expect((await task).message).toEqual(message);
+});
+it("rejects cross-conversation snapshots and interrupted streams instead of persisting a partial reply", async () => {
+  for (const event of [
+    {
+      type: "text",
+      replyId: id(9),
+      conversationId: input.conversationId,
+      text: "wrong",
+    },
+    {
+      type: "text",
+      replyId: input.replyId,
+      conversationId: input.conversationId,
+      text: "partial",
+    },
+  ]) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify(event) + "\n", {
+            headers: { "content-type": "application/x-ndjson" },
+          }),
+      ),
+    );
+    await expect(
+      new ApiClient("https://test.invalid").copilotTurn(
+        "test",
+        id(4),
+        id(5),
+        input,
+        undefined,
+        { onProgress: vi.fn() },
+      ),
+    ).rejects.toThrow();
+  }
+});
+it("cancels an idle stream promptly when leaving the conversation", async () => {
+  const cancel = vi.fn();
+  const stream = new ReadableStream<Uint8Array>({ cancel });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(stream, {
+          headers: { "content-type": "application/x-ndjson" },
+        }),
+    ),
+  );
+  const abort = new AbortController();
+  const task = new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    abort.signal,
+    { onProgress: vi.fn() },
+  );
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  abort.abort();
+  await expect(task).rejects.toThrow("COPILOT_STREAM_CANCELLED");
+  expect(cancel).toHaveBeenCalled();
+});
