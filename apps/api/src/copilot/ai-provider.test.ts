@@ -1727,3 +1727,58 @@ it("requires a natural body in the OpenAI strict schema without breaking legacy 
   expect(body.text.format.schema.required).toContain("narrative");
   expect(result.output.narrative).toBe(answer.narrative);
 });
+it("prepares one source-grounded memory suggestion only for an opted-in client, without writing and within the existing model-loop budget", async () => {
+  for (const mode of ["valid", "invented", "legacy"]) {
+    const f = fixture(),
+      id = randomUUID();
+    f.request.userQuestion = "La casse est saisie à la date de saisie.";
+    if (mode !== "legacy")
+      f.request.memorySuggestion = { currentUserMessageId: id };
+    const input = {
+      statement: "La casse est comptabilisée à la date de saisie.",
+      sources: [
+        {
+          messageId: id,
+          quote:
+            mode === "invented" ? "Citation inventée" : f.request.userQuestion,
+        },
+      ],
+    };
+    let calls = 0;
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (calls++ === 0) {
+        expect(
+          body.tools.some((t: { name: string }) => t.name === "suggest_memory"),
+        ).toBe(mode !== "legacy");
+        if (mode === "legacy") return response();
+        const envelope = (await response().json()) as Record<string, unknown>;
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_memory",
+            call_id: "call_memory",
+            name: "suggest_memory",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response();
+    });
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: async ({ businessDate }) => ({
+        businessDate,
+        referenceDate: businessDate,
+        evidence: [],
+      }),
+    }).generate(f.request, schema);
+    expect(result.knowledgeSuggestions).toEqual(
+      mode === "valid" ? [input] : [],
+    );
+    expect(transport).toHaveBeenCalledTimes(mode === "legacy" ? 1 : 2);
+  }
+});

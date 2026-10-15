@@ -202,6 +202,9 @@ export async function generateCopilotResponse(
   response: CopilotResponse;
   metadata: CopilotGenerationMetadata | null;
   evidence?: CopilotGenerationRequest["evidence"];
+  knowledgeSuggestions?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["knowledgeSuggestions"];
   informationRequests?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["informationRequests"];
@@ -274,6 +277,7 @@ export async function generateCopilotResponse(
       metadata: generated.metadata,
       productPreviews: generated.productPreviews,
       informationRequests: generated.informationRequests,
+      knowledgeSuggestions: generated.knowledgeSuggestions,
       evidence: request.evidence,
     };
   } catch (error) {

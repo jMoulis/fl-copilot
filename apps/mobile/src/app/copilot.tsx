@@ -1,3 +1,5 @@
+import { readKnowledgeSuggestion } from "@fl-copilot/domain";
+import { KnowledgeSuggestionCard } from "@/copilot/knowledge-suggestion-card";
 import { fetch as expoFetch } from "expo/fetch";
 import { CopilotIntakeSummary } from "@/copilot/intake-summary";
 import { MercalysImportScreen } from "@/documents/mercalys-import-screen";
@@ -113,6 +115,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     onSubmitted: () => Promise<void>,
   ) => {
     try {
+      readKnowledgeSuggestion(message);
+      return <KnowledgeSuggestionCard key={message.id} message={message} />;
+    } catch {
+      /* Other supported private tool artifacts follow. */
+    }
+    try {
       readCopilotInformationRequest(message);
       return (
         <InformationFormCard
@@ -165,6 +173,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
             api.copilotTurn(token, storeId, ownerId, input, signal, {
               onProgress,
               onActivity,
+              memorySuggestions: true,
               fetch: expoFetch as typeof fetch,
             }),
           ),

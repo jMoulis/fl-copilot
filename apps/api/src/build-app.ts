@@ -636,6 +636,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
             }),
             authorize,
+            allowMemorySuggestions:
+              request.headers["x-copilot-memory-suggestions"] === "1",
             onActivity:
               streaming && request.headers["x-copilot-activity"] === "1"
                 ? (activity) =>
