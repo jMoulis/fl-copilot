@@ -629,3 +629,11 @@ Validation includes exact decimal ranking with partial/missing observations, dup
 - Completed user and assistant messages offer an explicit French Copy action with success/failure feedback; the composer retains native paste and message text remains selectable.
 - Copying retains readable Markdown (including tables), strips internal citation payloads from assistant answers, works offline, and neither reads the clipboard nor writes business data.
 - Expo Clipboard is aligned with SDK 57; a new native binary is required for the one-tap action. Its lazy import protects older binaries from a startup module error.
+
+### T19/T22 — Recorded period waste rates (pilot follow-up)
+
+The period read now returns an exact percentage of recorded waste valued at sales price over net sales, for the current and optional reference period. It always divides period sums, including when the caller asks for daily averages, and never averages daily ratios or intersects sales/waste posting dates. Unknown inputs and non-positive sales keep the rate unavailable; partial sums produce an explicitly partial descriptive ratio, not a claim of complete coverage. No daily zero observations or business dates are inferred from the store's delayed posting practice.
+
+Short French period evidence can be displayed directly in table columns through existing verified-value placeholders. The model tool description is updated in place to use qualified available ratios instead of refusing solely because calendar days are absent. No additional tool/provider call, financial recomputation by the model, client migration or EAS build is needed for this server/shared-engine change.
+
+The pilot clarified: waste is scanned daily, posted several times per week, and attributed to posting date. This is user-declared conversational context, not a production configuration silently written by the coding agent. Durable, correctable cross-chat practice memory remains the distinct T24/T25 delivery gate; do not mark it complete from history alone.
