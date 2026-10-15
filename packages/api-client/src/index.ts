@@ -1,3 +1,4 @@
+import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { readCopilotStream } from "./copilot-stream";
 import {
   copilotTurnRequestSchema,
@@ -62,7 +63,11 @@ export class ApiClient {
     ownerId: string,
     raw: CopilotTurnRequest,
     signal?: AbortSignal,
-    streaming?: { onProgress(text: string): void; fetch?: typeof fetch },
+    streaming?: {
+      onProgress(text: string): void;
+      onActivity?(activity: CopilotActivity): void;
+      fetch?: typeof fetch;
+    },
   ) {
     const input = copilotTurnRequestSchema.parse(raw);
     const streamResult = streaming
@@ -76,6 +81,7 @@ export class ApiClient {
                 ...authorizedStoreHeaders(accessToken, storeId),
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
+                ...(streaming.onActivity ? { "x-copilot-activity": "1" } : {}),
               },
               body: JSON.stringify(input),
             },
@@ -104,6 +110,7 @@ export class ApiClient {
                   input,
                   streaming.onProgress,
                   signal,
+                  streaming.onActivity,
                 )
               : await response.json(),
           );

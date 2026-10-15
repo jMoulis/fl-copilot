@@ -1,9 +1,14 @@
+import {
+  copilotActivitySchema,
+  type CopilotActivity,
+} from "@fl-copilot/sync-contracts";
 /** Decode bounded newline-delimited snapshots; only a final validated result is durable. */
 export async function readCopilotStream(
   response: Response,
   expected: { replyId: string; conversationId: string },
   onProgress: (text: string) => void,
   signal?: AbortSignal,
+  onActivity?: (activity: CopilotActivity) => void,
 ): Promise<unknown> {
   if (!response.body) throw Error("COPILOT_STREAM_UNAVAILABLE");
   const reader = response.body.getReader(),
@@ -35,7 +40,14 @@ export async function readCopilotStream(
           throw Error("COPILOT_STREAM_INVALID");
         const item = event as Record<string, unknown>;
         if (doneResult) throw Error("COPILOT_STREAM_INVALID");
-        if (item.type === "text") {
+        if (item.type === "activity") {
+          if (
+            item.replyId !== expected.replyId ||
+            item.conversationId !== expected.conversationId
+          )
+            throw Error("COPILOT_STREAM_SCOPE_INVALID");
+          onActivity?.(copilotActivitySchema.parse(item.activity));
+        } else if (item.type === "text") {
           if (
             item.replyId !== expected.replyId ||
             item.conversationId !== expected.conversationId ||

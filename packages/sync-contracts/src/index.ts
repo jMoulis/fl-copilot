@@ -104,3 +104,4 @@ export {
 } from "@fl-copilot/domain";
 
 export * from "./mercalys-publication";
+export * from "./copilot-activity";

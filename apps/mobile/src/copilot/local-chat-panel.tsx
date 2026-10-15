@@ -1,3 +1,4 @@
+import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { BottomSheet, MenuRow } from "../components/ui";
 import type { CopilotPdfSelection } from "./pdf-selection";
 import type { ReactNode } from "react";
@@ -56,6 +57,20 @@ function LocalChatPanel({
   intakeSummary,
   externalDraftRevision = 0,
 }: PanelProps) {
+  const [activities, setActivities] = useState<CopilotActivity[]>([]);
+  useEffect(
+    () =>
+      delivery?.subscribeActivities(conversationId, (activity) => {
+        setActivities((previous) =>
+          !activity
+            ? []
+            : previous.some((a) => a.id === activity.id)
+              ? previous.map((a) => (a.id === activity.id ? activity : a))
+              : [...previous, activity].slice(-12),
+        );
+      }),
+    [delivery, conversationId],
+  );
   const [streamingText, setStreamingText] = useState("");
   useEffect(
     () => delivery?.subscribe(conversationId, setStreamingText),
@@ -207,6 +222,7 @@ function LocalChatPanel({
   const send = async () => {
     if (locked.current || attachmentAbort.current) return;
     locked.current = true;
+    setActivities([]);
     setSending(true);
     setError(undefined);
     try {
@@ -238,6 +254,7 @@ function LocalChatPanel({
   };
   async function receive() {
     if (!delivery || attachmentAbort.current) return;
+    setActivities([]);
     setSending(true);
     setError(undefined);
     try {
@@ -369,6 +386,7 @@ function LocalChatPanel({
   return (
     <>
       <CopilotChatView
+        activities={activities}
         streamingText={streamingText}
         intakeSummary={intakeSummary}
         allowIntakeWithoutAttachmentCapacity={!!onOpenMercalys}

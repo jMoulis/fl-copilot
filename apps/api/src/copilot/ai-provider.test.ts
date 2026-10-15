@@ -316,9 +316,18 @@ it("executes scoped read capabilities once per date, caps distinct reads and fee
     expect(sent).toContain("Ne les inventez pas");
     return response();
   });
+  const activity = vi.fn();
   const result = await createCopilotAiProvider(f.config, transport, {
     daily,
-  }).generate(f.request, schema);
+  }).generate(f.request, schema, undefined, undefined, activity);
+  expect(activity).toHaveBeenCalledTimes(6);
+  expect(
+    activity.mock.calls.filter(([event]) => event.status === "RUNNING"),
+  ).toHaveLength(3);
+  expect(
+    activity.mock.calls.every(([event]) => event.stage === "COMPARISON"),
+  ).toBe(true);
+  expect(JSON.stringify(activity.mock.calls)).not.toContain("2026-10");
   expect(daily).toHaveBeenCalledTimes(3);
   expect(result.toolEvidence?.map((e) => e.id).sort()).toEqual([
     "tool-2026-10-08",

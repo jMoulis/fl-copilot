@@ -1,3 +1,7 @@
+import {
+  readPeriodWasteDrivers,
+  wasteDriversSchema,
+} from "./period-waste-drivers.js";
 import { readMercalysPeriodAudit } from "./mercalys-period-audit.js";
 import { mergeBusinessPeriods } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
@@ -50,6 +54,7 @@ export const periodAnalysisResultSchema = z.strictObject({
       }),
     )
     .max(3),
+  wasteDrivers: wasteDriversSchema.optional(),
   evidence: z.array(copilotEvidenceSchema).max(36),
 });
 export type PeriodAnalysisResult = z.infer<typeof periodAnalysisResultSchema>;
@@ -216,6 +221,7 @@ export async function readPeriodAnalysis(
       title: string,
       value: string | null,
       quality = false,
+      detail?: string,
     ) =>
       evidence.push(
         copilotEvidenceSchema.parse({
@@ -236,6 +242,7 @@ export async function readPeriodAnalysis(
           label: `${title} — ${label} — ${target.label}`,
           value,
           factKind: quality ? "QUALITY" : "DERIVED",
+          ...(detail ? { detail } : {}),
         }),
       );
     const amountLabel = (
@@ -249,6 +256,10 @@ export async function readPeriodAnalysis(
       "available-periods",
       "Périodes renseignées — " + label,
       availablePeriods.length
+        ? "Des journées sont renseignées sur la période demandée."
+        : "Aucune journée renseignée sur cette période.",
+      true,
+      availablePeriods.length
         ? availablePeriods
             .slice(0, 24)
             .map((p) => describe(p))
@@ -257,7 +268,6 @@ export async function readPeriodAnalysis(
               ? " ; autres périodes non affichées"
               : "")
         : "Aucune période renseignée",
-      true,
     );
     if (!input.productId && metric !== "margin") {
       const audit = await readMercalysPeriodAudit(
@@ -269,16 +279,20 @@ export async function readPeriodAnalysis(
       add(
         "published-imports",
         "Publications Mercalys consultées — " + label,
-        `${audit.files} fichiers actifs ; ${audit.publishedRows} lignes publiées actives ; ${audit.reviewRows} lignes non publiées à examiner dans ces sources. Les données d’autres sources restent distinctes. Ce contrôle porte sur les imports synchronisés connus, pas sur les fichiers jamais déposés.`,
+        audit.reviewRows
+          ? "Certaines lignes de ces imports restent à examiner."
+          : "Aucune ligne en attente dans les imports publiés consultés.",
         true,
+        `${audit.files} fichiers actifs ; ${audit.publishedRows} lignes publiées actives ; ${audit.reviewRows} lignes non publiées à examiner dans ces sources. Les données d’autres sources restent distinctes. Ce contrôle porte sur les imports synchronisés connus, pas sur les fichiers jamais déposés.`,
       );
     }
     if (c.partialDays)
       add(
         "partial-meaning",
         "Qualité de l’indicateur — " + label,
-        "Le statut partiel concerne des valeurs d’indicateur indisponibles parmi les produits. Il ne prouve pas que des lignes d’import manquent. Les montants renseignés restent exploitables dans leur périmètre.",
+        "Certains montants sont incomplets ; les chiffres renseignés restent utilisables.",
         true,
+        "Le statut partiel concerne des valeurs d’indicateur indisponibles parmi les produits. Il ne prouve pas que des lignes d’import manquent. Les montants renseignés restent exploitables dans leur périmètre.",
       );
     add(
       "current",
@@ -288,8 +302,11 @@ export async function readPeriodAnalysis(
     add(
       "current-coverage",
       `Couverture — ${describe(input.currentPeriod)}`,
-      coverageText(c),
+      c.availableDays === c.expectedDays
+        ? "Toutes les journées sont renseignées."
+        : "Ce cumul couvre seulement les journées et montants renseignés.",
       true,
+      coverageText(c),
     );
     if (input.referencePeriod && r) {
       add(
@@ -300,8 +317,11 @@ export async function readPeriodAnalysis(
       add(
         "reference-coverage",
         `Couverture — ${describe(input.referencePeriod)}`,
-        coverageText(r),
+        r.availableDays === r.expectedDays
+          ? "Toutes les journées de référence sont renseignées."
+          : "La période de référence est partiellement renseignée.",
         true,
+        coverageText(r),
       );
       add(
         "difference",
@@ -315,11 +335,26 @@ export async function readPeriodAnalysis(
       );
     }
   }
+  const waste =
+    !input.productId && input.metrics.includes("waste")
+      ? await readPeriodWasteDrivers(db, storeId, input.currentPeriod).catch(
+          () => ({
+            drivers: {
+              aggregation: "SUM" as const,
+              status: "UNAVAILABLE" as const,
+              products: [],
+            },
+            evidence: [],
+          }),
+        )
+      : undefined;
+  if (waste) evidence.push(...waste.evidence);
   return periodAnalysisResultSchema.parse({
     target,
     currentPeriod: input.currentPeriod,
     referencePeriod: input.referencePeriod,
     aggregation: input.aggregation,
+    ...(waste ? { wasteDrivers: waste.drivers } : {}),
     coverage,
     evidence,
   });

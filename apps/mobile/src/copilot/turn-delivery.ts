@@ -1,3 +1,4 @@
+import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import {
   copilotTurnRequestSchema,
   copilotMessageSchema,
@@ -19,6 +20,20 @@ export class CopilotTurnDelivery {
         this.listeners.delete(conversationId);
     };
   }
+  private activityListeners = new Map<
+    string,
+    (activity: CopilotActivity | null) => void
+  >();
+  subscribeActivities(
+    conversationId: string,
+    listener: (activity: CopilotActivity | null) => void,
+  ) {
+    this.activityListeners.set(conversationId, listener);
+    return () => {
+      if (this.activityListeners.get(conversationId) === listener)
+        this.activityListeners.delete(conversationId);
+    };
+  }
   private aborts = new Map<string, AbortController>();
   cancel(conversationId: string) {
     this.aborts.get(conversationId)?.abort();
@@ -32,6 +47,7 @@ export class CopilotTurnDelivery {
         request: CopilotTurnRequest,
         signal: AbortSignal,
         onProgress: (text: string) => void,
+        onActivity: (activity: CopilotActivity) => void,
       ): Promise<unknown>;
     },
   ) {}
@@ -122,13 +138,23 @@ export class CopilotTurnDelivery {
       throw new Error("COPILOT_CONVERSATION_UNAVAILABLE");
     cancelled(signal);
     this.listeners.get(conversationId)?.("");
+    this.activityListeners.get(conversationId)?.(null);
     let result: unknown;
     try {
-      result = await this.dependencies.ask(request, signal, (text) => {
-        if (!signal.aborted) this.listeners.get(conversationId)?.(text);
-      });
+      result = await this.dependencies.ask(
+        request,
+        signal,
+        (text) => {
+          if (!signal.aborted) this.listeners.get(conversationId)?.(text);
+        },
+        (activity) => {
+          if (!signal.aborted)
+            this.activityListeners.get(conversationId)?.(activity);
+        },
+      );
     } catch (error) {
       this.listeners.get(conversationId)?.("");
+      this.activityListeners.get(conversationId)?.(null);
       throw error;
     }
     cancelled(signal);

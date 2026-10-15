@@ -1,3 +1,4 @@
+import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { answerProse, renderAnswerText } from "./answer-text.js";
 import {
   copilotResponseSchema,
@@ -195,6 +196,7 @@ export async function generateCopilotResponse(
   raw: CopilotGenerationRequest,
   signal?: AbortSignal,
   onProgress?: (text: string) => void,
+  onActivity?: (activity: CopilotActivity) => void,
 ): Promise<{
   mode: "AI" | "FALLBACK";
   response: CopilotResponse;
@@ -253,6 +255,7 @@ export async function generateCopilotResponse(
             }
           }
         : undefined,
+      onActivity,
     );
     if (generated.toolEvidence) {
       const updated = copilotGenerationRequestSchema.safeParse({
