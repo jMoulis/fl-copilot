@@ -1,3 +1,4 @@
+import { AssistantAnswer } from "./assistant-answer";
 import { useRef, type ReactNode } from "react";
 import {
   FlatList,
@@ -26,6 +27,7 @@ const statusLabels: Record<CopilotChatStatus, string> = {
 export function CopilotChatView({
   title,
   messages,
+  streamingText,
   draft,
   status,
   error,
@@ -45,6 +47,7 @@ export function CopilotChatView({
   intakeSummary,
   allowIntakeWithoutAttachmentCapacity = false,
 }: {
+  streamingText?: string;
   intakeSummary?: ReactNode;
   allowIntakeWithoutAttachmentCapacity?: boolean;
   title: string;
@@ -168,6 +171,13 @@ export function CopilotChatView({
             </Text>
           </View>
         }
+        ListFooterComponent={
+          streamingText ? (
+            <View style={{ padding: 20 }}>
+              <AssistantAnswer text={streamingText} />
+            </View>
+          ) : null
+        }
         renderItem={({ item }) =>
           item.role === "TOOL" ? (
             <View style={styles.assistantMessage}>
@@ -184,10 +194,26 @@ export function CopilotChatView({
               <Text style={styles.author}>
                 {item.role === "USER" ? "Vous" : "Copilote"}
               </Text>
-              <Text selectable style={styles.message}>
-                {item.text}
-              </Text>
-              {item.attachments.map((attachment) => (
+              {item.role === "ASSISTANT" ? (
+                <AssistantAnswer
+                  text={item.text}
+                  renderSource={(id) => {
+                    const a = item.attachments.find(
+                      (a) => a.sourceDocumentId === id,
+                    );
+                    return a ? renderAttachment?.(a, item) : null;
+                  }}
+                />
+              ) : (
+                <Text selectable style={styles.message}>
+                  {item.text}
+                </Text>
+              )}
+              {(item.role === "ASSISTANT" &&
+              item.text.includes("copilot-source:")
+                ? []
+                : item.attachments
+              ).map((attachment) => (
                 <View key={attachment.sourceDocumentId}>
                   <Text style={styles.attachment}>{attachment.filename}</Text>
                   {renderAttachment?.(attachment, item)}
@@ -198,7 +224,7 @@ export function CopilotChatView({
         }
       />
       <View style={styles.footer}>
-        {statusLabels[status] ? (
+        {statusLabels[status] && !streamingText ? (
           <Text accessibilityLiveRegion="polite" style={styles.state}>
             {statusLabels[status]}
           </Text>

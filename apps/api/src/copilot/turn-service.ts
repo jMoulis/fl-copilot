@@ -50,6 +50,7 @@ export async function runCopilotTurn(
       parent: CopilotMessage,
     ) => Promise<CopilotGenerationRequest["context"]>;
     now?: () => Date;
+    onProgress?: (text: string) => void;
   },
   raw: CopilotTurnRequest,
   signal?: AbortSignal,
@@ -165,6 +166,7 @@ export async function runCopilotTurn(
       dependencies.provider,
       request,
       signal,
+      dependencies.onProgress,
     );
     cancelled();
     const renewed = await dependencies.authorize();

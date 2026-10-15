@@ -1,3 +1,4 @@
+import { answerProse, renderAnswerText } from "./answer-text.js";
 import {
   copilotResponseSchema,
   type CopilotResponse,
@@ -77,6 +78,7 @@ export function validateCopilotResponse(
       throw new CopilotGroundingError("UNKNOWN_EVIDENCE");
   }
   const prose = [
+    ...(result.narrative ? [answerProse(result.narrative)] : []),
     result.summary,
     ...result.interpretation,
     ...result.questions,
@@ -92,6 +94,17 @@ export function validateCopilotResponse(
   // No model-authored figures/dates: the client resolves evidence IDs to canonical values.
   if (prose.some((text) => /\p{N}/u.test(text)))
     throw new CopilotGroundingError("UNSUPPORTED_NUMBER");
+  if (result.narrative) {
+    try {
+      renderAnswerText(
+        result.narrative,
+        result.facts,
+        copilotRequestEvidence(request),
+      );
+    } catch {
+      throw new CopilotGroundingError("UNKNOWN_EVIDENCE");
+    }
+  }
   return result;
 }
 
@@ -181,6 +194,7 @@ export async function generateCopilotResponse(
   provider: CopilotAiProvider,
   raw: CopilotGenerationRequest,
   signal?: AbortSignal,
+  onProgress?: (text: string) => void,
 ): Promise<{
   mode: "AI" | "FALLBACK";
   response: CopilotResponse;
@@ -210,6 +224,35 @@ export async function generateCopilotResponse(
       request,
       copilotResponseSchema,
       signal,
+      onProgress
+        ? (raw, evidence) => {
+            if (!raw || typeof raw !== "object") return;
+            const value = raw as { narrative?: unknown; facts?: unknown };
+            if (
+              typeof value.narrative !== "string" ||
+              !Array.isArray(value.facts)
+            )
+              return;
+            const facts = value.facts.filter(
+              (f): f is { evidenceId: string } =>
+                !!f &&
+                typeof f === "object" &&
+                typeof f.evidenceId === "string",
+            );
+            try {
+              onProgress(
+                renderAnswerText(
+                  value.narrative,
+                  facts,
+                  [...copilotRequestEvidence(request), ...evidence],
+                  true,
+                ),
+              );
+            } catch {
+              /* Unresolved/unsupported partial output is never displayed. */
+            }
+          }
+        : undefined,
     );
     if (generated.toolEvidence) {
       const updated = copilotGenerationRequestSchema.safeParse({

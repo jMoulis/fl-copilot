@@ -243,3 +243,35 @@ it("grounds a tool-derived fact against the trusted returned evidence pool, not 
   expect(result.response.facts).toEqual([{ evidenceId: "queried-day" }]);
   expect(r.evidence).toBeUndefined();
 });
+it("streams resolved values while withholding unsupported numeric or unknown-reference partials", async () => {
+  const progress = vi.fn(),
+    r = request();
+  const provider: CopilotAiProvider = {
+    model: "test",
+    async generate(_request, schema, _signal, onPartial) {
+      onPartial?.({ ...answer, narrative: "Le CA est de 999 €." }, []);
+      onPartial?.({ ...answer, narrative: "Le CA est de {{value:0}} €." }, []);
+      return {
+        output: schema.parse({
+          ...answer,
+          narrative: "Le CA est de {{value:0}} €. {{source:0}}",
+        }),
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "test",
+          inputTokens: 0,
+          outputTokens: 0,
+        },
+      };
+    },
+  };
+  const result = await generateCopilotResponse(
+    provider,
+    r,
+    undefined,
+    progress,
+  );
+  expect(result.mode).toBe("AI");
+  expect(progress.mock.calls).toEqual([["Le CA est de 25 €."]]);
+});

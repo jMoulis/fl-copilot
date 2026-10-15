@@ -1,3 +1,4 @@
+import { readCopilotStream } from "./copilot-stream";
 import {
   copilotTurnRequestSchema,
   copilotTurnResultSchema,
@@ -61,18 +62,65 @@ export class ApiClient {
     ownerId: string,
     raw: CopilotTurnRequest,
     signal?: AbortSignal,
+    streaming?: { onProgress(text: string): void; fetch?: typeof fetch },
   ) {
     const input = copilotTurnRequestSchema.parse(raw);
-    const result = await this.request(
-      "/api/v1/copilot/turn",
-      {
-        signal,
-        method: "POST",
-        headers: authorizedStoreHeaders(accessToken, storeId),
-        body: JSON.stringify(input),
-      },
-      copilotTurnResultSchema,
-    );
+    const streamResult = streaming
+      ? await (async () => {
+          const response = await (streaming.fetch ?? fetch)(
+            `${this.baseUrl}/api/v1/copilot/turn`,
+            {
+              method: "POST",
+              signal,
+              headers: {
+                ...authorizedStoreHeaders(accessToken, storeId),
+                "content-type": "application/json",
+                accept: "application/x-ndjson",
+              },
+              body: JSON.stringify(input),
+            },
+          );
+          if (!response.ok) {
+            const error = apiErrorSchema.safeParse(
+              await response.json().catch(() => undefined),
+            );
+            throw new ApiClientError(
+              response.status,
+              error.success
+                ? error.data
+                : {
+                    code: "COPILOT_UNAVAILABLE",
+                    messageFr: "La réponse s’est interrompue. Réessayez.",
+                    retryable: true,
+                  },
+            );
+          }
+          return copilotTurnResultSchema.parse(
+            response.headers
+              .get("content-type")
+              ?.includes("application/x-ndjson")
+              ? await readCopilotStream(
+                  response,
+                  input,
+                  streaming.onProgress,
+                  signal,
+                )
+              : await response.json(),
+          );
+        })()
+      : undefined;
+    const result =
+      streamResult ??
+      (await this.request(
+        "/api/v1/copilot/turn",
+        {
+          signal,
+          method: "POST",
+          headers: authorizedStoreHeaders(accessToken, storeId),
+          body: JSON.stringify(input),
+        },
+        copilotTurnResultSchema,
+      ));
     const message = result.message;
     if (
       message.id !== input.replyId ||

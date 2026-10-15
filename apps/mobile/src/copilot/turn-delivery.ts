@@ -11,6 +11,14 @@ import { receiveCopilotReply } from "./response-receiver";
 /** One in-flight delivery per conversation and instance; persisted request IDs survive instance/app restart. */
 export class CopilotTurnDelivery {
   private running = new Map<string, Promise<"NONE" | "WAITING" | "RECEIVED">>();
+  private listeners = new Map<string, (text: string) => void>();
+  subscribe(conversationId: string, listener: (text: string) => void) {
+    this.listeners.set(conversationId, listener);
+    return () => {
+      if (this.listeners.get(conversationId) === listener)
+        this.listeners.delete(conversationId);
+    };
+  }
   private aborts = new Map<string, AbortController>();
   cancel(conversationId: string) {
     this.aborts.get(conversationId)?.abort();
@@ -20,7 +28,11 @@ export class CopilotTurnDelivery {
     private readonly scope: { storeId: string; ownerId: string },
     private readonly dependencies: {
       sync(): Promise<unknown>;
-      ask(request: CopilotTurnRequest, signal: AbortSignal): Promise<unknown>;
+      ask(
+        request: CopilotTurnRequest,
+        signal: AbortSignal,
+        onProgress: (text: string) => void,
+      ): Promise<unknown>;
     },
   ) {}
   deliver(conversationId: string) {
@@ -109,9 +121,24 @@ export class CopilotTurnDelivery {
     if (!current || current.status !== "ACTIVE")
       throw new Error("COPILOT_CONVERSATION_UNAVAILABLE");
     cancelled(signal);
-    const result = await this.dependencies.ask(request, signal);
+    this.listeners.get(conversationId)?.("");
+    let result: unknown;
+    try {
+      result = await this.dependencies.ask(request, signal, (text) => {
+        if (!signal.aborted) this.listeners.get(conversationId)?.(text);
+      });
+    } catch (error) {
+      this.listeners.get(conversationId)?.("");
+      throw error;
+    }
     cancelled(signal);
-    await receiveCopilotReply(this.db, this.scope, request, result);
+    const message = await receiveCopilotReply(
+      this.db,
+      this.scope,
+      request,
+      result,
+    );
+    this.listeners.get(conversationId)?.(message.text);
     cancelled(signal);
     try {
       await this.dependencies.sync();

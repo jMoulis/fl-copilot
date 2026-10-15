@@ -1,3 +1,4 @@
+import { renderAnswerText } from "./answer-text.js";
 import {
   copilotAttachmentReferenceSchema,
   copilotMessageSchema,
@@ -85,25 +86,29 @@ export function buildCopilotResponseMessage(input: {
     if (!item) throw new Error("COPILOT_REPLY_EVIDENCE_INVALID");
     return `${item.label} : ${item.value === null ? "indisponible" : String(item.value)}`;
   });
-  const text = [
-    response.summary,
-    ...(facts.length ? ["Faits disponibles", ...facts] : []),
-    ...(response.interpretation.length
-      ? ["Lecture", ...response.interpretation]
-      : []),
-    ...response.recommendations.map((r) =>
-      [
-        r.title,
-        r.explanation,
-        `Confiance : ${{ LOW: "limitée", MEDIUM: "modérée", HIGH: "élevée" }[r.confidence]}`,
-        ...r.risks.map((v) => `Vigilance : ${v}`),
-        ...r.missingData.map((v) => `Information manquante : ${v}`),
-        `Suivi : ${r.measurement.objective}`,
-        r.measurement.reviewWhen,
-      ].join("\n"),
-    ),
-    ...response.questions,
-  ].join("\n\n");
+  const text = response.narrative
+    ? renderAnswerText(response.narrative, response.facts, [
+        ...evidence.values(),
+      ])
+    : [
+        response.summary,
+        ...(facts.length ? ["Faits disponibles", ...facts] : []),
+        ...(response.interpretation.length
+          ? ["Lecture", ...response.interpretation]
+          : []),
+        ...response.recommendations.map((r) =>
+          [
+            r.title,
+            r.explanation,
+            `Confiance : ${{ LOW: "limitée", MEDIUM: "modérée", HIGH: "élevée" }[r.confidence]}`,
+            ...r.risks.map((v) => `Vigilance : ${v}`),
+            ...r.missingData.map((v) => `Information manquante : ${v}`),
+            `Suivi : ${r.measurement.objective}`,
+            r.measurement.reviewWhen,
+          ].join("\n"),
+        ),
+        ...response.questions,
+      ].join("\n\n");
   // Reject overflow rather than silently losing source/qualification information.
   return copilotMessageSchema.parse({
     id: input.id,

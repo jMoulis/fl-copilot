@@ -56,6 +56,11 @@ function LocalChatPanel({
   intakeSummary,
   externalDraftRevision = 0,
 }: PanelProps) {
+  const [streamingText, setStreamingText] = useState("");
+  useEffect(
+    () => delivery?.subscribe(conversationId, setStreamingText),
+    [delivery, conversationId],
+  );
   const [fileMenu, setFileMenu] = useState(false);
   const queuedFileAction = useRef<"PDF" | "MERCALYS" | undefined>(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
@@ -104,6 +109,7 @@ function LocalChatPanel({
                   value.messages.at(-1)?.entity,
                 );
                 if (alive) {
+                  setStreamingText("");
                   setSnapshot((previous) =>
                     previous
                       ? {
@@ -246,6 +252,7 @@ function LocalChatPanel({
           snapshot?.messages.at(-1)?.entity,
         );
         if (isCurrent()) {
+          setStreamingText("");
           setSnapshot((previous) =>
             previous
               ? { ...value, ...mergeCopilotHistory(previous, value) }
@@ -362,6 +369,7 @@ function LocalChatPanel({
   return (
     <>
       <CopilotChatView
+        streamingText={streamingText}
         intakeSummary={intakeSummary}
         allowIntakeWithoutAttachmentCapacity={!!onOpenMercalys}
         title={snapshot.conversation.title}
