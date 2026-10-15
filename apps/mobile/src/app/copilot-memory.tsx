@@ -18,6 +18,14 @@ import { CopilotKnowledgeRepository } from "@/copilot/knowledge-repository";
 import { colors } from "@/design/tokens";
 type Entry = Awaited<ReturnType<CopilotKnowledgeRepository["list"]>>[number];
 export default function CopilotMemoryScreen() {
+  const { session } = useAuth();
+  return (
+    <CopilotMemoryScreenContent
+      key={`${session?.user.id}/${session?.stores[0]?.storeId}`}
+    />
+  );
+}
+function CopilotMemoryScreenContent() {
   const { session } = useAuth(),
     { sqlite, deviceId } = useLocalDatabase(),
     { syncNow } = useSync();
@@ -51,9 +59,16 @@ export default function CopilotMemoryScreen() {
           if (active) {
             setEntries(rows);
             if (source) {
-              setStatement(source.text.slice(0, 800));
+              const existing = rows.find(
+                (e) =>
+                  e.entity.status === "ACTIVE" &&
+                  e.entity.sourceMessageId === source.id,
+              );
+              setStatement(
+                existing?.entity.statement ?? source.text.slice(0, 800),
+              );
               setSourceId(source.id);
-              setSelected(undefined);
+              setSelected(existing?.entity);
             }
           }
         })().catch(() => {
@@ -81,7 +96,7 @@ export default function CopilotMemoryScreen() {
           kind: "OPERATING_PRACTICE",
           statement: forget ? "Oublié" : statement,
           status: forget ? "FORGOTTEN" : "ACTIVE",
-          sourceMessageId: target?.sourceMessageId ?? sourceId,
+          sourceMessageId: target ? target.sourceMessageId : sourceId,
           confirmedBy: ownerId,
           version: (target?.version ?? 0) + 1,
           createdAt: target?.createdAt ?? now,
