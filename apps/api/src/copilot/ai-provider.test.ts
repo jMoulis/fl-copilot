@@ -1782,3 +1782,213 @@ it("prepares one source-grounded memory suggestion only for an opted-in client, 
     expect(transport).toHaveBeenCalledTimes(mode === "legacy" ? 1 : 2);
   }
 });
+
+it("retrieves older context in the existing bounded loop without making it official evidence", async () => {
+  const f = fixture();
+  const input = { query: "TG", before: null, limit: 3 };
+  const conversationHistory = vi.fn(async () => ({
+    messages: [
+      {
+        id: randomUUID(),
+        role: "USER" as const,
+        text: "Je préfère une TG agrumes.",
+        createdAt: "2026-10-10T12:00:00.000Z",
+        attachments: [],
+      },
+    ],
+    hasMore: true,
+    nextBefore: { id: randomUUID(), createdAt: "2026-10-10T12:00:00.000Z" },
+    sources: [],
+    sourcesOmitted: false,
+    evidence: [],
+  }));
+  let calls = 0;
+  const stages: string[] = [];
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "conversation_history",
+        ),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_history",
+          call_id: "call_history",
+          name: "conversation_history",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("Je préfère une TG agrumes.");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    conversationHistory,
+  }).generate(f.request, schema, undefined, undefined, (a) =>
+    stages.push(`${a.stage}:${a.status}`),
+  );
+  expect(conversationHistory).toHaveBeenCalledWith(input);
+  expect(result.toolEvidence).toEqual([]);
+  expect(stages).toEqual(["CONTEXT:RUNNING", "CONTEXT:DONE"]);
+  expect(calls).toBe(2);
+});
+
+it("can reopen a PDF discovered in older history without requesting it again", async () => {
+  const f = fixture(),
+    sourceId = randomUUID();
+  const historyInput = { query: "prospectus", before: null, limit: 2 };
+  const pdfInput = {
+    sourceDocumentId: sourceId,
+    businessDate: "2026-10-08",
+    pageNumber: 1,
+    offset: 0,
+    limit: 16,
+  };
+  const conversationHistory = vi.fn(async () => ({
+    messages: [
+      {
+        id: randomUUID(),
+        role: "USER" as const,
+        text: "Le prospectus est joint ici.",
+        createdAt: "2026-10-10T12:00:00.000Z",
+        attachments: [
+          {
+            sourceDocumentId: sourceId,
+            filename: "Ancien.pdf",
+            mediaType: "application/pdf",
+          },
+        ],
+      },
+    ],
+    hasMore: false,
+    nextBefore: null,
+    sources: [
+      {
+        sourceDocumentId: sourceId,
+        status: "CONFIRMED" as const,
+        sourceType: "WEEKLY_COMMERCIAL_PDF" as const,
+        filename: "Original.pdf",
+        mediaType: "application/pdf",
+        registeredAt: "2026-10-10T12:00:00.000Z",
+      },
+    ],
+    sourcesOmitted: false,
+    evidence: [],
+  }));
+  const commercialPdf = vi.fn(async () => ({
+    sourceDocumentId: sourceId,
+    businessDate: pdfInput.businessDate,
+    pageNumber: 1,
+    pageCount: 1,
+    status: "READY" as const,
+    week: {
+      date: pdfInput.businessDate,
+      year: 2026,
+      number: 41,
+      start: "2026-10-05",
+      end: "2026-10-11",
+    },
+    entries: [],
+    nextOffset: null,
+    excludedOperations: 0,
+    unknownOperations: 0,
+    evidence: [
+      {
+        id: "history-pdf-evidence",
+        sourceType: "SOURCE_DOCUMENT" as const,
+        sourceId,
+        sourceVersion: null,
+        label: "Source retrouvée",
+        value: "Instructions du prospectus",
+        factKind: "SOURCE_INSTRUCTION" as const,
+      },
+    ],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)),
+      step = calls++;
+    if (step < 2) {
+      const name = step === 0 ? "conversation_history" : "commercial_pdf";
+      if (step === 1) expect(JSON.stringify(body)).toContain(sourceId);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: `fc_history_pdf_${step}`,
+          call_id: `call_history_pdf_${step}`,
+          name,
+          arguments: JSON.stringify(step === 0 ? historyInput : pdfInput),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    expect(JSON.stringify(body)).toContain("history-pdf-evidence");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    conversationHistory,
+    commercialPdf,
+  }).generate(f.request, schema);
+  expect(conversationHistory).toHaveBeenCalledWith(historyInput);
+  expect(commercialPdf).toHaveBeenCalledWith(pdfInput);
+  expect(result.toolEvidence?.map((e) => e.id)).toEqual([
+    "history-pdf-evidence",
+  ]);
+  expect(calls).toBe(3);
+});
+
+it("does not leak a failed history read's internal error or fabricate history evidence", async () => {
+  const f = fixture();
+  const conversationHistory = vi.fn(async (): Promise<never> => {
+    throw Error("PRIVATE_DATABASE_DETAILS");
+  });
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_failed_history",
+          call_id: "call_failed_history",
+          name: "conversation_history",
+          arguments: JSON.stringify({ query: null, before: null, limit: 5 }),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_DATABASE_DETAILS");
+    expect(JSON.stringify(body)).toContain("unavailable");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    conversationHistory,
+  }).generate(f.request, schema);
+  expect(result.toolEvidence).toEqual([]);
+});
