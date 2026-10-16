@@ -1,3 +1,6 @@
+import { OperationsProposalCard } from "@/copilot/operations-proposal-card";
+import { CopilotOperationsProposalController } from "@/copilot/operations-proposal-controller";
+import { readCopilotOperationsProposal } from "@fl-copilot/domain";
 import { NeedProposalCard } from "@/copilot/need-proposal-card";
 import { CopilotNeedProposalController } from "@/copilot/need-proposal-controller";
 import { readCopilotNeedProposal } from "@fl-copilot/domain";
@@ -119,6 +122,31 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
+  // Current MANAGER policy; the runtime keeps the two capabilities independent.
+  const canCaptureStoreEvents = canManageProducts,
+    canManageStoreSettings = canManageProducts;
+  const operationsProposals = useMemo(
+    () =>
+      new CopilotOperationsProposalController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canCaptureStoreEvents,
+          canManageStoreSettings,
+        },
+        randomUUID,
+      ),
+    [
+      sqlite,
+      storeId,
+      ownerId,
+      deviceId,
+      canCaptureStoreEvents,
+      canManageStoreSettings,
+    ],
+  );
   const needProposals = useMemo(
     () =>
       new CopilotNeedProposalController(
@@ -190,6 +218,23 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       );
     } catch {
       /* Other supported tool artifacts are handled below. */
+    }
+    try {
+      const proposal = readCopilotOperationsProposal(message);
+      return (
+        <OperationsProposalCard
+          key={message.id}
+          message={message}
+          controller={operationsProposals}
+          canConfirm={
+            proposal.content.input.kind === "SETTINGS"
+              ? canManageStoreSettings
+              : canCaptureStoreEvents
+          }
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
     }
     try {
       readCopilotNeedProposal(message);
@@ -272,6 +317,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
               catalogueProposals: canManageProducts,
               executionProposals: canDeclareCommercialExecution,
@@ -288,6 +334,8 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     withAccessToken,
     canDeclareCommercialExecution,
     canManageProducts,
+    canCaptureStoreEvents,
+    canManageStoreSettings,
   ]);
   const attachPdf = async (signal: AbortSignal, capacity: number) => {
     if (!pdfPicker) throw Error("COPILOT_PDF_PICKER_UNAVAILABLE");

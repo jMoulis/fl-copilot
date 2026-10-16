@@ -400,3 +400,285 @@ it("does not close a commercial extraction or unresolved event and rolls back ca
     x.db.close();
   }
 });
+
+async function savedOperationsCard(
+  x: Awaited<ReturnType<typeof setup>>,
+  input: unknown,
+  basis: unknown,
+) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain"),
+    { applyCopilotRecord } = await import("./conversation-repository");
+  const b = basis as Record<string, unknown>;
+  basis = {
+    ...b,
+    product: b.product
+      ? {
+          packaging: null,
+          familyId: null,
+          subfamilyId: null,
+          ...(b.product as object),
+        }
+      : null,
+  };
+  const assistant = copilotMessageSchema.parse({
+    ...x.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: x.f.message.id,
+    text: "Proposition préparée.",
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "STORE_OPERATIONS_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input,
+      basis,
+    }),
+  });
+  await x.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, x.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, x.f, "copilot_message", message);
+  });
+  return message;
+}
+async function operationsController(
+  x: Awaited<ReturnType<typeof setup>>,
+  field = true,
+  settings = true,
+  db = x.a,
+) {
+  const { CopilotOperationsProposalController } =
+    await import("./operations-proposal-controller");
+  return new CopilotOperationsProposalController(
+    db,
+    {
+      storeId: x.f.storeId,
+      ownerId: x.f.ownerId,
+      deviceId: x.authority(x.capture).deviceId,
+      canCaptureStoreEvents: field,
+      canManageStoreSettings: settings,
+    },
+    randomUUID,
+  );
+}
+const operationsBlank = { product: null, event: null, settings: null };
+it("confirms capture and closure cards with normalized Paris dates and replay without changing product or analytics", async () => {
+  const x = await setup();
+  try {
+    const c = await operationsController(x),
+      m = await savedOperationsCard(
+        x,
+        {
+          kind: "FIELD_CAPTURE",
+          action: "PREPARE",
+          productId: x.product.id,
+          patch: {
+            type: "OUT_OF_STOCK",
+            startedAt: "2026-10-11T13:00:00+02:00",
+            comment: "Rayon vide constaté",
+          },
+        },
+        { ...operationsBlank, product: x.product },
+      );
+    const before = x.db.prepare("SELECT * FROM products").get();
+    expect((await c.open(m)).status).toBe("READY");
+    await c.confirm(m);
+    await c.confirm(m);
+    const r = captureFieldEventResultSchema.parse(
+      JSON.parse(
+        (
+          x.db
+            .prepare(
+              "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+            )
+            .get(m.id) as { result_json: string }
+        ).result_json,
+      ),
+    );
+    expect(r.after).toMatchObject({
+      source: "USER",
+      status: "ACTIVE",
+      startedAt: "2026-10-11T11:00:00.000Z",
+    });
+    const close = await savedOperationsCard(
+      x,
+      {
+        kind: "FIELD_CLOSE",
+        action: "PREPARE",
+        eventId: r.after.id,
+        patch: { endedAt: "2026-10-11T16:00:00+02:00" },
+      },
+      { ...operationsBlank, product: x.product, event: r.after },
+    );
+    await c.confirm(close);
+    await c.confirm(close);
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM store_product_events").get(),
+    ).toEqual({ n: 1 });
+    expect(x.db.prepare("SELECT * FROM products").get()).toEqual(before);
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM copilot_tool_results").get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    x.db.close();
+  }
+});
+it("keeps event and settings permissions independent, refuses stale/forged cards and rolls back failed/cancelled captures", async () => {
+  const x = await setup();
+  try {
+    const c = await operationsController(x),
+      m = await savedOperationsCard(
+        x,
+        {
+          kind: "FIELD_CAPTURE",
+          action: "PREPARE",
+          productId: x.product.id,
+          patch: { type: "OUT_OF_STOCK", startedAt: "2026-10-11T11:00:00Z" },
+        },
+        { ...operationsBlank, product: x.product },
+      );
+    await expect(
+      (await operationsController(x, false, true)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    await expect(
+      c.confirm({
+        ...m,
+        text: m.text.replace("OUT_OF_STOCK", "QUALITY_ISSUE"),
+      }),
+    ).rejects.toThrow();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(c.confirm(m, abort.signal)).rejects.toThrow();
+    x.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    x.a.fail = false;
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM store_product_events").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM copilot_tool_results").get(),
+    ).toEqual({ n: 0 });
+    x.db.prepare("UPDATE products SET version=2").run();
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+  } finally {
+    x.db.close();
+  }
+});
+it("preserves a saved device point while updating school zone and clears it only on explicit reviewed CITY selection", async () => {
+  const x = await setup();
+  try {
+    const { storeContextFixture } =
+        await import("../../../../scripts/test-store-context-fixtures"),
+      { applyStoreContext, StoreContextRepository } =
+        await import("../store/context-repository"),
+      { settingsSaveResultSchema } = await import("@fl-copilot/domain");
+    const settings = {
+      ...storeContextFixture(),
+      id: x.f.storeId,
+      storeId: x.f.storeId,
+      locationMode: "POINT" as const,
+      position: {
+        latitude: 48,
+        longitude: 2,
+        capturedAt: "2026-10-09T08:00:00.000Z",
+        source: "DEVICE" as const,
+      },
+    };
+    await applyStoreContext(x.a, x.f.storeId, settings);
+    const { position, ...visible } = settings;
+    const c = await operationsController(x),
+      m = await savedOperationsCard(
+        x,
+        { kind: "SETTINGS", action: "PREPARE", patch: { schoolZone: "B" } },
+        { ...operationsBlank, settings: visible },
+      );
+    expect(m.text).not.toContain("latitude");
+    await expect(
+      (await operationsController(x, true, false)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    await c.confirm(m);
+    expect(
+      (await new StoreContextRepository(x.a).get(x.f.storeId))!.entity.position,
+    ).toEqual(position);
+    const r = settingsSaveResultSchema.parse(
+      JSON.parse(
+        (
+          x.db
+            .prepare(
+              "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+            )
+            .get(m.id) as { result_json: string }
+        ).result_json,
+      ),
+    );
+    const { position: old, ...afterVisible } = r.after;
+    void old;
+    const city = await savedOperationsCard(
+      x,
+      {
+        kind: "SETTINGS",
+        action: "PREPARE",
+        patch: {
+          city: "Lyon",
+          postalCode: "69001",
+          schoolZone: "A",
+          location: "CITY",
+        },
+      },
+      { ...operationsBlank, settings: afterVisible },
+    );
+    await c.confirm(city);
+    const after = (await new StoreContextRepository(x.a).get(x.f.storeId))!
+      .entity;
+    expect(after).toMatchObject({
+      city: "Lyon",
+      schoolZone: "A",
+      locationMode: "CITY",
+      position: null,
+      version: 3,
+    });
+  } finally {
+    x.db.close();
+  }
+});
+it("restores completed operations cards after closing SQLite without another outbox command", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-operations-card-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let opened: DatabaseSync | undefined;
+  try {
+    const m = await savedOperationsCard(
+      x,
+      {
+        kind: "SETTINGS",
+        action: "PREPARE",
+        patch: { city: "Asnières-sur-Seine", postalCode: "92600" },
+      },
+      operationsBlank,
+    );
+    await (await operationsController(x)).confirm(m);
+    const before = x.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    x.db.close();
+    opened = new DatabaseSync(path);
+    expect(
+      (
+        await (
+          await operationsController(x, true, true, new Adapter(opened))
+        ).confirm(m)
+      ).status,
+    ).toBe("COMPLETED");
+    expect(opened.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      before,
+    );
+  } finally {
+    if (opened) opened.close();
+    else x.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

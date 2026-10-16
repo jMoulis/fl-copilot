@@ -2671,6 +2671,12 @@ it("advertises need preparation only to capable callers and returns a review art
   let calls = 0;
   const transport: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
+    const definition = body.tools.find(
+      (t: { name: string }) => t.name === "need_mutation_preview",
+    );
+    expect(definition.parameters.type).toBe("object");
+    expect(definition.parameters.oneOf).toBeUndefined();
+    expect(definition.parameters.anyOf).toBeUndefined();
     if (calls++ === 0) {
       expect(
         body.tools.some(
@@ -2798,3 +2804,93 @@ it.each(["INSPECTED", "READY"] as const)(
     );
   },
 );
+
+it("advertises store operations preparation only to capable callers and returns a review artifact without business writes", async () => {
+  const { copilotOperationsPreviewSchema } = await import("@fl-copilot/domain");
+  const f = fixture(),
+    data = { storeId: f.request.storeId };
+  f.request.storeId = data.storeId;
+  f.request.context = detectCopilotConflicts({
+    batch: scoreCopilotPriorities({
+      storeId: data.storeId,
+      evaluatedAt,
+      candidates: [],
+    }),
+    intents: [],
+  });
+  const input = {
+    kind: "SETTINGS" as const,
+    action: "PREPARE" as const,
+    patch: { city: "Asnières-sur-Seine", postalCode: "92600" },
+  };
+  const evidence = {
+    id: "task-preview",
+    sourceId: data.storeId,
+    sourceVersion: null,
+    sourceType: "COMMERCIAL_OPERATION" as const,
+    label: "Déclaration préparée",
+    value: "Aucun enregistrement effectué.",
+    factKind: "PLANNED" as const,
+  };
+  const value = copilotOperationsPreviewSchema.parse({
+    input,
+    status: "READY",
+    basis: { product: null, event: null, settings: null },
+    missingFields: [],
+    evidence: [evidence],
+  });
+  const operationsPreview = vi.fn(async () => value);
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    const definition = body.tools.find(
+      (t: { name: string }) => t.name === "store_operations_preview",
+    );
+    expect(definition.parameters.type).toBe("object");
+    expect(definition.parameters.oneOf).toBeUndefined();
+    expect(definition.parameters.anyOf).toBeUndefined();
+    if (calls++ === 0) {
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "store_operations_preview",
+        ),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_execution",
+          call_id: "call_execution",
+          name: "store_operations_preview",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    operationsPreview,
+  }).generate(f.request, schema);
+  expect(operationsPreview).toHaveBeenCalledOnce();
+  expect(result.operationsPreviews).toEqual([value]);
+  expect(result.toolEvidence).toEqual([evidence]);
+  await createCopilotAiProvider(
+    f.config,
+    async (_url, init) => {
+      expect(
+        JSON.parse(String(init?.body)).tools.some(
+          (t: { name: string }) => t.name === "store_operations_preview",
+        ),
+      ).toBe(false);
+      return response();
+    },
+    { daily: vi.fn() },
+  ).generate(f.request, schema);
+});
