@@ -1,0 +1,282 @@
+import { randomUUID } from "node:crypto";
+import { MongoClient, type Db, type Document } from "mongodb";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  copilotAnalyticsQuerySchema,
+  type CopilotAnalyticsQuery,
+} from "@fl-copilot/domain";
+import { readAnalyticsQuery } from "../src/copilot/analytics-query-tool";
+import { runMongoMigrations } from "../src/database/migrations";
+import { renderAnswerText } from "../src/copilot/answer-text";
+const uri = process.env.TEST_MONGODB_URI;
+describe.skipIf(!uri)("flexible canonical analytics queries", () => {
+  let client: MongoClient, db: Db, storeId: string, otherStore: string;
+  let banana: string, pear: string;
+  const query = (
+    extra: Partial<CopilotAnalyticsQuery> = {},
+  ): CopilotAnalyticsQuery => ({
+    currentPeriod: { start: "2025-10-01", end: "2025-10-31" },
+    referencePeriod: null,
+    groupBy: "PRODUCT",
+    metrics: ["sales"],
+    aggregation: "SUM",
+    filters: {
+      productIds: null,
+      labelContains: null,
+      category: null,
+      nature: null,
+    },
+    having: null,
+    sort: { metric: "sales", value: "CURRENT", direction: "DESC" },
+    offset: 0,
+    limit: 10,
+    ...extra,
+  });
+  const snapshot = (
+    id: string,
+    productId: string,
+    date: string,
+    value: string | null,
+  ) => {
+    const availability = {
+      status: value === null ? "UNAVAILABLE" : "AVAILABLE",
+      inputCount: 1,
+      availableInputCount: value === null ? 0 : 1,
+      missingInputCount: value === null ? 1 : 0,
+    };
+    return {
+      _id: randomUUID(),
+      storeId: id,
+      productId,
+      date,
+      performance: {
+        storeId: id,
+        productId,
+        date,
+        formulaVersion: "product-daily-v1",
+        inputRevision: randomUUID(),
+        computedAt: "2026-10-16T00:00:00.000Z",
+        sales: { salesValue: value, marginValue: value },
+        waste: { salesValue: value },
+        availability: {
+          salesValue: availability,
+          salesMarginValue: availability,
+          wasteSalesValue: availability,
+        },
+      },
+    };
+  };
+  beforeAll(async () => {
+    client = await MongoClient.connect(uri!);
+    db = client.db(`fl_cube_${randomUUID().replaceAll("-", "").slice(0, 24)}`);
+    await runMongoMigrations(db);
+  });
+  afterAll(async () => {
+    try {
+      await db?.dropDatabase();
+    } finally {
+      await client?.close();
+    }
+  });
+  beforeEach(async () => {
+    storeId = randomUUID();
+    otherStore = randomUUID();
+    banana = randomUUID();
+    pear = randomUUID();
+    await db.collection<Document & { _id: string }>("products").insertMany([
+      {
+        _id: banana,
+        storeId,
+        label: "BANANE VRAC",
+        category: "FRUIT",
+        nature: "BULK",
+      },
+      {
+        _id: pear,
+        storeId,
+        label: "POIRE",
+        category: "FRUIT",
+        nature: "PACKAGED",
+        deletedAt: "2026-01-01",
+      },
+      {
+        _id: randomUUID(),
+        storeId: otherStore,
+        label: "PRIVATE PRODUCT",
+        category: "OTHER",
+        nature: "UNKNOWN",
+      },
+    ]);
+    await db
+      .collection<Document & { _id: string }>("productDailyPerformance")
+      .insertMany([
+        snapshot(storeId, banana, "2025-10-01", "10.10"),
+        snapshot(storeId, banana, "2025-10-02", "0.20"),
+        snapshot(storeId, pear, "2025-10-01", "20.00"),
+        snapshot(storeId, banana, "2024-10-01", "40.00"),
+        snapshot(otherStore, randomUUID(), "2025-10-01", "999999.00"),
+      ]);
+  });
+  it("returns a complete-scope product ranking on partial calendar data and renders a verified table", async () => {
+    const r = await readAnalyticsQuery(db, storeId, query());
+    expect(r).toMatchObject({
+      status: "AVAILABLE",
+      totalGroups: 2,
+      hasMore: false,
+      rows: [
+        { key: pear, metrics: [{ current: "20.00" }] },
+        {
+          key: banana,
+          metrics: [
+            {
+              current: "10.30",
+              currentCoverage: { availableDays: 2, missingDays: 29 },
+            },
+          ],
+        },
+      ],
+    });
+    expect(JSON.stringify(r)).not.toContain("999999");
+    expect(JSON.stringify(r)).not.toContain("PRIVATE PRODUCT");
+    const facts = r.rows.map((row) => ({
+      evidenceId: row.metrics[0]!.evidenceIds.current,
+    }));
+    const text = renderAnswerText(
+      "| Produit | CA |\n| --- | --- |\n| {{label:0}} | {{value:0}} € |\n| {{label:1}} | {{value:1}} € |\n{{source:0}}",
+      facts,
+      r.evidence,
+    );
+    expect(text).toContain("20,00 €");
+    expect(text).toContain("10,30 €");
+    expect(text).toContain("BANANE VRAC");
+  });
+  it("filters by a literal name or current category/nature, keeps retired historical products and returns unresolved IDs", async () => {
+    const name = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({ filters: { ...query().filters, labelContains: "banane" } }),
+    );
+    expect(name.rows.map((r) => r.key)).toEqual([banana]);
+    const packaged = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({ filters: { ...query().filters, nature: "PACKAGED" } }),
+    );
+    expect(packaged.rows.map((r) => r.key)).toEqual([pear]);
+    const unknown = randomUUID();
+    const empty = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({ filters: { ...query().filters, productIds: [unknown] } }),
+    );
+    expect(empty).toMatchObject({
+      status: "EMPTY",
+      rows: [],
+      unresolvedProductIds: [unknown],
+    });
+    expect(
+      (
+        await readAnalyticsQuery(
+          db,
+          storeId,
+          query({ filters: { ...query().filters, labelContains: ".*" } }),
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+  it("compares arbitrary months, orders decreases, paginates only after global ranking and has stable evidence identities", async () => {
+    const input = query({
+      referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+      having: null,
+      sort: { metric: "sales", value: "CHANGE", direction: "ASC" },
+      limit: 1,
+    });
+    const a = await readAnalyticsQuery(db, storeId, input),
+      b = await readAnalyticsQuery(db, storeId, input);
+    expect(a).toEqual(b);
+    expect(a).toMatchObject({
+      hasMore: true,
+      nextOffset: 1,
+      rows: [
+        {
+          key: banana,
+          metrics: [
+            {
+              current: "10.30",
+              reference: "40.00",
+              change: "-29.70",
+              changePercent: "-74.25",
+            },
+          ],
+        },
+      ],
+    });
+    expect(
+      (await readAnalyticsQuery(db, storeId, { ...input, offset: 1 })).rows[0]!
+        .key,
+    ).toBe(pear);
+    expect(
+      a.evidence.find(
+        (e) => e.id === a.rows[0]!.metrics[0]!.evidenceIds.change,
+      )!.value,
+    ).toBe("-29.70");
+  });
+  it("handles unknown catalogue classification, daily gaps and multiple monetary metrics without inferred zeros", async () => {
+    const missing = randomUUID();
+    await db
+      .collection<Document & { _id: string }>("productDailyPerformance")
+      .insertOne(snapshot(storeId, missing, "2025-10-01", "1.00"));
+    const category = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({ groupBy: "CATEGORY", metrics: ["sales", "margin", "waste"] }),
+    );
+    expect(category.rows.map((r) => r.key)).toEqual(["FRUIT", "UNKNOWN"]);
+    expect(category.rows[0]!.metrics).toHaveLength(3);
+    const daily = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({
+        groupBy: "DAY",
+        having: null,
+        sort: { metric: "sales", value: "GROUP", direction: "ASC" },
+        limit: 3,
+      }),
+    );
+    expect(daily.rows.map((r) => r.metrics[0]!.current)).toEqual([
+      "31.10",
+      "0.20",
+      null,
+    ]);
+    expect(daily.rows[2]!.metrics[0]!.currentCoverage.missingDays).toBe(1);
+    expect(daily.rows[1]!.metrics[0]!.currentCoverage.partialDays).toBe(1);
+  });
+  it("revalidates snapshot scope and never executes model operators or writes operational data", async () => {
+    const before = await db
+      .collection("productDailyPerformance")
+      .countDocuments();
+    expect(
+      copilotAnalyticsQuerySchema.safeParse({
+        ...query(),
+        pipeline: [{ $out: "products" }],
+      }).success,
+    ).toBe(false);
+    await expect(
+      readAnalyticsQuery(db, storeId, { ...query(), storeId: otherStore }),
+    ).rejects.toThrow();
+    await readAnalyticsQuery(db, storeId, query());
+    expect(
+      await db.collection("productDailyPerformance").countDocuments(),
+    ).toBe(before);
+    expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
+    await db
+      .collection<Document & { _id: string }>("productDailyPerformance")
+      .updateOne(
+        { storeId, productId: banana, date: "2025-10-01" },
+        { $set: { "performance.storeId": otherStore } },
+      );
+    await expect(readAnalyticsQuery(db, storeId, query())).rejects.toThrow(
+      "ANALYTICS_QUERY_SCOPE_INVALID",
+    );
+  });
+});

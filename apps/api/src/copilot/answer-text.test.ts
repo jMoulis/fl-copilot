@@ -72,3 +72,31 @@ it("keeps a concise qualification in the answer and the calendar inventory behin
       .value,
   ).toBe(detail);
 });
+it("renders a comparative table with more than twenty-four verified values while still rejecting invented figures", async () => {
+  const { copilotResponseSchema } = await import("@fl-copilot/domain");
+  const evidence = Array.from({ length: 30 }, (_, i) => ({
+    ...e[0]!,
+    id: `table/${i}`,
+    label: "Montant renseigné",
+    value: `${i}.00`,
+  }));
+  const facts = evidence.map((v) => ({ evidenceId: v.id }));
+  const narrative =
+    "| Montant |\n| --- |\n" +
+    facts.map((_, i) => `| {{value:${i}}} € |`).join("\n");
+  const response = copilotResponseSchema.parse({
+    language: "fr-FR",
+    summary: "Voici les montants renseignés.",
+    facts,
+    narrative,
+    interpretation: [],
+    recommendations: [],
+    questions: [],
+  });
+  expect(
+    renderAnswerText(response.narrative!, response.facts, evidence),
+  ).toContain("29,00 €");
+  expect(() =>
+    renderAnswerText(narrative + "Total : 999 €", facts, evidence),
+  ).toThrow("INVALID_ANSWER_TEMPLATE");
+});

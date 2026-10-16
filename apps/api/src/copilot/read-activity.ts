@@ -8,6 +8,7 @@ export function readActivityStage(key: string): CopilotActivity["stage"] {
     return args[1] && typeof args[1] === "object" && args[1].referencePeriod
       ? "COMPARISON"
       : "ANALYTICS";
+  if (kind === "analytics-query") return "ANALYTICS";
   if (kind === "daily") return "COMPARISON";
   if (
     kind === "products" ||

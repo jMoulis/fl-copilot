@@ -8,7 +8,7 @@ export const copilotResponseSchema = z
   .object({
     language: z.literal("fr-FR"),
     summary: prose,
-    facts: z.array(z.object({ evidenceId: reference }).strict()).max(24),
+    facts: z.array(z.object({ evidenceId: reference }).strict()).max(96),
     narrative: z.string().trim().min(1).max(12000).optional(),
     interpretation: z.array(prose).max(8),
     recommendations: z
