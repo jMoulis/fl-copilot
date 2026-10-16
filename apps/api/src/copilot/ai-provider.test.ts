@@ -2625,3 +2625,176 @@ it("permits the bounded search/inspect/preview depth for catalogue callers then 
   expect(cataloguePreview).toHaveBeenCalledTimes(3);
   expect(r.cataloguePreviews).toHaveLength(3);
 });
+
+it("advertises need preparation only to capable callers and returns a review artifact without business writes", async () => {
+  const { copilotNeedPreviewSchema } = await import("@fl-copilot/domain");
+  const f = fixture(),
+    data = { storeId: f.request.storeId };
+  f.request.storeId = data.storeId;
+  f.request.context = detectCopilotConflicts({
+    batch: scoreCopilotPriorities({
+      storeId: data.storeId,
+      evaluatedAt,
+      candidates: [],
+    }),
+    intents: [],
+  });
+  const input = {
+    kind: "NEED" as const,
+    action: "PREPARE" as const,
+    needUnitId: null,
+    patch: { name: "Repas rapide" },
+  };
+  const evidence = {
+    id: "task-preview",
+    sourceId: data.storeId,
+    sourceVersion: null,
+    sourceType: "COMMERCIAL_OPERATION" as const,
+    label: "Déclaration préparée",
+    value: "Aucun enregistrement effectué.",
+    factKind: "PLANNED" as const,
+  };
+  const value = copilotNeedPreviewSchema.parse({
+    input,
+    status: "READY",
+    basis: {
+      need: null,
+      product: null,
+      substitute: null,
+      membership: null,
+      substitution: null,
+    },
+    missingFields: [],
+    evidence: [evidence],
+  });
+  const needPreview = vi.fn(async () => value);
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "need_mutation_preview",
+        ),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_execution",
+          call_id: "call_execution",
+          name: "need_mutation_preview",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    needPreview,
+  }).generate(f.request, schema);
+  expect(needPreview).toHaveBeenCalledOnce();
+  expect(result.needPreviews).toEqual([value]);
+  expect(result.toolEvidence).toEqual([evidence]);
+  await createCopilotAiProvider(
+    f.config,
+    async (_url, init) => {
+      expect(
+        JSON.parse(String(init?.body)).tools.some(
+          (t: { name: string }) => t.name === "need_mutation_preview",
+        ),
+      ).toBe(false);
+      return response();
+    },
+    { daily: vi.fn() },
+  ).generate(f.request, schema);
+});
+
+it.each(["INSPECTED", "READY"] as const)(
+  "bounds need read/action cards and hides unrelated writers (%s)",
+  async (status) => {
+    const { copilotNeedPreviewSchema } = await import("@fl-copilot/domain"),
+      { substitutionFixture } =
+        await import("../../../../scripts/test-substitution-fixtures");
+    const f = fixture(),
+      data = await substitutionFixture();
+    let calls = 0;
+    const needPreview = vi.fn(async (input: unknown) => {
+      const v = z.object({ needUnitId: z.string() }).parse(input);
+      return copilotNeedPreviewSchema.parse({
+        input,
+        status,
+        basis: {
+          need: { ...data.need, id: v.needUnitId, storeId: f.request.storeId },
+          product: null,
+          substitute: null,
+          membership: null,
+          substitution: null,
+        },
+        missingFields: [],
+        evidence: [
+          {
+            id: `need-read-${v.needUnitId}`,
+            sourceId: v.needUnitId,
+            sourceVersion: 1,
+            sourceType: "DATA_QUALITY",
+            label: "Besoin",
+            value: "Consulté.",
+            factKind: "QUALITY",
+          },
+        ],
+      });
+    });
+    const ids = [0, 1, 2, 3, 4].map(() => randomUUID());
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "product_catalogue_preview",
+        ),
+      ).toBe(false);
+      const n = calls++;
+      if (n < 2) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = ids
+          .slice(n === 0 ? 0 : 3, n === 0 ? 3 : 5)
+          .map((id) => ({
+            type: "function_call",
+            id: `fc_${id}`,
+            call_id: `call_${id}`,
+            name: "need_mutation_preview",
+            arguments: JSON.stringify({
+              kind: "NEED",
+              action: status === "READY" ? "PREPARE" : "INSPECT",
+              needUnitId: id,
+              patch: status === "READY" ? { name: "Nouveau nom" } : {},
+            }),
+            status: "completed",
+          }));
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      needPreview,
+    }).generate(f.request, schema);
+    expect(calls).toBe(3);
+    expect(needPreview).toHaveBeenCalledTimes(4);
+    expect(r.toolEvidence).toHaveLength(status === "READY" ? 3 : 4);
+    expect(r.needPreviews?.filter((p) => p.status === "READY")).toHaveLength(
+      status === "READY" ? 3 : 0,
+    );
+  },
+);

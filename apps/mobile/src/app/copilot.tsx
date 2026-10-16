@@ -1,3 +1,6 @@
+import { NeedProposalCard } from "@/copilot/need-proposal-card";
+import { CopilotNeedProposalController } from "@/copilot/need-proposal-controller";
+import { readCopilotNeedProposal } from "@fl-copilot/domain";
 import { CatalogueProposalCard } from "@/copilot/catalogue-proposal-card";
 import { CopilotCatalogueProposalController } from "@/copilot/catalogue-proposal-controller";
 import { readCopilotCatalogueProposal } from "@fl-copilot/domain";
@@ -116,6 +119,16 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
+  const needProposals = useMemo(
+    () =>
+      new CopilotNeedProposalController(
+        sqlite,
+        { storeId, ownerId, deviceId, canManageProducts },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
   const catalogueProposals = useMemo(
     () =>
       new CopilotCatalogueProposalController(
@@ -177,6 +190,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       );
     } catch {
       /* Other supported tool artifacts are handled below. */
+    }
+    try {
+      readCopilotNeedProposal(message);
+      return (
+        <NeedProposalCard
+          key={message.id}
+          message={message}
+          controller={needProposals}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
     }
     try {
       readCopilotCatalogueProposal(message);
@@ -246,6 +272,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              needProposals: canManageProducts,
               catalogueProposals: canManageProducts,
               executionProposals: canDeclareCommercialExecution,
               fetch: expoFetch as typeof fetch,
