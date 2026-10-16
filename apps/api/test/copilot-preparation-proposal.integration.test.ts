@@ -115,6 +115,27 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       "UNAVAILABLE",
     );
   });
+  it("reports an oversized complete review explicitly instead of truncating or breaking the reply", async () => {
+    const f = await fixture();
+    const placements = Array.from({ length: 30 }, (_, i) => ({
+      ...f.preparation.placements[0],
+      id: randomUUID(),
+      label: String(i).padStart(2, "0") + "a".repeat(78),
+      theme: "b".repeat(240),
+    }));
+    await db
+      .collection("commercialWeekPreparations")
+      .updateOne({ _id: f.preparation.id } as Document, {
+        $set: { placements, tgCapacity: 30, note: "n".repeat(1200) },
+      });
+    const r = await readPreparationPreview(db, f.storeId, {
+      weekStart: f.preparation.weekStart,
+      patch: { note: "Autre note" },
+    });
+    expect(r.status).toBe("LIMIT_EXCEEDED");
+    expect(r.basis).toBeNull();
+    expect(String(r.evidence[0].value)).toContain("trop volumineux");
+  });
   it.skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
     "atomically persists a private TG review card with its reply and replays it without business writes",
     async () => {

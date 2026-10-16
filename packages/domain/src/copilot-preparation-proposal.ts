@@ -106,7 +106,13 @@ export function prepareWeekPatch(
 }
 export const copilotPreparationPreviewSchema = z.strictObject({
   input: copilotPreparationPatchSchema,
-  status: z.enum(["READY", "UNCHANGED", "UNAVAILABLE", "BLOCKED"]),
+  status: z.enum([
+    "READY",
+    "UNCHANGED",
+    "UNAVAILABLE",
+    "BLOCKED",
+    "LIMIT_EXCEEDED",
+  ]),
   basis: preparationBasisSchema.nullable(),
   evidence: z.array(copilotEvidenceSchema).min(1).max(2),
 });

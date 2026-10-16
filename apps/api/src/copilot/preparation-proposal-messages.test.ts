@@ -121,7 +121,12 @@ it("builds stable scoped cards and keeps only the latest preview per week; no un
   expect(
     readCopilotPreparationProposal(cards[0]).request.input.draft.note,
   ).toBe(input.patch.note);
-  for (const status of ["UNCHANGED", "BLOCKED", "UNAVAILABLE"])
+  for (const status of [
+    "UNCHANGED",
+    "BLOCKED",
+    "UNAVAILABLE",
+    "LIMIT_EXCEEDED",
+  ])
     expect(
       buildPreparationProposalMessages(assistant, [
         preview,

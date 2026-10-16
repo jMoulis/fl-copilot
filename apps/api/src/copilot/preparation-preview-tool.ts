@@ -21,8 +21,10 @@ export async function readPreparationPreview(
     limit: 10,
   });
   const all = r.all;
-  let status: "READY" | "UNCHANGED" | "UNAVAILABLE" | "BLOCKED" = "READY";
-  const basis =
+  let status:
+    "READY" | "UNCHANGED" | "UNAVAILABLE" | "BLOCKED" | "LIMIT_EXCEEDED" =
+    "READY";
+  let basis =
     r.preparation && all.length === r.preparation.offerRefs.length
       ? { preparation: r.preparation, choices: all }
       : null;
@@ -43,6 +45,12 @@ export async function readPreparationPreview(
     } catch {
       status = "BLOCKED";
     }
+  // Keep complete review snapshots inside the existing 16k private-message contract.
+  // Reserve room for the kind/version/assistant binding; never truncate a review.
+  if (JSON.stringify({ input, basis }).length > 15000) {
+    status = "LIMIT_EXCEEDED";
+    basis = null;
+  }
   const hash = createHash("sha256")
     .update(JSON.stringify([storeId, input, basis, status]))
     .digest("hex");
@@ -59,13 +67,15 @@ export async function readPreparationPreview(
         label: "Modification du brouillon TG",
         factKind: "QUALITY",
         value:
-          status === "READY"
-            ? "Modification préparée, à confirmer sur l’appareil. Le brouillon sera enregistré localement ; aucune validation de plan ni installation en rayon."
-            : status === "UNCHANGED"
-              ? "Le brouillon contient déjà ces valeurs ; aucun changement."
-              : status === "UNAVAILABLE"
-                ? "Le brouillon ou ses offres ne sont pas disponibles. Ouvrez ou créez la préparation hebdomadaire, puis synchronisez-la."
-                : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts et les affectations aux offres déjà sélectionnées. Aucun changement.",
+          status === "LIMIT_EXCEEDED"
+            ? "Ce brouillon est trop volumineux pour une carte de confirmation complète. Modifiez-le dans l’écran de préparation hebdomadaire ; aucune donnée n’a été tronquée ni enregistrée."
+            : status === "READY"
+              ? "Modification préparée, à confirmer sur l’appareil. Le brouillon sera enregistré localement ; aucune validation de plan ni installation en rayon."
+              : status === "UNCHANGED"
+                ? "Le brouillon contient déjà ces valeurs ; aucun changement."
+                : status === "UNAVAILABLE"
+                  ? "Le brouillon ou ses offres ne sont pas disponibles. Ouvrez ou créez la préparation hebdomadaire, puis synchronisez-la."
+                  : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts et les affectations aux offres déjà sélectionnées. Aucun changement.",
       },
     ],
   });
