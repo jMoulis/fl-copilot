@@ -1,3 +1,6 @@
+import { ExecutionProposalCard } from "@/copilot/execution-proposal-card";
+import { CopilotExecutionProposalController } from "@/copilot/execution-proposal-controller";
+import { readCopilotExecutionProposal } from "@fl-copilot/domain";
 import { ContextCheckpointCard } from "@/copilot/context-checkpoint-card";
 import { readContextCheckpoint } from "@fl-copilot/domain";
 import { readKnowledgeSuggestion } from "@fl-copilot/domain";
@@ -23,7 +26,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { randomUUID } from "expo-crypto";
+import {
+  randomUUID,
+  digestStringAsync,
+  CryptoDigestAlgorithm,
+} from "expo-crypto";
 import { ApiClient } from "@fl-copilot/api-client";
 import { useAuth } from "@/auth/auth-provider";
 import { useLocalDatabase } from "@/providers/database-provider";
@@ -43,6 +50,8 @@ import {
   InlineAlert,
 } from "@/components/ui";
 import { colors } from "@/design/tokens";
+const executionDigest = (s: string) =>
+  digestStringAsync(CryptoDigestAlgorithm.SHA256, s);
 
 interface NativePdfPicker {
   getDocumentAsync(options: {
@@ -94,6 +103,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     session?.stores.some(
       (store) => store.storeId === storeId && store.role === "MANAGER",
     ) ?? false;
+  const canDeclareCommercialExecution = canManageProducts; // Current MANAGER role policy.
   const proposals = useMemo(
     () =>
       new CopilotProductProposalController(
@@ -102,6 +112,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const executionProposals = useMemo(
+    () =>
+      new CopilotExecutionProposalController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canDeclareCommercialExecution,
+        },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canDeclareCommercialExecution],
   );
   const forms = useMemo(
     () =>
@@ -140,6 +165,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       );
     } catch {
       /* Other supported tool artifacts are handled below. */
+    }
+    try {
+      readCopilotExecutionProposal(message);
+      return (
+        <ExecutionProposalCard
+          key={message.id}
+          message={message}
+          controller={executionProposals}
+          canConfirm={canDeclareCommercialExecution}
+        />
+      );
+    } catch {
+      /* Other supported private tool artifacts follow. */
     }
     try {
       readCopilotProductProposal(message);
@@ -183,12 +221,20 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              executionProposals: canDeclareCommercialExecution,
               fetch: expoFetch as typeof fetch,
             }),
           ),
       },
     );
-  }, [sqlite, storeId, ownerId, syncNow, withAccessToken]);
+  }, [
+    sqlite,
+    storeId,
+    ownerId,
+    syncNow,
+    withAccessToken,
+    canDeclareCommercialExecution,
+  ]);
   const attachPdf = async (signal: AbortSignal, capacity: number) => {
     if (!pdfPicker) throw Error("COPILOT_PDF_PICKER_UNAVAILABLE");
     return selectCopilotPdfs(

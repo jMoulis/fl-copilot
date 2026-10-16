@@ -349,3 +349,228 @@ it("keeps absent plans absent, blocks conflicts and rolls back declarations on c
     s.db.close();
   }
 });
+
+async function savedExecutionProposal(
+  s: Awaited<ReturnType<typeof setup>>,
+  status: "DONE" | "TODO" | "SKIPPED" | "NOT_APPLICABLE" = "DONE",
+  before = null as import("@fl-copilot/domain").CommercialExecutionTask | null,
+) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain");
+  const { applyCopilotRecord } = await import("./conversation-repository");
+  const assistant = copilotMessageSchema.parse({
+    ...s.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    text: "Déclaration préparée, à confirmer.",
+    replyToMessageId: s.f.message.id,
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "COMMERCIAL_EXECUTION_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input: {
+        weekStart: s.fixture.plan.weekStart,
+        taskId: s.fixture.proposals[0]!.id,
+        status,
+        note:
+          status === "SKIPPED" || status === "NOT_APPLICABLE"
+            ? "Décision utilisateur : affichage non retenu"
+            : "Affiche imprimée",
+      },
+      proposal: s.fixture.proposals[0],
+      before,
+    }),
+  });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", message);
+  });
+  return message;
+}
+async function proposalController(
+  s: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  db = s.a,
+) {
+  const { CopilotExecutionProposalController } =
+    await import("./execution-proposal-controller");
+  return new CopilotExecutionProposalController(
+    db,
+    {
+      storeId: s.f.storeId,
+      ownerId: s.f.ownerId,
+      deviceId: s.authority(s.request).deviceId,
+      canDeclareCommercialExecution: allowed,
+    },
+    testChoiceDigest,
+    randomUUID,
+  );
+}
+it("confirms a persisted execution card offline once, preserves its completion after reopening SQLite and never modifies its plan", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-execution-card-")),
+    path = join(dir, "db.sqlite"),
+    s = await setup(path);
+  let opened: DatabaseSync | undefined;
+  try {
+    const message = await savedExecutionProposal(s),
+      controller = await proposalController(s);
+    const count = () =>
+      (
+        s.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_type='commercial_execution_task'",
+          )
+          .get() as { n: number }
+      ).n;
+    const original = s.db
+      .prepare("SELECT payload_json FROM commercial_week_plans")
+      .get();
+    expect((await controller.open(message)).status).toBe("READY");
+    expect(count()).toBe(0);
+    expect((await controller.confirm(message)).status).toBe("COMPLETED");
+    expect(count()).toBe(1);
+    expect(
+      s.db.prepare("SELECT payload_json FROM commercial_week_plans").get(),
+    ).toEqual(original);
+    s.db.close();
+    opened = new DatabaseSync(path);
+    const restored = await proposalController(s, true, new Adapter(opened));
+    expect((await restored.confirm(message)).status).toBe("COMPLETED");
+    expect(
+      (
+        opened
+          .prepare(
+            "SELECT COUNT(*) AS n FROM sync_outbox WHERE entity_type='commercial_execution_task'",
+          )
+          .get() as { n: number }
+      ).n,
+    ).toBe(1);
+  } finally {
+    if (opened) opened.close();
+    else s.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("rejects forged/foreign/unsynchronized execution cards and revoked write permission", async () => {
+  const s = await setup();
+  try {
+    const message = await savedExecutionProposal(s),
+      controller = await proposalController(s);
+    await expect(
+      controller.confirm({
+        ...message,
+        text: message.text.replace("Affiche imprimée", "Forged note"),
+      }),
+    ).rejects.toThrow();
+    await expect(
+      (await proposalController(s, false)).confirm(message),
+    ).rejects.toThrow("FORBIDDEN");
+    await expect(
+      controller.open({ ...message, ownerId: randomUUID() }),
+    ).rejects.toThrow();
+    s.db
+      .prepare("UPDATE copilot_messages SET sync_state='PENDING' WHERE id=?")
+      .run(message.id);
+    await expect(controller.open(message)).rejects.toThrow();
+    expect(
+      (
+        s.db
+          .prepare("SELECT COUNT(*) AS n FROM commercial_execution_tasks")
+          .get() as { n: number }
+      ).n,
+    ).toBe(0);
+  } finally {
+    s.db.close();
+  }
+});
+it("refuses a changed declaration or plan instead of overwriting it from an old execution card", async () => {
+  const s = await setup();
+  try {
+    const message = await savedExecutionProposal(s),
+      controller = await proposalController(s);
+    await s.runtime.execute(s.request, s.authority(s.request));
+    expect((await controller.open(message)).status).toBe("STALE");
+    await expect(controller.confirm(message)).rejects.toThrow("STALE");
+    const fresh = await savedExecutionProposal(
+      s,
+      "TODO",
+      (await new (
+        await import("../commercial/execution-repository")
+      ).CommercialExecutionRepository(s.a, testChoiceDigest).get(
+        s.f.storeId,
+        s.fixture.proposals[0]!.id,
+      ))!.entity,
+    );
+    expect((await controller.open(fresh)).status).toBe("READY");
+    s.db
+      .prepare("UPDATE commercial_week_plans SET sync_state='CONFLICT'")
+      .run();
+    expect((await controller.open(fresh)).status).toBe("STALE");
+    await expect(controller.confirm(fresh)).rejects.toThrow("STALE");
+  } finally {
+    s.db.close();
+  }
+});
+it("rolls back execution/card completion/outbox together on failure and honours cancellation", async () => {
+  const s = await setup();
+  try {
+    const message = await savedExecutionProposal(s),
+      controller = await proposalController(s);
+    await expect(
+      controller.confirm(message, AbortSignal.abort()),
+    ).rejects.toThrow();
+    s.a.fail = true;
+    await expect(controller.confirm(message)).rejects.toThrow();
+    s.a.fail = false;
+    expect(
+      (
+        s.db
+          .prepare("SELECT COUNT(*) AS n FROM commercial_execution_tasks")
+          .get() as { n: number }
+      ).n,
+    ).toBe(0);
+    expect(
+      (
+        s.db
+          .prepare("SELECT COUNT(*) AS n FROM copilot_tool_results")
+          .get() as { n: number }
+      ).n,
+    ).toBe(0);
+    expect((await controller.open(message)).status).toBe("READY");
+    await controller.confirm(message);
+  } finally {
+    s.db.close();
+  }
+});
+it("records an explicit reason and can reset a reviewed declaration without claiming physical work", async () => {
+  const s = await setup();
+  try {
+    const message = await savedExecutionProposal(s, "SKIPPED"),
+      controller = await proposalController(s);
+    await controller.confirm(message);
+    const repo = new (
+      await import("../commercial/execution-repository")
+    ).CommercialExecutionRepository(s.a, testChoiceDigest);
+    const before = (await repo.get(s.f.storeId, s.fixture.proposals[0]!.id))!
+      .entity;
+    expect(before).toMatchObject({
+      status: "SKIPPED",
+      completedAt: null,
+      note: "Décision utilisateur : affichage non retenu",
+    });
+    const reset = await savedExecutionProposal(s, "TODO", before);
+    await controller.confirm(reset);
+    expect((await repo.get(s.f.storeId, before.id))!.entity).toMatchObject({
+      status: "TODO",
+      completedAt: null,
+      version: 2,
+    });
+  } finally {
+    s.db.close();
+  }
+});

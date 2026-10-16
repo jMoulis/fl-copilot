@@ -258,7 +258,7 @@ it("negotiates and scopes public activity events without persisting them in the 
   );
   expect(result.message).toEqual(message);
 });
-it("opts into memory and web sources only when the client supports their renderer", async () => {
+it("opts into optional proposal and source tools only when the client supports their renderer", async () => {
   const transport = vi.fn<typeof fetch>(
     async () =>
       new Response(
@@ -277,7 +277,12 @@ it("opts into memory and web sources only when the client supports their rendere
       id(5),
       input,
       undefined,
-      { onProgress: vi.fn(), memorySuggestions: enabled, webResearch: enabled },
+      {
+        onProgress: vi.fn(),
+        memorySuggestions: enabled,
+        webResearch: enabled,
+        executionProposals: enabled,
+      },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
     if (enabled)
@@ -285,5 +290,8 @@ it("opts into memory and web sources only when the client supports their rendere
     else expect(headers).not.toHaveProperty("x-copilot-memory-suggestions");
     if (enabled) expect(headers).toHaveProperty("x-copilot-web-research", "1");
     else expect(headers).not.toHaveProperty("x-copilot-web-research");
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-execution-proposals", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-execution-proposals");
   }
 });

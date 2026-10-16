@@ -35,3 +35,34 @@ export const commercialExecutionTaskSchema = z
 export type CommercialExecutionTask = z.infer<
   typeof commercialExecutionTaskSchema
 >;
+
+/** Structural task target identity shared by validators and the execution engine. */
+export function commercialExecutionTargetMatches(
+  left: CommercialExecutionTask,
+  right: Pick<
+    CommercialExecutionTask,
+    | "id"
+    | "storeId"
+    | "planId"
+    | "planRevisionId"
+    | "planVersion"
+    | "planChecksum"
+    | "kind"
+    | "targetId"
+    | "label"
+  >,
+) {
+  return (
+    [
+      "id",
+      "storeId",
+      "planId",
+      "planRevisionId",
+      "planVersion",
+      "planChecksum",
+      "kind",
+      "targetId",
+      "label",
+    ] as const
+  ).every((key) => left[key] === right[key]);
+}
