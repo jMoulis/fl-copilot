@@ -182,6 +182,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onProgress,
               onActivity,
               memorySuggestions: true,
+              webResearch: true,
               fetch: expoFetch as typeof fetch,
             }),
           ),

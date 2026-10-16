@@ -67,6 +67,7 @@ export class ApiClient {
       onProgress(text: string): void;
       onActivity?(activity: CopilotActivity): void;
       memorySuggestions?: boolean;
+      webResearch?: boolean;
       fetch?: typeof fetch;
     },
   ) {
@@ -83,6 +84,9 @@ export class ApiClient {
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
                 ...(streaming.onActivity ? { "x-copilot-activity": "1" } : {}),
+                ...(streaming.webResearch
+                  ? { "x-copilot-web-research": "1" }
+                  : {}),
                 ...(streaming.memorySuggestions
                   ? { "x-copilot-memory-suggestions": "1" }
                   : {}),
