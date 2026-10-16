@@ -1,3 +1,6 @@
+import { PreparationProposalCard } from "@/copilot/preparation-proposal-card";
+import { CopilotPreparationProposalController } from "@/copilot/preparation-proposal-controller";
+import { readCopilotPreparationProposal } from "@fl-copilot/domain";
 import { OperationsProposalCard } from "@/copilot/operations-proposal-card";
 import { CopilotOperationsProposalController } from "@/copilot/operations-proposal-controller";
 import { readCopilotOperationsProposal } from "@fl-copilot/domain";
@@ -125,6 +128,17 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   // Current MANAGER policy; the runtime keeps the two capabilities independent.
   const canCaptureStoreEvents = canManageProducts,
     canManageStoreSettings = canManageProducts;
+  const canPrepareCommercialWeek = canManageProducts;
+  const preparationProposals = useMemo(
+    () =>
+      new CopilotPreparationProposalController(
+        sqlite,
+        { storeId, ownerId, deviceId, canPrepareCommercialWeek },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canPrepareCommercialWeek],
+  );
   const operationsProposals = useMemo(
     () =>
       new CopilotOperationsProposalController(
@@ -218,6 +232,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       );
     } catch {
       /* Other supported tool artifacts are handled below. */
+    }
+    try {
+      readCopilotPreparationProposal(message);
+      return (
+        <PreparationProposalCard
+          key={message.id}
+          message={message}
+          controller={preparationProposals}
+          canConfirm={canPrepareCommercialWeek}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
     }
     try {
       const proposal = readCopilotOperationsProposal(message);
@@ -317,6 +344,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              preparationProposals: canPrepareCommercialWeek,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
               catalogueProposals: canManageProducts,
@@ -332,6 +360,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     ownerId,
     syncNow,
     withAccessToken,
+    canPrepareCommercialWeek,
     canDeclareCommercialExecution,
     canManageProducts,
     canCaptureStoreEvents,

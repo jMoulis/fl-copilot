@@ -103,3 +103,4 @@ export * from "./copilot-need-proposal";
 export * from "./copilot-operations-proposal";
 
 export * from "./copilot-preparation-read";
+export * from "./copilot-preparation-proposal";

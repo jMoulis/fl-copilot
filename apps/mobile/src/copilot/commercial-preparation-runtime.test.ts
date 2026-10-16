@@ -328,3 +328,177 @@ it("keeps missing weeks absent, blocks foreign reads and rejects forged source i
     s.db.close();
   }
 });
+
+async function preparationCard(x: Awaited<ReturnType<typeof setup>>) {
+  const { copilotMessageSchema, copilotPreparationPatchSchema } =
+    await import("@fl-copilot/domain");
+  const { applyCopilotRecord } = await import("./conversation-repository");
+  const after = (await x.runtime.execute(x.request, x.authority(x.request)))
+    .after;
+  const assistant = copilotMessageSchema.parse({
+    ...x.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: x.f.message.id,
+    attachments: [],
+    text: "Brouillon préparé.",
+  });
+  const input = copilotPreparationPatchSchema.parse({
+    weekStart: after.weekStart,
+    patch: {
+      note: "Une nouvelle note",
+      tgUpdates: [
+        {
+          placementId: after.placements[0].id,
+          theme: "Nouveau thème",
+          offerIds: [],
+        },
+      ],
+    },
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "COMMERCIAL_PREPARATION_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input,
+      basis: { preparation: after, choices: [x.choice.choice] },
+    }),
+  });
+  await x.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, x.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, x.f, "copilot_message", message);
+  });
+  return message;
+}
+async function preparationController(
+  x: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  a = x.a,
+) {
+  const { CopilotPreparationProposalController } =
+    await import("./preparation-proposal-controller");
+  return new CopilotPreparationProposalController(
+    a,
+    {
+      storeId: x.f.storeId,
+      ownerId: x.f.ownerId,
+      deviceId: x.authority(x.request).deviceId,
+      canPrepareCommercialWeek: allowed,
+    },
+    testChoiceDigest,
+    randomUUID,
+  );
+}
+it("confirms a private TG patch offline and replays after restart without changing plan, offers or duplicate outbox", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tg-card-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const m = await preparationCard(x),
+      c = await preparationController(x);
+    expect((await c.open(m)).status).toBe("READY");
+    expect((await c.confirm(m)).status).toBe("COMPLETED");
+    x.db.close();
+    reopened = new DatabaseSync(path);
+    const a = new Adapter(reopened);
+    expect(
+      (await (await preparationController(x, true, a)).confirm(m)).status,
+    ).toBe("COMPLETED");
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='commercial_week_preparation'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    const row = reopened
+      .prepare("SELECT payload_json FROM commercial_week_preparations")
+      .get() as { payload_json: string };
+    expect(JSON.parse(row.payload_json)).toMatchObject({
+      note: "Une nouvelle note",
+      version: 2,
+      placements: [{ theme: "Nouveau thème", offerIds: [] }],
+    });
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+    ).toEqual({ n: 0 });
+    await expect(
+      (await preparationController(x, false, a)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+  } finally {
+    reopened?.close();
+    try {
+      x.db.close();
+    } catch {
+      /* already closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("rejects untrusted/stale/forbidden TG cards, cancellation and failed commits without a partial draft", async () => {
+  const x = await setup();
+  try {
+    const m = await preparationCard(x),
+      c = await preparationController(x);
+    await expect(
+      (await preparationController(x, false)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    await expect(
+      c.confirm({ ...m, text: m.text.replace("Nouveau thème", "Autre") }),
+    ).rejects.toThrow();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(c.confirm(m, abort.signal)).rejects.toThrow();
+    x.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    x.a.fail = false;
+    expect(
+      x.db
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 1 });
+    const r = x.db
+      .prepare("SELECT payload_json FROM commercial_week_preparations")
+      .get() as { payload_json: string };
+    const changed = { ...JSON.parse(r.payload_json), version: 2 };
+    x.db
+      .prepare("UPDATE commercial_week_preparations SET payload_json=?")
+      .run(JSON.stringify(changed));
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+  } finally {
+    x.db.close();
+  }
+});
+it("refuses TG patch when a selected choice changes or local sync is in conflict", async () => {
+  for (const conflict of [false, true]) {
+    const x = await setup();
+    try {
+      const m = await preparationCard(x),
+        c = await preparationController(x);
+      if (conflict)
+        x.db
+          .prepare("UPDATE commercial_offer_choices SET sync_state='CONFLICT'")
+          .run();
+      else {
+        x.db
+          .prepare("UPDATE commercial_offer_choices SET payload_json=?")
+          .run(JSON.stringify({ ...x.choice.choice, version: 2 }));
+      }
+      expect((await c.open(m)).status).toBe("STALE");
+      await expect(c.confirm(m)).rejects.toThrow("STALE");
+    } finally {
+      x.db.close();
+    }
+  }
+});
