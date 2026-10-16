@@ -1,3 +1,4 @@
+import { catalogueSnapshotDraft } from "@fl-copilot/domain";
 import {
   normalizeProductLabel,
   type Product,
@@ -194,24 +195,7 @@ export async function saveProductEditor(
 export function productSnapshotToDraft(
   snapshot: ProductEditorSnapshot,
 ): ProductEditorDraft {
-  return {
-    label: snapshot.product.entity.label,
-    category: snapshot.product.entity.category,
-    nature: snapshot.product.entity.nature,
-    salesUnit: snapshot.product.entity.salesUnit,
-    packagingQuantity: snapshot.product.entity.packaging?.quantity ?? "",
-    packagingUnit: snapshot.product.entity.packaging?.unit ?? "KG",
-    packagingSourceLabel: snapshot.product.entity.packaging?.sourceLabel ?? "",
-    identifiers: snapshot.identifiers.map(({ entity }) => ({
-      id: entity.id,
-      type: entity.type,
-      value: entity.value,
-    })),
-    aliases: snapshot.aliases.map(({ entity }) => ({
-      id: entity.id,
-      alias: entity.alias,
-    })),
-  };
+  return catalogueSnapshotDraft(snapshot);
 }
 
 export const emptyProductDraft: ProductEditorDraft = {

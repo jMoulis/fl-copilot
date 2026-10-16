@@ -2483,3 +2483,145 @@ it("advertises execution preparation only to capable callers and returns a revie
     { daily: vi.fn() },
   ).generate(f.request, schema);
 });
+
+it("advertises catalogue preparation only to capable callers and returns a review artifact without business writes", async () => {
+  const { copilotCataloguePreviewSchema } = await import("@fl-copilot/domain");
+  const f = fixture(),
+    data = { storeId: f.request.storeId };
+  f.request.storeId = data.storeId;
+  f.request.context = detectCopilotConflicts({
+    batch: scoreCopilotPriorities({
+      storeId: data.storeId,
+      evaluatedAt,
+      candidates: [],
+    }),
+    intents: [],
+  });
+  const input = {
+    action: "CREATE" as const,
+    productId: null,
+    patch: { label: "BANANE VRAC" },
+  };
+  const evidence = {
+    id: "task-preview",
+    sourceId: data.storeId,
+    sourceVersion: null,
+    sourceType: "COMMERCIAL_OPERATION" as const,
+    label: "Déclaration préparée",
+    value: "Aucun enregistrement effectué.",
+    factKind: "PLANNED" as const,
+  };
+  const value = copilotCataloguePreviewSchema.parse({
+    input,
+    status: "READY",
+    before: null,
+    evidence: [evidence],
+  });
+  const cataloguePreview = vi.fn(async () => value);
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "product_catalogue_preview",
+        ),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_execution",
+          call_id: "call_execution",
+          name: "product_catalogue_preview",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    cataloguePreview,
+  }).generate(f.request, schema);
+  expect(cataloguePreview).toHaveBeenCalledOnce();
+  expect(result.cataloguePreviews).toEqual([value]);
+  expect(result.toolEvidence).toEqual([evidence]);
+  await createCopilotAiProvider(
+    f.config,
+    async (_url, init) => {
+      expect(
+        JSON.parse(String(init?.body)).tools.some(
+          (t: { name: string }) => t.name === "product_catalogue_preview",
+        ),
+      ).toBe(false);
+      return response();
+    },
+    { daily: vi.fn() },
+  ).generate(f.request, schema);
+});
+
+it("permits the bounded search/inspect/preview depth for catalogue callers then forces the final answer", async () => {
+  const { copilotCataloguePreviewSchema } = await import("@fl-copilot/domain");
+  const f = fixture();
+  let calls = 0;
+  const cataloguePreview = vi.fn(async (input: unknown) =>
+    copilotCataloguePreviewSchema.parse({
+      input,
+      status: "READY",
+      before: null,
+      evidence: [
+        {
+          id: `catalogue-${calls}`,
+          sourceId: f.request.storeId,
+          sourceVersion: null,
+          sourceType: "DATA_QUALITY",
+          label: "Fiche préparée",
+          value: "Confirmation requise.",
+          factKind: "QUALITY",
+        },
+      ],
+    }),
+  );
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)),
+      n = calls++;
+    if (n < 3) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: `fc_${n}`,
+          call_id: `call_${n}`,
+          name: "product_catalogue_preview",
+          arguments: JSON.stringify({
+            action: "CREATE",
+            productId: null,
+            patch: { label: `Produit ${n}` },
+          }),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(body.tool_choice).toBe("none");
+    return response();
+  };
+  const r = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    cataloguePreview,
+  }).generate(f.request, schema);
+  expect(calls).toBe(4);
+  expect(cataloguePreview).toHaveBeenCalledTimes(3);
+  expect(r.cataloguePreviews).toHaveLength(3);
+});

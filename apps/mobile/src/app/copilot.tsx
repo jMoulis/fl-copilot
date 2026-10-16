@@ -1,3 +1,6 @@
+import { CatalogueProposalCard } from "@/copilot/catalogue-proposal-card";
+import { CopilotCatalogueProposalController } from "@/copilot/catalogue-proposal-controller";
+import { readCopilotCatalogueProposal } from "@fl-copilot/domain";
 import { ExecutionProposalCard } from "@/copilot/execution-proposal-card";
 import { CopilotExecutionProposalController } from "@/copilot/execution-proposal-controller";
 import { readCopilotExecutionProposal } from "@fl-copilot/domain";
@@ -113,6 +116,15 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
+  const catalogueProposals = useMemo(
+    () =>
+      new CopilotCatalogueProposalController(
+        sqlite,
+        { storeId, ownerId, deviceId, canManageProducts },
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
   const executionProposals = useMemo(
     () =>
       new CopilotExecutionProposalController(
@@ -165,6 +177,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       );
     } catch {
       /* Other supported tool artifacts are handled below. */
+    }
+    try {
+      readCopilotCatalogueProposal(message);
+      return (
+        <CatalogueProposalCard
+          key={message.id}
+          message={message}
+          controller={catalogueProposals}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
     }
     try {
       readCopilotExecutionProposal(message);
@@ -221,6 +246,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              catalogueProposals: canManageProducts,
               executionProposals: canDeclareCommercialExecution,
               fetch: expoFetch as typeof fetch,
             }),
@@ -234,6 +260,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     syncNow,
     withAccessToken,
     canDeclareCommercialExecution,
+    canManageProducts,
   ]);
   const attachPdf = async (signal: AbortSignal, capacity: number) => {
     if (!pdfPicker) throw Error("COPILOT_PDF_PICKER_UNAVAILABLE");

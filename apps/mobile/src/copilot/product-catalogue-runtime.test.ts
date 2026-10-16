@@ -377,3 +377,209 @@ it("rolls back aggregate, commands and operation result on commit failure or in-
     x.db.close();
   }
 });
+
+async function catalogueCard(
+  s: Awaited<ReturnType<typeof setup>>,
+  input: unknown,
+  before: unknown = null,
+) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain");
+  const { applyCopilotRecord } = await import("./conversation-repository");
+  const assistant = copilotMessageSchema.parse({
+    ...s.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: s.f.message.id,
+    text: "Fiche préparée.",
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "PRODUCT_CATALOGUE_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input,
+      before,
+    }),
+  });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", message);
+  });
+  return message;
+}
+async function catalogueController(
+  s: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  a = s.a,
+) {
+  const { CopilotCatalogueProposalController } =
+    await import("./catalogue-proposal-controller");
+  return new CopilotCatalogueProposalController(
+    a,
+    {
+      storeId: s.f.storeId,
+      ownerId: s.f.ownerId,
+      deviceId: s.authority(s.create).deviceId,
+      canManageProducts: allowed,
+    },
+    randomUUID,
+  );
+}
+it("confirms create/update/retirement cards through the canonical writer with exact child lists and preserves unrelated fields", async () => {
+  const s = await setup();
+  try {
+    const c = await catalogueController(s);
+    const m = await catalogueCard(s, {
+      action: "CREATE",
+      productId: null,
+      patch: s.create.input.draft,
+    });
+    expect((await c.open(m)).status).toBe("READY");
+    expect(s.db.prepare("SELECT COUNT(*) n FROM products").get()).toEqual({
+      n: 0,
+    });
+    expect((await c.confirm(m)).status).toBe("COMPLETED");
+    const result = productSaveResultSchema.parse(
+      JSON.parse(
+        (
+          s.db
+            .prepare(
+              "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+            )
+            .get(m.id) as { result_json: string }
+        ).result_json,
+      ),
+    );
+    const productId = result.after.product.entity.id;
+    const update = await catalogueCard(
+      s,
+      {
+        action: "UPDATE",
+        productId,
+        patch: {
+          label: "BANANE JAUNE VRAC",
+          aliases: [
+            ...result.after.aliases.map((r) => ({
+              id: r.entity.id,
+              alias: r.entity.alias,
+            })),
+            { alias: "Bananes jaunes" },
+          ],
+        },
+      },
+      result.after,
+    );
+    await c.confirm(update);
+    const { loadProductEditorSnapshot } =
+      await import("../products/product-editor-service");
+    const after = (await loadProductEditorSnapshot(
+      new ProductMasterRepository(s.a),
+      productId,
+    ))!;
+    expect(after.product.entity).toMatchObject({
+      label: "BANANE JAUNE VRAC",
+      nature: "BULK",
+      salesUnit: "KG",
+    });
+    expect(after.identifiers[0]!.entity.value).toBe("00042");
+    expect(after.aliases).toHaveLength(2);
+    const retire = await catalogueCard(
+      s,
+      { action: "RETIRE", productId, patch: {} },
+      after,
+    );
+    await c.confirm(retire);
+    await c.confirm(retire);
+    expect(
+      (await new ProductMasterRepository(s.a).getProduct(productId))!.entity
+        .deletedAt,
+    ).not.toBeNull();
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM copilot_tool_results").get(),
+    ).toEqual({ n: 3 });
+  } finally {
+    s.db.close();
+  }
+});
+it("refuses stale child versions, forged artifacts and revoked rights; failed commit rolls back and retry succeeds", async () => {
+  const s = await setup();
+  try {
+    const c = await catalogueController(s),
+      m = await catalogueCard(s, {
+        action: "CREATE",
+        productId: null,
+        patch: s.create.input.draft,
+      });
+    await expect(
+      (await catalogueController(s, false)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    await expect(
+      c.confirm({ ...m, text: m.text.replace("BANANE VRAC", "Forgery") }),
+    ).rejects.toThrow();
+    s.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    s.a.fail = false;
+    expect(s.db.prepare("SELECT COUNT(*) n FROM products").get()).toEqual({
+      n: 0,
+    });
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM copilot_tool_results").get(),
+    ).toEqual({ n: 0 });
+    await c.confirm(m);
+    const r = productSaveResultSchema.parse(
+      JSON.parse(
+        (
+          s.db
+            .prepare(
+              "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+            )
+            .get(m.id) as { result_json: string }
+        ).result_json,
+      ),
+    );
+    const update = await catalogueCard(
+      s,
+      {
+        action: "UPDATE",
+        productId: r.after.product.entity.id,
+        patch: { label: "Autre libellé" },
+      },
+      r.after,
+    );
+    s.db.prepare("UPDATE product_aliases SET version=99").run();
+    expect((await c.open(update)).status).toBe("STALE");
+    await expect(c.confirm(update)).rejects.toThrow("STALE");
+  } finally {
+    s.db.close();
+  }
+});
+it("restores completed catalogue card replay after a physical SQLite reopen without duplicate commands", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-catalogue-card-")),
+    path = join(dir, "state.db"),
+    s = await setup(path);
+  let opened: DatabaseSync | undefined;
+  try {
+    const m = await catalogueCard(s, {
+      action: "CREATE",
+      productId: null,
+      patch: s.create.input.draft,
+    });
+    await (await catalogueController(s)).confirm(m);
+    const count = s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    s.db.close();
+    opened = new DatabaseSync(path);
+    const controller = await catalogueController(s, true, new Adapter(opened));
+    expect((await controller.confirm(m)).status).toBe("COMPLETED");
+    expect(opened.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      count,
+    );
+  } finally {
+    if (opened) opened.close();
+    else s.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
