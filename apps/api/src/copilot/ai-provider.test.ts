@@ -2671,6 +2671,12 @@ it("advertises need preparation only to capable callers and returns a review art
   let calls = 0;
   const transport: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
+    const definition = body.tools.find(
+      (t: { name: string }) => t.name === "need_mutation_preview",
+    );
+    expect(definition.parameters.type).toBe("object");
+    expect(definition.parameters.oneOf).toBeUndefined();
+    expect(definition.parameters.anyOf).toBeUndefined();
     if (calls++ === 0) {
       expect(
         body.tools.some(
@@ -2837,6 +2843,12 @@ it("advertises store operations preparation only to capable callers and returns 
   let calls = 0;
   const transport: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
+    const definition = body.tools.find(
+      (t: { name: string }) => t.name === "store_operations_preview",
+    );
+    expect(definition.parameters.type).toBe("object");
+    expect(definition.parameters.oneOf).toBeUndefined();
+    expect(definition.parameters.anyOf).toBeUndefined();
     if (calls++ === 0) {
       expect(
         body.tools.some(
