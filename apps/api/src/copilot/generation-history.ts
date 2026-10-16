@@ -26,6 +26,39 @@ export async function readConversationGenerationHistory(
     .sort({ createdAt: -1, _id: -1 })
     .limit(21)
     .toArray();
+  // A corrected question and the answer to its old version must not become
+  // active context again. Query only candidate IDs, within this private topic
+  // and no later than the current turn (which may itself be the correction).
+  const candidateIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        row.role === "USER"
+          ? [row.id]
+          : row.replyToMessageId
+            ? [row.replyToMessageId]
+            : [],
+      ),
+    ),
+  ];
+  const superseded = new Set(
+    candidateIds.length === 0
+      ? []
+      : await db
+          .collection<CopilotMessage & { _id: string }>("copilotMessages")
+          .distinct(
+            "supersedesMessageId",
+            {
+              storeId: parent.storeId,
+              ownerId: parent.ownerId,
+              conversationId: parent.conversationId,
+              role: "USER",
+              createdAt: { $lte: parent.createdAt },
+              supersedesMessageId: { $in: candidateIds },
+            },
+            { maxTimeMS: 2000 },
+          ),
+  );
+  if (parent.supersedesMessageId) superseded.add(parent.supersedesMessageId);
   const messages: NonNullable<CopilotGenerationRequest["history"]>["messages"] =
     [];
   const references = new Map<string, CopilotMessage["attachments"][number]>();
@@ -45,6 +78,11 @@ export async function readConversationGenerationHistory(
       Date.parse(message.createdAt) >= Date.parse(parent.createdAt)
     )
       throw new Error("COPILOT_HISTORY_SCOPE_INVALID");
+    if (
+      superseded.has(message.id) ||
+      (message.replyToMessageId && superseded.has(message.replyToMessageId))
+    )
+      continue;
     // Preserve whole messages; never silently cut a constraint or decimal value.
     if (message.text.length > remaining) break;
     remaining -= message.text.length;

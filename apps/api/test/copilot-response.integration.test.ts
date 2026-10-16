@@ -1905,6 +1905,74 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(bounded.messages[0]!.text).toHaveLength(16000);
       expect(bounded.earlierMessagesOmitted).toBe(true);
     });
+    it("omits corrected private questions and their answers without applying foreign or future corrections", async () => {
+      const f = await fixture();
+      const base = Date.parse(f.message.createdAt);
+      const old = {
+        ...f.message,
+        id: randomUUID(),
+        text: "Ancienne pratique",
+        createdAt: new Date(base - 4000).toISOString(),
+      };
+      const answer = {
+        ...old,
+        id: randomUUID(),
+        role: "ASSISTANT" as const,
+        replyToMessageId: old.id,
+        text: "Réponse ancienne",
+      };
+      const retained = {
+        ...old,
+        id: randomUUID(),
+        text: "Contrainte conservée",
+      };
+      const correction = {
+        ...old,
+        id: randomUUID(),
+        supersedesMessageId: old.id,
+        text: "Pratique corrigée",
+        createdAt: new Date(base - 2000).toISOString(),
+      };
+      const hidden = [
+        {
+          ...correction,
+          id: randomUUID(),
+          ownerId: randomUUID(),
+          supersedesMessageId: retained.id,
+        },
+        {
+          ...correction,
+          id: randomUUID(),
+          storeId: randomUUID(),
+          supersedesMessageId: retained.id,
+        },
+        {
+          ...correction,
+          id: randomUUID(),
+          conversationId: randomUUID(),
+          supersedesMessageId: retained.id,
+        },
+        {
+          ...correction,
+          id: randomUUID(),
+          supersedesMessageId: retained.id,
+          createdAt: new Date(base + 1000).toISOString(),
+        },
+      ];
+      await db.collection<{ _id: string }>("copilotMessages").insertMany(
+        [old, answer, retained, correction, ...hidden].map((m) => ({
+          _id: m.id,
+          ...m,
+        })),
+      );
+      const history = await readConversationGenerationHistory(db, f.message);
+      expect(new Set(history.messages.map((m) => m.id))).toEqual(
+        new Set([retained.id, correction.id]),
+      );
+      expect(history.earlierMessagesOmitted).toBe(true);
+      expect(JSON.stringify(history)).not.toContain(old.text);
+      expect(JSON.stringify(history)).not.toContain(answer.text);
+    });
     it("keeps only deduplicated recent source references from included private messages, with current files taking precedence", async () => {
       const f = await fixture();
       const base = Date.parse(f.message.createdAt);
