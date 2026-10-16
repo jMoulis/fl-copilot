@@ -17,7 +17,13 @@ it("maps real tool keys without disclosing private arguments", () => {
       JSON.stringify(["product-search", { query: "private label" }]),
     ),
   ).toBe("PRODUCTS");
-  for (const key of ["documents", "pdf", "offers", "waste-receipt"])
+  for (const key of [
+    "documents",
+    "pdf",
+    "offers",
+    "waste-receipt",
+    "commercial-preparation",
+  ])
     expect(readActivityStage(JSON.stringify([key, { private: true }]))).toBe(
       "DOCUMENTS",
     );

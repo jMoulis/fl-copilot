@@ -1,3 +1,4 @@
+import { readCommercialPreparation } from "./copilot/commercial-preparation-tool.js";
 import { readOperationsPreview } from "./copilot/operations-preview-tool.js";
 import { readNeedPreview } from "./copilot/need-preview-tool.js";
 import { readCataloguePreview } from "./copilot/catalogue-preview-tool.js";
@@ -743,6 +744,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               commercialPdf: async (input) => {
                 await authorize();
                 const result = await readCommercialPdf(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              commercialPreparation: async (input) => {
+                await authorize();
+                const result = await readCommercialPreparation(
+                  db,
+                  storeId,
+                  input,
+                );
                 await authorize();
                 return result;
               },
