@@ -303,4 +303,205 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       ).toBe(0);
     },
   );
+  it("initializes only a missing week from current retained choices without writing business data or inventing capacity", async () => {
+    const f = await fixture(),
+      input = {
+        weekStart: f.preparation.weekStart,
+        create: { choiceIds: [f.choice.id] },
+        patch: {},
+      };
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "ALREADY_EXISTS",
+    );
+    await db
+      .collection("commercialWeekPreparations")
+      .deleteOne({ _id: f.preparation.id } as Document);
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: f.choice.id } as Document, { $set: { version: 3 } });
+    const r = await readPreparationPreview(db, f.storeId, input);
+    expect(r.status).toBe("READY");
+    expect(r.basis?.preparation).toBeNull();
+    expect(r.basis?.creationStoreId).toBe(f.storeId);
+    const { prepareWeekPatch } = await import("@fl-copilot/domain");
+    const request = prepareWeekPatch(r.input, r.basis!, randomUUID());
+    expect(request.input).toMatchObject({
+      expectedVersion: null,
+      draft: {
+        tgCapacity: null,
+        offerRefs: [{ choiceId: f.choice.id, choiceVersion: 3 }],
+      },
+    });
+    expect(
+      await db
+        .collection("commercialWeekPreparations")
+        .countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
+    const empty = await readPreparationPreview(db, f.storeId, {
+      ...input,
+      create: { choiceIds: [] },
+    });
+    expect(empty.status).toBe("READY");
+    expect(empty.basis?.choices).toEqual([]);
+  });
+  it("rejects missing/foreign/withdrawn/out-of-week initial choices and undeclared TG capacity", async () => {
+    const f = await fixture(),
+      input = {
+        weekStart: f.preparation.weekStart,
+        create: { choiceIds: [f.choice.id] },
+        patch: {},
+      };
+    await db
+      .collection("commercialWeekPreparations")
+      .deleteOne({ _id: f.preparation.id } as Document);
+    expect((await readPreparationPreview(db, randomUUID(), input)).status).toBe(
+      "UNAVAILABLE",
+    );
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...input,
+          create: { choiceIds: [randomUUID()] },
+        })
+      ).status,
+    ).toBe("UNAVAILABLE");
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...input,
+          patch: {
+            tgAdditions: [
+              { label: "TG", theme: "Saison", offerIds: [f.choice.id] },
+            ],
+          },
+        })
+      ).status,
+    ).toBe("BLOCKED");
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: f.choice.id } as Document, {
+        $set: { status: "WITHDRAWN" },
+      });
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "BLOCKED",
+    );
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: f.choice.id } as Document, {
+        $set: {
+          status: "RETAINED",
+          saleStart: "2026-10-12",
+          saleEnd: "2026-10-13",
+        },
+      });
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "BLOCKED",
+    );
+  });
+  it
+    .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
+    .each([false, true])(
+    "persists a private version-3 creation preview atomically, with no business creation; rejects forged creation scope (%s)",
+    async (forged) => {
+      const f = await fixture(),
+        chat = chatFixture(randomUUID);
+      await db
+        .collection("commercialWeekPreparations")
+        .deleteOne({ _id: f.preparation.id } as Document);
+      chat.storeId = f.storeId;
+      chat.conversation.storeId = f.storeId;
+      chat.message.storeId = f.storeId;
+      chat.message.attachments = [];
+      chat.message.text = "Prépare cette nouvelle semaine.";
+      await db
+        .collection<Document & { _id: string }>("copilotConversations")
+        .insertOne({ _id: chat.conversation.id, ...chat.conversation });
+      await db
+        .collection<Document & { _id: string }>("copilotMessages")
+        .insertOne({ _id: chat.message.id, ...chat.message });
+      const preview = await readPreparationPreview(db, f.storeId, {
+        weekStart: f.preparation.weekStart,
+        create: { choiceIds: [f.choice.id] },
+        patch: { note: "À préparer" },
+      });
+      if (forged) preview.basis!.creationStoreId = randomUUID();
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Nouvelle semaine préparée, à confirmer.",
+          facts: preview.evidence.map((e) => ({ evidenceId: e.id })),
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "test-week-create",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        toolEvidence: preview.evidence,
+        preparationPreviews: [preview],
+      }));
+      const deps = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => ({
+          storeId: f.storeId,
+          ownerId: chat.ownerId,
+          canRespond: true,
+        }),
+        loadContext: async () =>
+          detectCopilotConflicts({
+            batch: scoreCopilotPriorities({
+              storeId: f.storeId,
+              evaluatedAt: chat.message.createdAt,
+              candidates: [],
+            }),
+            intents: [],
+          }),
+      };
+      const turn = {
+        conversationId: chat.conversation.id,
+        userMessageId: chat.message.id,
+        replyId: randomUUID(),
+      };
+      if (forged) {
+        await expect(runCopilotTurn(deps, turn)).rejects.toThrow();
+        expect(
+          await db.collection("copilotMessages").countDocuments({
+            conversationId: chat.conversation.id,
+            role: { $in: ["ASSISTANT", "TOOL"] },
+          }),
+        ).toBe(0);
+      } else {
+        await runCopilotTurn(deps, turn);
+        const cards = await db
+          .collection("copilotMessages")
+          .find({ conversationId: chat.conversation.id, role: "TOOL" })
+          .toArray();
+        expect(cards).toHaveLength(1);
+        const { _id, ...payload } = cards[0],
+          decoded = readCopilotPreparationProposal(payload);
+        expect(decoded.content.schemaVersion).toBe(3);
+        expect(decoded.request.input.expectedVersion).toBeNull();
+        expect(
+          await db.collection("syncChanges").countDocuments({ entityId: _id }),
+        ).toBe(1);
+        expect((await runCopilotTurn(deps, turn)).alreadyApplied).toBe(true);
+        expect(generate).toHaveBeenCalledOnce();
+      }
+      expect(
+        await db
+          .collection("commercialWeekPreparations")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(0);
+      expect(
+        await db
+          .collection("commercialWeekPlans")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(0);
+    },
+  );
 });

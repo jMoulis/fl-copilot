@@ -90,26 +90,46 @@ export function PreparationProposalCard({
           <Text style={{ fontWeight: "600" }}>
             Semaine du {date(state.content.input.weekStart)}
           </Text>
+          {state.content.input.create ? (
+            <View style={{ gap: 4 }}>
+              <Text style={{ fontWeight: "700" }}>
+                Créer le brouillon de cette semaine
+              </Text>
+              <Text>
+                Offres retenues sélectionnées :{" "}
+                {state.content.basis.choices
+                  .map((c) => c.rawProductLabel + " — " + c.operationLabel)
+                  .join(" ; ") || "Aucune"}
+              </Text>
+              <Text>
+                Capacité TG :{" "}
+                {state.request.input.draft.tgCapacity ?? "Non renseignée"}. Ce
+                brouillon n’est pas un plan validé. Les offres ne sont pas
+                validées par cette création.
+              </Text>
+            </View>
+          ) : null}
           {state.content.input.patch.tgCapacity !== undefined ? (
             <Text>
               Capacité TG :{" "}
-              {state.content.basis.preparation.tgCapacity ?? "Non renseignée"} →{" "}
-              {state.request.input.draft.tgCapacity ?? "Non renseignée"}
+              {state.content.basis.preparation?.tgCapacity ?? "Non renseignée"}{" "}
+              → {state.request.input.draft.tgCapacity ?? "Non renseignée"}
             </Text>
           ) : null}
           {state.content.input.patch.note !== undefined ? (
             <View style={{ gap: 3 }}>
               <Text style={{ fontWeight: "600" }}>Note</Text>
               <Text>
-                Avant : {state.content.basis.preparation.note || "Aucune"}
+                Avant : {state.content.basis.preparation?.note || "Aucune"}
               </Text>
               <Text>Après : {state.request.input.draft.note || "Aucune"}</Text>
             </View>
           ) : null}
           {(state.content.input.patch.tgUpdates ?? []).map((u) => {
-            const before = state.content.basis.preparation.placements.find(
+            const before = state.content.basis.preparation?.placements.find(
               (p) => p.id === u.placementId,
-            )!;
+            );
+            if (!before) return null;
             const after = state.request.input.draft.placements.find(
               (p) => p.id === u.placementId,
             )!;
@@ -145,9 +165,10 @@ export function PreparationProposalCard({
             );
           })}
           {(state.content.input.patch.tgRemovals ?? []).map((id) => {
-            const removed = state.content.basis.preparation.placements.find(
+            const removed = state.content.basis.preparation?.placements.find(
               (p) => p.id === id,
-            )!;
+            );
+            if (!removed) return null;
             const names =
               removed.offerIds
                 .map(
@@ -236,7 +257,9 @@ export function PreparationProposalCard({
                   ? "Enregistrement…"
                   : state.content.input.patch.tgRemovals?.length
                     ? `Confirmer le retrait de ${state.content.input.patch.tgRemovals.length} TG et enregistrer`
-                    : "Enregistrer le brouillon"}
+                    : state.content.input.create
+                      ? "Créer le brouillon"
+                      : "Enregistrer le brouillon"}
               </Text>
             </Pressable>
           ) : null}

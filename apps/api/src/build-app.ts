@@ -577,6 +577,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
               ...(request.headers["x-copilot-preparation-proposals"] === "1"
                 ? {
+                    preparationCreate:
+                      request.headers["x-copilot-preparation-layout"] === "1" &&
+                      request.headers["x-copilot-preparation-create"] === "1",
                     preparationLayout:
                       request.headers["x-copilot-preparation-layout"] === "1",
                     preparationPreview: async (input) => {

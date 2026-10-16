@@ -251,3 +251,116 @@ it("requires explicit complete additions, canonical capacity/unique labels and v
   expect(r.input.draft.placements[0]).toEqual(tg);
   expect(r.input.draft.tgCapacity).toBe(2);
 });
+
+it("initializes a missing week with exact retained choice versions and no invented capacity, IDs or application timestamps", async () => {
+  const { f, assistant, evidence } = await fixture();
+  const input = copilotPreparationPatchSchema.parse({
+    weekStart: "2026-12-28",
+    create: { choiceIds: [f.choice.id] },
+    patch: { note: "Préparer la semaine" },
+  });
+  const basis = {
+    preparation: null,
+    creationStoreId: f.storeId,
+    choices: [
+      {
+        ...f.choice,
+        version: 3,
+        saleStart: "2026-12-28",
+        saleEnd: "2027-01-03",
+      },
+    ],
+  };
+  const cards = buildPreparationProposalMessages(assistant, [
+    { input, basis, evidence, status: "READY" },
+  ]);
+  const r = readCopilotPreparationProposal(cards[0]);
+  expect(r.content.schemaVersion).toBe(3);
+  expect(r.request.input).toMatchObject({
+    expectedVersion: null,
+    draft: {
+      weekStart: "2026-12-28",
+      weekEnd: "2027-01-03",
+      tgCapacity: null,
+      status: "DRAFT",
+      offerRefs: [{ choiceId: f.choice.id, choiceVersion: 3 }],
+      placements: [],
+    },
+  });
+  expect(JSON.stringify(r.request)).not.toContain("2000-01-01");
+  for (const schemaVersion of [1, 2])
+    expect(() =>
+      readCopilotPreparationProposal({
+        ...cards[0],
+        text: JSON.stringify({ ...r.content, schemaVersion }),
+      }),
+    ).toThrow("VERSION");
+  const empty = copilotPreparationPatchSchema.parse({
+    weekStart: input.weekStart,
+    create: { choiceIds: [] },
+    patch: {},
+  });
+  expect(
+    prepareWeekPatch(empty, { ...basis, choices: [] }, randomUUID()).input.draft
+      .tgCapacity,
+  ).toBeNull();
+  const { validatePreparationBasis } = await import("@fl-copilot/domain");
+  expect(() =>
+    validatePreparationBasis(randomUUID(), empty, { ...basis, choices: [] }),
+  ).toThrow("SCOPE");
+});
+it("keeps new-week creation distinct from edit/layout schemas and rejects unknown choices, scope or revision injection", async () => {
+  const { f } = await fixture(),
+    input = {
+      weekStart: f.preparation.weekStart,
+      create: { choiceIds: [f.choice.id] },
+      patch: {},
+    };
+  const {
+    copilotPreparationEditPatchSchema,
+    copilotPreparationLayoutPatchSchema,
+    validatePreparationBasis,
+  } = await import("@fl-copilot/domain");
+  expect(copilotPreparationEditPatchSchema.safeParse(input).success).toBe(
+    false,
+  );
+  expect(copilotPreparationLayoutPatchSchema.safeParse(input).success).toBe(
+    false,
+  );
+  for (const patch of [
+    { tgUpdates: [{ placementId: randomUUID(), theme: "X" }] },
+    { tgRemovals: [randomUUID()] },
+  ])
+    expect(
+      copilotPreparationPatchSchema.safeParse({ ...input, patch }).success,
+    ).toBe(false);
+  for (const extra of [
+    { creationStoreId: f.storeId },
+    { expectedVersion: 1 },
+    { operationId: randomUUID() },
+    { sourceReviewed: true },
+  ])
+    expect(
+      copilotPreparationPatchSchema.safeParse({ ...input, ...extra }).success,
+    ).toBe(false);
+  expect(
+    copilotPreparationPatchSchema.safeParse({
+      ...input,
+      create: { choiceIds: [f.choice.id, f.choice.id] },
+    }).success,
+  ).toBe(false);
+  const parsed = copilotPreparationPatchSchema.parse(input);
+  for (const basis of [
+    { preparation: f.preparation, choices: [f.choice] },
+    { preparation: null, choices: [f.choice] },
+    { preparation: null, creationStoreId: f.storeId, choices: [] },
+    {
+      preparation: null,
+      creationStoreId: f.storeId,
+      choices: [{ ...f.choice, storeId: randomUUID() }],
+    },
+  ])
+    expect(() => validatePreparationBasis(f.storeId, parsed, basis)).toThrow(
+      "SCOPE",
+    );
+});

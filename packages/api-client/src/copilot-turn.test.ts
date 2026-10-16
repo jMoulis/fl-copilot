@@ -283,6 +283,7 @@ it("opts into optional proposal and source tools only when the client supports t
         webResearch: enabled,
         preparationProposals: enabled,
         preparationLayout: enabled,
+        preparationCreate: enabled,
         storeOperations: enabled,
         needProposals: enabled,
         catalogueProposals: enabled,
@@ -295,6 +296,9 @@ it("opts into optional proposal and source tools only when the client supports t
     else expect(headers).not.toHaveProperty("x-copilot-memory-suggestions");
     if (enabled) expect(headers).toHaveProperty("x-copilot-web-research", "1");
     else expect(headers).not.toHaveProperty("x-copilot-web-research");
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-preparation-create", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-preparation-create");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-preparation-layout", "1");
     else expect(headers).not.toHaveProperty("x-copilot-preparation-layout");

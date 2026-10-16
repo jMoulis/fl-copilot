@@ -2981,9 +2981,11 @@ it.each([false, true])(
   },
 );
 
-it.each([false, true])(
+it.each(["EDIT", "LAYOUT", "CREATE"])(
   "offers compatible TG preview schemas and grounds native cards (layout=%s)",
-  async (layout) => {
+  async (mode) => {
+    const layout = mode !== "EDIT",
+      create = mode === "CREATE";
     const { commercialPlanFixture } =
         await import("../../../../scripts/test-commercial-plan-fixtures"),
       data = await commercialPlanFixture();
@@ -3001,26 +3003,38 @@ it.each([false, true])(
     });
     const input = {
       weekStart: data.preparation.weekStart,
-      patch: {
-        ...(layout
-          ? {
-              tgCapacity: 2,
-              tgAdditions: [
-                {
-                  label: "TG ajoutée",
-                  theme: "Saison",
-                  offerIds: [data.choice.id],
-                },
-              ],
-            }
-          : {}),
-        tgUpdates: [
-          {
-            placementId: data.preparation.placements[0].id,
-            theme: "Nouveau thème",
+      ...(create ? { create: { choiceIds: [data.choice.id] } } : {}),
+      patch: create
+        ? {
+            tgCapacity: 1,
+            tgAdditions: [
+              {
+                label: "TG nouvelle",
+                theme: "Saison",
+                offerIds: [data.choice.id],
+              },
+            ],
+          }
+        : {
+            ...(layout
+              ? {
+                  tgCapacity: 2,
+                  tgAdditions: [
+                    {
+                      label: "TG ajoutée",
+                      theme: "Saison",
+                      offerIds: [data.choice.id],
+                    },
+                  ],
+                }
+              : {}),
+            tgUpdates: [
+              {
+                placementId: data.preparation.placements[0].id,
+                theme: "Nouveau thème",
+              },
+            ],
           },
-        ],
-      },
     };
     const evidence = {
       id: "tg-preview",
@@ -3034,7 +3048,13 @@ it.each([false, true])(
     const value = copilotPreparationPreviewSchema.parse({
       input,
       status: "READY",
-      basis: { preparation: data.preparation, choices: [data.choice] },
+      basis: create
+        ? {
+            preparation: null,
+            creationStoreId: data.storeId,
+            choices: [data.choice],
+          }
+        : { preparation: data.preparation, choices: [data.choice] },
       evidence: [evidence],
     });
     const preparationPreview = vi.fn(async () => value);
@@ -3045,6 +3065,10 @@ it.each([false, true])(
           (t: { name: string }) => t.name === "commercial_preparation_preview",
         );
       expect(definition.parameters.type).toBe("object");
+      if (create)
+        expect(definition.parameters.properties).toHaveProperty("create");
+      else
+        expect(definition.parameters.properties).not.toHaveProperty("create");
       if (layout)
         expect(
           definition.parameters.properties.patch.properties,
@@ -3077,6 +3101,7 @@ it.each([false, true])(
       daily: vi.fn(),
       preparationPreview,
       preparationLayout: layout,
+      preparationCreate: create,
     }).generate(f.request, schema);
     expect(preparationPreview).toHaveBeenCalledExactlyOnceWith(input);
     expect(r.preparationPreviews).toEqual([value]);
