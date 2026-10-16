@@ -1,3 +1,4 @@
+import { readConversationContext } from "./copilot/conversation-history-tool.js";
 import type { FastifyReply } from "fastify";
 import { PassThrough } from "node:stream";
 import {
@@ -495,6 +496,21 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           {
             db,
             provider: createCopilotAiProvider(config, undefined, {
+              conversationHistory: async (input) => {
+                const principal = await authorize();
+                const result = await readConversationContext(
+                  db,
+                  {
+                    storeId: principal.storeId,
+                    ownerId: principal.ownerId,
+                    conversationId: request.body.conversationId,
+                    parentMessageId: request.body.userMessageId,
+                  },
+                  input,
+                );
+                await authorize();
+                return result;
+              },
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);

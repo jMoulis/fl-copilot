@@ -1,3 +1,4 @@
+import { readConversationContext } from "../src/copilot/conversation-history-tool";
 import { buildInformationRequestMessages } from "../src/copilot/information-request-messages";
 import { readAnsweredInformationContext } from "../src/copilot/answered-information";
 import { buildProductProposalMessages } from "../src/copilot/product-proposal-messages";
@@ -1858,6 +1859,224 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       );
       expect(foreign.status).toBe("BLOCKED");
       expect(JSON.stringify(foreign)).not.toContain(f.product.label);
+    });
+    it("retrieves older private context with stable tied-timestamp pages and revalidated files", async () => {
+      const f = await fixture();
+      const base = Date.parse(f.message.createdAt);
+      const sourceId = randomUUID(),
+        foreignSource = randomUUID();
+      await db.collection<{ _id: string }>("sourceDocuments").insertMany([
+        {
+          _id: sourceId,
+          storeId: f.message.storeId,
+          sourceType: "WEEKLY_COMMERCIAL_PDF",
+          originalFilename: "Original.pdf",
+          mimeType: "application/pdf",
+          createdAt: new Date(base - 10000),
+          remoteUploadStatus: "CONFIRMED",
+          deletedAt: null,
+        },
+        {
+          _id: foreignSource,
+          storeId: randomUUID(),
+          sourceType: "WEEKLY_COMMERCIAL_PDF",
+          originalFilename: "Secret.pdf",
+          mimeType: "application/pdf",
+          createdAt: new Date(base - 10000),
+          remoteUploadStatus: "CONFIRMED",
+          deletedAt: null,
+        },
+      ] as never);
+      const earlier = Array.from({ length: 24 }, (_, i) => ({
+        ...f.message,
+        id: randomUUID(),
+        text: `Ancienne discussion ${i}`,
+        attachments:
+          i === 0
+            ? [
+                {
+                  sourceDocumentId: sourceId,
+                  filename: "Captured.pdf",
+                  mediaType: "application/pdf",
+                },
+                {
+                  sourceDocumentId: foreignSource,
+                  filename: "Unknown.pdf",
+                  mediaType: "application/pdf",
+                },
+              ]
+            : [],
+        createdAt: new Date(base - 2000).toISOString(),
+      }));
+      const hidden = [
+        {
+          ...earlier[0]!,
+          id: randomUUID(),
+          ownerId: randomUUID(),
+          text: "SECRET OWNER",
+        },
+        {
+          ...earlier[0]!,
+          id: randomUUID(),
+          storeId: randomUUID(),
+          text: "SECRET STORE",
+        },
+        {
+          ...earlier[0]!,
+          id: randomUUID(),
+          conversationId: randomUUID(),
+          text: "SECRET TOPIC",
+        },
+        {
+          ...earlier[0]!,
+          id: randomUUID(),
+          role: "TOOL" as const,
+          text: "SECRET TOOL",
+        },
+        {
+          ...earlier[0]!,
+          id: randomUUID(),
+          createdAt: new Date(base + 1000).toISOString(),
+          text: "SECRET FUTURE",
+        },
+      ];
+      await db
+        .collection<{ _id: string }>("copilotMessages")
+        .insertMany([...earlier, ...hidden].map((m) => ({ _id: m.id, ...m })));
+      const scope = {
+        storeId: f.message.storeId,
+        ownerId: f.message.ownerId,
+        conversationId: f.message.conversationId,
+        parentMessageId: f.message.id,
+      };
+      const seen = [],
+        metadata = [];
+      let before = null as { id: string; createdAt: string } | null;
+      for (let i = 0; i < 6; i++) {
+        const page = await readConversationContext(db, scope, {
+          query: null,
+          before,
+          limit: 5,
+        });
+        seen.push(...page.messages);
+        metadata.push(...page.sources);
+        expect(page.evidence).toEqual([]);
+        before = page.nextBefore;
+        if (!page.hasMore) break;
+      }
+      expect(new Set(seen.map((m) => m.id))).toEqual(
+        new Set(earlier.map((m) => m.id)),
+      );
+      expect(seen).toHaveLength(24);
+      expect(before).toBeNull();
+      expect(JSON.stringify(seen)).not.toContain("SECRET");
+      expect(metadata).toContainEqual(
+        expect.objectContaining({
+          sourceDocumentId: sourceId,
+          filename: "Original.pdf",
+          status: "CONFIRMED",
+        }),
+      );
+      expect(metadata).toContainEqual(
+        expect.objectContaining({
+          sourceDocumentId: foreignSource,
+          filename: null,
+          status: "UNAVAILABLE",
+        }),
+      );
+      expect(JSON.stringify(metadata)).not.toContain("Secret.pdf");
+      await expect(
+        readConversationContext(
+          db,
+          { ...scope, ownerId: randomUUID() },
+          { query: null, before: null, limit: 5 },
+        ),
+      ).rejects.toThrow();
+      await expect(
+        readConversationContext(
+          db,
+          { ...scope, parentMessageId: hidden[0]!.id },
+          { query: null, before: null, limit: 5 },
+        ),
+      ).rejects.toThrow();
+      await db
+        .collection("copilotConversations")
+        .updateOne({ _id: f.message.conversationId } as never, {
+          $set: { status: "ARCHIVED" },
+        });
+      await expect(
+        readConversationContext(db, scope, {
+          query: null,
+          before: null,
+          limit: 5,
+        }),
+      ).rejects.toThrow();
+    });
+    it("searches literal historical passages, excludes corrected answers and keeps whole oversized messages pageable", async () => {
+      const f = await fixture();
+      const base = Date.parse(f.message.createdAt);
+      const old = {
+        ...f.message,
+        attachments: [],
+        id: randomUUID(),
+        text: "ancienne contrainte [TG.*]",
+        createdAt: new Date(base - 5000).toISOString(),
+      };
+      const answer = {
+        ...old,
+        id: randomUUID(),
+        role: "ASSISTANT" as const,
+        replyToMessageId: old.id,
+      };
+      const correction = {
+        ...old,
+        id: randomUUID(),
+        supersedesMessageId: old.id,
+        text: "nouvelle contrainte [TG.*]",
+        createdAt: new Date(base - 4000).toISOString(),
+      };
+      const other = { ...old, id: randomUUID(), text: "autre TG NON LITERAL" };
+      const big = Array.from({ length: 2 }, (_, i) => ({
+        ...old,
+        id: randomUUID(),
+        text: String(i).repeat(16000),
+        createdAt: new Date(base - 1000 - i * 1000).toISOString(),
+      }));
+      await db.collection<{ _id: string }>("copilotMessages").insertMany(
+        [old, answer, correction, other, ...big].map((m) => ({
+          _id: m.id,
+          ...m,
+        })),
+      );
+      const scope = {
+        storeId: f.message.storeId,
+        ownerId: f.message.ownerId,
+        conversationId: f.message.conversationId,
+        parentMessageId: f.message.id,
+      };
+      const found = await readConversationContext(db, scope, {
+        query: "[tg.*]",
+        before: null,
+        limit: 5,
+      });
+      expect(found.messages.map((m) => m.id)).toEqual([correction.id]);
+      expect(found.hasMore).toBe(false);
+      const page = await readConversationContext(db, scope, {
+        query: null,
+        before: null,
+        limit: 5,
+      });
+      expect(page.messages.map((m) => m.id)).toEqual([big[0]!.id]);
+      expect(page.messages[0]!.text).toHaveLength(16000);
+      expect(page.hasMore).toBe(true);
+      const next = await readConversationContext(db, scope, {
+        query: null,
+        before: page.nextBefore,
+        limit: 5,
+      });
+      expect(next.messages.some((m) => m.id === big[1]!.id)).toBe(true);
+      expect(next.messages.some((m) => m.id === big[0]!.id)).toBe(false);
+      expect(JSON.stringify(next)).not.toContain(old.text);
     });
     it("bounds private generation history and excludes other topics, actors and later messages", async () => {
       const f = await fixture();

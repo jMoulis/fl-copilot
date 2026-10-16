@@ -1,3 +1,4 @@
+import { readSupersededHistoryIds } from "./history-supersession.js";
 import { copilotMessageSchema, type CopilotMessage } from "@fl-copilot/domain";
 import type { Db } from "mongodb";
 import type { CopilotGenerationRequest } from "./ai-provider.js";
@@ -26,39 +27,7 @@ export async function readConversationGenerationHistory(
     .sort({ createdAt: -1, _id: -1 })
     .limit(21)
     .toArray();
-  // A corrected question and the answer to its old version must not become
-  // active context again. Query only candidate IDs, within this private topic
-  // and no later than the current turn (which may itself be the correction).
-  const candidateIds = [
-    ...new Set(
-      rows.flatMap((row) =>
-        row.role === "USER"
-          ? [row.id]
-          : row.replyToMessageId
-            ? [row.replyToMessageId]
-            : [],
-      ),
-    ),
-  ];
-  const superseded = new Set(
-    candidateIds.length === 0
-      ? []
-      : await db
-          .collection<CopilotMessage & { _id: string }>("copilotMessages")
-          .distinct(
-            "supersedesMessageId",
-            {
-              storeId: parent.storeId,
-              ownerId: parent.ownerId,
-              conversationId: parent.conversationId,
-              role: "USER",
-              createdAt: { $lte: parent.createdAt },
-              supersedesMessageId: { $in: candidateIds },
-            },
-            { maxTimeMS: 2000 },
-          ),
-  );
-  if (parent.supersedesMessageId) superseded.add(parent.supersedesMessageId);
+  const superseded = await readSupersededHistoryIds(db, parent, rows);
   const messages: NonNullable<CopilotGenerationRequest["history"]>["messages"] =
     [];
   const references = new Map<string, CopilotMessage["attachments"][number]>();

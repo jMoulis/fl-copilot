@@ -319,3 +319,7 @@ The first native intent/review binding now supports typed persisted `product.cla
 ### Native conversation intake bridge (M7-T23)
 
 The chat attachment menu now hosts conversation-bound Mercalys XLSX/ZIP manifests and reuses the existing native import review/publication screen. Retained lots can be reopened from their private conversation. An explicit post-publication action prepares a coverage-aware analysis question in the existing draft, preserving text and PDF references; the manager still sends that question. This is native intake UI, not a model-granted publication capability or a synchronized archive/manifest entity. Native grouped ready-line publication now previews and confirms through the same canonical writer; automatic missing-file-request resumption remains pending.
+
+## M7-T25 continuity — private conversation context reads
+
+`conversation_history` reads earlier USER/ASSISTANT entries only in the current authenticated active topic. Bounded timestamp/UUID pages, literal passage search, shared correction exclusion and whole-message budgets preserve original text and IDs. Attachment metadata is revalidated by existing source ownership rules; content reading remains the corresponding PDF/receipt tool. The model cannot supply tenant/topic scope. Conversation prose is not official KPI evidence, a confirmed business action or memory-write authority. Original local/display history is unchanged. Versioned semantic compaction remains separate work.

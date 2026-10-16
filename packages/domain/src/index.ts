@@ -93,3 +93,4 @@ export * from "./mercalys-batch-publication";
 export * from "./business-periods";
 export * from "./copilot-knowledge";
 export * from "./copilot-knowledge-proposal";
+export * from "./copilot-history-read";
