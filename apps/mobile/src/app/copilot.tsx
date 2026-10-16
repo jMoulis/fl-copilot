@@ -347,6 +347,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationProposals: canPrepareCommercialWeek,
               preparationLayout: canPrepareCommercialWeek,
               preparationCreate: canPrepareCommercialWeek,
+              preparationSelection: canPrepareCommercialWeek,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
               catalogueProposals: canManageProducts,

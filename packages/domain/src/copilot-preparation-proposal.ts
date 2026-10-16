@@ -19,6 +19,27 @@ export const copilotPreparationPatchSchema = z
       })
       .optional(),
     patch: z.strictObject({
+      offerSelection: z
+        .strictObject({
+          addChoiceIds: z.array(z.uuid()).min(1).max(100).optional(),
+          removeChoiceIds: z.array(z.uuid()).min(1).max(100).optional(),
+        })
+        .refine((v) => Object.keys(v).length > 0)
+        .superRefine((v, c) => {
+          const add = v.addChoiceIds ?? [],
+            remove = v.removeChoiceIds ?? [];
+          if (
+            new Set(add).size !== add.length ||
+            new Set(remove).size !== remove.length ||
+            add.some((id) => remove.includes(id))
+          )
+            c.addIssue({
+              code: "custom",
+              message:
+                "Une offre ne peut être sélectionnée plusieurs fois, ni ajoutée et retirée ensemble.",
+            });
+        })
+        .optional(),
       tgCapacity: commercialWeekPreparationSchema.shape.tgCapacity.optional(),
       note: commercialWeekPreparationSchema.shape.note.optional(),
       tgAdditions: z
@@ -58,7 +79,9 @@ export const copilotPreparationPatchSchema = z
       });
     if (
       v.create &&
-      (v.patch.tgUpdates !== undefined || v.patch.tgRemovals !== undefined)
+      (v.patch.tgUpdates !== undefined ||
+        v.patch.tgRemovals !== undefined ||
+        v.patch.offerSelection !== undefined)
     )
       c.addIssue({
         code: "custom",
@@ -98,7 +121,23 @@ export const copilotPreparationEditPatchSchema = z
       .refine((v) => Object.keys(v).length > 0),
   })
   .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+const previousPreparationPatchSchema = z
+  .strictObject(copilotPreparationPatchSchema.shape.patch.shape)
+  .omit({ offerSelection: true });
 export const copilotPreparationLayoutPatchSchema = z
+  .strictObject({
+    weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    patch: previousPreparationPatchSchema,
+  })
+  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+export const copilotPreparationCreatePatchSchema = z
+  .strictObject({
+    weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    create: copilotPreparationPatchSchema.shape.create,
+    patch: previousPreparationPatchSchema,
+  })
+  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+export const copilotPreparationSelectionPatchSchema = z
   .strictObject({
     weekStart: copilotPreparationPatchSchema.shape.weekStart,
     patch: copilotPreparationPatchSchema.shape.patch,
@@ -127,7 +166,7 @@ export function preparationAdditionId(operationId: string, index: number) {
 export const preparationBasisSchema = z.strictObject({
   preparation: commercialWeekPreparationSchema.nullable(),
   creationStoreId: z.uuid().optional(),
-  choices: z.array(commercialOfferChoiceSchema).max(100),
+  choices: z.array(commercialOfferChoiceSchema).max(200),
 });
 export function validatePreparationBasis(
   storeId: string,
@@ -137,8 +176,15 @@ export function validatePreparationBasis(
   z.uuid().parse(storeId);
   const b = preparationBasisSchema.parse(raw),
     p = b.preparation;
-  const ids =
-    input.create?.choiceIds ?? p?.offerRefs.map((r) => r.choiceId) ?? [];
+  const ids = [
+    ...new Set([
+      ...(input.create?.choiceIds ?? p?.offerRefs.map((r) => r.choiceId) ?? []),
+      ...(input.patch.offerSelection?.addChoiceIds ?? []),
+    ]),
+  ];
+  const required = ids.filter(
+    (id) => !(input.patch.offerSelection?.removeChoiceIds ?? []).includes(id),
+  );
   if (
     (input.create
       ? p !== null || b.creationStoreId !== storeId
@@ -148,7 +194,7 @@ export function validatePreparationBasis(
         b.creationStoreId !== undefined) ||
     b.choices.some((c) => c.storeId !== storeId || !ids.includes(c.id)) ||
     new Set(b.choices.map((c) => c.id)).size !== b.choices.length ||
-    b.choices.length !== ids.length
+    required.some((id) => !b.choices.some((c) => c.id === id))
   )
     throw Error("PREPARATION_PROPOSAL_SCOPE");
   return b;
@@ -187,6 +233,23 @@ export function prepareWeekPatch(
       createdAt: "2000-01-01T00:00:00.000Z",
       updatedAt: "2000-01-01T00:00:00.000Z",
     });
+  const selection = input.patch.offerSelection,
+    selected = p.offerRefs.map((r) => r.choiceId);
+  if (selection?.removeChoiceIds?.some((id) => !selected.includes(id)))
+    throw Error("PREPARATION_OFFER_UNAVAILABLE");
+  const offerRefs = selection
+    ? [
+        ...p.offerRefs.filter(
+          (r) => !selection.removeChoiceIds?.includes(r.choiceId),
+        ),
+        ...(selection.addChoiceIds ?? [])
+          .filter((id) => !selected.includes(id))
+          .map((choiceId) => ({
+            choiceId,
+            choiceVersion: b.choices.find((c) => c.id === choiceId)!.version,
+          })),
+      ]
+    : p.offerRefs;
   const updates = input.patch.tgUpdates ?? [];
   const removals = input.patch.tgRemovals ?? [];
   if (
@@ -196,6 +259,7 @@ export function prepareWeekPatch(
     throw Error("PREPARATION_TG_UNAVAILABLE");
   const after = commercialWeekPreparationSchema.parse({
     ...p,
+    offerRefs,
     ...(input.patch.tgCapacity !== undefined
       ? { tgCapacity: input.patch.tgCapacity }
       : {}),
@@ -245,7 +309,12 @@ export const copilotPreparationPreviewSchema = z.strictObject({
 });
 export const copilotPreparationProposalSchema = z.strictObject({
   kind: z.literal("COMMERCIAL_PREPARATION_PROPOSAL"),
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  schemaVersion: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+  ]),
   assistantMessageId: z.uuid(),
   input: copilotPreparationPatchSchema,
   basis: preparationBasisSchema,
@@ -262,6 +331,11 @@ export function readCopilotPreparationProposal(raw: unknown) {
     JSON.parse(message.text),
   );
   validatePreparationBasis(message.storeId, content.input, content.basis);
+  if (
+    Boolean(content.input.patch.offerSelection) !==
+    (content.schemaVersion === 4)
+  )
+    throw Error("PREPARATION_PROPOSAL_VERSION");
   if (Boolean(content.input.create) !== (content.schemaVersion === 3))
     throw Error("PREPARATION_PROPOSAL_VERSION");
   if (content.schemaVersion === 1 && hasPreparationLayoutChange(content.input))

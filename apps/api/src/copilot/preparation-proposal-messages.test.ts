@@ -364,3 +364,105 @@ it("keeps new-week creation distinct from edit/layout schemas and rejects unknow
       "SCOPE",
     );
 });
+
+it("preserves pinned references and requires explicit TG changes when replacing selected offers", async () => {
+  const { f, basis, assistant, evidence } = await fixture();
+  const added = { ...f.choice, id: randomUUID(), version: 3 };
+  const input = copilotPreparationPatchSchema.parse({
+    weekStart: f.preparation.weekStart,
+    patch: {
+      offerSelection: {
+        addChoiceIds: [added.id],
+        removeChoiceIds: [f.choice.id],
+      },
+      tgUpdates: [
+        { placementId: f.preparation.placements[0].id, offerIds: [added.id] },
+      ],
+    },
+  });
+  const review = { ...basis, choices: [...basis.choices, added] };
+  const cards = buildPreparationProposalMessages(assistant, [
+    { input, basis: review, evidence, status: "READY" },
+  ]);
+  const result = readCopilotPreparationProposal(cards[0]);
+  expect(result.content.schemaVersion).toBe(4);
+  expect(result.request.input.draft.offerRefs).toEqual([
+    { choiceId: added.id, choiceVersion: 3 },
+  ]);
+  expect(result.request.input.draft.placements[0].offerIds).toEqual([added.id]);
+  expect(() =>
+    prepareWeekPatch(
+      { ...input, patch: { offerSelection: input.patch.offerSelection } },
+      review,
+      randomUUID(),
+    ),
+  ).toThrow();
+  const kept = prepareWeekPatch(
+    {
+      ...input,
+      patch: { offerSelection: { addChoiceIds: [f.choice.id, added.id] } },
+    },
+    { ...review, choices: [{ ...f.choice, version: 9 }, added] },
+    randomUUID(),
+  );
+  expect(kept.input.draft.offerRefs).toEqual([
+    ...f.preparation.offerRefs,
+    { choiceId: added.id, choiceVersion: 3 },
+  ]);
+  expect(() =>
+    readCopilotPreparationProposal({
+      ...cards[0],
+      text: JSON.stringify({ ...result.content, schemaVersion: 3 }),
+    }),
+  ).toThrow();
+});
+it("allows explicit missing-reference cleanup but rejects invalid selections and old client schemas", async () => {
+  const { f, basis } = await fixture();
+  const input = copilotPreparationPatchSchema.parse({
+    weekStart: f.preparation.weekStart,
+    patch: {
+      offerSelection: { removeChoiceIds: [f.choice.id] },
+      tgRemovals: [f.preparation.placements[0].id],
+    },
+  });
+  expect(
+    prepareWeekPatch(input, { ...basis, choices: [] }, randomUUID()).input.draft
+      .offerRefs,
+  ).toEqual([]);
+  const {
+    copilotPreparationCreatePatchSchema,
+    copilotPreparationLayoutPatchSchema,
+  } = await import("@fl-copilot/domain");
+  for (const schema of [
+    copilotPreparationCreatePatchSchema,
+    copilotPreparationLayoutPatchSchema,
+  ])
+    expect(schema.safeParse(input).success).toBe(false);
+  for (const offerSelection of [
+    {},
+    { addChoiceIds: [f.choice.id, f.choice.id] },
+    { addChoiceIds: [f.choice.id], removeChoiceIds: [f.choice.id] },
+  ])
+    expect(
+      copilotPreparationPatchSchema.safeParse({
+        ...input,
+        patch: { offerSelection },
+      }).success,
+    ).toBe(false);
+  expect(() =>
+    prepareWeekPatch(
+      {
+        ...input,
+        patch: { offerSelection: { removeChoiceIds: [randomUUID()] } },
+      },
+      basis,
+      randomUUID(),
+    ),
+  ).toThrow();
+  expect(
+    copilotPreparationPatchSchema.safeParse({
+      ...input,
+      create: { choiceIds: [] },
+    }).success,
+  ).toBe(false);
+});

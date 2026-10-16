@@ -1,4 +1,7 @@
-import { commercialChoiceWithinWeek } from "@fl-copilot/commercial-core";
+import {
+  commercialChoiceWithinWeek,
+  commercialPreparationOfferIssues,
+} from "@fl-copilot/commercial-core";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import {
@@ -6,6 +9,8 @@ import {
   copilotPreparationPreviewSchema,
   prepareWeekPatch,
   preparationRequestSchema,
+  validatePreparationBasis,
+  commercialWeekPreparationSchema,
 } from "@fl-copilot/domain";
 import { loadCommercialPreparationContext } from "./commercial-preparation-tool.js";
 /** Reuses canonical reference checks for missing-week creation or existing-draft edits; never writes. */
@@ -25,6 +30,7 @@ export async function readPreparationPreview(
       limit: 10,
     },
     input.create?.choiceIds,
+    input.patch.offerSelection?.addChoiceIds,
   );
   const all = r.all;
   let status:
@@ -36,15 +42,30 @@ export async function readPreparationPreview(
     | "ALREADY_EXISTS" = "READY";
   let basis: ReturnType<typeof copilotPreparationPreviewSchema.parse>["basis"] =
     input.create
-      ? r.preparation || all.length !== input.create.choiceIds.length
+      ? r.preparation
         ? null
         : { preparation: null, creationStoreId: storeId, choices: all }
-      : r.preparation && all.length === r.preparation.offerRefs.length
+      : r.preparation
         ? { preparation: r.preparation, choices: all }
         : null;
+  if (basis)
+    try {
+      validatePreparationBasis(storeId, input, basis);
+    } catch {
+      basis = null;
+    }
+  const removedIds = input.patch.offerSelection?.removeChoiceIds ?? [];
+  const unresolvedTgs = (r.preparation?.placements ?? [])
+    .filter((t) => !input.patch.tgRemovals?.includes(t.id))
+    .filter((t) =>
+      (
+        input.patch.tgUpdates?.find((u) => u.placementId === t.id)?.offerIds ??
+        t.offerIds
+      ).some((id) => removedIds.includes(id)),
+    );
   if (input.create && r.preparation) status = "ALREADY_EXISTS";
   else if (!basis) status = "UNAVAILABLE";
-  else if (r.issues.length) status = "BLOCKED";
+  else if (r.issues.length && !input.patch.offerSelection) status = "BLOCKED";
   else
     try {
       const request = prepareWeekPatch(
@@ -62,6 +83,18 @@ export async function readPreparationPreview(
               end: request.input.draft.weekEnd,
             }),
         )
+      )
+        status = "BLOCKED";
+      if (
+        input.patch.offerSelection &&
+        basis.preparation &&
+        commercialPreparationOfferIssues(
+          commercialWeekPreparationSchema.parse({
+            ...basis.preparation,
+            ...request.input.draft,
+          }),
+          all,
+        ).length
       )
         status = "BLOCKED";
       const current = basis.preparation
@@ -110,7 +143,9 @@ export async function readPreparationPreview(
                     ? input.create
                       ? "Certaines offres retenues sélectionnées ne sont pas disponibles dans ce magasin. Vérifiez leur sélection et leur synchronisation ; aucun brouillon créé."
                       : "Le brouillon ou ses offres ne sont pas disponibles. Ouvrez ou créez la préparation hebdomadaire, puis synchronisez-la."
-                    : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts, les TG à retirer ou modifier et les affectations aux offres déjà sélectionnées. Aucun changement.",
+                    : unresolvedTgs.length
+                      ? `Les offres à retirer restent affectées aux TG suivantes : ${unresolvedTgs.map((t) => t.label).join(" ; ")}. Précisez leurs nouvelles affectations ou leur retrait ; aucune TG ni affectation ne sera retirée automatiquement.`
+                      : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts, les TG à retirer ou modifier et les affectations aux offres déjà sélectionnées. Aucun changement.",
       },
     ],
   });
