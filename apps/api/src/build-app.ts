@@ -1,3 +1,4 @@
+import { readOperationsPreview } from "./copilot/operations-preview-tool.js";
 import { readNeedPreview } from "./copilot/need-preview-tool.js";
 import { readCataloguePreview } from "./copilot/catalogue-preview-tool.js";
 import { readCommercialExecutionPreview } from "./copilot/commercial-plan-tool.js";
@@ -572,6 +573,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 return result;
               },
+              ...(request.headers["x-copilot-store-operations"] === "1"
+                ? {
+                    operationsPreview: async (input) => {
+                      await authorize();
+                      const result = await readOperationsPreview(
+                        db,
+                        storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
               ...(request.headers["x-copilot-need-proposals"] === "1"
                 ? {
                     needPreview: async (input) => {
