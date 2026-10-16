@@ -341,3 +341,25 @@ External findings retain their own provenance/access time and safe source links 
 ### Reviewed execution declarations — 16 October 2026
 
 `commercial_execution_preview` prepares a current-plan task declaration with exact target/revision and previous state, without a business write. Compatible clients receive a private typed proposal card; explicit MANAGER confirmation reuses the existing local reviewed `commercial.execution.save` runtime and its atomic declaration/history/journal/Outbox transaction. TODO/DONE/SKIPPED/NOT_APPLICABLE remain declarations, not physical printing/installation or plan edits. Stale/conflicted targets fail closed and completed local replay is idempotent. Older binaries do not advertise the tool. Native acceptance belongs to the next grouped build; see M7-T21h in `../progress/M7_COPILOT.md` for validation and limits.
+
+## CRUD activation sequence — 16 October 2026
+
+The implementation priority is now connecting existing manual business actions to the primary chat. An internal adapter alone is not counted as a live chat capability. Each family keeps canonical validation, exact review/version checks, local-first transactions and its own conflicts; original source binaries, audit history and derived KPI records are not editable CRUD targets.
+
+| Delivery family | Chat coverage and remaining work |
+| --- | --- |
+| Product editor | Classification batches already connected. This increment connects full editor CREATE/UPDATE/RETIRE plus an exact full-fiche INSPECT, identifiers and aliases. Native review requires the next grouped binary. Dedicated child validation/rejection and conflict recovery remain separate. |
+| Need units and directed associations | Reads and reviewed local mutation adapters exist. Next connect typed proposals and native confirmation, preserving refusals and direction. |
+| Field observations and store settings | Reads/internal reviewed adapters exist. Connect create/update/close and supported settings through their existing services. |
+| Commercial choices, offers and plans | Existing canonical adapters need native source-review/confirmation orchestration. Task execution declarations are connected separately; no physical printing/installation. |
+| Mercalys and photographed waste | Native intake/review/publication exists. Connect conversational corrections, matching and publication to the same services, with specific ambiguity and corrected-publication decisions. |
+
+This sequence is an implementation backlog, not a claim of complete CRUD activation. Recovery, reversals and source-specific critical decisions remain visible acceptance gates for each family.
+
+### Product catalogue chat bridge
+
+`product_catalogue_preview` supports read-only INSPECT and prepares one explicit CREATE/UPDATE/RETIRE against the authenticated store. UPDATE contains only requested editor fields; the shared full-editor projection retains unrequested fields and children. Supplied child arrays are complete replacements and the native card displays previous/proposed lists. Existing child IDs, leading-zero codes, prior statuses/refusals and exact versions remain canonical. Partial UNKNOWN classification is allowed where the manual editor allows it. Retirement is logical and preserves history. No source identity, scope, permission, clock, operation ID or database command is model-supplied.
+
+Private PRODUCT_CATALOGUE_PROPOSAL artifacts commit with the reply and private replication changes. Explicit MANAGER confirmation rechecks the exact synchronized artifact, assistant parent and current local product/child snapshot, then reuses `CopilotProductCatalogueRuntime` and the manual editor writer. Product/children, history/result journal, recomputation and Outbox remain atomic. Stale/conflicted state, duplicate identifiers and invalid/refused aliases use existing canonical guards. Exact completed local replay survives restart. Capability `x-copilot-catalogue-proposals: 1` keeps older binaries from receiving an unsupported action. This capability permits at most four SDK steps for search → inspect → preview → answer, retaining the existing three-distinct-read/five-invocation/time/input-byte limits; other clients retain their previous step bound.
+
+Native confirmation acceptance is deferred to the next grouped build, with no paid EAS build in this increment. This is the full manual product-editor surface, not completion of all business CRUD families or dedicated identifier/alias validation/recovery.

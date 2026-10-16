@@ -1,3 +1,4 @@
+import { buildCatalogueProposalMessages } from "./catalogue-proposal-messages.js";
 import { buildExecutionProposalMessages } from "./execution-proposal-messages.js";
 import {
   readConversationCheckpoint,
@@ -285,6 +286,10 @@ export async function runCopilotTurn(
         }
         if (generation.mode === "AI")
           for (const proposal of [
+            ...buildCatalogueProposalMessages(
+              message,
+              generation.cataloguePreviews ?? [],
+            ),
             ...buildExecutionProposalMessages(
               message,
               generation.executionPreviews ?? [],
