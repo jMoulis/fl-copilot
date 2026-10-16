@@ -1,3 +1,4 @@
+import { commercialExecutionTargetMatches } from "@fl-copilot/domain";
 import {
   commercialWeekPlanSchema,
   type CommercialWeekPlan,
@@ -110,21 +111,7 @@ export function commercialExecutionSameTarget(
   t: CommercialExecutionTask,
   p: CommercialExecutionProposal,
 ) {
-  return [
-    "id",
-    "storeId",
-    "planId",
-    "planRevisionId",
-    "planVersion",
-    "planChecksum",
-    "kind",
-    "targetId",
-    "label",
-  ].every(
-    (k) =>
-      t[k as keyof CommercialExecutionTask] ===
-      p[k as keyof CommercialExecutionProposal],
-  );
+  return commercialExecutionTargetMatches(t, p);
 }
 export function commercialExecutionProgress(
   proposals: readonly CommercialExecutionProposal[],

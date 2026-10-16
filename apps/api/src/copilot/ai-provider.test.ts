@@ -2396,3 +2396,90 @@ it("lets the model request a product ranking without enumerating product IDs and
   expect(text).toContain("1\u202f234,56 €");
   expect(text).toContain("copilot-source:");
 });
+
+it("advertises execution preparation only to capable callers and returns a review artifact without business writes", async () => {
+  const { commercialExecutionFixture } =
+    await import("../../../../scripts/test-commercial-execution-fixtures");
+  const { copilotExecutionPreviewResultSchema } =
+    await import("@fl-copilot/domain");
+  const f = fixture(),
+    data = await commercialExecutionFixture();
+  f.request.storeId = data.storeId;
+  f.request.context = detectCopilotConflicts({
+    batch: scoreCopilotPriorities({
+      storeId: data.storeId,
+      evaluatedAt,
+      candidates: [],
+    }),
+    intents: [],
+  });
+  const input = {
+    weekStart: data.plan.weekStart,
+    taskId: data.proposals[0]!.id,
+    status: "DONE" as const,
+    note: "Affiche imprimée",
+  };
+  const evidence = {
+    id: "task-preview",
+    sourceId: input.taskId,
+    sourceVersion: data.plan.version,
+    sourceType: "COMMERCIAL_OPERATION" as const,
+    label: "Déclaration préparée",
+    value: "Aucun enregistrement effectué.",
+    factKind: "PLANNED" as const,
+  };
+  const value = copilotExecutionPreviewResultSchema.parse({
+    input,
+    status: "READY",
+    preview: { proposal: data.proposals[0], before: null },
+    evidence: [evidence],
+  });
+  const executionPreview = vi.fn(async () => value);
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some(
+          (t: { name: string }) => t.name === "commercial_execution_preview",
+        ),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_execution",
+          call_id: "call_execution",
+          name: "commercial_execution_preview",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    executionPreview,
+  }).generate(f.request, schema);
+  expect(executionPreview).toHaveBeenCalledOnce();
+  expect(result.executionPreviews).toEqual([value]);
+  expect(result.toolEvidence).toEqual([evidence]);
+  await createCopilotAiProvider(
+    f.config,
+    async (_url, init) => {
+      expect(
+        JSON.parse(String(init?.body)).tools.some(
+          (t: { name: string }) => t.name === "commercial_execution_preview",
+        ),
+      ).toBe(false);
+      return response();
+    },
+    { daily: vi.fn() },
+  ).generate(f.request, schema);
+});

@@ -1,3 +1,7 @@
+import {
+  copilotExecutionPreviewInputSchema,
+  copilotExecutionPreviewResultSchema,
+} from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db } from "mongodb";
@@ -29,22 +33,18 @@ const placementOfferProjection = taskShape.placementOffers.element.strip();
 const mechanism = (m: Parameters<typeof commercialMechanismDescription>[0]) =>
   commercialMechanismDescription(m) +
   (m.type === "CARD_BENEFIT" && m.scope ? " ; portée carte : " + m.scope : "");
-export async function readCommercialPlan(
+async function readExecutionContext(
   db: Db,
   storeId: string,
-  raw: unknown,
+  weekStart: string,
 ) {
-  z.string().uuid().parse(storeId);
-  const input = copilotPlanReadInputSchema.parse(raw);
   const row = await db
     .collection<WeekPlanDocument>("commercialWeekPlans")
-    .findOne({ storeId, weekStart: input.weekStart }, { maxTimeMS: 2000 });
+    .findOne({ storeId, weekStart }, { maxTimeMS: 2000 });
   const p = row ? serializeCommercialPlan(row) : null;
   if (
     p &&
-    (row!._id !== p.id ||
-      p.storeId !== storeId ||
-      p.weekStart !== input.weekStart)
+    (row!._id !== p.id || p.storeId !== storeId || p.weekStart !== weekStart)
   )
     throw Error("COPILOT_PLAN_SCOPE_INVALID");
   const proposals = p ? await commercialExecutionChecklist(p, digest) : [];
@@ -79,6 +79,17 @@ export async function readCommercialPlan(
     : records.filter((r) =>
         proposals.some((t) => commercialExecutionSameTarget(r, t)),
       );
+  return { p, proposals, records, matched, exceeded, status };
+}
+export async function readCommercialPlan(
+  db: Db,
+  storeId: string,
+  raw: unknown,
+) {
+  z.uuid().parse(storeId);
+  const input = copilotPlanReadInputSchema.parse(raw);
+  const { p, proposals, records, matched, exceeded, status } =
+    await readExecutionContext(db, storeId, input.weekStart);
   const page = exceeded
     ? []
     : proposals.slice(input.offset, input.offset + input.limit);
@@ -208,5 +219,67 @@ export async function readCommercialPlan(
     unmatchedDeclarations,
     nextOffset,
     evidence,
+  });
+}
+
+/** Preparation only: stable current task identity/revision, never an execution write. */
+export async function readCommercialExecutionPreview(
+  db: Db,
+  storeId: string,
+  raw: unknown,
+) {
+  z.uuid().parse(storeId);
+  const input = copilotExecutionPreviewInputSchema.parse(raw);
+  const { p, proposals, records, matched, exceeded } =
+    await readExecutionContext(db, storeId, input.weekStart);
+  const proposal = exceeded
+    ? undefined
+    : proposals.find((t) => t.id === input.taskId);
+  const before = proposal
+    ? (matched.find((r) => commercialExecutionSameTarget(r, proposal)) ?? null)
+    : null;
+  // An existing same ID with drifted target must never be treated as a missing declaration.
+  const drifted =
+    proposal &&
+    records.some(
+      (r) =>
+        r.id === proposal.id && !commercialExecutionSameTarget(r, proposal),
+    );
+  const status = !p
+    ? "NO_PLAN"
+    : exceeded
+      ? "LIMIT_EXCEEDED"
+      : !proposal || drifted
+        ? "TASK_UNAVAILABLE"
+        : before?.status === input.status && before.note === input.note
+          ? "UNCHANGED"
+          : "READY";
+  const preview =
+    proposal && ["READY", "UNCHANGED"].includes(status)
+      ? { proposal, before }
+      : null;
+  const revision = createHash("sha256")
+    .update(JSON.stringify([storeId, input, preview, status]))
+    .digest("hex");
+  return copilotExecutionPreviewResultSchema.parse({
+    input,
+    status,
+    preview,
+    evidence: [
+      {
+        id: `execution-preview/${revision}`,
+        sourceId: proposal?.id ?? storeId,
+        sourceType: "COMMERCIAL_OPERATION",
+        sourceVersion: p?.version ?? null,
+        label: proposal?.label ?? "Déclaration commerciale indisponible",
+        value:
+          status === "READY"
+            ? "Déclaration préparée, à confirmer sur l’appareil. Aucun enregistrement effectué."
+            : status === "UNCHANGED"
+              ? "Cette déclaration est déjà enregistrée avec le même statut et la même note."
+              : "Le plan ou la tâche courante n’est pas disponible pour préparer cette déclaration.",
+        factKind: status === "UNCHANGED" ? "OBSERVED" : "PLANNED",
+      },
+    ],
   });
 }

@@ -96,3 +96,4 @@ export * from "./copilot-knowledge-proposal";
 export * from "./copilot-history-read";
 export * from "./copilot-context-checkpoint";
 export * from "./copilot-analytics-query";
+export * from "./copilot-execution-proposal";

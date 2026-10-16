@@ -1,3 +1,4 @@
+import { buildExecutionProposalMessages } from "./execution-proposal-messages.js";
 import {
   readConversationCheckpoint,
   buildContextCheckpoint,
@@ -284,6 +285,10 @@ export async function runCopilotTurn(
         }
         if (generation.mode === "AI")
           for (const proposal of [
+            ...buildExecutionProposalMessages(
+              message,
+              generation.executionPreviews ?? [],
+            ),
             ...buildKnowledgeSuggestionMessages(
               message,
               generation.knowledgeSuggestions ?? [],

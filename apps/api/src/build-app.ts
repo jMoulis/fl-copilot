@@ -1,3 +1,4 @@
+import { readCommercialExecutionPreview } from "./copilot/commercial-plan-tool.js";
 import { readAnalyticsQuery } from "./copilot/analytics-query-tool.js";
 import { createCopilotWebResearchJournal } from "./copilot/web-research-journal.js";
 import { createCopilotWebResearch } from "./copilot/web-research.js";
@@ -569,6 +570,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 return result;
               },
+              ...(request.headers["x-copilot-execution-proposals"] === "1"
+                ? {
+                    executionPreview: async (input) => {
+                      await authorize();
+                      const result = await readCommercialExecutionPreview(
+                        db,
+                        storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);
