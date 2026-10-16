@@ -99,3 +99,4 @@ export * from "./copilot-analytics-query";
 export * from "./copilot-execution-proposal";
 
 export * from "./copilot-catalogue-proposal";
+export * from "./copilot-need-proposal";

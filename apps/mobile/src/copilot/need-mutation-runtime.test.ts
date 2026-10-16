@@ -104,7 +104,7 @@ async function setup(path = ":memory:") {
     expectedVersion: null,
     decision: "VALIDATED",
   };
-  return { db, a, f, chat, authority, runtime, association };
+  return { db, a, f, chat, deviceId, authority, runtime, association };
 }
 it("creates/renames/deactivates a need offline, preserves origin/code and reserved inactive identity and replays after restart", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fl-need-tools-")),
@@ -548,5 +548,313 @@ it("preserves learned membership confidence and rejects a declared overwrite of 
     expect(r.after.confidence).toBe(0.65);
   } finally {
     x.db.close();
+  }
+});
+
+async function savedNeedCard(
+  x: Awaited<ReturnType<typeof setup>>,
+  input: unknown,
+  basis: unknown,
+) {
+  const b = basis as Record<string, unknown>;
+  basis = {
+    ...b,
+    ...Object.fromEntries(
+      ["product", "substitute"].map((k) => [
+        k,
+        b[k]
+          ? {
+              packaging: null,
+              familyId: null,
+              subfamilyId: null,
+              ...(b[k] as object),
+            }
+          : null,
+      ]),
+    ),
+  };
+  const { copilotMessageSchema } = await import("@fl-copilot/domain"),
+    { applyCopilotRecord } = await import("./conversation-repository");
+  const assistant = copilotMessageSchema.parse({
+    ...x.chat.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: x.chat.message.id,
+    text: "Proposition préparée.",
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "NEED_MUTATION_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input,
+      basis,
+    }),
+  });
+  await x.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, x.chat, "copilot_message", assistant);
+    await applyCopilotRecord(tx, x.chat, "copilot_message", message);
+  });
+  return message;
+}
+async function needController(
+  x: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  db = x.a,
+) {
+  const { CopilotNeedProposalController } =
+    await import("./need-proposal-controller");
+  return new CopilotNeedProposalController(
+    db,
+    {
+      storeId: x.f.need.storeId,
+      ownerId: x.chat.ownerId,
+      deviceId: x.deviceId,
+      canManageProducts: allowed,
+    },
+    substitutionDigest,
+    randomUUID,
+  );
+}
+const emptyBasis = {
+  need: null,
+  product: null,
+  substitute: null,
+  membership: null,
+  substitution: null,
+};
+it("confirms need creation, rename and deactivation cards while preserving code and history", async () => {
+  const x = await setup();
+  try {
+    const c = await needController(x),
+      m = await savedNeedCard(
+        x,
+        {
+          kind: "NEED",
+          action: "PREPARE",
+          needUnitId: null,
+          patch: { name: "Repas rapide" },
+        },
+        emptyBasis,
+      );
+    expect((await c.open(m)).status).toBe("READY");
+    await c.confirm(m);
+    const r = needSaveResultSchema.parse(
+      JSON.parse(
+        (
+          x.db
+            .prepare(
+              "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+            )
+            .get(m.id) as { result_json: string }
+        ).result_json,
+      ),
+    );
+    expect(r.after.code).toBe("REPAS_RAPIDE");
+    const rename = await savedNeedCard(
+      x,
+      {
+        kind: "NEED",
+        action: "PREPARE",
+        needUnitId: r.after.id,
+        patch: { name: "Repas express", status: "INACTIVE" },
+      },
+      { ...emptyBasis, need: r.after },
+    );
+    await c.confirm(rename);
+    await c.confirm(rename);
+    const { NeedUnitRepository } = await import("../needs/repository");
+    const after = await new NeedUnitRepository(x.a).get(
+      x.f.need.storeId,
+      r.after.id,
+    );
+    expect(after!.entity).toMatchObject({
+      code: "REPAS_RAPIDE",
+      name: "Repas express",
+      status: "INACTIVE",
+      version: 2,
+    });
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM copilot_tool_results").get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    x.db.close();
+  }
+});
+it("requires a separate explicit reactivation decision and preserves learned substitution values and direction", async () => {
+  const x = await setup();
+  try {
+    const record = {
+      ...x.f.substitution,
+      status: "REJECTED" as const,
+      humanConfirmed: true,
+      observedSubstitution: 0.7,
+      relationshipScore: 0.6,
+      confidence: 0.8,
+      evidenceCount: 3,
+      lastEvidenceAt: x.f.need.updatedAt,
+    };
+    await applyProductSubstitution(x.a, x.f.need.storeId, record);
+    const c = await needController(x),
+      m = await savedNeedCard(
+        x,
+        {
+          kind: "SUBSTITUTION",
+          action: "PREPARE",
+          needUnitId: x.f.need.id,
+          productId: x.f.product.id,
+          substituteProductId: x.f.substitute.id,
+          patch: { decision: "VALIDATED" },
+        },
+        {
+          ...emptyBasis,
+          need: x.f.need,
+          product: x.f.product,
+          substitute: x.f.substitute,
+          substitution: record,
+        },
+      );
+    expect((await c.open(m)).reactivationRequired).toBe(true);
+    await expect(c.confirm(m)).rejects.toThrow("REFUSAL_REQUIRED");
+    await c.confirm(m, true);
+    await c.confirm(m, true);
+    const r = substitutionSaveResultSchema.parse(
+      JSON.parse(
+        (
+          x.db
+            .prepare(
+              "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+            )
+            .get(m.id) as { result_json: string }
+        ).result_json,
+      ),
+    );
+    expect(r.after).toMatchObject({
+      sourceProductId: x.f.product.id,
+      substituteProductId: x.f.substitute.id,
+      observedSubstitution: 0.7,
+      relationshipScore: 0.6,
+      confidence: 0.8,
+      evidenceCount: 3,
+      status: "VALIDATED",
+    });
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM product_substitutions").get(),
+    ).toEqual({ n: 1 });
+  } finally {
+    x.db.close();
+  }
+});
+it("creates membership from a reviewed card, refuses stale parents and revoked/forged artifacts, rolls back cancelled/failed writes", async () => {
+  const x = await setup();
+  try {
+    const c = await needController(x),
+      m = await savedNeedCard(
+        x,
+        {
+          kind: "MEMBERSHIP",
+          action: "PREPARE",
+          needUnitId: x.f.need.id,
+          productId: x.f.product.id,
+          patch: {
+            decision: "VALIDATED",
+            strength: 0.8,
+            declaredConfidence: 0.7,
+          },
+        },
+        { ...emptyBasis, need: x.f.need, product: x.f.product },
+      );
+    await expect((await needController(x, false)).confirm(m)).rejects.toThrow(
+      "FORBIDDEN",
+    );
+    await expect(
+      c.confirm({ ...m, text: m.text.replace("0.8", "0.9") }),
+    ).rejects.toThrow();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(c.confirm(m, false, abort.signal)).rejects.toThrow();
+    x.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    x.a.fail = false;
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM need_memberships").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM copilot_tool_results").get(),
+    ).toEqual({ n: 0 });
+    await c.confirm(m);
+    const r = membershipSaveResultSchema.parse(
+      JSON.parse(
+        (
+          x.db
+            .prepare(
+              "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+            )
+            .get(m.id) as { result_json: string }
+        ).result_json,
+      ),
+    );
+    const update = await savedNeedCard(
+      x,
+      {
+        kind: "MEMBERSHIP",
+        action: "PREPARE",
+        needUnitId: x.f.need.id,
+        productId: x.f.product.id,
+        patch: { decision: "REJECTED" },
+      },
+      {
+        ...emptyBasis,
+        need: x.f.need,
+        product: x.f.product,
+        membership: r.after,
+      },
+    );
+    x.db
+      .prepare(
+        "UPDATE need_units SET payload_json=json_set(payload_json,'$.version',99)",
+      )
+      .run();
+    expect((await c.open(update)).status).toBe("STALE");
+    await expect(c.confirm(update)).rejects.toThrow("STALE");
+  } finally {
+    x.db.close();
+  }
+});
+it("replays completed need cards after a physical SQLite restart without another command", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-need-card-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let opened: DatabaseSync | undefined;
+  try {
+    const m = await savedNeedCard(
+      x,
+      {
+        kind: "NEED",
+        action: "PREPARE",
+        needUnitId: null,
+        patch: { name: "Cuisine rapide" },
+      },
+      emptyBasis,
+    );
+    await (await needController(x)).confirm(m);
+    const count = x.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    x.db.close();
+    opened = new DatabaseSync(path);
+    expect(
+      (await (await needController(x, true, new Adapter(opened))).confirm(m))
+        .status,
+    ).toBe("COMPLETED");
+    expect(opened.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      count,
+    );
+  } finally {
+    if (opened) opened.close();
+    else x.db.close();
+    rmSync(dir, { recursive: true, force: true });
   }
 });

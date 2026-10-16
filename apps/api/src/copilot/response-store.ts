@@ -1,3 +1,4 @@
+import { readCopilotNeedProposal } from "@fl-copilot/domain";
 import { readCopilotCatalogueProposal } from "@fl-copilot/domain";
 import { readCopilotExecutionProposal } from "@fl-copilot/domain";
 import { validateStoredContext } from "./context-checkpoint.js";
@@ -110,13 +111,15 @@ export async function appendCopilotToolRecord(
       ? readCopilotInformationRequest(decoded)
       : kind === "CONTEXT_CHECKPOINT"
         ? readContextCheckpoint(decoded)
-        : kind === "PRODUCT_CATALOGUE_PROPOSAL"
-          ? readCopilotCatalogueProposal(decoded)
-          : kind === "COMMERCIAL_EXECUTION_PROPOSAL"
-            ? readCopilotExecutionProposal(decoded)
-            : kind === "KNOWLEDGE_SUGGESTION"
-              ? readKnowledgeSuggestion(decoded)
-              : readCopilotProductProposal(decoded);
+        : kind === "NEED_MUTATION_PROPOSAL"
+          ? readCopilotNeedProposal(decoded)
+          : kind === "PRODUCT_CATALOGUE_PROPOSAL"
+            ? readCopilotCatalogueProposal(decoded)
+            : kind === "COMMERCIAL_EXECUTION_PROPOSAL"
+              ? readCopilotExecutionProposal(decoded)
+              : kind === "KNOWLEDGE_SUGGESTION"
+                ? readKnowledgeSuggestion(decoded)
+                : readCopilotProductProposal(decoded);
   const message = artifact.message;
   const assistantMessageId =
     "content" in artifact

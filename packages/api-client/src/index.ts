@@ -68,6 +68,7 @@ export class ApiClient {
       onActivity?(activity: CopilotActivity): void;
       memorySuggestions?: boolean;
       webResearch?: boolean;
+      needProposals?: boolean;
       catalogueProposals?: boolean;
       executionProposals?: boolean;
       fetch?: typeof fetch;
@@ -86,6 +87,9 @@ export class ApiClient {
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
                 ...(streaming.onActivity ? { "x-copilot-activity": "1" } : {}),
+                ...(streaming.needProposals
+                  ? { "x-copilot-need-proposals": "1" }
+                  : {}),
                 ...(streaming.catalogueProposals
                   ? { "x-copilot-catalogue-proposals": "1" }
                   : {}),
