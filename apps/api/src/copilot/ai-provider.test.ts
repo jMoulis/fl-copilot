@@ -2894,3 +2894,89 @@ it("advertises store operations preparation only to capable callers and returns 
     { daily: vi.fn() },
   ).generate(f.request, schema);
 });
+
+it.each([false, true])(
+  "reads weekly preparation through actual SDK tool transport, rejecting foreign scope: %s",
+  async (foreign) => {
+    const f = fixture(),
+      input = { weekStart: "2026-10-05", offset: 0, limit: 10 };
+    const { commercialPlanFixture } =
+      await import("../../../../scripts/test-commercial-plan-fixtures");
+    const data = await commercialPlanFixture();
+    f.request.storeId = data.storeId;
+    f.request.context = detectCopilotConflicts({
+      batch: scoreCopilotPriorities({
+        storeId: data.storeId,
+        evaluatedAt,
+        candidates: [],
+      }),
+      intents: [],
+    });
+    const evidence = {
+      id: "preparation-read",
+      sourceId: data.preparation.id,
+      sourceVersion: 1,
+      sourceType: "COMMERCIAL_OPERATION" as const,
+      label: "Brouillon hebdomadaire",
+      value: "Préparation seulement, aucune modification.",
+      factKind: "PLANNED" as const,
+    };
+    const value = {
+      weekStart: input.weekStart,
+      status: "DRAFT" as const,
+      preparation: {
+        ...data.preparation,
+        storeId: foreign
+          ? "00000000-0000-4000-8000-000000000001"
+          : data.storeId,
+      },
+      choices: [data.choice],
+      issues: [],
+      missingChoiceIds: [],
+      nextOffset: null,
+      evidence: [evidence],
+    };
+    const commercialPreparation = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const definition = body.tools.find(
+        (t: { name: string }) => t.name === "commercial_preparation",
+      );
+      expect(definition.parameters.type).toBe("object");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_preparation",
+            call_id: "call_preparation",
+            name: "commercial_preparation",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const toolResult = body.input.find(
+        (x: { type: string }) => x.type === "function_call_output",
+      );
+      expect(JSON.parse(toolResult.output)).toMatchObject(
+        foreign
+          ? { unavailable: true }
+          : { status: "DRAFT", preparation: data.preparation },
+      );
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      commercialPreparation,
+    }).generate(f.request, schema);
+    expect(commercialPreparation).toHaveBeenCalledExactlyOnceWith(input);
+    expect(r.toolEvidence).toEqual(foreign ? [] : [evidence]);
+  },
+);
