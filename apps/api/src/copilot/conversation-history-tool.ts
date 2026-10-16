@@ -77,6 +77,7 @@ export async function readConversationContext(
     .collection<CopilotMessage & { _id: string }>("copilotMessages")
     .find({
       ...privateScope,
+      ...(input.messageId ? { _id: input.messageId } : {}),
       role: { $in: ["USER", "ASSISTANT"] },
       $and: [{ createdAt: { $lt: parent.createdAt } }, cursorFilter],
       ...(escaped ? { text: { $regex: escaped, $options: "i" } } : {}),
@@ -96,6 +97,7 @@ export async function readConversationContext(
     const m = copilotMessageSchema.parse(payload);
     if (
       _id !== m.id ||
+      (input.messageId !== null && input.messageId !== m.id) ||
       m.storeId !== scope.storeId ||
       m.ownerId !== scope.ownerId ||
       m.conversationId !== scope.conversationId ||

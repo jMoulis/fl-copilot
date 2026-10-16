@@ -5,7 +5,7 @@ import {
 } from "./copilot-history-read";
 const uuid = "11111111-1111-4111-8111-111111111111";
 it("accepts only bounded context lookups, with no model-controlled tenant or topic", () => {
-  const input = { query: null, before: null, limit: 5 };
+  const input = { messageId: null, query: null, before: null, limit: 5 };
   expect(copilotHistoryReadInputSchema.parse(input)).toEqual(input);
   for (const patch of [
     { storeId: uuid },
@@ -69,6 +69,25 @@ it("rejects incomplete cursors, duplicate or oversized messages and official evi
           text: "b".repeat(3000),
         },
       ],
+    }).success,
+  ).toBe(false);
+});
+
+it("binds exact-message retrieval without allowing a combined search or pagination scope", () => {
+  expect(
+    copilotHistoryReadInputSchema.parse({
+      messageId: uuid,
+      query: null,
+      before: null,
+      limit: 1,
+    }).messageId,
+  ).toBe(uuid);
+  expect(
+    copilotHistoryReadInputSchema.safeParse({
+      messageId: uuid,
+      query: "TG",
+      before: null,
+      limit: 1,
     }).success,
   ).toBe(false);
 });

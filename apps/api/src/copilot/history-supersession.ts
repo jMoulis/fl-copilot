@@ -1,10 +1,11 @@
 import type { CopilotMessage } from "@fl-copilot/domain";
-import type { Db } from "mongodb";
+import type { Db, ClientSession } from "mongodb";
 /** Bounded candidate IDs; no foreign, future or cross-topic correction applies. */
 export async function readSupersededHistoryIds(
   db: Db,
   parent: CopilotMessage,
   rows: CopilotMessage[],
+  session?: ClientSession,
 ) {
   const ids = [
     ...new Set(
@@ -31,7 +32,7 @@ export async function readSupersededHistoryIds(
               createdAt: { $lte: parent.createdAt },
               supersedesMessageId: { $in: ids },
             },
-            { maxTimeMS: 2000 },
+            { maxTimeMS: 2000, ...(session ? { session } : {}) },
           )
       : [],
   );

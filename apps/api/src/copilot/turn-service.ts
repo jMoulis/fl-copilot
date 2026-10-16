@@ -1,3 +1,7 @@
+import {
+  readConversationCheckpoint,
+  buildContextCheckpoint,
+} from "./context-checkpoint.js";
 import { buildKnowledgeSuggestionMessages } from "./knowledge-suggestion-messages";
 import { readKnowledge } from "./knowledge-store";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
@@ -10,6 +14,7 @@ import { readLatestDepartmentEvidence } from "./daily-evidence.js";
 import { acquireTurnLease } from "./turn-lease.js";
 import { randomUUID } from "node:crypto";
 import {
+  isContextCheckpointUnchanged,
   copilotTurnRequestSchema,
   type CopilotTurnRequest,
   copilotConversationSchema,
@@ -170,6 +175,20 @@ export async function runCopilotTurn(
       entries: [],
     }));
     cancelled();
+    const retainedContext = history.earlierMessagesOmitted
+      ? await readConversationCheckpoint(dependencies.db, initial.parent)
+      : undefined;
+    cancelled();
+    const recentById = new Map(
+      [...recentSources, ...(retainedContext?.sources ?? [])]
+        .filter(
+          (s) =>
+            !initial.parent.attachments.some(
+              (a) => a.sourceDocumentId === s.sourceDocumentId,
+            ),
+        )
+        .map((s) => [s.sourceDocumentId, s]),
+    );
     const request = {
       requestId: randomUUID(),
       storeId: authority.storeId,
@@ -177,8 +196,14 @@ export async function runCopilotTurn(
       evidence,
       history,
       attachedSources,
-      recentSources,
-      recentSourcesOmitted,
+      recentSources: [...recentById.values()].slice(0, 10),
+      recentSourcesOmitted:
+        recentSourcesOmitted ||
+        !!retainedContext?.sourcesOmitted ||
+        recentById.size > 10,
+      ...(retainedContext
+        ? { conversationCheckpoint: retainedContext.checkpoint }
+        : {}),
       answeredInformation,
       storeKnowledge,
       userQuestion: initial.parent.text || null,
@@ -228,6 +253,35 @@ export async function runCopilotTurn(
           message,
           changes,
         );
+        if (
+          generation.mode === "AI" &&
+          generation.contextCheckpoint &&
+          !(
+            request.conversationCheckpoint?.status === "AVAILABLE" &&
+            isContextCheckpointUnchanged(
+              request.conversationCheckpoint.content,
+              generation.contextCheckpoint,
+              latest.parent.attachments.map((a) => a.sourceDocumentId),
+            )
+          )
+        ) {
+          const checkpoint = await buildContextCheckpoint(
+            dependencies.db,
+            message,
+            latest.parent,
+            generation.contextCheckpoint,
+            request.conversationCheckpoint?.status === "AVAILABLE"
+              ? request.conversationCheckpoint.checkpointId
+              : null,
+            session,
+          );
+          await appendCopilotToolRecord(
+            { database: dependencies.db, session },
+            renewed,
+            checkpoint,
+            changes,
+          );
+        }
         if (generation.mode === "AI")
           for (const proposal of [
             ...buildKnowledgeSuggestionMessages(
@@ -250,6 +304,7 @@ export async function runCopilotTurn(
               proposal,
               changes,
             );
+        cancelled();
         return reply;
       });
       if (!result) throw new Error("COPILOT_REPLY_COMMIT_FAILED");

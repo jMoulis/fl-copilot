@@ -1,3 +1,5 @@
+import { ContextCheckpointCard } from "@/copilot/context-checkpoint-card";
+import { readContextCheckpoint } from "@fl-copilot/domain";
 import { readKnowledgeSuggestion } from "@fl-copilot/domain";
 import { KnowledgeSuggestionCard } from "@/copilot/knowledge-suggestion-card";
 import { fetch as expoFetch } from "expo/fetch";
@@ -114,6 +116,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     message: CopilotMessage,
     onSubmitted: () => Promise<void>,
   ) => {
+    try {
+      readContextCheckpoint(message);
+      return <ContextCheckpointCard key={message.id} message={message} />;
+    } catch {
+      /* Other supported private tool artifacts follow. */
+    }
     try {
       readKnowledgeSuggestion(message);
       return <KnowledgeSuggestionCard key={message.id} message={message} />;
