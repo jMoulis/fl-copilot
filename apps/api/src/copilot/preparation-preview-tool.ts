@@ -1,3 +1,4 @@
+import { commercialChoiceWithinWeek } from "@fl-copilot/commercial-core";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import {
@@ -7,7 +8,7 @@ import {
   preparationRequestSchema,
 } from "@fl-copilot/domain";
 import { loadCommercialPreparationContext } from "./commercial-preparation-tool.js";
-/** Reuses complete canonical reference checks; only prepares an existing draft. */
+/** Reuses canonical reference checks for missing-week creation or existing-draft edits; never writes. */
 export async function readPreparationPreview(
   db: Db,
   storeId: string,
@@ -15,20 +16,34 @@ export async function readPreparationPreview(
 ) {
   const input = copilotPreparationPatchSchema.parse(raw);
   // At most 100 references, no unbounded source/product scan. All issue checks cover all references.
-  const r = await loadCommercialPreparationContext(db, storeId, {
-    weekStart: input.weekStart,
-    offset: 0,
-    limit: 10,
-  });
+  const r = await loadCommercialPreparationContext(
+    db,
+    storeId,
+    {
+      weekStart: input.weekStart,
+      offset: 0,
+      limit: 10,
+    },
+    input.create?.choiceIds,
+  );
   const all = r.all;
   let status:
-    "READY" | "UNCHANGED" | "UNAVAILABLE" | "BLOCKED" | "LIMIT_EXCEEDED" =
-    "READY";
-  let basis =
-    r.preparation && all.length === r.preparation.offerRefs.length
-      ? { preparation: r.preparation, choices: all }
-      : null;
-  if (!basis) status = "UNAVAILABLE";
+    | "READY"
+    | "UNCHANGED"
+    | "UNAVAILABLE"
+    | "BLOCKED"
+    | "LIMIT_EXCEEDED"
+    | "ALREADY_EXISTS" = "READY";
+  let basis: ReturnType<typeof copilotPreparationPreviewSchema.parse>["basis"] =
+    input.create
+      ? r.preparation || all.length !== input.create.choiceIds.length
+        ? null
+        : { preparation: null, creationStoreId: storeId, choices: all }
+      : r.preparation && all.length === r.preparation.offerRefs.length
+        ? { preparation: r.preparation, choices: all }
+        : null;
+  if (input.create && r.preparation) status = "ALREADY_EXISTS";
+  else if (!basis) status = "UNAVAILABLE";
   else if (r.issues.length) status = "BLOCKED";
   else
     try {
@@ -37,9 +52,23 @@ export async function readPreparationPreview(
         basis,
         "00000000-0000-4000-8000-000000000001",
       );
-      const current = preparationRequestSchema.shape.input.shape.draft
-        .strip()
-        .parse(basis.preparation);
+      if (
+        input.create &&
+        all.some(
+          (c) =>
+            c.status !== "RETAINED" ||
+            !commercialChoiceWithinWeek(c, {
+              start: request.input.draft.weekStart,
+              end: request.input.draft.weekEnd,
+            }),
+        )
+      )
+        status = "BLOCKED";
+      const current = basis.preparation
+        ? preparationRequestSchema.shape.input.shape.draft
+            .strip()
+            .parse(basis.preparation)
+        : null;
       if (JSON.stringify(current) === JSON.stringify(request.input.draft))
         status = "UNCHANGED";
     } catch {
@@ -67,15 +96,21 @@ export async function readPreparationPreview(
         label: "Modification du brouillon TG",
         factKind: "QUALITY",
         value:
-          status === "LIMIT_EXCEEDED"
-            ? "Ce brouillon est trop volumineux pour une carte de confirmation complète. Modifiez-le dans l’écran de préparation hebdomadaire ; aucune donnée n’a été tronquée ni enregistrée."
-            : status === "READY"
-              ? "Modification préparée, à confirmer sur l’appareil. Le brouillon sera enregistré localement ; aucune validation de plan ni installation en rayon."
-              : status === "UNCHANGED"
-                ? "Le brouillon contient déjà ces valeurs ; aucun changement."
-                : status === "UNAVAILABLE"
-                  ? "Le brouillon ou ses offres ne sont pas disponibles. Ouvrez ou créez la préparation hebdomadaire, puis synchronisez-la."
-                  : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts, les TG à retirer ou modifier et les affectations aux offres déjà sélectionnées. Aucun changement.",
+          status === "ALREADY_EXISTS"
+            ? "Un brouillon synchronisé existe déjà pour cette semaine. Consultez-le puis préparez une modification ; il ne sera pas remplacé par une création."
+            : status === "LIMIT_EXCEEDED"
+              ? "Ce brouillon est trop volumineux pour une carte de confirmation complète. Modifiez-le dans l’écran de préparation hebdomadaire ; aucune donnée n’a été tronquée ni enregistrée."
+              : status === "READY"
+                ? input.create
+                  ? "Nouvelle semaine préparée à partir des offres retenues sélectionnées, à confirmer sur l’appareil. Aucune validation commerciale, publication ou installation en rayon."
+                  : "Modification préparée, à confirmer sur l’appareil. Le brouillon sera enregistré localement ; aucune validation de plan ni installation en rayon."
+                : status === "UNCHANGED"
+                  ? "Le brouillon contient déjà ces valeurs ; aucun changement."
+                  : status === "UNAVAILABLE"
+                    ? input.create
+                      ? "Certaines offres retenues sélectionnées ne sont pas disponibles dans ce magasin. Vérifiez leur sélection et leur synchronisation ; aucun brouillon créé."
+                      : "Le brouillon ou ses offres ne sont pas disponibles. Ouvrez ou créez la préparation hebdomadaire, puis synchronisez-la."
+                    : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts, les TG à retirer ou modifier et les affectations aux offres déjà sélectionnées. Aucun changement.",
       },
     ],
   });

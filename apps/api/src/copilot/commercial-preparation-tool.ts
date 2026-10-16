@@ -22,9 +22,17 @@ export async function loadCommercialPreparationContext(
   db: Db,
   storeId: string,
   raw: unknown,
+  initialChoiceIds?: readonly string[],
 ) {
   z.uuid().parse(storeId);
   const input = copilotPreparationReadInputSchema.parse(raw);
+  const initial = initialChoiceIds
+    ? z
+        .array(z.uuid())
+        .max(100)
+        .refine((ids) => new Set(ids).size === ids.length)
+        .parse(initialChoiceIds)
+    : [];
   const row = await db
     .collection<PreparationDocument>("commercialWeekPreparations")
     .findOne({ storeId, weekStart: input.weekStart }, { maxTimeMS: 2000 });
@@ -36,7 +44,12 @@ export async function loadCommercialPreparationContext(
       preparation.weekStart !== input.weekStart)
   )
     throw Error("COPILOT_PREPARATION_SCOPE_INVALID");
-  const refs = preparation?.offerRefs ?? [];
+  const refs =
+    preparation?.offerRefs ??
+    initial.map((choiceId) => ({
+      choiceId,
+      choiceVersion: 1,
+    }));
   const rows = refs.length
     ? await db
         .collection<OfferChoiceDocument>("commercialOfferChoices")

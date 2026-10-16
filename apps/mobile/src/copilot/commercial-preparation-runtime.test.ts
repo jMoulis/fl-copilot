@@ -627,3 +627,165 @@ it("rolls back added/removed TGs on failed commit and refuses deletion when its 
     x.db.close();
   }
 });
+
+async function newWeekCard(x: Awaited<ReturnType<typeof setup>>) {
+  const { copilotMessageSchema, copilotPreparationPatchSchema } =
+      await import("@fl-copilot/domain"),
+    { applyCopilotRecord } = await import("./conversation-repository");
+  const assistant = copilotMessageSchema.parse({
+    ...x.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: x.f.message.id,
+    attachments: [],
+    text: "Nouvelle semaine préparée.",
+  });
+  const input = copilotPreparationPatchSchema.parse({
+    weekStart: x.request.input.draft.weekStart,
+    create: { choiceIds: [x.choice.choice.id] },
+    patch: {
+      tgCapacity: 1,
+      tgAdditions: [
+        {
+          label: "TG nouvelle",
+          theme: "Saison",
+          offerIds: [x.choice.choice.id],
+        },
+      ],
+    },
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "COMMERCIAL_PREPARATION_PROPOSAL",
+      schemaVersion: 3,
+      assistantMessageId: assistant.id,
+      input,
+      basis: {
+        preparation: null,
+        creationStoreId: x.f.storeId,
+        choices: [x.choice.choice],
+      },
+    }),
+  });
+  await x.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, x.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, x.f, "copilot_message", message);
+  });
+  return message;
+}
+it("creates the week's canonical draft offline from a version-3 private card and replays once after restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "week-create-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const m = await newWeekCard(x),
+      c = await preparationController(x);
+    expect((await c.open(m)).status).toBe("READY");
+    const expected = (await c.open(m)).request.input.draft;
+    expect((await c.confirm(m)).status).toBe("COMPLETED");
+    x.db.close();
+    reopened = new DatabaseSync(path);
+    const a = new Adapter(reopened);
+    expect(
+      (await (await preparationController(x, true, a)).confirm(m)).status,
+    ).toBe("COMPLETED");
+    const row = reopened
+        .prepare("SELECT payload_json FROM commercial_week_preparations")
+        .get() as { payload_json: string },
+      saved = JSON.parse(row.payload_json);
+    const { commercialWeekPreparationId } =
+      await import("@fl-copilot/commercial-core");
+    expect(saved.id).toBe(
+      await commercialWeekPreparationId(
+        x.f.storeId,
+        expected.weekStart,
+        testChoiceDigest,
+      ),
+    );
+    expect(saved).toMatchObject({
+      ...expected,
+      version: 1,
+      storeId: x.f.storeId,
+    });
+    expect(saved.createdAt).not.toBe("2000-01-01T00:00:00.000Z");
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 1 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='commercial_week_preparation'",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+    ).toEqual({ n: 0 });
+    await expect(
+      (await preparationController(x, false, a)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+  } finally {
+    reopened?.close();
+    try {
+      x.db.close();
+    } catch {
+      /* already closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("never overwrites a local pending week when the remote creation preview was based on absence", async () => {
+  const x = await setup();
+  try {
+    const m = await newWeekCard(x),
+      c = await preparationController(x);
+    await x.runtime.execute(x.request, x.authority(x.request));
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+    const row = x.db
+      .prepare("SELECT payload_json FROM commercial_week_preparations")
+      .get() as { payload_json: string };
+    expect(JSON.parse(row.payload_json).note).toBe(x.request.input.draft.note);
+    expect(
+      x.db
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 1 });
+  } finally {
+    x.db.close();
+  }
+});
+it("rolls back a new week on failure/cancellation and refuses creation against a changed selected choice", async () => {
+  const x = await setup();
+  try {
+    const m = await newWeekCard(x),
+      c = await preparationController(x),
+      abort = new AbortController();
+    abort.abort();
+    await expect(c.confirm(m, abort.signal)).rejects.toThrow();
+    x.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    x.a.fail = false;
+    expect(
+      x.db.prepare("SELECT COUNT(*) n FROM commercial_week_preparations").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      x.db
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 0 });
+    x.db
+      .prepare("UPDATE commercial_offer_choices SET payload_json=?")
+      .run(JSON.stringify({ ...x.choice.choice, version: 2 }));
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+  } finally {
+    x.db.close();
+  }
+});

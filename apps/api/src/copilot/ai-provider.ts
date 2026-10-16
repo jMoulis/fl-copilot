@@ -1,5 +1,6 @@
 import {
   copilotPreparationEditPatchSchema,
+  copilotPreparationLayoutPatchSchema,
   copilotPreparationPatchSchema,
   copilotPreparationPreviewSchema,
   validatePreparationBasis,
@@ -291,6 +292,7 @@ export function createCopilotAiProvider(
       input: z.infer<typeof copilotPreparationReadInputSchema>,
     ): Promise<z.infer<typeof copilotPreparationReadResultSchema>>;
     preparationLayout?: boolean;
+    preparationCreate?: boolean;
     preparationPreview?(
       input: z.infer<typeof copilotPreparationPatchSchema>,
     ): Promise<z.infer<typeof copilotPreparationPreviewSchema>>;
@@ -646,13 +648,18 @@ export function createCopilotAiProvider(
                   ? {
                       commercial_preparation_preview: tool({
                         description:
-                          "Prepare requested changes to an existing weekly TG draft; read commercial_preparation first for the explicit Monday and exact TG/offer identities. Patch declared capacity/note and a partial tgUpdates list; omitted TGs/fields/source links and selected offer revisions are preserved. Assign only already selected offers; empty offerIds explicitly clears assignments. Never invent capacity, prices, source review or product identity. Capacity is declared: ask rather than increasing it silently. READY creates a before/after native confirmation card, not a saved draft, validated plan or field installation. UNCHANGED makes no change; BLOCKED needs reference/capacity/identity review; LIMIT_EXCEEDED requires the weekly screen, never truncation. Prefer one combined patch per week, at most three ready cards per turn. " +
+                          "Prepare a weekly TG draft action; read commercial_preparation first for the explicit Monday and whether a draft already exists. Patch declared capacity/note and a partial tgUpdates list; omitted TGs/fields/source links and selected offer revisions are preserved. Assign only already selected offers; empty offerIds explicitly clears assignments. Never invent capacity, prices, source review or product identity. Capacity is declared: ask rather than increasing it silently. READY creates a before/after native confirmation card, not a saved draft, validated plan or field installation. UNCHANGED makes no change; BLOCKED needs reference/capacity/identity review; LIMIT_EXCEEDED requires the weekly screen, never truncation. Prefer one combined patch per week, at most three ready cards per turn. " +
                           (reads.preparationLayout
                             ? "tgAdditions supplies complete label/theme/offerIds without IDs or PDF links; application IDs survive retry. tgRemovals names exact existing TG IDs from an explicit removal intent, never inferred from a suggested layout. The card highlights removals and lost assignments/source-idea links. Removal affects only the draft, preserving selected offers, originals, validated plans and field declarations."
-                            : "This client supports only existing TG edits, no creation or removal."),
-                        inputSchema: reads.preparationLayout
+                            : "This client supports only existing TG edits, no creation or removal.") +
+                          (reads.preparationCreate
+                            ? " To initialize a missing week's draft, supply create.choiceIds with the exact retained choices discovered through commercial_offers and this explicit Monday. Use only applicable, requested choices, not every PDF item; preserve unknown capacity as null, and ask rather than inventing it. Empty choiceIds explicitly starts an empty draft. Creation supports note/capacity/new TGs, never existing TG updates/removals. ALREADY_EXISTS means inspect and edit, never replace the existing week. Local pending drafts also prevent creation. Creation selects retained offers into a draft but does not validate them or a plan."
+                            : " Creating a new week's draft is unavailable on this client."),
+                        inputSchema: reads.preparationCreate
                           ? copilotPreparationPatchSchema
-                          : copilotPreparationEditPatchSchema,
+                          : reads.preparationLayout
+                            ? copilotPreparationLayoutPatchSchema
+                            : copilotPreparationEditPatchSchema,
                         execute: (input) =>
                           executeRead(
                             JSON.stringify(["preparation-preview", input]),
