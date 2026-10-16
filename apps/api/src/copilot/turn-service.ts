@@ -1,3 +1,4 @@
+import { buildPreparationProposalMessages } from "./preparation-proposal-messages.js";
 import { buildOperationsProposalMessages } from "./operations-proposal-messages.js";
 import { buildNeedProposalMessages } from "./need-proposal-messages.js";
 import { buildCatalogueProposalMessages } from "./catalogue-proposal-messages.js";
@@ -288,6 +289,10 @@ export async function runCopilotTurn(
         }
         if (generation.mode === "AI")
           for (const proposal of [
+            ...buildPreparationProposalMessages(
+              message,
+              generation.preparationPreviews ?? [],
+            ),
             ...buildOperationsProposalMessages(
               message,
               generation.operationsPreviews ?? [],

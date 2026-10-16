@@ -18,7 +18,7 @@ import {
   type OfferChoiceDocument,
 } from "../commercial/offer-choice-sync.js";
 /** Current synchronized draft and current selected choices, never a plan validation. */
-export async function readCommercialPreparation(
+export async function loadCommercialPreparationContext(
   db: Db,
   storeId: string,
   raw: unknown,
@@ -61,6 +61,15 @@ export async function readCommercialPreparation(
   const issues = preparation
     ? commercialPreparationOfferIssues(preparation, all)
     : [];
+  return { input, preparation, refs, all, issues };
+}
+export async function readCommercialPreparation(
+  db: Db,
+  storeId: string,
+  raw: unknown,
+) {
+  const { input, preparation, refs, all, issues } =
+    await loadCommercialPreparationContext(db, storeId, raw);
   const pageRefs = refs.slice(input.offset, input.offset + input.limit);
   const choices = pageRefs.flatMap((ref) =>
     all.filter((c) => c.id === ref.choiceId),

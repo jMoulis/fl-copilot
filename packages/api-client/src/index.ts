@@ -68,6 +68,7 @@ export class ApiClient {
       onActivity?(activity: CopilotActivity): void;
       memorySuggestions?: boolean;
       webResearch?: boolean;
+      preparationProposals?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
       catalogueProposals?: boolean;
@@ -88,6 +89,9 @@ export class ApiClient {
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
                 ...(streaming.onActivity ? { "x-copilot-activity": "1" } : {}),
+                ...(streaming.preparationProposals
+                  ? { "x-copilot-preparation-proposals": "1" }
+                  : {}),
                 ...(streaming.storeOperations
                   ? { "x-copilot-store-operations": "1" }
                   : {}),

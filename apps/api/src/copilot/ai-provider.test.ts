@@ -2980,3 +2980,94 @@ it.each([false, true])(
     expect(r.toolEvidence).toEqual(foreign ? [] : [evidence]);
   },
 );
+
+it("offers TG draft mutation previews only to capable clients and grounds the returned native card", async () => {
+  const { commercialPlanFixture } =
+      await import("../../../../scripts/test-commercial-plan-fixtures"),
+    data = await commercialPlanFixture();
+  const { copilotPreparationPreviewSchema } =
+    await import("@fl-copilot/domain");
+  const f = fixture();
+  f.request.storeId = data.storeId;
+  f.request.context = detectCopilotConflicts({
+    batch: scoreCopilotPriorities({
+      storeId: data.storeId,
+      evaluatedAt,
+      candidates: [],
+    }),
+    intents: [],
+  });
+  const input = {
+    weekStart: data.preparation.weekStart,
+    patch: {
+      tgUpdates: [
+        {
+          placementId: data.preparation.placements[0].id,
+          theme: "Nouveau thème",
+        },
+      ],
+    },
+  };
+  const evidence = {
+    id: "tg-preview",
+    sourceId: data.preparation.id,
+    sourceVersion: 1,
+    sourceType: "DATA_QUALITY" as const,
+    label: "Brouillon TG",
+    value: "Proposition à confirmer.",
+    factKind: "QUALITY" as const,
+  };
+  const value = copilotPreparationPreviewSchema.parse({
+    input,
+    status: "READY",
+    basis: { preparation: data.preparation, choices: [data.choice] },
+    evidence: [evidence],
+  });
+  const preparationPreview = vi.fn(async () => value);
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body)),
+      definition = body.tools.find(
+        (t: { name: string }) => t.name === "commercial_preparation_preview",
+      );
+    expect(definition.parameters.type).toBe("object");
+    if (calls++ === 0) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_tg",
+          call_id: "call_tg",
+          name: "commercial_preparation_preview",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return response();
+  };
+  const r = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    preparationPreview,
+  }).generate(f.request, schema);
+  expect(preparationPreview).toHaveBeenCalledExactlyOnceWith(input);
+  expect(r.preparationPreviews).toEqual([value]);
+  expect(r.toolEvidence).toEqual([evidence]);
+  await createCopilotAiProvider(
+    f.config,
+    async (_url, init) => {
+      expect(
+        JSON.parse(String(init?.body)).tools.some(
+          (t: { name: string }) => t.name === "commercial_preparation_preview",
+        ),
+      ).toBe(false);
+      return response();
+    },
+    { daily: vi.fn() },
+  ).generate(f.request, schema);
+});
