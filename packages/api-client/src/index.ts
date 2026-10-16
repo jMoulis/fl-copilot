@@ -69,6 +69,7 @@ export class ApiClient {
       memorySuggestions?: boolean;
       webResearch?: boolean;
       preparationProposals?: boolean;
+      preparationLayout?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
       catalogueProposals?: boolean;
@@ -89,6 +90,10 @@ export class ApiClient {
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
                 ...(streaming.onActivity ? { "x-copilot-activity": "1" } : {}),
+                ...(streaming.preparationLayout &&
+                streaming.preparationProposals
+                  ? { "x-copilot-preparation-layout": "1" }
+                  : {}),
                 ...(streaming.preparationProposals
                   ? { "x-copilot-preparation-proposals": "1" }
                   : {}),

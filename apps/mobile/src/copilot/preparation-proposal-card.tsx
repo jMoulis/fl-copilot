@@ -144,8 +144,62 @@ export function PreparationProposalCard({
               </View>
             );
           })}
+          {(state.content.input.patch.tgRemovals ?? []).map((id) => {
+            const removed = state.content.basis.preparation.placements.find(
+              (p) => p.id === id,
+            )!;
+            const names =
+              removed.offerIds
+                .map(
+                  (offerId) =>
+                    state.content.basis.choices.find((c) => c.id === offerId)
+                      ?.rawProductLabel ?? "Offre indisponible",
+                )
+                .join(" ; ") || "Aucune offre affectée";
+            return (
+              <View key={id} style={{ gap: 4 }}>
+                <Text style={{ fontWeight: "700", color: colors.critical }}>
+                  Retirer du brouillon : {removed.label}
+                </Text>
+                <Text>Thème : {removed.theme || "Non renseigné"}</Text>
+                <Text>
+                  Offres qui ne seront plus affectées à cette TG : {names}
+                </Text>
+                <Text>
+                  Les offres restent sélectionnées pour la semaine.{" "}
+                  {removed.sourceIdea
+                    ? "Le lien de cette TG vers l’idée PDF sera retiré du brouillon ; le document original et l’historique sont conservés."
+                    : "L’historique du brouillon est conservé."}
+                </Text>
+              </View>
+            );
+          })}
+          {(state.content.input.patch.tgAdditions ?? []).map(
+            (addition, index) => (
+              <View key={`addition-${index}`} style={{ gap: 4 }}>
+                <Text style={{ fontWeight: "700" }}>
+                  Ajouter au brouillon : {addition.label}
+                </Text>
+                <Text>Thème : {addition.theme || "Non renseigné"}</Text>
+                <Text>
+                  Offres :{" "}
+                  {addition.offerIds
+                    .map(
+                      (id) =>
+                        state.content.basis.choices.find((c) => c.id === id)
+                          ?.rawProductLabel ?? "Offre indisponible",
+                    )
+                    .join(" ; ") || "Aucune offre affectée"}
+                </Text>
+                <Text>
+                  Nouvel emplacement proposé, sans lien vers une idée PDF et
+                  sans installation en rayon.
+                </Text>
+              </View>
+            ),
+          )}
           <Text>
-            Les autres TG et les liens vers les idées du PDF sont conservés.
+            Les TG conservées gardent leurs liens vers les idées du PDF.
             Confirmer enregistre le brouillon ; le plan validé et l’installation
             en rayon restent inchangés.
           </Text>
@@ -178,7 +232,11 @@ export function PreparationProposalCard({
                   fontWeight: "600",
                 }}
               >
-                {saving ? "Enregistrement…" : "Enregistrer le brouillon"}
+                {saving
+                  ? "Enregistrement…"
+                  : state.content.input.patch.tgRemovals?.length
+                    ? `Confirmer le retrait de ${state.content.input.patch.tgRemovals.length} TG et enregistrer`
+                    : "Enregistrer le brouillon"}
               </Text>
             </Pressable>
           ) : null}

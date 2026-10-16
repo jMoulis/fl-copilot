@@ -329,9 +329,15 @@ it("keeps missing weeks absent, blocks foreign reads and rejects forged source i
   }
 });
 
-async function preparationCard(x: Awaited<ReturnType<typeof setup>>) {
-  const { copilotMessageSchema, copilotPreparationPatchSchema } =
-    await import("@fl-copilot/domain");
+async function preparationCard(
+  x: Awaited<ReturnType<typeof setup>>,
+  override?: unknown,
+) {
+  const {
+    copilotMessageSchema,
+    copilotPreparationPatchSchema,
+    hasPreparationLayoutChange,
+  } = await import("@fl-copilot/domain");
   const { applyCopilotRecord } = await import("./conversation-repository");
   const after = (await x.runtime.execute(x.request, x.authority(x.request)))
     .after;
@@ -343,26 +349,28 @@ async function preparationCard(x: Awaited<ReturnType<typeof setup>>) {
     attachments: [],
     text: "Brouillon préparé.",
   });
-  const input = copilotPreparationPatchSchema.parse({
-    weekStart: after.weekStart,
-    patch: {
-      note: "Une nouvelle note",
-      tgUpdates: [
-        {
-          placementId: after.placements[0].id,
-          theme: "Nouveau thème",
-          offerIds: [],
-        },
-      ],
+  const input = copilotPreparationPatchSchema.parse(
+    override ?? {
+      weekStart: after.weekStart,
+      patch: {
+        note: "Une nouvelle note",
+        tgUpdates: [
+          {
+            placementId: after.placements[0].id,
+            theme: "Nouveau thème",
+            offerIds: [],
+          },
+        ],
+      },
     },
-  });
+  );
   const message = copilotMessageSchema.parse({
     ...assistant,
     id: randomUUID(),
     role: "TOOL",
     text: JSON.stringify({
       kind: "COMMERCIAL_PREPARATION_PROPOSAL",
-      schemaVersion: 1,
+      schemaVersion: hasPreparationLayoutChange(input) ? 2 : 1,
       assistantMessageId: assistant.id,
       input,
       basis: { preparation: after, choices: [x.choice.choice] },
@@ -500,5 +508,122 @@ it("refuses TG patch when a selected choice changes or local sync is in conflict
     } finally {
       x.db.close();
     }
+  }
+});
+
+it("adds and removes draft TGs after explicit review, replays their stable identities after restart and preserves selected offers/history", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tg-layout-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const old = x.request.input.draft.placements[0];
+    const m = await preparationCard(x, {
+      weekStart: x.request.input.draft.weekStart,
+      patch: {
+        tgCapacity: 2,
+        tgRemovals: [old.id],
+        tgAdditions: [
+          {
+            label: "TG entrée nouvelle",
+            theme: "Saison",
+            offerIds: [x.choice.choice.id],
+          },
+          { label: "TG sortie", theme: "", offerIds: [] },
+        ],
+      },
+    });
+    const c = await preparationController(x);
+    const expected = (await c.open(m)).request.input.draft;
+    expect(expected.placements).toHaveLength(2);
+    expect(expected.placements.every((t) => t.id !== old.id)).toBe(true);
+    await c.confirm(m);
+    x.db.close();
+    reopened = new DatabaseSync(path);
+    const a = new Adapter(reopened);
+    expect(
+      (await (await preparationController(x, true, a)).confirm(m)).status,
+    ).toBe("COMPLETED");
+    const row = reopened
+      .prepare("SELECT payload_json FROM commercial_week_preparations")
+      .get() as { payload_json: string };
+    const saved = JSON.parse(row.payload_json);
+    expect(saved.placements).toEqual(expected.placements);
+    expect(saved.offerRefs).toEqual(x.request.input.draft.offerRefs);
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='commercial_week_preparation'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_offer_choices").get(),
+    ).toEqual({ n: 1 });
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+    ).toEqual({ n: 0 });
+    const oldHistory = reopened
+      .prepare(
+        "SELECT payload_json FROM commercial_preparation_history ORDER BY rowid LIMIT 1",
+      )
+      .get() as { payload_json: string };
+    expect(JSON.parse(oldHistory.payload_json).placements[0].id).toBe(old.id);
+    await expect(
+      (await preparationController(x, false, a)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+  } finally {
+    reopened?.close();
+    try {
+      x.db.close();
+    } catch {
+      /* already closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("rolls back added/removed TGs on failed commit and refuses deletion when its reviewed basis changes", async () => {
+  const x = await setup();
+  try {
+    const old = x.request.input.draft.placements[0];
+    const m = await preparationCard(x, {
+        weekStart: x.request.input.draft.weekStart,
+        patch: {
+          tgRemovals: [old.id],
+          tgAdditions: [{ label: "Autre TG", theme: "", offerIds: [] }],
+        },
+      }),
+      c = await preparationController(x);
+    const before = x.db
+      .prepare("SELECT payload_json FROM commercial_week_preparations")
+      .get();
+    x.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    x.a.fail = false;
+    expect(
+      x.db
+        .prepare("SELECT payload_json FROM commercial_week_preparations")
+        .get(),
+    ).toEqual(before);
+    expect(
+      x.db
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 1 });
+    const r = before as { payload_json: string },
+      changed = JSON.parse(r.payload_json);
+    changed.placements[0].theme = "Modification locale";
+    x.db
+      .prepare("UPDATE commercial_week_preparations SET payload_json=?")
+      .run(JSON.stringify(changed));
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+  } finally {
+    x.db.close();
   }
 });

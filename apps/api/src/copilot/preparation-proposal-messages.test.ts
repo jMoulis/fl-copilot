@@ -139,3 +139,115 @@ it("builds stable scoped cards and keeps only the latest preview per week; no un
     ]),
   ).toThrow("SCOPE");
 });
+
+it("creates stable application-owned TG IDs, removes only named placements, preserves offer selection and versions review cards", async () => {
+  const { f, basis, assistant, evidence } = await fixture();
+  const sourceIdea = {
+    readingId: f.reading.id,
+    checksum: f.reading.checksum,
+    tgIndex: 0,
+  };
+  basis.preparation.placements[0].sourceIdea = sourceIdea;
+  const input = copilotPreparationPatchSchema.parse({
+    weekStart: f.preparation.weekStart,
+    patch: {
+      tgRemovals: [f.preparation.placements[0].id],
+      tgAdditions: [
+        { label: "TG nouvelle", theme: "Saison", offerIds: [f.choice.id] },
+      ],
+    },
+  });
+  const cards = buildPreparationProposalMessages(assistant, [
+    { input, basis, evidence, status: "READY" },
+  ]);
+  expect(cards).toHaveLength(1);
+  const card = readCopilotPreparationProposal(cards[0]);
+  expect(card.content.schemaVersion).toBe(2);
+  const after = card.request.input.draft;
+  expect(after.placements).toHaveLength(1);
+  expect(after.placements[0]).toMatchObject({
+    label: "TG nouvelle",
+    sourceIdea: null,
+    offerIds: [f.choice.id],
+  });
+  expect(after.placements[0].id).not.toBe(f.preparation.placements[0].id);
+  expect(readCopilotPreparationProposal(cards[0]).request).toEqual(
+    card.request,
+  );
+  expect(after.offerRefs).toEqual(f.preparation.offerRefs);
+  expect(basis.preparation.placements[0].sourceIdea).toEqual(sourceIdea);
+  expect(() =>
+    readCopilotPreparationProposal({
+      ...cards[0],
+      text: JSON.stringify({ ...card.content, schemaVersion: 1 }),
+    }),
+  ).toThrow("VERSION");
+  const { preparationAdditionId } = await import("@fl-copilot/domain");
+  expect(preparationAdditionId(cards[0].id, 0)).toBe(after.placements[0].id);
+  expect(preparationAdditionId(cards[0].id, 1)).not.toBe(
+    after.placements[0].id,
+  );
+});
+it("requires explicit complete additions, canonical capacity/unique labels and valid removal IDs without model authority", async () => {
+  const { f, basis } = await fixture(),
+    tg = f.preparation.placements[0];
+  const input = {
+    weekStart: f.preparation.weekStart,
+    patch: {
+      tgCapacity: 2,
+      tgAdditions: [{ label: "TG nouvelle", theme: "", offerIds: [] }],
+    },
+  };
+  const { copilotPreparationEditPatchSchema } =
+    await import("@fl-copilot/domain");
+  expect(copilotPreparationEditPatchSchema.safeParse(input).success).toBe(
+    false,
+  );
+  for (const patch of [
+    { tgAdditions: [] },
+    { tgRemovals: [] },
+    { tgRemovals: [tg.id, tg.id] },
+    {
+      tgRemovals: [tg.id],
+      tgUpdates: [{ placementId: tg.id, theme: "Autre" }],
+    },
+    { tgAdditions: [{ ...input.patch.tgAdditions[0], id: tg.id }] },
+    {
+      tgAdditions: [
+        { ...input.patch.tgAdditions[0], sourceIdea: tg.sourceIdea },
+      ],
+    },
+  ])
+    expect(
+      copilotPreparationPatchSchema.safeParse({ ...input, patch }).success,
+    ).toBe(false);
+  for (const patch of [
+    { tgAdditions: input.patch.tgAdditions }, // existing one-TG capacity, no silent increase
+    { tgRemovals: [randomUUID()] },
+    {
+      tgCapacity: 2,
+      tgAdditions: [{ ...input.patch.tgAdditions[0], label: tg.label }],
+    },
+    {
+      tgCapacity: 2,
+      tgAdditions: [
+        { ...input.patch.tgAdditions[0], offerIds: [randomUUID()] },
+      ],
+    },
+  ])
+    expect(() =>
+      prepareWeekPatch(
+        copilotPreparationPatchSchema.parse({ ...input, patch }),
+        basis,
+        randomUUID(),
+      ),
+    ).toThrow();
+  const r = prepareWeekPatch(
+    copilotPreparationPatchSchema.parse(input),
+    basis,
+    randomUUID(),
+  );
+  expect(r.input.draft.placements).toHaveLength(2);
+  expect(r.input.draft.placements[0]).toEqual(tg);
+  expect(r.input.draft.tgCapacity).toBe(2);
+});

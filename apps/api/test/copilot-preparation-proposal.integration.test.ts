@@ -136,9 +136,75 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
     expect(r.basis).toBeNull();
     expect(String(r.evidence[0].value)).toContain("trop volumineux");
   });
-  it.skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
-    "atomically persists a private TG review card with its reply and replays it without business writes",
-    async () => {
+  it("prepares additions/removals only within declared capacity and selected offers without changing the remote draft", async () => {
+    const f = await fixture(),
+      before = await db
+        .collection("commercialWeekPreparations")
+        .findOne({ _id: f.preparation.id } as Document),
+      tg = f.preparation.placements[0];
+    const addition = {
+      label: "TG nouvelle",
+      theme: "Saison",
+      offerIds: [f.choice.id],
+    };
+    const raw = {
+      weekStart: f.preparation.weekStart,
+      patch: { tgRemovals: [tg.id], tgAdditions: [addition] },
+    };
+    expect((await readPreparationPreview(db, f.storeId, raw)).status).toBe(
+      "READY",
+    );
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...raw,
+          patch: { tgAdditions: [addition] },
+        })
+      ).status,
+    ).toBe("BLOCKED");
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...raw,
+          patch: { tgCapacity: 2, tgAdditions: [addition] },
+        })
+      ).status,
+    ).toBe("READY");
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...raw,
+          patch: { tgRemovals: [randomUUID()] },
+        })
+      ).status,
+    ).toBe("BLOCKED");
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...raw,
+          patch: {
+            tgRemovals: [tg.id],
+            tgAdditions: [{ ...addition, offerIds: [randomUUID()] }],
+          },
+        })
+      ).status,
+    ).toBe("BLOCKED");
+    expect(
+      await db
+        .collection("commercialWeekPreparations")
+        .findOne({ _id: f.preparation.id } as Document),
+    ).toEqual(before);
+    expect(
+      await db
+        .collection("commercialWeekPlans")
+        .countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
+  });
+  it
+    .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
+    .each([false, true])(
+    "atomically persists a compatible private TG review card (layout=%s) without business writes",
+    async (layout) => {
       const f = await fixture(),
         chat = chatFixture(randomUUID);
       chat.storeId = f.storeId;
@@ -152,7 +218,22 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       await db
         .collection<Document & { _id: string }>("copilotMessages")
         .insertOne({ _id: chat.message.id, ...chat.message });
-      const preview = await readPreparationPreview(db, f.storeId, f.input);
+      const input = layout
+        ? {
+            weekStart: f.preparation.weekStart,
+            patch: {
+              tgRemovals: [f.preparation.placements[0].id],
+              tgAdditions: [
+                {
+                  label: "Nouvelle TG",
+                  theme: "Saison",
+                  offerIds: [f.choice.id],
+                },
+              ],
+            },
+          }
+        : f.input;
+      const preview = await readPreparationPreview(db, f.storeId, input);
       const generate = vi.fn(async () => ({
         output: {
           language: "fr-FR",
@@ -203,7 +284,7 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       expect(cards).toHaveLength(1);
       const { _id, ...payload } = cards[0];
       expect(readCopilotPreparationProposal(payload).content.input).toEqual(
-        f.input,
+        input,
       );
       expect(
         await db.collection("syncChanges").countDocuments({ entityId: _id }),

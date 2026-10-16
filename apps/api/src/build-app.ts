@@ -577,6 +577,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
               ...(request.headers["x-copilot-preparation-proposals"] === "1"
                 ? {
+                    preparationLayout:
+                      request.headers["x-copilot-preparation-layout"] === "1",
                     preparationPreview: async (input) => {
                       await authorize();
                       const result = await readPreparationPreview(

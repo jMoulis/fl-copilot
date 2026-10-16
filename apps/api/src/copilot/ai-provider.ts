@@ -1,4 +1,5 @@
 import {
+  copilotPreparationEditPatchSchema,
   copilotPreparationPatchSchema,
   copilotPreparationPreviewSchema,
   validatePreparationBasis,
@@ -289,6 +290,7 @@ export function createCopilotAiProvider(
     commercialPreparation?(
       input: z.infer<typeof copilotPreparationReadInputSchema>,
     ): Promise<z.infer<typeof copilotPreparationReadResultSchema>>;
+    preparationLayout?: boolean;
     preparationPreview?(
       input: z.infer<typeof copilotPreparationPatchSchema>,
     ): Promise<z.infer<typeof copilotPreparationPreviewSchema>>;
@@ -644,8 +646,13 @@ export function createCopilotAiProvider(
                   ? {
                       commercial_preparation_preview: tool({
                         description:
-                          "Prepare requested changes to an existing weekly TG draft, never write directly. Read commercial_preparation first to identify the explicit Monday and exact TG IDs. Patch only requested declared tgCapacity/note or existing TG label/theme/offerIds; omitted fields, source idea links, selected offer revisions and other TGs are preserved. tgUpdates is a partial list by placementId, not replacement of the TG list. offerIds can use only choices already selected in that draft, empty list explicitly removes that TG's assignments. New TGs, deletions and selecting/retaining new offers are not supported by this tool. Do not invent capacity, measurements, prices, source review or product identities. LIMIT_EXCEEDED requires using the weekly preparation screen without claiming a change; the complete review cannot be truncated. BLOCKED means check changed offer references, capacity or assignments before a fresh preview. READY creates a native before/after confirmation card, not a saved draft, validated plan or field installation. UNCHANGED produces no write. At most three ready cards per turn; prefer one combined patch for the same week. User confirmation is required; model cannot grant it.",
-                        inputSchema: copilotPreparationPatchSchema,
+                          "Prepare requested changes to an existing weekly TG draft; read commercial_preparation first for the explicit Monday and exact TG/offer identities. Patch declared capacity/note and a partial tgUpdates list; omitted TGs/fields/source links and selected offer revisions are preserved. Assign only already selected offers; empty offerIds explicitly clears assignments. Never invent capacity, prices, source review or product identity. Capacity is declared: ask rather than increasing it silently. READY creates a before/after native confirmation card, not a saved draft, validated plan or field installation. UNCHANGED makes no change; BLOCKED needs reference/capacity/identity review; LIMIT_EXCEEDED requires the weekly screen, never truncation. Prefer one combined patch per week, at most three ready cards per turn. " +
+                          (reads.preparationLayout
+                            ? "tgAdditions supplies complete label/theme/offerIds without IDs or PDF links; application IDs survive retry. tgRemovals names exact existing TG IDs from an explicit removal intent, never inferred from a suggested layout. The card highlights removals and lost assignments/source-idea links. Removal affects only the draft, preserving selected offers, originals, validated plans and field declarations."
+                            : "This client supports only existing TG edits, no creation or removal."),
+                        inputSchema: reads.preparationLayout
+                          ? copilotPreparationPatchSchema
+                          : copilotPreparationEditPatchSchema,
                         execute: (input) =>
                           executeRead(
                             JSON.stringify(["preparation-preview", input]),
