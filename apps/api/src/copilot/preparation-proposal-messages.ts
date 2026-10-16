@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  hasPreparationLayoutChange,
   validatePreparationBasis,
   copilotMessageSchema,
   copilotPreparationPreviewSchema,
@@ -27,7 +28,7 @@ export function buildPreparationProposalMessages(
   return ready.map((result) => {
     const content = copilotPreparationProposalSchema.parse({
       kind: "COMMERCIAL_PREPARATION_PROPOSAL",
-      schemaVersion: 1,
+      schemaVersion: hasPreparationLayoutChange(result.input) ? 2 : 1,
       assistantMessageId: assistant.id,
       input: result.input,
       basis: result.basis,

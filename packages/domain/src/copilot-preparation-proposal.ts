@@ -14,6 +14,18 @@ export const copilotPreparationPatchSchema = z
       .strictObject({
         tgCapacity: commercialWeekPreparationSchema.shape.tgCapacity.optional(),
         note: commercialWeekPreparationSchema.shape.note.optional(),
+        tgAdditions: z
+          .array(
+            z.strictObject({
+              label: placement.label,
+              theme: placement.theme,
+              offerIds: placement.offerIds,
+            }),
+          )
+          .min(1)
+          .max(30)
+          .optional(),
+        tgRemovals: z.array(z.uuid()).min(1).max(30).optional(),
         tgUpdates: z
           .array(
             z
@@ -33,6 +45,17 @@ export const copilotPreparationPatchSchema = z
   })
   .superRefine((v, c) => {
     const ids = v.patch.tgUpdates?.map((p) => p.placementId) ?? [];
+    const removals = v.patch.tgRemovals ?? [];
+    if (
+      new Set(removals).size !== removals.length ||
+      removals.some((id) => ids.includes(id))
+    )
+      c.addIssue({
+        code: "custom",
+        path: ["patch", "tgRemovals"],
+        message:
+          "Une TG ne peut être retirée deux fois ou modifiée et retirée ensemble.",
+      });
     if (new Set(ids).size !== ids.length)
       c.addIssue({
         code: "custom",
@@ -40,6 +63,39 @@ export const copilotPreparationPatchSchema = z
         message: "Une TG ne peut être modifiée deux fois.",
       });
   });
+/** Legacy capable clients can still edit; they cannot review additions/removals. */
+export const copilotPreparationEditPatchSchema = z
+  .strictObject({
+    weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    patch: z
+      .strictObject({
+        tgCapacity: copilotPreparationPatchSchema.shape.patch.shape.tgCapacity,
+        note: copilotPreparationPatchSchema.shape.patch.shape.note,
+        tgUpdates: copilotPreparationPatchSchema.shape.patch.shape.tgUpdates,
+      })
+      .refine((v) => Object.keys(v).length > 0),
+  })
+  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+export function hasPreparationLayoutChange(
+  input: z.infer<typeof copilotPreparationPatchSchema>,
+) {
+  return (
+    input.patch.tgAdditions !== undefined ||
+    input.patch.tgRemovals !== undefined
+  );
+}
+/** IDs belong to the trusted persisted operation, never to model arguments. */
+export function preparationAdditionId(operationId: string, index: number) {
+  z.uuid().parse(operationId);
+  z.number().int().min(0).max(29).parse(index);
+  const suffix = (
+    (parseInt(operationId.slice(-12), 16) + index + 1) %
+    0x1000000000000
+  )
+    .toString(16)
+    .padStart(12, "0");
+  return operationId.slice(0, -12) + suffix;
+}
 export const preparationBasisSchema = z.strictObject({
   preparation: commercialWeekPreparationSchema,
   choices: z.array(commercialOfferChoiceSchema).max(100),
@@ -75,7 +131,11 @@ export function prepareWeekPatch(
     raw,
   );
   const updates = input.patch.tgUpdates ?? [];
-  if (updates.some((u) => !p.placements.some((t) => t.id === u.placementId)))
+  const removals = input.patch.tgRemovals ?? [];
+  if (
+    updates.some((u) => !p.placements.some((t) => t.id === u.placementId)) ||
+    removals.some((id) => !p.placements.some((t) => t.id === id))
+  )
     throw Error("PREPARATION_TG_UNAVAILABLE");
   const after = commercialWeekPreparationSchema.parse({
     ...p,
@@ -83,13 +143,22 @@ export function prepareWeekPatch(
       ? { tgCapacity: input.patch.tgCapacity }
       : {}),
     ...(input.patch.note !== undefined ? { note: input.patch.note } : {}),
-    placements: p.placements.map((t) => {
-      const u = updates.find((u) => u.placementId === t.id);
-      if (!u) return t;
-      const { placementId, ...patch } = u;
-      void placementId;
-      return { ...t, ...patch };
-    }),
+    placements: [
+      ...p.placements
+        .filter((t) => !removals.includes(t.id))
+        .map((t) => {
+          const u = updates.find((u) => u.placementId === t.id);
+          if (!u) return t;
+          const { placementId, ...patch } = u;
+          void placementId;
+          return { ...t, ...patch };
+        }),
+      ...(input.patch.tgAdditions ?? []).map((addition, index) => ({
+        ...addition,
+        id: preparationAdditionId(operationId, index),
+        sourceIdea: null,
+      })),
+    ],
   });
   const { id, storeId, version, createdAt, updatedAt, ...draft } = after;
   void id;
@@ -118,7 +187,7 @@ export const copilotPreparationPreviewSchema = z.strictObject({
 });
 export const copilotPreparationProposalSchema = z.strictObject({
   kind: z.literal("COMMERCIAL_PREPARATION_PROPOSAL"),
-  schemaVersion: z.literal(1),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
   assistantMessageId: z.uuid(),
   input: copilotPreparationPatchSchema,
   basis: preparationBasisSchema,
@@ -135,6 +204,8 @@ export function readCopilotPreparationProposal(raw: unknown) {
     JSON.parse(message.text),
   );
   validatePreparationBasis(message.storeId, content.input, content.basis);
+  if (content.schemaVersion === 1 && hasPreparationLayoutChange(content.input))
+    throw Error("PREPARATION_PROPOSAL_VERSION");
   const request = prepareWeekPatch(content.input, content.basis, message.id);
   return { message, content, request };
 }

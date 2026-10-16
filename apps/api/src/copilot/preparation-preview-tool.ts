@@ -75,7 +75,7 @@ export async function readPreparationPreview(
                 ? "Le brouillon contient déjà ces valeurs ; aucun changement."
                 : status === "UNAVAILABLE"
                   ? "Le brouillon ou ses offres ne sont pas disponibles. Ouvrez ou créez la préparation hebdomadaire, puis synchronisez-la."
-                  : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts et les affectations aux offres déjà sélectionnées. Aucun changement.",
+                  : "Modification bloquée : vérifiez les références d’offres, la capacité TG, les noms distincts, les TG à retirer ou modifier et les affectations aux offres déjà sélectionnées. Aucun changement.",
       },
     ],
   });

@@ -771,3 +771,11 @@ Cards are persisted atomically with the private assistant reply, checked against
 New TG creation/removal, choosing or validating new offers, final plan validation and dedicated conflict recovery remain follow-up commercial work. No EAS build or paid model call was launched; the new native card joins the next grouped device acceptance.
 
 Oversized complete TG review snapshots return `LIMIT_EXCEEDED` without a card and point to the weekly preparation screen; they are never truncated or allowed to violate the existing 16k private-message limit.
+
+## 16 October 2026 — create/remove TGs in a reviewed existing weekly draft
+
+Completed the next TG layout increment: a single explicit preview can add named/themed placements using already-selected offers, remove exact existing placements, update retained ones and change declared capacity/note. Capacity never increases by inference. Stable application-generated placement IDs derive from the trusted private operation UUID and addition index, not model IDs, and repeat unchanged after restart/replay. New placements do not invent a link to a PDF idea.
+
+Version-2 private review cards show added/removed TGs and lost assignments/source-idea links, and use explicit removal confirmation. The canonical draft writer preserves selected offers, original documents, other TGs, historical drafts and saved validated plans; a removed draft placement is not a declaration of physical removal from the rayon. Version-1 edit cards remain supported. A distinct layout capability keeps older clients on the strict edit-only tool schema.
+
+Validation covers shared contracts/IDs/versioning/invalid capacity/duplicate or unknown removals/update-removal overlap/forged IDs or source links/unselected offers; real SQLite confirmation/restart/exact replay/history and selected-offer preservation/rollback/stale review; actual AI SDK mock-transport schema advertisement for old/new capabilities; Atlas read-only preview and atomic private version-1/version-2 reply/card persistence/replay, plus the existing inspection regression suite. No migrations, dependency/provider changes, paid AI request or EAS build. Device UX acceptance remains grouped with the pending native changes.
