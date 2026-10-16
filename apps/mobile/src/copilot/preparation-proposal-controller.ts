@@ -60,11 +60,15 @@ export class CopilotPreparationProposalController {
       this.db,
       this.digest,
     ).get(this.scope.storeId, content.input.weekStart);
-    const refs =
-      content.basis.preparation?.offerRefs ??
-      content.input.create!.choiceIds.map((choiceId) => ({ choiceId }));
+    const ids = [
+      ...new Set([
+        ...(content.basis.preparation?.offerRefs.map((r) => r.choiceId) ??
+          content.input.create!.choiceIds),
+        ...(content.input.patch.offerSelection?.addChoiceIds ?? []),
+      ]),
+    ];
     const choices = (await readCommercialChoices(this.db, this.scope.storeId))
-      .filter((c) => refs.some((r) => r.choiceId === c.entity.id))
+      .filter((c) => ids.includes(c.entity.id))
       .sort((a, b) => a.entity.id.localeCompare(b.entity.id));
     const current = preparationBasisSchema.parse({
       preparation: prep?.entity ?? null,

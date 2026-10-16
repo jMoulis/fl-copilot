@@ -28,11 +28,13 @@ export function buildPreparationProposalMessages(
   return ready.map((result) => {
     const content = copilotPreparationProposalSchema.parse({
       kind: "COMMERCIAL_PREPARATION_PROPOSAL",
-      schemaVersion: result.input.create
-        ? 3
-        : hasPreparationLayoutChange(result.input)
-          ? 2
-          : 1,
+      schemaVersion: result.input.patch.offerSelection
+        ? 4
+        : result.input.create
+          ? 3
+          : hasPreparationLayoutChange(result.input)
+            ? 2
+            : 1,
       assistantMessageId: assistant.id,
       input: result.input,
       basis: result.basis,

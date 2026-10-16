@@ -332,6 +332,9 @@ it("keeps missing weeks absent, blocks foreign reads and rejects forged source i
 async function preparationCard(
   x: Awaited<ReturnType<typeof setup>>,
   override?: unknown,
+  extraChoices: Awaited<
+    ReturnType<typeof commercialChoiceFixture>
+  >["choice"][] = [],
 ) {
   const {
     copilotMessageSchema,
@@ -370,10 +373,17 @@ async function preparationCard(
     role: "TOOL",
     text: JSON.stringify({
       kind: "COMMERCIAL_PREPARATION_PROPOSAL",
-      schemaVersion: hasPreparationLayoutChange(input) ? 2 : 1,
+      schemaVersion: input.patch.offerSelection
+        ? 4
+        : hasPreparationLayoutChange(input)
+          ? 2
+          : 1,
       assistantMessageId: assistant.id,
       input,
-      basis: { preparation: after, choices: [x.choice.choice] },
+      basis: {
+        preparation: after,
+        choices: [x.choice.choice, ...extraChoices],
+      },
     }),
   });
   await x.a.withExclusiveTransactionAsync(async (tx) => {
@@ -787,5 +797,84 @@ it("rolls back a new week on failure/cancellation and refuses creation against a
     await expect(c.confirm(m)).rejects.toThrow("STALE");
   } finally {
     x.db.close();
+  }
+});
+
+it("saves offer selection atomically and preserves retained choices on restart replay", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "offer-selection-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const added = await commercialChoiceFixture({ storeId: x.f.storeId });
+    await applyCommercialChoice(x.a, x.f.storeId, added.choice);
+    const m = await preparationCard(
+      x,
+      {
+        weekStart: x.request.input.draft.weekStart,
+        patch: {
+          offerSelection: {
+            addChoiceIds: [added.choice.id],
+            removeChoiceIds: [x.choice.choice.id],
+          },
+          tgUpdates: [
+            {
+              placementId: x.request.input.draft.placements[0].id,
+              offerIds: [added.choice.id],
+            },
+          ],
+        },
+      },
+      [added.choice],
+    );
+    const c = await preparationController(x);
+    expect((await c.open(m)).status).toBe("READY");
+    x.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    x.a.fail = false;
+    expect(
+      x.db
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 1 });
+    await c.confirm(m);
+    x.db.close();
+    reopened = new DatabaseSync(path);
+    expect(
+      (
+        await (
+          await preparationController(x, true, new Adapter(reopened))
+        ).confirm(m)
+      ).status,
+    ).toBe("COMPLETED");
+    const row = reopened
+      .prepare("SELECT payload_json FROM commercial_week_preparations")
+      .get() as { payload_json: string };
+    expect(JSON.parse(row.payload_json).offerRefs).toEqual([
+      { choiceId: added.choice.id, choiceVersion: 1 },
+    ]);
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='commercial_week_preparation'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_offer_choices").get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    reopened?.close();
+    try {
+      x.db.close();
+    } catch {
+      /* closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -109,6 +109,41 @@ export function PreparationProposalCard({
               </Text>
             </View>
           ) : null}
+          {state.content.input.patch.offerSelection ? (
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontWeight: "700" }}>
+                Offres sélectionnées pour la semaine
+              </Text>
+              {(
+                state.content.input.patch.offerSelection.addChoiceIds ?? []
+              ).map((id) => (
+                <Text key={`add-${id}`}>
+                  Ajouter :{" "}
+                  {state.content.basis.choices.find((c) => c.id === id)
+                    ?.rawProductLabel ?? "Offre indisponible"}
+                  {state.content.basis.preparation?.offerRefs.some(
+                    (r) => r.choiceId === id,
+                  )
+                    ? " (déjà sélectionnée, référence conservée)"
+                    : ""}
+                </Text>
+              ))}
+              {(
+                state.content.input.patch.offerSelection.removeChoiceIds ?? []
+              ).map((id) => (
+                <Text key={`remove-${id}`} style={{ color: colors.critical }}>
+                  Retirer de la sélection :{" "}
+                  {state.content.basis.choices.find((c) => c.id === id)
+                    ?.rawProductLabel ?? "Offre indisponible"}
+                </Text>
+              ))}
+              <Text>
+                Le retrait concerne ce brouillon. Les offres restent retenues
+                dans le magasin et les documents originaux sont conservés. Les
+                changements d’affectation aux TG sont détaillés ci-dessous.
+              </Text>
+            </View>
+          ) : null}
           {state.content.input.patch.tgCapacity !== undefined ? (
             <Text>
               Capacité TG :{" "}
@@ -255,11 +290,14 @@ export function PreparationProposalCard({
               >
                 {saving
                   ? "Enregistrement…"
-                  : state.content.input.patch.tgRemovals?.length
-                    ? `Confirmer le retrait de ${state.content.input.patch.tgRemovals.length} TG et enregistrer`
-                    : state.content.input.create
-                      ? "Créer le brouillon"
-                      : "Enregistrer le brouillon"}
+                  : state.content.input.patch.offerSelection?.removeChoiceIds
+                        ?.length
+                    ? "Confirmer les retraits et enregistrer"
+                    : state.content.input.patch.tgRemovals?.length
+                      ? `Confirmer le retrait de ${state.content.input.patch.tgRemovals.length} TG et enregistrer`
+                      : state.content.input.create
+                        ? "Créer le brouillon"
+                        : "Enregistrer le brouillon"}
               </Text>
             </Pressable>
           ) : null}

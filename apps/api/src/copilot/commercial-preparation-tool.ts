@@ -23,6 +23,7 @@ export async function loadCommercialPreparationContext(
   storeId: string,
   raw: unknown,
   initialChoiceIds?: readonly string[],
+  supplementalChoiceIds?: readonly string[],
 ) {
   z.uuid().parse(storeId);
   const input = copilotPreparationReadInputSchema.parse(raw);
@@ -50,26 +51,32 @@ export async function loadCommercialPreparationContext(
       choiceId,
       choiceVersion: 1,
     }));
-  const rows = refs.length
+  const supplemental = supplementalChoiceIds
+    ? z
+        .array(z.uuid())
+        .max(100)
+        .refine((ids) => new Set(ids).size === ids.length)
+        .parse(supplementalChoiceIds)
+    : [];
+  const lookupIds = [
+    ...new Set([...refs.map((r) => r.choiceId), ...supplemental]),
+  ];
+  const rows = lookupIds.length
     ? await db
         .collection<OfferChoiceDocument>("commercialOfferChoices")
-        .find({ storeId, _id: { $in: refs.map((r) => r.choiceId) } })
+        .find({ storeId, _id: { $in: lookupIds } })
         .sort({ _id: 1 })
         .maxTimeMS(2000)
-        .limit(101)
+        .limit(201)
         .toArray()
     : [];
   const all = rows.map((r) => {
     const c = serializeCommercialChoice(r);
-    if (
-      r._id !== c.id ||
-      c.storeId !== storeId ||
-      !refs.some((ref) => ref.choiceId === c.id)
-    )
+    if (r._id !== c.id || c.storeId !== storeId || !lookupIds.includes(c.id))
       throw Error("COPILOT_PREPARATION_SCOPE_INVALID");
     return c;
   });
-  if (all.length > 100 || new Set(all.map((c) => c.id)).size !== all.length)
+  if (all.length > 200 || new Set(all.map((c) => c.id)).size !== all.length)
     throw Error("COPILOT_PREPARATION_LIMIT");
   const issues = preparation
     ? commercialPreparationOfferIssues(preparation, all)

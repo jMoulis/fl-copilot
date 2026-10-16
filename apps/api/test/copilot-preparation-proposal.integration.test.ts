@@ -12,6 +12,7 @@ import {
   scoreCopilotPriorities,
   detectCopilotConflicts,
 } from "@fl-copilot/analytics-core";
+import { commercialChoiceFixture } from "../../../scripts/test-commercial-choice-fixtures";
 const uri = process.env.TEST_MONGODB_URI;
 describe.skipIf(!uri)("private TG draft proposals", () => {
   let client: MongoClient, db: Db;
@@ -50,6 +51,78 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       },
     };
   }
+  it("blocks dangling TG assignments, accepts explicit replacement and scopes new retained offers", async () => {
+    const f = await fixture(),
+      added = await commercialChoiceFixture({ storeId: f.storeId });
+    await db
+      .collection<Document & { _id: string }>("commercialOfferChoices")
+      .insertOne({
+        _id: added.choice.id,
+        duplicateKey: randomUUID(),
+        ...added.choice,
+      });
+    const patch = {
+      offerSelection: {
+        addChoiceIds: [added.choice.id],
+        removeChoiceIds: [f.choice.id],
+      },
+    };
+    const blocked = await readPreparationPreview(db, f.storeId, {
+      ...f.input,
+      patch,
+    });
+    expect(blocked.status).toBe("BLOCKED");
+    expect(String(blocked.evidence[0].value)).toContain(
+      f.preparation.placements[0].label,
+    );
+    const input = {
+      ...f.input,
+      patch: {
+        ...patch,
+        tgUpdates: [
+          {
+            placementId: f.preparation.placements[0].id,
+            offerIds: [added.choice.id],
+          },
+        ],
+      },
+    };
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "READY",
+    );
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: added.choice.id } as Document, {
+        $set: { status: "WITHDRAWN" },
+      });
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "BLOCKED",
+    );
+    await db
+      .collection("commercialOfferChoices")
+      .deleteOne({ _id: f.choice.id } as Document);
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...f.input,
+          patch: {
+            offerSelection: { removeChoiceIds: [f.choice.id] },
+            tgUpdates: [
+              { placementId: f.preparation.placements[0].id, offerIds: [] },
+            ],
+          },
+        })
+      ).status,
+    ).toBe("READY");
+    expect((await readPreparationPreview(db, randomUUID(), input)).status).toBe(
+      "UNAVAILABLE",
+    );
+    expect(
+      (await db
+        .collection("commercialWeekPreparations")
+        .findOne({ _id: f.preparation.id } as Document))!.offerRefs,
+    ).toEqual(f.preparation.offerRefs);
+  });
   it("prepares without writing, preserves no-op and rejects missing, foreign or impossible draft changes", async () => {
     const f = await fixture();
     const r = await readPreparationPreview(db, f.storeId, f.input);
@@ -202,9 +275,10 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
   });
   it
     .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
-    .each([false, true])(
-    "atomically persists a compatible private TG review card (layout=%s) without business writes",
-    async (layout) => {
+    .each(["EDIT", "LAYOUT", "SELECTION"])(
+    "atomically persists a compatible private TG review card (mode=%s) without business writes",
+    async (mode) => {
+      const layout = mode === "LAYOUT";
       const f = await fixture(),
         chat = chatFixture(randomUUID);
       chat.storeId = f.storeId;
@@ -218,21 +292,32 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       await db
         .collection<Document & { _id: string }>("copilotMessages")
         .insertOne({ _id: chat.message.id, ...chat.message });
-      const input = layout
-        ? {
-            weekStart: f.preparation.weekStart,
-            patch: {
-              tgRemovals: [f.preparation.placements[0].id],
-              tgAdditions: [
-                {
-                  label: "Nouvelle TG",
-                  theme: "Saison",
-                  offerIds: [f.choice.id],
+      const input =
+        mode === "SELECTION"
+          ? {
+              weekStart: f.preparation.weekStart,
+              patch: {
+                offerSelection: { removeChoiceIds: [f.choice.id] },
+                tgUpdates: [
+                  { placementId: f.preparation.placements[0].id, offerIds: [] },
+                ],
+              },
+            }
+          : layout
+            ? {
+                weekStart: f.preparation.weekStart,
+                patch: {
+                  tgRemovals: [f.preparation.placements[0].id],
+                  tgAdditions: [
+                    {
+                      label: "Nouvelle TG",
+                      theme: "Saison",
+                      offerIds: [f.choice.id],
+                    },
+                  ],
                 },
-              ],
-            },
-          }
-        : f.input;
+              }
+            : f.input;
       const preview = await readPreparationPreview(db, f.storeId, input);
       const generate = vi.fn(async () => ({
         output: {
