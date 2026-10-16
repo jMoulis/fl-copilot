@@ -50,7 +50,12 @@ export function renderAnswerText(
     const source = encodeURIComponent(
       JSON.stringify({
         label: item.label,
-        value: item.detail ?? item.value,
+        value: item.externalResearch
+          ? "Informations publiques externes, distinctes des chiffres du magasin."
+          : (item.detail ?? item.value),
+        ...(item.externalResearch
+          ? { externalResearch: item.externalResearch }
+          : {}),
         sourceType: item.sourceType,
         sourceId: item.sourceId,
       }),

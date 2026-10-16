@@ -1,3 +1,6 @@
+import { createCopilotWebResearchJournal } from "./copilot/web-research-journal.js";
+import { createCopilotWebResearch } from "./copilot/web-research.js";
+import { publicResearchToolResult } from "./copilot/public-research-tool.js";
 import { prepareContextCheckpoint } from "./copilot/context-checkpoint.js";
 import { readConversationContext } from "./copilot/conversation-history-tool.js";
 import type { FastifyReply } from "fastify";
@@ -540,6 +543,25 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 return result;
               },
+              ...(request.headers["x-copilot-web-research"] === "1"
+                ? {
+                    publicResearch: async (input, signal) =>
+                      publicResearchToolResult(
+                        await createCopilotWebResearchJournal({
+                          db,
+                          authorize,
+                          research: createCopilotWebResearch(config).research,
+                        })(
+                          {
+                            conversationId: request.body.conversationId,
+                            userMessageId: request.body.userMessageId,
+                          },
+                          input,
+                          signal,
+                        ),
+                      ),
+                  }
+                : {}),
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);

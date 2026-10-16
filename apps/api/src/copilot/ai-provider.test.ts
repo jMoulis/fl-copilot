@@ -2190,3 +2190,68 @@ it("does not prepare or persist an unchanged context checkpoint again", async ()
   expect(result.contextCheckpoint).toBeUndefined();
   expect(prepareContextCheckpoint).not.toHaveBeenCalled();
 });
+
+it("performs bounded public research through the real SDK loop and exposes external evidence only", async () => {
+  const { publicResearchToolResult } = await import("./public-research-tool");
+  const f = fixture();
+  const input = {
+    query: "Saisonnalité des poires en France",
+    purpose: "PRODUCE" as const,
+  };
+  const research = publicResearchToolResult({
+    ...input,
+    requestId: randomUUID(),
+    kind: "EXTERNAL_RESEARCH",
+    summaryFr: "Les périodes varient selon les variétés.",
+    accessedAt: "2026-10-16T10:00:00.000Z",
+    model: "test-model",
+    inputTokens: 10,
+    outputTokens: 20,
+    citations: [
+      {
+        url: "https://www.interfel.com/",
+        title: "Interfel",
+        start: 0,
+        end: 12,
+        publishedAt: null,
+      },
+    ],
+  });
+  const publicResearch = vi.fn(async () => research);
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "public_research"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_public",
+          call_id: "call_public",
+          name: "public_research",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain("EXTERNAL_RESEARCH");
+    expect(JSON.stringify(body)).toContain(research.evidence[0]!.id);
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    publicResearch,
+  }).generate(f.request, schema);
+  expect(publicResearch).toHaveBeenCalledTimes(1);
+  expect(publicResearch.mock.calls[0]).toHaveLength(2);
+  expect(result.toolEvidence).toEqual(research.evidence);
+  expect(calls).toBe(2);
+});

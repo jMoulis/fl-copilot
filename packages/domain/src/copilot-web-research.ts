@@ -92,3 +92,37 @@ export type PublicWebResearchRequest = z.infer<
 export type PublicWebResearchResult = z.infer<
   typeof publicWebResearchResultSchema
 >;
+
+/** Model may supply only a general public topic, never private identifiers or metrics. */
+export const copilotPublicResearchInputSchema = z.strictObject({
+  query: publicResearchQuerySchema.refine(
+    (q) =>
+      q.length <= 400 &&
+      !/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|\d{8,}|[€$%]|\b(?:mon|ma|mes|notre|nos|my|our)\b/i.test(
+        q,
+      ),
+  ),
+  purpose: publicWebResearchRequestSchema.shape.purpose,
+});
+export const copilotExternalResearchSourceSchema = z
+  .strictObject({
+    kind: z.literal("EXTERNAL_RESEARCH"),
+    accessedAt: z.string().datetime(),
+    citations: z
+      .array(
+        z.strictObject({
+          url: z.string().max(600).refine(isPublicResearchUrl),
+          title: z.string().min(1).max(120),
+          publishedAt: z.null(),
+        }),
+      )
+      .min(1)
+      .max(3),
+  })
+  .refine((v) => {
+    try {
+      return encodeURIComponent(JSON.stringify(v)).length <= 3500;
+    } catch {
+      return false;
+    }
+  });

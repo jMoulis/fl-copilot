@@ -258,7 +258,7 @@ it("negotiates and scopes public activity events without persisting them in the 
   );
   expect(result.message).toEqual(message);
 });
-it("opts into memory proposals only when the client can render their confirmation card", async () => {
+it("opts into memory and web sources only when the client supports their renderer", async () => {
   const transport = vi.fn<typeof fetch>(
     async () =>
       new Response(
@@ -277,11 +277,13 @@ it("opts into memory proposals only when the client can render their confirmatio
       id(5),
       input,
       undefined,
-      { onProgress: vi.fn(), memorySuggestions: enabled },
+      { onProgress: vi.fn(), memorySuggestions: enabled, webResearch: enabled },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-memory-suggestions", "1");
     else expect(headers).not.toHaveProperty("x-copilot-memory-suggestions");
+    if (enabled) expect(headers).toHaveProperty("x-copilot-web-research", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-web-research");
   }
 });

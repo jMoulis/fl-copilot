@@ -768,6 +768,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 37,
+    name: "copilot-public-research-journal",
+    async up(database) {
+      await database
+        .collection("copilotWebResearch")
+        .createIndex(
+          { storeId: 1, ownerId: 1, conversationId: 1, startedAt: -1 },
+          { name: "copilot_web_research_private_scope" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

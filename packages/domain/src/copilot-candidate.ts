@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { copilotExternalResearchSourceSchema } from "./copilot-web-research";
 const score = z.number().finite().min(0).max(1);
 const ref = z.string().min(1).max(1000);
 export const recommendationTypeSchema = z.enum([
@@ -41,6 +42,7 @@ export const copilotEvidenceSchema = z
     label: z.string().min(1).max(1000),
     value: z.union([z.string().max(10000), z.number().finite(), z.null()]),
     detail: z.string().max(10000).optional(),
+    externalResearch: copilotExternalResearchSourceSchema.optional(),
     factKind: z.enum([
       "OBSERVED",
       "SOURCE_INSTRUCTION",
@@ -49,7 +51,15 @@ export const copilotEvidenceSchema = z
       "QUALITY",
     ]),
   })
-  .strict();
+  .strict()
+  .refine(
+    (e) =>
+      !e.externalResearch ||
+      (e.sourceType === "SOURCE_DOCUMENT" &&
+        e.factKind === "SOURCE_INSTRUCTION" &&
+        e.sourceVersion === null &&
+        e.id.startsWith("public-web-research/")),
+  );
 export const candidateContextSchema = z
   .object({
     productIds: z.array(ref),

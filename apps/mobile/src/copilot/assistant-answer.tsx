@@ -1,5 +1,17 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { ScrollView, Text, View, StyleSheet } from "react-native";
+import {
+  ScrollView,
+  Text,
+  View,
+  StyleSheet,
+  Linking,
+  Pressable,
+} from "react-native";
+import {
+  copilotExternalResearchSourceSchema,
+  isPublicResearchUrl,
+} from "@fl-copilot/domain";
+import type { z } from "zod";
 import { BottomSheet } from "../components/ui";
 import { colors } from "../design/tokens";
 import { markdownBlocks } from "./markdown-blocks";
@@ -7,6 +19,7 @@ type Source = {
   label: string;
   value: string | number | null;
   sourceId: string;
+  externalResearch?: z.infer<typeof copilotExternalResearchSourceSchema>;
 };
 /** Small native Markdown surface: no HTML, arbitrary URL navigation or webview. */
 export function AssistantAnswer({
@@ -17,6 +30,7 @@ export function AssistantAnswer({
   renderSource?(id: string): ReactNode;
 }) {
   const [source, setSource] = useState<Source>();
+  const [linkError, setLinkError] = useState(false);
   const blocks = useMemo(() => markdownBlocks(text), [text]);
   function openSource(encoded: string) {
     try {
@@ -30,8 +44,16 @@ export function AssistantAnswer({
         (v.value === null ||
           typeof v.value === "number" ||
           typeof v.value === "string")
-      )
+      ) {
+        if (
+          v.externalResearch &&
+          !copilotExternalResearchSourceSchema.safeParse(v.externalResearch)
+            .success
+        )
+          return;
+        setLinkError(false);
         setSource(v);
+      }
     } catch {
       /* Partial citations become clickable only after their token closes. */
     }
@@ -118,7 +140,47 @@ export function AssistantAnswer({
                 ? "Valeur non disponible"
                 : String(source.value)}
             </Text>
-            {renderSource?.(source.sourceId)}
+            {source.externalResearch ? (
+              <View style={styles.answer}>
+                <Text style={styles.text}>
+                  Recherche web · consultée le{" "}
+                  {new Date(
+                    source.externalResearch.accessedAt,
+                  ).toLocaleDateString("fr-FR")}
+                </Text>
+                {source.externalResearch.citations.map((citation) => (
+                  <Pressable
+                    key={citation.url}
+                    accessibilityRole="link"
+                    accessibilityLabel={`Ouvrir la source : ${citation.title}`}
+                    style={styles.externalLink}
+                    onPress={() => {
+                      setLinkError(false);
+                      if (!isPublicResearchUrl(citation.url)) {
+                        setLinkError(true);
+                        return;
+                      }
+                      void Linking.openURL(citation.url).catch(() =>
+                        setLinkError(true),
+                      );
+                    }}
+                  >
+                    <Text style={styles.text}>{citation.title}</Text>
+                    <Text style={styles.link}>
+                      {new URL(citation.url).hostname}
+                    </Text>
+                  </Pressable>
+                ))}
+                {linkError ? (
+                  <Text accessibilityRole="alert" style={styles.text}>
+                    Impossible d’ouvrir ce lien. Réessayez avec une connexion
+                    disponible.
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              renderSource?.(source.sourceId)
+            )}
           </View>
         ) : null}
       </BottomSheet>
@@ -127,6 +189,7 @@ export function AssistantAnswer({
 }
 const styles = StyleSheet.create({
   answer: { gap: 14 },
+  externalLink: { minHeight: 44, paddingVertical: 10, gap: 4 },
   text: { fontSize: 17, lineHeight: 26, color: colors.ink },
   heading: { fontSize: 19, fontWeight: "600" },
   bold: { fontWeight: "600" },
