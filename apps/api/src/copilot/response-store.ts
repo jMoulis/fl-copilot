@@ -1,3 +1,5 @@
+import { validateStoredContext } from "./context-checkpoint.js";
+import { readContextCheckpoint } from "@fl-copilot/domain";
 import {
   readKnowledgeSuggestion,
   validateKnowledgeSuggestionSources,
@@ -104,9 +106,11 @@ export async function appendCopilotToolRecord(
   const artifact =
     kind === "MISSING_INFORMATION_REQUEST"
       ? readCopilotInformationRequest(decoded)
-      : kind === "KNOWLEDGE_SUGGESTION"
-        ? readKnowledgeSuggestion(decoded)
-        : readCopilotProductProposal(decoded);
+      : kind === "CONTEXT_CHECKPOINT"
+        ? readContextCheckpoint(decoded)
+        : kind === "KNOWLEDGE_SUGGESTION"
+          ? readKnowledgeSuggestion(decoded)
+          : readCopilotProductProposal(decoded);
   const message = artifact.message;
   const assistantMessageId =
     "content" in artifact
@@ -138,6 +142,27 @@ export async function appendCopilotToolRecord(
   const messages = ctx.database.collection<CopilotMessage & { _id: string }>(
     "copilotMessages",
   );
+  if (kind === "CONTEXT_CHECKPOINT") {
+    const parent = await messages.findOne(
+      {
+        _id: message.replyToMessageId!,
+        storeId: message.storeId,
+        ownerId: message.ownerId,
+        conversationId: message.conversationId,
+        role: "USER",
+      },
+      { session: ctx.session },
+    );
+    if (!parent) throw Error("COPILOT_CONTEXT_PARENT_INVALID");
+    const { _id, ...parentPayload } = parent;
+    if (_id !== parentPayload.id) throw Error("COPILOT_CONTEXT_PARENT_INVALID");
+    await validateStoredContext(
+      ctx.database,
+      decoded,
+      copilotMessageSchema.parse(parentPayload),
+      ctx.session,
+    );
+  }
   if (kind === "KNOWLEDGE_SUGGESTION") {
     const suggestion = readKnowledgeSuggestion(decoded).content.suggestion;
     const sources = [];

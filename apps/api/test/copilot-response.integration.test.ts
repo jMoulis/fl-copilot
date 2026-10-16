@@ -1,3 +1,4 @@
+import { readConversationCheckpoint } from "../src/copilot/context-checkpoint";
 import { readConversationContext } from "../src/copilot/conversation-history-tool";
 import { buildInformationRequestMessages } from "../src/copilot/information-request-messages";
 import { readAnsweredInformationContext } from "../src/copilot/answered-information";
@@ -58,6 +59,7 @@ import { runCopilotTurn } from "../src/copilot/turn-service";
 import {
   CopilotAiError,
   type CopilotAiProvider,
+  type CopilotGenerationRequest,
 } from "../src/copilot/ai-provider";
 import {
   detectCopilotConflicts,
@@ -1949,11 +1951,31 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         conversationId: f.message.conversationId,
         parentMessageId: f.message.id,
       };
+      const exact = await readConversationContext(db, scope, {
+        messageId: earlier[0]!.id,
+        query: null,
+        before: null,
+        limit: 5,
+      });
+      expect(exact.messages.map((m) => m.id)).toEqual([earlier[0]!.id]);
+      for (const messageId of [hidden[0]!.id, hidden[4]!.id, f.message.id]) {
+        expect(
+          (
+            await readConversationContext(db, scope, {
+              messageId,
+              query: null,
+              before: null,
+              limit: 5,
+            })
+          ).messages,
+        ).toEqual([]);
+      }
       const seen = [],
         metadata = [];
       let before = null as { id: string; createdAt: string } | null;
       for (let i = 0; i < 6; i++) {
         const page = await readConversationContext(db, scope, {
+          messageId: null,
           query: null,
           before,
           limit: 5,
@@ -1989,14 +2011,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         readConversationContext(
           db,
           { ...scope, ownerId: randomUUID() },
-          { query: null, before: null, limit: 5 },
+          { messageId: null, query: null, before: null, limit: 5 },
         ),
       ).rejects.toThrow();
       await expect(
         readConversationContext(
           db,
           { ...scope, parentMessageId: hidden[0]!.id },
-          { query: null, before: null, limit: 5 },
+          { messageId: null, query: null, before: null, limit: 5 },
         ),
       ).rejects.toThrow();
       await db
@@ -2006,6 +2028,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         });
       await expect(
         readConversationContext(db, scope, {
+          messageId: null,
           query: null,
           before: null,
           limit: 5,
@@ -2055,6 +2078,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         parentMessageId: f.message.id,
       };
       const found = await readConversationContext(db, scope, {
+        messageId: null,
         query: "[tg.*]",
         before: null,
         limit: 5,
@@ -2062,6 +2086,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(found.messages.map((m) => m.id)).toEqual([correction.id]);
       expect(found.hasMore).toBe(false);
       const page = await readConversationContext(db, scope, {
+        messageId: null,
         query: null,
         before: null,
         limit: 5,
@@ -2070,6 +2095,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(page.messages[0]!.text).toHaveLength(16000);
       expect(page.hasMore).toBe(true);
       const next = await readConversationContext(db, scope, {
+        messageId: null,
         query: null,
         before: page.nextBefore,
         limit: 5,
@@ -2544,6 +2570,297 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .collection("copilotMessages")
           .countDocuments({ conversationId: f.conversation.id, role: "TOOL" }),
       ).toBe(1);
+    });
+    it("persists and restores versioned private context checkpoints across a long conversation without business writes", async () => {
+      const f = await fixture();
+      const base = Date.parse(f.message.createdAt);
+      const old = {
+        ...f.message,
+        id: randomUUID(),
+        attachments: [],
+        text: "Je veux préparer quatre TG chaque semaine.\n\nLe passage doit rester libre.",
+        createdAt: new Date(base - 60000).toISOString(),
+      };
+      const older = Array.from({ length: 24 }, (_, i) => ({
+        ...old,
+        id: randomUUID(),
+        text: `Échange ${i}`,
+        createdAt: new Date(base - 50000 + i * 1000).toISOString(),
+      }));
+      await db
+        .collection<{ _id: string }>("copilotMessages")
+        .insertMany([old, ...older].map((m) => ({ _id: m.id, ...m })));
+      const context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: f.storeId,
+          evaluatedAt: f.message.createdAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const draft = {
+        notes: [
+          {
+            topic: "GOAL" as const,
+            sourceMessageId: old.id,
+            quote: "Je veux préparer quatre TG chaque semaine.",
+          },
+        ],
+      };
+      const generate = vi.fn(async (_request: CopilotGenerationRequest) => ({
+        output: {
+          language: "fr-FR",
+          summary: "Je poursuis la préparation.",
+          facts: [],
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: _request.requestId,
+          inputTokens: null,
+          outputTokens: null,
+        },
+        contextCheckpoint: draft,
+      }));
+      const dependencies = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => f.authority,
+        loadContext: async () => context,
+        now: () => new Date(base + 1000),
+      };
+      const turn = {
+        replyId: f.response.id,
+        userMessageId: f.message.id,
+        conversationId: f.conversation.id,
+      };
+      await runCopilotTurn(dependencies, turn);
+      await runCopilotTurn(dependencies, turn);
+      expect(generate).toHaveBeenCalledTimes(1);
+      let snapshots = await db
+        .collection("copilotMessages")
+        .find({ conversationId: f.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(snapshots).toHaveLength(1);
+      const firstId = String(snapshots[0]!.id);
+      expect(JSON.parse(String(snapshots[0]!.text))).toMatchObject({
+        kind: "CONTEXT_CHECKPOINT",
+        schemaVersion: 1,
+        previousCheckpointId: null,
+        partial: true,
+      });
+      const later = {
+        ...f.message,
+        id: randomUUID(),
+        text: "Continuons la préparation.",
+        attachments: [
+          {
+            sourceDocumentId: randomUUID(),
+            filename: "Nouvelle-source.pdf",
+            mediaType: "application/pdf",
+          },
+        ],
+        createdAt: new Date(base + 2000).toISOString(),
+      };
+      await db
+        .collection<{ _id: string }>("copilotMessages")
+        .insertOne({ _id: later.id, ...later });
+      const restored = await readConversationCheckpoint(db, later);
+      expect(restored.checkpoint).toMatchObject({
+        status: "AVAILABLE",
+        checkpointId: firstId,
+        content: { notes: [expect.objectContaining(draft.notes[0]!)] },
+      });
+      expect(
+        (
+          await readConversationCheckpoint(db, {
+            ...later,
+            ownerId: randomUUID(),
+          })
+        ).checkpoint.status,
+      ).toBe("ABSENT");
+      expect(
+        (
+          await readConversationCheckpoint(db, {
+            ...later,
+            conversationId: randomUUID(),
+          })
+        ).checkpoint.status,
+      ).toBe("ABSENT");
+      draft.notes.push({
+        topic: "GOAL",
+        sourceMessageId: old.id,
+        quote: "Le passage doit rester libre.",
+      });
+      await runCopilotTurn(
+        { ...dependencies, now: () => new Date(base + 3000) },
+        { ...turn, replyId: randomUUID(), userMessageId: later.id },
+      );
+      expect(generate.mock.calls[1]?.[0]).toMatchObject({
+        conversationCheckpoint: { status: "AVAILABLE", checkpointId: firstId },
+      });
+      snapshots = await db
+        .collection("copilotMessages")
+        .find({ conversationId: f.conversation.id, role: "TOOL" })
+        .sort({ createdAt: 1 })
+        .toArray();
+      expect(snapshots).toHaveLength(2);
+      const latestContent = JSON.parse(String(snapshots[1]!.text));
+      expect(latestContent.sourceDocumentIds).toContain(
+        f.message.attachments[0]!.sourceDocumentId,
+      );
+      expect(latestContent.sourceDocumentIds).toContain(
+        later.attachments[0]!.sourceDocumentId,
+      );
+      expect(JSON.parse(String(snapshots[1]!.text)).previousCheckpointId).toBe(
+        firstId,
+      );
+      const unchangedParent = {
+        ...later,
+        id: randomUUID(),
+        text: "Poursuivons.",
+        createdAt: new Date(base + 3500).toISOString(),
+      };
+      await db
+        .collection<{ _id: string }>("copilotMessages")
+        .insertOne({ _id: unchangedParent.id, ...unchangedParent });
+      await runCopilotTurn(
+        { ...dependencies, now: () => new Date(base + 3600) },
+        { ...turn, replyId: randomUUID(), userMessageId: unchangedParent.id },
+      );
+      expect(
+        await db
+          .collection("copilotMessages")
+          .countDocuments({ conversationId: f.conversation.id, role: "TOOL" }),
+      ).toBe(2);
+      expect(
+        await db
+          .collection("syncChanges")
+          .countDocuments({ entityId: firstId }),
+      ).toBe(1);
+      expect(
+        await db
+          .collection("copilotKnowledge")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(0);
+      expect(
+        await db.collection("copilotMessages").countDocuments({
+          _id: { $in: [old.id, ...older.map((m) => m.id)] },
+        } as never),
+      ).toBe(25);
+      // An unrelated paragraph changed: the saved quote still matches but its full source fingerprint does not.
+      await db
+        .collection("copilotMessages")
+        .updateOne({ _id: old.id } as never, {
+          $set: { text: old.text + "\n\nUne nouvelle contrainte." },
+        });
+      const newestParent = {
+        ...later,
+        createdAt: new Date(base + 4000).toISOString(),
+      };
+      expect(
+        (await readConversationCheckpoint(db, newestParent)).checkpoint.status,
+      ).toBe("STALE");
+      await db
+        .collection("copilotMessages")
+        .updateOne({ _id: old.id } as never, { $set: { text: old.text } });
+      expect(
+        (
+          await readConversationCheckpoint(db, {
+            ...newestParent,
+            supersedesMessageId: old.id,
+          })
+        ).checkpoint.status,
+      ).toBe("STALE");
+      // A future correction does not retroactively change an earlier turn's context.
+      const correction = {
+        ...later,
+        id: randomUUID(),
+        supersedesMessageId: old.id,
+        text: "Mon objectif a changé.",
+        createdAt: new Date(base + 5000).toISOString(),
+      };
+      await db
+        .collection<{ _id: string }>("copilotMessages")
+        .insertOne({ _id: correction.id, ...correction });
+      expect(
+        (await readConversationCheckpoint(db, newestParent)).checkpoint.status,
+      ).toBe("AVAILABLE");
+      expect(
+        (await readConversationCheckpoint(db, correction)).checkpoint.status,
+      ).toBe("STALE");
+    });
+    it("rolls back context checkpoints with invented or foreign source paragraphs together with the reply", async () => {
+      for (const foreign of [false, true]) {
+        const f = await fixture();
+        const other = { ...f.message, id: randomUUID(), ownerId: randomUUID() };
+        await db
+          .collection<{ _id: string }>("copilotMessages")
+          .insertOne({ _id: other.id, ...other });
+        const generate = vi.fn(async (_request: CopilotGenerationRequest) => ({
+          output: {
+            language: "fr-FR",
+            summary: "Je poursuis la préparation.",
+            facts: [],
+            interpretation: [],
+            recommendations: [],
+            questions: [],
+          },
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: _request.requestId,
+            inputTokens: null,
+            outputTokens: null,
+          },
+          contextCheckpoint: {
+            notes: [
+              {
+                topic: "GOAL",
+                sourceMessageId: foreign ? other.id : f.message.id,
+                quote: foreign ? other.text : "Une citation inventée",
+              },
+            ],
+          },
+        }));
+        const context = detectCopilotConflicts({
+          batch: scoreCopilotPriorities({
+            storeId: f.storeId,
+            evaluatedAt: f.message.createdAt,
+            candidates: [],
+          }),
+          intents: [],
+        });
+        await expect(
+          runCopilotTurn(
+            {
+              db,
+              provider: { model: "test", generate } as CopilotAiProvider,
+              authorize: async () => f.authority,
+              loadContext: async () => context,
+            },
+            {
+              replyId: f.response.id,
+              userMessageId: f.message.id,
+              conversationId: f.conversation.id,
+            },
+          ),
+        ).rejects.toThrow("QUOTE");
+        expect(
+          await db.collection("copilotMessages").countDocuments({
+            conversationId: f.conversation.id,
+            role: { $in: ["ASSISTANT", "TOOL"] },
+          }),
+        ).toBe(0);
+        expect(
+          await db
+            .collection("syncChanges")
+            .countDocuments({ entityId: f.response.id }),
+        ).toBe(0);
+      }
     });
     it("persists an opted-in source-grounded memory proposal once without creating knowledge, and rolls back invented quotations", async () => {
       for (const invalid of [false, true]) {

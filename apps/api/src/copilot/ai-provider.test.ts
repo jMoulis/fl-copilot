@@ -1785,7 +1785,7 @@ it("prepares one source-grounded memory suggestion only for an opted-in client, 
 
 it("retrieves older context in the existing bounded loop without making it official evidence", async () => {
   const f = fixture();
-  const input = { query: "TG", before: null, limit: 3 };
+  const input = { messageId: null, query: "TG", before: null, limit: 3 };
   const conversationHistory = vi.fn(async () => ({
     messages: [
       {
@@ -1847,7 +1847,12 @@ it("retrieves older context in the existing bounded loop without making it offic
 it("can reopen a PDF discovered in older history without requesting it again", async () => {
   const f = fixture(),
     sourceId = randomUUID();
-  const historyInput = { query: "prospectus", before: null, limit: 2 };
+  const historyInput = {
+    messageId: null,
+    query: "prospectus",
+    before: null,
+    limit: 2,
+  };
   const pdfInput = {
     sourceDocumentId: sourceId,
     businessDate: "2026-10-08",
@@ -1974,7 +1979,12 @@ it("does not leak a failed history read's internal error or fabricate history ev
           id: "fc_failed_history",
           call_id: "call_failed_history",
           name: "conversation_history",
-          arguments: JSON.stringify({ query: null, before: null, limit: 5 }),
+          arguments: JSON.stringify({
+            messageId: null,
+            query: null,
+            before: null,
+            limit: 5,
+          }),
           status: "completed",
         },
       ];
@@ -1991,4 +2001,192 @@ it("does not leak a failed history read's internal error or fabricate history ev
     conversationHistory,
   }).generate(f.request, schema);
   expect(result.toolEvidence).toEqual([]);
+});
+
+it("prepares a source-paragraph context checkpoint only for omitted history and never as official evidence", async () => {
+  const f = fixture(),
+    sourceId = randomUUID();
+  const quote = "Je souhaite préparer quatre TG.";
+  f.request.history = {
+    messages: [
+      {
+        id: sourceId,
+        role: "USER",
+        text: quote,
+        createdAt: "2026-10-10T12:00:00.000Z",
+      },
+    ],
+    earlierMessagesOmitted: true,
+  };
+  const input = {
+    notes: [{ topic: "GOAL" as const, sourceMessageId: sourceId, quote }],
+  };
+  const prepareContextCheckpoint = vi.fn(async () => ({
+    ...input,
+    evidence: [] as never[],
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "compact_context"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_checkpoint",
+          call_id: "call_checkpoint",
+          name: "compact_context",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    prepareContextCheckpoint,
+  }).generate(f.request, schema);
+  expect(result.contextCheckpoint).toEqual(input);
+  expect(result.toolEvidence).toEqual([]);
+  expect(prepareContextCheckpoint).toHaveBeenCalledWith(input);
+  expect(calls).toBe(2);
+  f.request.history.earlierMessagesOmitted = false;
+  await createCopilotAiProvider(
+    f.config,
+    async (_url, init) => {
+      expect(
+        JSON.parse(String(init?.body)).tools.some(
+          (t: { name: string }) => t.name === "compact_context",
+        ),
+      ).toBe(false);
+      return response();
+    },
+    { daily: vi.fn(), prepareContextCheckpoint },
+  ).generate(f.request, schema);
+});
+
+it("refuses invented checkpoint quotations before the read adapter and returns no checkpoint", async () => {
+  const f = fixture(),
+    sourceId = randomUUID();
+  f.request.history = {
+    messages: [
+      {
+        id: sourceId,
+        role: "USER",
+        text: "Le passage doit rester libre sur un mètre.",
+        createdAt: "2026-10-10T12:00:00.000Z",
+      },
+    ],
+    earlierMessagesOmitted: true,
+  };
+  const prepareContextCheckpoint = vi.fn(async (): Promise<never> => {
+    throw Error("SHOULD_NOT_CALL");
+  });
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    if (calls++ === 0) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_wrong_checkpoint",
+          call_id: "call_wrong_checkpoint",
+          name: "compact_context",
+          arguments: JSON.stringify({
+            notes: [
+              {
+                topic: "CONSTRAINT",
+                sourceMessageId: sourceId,
+                quote: "Le passage doit rester libre",
+              },
+            ],
+          }),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(JSON.parse(String(init?.body)))).toContain(
+      "unavailable",
+    );
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    prepareContextCheckpoint,
+  }).generate(f.request, schema);
+  expect(result.contextCheckpoint).toBeUndefined();
+  expect(prepareContextCheckpoint).not.toHaveBeenCalled();
+});
+
+it("does not prepare or persist an unchanged context checkpoint again", async () => {
+  const f = fixture(),
+    sourceId = randomUUID();
+  const note = {
+    topic: "GOAL" as const,
+    sourceMessageId: sourceId,
+    quote: "Je souhaite préparer quatre TG.",
+  };
+  f.request.history = { messages: [], earlierMessagesOmitted: true };
+  f.request.conversationCheckpoint = {
+    status: "AVAILABLE",
+    checkpointId: randomUUID(),
+    content: {
+      kind: "CONTEXT_CHECKPOINT",
+      schemaVersion: 1,
+      assistantMessageId: randomUUID(),
+      throughUserMessageId: randomUUID(),
+      throughSourceHash: "0".repeat(64),
+      previousCheckpointId: null,
+      partial: true,
+      notes: [{ ...note, sourceHash: "0".repeat(64) }],
+      sourceDocumentIds: [],
+      sourceReferencesOmitted: false,
+    },
+  };
+  const prepareContextCheckpoint = vi.fn(async (): Promise<never> => {
+    throw Error("SHOULD_NOT_CALL");
+  });
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    if (calls++ === 0) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_same_checkpoint",
+          call_id: "call_same_checkpoint",
+          name: "compact_context",
+          arguments: JSON.stringify({ notes: [note] }),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(String(init?.body)).toContain("unchanged");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    prepareContextCheckpoint,
+  }).generate(f.request, schema);
+  expect(result.contextCheckpoint).toBeUndefined();
+  expect(prepareContextCheckpoint).not.toHaveBeenCalled();
 });

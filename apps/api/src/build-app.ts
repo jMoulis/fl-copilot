@@ -1,3 +1,4 @@
+import { prepareContextCheckpoint } from "./copilot/context-checkpoint.js";
 import { readConversationContext } from "./copilot/conversation-history-tool.js";
 import type { FastifyReply } from "fastify";
 import { PassThrough } from "node:stream";
@@ -496,6 +497,34 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           {
             db,
             provider: createCopilotAiProvider(config, undefined, {
+              prepareContextCheckpoint: async (input) => {
+                const principal = await authorize();
+                const parent = await db
+                  .collection<CopilotMessage & { _id: string }>(
+                    "copilotMessages",
+                  )
+                  .findOne(
+                    {
+                      _id: request.body.userMessageId,
+                      storeId: principal.storeId,
+                      ownerId: principal.ownerId,
+                      conversationId: request.body.conversationId,
+                      role: "USER",
+                    },
+                    { maxTimeMS: 2000 },
+                  );
+                if (!parent) throw Error("COPILOT_CONTEXT_PARENT_INVALID");
+                const { _id, ...payload } = parent;
+                if (_id !== payload.id)
+                  throw Error("COPILOT_CONTEXT_PARENT_INVALID");
+                const result = await prepareContextCheckpoint(
+                  db,
+                  payload,
+                  input,
+                );
+                await authorize();
+                return result;
+              },
               conversationHistory: async (input) => {
                 const principal = await authorize();
                 const result = await readConversationContext(

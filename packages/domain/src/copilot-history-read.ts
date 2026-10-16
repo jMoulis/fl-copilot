@@ -5,11 +5,17 @@ const cursor = z.strictObject({
   createdAt: z.string().datetime(),
   id: z.string().uuid(),
 });
-export const copilotHistoryReadInputSchema = z.strictObject({
-  query: z.string().trim().min(2).max(120).nullable(),
-  before: cursor.nullable(),
-  limit: z.number().int().min(1).max(5),
-});
+export const copilotHistoryReadInputSchema = z
+  .strictObject({
+    messageId: z.string().uuid().nullable(),
+    query: z.string().trim().min(2).max(120).nullable(),
+    before: cursor.nullable(),
+    limit: z.number().int().min(1).max(5),
+  })
+  .refine(
+    (v) => !v.messageId || (v.query === null && v.before === null),
+    "Exact message lookup cannot combine search or cursor",
+  );
 export const copilotHistoryReadResultSchema = z
   .strictObject({
     messages: z
