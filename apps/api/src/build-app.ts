@@ -1,3 +1,4 @@
+import { readAnalyticsQuery } from "./copilot/analytics-query-tool.js";
 import { createCopilotWebResearchJournal } from "./copilot/web-research-journal.js";
 import { createCopilotWebResearch } from "./copilot/web-research.js";
 import { publicResearchToolResult } from "./copilot/public-research-tool.js";
@@ -562,6 +563,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                       ),
                   }
                 : {}),
+              analyticsQuery: async (input) => {
+                await authorize();
+                const result = await readAnalyticsQuery(db, storeId, input);
+                await authorize();
+                return result;
+              },
               daily: async (input) => {
                 await authorize();
                 const result = await readDailyAnalysis(db, storeId, input);

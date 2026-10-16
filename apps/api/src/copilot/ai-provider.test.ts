@@ -2255,3 +2255,144 @@ it("performs bounded public research through the real SDK loop and exposes exter
   expect(result.toolEvidence).toEqual(research.evidence);
   expect(calls).toBe(2);
 });
+
+it("lets the model request a product ranking without enumerating product IDs and grounds its returned table values", async () => {
+  const { analyticsQueryResultSchema } = await import("./analytics-query-tool");
+  const { copilotResponseSchema } = await import("@fl-copilot/domain");
+  const { validateCopilotResponse } = await import("./response-service");
+  const { renderAnswerText } = await import("./answer-text");
+  const f = fixture();
+  const input = {
+    currentPeriod: { start: "2025-10-01", end: "2025-10-31" },
+    referencePeriod: null,
+    groupBy: "PRODUCT" as const,
+    metrics: ["sales" as const],
+    aggregation: "SUM" as const,
+    filters: {
+      productIds: null,
+      labelContains: null,
+      category: null,
+      nature: null,
+    },
+    having: null,
+    sort: {
+      metric: "sales" as const,
+      value: "CURRENT" as const,
+      direction: "DESC" as const,
+    },
+    offset: 0,
+    limit: 10,
+  };
+  const evidence = {
+    id: "query-ranking/sales",
+    sourceId: "query-ranking",
+    sourceType: "KPI" as const,
+    sourceVersion: null,
+    label: "BANANE VRAC — CA net (€)",
+    value: "1234.56",
+    factKind: "DERIVED" as const,
+  };
+  const analyticsQuery = vi.fn(async () =>
+    analyticsQueryResultSchema.parse({
+      query: input,
+      status: "AVAILABLE",
+      scope: "OBSERVED_PRODUCT_DAYS_CURRENT_CATALOGUE",
+      unresolvedProductIds: [],
+      totalGroups: 1,
+      evaluatedGroups: 1,
+      unknownConditionGroups: 0,
+      knownGroups: 1,
+      hasMore: false,
+      nextOffset: null,
+      rows: [
+        {
+          key: randomUUID(),
+          label: "BANANE VRAC",
+          productCount: 1,
+          metrics: [
+            {
+              metric: "sales",
+              current: "1234.56",
+              reference: null,
+              change: null,
+              changePercent: null,
+              currentCoverage: {
+                expectedDays: 31,
+                availableDays: 30,
+                partialDays: 0,
+                missingDays: 1,
+                missingDateExamples: ["2025-10-20"],
+              },
+              referenceCoverage: null,
+              warnings: [],
+              evidenceIds: {
+                current: evidence.id,
+                reference: null,
+                change: null,
+                changePercent: null,
+              },
+            },
+          ],
+        },
+      ],
+      evidence: [evidence],
+    }),
+  );
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      expect(
+        body.tools.some((t: { name: string }) => t.name === "analytics_query"),
+      ).toBe(true);
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_query",
+          call_id: "call_query",
+          name: "analytics_query",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    expect(JSON.stringify(body)).toContain(evidence.id);
+    return response(
+      JSON.stringify({
+        language: "fr-FR",
+        summary: "Voici le classement renseigné.",
+        facts: [{ evidenceId: evidence.id }],
+        narrative:
+          "| Produit | CA |\n| --- | --- |\n| {{label:0}} | {{value:0}} € |\nCe classement porte sur les données disponibles. {{source:0}}",
+        interpretation: [],
+        recommendations: [],
+        questions: [],
+      }),
+    );
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    analyticsQuery,
+  }).generate(f.request, copilotResponseSchema);
+  expect(analyticsQuery).toHaveBeenCalledTimes(1);
+  expect(analyticsQuery.mock.calls[0]).toEqual([input]);
+  expect(result.toolEvidence).toEqual([evidence]);
+  expect(calls).toBe(2);
+  const verified = validateCopilotResponse(result.output, {
+    ...f.request,
+    evidence: result.toolEvidence,
+  });
+  const text = renderAnswerText(
+    verified.narrative!,
+    verified.facts,
+    result.toolEvidence!,
+  );
+  expect(text).toContain("1\u202f234,56 €");
+  expect(text).toContain("copilot-source:");
+});

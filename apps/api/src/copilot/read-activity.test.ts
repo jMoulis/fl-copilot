@@ -10,6 +10,9 @@ it("maps real tool keys without disclosing private arguments", () => {
     readActivityStage(JSON.stringify(["period", { referencePeriod: null }])),
   ).toBe("ANALYTICS");
   expect(
+    readActivityStage(JSON.stringify(["analytics-query", { private: true }])),
+  ).toBe("ANALYTICS");
+  expect(
     readActivityStage(
       JSON.stringify(["product-search", { query: "private label" }]),
     ),
