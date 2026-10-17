@@ -209,7 +209,9 @@ Operations: `recomputeProduct`, `recomputeDepartment`, `process`, `enqueueAnalyt
 
 Adapter source: [`conversation-repository.ts`](../../apps/mobile/src/copilot/conversation-repository.ts). Target: **T17/T19**.
 
-Operations: `scoped`, `list`, `save`, `resolve`, `append`, `messages`, `saveDraft`, `draft`, `applyCopilotRecord`.
+Operations: `scoped`, `list`, `save`, `resolve`, `append`, `messages`, `saveDraft`, `draft`, `remove`, `applyCopilotRecord`.
+
+Native owner actions support logical deletion of a message (including dependent replies/cards) or a complete conversation, with explicit confirmation, versioned private tombstones/history and atomic Outbox. A conversation uses swipe-left delete; a message uses a native long-press menu. Deleted exchanges are excluded from future generation/retrieval/checkpoints and cannot authorize new business actions. Original files, audit and independently saved shared memory/business actions remain; no physical erasure or automatic reversal is claimed. These are trusted native UI operations, not model mutation tools. Deletion-aware sync/history is capability-gated with schema-compatible archived projections for older clients. Native acceptance and grouped API/mobile delivery remain pending.
 
 ### copilot.priority-repository
 

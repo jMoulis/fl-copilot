@@ -1,3 +1,4 @@
+import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { z } from "zod";
 import {
   productClassificationAuthoritySchema,
@@ -115,6 +116,23 @@ export async function runReviewedStoreOperation<
         m.ownerId !== ctx.ownerId ||
         m.conversationId !== ctx.conversationId ||
         m.role !== "USER"
+      )
+        throw new ProductClassificationError("FORBIDDEN");
+      if (copilotMessageIsDeleted(m, c))
+        throw new ProductClassificationError("FORBIDDEN");
+      const artifact = await tx.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+        request.operationId,
+        ctx.storeId,
+        ctx.ownerId,
+        ctx.conversationId,
+      );
+      if (
+        artifact &&
+        copilotMessageIsDeleted(
+          copilotMessageSchema.parse(JSON.parse(artifact.payload_json)),
+          c,
+        )
       )
         throw new ProductClassificationError("FORBIDDEN");
       const old = await tx.getFirstAsync<{

@@ -2,7 +2,7 @@ import { synchronizedMercalysPublicationSchema } from "@fl-copilot/sync-contract
 import type { MercalysPublicationDocument } from "../imports/mercalys-publication-sync.js";
 import {
   isChatType,
-  serializeChat,
+  serializeChatForClient,
   chatCollections,
 } from "../copilot/conversation-store";
 import {
@@ -104,6 +104,7 @@ export interface SyncPullService {
     storeId: string,
     query: SyncPullQuery,
     ownerId?: string,
+    supportsHistoryDeletion?: boolean,
   ): Promise<SyncPullResponse>;
 }
 
@@ -112,7 +113,7 @@ export function createMongoSyncPullService(
   now: () => Date = () => new Date(),
 ): SyncPullService {
   return {
-    async pull(storeId, query, ownerId) {
+    async pull(storeId, query, ownerId, supportsHistoryDeletion = false) {
       const afterSequence = query.cursor
         ? decodeCursor(query.cursor, storeId)
         : Long.ZERO;
@@ -231,7 +232,11 @@ export function createMongoSyncPullService(
                 entityId: change.entityId,
                 entityVersion: row.version,
                 operation: change.operation,
-                entity: serializeChat(change.entityType, row),
+                entity: serializeChatForClient(
+                  change.entityType,
+                  row,
+                  supportsHistoryDeletion,
+                ),
                 changedAt: change.changedAt.toISOString(),
               };
             }

@@ -46,8 +46,13 @@ function fixture() {
     ),
   };
   const find = vi.fn(() => cursor);
-  const db = { collection: vi.fn(() => ({ find, distinct })) } as unknown as Db;
-  return { parent, old, answer, latest, distinct, find, db };
+  const findOne = vi.fn(
+    async () => null as { deletedMessageIds?: string[] } | null,
+  );
+  const db = {
+    collection: vi.fn(() => ({ find, distinct, findOne })),
+  } as unknown as Db;
+  return { parent, old, answer, latest, distinct, find, findOne, db };
 }
 
 it("excludes corrected questions and their old answers, retaining other context", async () => {
@@ -87,4 +92,13 @@ it("retains whole uncorrected messages and reports complete coverage", async () 
     f.latest.text,
   ]);
   expect(result.earlierMessagesOmitted).toBe(false);
+});
+
+it("omits deleted messages and dependent answers from generation without exposing their attachments", async () => {
+  const f = fixture();
+  f.distinct.mockResolvedValue([]);
+  f.findOne.mockResolvedValue({ deletedMessageIds: [f.old.id, f.latest.id] });
+  const result = await readConversationGenerationHistory(f.db, f.parent);
+  expect(result.messages).toEqual([]);
+  expect(result.recentAttachmentReferences).toEqual([]);
 });

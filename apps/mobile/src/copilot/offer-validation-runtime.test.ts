@@ -479,3 +479,34 @@ it("refuses validation when retained price units disagree with the active produc
     s.db.close();
   }
 });
+
+it("cannot confirm a proposal whose assistant message was deleted, including a direct runtime race", async () => {
+  const s = await setup();
+  try {
+    const message = await validationCard(s),
+      c = await validationController(s);
+    const content = JSON.parse(message.text),
+      conversation = await s.a.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM copilot_conversations WHERE id=?",
+        s.f.conversation.id,
+      );
+    await s.a.runAsync(
+      "UPDATE copilot_conversations SET payload_json=? WHERE id=?",
+      JSON.stringify({
+        ...JSON.parse(conversation!.payload_json),
+        deletedMessageIds: [content.assistantMessageId],
+      }),
+      s.f.conversation.id,
+    );
+    await expect(c.confirm(message, true)).rejects.toThrow("UNAVAILABLE");
+    const request = { ...s.request, operationId: message.id };
+    await expect(
+      s.runtime.execute(request, s.authority(request)),
+    ).rejects.toThrow();
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});

@@ -86,6 +86,12 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `copilot-history-deletion:${storeId}:${ownerId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     } else if (
       bootstrap.entities.copilotConversations ||
       bootstrap.entities.copilotMessages

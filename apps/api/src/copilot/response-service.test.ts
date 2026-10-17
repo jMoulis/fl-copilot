@@ -275,3 +275,79 @@ it("streams resolved values while withholding unsupported numeric or unknown-ref
   expect(result.mode).toBe("AI");
   expect(progress.mock.calls).toEqual([["Le CA est de 25 €."]]);
 });
+
+it("keeps the verified butternut nature/unit card when final prose fails grounding, without claiming the edit was saved", async () => {
+  const { commercialChoiceFixture } =
+    await import("../../../../scripts/test-commercial-choice-fixtures");
+  const { compareProductClassification } = await import("@fl-copilot/domain");
+  const { buildCopilotResponseMessage } = await import("./response-message");
+  const { buildProductProposalMessages } =
+    await import("./product-proposal-messages");
+  const { chatFixture } =
+    await import("../../../../scripts/test-chat-fixtures");
+  const r = request(),
+    source = await commercialChoiceFixture({ storeId: r.storeId }),
+    chat = chatFixture(randomUUID);
+  const before = {
+    ...source.product,
+    nature: "UNKNOWN" as const,
+    salesUnit: "UNKNOWN" as const,
+  };
+  const input = {
+    productId: before.id,
+    patch: { nature: "BULK" as const, salesUnit: "PIECE" as const },
+  };
+  const previews = [
+    {
+      input,
+      result: {
+        productId: before.id,
+        status: "PREVIEW" as const,
+        preview: compareProductClassification(before, input.patch),
+        evidence: [
+          {
+            id: "preview",
+            sourceType: "DATA_QUALITY" as const,
+            sourceId: before.id,
+            sourceVersion: before.version,
+            label: "Aperçu",
+            value: "Non enregistré",
+            factKind: "QUALITY" as const,
+          },
+        ],
+      },
+    },
+  ];
+  const provider = {
+    model: "test",
+    generate: vi.fn().mockResolvedValue({
+      output: { ...answer, summary: "999 euros" },
+      productPreviews: previews,
+      metadata: null,
+    }),
+  } as CopilotAiProvider;
+  const generated = await generateCopilotResponse(provider, r);
+  expect(generated.mode).toBe("FALLBACK");
+  expect(generated.productPreviews).toEqual(previews);
+  const message = buildCopilotResponseMessage({
+    id: randomUUID(),
+    createdAt: chat.message.createdAt,
+    parent: {
+      ...chat.message,
+      storeId: r.storeId,
+      text: "Sans emballage et vendu à la pièce.",
+      attachments: [],
+    },
+    request: r,
+    generation: generated,
+  });
+  expect(message.text).toContain("Rien n’a encore été modifié");
+  expect(message.text).not.toContain("999");
+  expect(message.text).not.toContain("Faits disponibles");
+  const [card] = buildProductProposalMessages(
+    message,
+    generated.productPreviews!,
+  );
+  expect(card).toBeDefined();
+  expect(JSON.parse(card!.text).patch).toEqual(input.patch);
+});

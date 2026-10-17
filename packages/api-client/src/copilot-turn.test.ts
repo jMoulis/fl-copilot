@@ -349,3 +349,27 @@ it("opts into optional proposal and source tools only when the client supports t
     else expect(headers).not.toHaveProperty("x-copilot-execution-proposals");
   }
 });
+
+it("advertises deletion-aware private history to avoid legacy projections on the updated app", async () => {
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          storeId: id(4),
+          ownerId: id(5),
+          conversationId: null,
+          conversations: [],
+          messages: [],
+          hasMore: false,
+          before: null,
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
+  );
+  vi.stubGlobal("fetch", transport);
+  await new ApiClient("https://test.invalid").copilotHistory("test", id(4));
+  expect(transport.mock.calls[0]![1]).toHaveProperty(
+    "headers.x-copilot-history-deletion",
+    "1",
+  );
+});

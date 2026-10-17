@@ -1,3 +1,5 @@
+import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import { Pressable, Alert } from "react-native";
 import { OfferValidationCard } from "@/copilot/offer-validation-card";
 import { CopilotOfferValidationController } from "@/copilot/offer-validation-controller";
 import { readCopilotOfferValidationProposal } from "@fl-copilot/domain";
@@ -610,6 +612,13 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   const [error, setError] = useState<string>();
   const createLocked = useRef(false);
   const topicRevision = useRef(0);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     let alive = true;
     const revision = ++topicRevision.current;
@@ -677,16 +686,78 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       {conversations
         .filter((row) => row.entity.status === "ACTIVE")
         .map((row) => (
-          <MenuRow
+          <Swipeable
             key={row.entity.id}
-            title={row.entity.title}
-            description={`Créée le ${new Date(row.entity.createdAt).toLocaleString("fr-FR")}`}
-            icon="chatbubble-outline"
-            onPress={() => {
-              setActive(row.entity.id);
-              setMenu(false);
-            }}
-          />
+            overshootRight={false}
+            renderRightActions={(_progress, _translation, methods) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Supprimer la conversation ${row.entity.title}`}
+                style={{
+                  minWidth: 100,
+                  justifyContent: "center",
+                  alignItems: "center",
+                  backgroundColor: colors.critical,
+                  borderRadius: 16,
+                  marginLeft: 8,
+                }}
+                onPress={() => {
+                  methods.close();
+                  Alert.alert(
+                    "Supprimer cette conversation ?",
+                    "Elle sera retirée du fil et du contexte du copilote. Les fichiers, les souvenirs mémorisés et les actions déjà confirmées sont conservés.",
+                    [
+                      { text: "Annuler", style: "cancel" },
+                      {
+                        text: "Supprimer",
+                        style: "destructive",
+                        onPress: () => {
+                          const revision = ++topicRevision.current;
+                          void controller
+                            .removeConversation(row.entity.id)
+                            .then(async () => {
+                              const rows = await repo.list();
+                              if (
+                                !mounted.current ||
+                                revision !== topicRevision.current
+                              )
+                                return;
+                              setConversations(rows);
+                              if (active === row.entity.id)
+                                setActive(undefined);
+                              void syncNow(storeId);
+                            })
+                            .catch(() => {
+                              if (
+                                mounted.current &&
+                                revision === topicRevision.current
+                              )
+                                setError(
+                                  "La conversation n’a pas pu être supprimée.",
+                                );
+                            });
+                        },
+                      },
+                    ],
+                  );
+                }}
+              >
+                <Text style={{ color: "white", fontWeight: "600" }}>
+                  Supprimer
+                </Text>
+              </Pressable>
+            )}
+          >
+            <MenuRow
+              title={row.entity.title}
+              description={`Créée le ${new Date(row.entity.createdAt).toLocaleString("fr-FR")}`}
+              icon="chatbubble-outline"
+              onPress={() => {
+                setActive(row.entity.id);
+                setMenu(false);
+              }}
+            />
+          </Swipeable>
         ))}
       <SecondaryButton
         label="Retour à l’application"

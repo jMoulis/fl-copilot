@@ -1,3 +1,4 @@
+import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { readCopilotOfferValidationProposal } from "@fl-copilot/domain";
 import { readCopilotChoiceCreateProposal } from "@fl-copilot/domain";
 import { readCopilotChoiceRetentionProposal } from "@fl-copilot/domain";
@@ -76,6 +77,8 @@ export async function appendCopilotResponse(
     Date.parse(message.createdAt) < Date.parse(parent.createdAt)
   )
     throw new Error("COPILOT_REPLY_PARENT_INVALID");
+  if (copilotMessageIsDeleted(parent, conversationPayload))
+    throw Error("COPILOT_REPLY_PARENT_INVALID");
   // Authority and active parent are checked before replay; revocation cannot expose a cached private reply.
   const existing = await messages.findOne(
     { _id: message.id },

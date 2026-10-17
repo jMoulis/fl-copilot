@@ -1159,3 +1159,118 @@ it("appends a publication analysis question to the private draft without sending
     db.close();
   }
 });
+
+it("logically deletes a question and its replies, preserving immutable records and committing the tombstone with Outbox", async () => {
+  const db = new DatabaseSync(":memory:"),
+    a = new Adapter(db),
+    f = chatFixture(randomUUID);
+  try {
+    await runLocalMigrations(a);
+    const repo = new CopilotConversationRepository(a, f);
+    await repo.save(f.conversation, command());
+    await repo.append(
+      { ...f.message, attachments: [] },
+      { ...command(), replyId: randomUUID() },
+    );
+    const assistant = {
+      ...f.message,
+      id: randomUUID(),
+      role: "ASSISTANT" as const,
+      replyToMessageId: f.message.id,
+      attachments: [],
+      text: "Réponse",
+    };
+    await applyCopilotRecord(a, f, "copilot_message", assistant);
+    const { copilotMessageIsDeleted } = await import("@fl-copilot/domain");
+    const stamp = new Date(
+      Date.parse(f.conversation.updatedAt) + 1000,
+    ).toISOString();
+    a.fail = true;
+    await expect(
+      repo.remove(f.conversation.id, f.message.id, command(), stamp),
+    ).rejects.toThrow("COMMIT_FAILED");
+    expect(
+      (await repo.get(f.conversation.id))!.deletedMessageIds,
+    ).toBeUndefined();
+    expect(await repo.pendingTurns(f.conversation.id)).toHaveLength(1);
+    a.fail = false;
+    await repo.remove(f.conversation.id, f.message.id, command(), stamp);
+    const updated = (await repo.get(f.conversation.id))!;
+    expect(updated.deletedMessageIds).toEqual([f.message.id]);
+    expect(copilotMessageIsDeleted(f.message, updated)).toBe(true);
+    expect(copilotMessageIsDeleted(assistant, updated)).toBe(true);
+    expect(await repo.pendingTurns(f.conversation.id)).toHaveLength(0);
+    expect(db.prepare("SELECT COUNT(*) n FROM copilot_messages").get()).toEqual(
+      { n: 2 },
+    );
+    const count = db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    await repo.remove(f.conversation.id, f.message.id, command(), stamp);
+    expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      count,
+    );
+    await expect(
+      repo.save(
+        { ...updated, deletedMessageIds: [], version: updated.version + 1 },
+        command(),
+      ),
+    ).rejects.toThrow("DELETION_IMMUTABLE");
+    await expect(
+      new CopilotConversationRepository(a, {
+        ...f,
+        ownerId: randomUUID(),
+      }).remove(f.conversation.id, f.message.id, command(), stamp),
+    ).rejects.toThrow();
+  } finally {
+    db.close();
+  }
+});
+it("deletes a complete conversation atomically, cancels its draft and turns and forbids resurrection", async () => {
+  const db = new DatabaseSync(":memory:"),
+    a = new Adapter(db),
+    f = chatFixture(randomUUID);
+  try {
+    await runLocalMigrations(a);
+    const repo = new CopilotConversationRepository(a, f);
+    await repo.save(f.conversation, command());
+    await repo.append(
+      { ...f.message, attachments: [] },
+      { ...command(), replyId: randomUUID() },
+    );
+    await repo.saveDraft(f.conversation.id, {
+      text: "à conserver si annulation",
+      attachments: [],
+      updatedAt: f.message.createdAt,
+    });
+    const stamp = new Date(
+      Date.parse(f.conversation.updatedAt) + 1000,
+    ).toISOString();
+    a.fail = true;
+    await expect(
+      repo.remove(f.conversation.id, null, command(), stamp),
+    ).rejects.toThrow();
+    expect(await repo.draft(f.conversation.id)).not.toBeNull();
+    a.fail = false;
+    await repo.remove(f.conversation.id, null, command(), stamp);
+    const removed = (await repo.get(f.conversation.id))!;
+    expect(removed.status).toBe("ARCHIVED");
+    expect(removed.deletedAt).toBe(stamp);
+    expect(await repo.draft(f.conversation.id)).toBeNull();
+    expect(await repo.pendingTurns(f.conversation.id)).toHaveLength(0);
+    await expect(
+      repo.save(
+        {
+          ...removed,
+          deletedAt: undefined,
+          status: "ACTIVE",
+          version: removed.version + 1,
+        },
+        command(),
+      ),
+    ).rejects.toThrow("DELETION_IMMUTABLE");
+    expect(db.prepare("SELECT COUNT(*) n FROM copilot_messages").get()).toEqual(
+      { n: 1 },
+    );
+  } finally {
+    db.close();
+  }
+});

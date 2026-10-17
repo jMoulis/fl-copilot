@@ -260,6 +260,7 @@ export async function generateCopilotResponse(
   )
     throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
   if (signal?.aborted) throw new CopilotAiError("COPILOT_AI_CANCELLED", false);
+  let completed: Awaited<ReturnType<CopilotAiProvider["generate"]>> | undefined;
   try {
     const generated = await provider.generate(
       request,
@@ -296,6 +297,7 @@ export async function generateCopilotResponse(
         : undefined,
       onActivity,
     );
+    completed = generated;
     if (generated.toolEvidence) {
       const updated = copilotGenerationRequestSchema.safeParse({
         ...request,
@@ -344,6 +346,11 @@ export async function generateCopilotResponse(
       response: copilotResponseFallback(request),
       metadata: null,
       evidence: request.evidence,
+      // A failed narrative does not invalidate a separately checked read-only
+      // classification preview. It still requires the native confirmation card.
+      ...(error instanceof CopilotGroundingError && completed?.productPreviews
+        ? { productPreviews: completed.productPreviews }
+        : {}),
     };
   }
 }

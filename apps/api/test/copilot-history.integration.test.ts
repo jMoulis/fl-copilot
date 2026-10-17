@@ -61,6 +61,140 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ],
       };
     }
+    it("synchronizes deletion metadata, refuses foreign targets and restoration, and keeps old clients parse-compatible", async () => {
+      const f = chatFixture(randomUUID),
+        push = createMongoSyncPushService(database);
+      await push.push(request(f.conversation), "create", f.ownerId);
+      await push.push(
+        request({ ...f.message, attachments: [] }),
+        "message",
+        f.ownerId,
+      );
+      const db = await database.getDb();
+      const removed = {
+        ...f.conversation,
+        deletedMessageIds: [f.message.id],
+        version: 2,
+        updatedAt: "2026-10-12T12:00:00.000Z",
+      };
+      expect(
+        (
+          await push.push(
+            request({ ...removed, deletedMessageIds: [randomUUID()] }, 1),
+            "bad-target",
+            f.ownerId,
+          )
+        ).results[0]!.error?.code,
+      ).toBe("COPILOT_DELETION_TARGET_INVALID");
+      expect(
+        (await push.push(request(removed, 1), "remove", f.ownerId)).results[0]!
+          .status,
+      ).toBe("APPLIED");
+      expect(
+        (
+          await push.push(
+            request({ ...removed, deletedMessageIds: [], version: 3 }, 2),
+            "restore",
+            f.ownerId,
+          )
+        ).results[0]!.error?.code,
+      ).toBe("COPILOT_DELETION_IMMUTABLE");
+      const { serializeChatForClient } =
+        await import("../src/copilot/conversation-store");
+      const row = await db
+        .collection<
+          import("../src/copilot/conversation-store").ChatRecordDocument
+        >("copilotConversations")
+        .findOne({ _id: f.conversation.id });
+      expect(
+        serializeChatForClient("copilot_conversation", row!, true),
+      ).toMatchObject({ status: "ACTIVE", deletedMessageIds: [f.message.id] });
+      const legacy = serializeChatForClient(
+        "copilot_conversation",
+        row!,
+        false,
+      );
+      expect(legacy).toMatchObject({ status: "ARCHIVED" });
+      expect(legacy).not.toHaveProperty("deletedMessageIds");
+      const scope = {
+        storeId: f.storeId,
+        userId: f.ownerId,
+        storeName: "Test",
+        role: "MANAGER",
+        sessionId: randomUUID(),
+        deviceId: f.deviceId,
+      };
+      const snapshots = createMongoSyncBootstrapService(database);
+      const oldSnapshot = await snapshots.bootstrap(scope, {
+        rawObservationDays: 90,
+        copilotHistory: "true",
+      });
+      expect(
+        oldSnapshot.entities.copilotConversations?.find(
+          (c) => c.id === f.conversation.id,
+        )?.status,
+      ).toBe("ARCHIVED");
+      const newSnapshot = await snapshots.bootstrap(
+        scope,
+        { rawObservationDays: 90, copilotHistory: "true" },
+        true,
+      );
+      expect(
+        newSnapshot.entities.copilotConversations?.find(
+          (c) => c.id === f.conversation.id,
+        ),
+      ).toMatchObject({ status: "ACTIVE", deletedMessageIds: [f.message.id] });
+      expect(
+        (
+          await readCopilotHistory(
+            db,
+            f.storeId,
+            f.ownerId,
+            { conversationId: f.conversation.id, limit: 50 },
+            true,
+          )
+        ).messages,
+      ).toEqual([]);
+
+      const { readConversationGenerationHistory } =
+        await import("../src/copilot/generation-history");
+      const next = {
+        ...f.message,
+        id: randomUUID(),
+        createdAt: "2026-10-13T12:00:00.000Z",
+      };
+      expect(
+        (await readConversationGenerationHistory(db, next)).messages,
+      ).toEqual([]);
+      const deleted = {
+        ...removed,
+        status: "ARCHIVED" as const,
+        deletedAt: "2026-10-14T12:00:00.000Z",
+        updatedAt: "2026-10-14T12:00:00.000Z",
+        version: 3,
+      };
+      expect(
+        (await push.push(request(deleted, 2), "delete-topic", f.ownerId))
+          .results[0]!.status,
+      ).toBe("APPLIED");
+      expect(
+        (
+          await push.push(
+            request(
+              {
+                ...deleted,
+                deletedAt: undefined,
+                status: "ACTIVE",
+                version: 4,
+              },
+              3,
+            ),
+            "restore-topic",
+            f.ownerId,
+          )
+        ).results[0]!.error?.code,
+      ).toBe("COPILOT_DELETION_IMMUTABLE");
+    });
     it("persists a conversation/user message exactly once, restores only its actor and hides private changes from older clients", async () => {
       const f = chatFixture(randomUUID),
         push = createMongoSyncPushService(database),

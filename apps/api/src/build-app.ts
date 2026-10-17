@@ -1003,6 +1003,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         storeId,
         store.userId,
         request.query,
+        request.headers["x-copilot-history-deletion"] === "1",
       );
     },
   );
@@ -1097,7 +1098,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       const principal = await auth.authorizeStore(accessToken, storeId);
       try {
         return request.query.copilotHistory === "true"
-          ? await syncPull.pull(storeId, request.query, principal.userId)
+          ? await syncPull.pull(
+              storeId,
+              request.query,
+              principal.userId,
+              request.headers["x-copilot-history-deletion"] === "1",
+            )
           : await syncPull.pull(storeId, request.query);
       } catch (error) {
         if (error instanceof SyncPullCursorError) {
@@ -1145,7 +1151,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
       const store = await auth.authorizeStore(accessToken, storeId);
-      return syncBootstrap.bootstrap(store, request.query);
+      return request.headers["x-copilot-history-deletion"] === "1"
+        ? syncBootstrap.bootstrap(store, request.query, true)
+        : syncBootstrap.bootstrap(store, request.query);
     },
   );
   app.post(

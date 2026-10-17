@@ -25,8 +25,10 @@ type Source = {
 export function AssistantAnswer({
   text,
   renderSource,
+  selectable = true,
 }: {
   text: string;
+  selectable?: boolean;
   renderSource?(id: string): ReactNode;
 }) {
   const [source, setSource] = useState<Source>();
@@ -104,7 +106,7 @@ export function AssistantAnswer({
                   {row.map((cell, c) => (
                     <Text
                       key={c}
-                      selectable
+                      selectable={selectable}
                       style={[styles.cell, r === 0 && styles.bold]}
                     >
                       {inline(cell)}
@@ -117,7 +119,7 @@ export function AssistantAnswer({
         ) : (
           <Text
             key={i}
-            selectable
+            selectable={selectable}
             style={[styles.text, block.type === "heading" && styles.heading]}
           >
             {block.type === "list" ? "• " : ""}
@@ -132,10 +134,10 @@ export function AssistantAnswer({
       >
         {source ? (
           <View style={styles.answer}>
-            <Text selectable style={styles.bold}>
+            <Text selectable={selectable} style={styles.bold}>
               {source.label}
             </Text>
-            <Text selectable style={styles.text}>
+            <Text selectable={selectable} style={styles.text}>
               {source.value === null
                 ? "Valeur non disponible"
                 : String(source.value)}

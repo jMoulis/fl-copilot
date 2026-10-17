@@ -222,6 +222,12 @@ export class MobileSyncService {
           `copilot-history:${storeId}:${this.options.copilotOwnerId}`,
         )
       : true;
+    const historyDeletionAdopted = this.options.copilotHistory
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `copilot-history-deletion:${storeId}:${this.options.copilotOwnerId}`,
+        )
+      : true;
     const scoresAdopted = this.options.substitutionScores
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -274,6 +280,7 @@ export class MobileSyncService {
       !evidenceAdopted ||
       !scoresAdopted ||
       !chatAdopted ||
+      !historyDeletionAdopted ||
       !knowledgeAdopted ||
       !mercalysAdopted ||
       !executionAdopted ||

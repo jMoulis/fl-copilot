@@ -38,6 +38,24 @@ export function serializeChat(type: string, row: ChatRecordDocument) {
     ? copilotConversationSchema.parse(payload)
     : copilotMessageSchema.parse(payload);
 }
+/** Older clients cannot parse deletion metadata or honour per-message hiding.
+ * Project affected topics as archived without changing canonical business state. */
+export function serializeChatForClient(
+  type: string,
+  row: ChatRecordDocument,
+  supportsDeletion = false,
+) {
+  const record = serializeChat(type, row);
+  if (type !== "copilot_conversation" || supportsDeletion) return record;
+  const { deletedAt, deletedMessageIds, ...legacy } =
+    record as CopilotConversation;
+  return {
+    ...legacy,
+    ...(deletedAt || deletedMessageIds?.length
+      ? { status: "ARCHIVED" as const }
+      : {}),
+  };
+}
 /** Runs before processed-command replay: cached private responses never bypass actor checks. */
 export async function canAccessChatCommand(
   db: Db,
@@ -169,6 +187,38 @@ export async function applyChatCommand(
     await collection.insertOne({ _id: e.id, ...m }, { session: ctx.session });
   } else {
     const v = e as CopilotConversation;
+    const previous = old
+      ? (serializeChat(type, old) as CopilotConversation)
+      : null;
+    if (
+      previous &&
+      ((previous.deletedAt &&
+        (previous.deletedAt !== v.deletedAt || v.status !== "ARCHIVED")) ||
+        (previous.deletedMessageIds ?? []).some(
+          (id) => !v.deletedMessageIds?.includes(id),
+        ))
+    )
+      return reject("COPILOT_DELETION_IMMUTABLE");
+    const added = (v.deletedMessageIds ?? []).filter(
+      (id) => !previous?.deletedMessageIds?.includes(id),
+    );
+    if (added.length) {
+      const count = await ctx.database
+        .collection<CopilotMessage & { _id: string }>("copilotMessages")
+        .countDocuments(
+          {
+            _id: { $in: added },
+            storeId,
+            ownerId,
+            conversationId: v.id,
+            role: { $in: ["USER", "ASSISTANT"] },
+          },
+          { session: ctx.session },
+        );
+      if (count !== added.length)
+        return reject("COPILOT_DELETION_TARGET_INVALID");
+    }
+
     if ((c.expectedRemoteVersion ?? null) !== (old?.version ?? null))
       return {
         resultStatus: "CONFLICT",
@@ -232,6 +282,7 @@ export async function chatBootstrap(
   storeId: string,
   ownerId: string,
   session: ClientSession,
+  supportsDeletion = false,
 ) {
   const scope = { storeId, ownerId };
   const messages = await db
@@ -260,10 +311,14 @@ export async function chatBootstrap(
     copilotHistoryOwnerId: ownerId,
     copilotConversations: [
       ...new Map([...recent, ...extra].map((c) => [c.id, c])).values(),
-    ].map((c) => serializeChat("copilot_conversation", c)),
+    ].map((c) =>
+      serializeChatForClient("copilot_conversation", c, supportsDeletion),
+    ),
     copilotMessages: messages
       .reverse()
-      .map((m) => serializeChat("copilot_message", m)),
+      .map((m) =>
+        serializeChatForClient("copilot_message", m, supportsDeletion),
+      ),
     copilotHistoryPartial: true,
   };
 }

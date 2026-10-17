@@ -1,3 +1,4 @@
+import { buildProductProposalMessages } from "./product-proposal-messages";
 import { renderAnswerText } from "./answer-text.js";
 import {
   copilotAttachmentReferenceSchema,
@@ -110,7 +111,7 @@ export function buildCopilotResponseMessage(input: {
         ...response.questions,
       ].join("\n\n");
   // Reject overflow rather than silently losing source/qualification information.
-  return copilotMessageSchema.parse({
+  const message = copilotMessageSchema.parse({
     id: input.id,
     storeId: parent.storeId,
     ownerId: parent.ownerId,
@@ -123,4 +124,17 @@ export function buildCopilotResponseMessage(input: {
     version: 1,
     createdAt: input.createdAt,
   });
+  if (
+    input.generation.mode === "FALLBACK" &&
+    input.generation.productPreviews?.length &&
+    buildProductProposalMessages(message, input.generation.productPreviews)
+      .length
+  ) {
+    return {
+      ...message,
+      text: "La correction est préparée dans la carte ci-dessous. Vérifie les valeurs, puis confirme pour l’enregistrer. Rien n’a encore été modifié.",
+      attachments: [],
+    };
+  }
+  return message;
 }

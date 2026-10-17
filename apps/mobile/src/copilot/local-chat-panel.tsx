@@ -1,3 +1,4 @@
+import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { BottomSheet, MenuRow } from "../components/ui";
 import type { CopilotPdfSelection } from "./pdf-selection";
@@ -10,6 +11,7 @@ import type { CopilotTurnDelivery } from "./turn-delivery";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   Pressable,
   Text,
@@ -393,7 +395,12 @@ function LocalChatPanel({
         intakeSummary={intakeSummary}
         allowIntakeWithoutAttachmentCapacity={!!onOpenMercalys}
         title={snapshot.conversation.title}
-        messages={snapshot.messages.map((message) => message.entity)}
+        messages={snapshot.messages
+          .map((message) => message.entity)
+          .filter(
+            (message) =>
+              !copilotMessageIsDeleted(message, snapshot.conversation),
+          )}
         draft={draft}
         status={sending ? "GENERATING" : queued ? "QUEUED" : "IDLE"}
         error={error}
@@ -423,6 +430,48 @@ function LocalChatPanel({
         }
         onConversations={onConversations}
         onRemember={onRemember}
+        onDeleteMessage={(message) => {
+          if (sending || locked.current) return;
+          Alert.alert(
+            "Supprimer ce message ?",
+            message.role === "USER"
+              ? "Le message et ses réponses seront retirés du fil et du contexte du copilote. Les fichiers, les souvenirs mémorisés et les actions déjà confirmées sont conservés."
+              : "La réponse et ses cartes seront retirées du fil et du contexte du copilote. Les actions déjà confirmées sont conservées.",
+            [
+              { text: "Annuler", style: "cancel" },
+              {
+                text: "Supprimer",
+                style: "destructive",
+                onPress: () => {
+                  if (locked.current) return;
+                  locked.current = true;
+                  void controller
+                    .removeMessage(conversationId, message.id)
+                    .then(() =>
+                      controller.open(
+                        conversationId,
+                        snapshot.messages[0]?.entity,
+                      ),
+                    )
+                    .then((value) => {
+                      if (
+                        current.current.controller === controller &&
+                        current.current.conversationId === conversationId
+                      )
+                        setSnapshot(value);
+                    })
+                    .catch(() => {
+                      if (current.current.controller === controller)
+                        setError("Le message n’a pas pu être supprimé.");
+                    })
+                    .finally(() => {
+                      locked.current = false;
+                    });
+                },
+              },
+            ],
+          );
+        }}
         onOlder={
           snapshot.hasMore
             ? () => {

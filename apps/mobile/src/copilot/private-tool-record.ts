@@ -1,3 +1,7 @@
+import {
+  copilotConversationSchema,
+  copilotMessageIsDeleted,
+} from "@fl-copilot/domain";
 import { copilotMessageSchema, type CopilotMessage } from "@fl-copilot/domain";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 /** The synced private TOOL row and its immutable server reply must match the displayed artifact exactly. */
@@ -13,6 +17,22 @@ export async function verifyPrivateToolRecord(
     message.ownerId !== scope.ownerId
   )
     throw Error("COPILOT_PROPOSAL_SCOPE_INVALID");
+  const topic = await db.getFirstAsync<{ payload_json: string }>(
+    "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
+    message.conversationId,
+    scope.storeId,
+    scope.ownerId,
+  );
+  if (
+    !topic ||
+    copilotConversationSchema.parse(JSON.parse(topic.payload_json)).status !==
+      "ACTIVE" ||
+    copilotMessageIsDeleted(
+      message,
+      copilotConversationSchema.parse(JSON.parse(topic.payload_json)),
+    )
+  )
+    throw Error("COPILOT_PROPOSAL_UNAVAILABLE");
   const persisted = await db.getFirstAsync<{
     payload_json: string;
     sync_state: string;
