@@ -23,7 +23,7 @@ Deploy the Fastify API as a Node.js Vercel Function with Fluid Compute.
 
 ## Consequences
 
-- Git branches receive protected Preview deployments and `master` deploys production automatically.
+- Updated 17 October 2026: automatic Git deployments are disabled. GitHub checks remain required; protected previews run only when useful, and production releases group reviewed changes. See `docs/RELEASE_PROCESS.md`.
 - The API, Blob credentials and deployment logs live in one Vercel project.
 - Function duration, bundle size and regional limits must be monitored as remote parsing and Inngest work are introduced.
 - A container worker remains an explicit future option if measured processing requirements exceed Vercel Function limits; adopting one requires a new decision.
