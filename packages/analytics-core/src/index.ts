@@ -16,3 +16,4 @@ export * from "./calendar-period-comparison";
 export * from "./period-contributors";
 export * from "./period-waste-rate";
 export * from "./analytics-query";
+export * from "./price-scenario";
