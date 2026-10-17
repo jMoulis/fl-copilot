@@ -1,3 +1,4 @@
+import { previewChoiceWithdrawal } from "./copilot/choice-withdrawal-tool.js";
 import { readPreparationPreview } from "./copilot/preparation-preview-tool.js";
 import { readCommercialPreparation } from "./copilot/commercial-preparation-tool.js";
 import { readOperationsPreview } from "./copilot/operations-preview-tool.js";
@@ -787,6 +788,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 return result;
               },
+              ...(request.headers["x-copilot-choice-withdrawal"] === "1"
+                ? {
+                    choiceWithdrawal: async (input) => {
+                      await authorize();
+                      const result = await previewChoiceWithdrawal(
+                        db,
+                        storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
               commercialChoice: async (input) => {
                 await authorize();
                 const result = await readCommercialChoice(db, storeId, input);

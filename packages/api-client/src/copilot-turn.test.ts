@@ -281,6 +281,7 @@ it("opts into optional proposal and source tools only when the client supports t
         onProgress: vi.fn(),
         memorySuggestions: enabled,
         webResearch: enabled,
+        choiceWithdrawal: enabled,
         preparationProposals: enabled,
         preparationLayout: enabled,
         preparationCreate: enabled,
@@ -293,6 +294,9 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-choice-withdrawal", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-choice-withdrawal");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-preparation-refresh", "1");
     else expect(headers).not.toHaveProperty("x-copilot-preparation-refresh");

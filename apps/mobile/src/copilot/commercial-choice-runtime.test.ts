@@ -356,3 +356,144 @@ it("inspects withdrawn choices, validates prices and preserves conflicts without
     s.db.close();
   }
 });
+
+async function withdrawalCard(s: Awaited<ReturnType<typeof setup>>) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain");
+  const { applyCopilotRecord } = await import("./conversation-repository");
+  const before = (await s.runtime.execute(s.request, s.authority(s.request)))
+    .after;
+  const assistant = copilotMessageSchema.parse({
+    ...s.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: s.f.message.id,
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "COMMERCIAL_CHOICE_WITHDRAWAL_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input: { choiceId: before.id },
+      before,
+    }),
+  });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", message);
+  });
+  return message;
+}
+async function withdrawalController(
+  s: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  db = s.a,
+) {
+  const { CopilotChoiceWithdrawalController } =
+    await import("./choice-withdrawal-controller");
+  return new CopilotChoiceWithdrawalController(
+    db,
+    {
+      storeId: s.f.storeId,
+      ownerId: s.f.ownerId,
+      deviceId: s.authority(s.request).deviceId,
+      canManageCommercialChoices: allowed,
+    },
+    testChoiceDigest,
+    randomUUID,
+  );
+}
+it("confirms a private withdrawal atomically, preserves sources and replays once after restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "withdraw-card-")),
+    path = join(dir, "local.db"),
+    s = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const m = await withdrawalCard(s),
+      c = await withdrawalController(s);
+    expect((await c.open(m)).status).toBe("READY");
+    const original = JSON.stringify(
+      s.db.prepare("SELECT * FROM commercial_visual_readings").get(),
+    );
+    await expect(
+      (await withdrawalController(s, false)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    s.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    s.a.fail = false;
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 1 });
+    await c.confirm(m);
+    expect(
+      JSON.stringify(
+        s.db.prepare("SELECT * FROM commercial_visual_readings").get(),
+      ),
+    ).toBe(original);
+    s.db.close();
+    reopened = new DatabaseSync(path);
+    expect(
+      (
+        await (
+          await withdrawalController(s, true, new Adapter(reopened))
+        ).confirm(m)
+      ).status,
+    ).toBe("COMPLETED");
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_choice_history")
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE command_type='COMMERCIAL_OFFER_CHOICE_UPSERT'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    reopened?.close();
+    try {
+      s.db.close();
+    } catch {
+      /* closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("refuses stale, forged and cancelled private withdrawals", async () => {
+  const s = await setup();
+  try {
+    const m = await withdrawalCard(s),
+      c = await withdrawalController(s);
+    await expect(
+      c.confirm({ ...m, text: m.text.replace('"version":1', '"version":2') }),
+    ).rejects.toThrow();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(c.confirm(m, abort.signal)).rejects.toThrow();
+    const changed = {
+      ...s.request,
+      operationId: randomUUID(),
+      input: {
+        ...s.request.input,
+        expectedVersion: 1,
+        draft: { ...s.request.input.draft, note: "Autre changement" },
+      },
+    };
+    await s.runtime.execute(changed, s.authority(changed));
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    s.db.close();
+  }
+});
