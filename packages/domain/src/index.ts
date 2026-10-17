@@ -116,3 +116,4 @@ export * from "./copilot-plan-validation-preview";
 export * from "./copilot-document-comparison";
 export * from "./copilot-commercial-reference";
 export * from "./copilot-reference-inspection";
+export * from "./price-scenario";
