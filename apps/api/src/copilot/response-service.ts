@@ -208,6 +208,9 @@ export async function generateCopilotResponse(
   knowledgeSuggestions?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["knowledgeSuggestions"];
+  priceScenarioForms?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["priceScenarioForms"];
   informationRequests?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["informationRequests"];
@@ -334,6 +337,7 @@ export async function generateCopilotResponse(
       cataloguePreviews: generated.cataloguePreviews,
       executionPreviews: generated.executionPreviews,
       informationRequests: generated.informationRequests,
+      priceScenarioForms: generated.priceScenarioForms,
       knowledgeSuggestions: generated.knowledgeSuggestions,
       contextCheckpoint: generated.contextCheckpoint,
       evidence: request.evidence,

@@ -1,3 +1,4 @@
+import { buildPriceScenarioFormMessages } from "./price-scenario-messages.js";
 import { buildReferenceProposalMessages } from "./reference-messages.js";
 import { buildPlanValidationProposalMessages } from "./plan-validation-messages.js";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
@@ -378,9 +379,15 @@ export async function runCopilotTurn(
               message,
               generation.productPreviews ?? [],
             ),
+            ...buildPriceScenarioFormMessages(
+              message,
+              generation.priceScenarioForms ?? [],
+            ),
             ...buildInformationRequestMessages(
               message,
-              generation.informationRequests ?? [],
+              generation.priceScenarioForms?.length
+                ? []
+                : (generation.informationRequests ?? []),
             ),
           ])
             await appendCopilotToolRecord(
