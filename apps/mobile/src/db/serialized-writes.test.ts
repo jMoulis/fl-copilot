@@ -20,6 +20,12 @@ function fixture() {
     async runAsync(sql: string) {
       return root.prepare(sql).run();
     },
+    async getFirstAsync(sql: string) {
+      return root.prepare(sql).get() ?? null;
+    },
+    async getAllAsync(sql: string) {
+      return root.prepare(sql).all();
+    },
     async withExclusiveTransactionAsync(
       task: (db: SQLiteDatabase) => Promise<void>,
     ) {
@@ -41,7 +47,11 @@ function fixture() {
     },
   } as unknown as Pick<
     SQLiteDatabase,
-    "execAsync" | "runAsync" | "withExclusiveTransactionAsync"
+    | "execAsync"
+    | "runAsync"
+    | "getFirstAsync"
+    | "getAllAsync"
+    | "withExclusiveTransactionAsync"
   >;
   return {
     root,
@@ -106,12 +116,16 @@ it("queues import, sync and direct writers while WAL reads remain usable and com
     const direct = db
       .runAsync("INSERT INTO actions VALUES(3)")
       .then(() => order.push("direct"));
-    expect(f.root.prepare("SELECT COUNT(*) n FROM actions").get()).toEqual({
+    const sequence = db.getFirstAsync(
+      "INSERT INTO outbox VALUES(3) RETURNING id",
+    );
+    expect(await db.getFirstAsync("SELECT COUNT(*) n FROM actions")).toEqual({
       n: 0,
     });
     expect(order).toEqual(["import"]);
     finish.release();
     await Promise.all([importing, sync, direct]);
+    expect(await sequence).toEqual({ id: 3 });
     expect(order).toEqual(["import", "sync", "direct"]);
     expect(f.root.prepare("SELECT * FROM actions ORDER BY id").all()).toEqual([
       { id: 1 },
@@ -121,6 +135,7 @@ it("queues import, sync and direct writers while WAL reads remain usable and com
     expect(f.root.prepare("SELECT * FROM outbox ORDER BY id").all()).toEqual([
       { id: 1 },
       { id: 2 },
+      { id: 3 },
     ]);
   } finally {
     finish.release();

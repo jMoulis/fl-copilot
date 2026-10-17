@@ -2,7 +2,11 @@ import type { SQLiteDatabase } from "expo-sqlite";
 
 type WritableDatabase = Pick<
   SQLiteDatabase,
-  "execAsync" | "runAsync" | "withExclusiveTransactionAsync"
+  | "execAsync"
+  | "runAsync"
+  | "getFirstAsync"
+  | "getAllAsync"
+  | "withExclusiveTransactionAsync"
 >;
 const configured = new WeakSet<object>();
 /** Expo exclusive transactions open independent connections. Queue app writers
@@ -24,15 +28,27 @@ export function serializeLocalWrites<T extends WritableDatabase>(
     );
     return result;
   };
-  for (const name of ["execAsync", "runAsync"] as const) {
+  for (const name of [
+    "execAsync",
+    "runAsync",
+    "getFirstAsync",
+    "getAllAsync",
+  ] as const) {
     const original = database[name];
     Object.defineProperty(database, name, {
       configurable: true,
       writable: true,
-      value: (...args: unknown[]) =>
-        enqueue(
-          () => Reflect.apply(original, database, args) as Promise<unknown>,
-        ),
+      value: (...args: unknown[]) => {
+        const work = () =>
+          Reflect.apply(original, database, args) as Promise<unknown>;
+        // getFirstAsync also runs INSERT ... RETURNING for Outbox sequences.
+        // Only plain reads may bypass the writer queue; unknown SQL is queued.
+        return (name === "getFirstAsync" || name === "getAllAsync") &&
+          typeof args[0] === "string" &&
+          /^\s*(SELECT|EXPLAIN)\b/i.test(args[0])
+          ? work()
+          : enqueue(work);
+      },
     });
   }
   const exclusive = database.withExclusiveTransactionAsync.bind(database);
