@@ -1085,3 +1085,213 @@ it("rejects re-retention on a changed product, forged card or cancellation", asy
     s.db.close();
   }
 });
+async function createChoiceCard(s: Awaited<ReturnType<typeof setup>>) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain"),
+    { projectCommercialSourceOffer } =
+      await import("@fl-copilot/commercial-core"),
+    { applyCopilotRecord } = await import("./conversation-repository");
+  const product = (await new ProductMasterRepository(s.a).getProduct(
+      s.fixture.product.id,
+    ))!.entity,
+    offer = projectCommercialSourceOffer(s.fixture.reading, 0, 0),
+    draft = s.request.input.draft;
+  const assistant = copilotMessageSchema.parse({
+      ...s.f.message,
+      id: randomUUID(),
+      role: "ASSISTANT",
+      replyToMessageId: s.f.message.id,
+      attachments: [],
+    }),
+    message = copilotMessageSchema.parse({
+      ...assistant,
+      id: randomUUID(),
+      role: "TOOL",
+      text: JSON.stringify({
+        kind: "COMMERCIAL_CHOICE_CREATE_PROPOSAL",
+        schemaVersion: 1,
+        assistantMessageId: assistant.id,
+        input: {
+          source: draft.source,
+          productId: draft.productId,
+          saleStart: draft.saleStart,
+          saleEnd: draft.saleEnd,
+          mechanism: draft.mechanism,
+          note: draft.note,
+        },
+        basis: { storeId: s.f.storeId, offer, product },
+      }),
+    });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", message);
+  });
+  return message;
+}
+async function createChoiceController(
+  s: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  db = s.a,
+) {
+  const { CopilotChoiceCreateController } =
+    await import("./choice-create-controller");
+  return new CopilotChoiceCreateController(
+    db,
+    {
+      storeId: s.f.storeId,
+      ownerId: s.f.ownerId,
+      deviceId: s.authority(s.request).deviceId,
+      canManageCommercialChoices: allowed,
+    },
+    testChoiceDigest,
+    randomUUID,
+  );
+}
+const reviewedCreation = {
+  criticalFieldsConfirmed: true,
+  applicabilityConfirmed: true,
+};
+it("creates a source-bound choice only after both reviews, atomically and once after restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "choice-create-")),
+    path = join(dir, "local.db"),
+    s = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const m = await createChoiceCard(s),
+      c = await createChoiceController(s);
+    expect((await c.open(m)).status).toBe("READY");
+    for (const review of [
+      { criticalFieldsConfirmed: false, applicabilityConfirmed: true },
+      { criticalFieldsConfirmed: true, applicabilityConfirmed: false },
+    ])
+      await expect(c.confirm(m, review)).rejects.toThrow("REVIEW_REQUIRED");
+    await expect(
+      (await createChoiceController(s, false)).confirm(m, reviewedCreation),
+    ).rejects.toThrow("FORBIDDEN");
+    s.a.fail = true;
+    await expect(c.confirm(m, reviewedCreation)).rejects.toThrow();
+    s.a.fail = false;
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_offer_choices").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 0 });
+    expect((await c.confirm(m, reviewedCreation)).status).toBe("COMPLETED");
+    const row = s.db
+      .prepare("SELECT payload_json FROM commercial_offer_choices")
+      .get() as { payload_json: string };
+    expect(JSON.parse(row.payload_json)).toMatchObject({
+      id: s.fixture.choice.id,
+      source: s.fixture.choice.source,
+      productId: s.fixture.product.id,
+      mechanism: s.fixture.choice.mechanism,
+      status: "RETAINED",
+      version: 1,
+    });
+    s.db.close();
+    reopened = new DatabaseSync(path);
+    expect(
+      (
+        await (
+          await createChoiceController(s, true, new Adapter(reopened))
+        ).confirm(m, reviewedCreation)
+      ).status,
+    ).toBe("COMPLETED");
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_choice_history")
+        .get(),
+    ).toEqual({ n: 1 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE command_type='COMMERCIAL_OFFER_CHOICE_UPSERT'",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
+  } finally {
+    reopened?.close();
+    try {
+      s.db.close();
+    } catch {
+      /* already closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("rejects forged, cancelled, stale-product or missing-source creation reviews", async () => {
+  const s = await setup();
+  try {
+    const m = await createChoiceCard(s),
+      c = await createChoiceController(s);
+    await expect(
+      c.confirm(
+        {
+          ...m,
+          text: m.text.replace(s.fixture.product.label, "Autre produit"),
+        },
+        reviewedCreation,
+      ),
+    ).rejects.toThrow();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(
+      c.confirm(m, reviewedCreation, abort.signal),
+    ).rejects.toThrow();
+    s.db
+      .prepare("DELETE FROM commercial_visual_readings WHERE id=?")
+      .run(s.fixture.readingId);
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m, reviewedCreation)).rejects.toThrow("STALE");
+    await applyCommercialVisualReading(s.a, s.f.storeId, s.fixture.reading);
+    await new ProductMasterRepository(s.a).upsertProduct(
+      { ...s.fixture.product, label: "Produit changé", version: 2 },
+      { commandId: randomUUID(), deviceId: s.authority(s.request).deviceId },
+    );
+    expect((await c.open(m)).status).toBe("STALE");
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_offer_choices").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});
+it("never overwrites a locally retained or withdrawn choice with an initial-retention card", async () => {
+  const s = await setup();
+  try {
+    const m = await createChoiceCard(s),
+      c = await createChoiceController(s);
+    await s.runtime.execute(s.request, s.authority(s.request));
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m, reviewedCreation)).rejects.toThrow("STALE");
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 1 });
+    const withdrawal = {
+      ...s.request,
+      operationId: randomUUID(),
+      input: {
+        expectedVersion: 1,
+        productVersion: null,
+        draft: { ...s.request.input.draft, status: "WITHDRAWN" },
+      },
+    };
+    await s.runtime.execute(withdrawal, s.authority(withdrawal));
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m, reviewedCreation)).rejects.toThrow("STALE");
+    expect(
+      JSON.parse(
+        (
+          s.db
+            .prepare("SELECT payload_json FROM commercial_offer_choices")
+            .get() as { payload_json: string }
+        ).payload_json,
+      ).status,
+    ).toBe("WITHDRAWN");
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    s.db.close();
+  }
+});

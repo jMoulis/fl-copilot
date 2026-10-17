@@ -1,3 +1,6 @@
+import { ChoiceCreateCard } from "@/copilot/choice-create-card";
+import { CopilotChoiceCreateController } from "@/copilot/choice-create-controller";
+import { readCopilotChoiceCreateProposal } from "@fl-copilot/domain";
 import { ChoiceRetentionCard } from "@/copilot/choice-retention-card";
 import { CopilotChoiceRetentionController } from "@/copilot/choice-retention-controller";
 import { readCopilotChoiceRetentionProposal } from "@fl-copilot/domain";
@@ -237,6 +240,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
+  const choiceCreates = useMemo(
+    () =>
+      new CopilotChoiceCreateController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canManageCommercialChoices: canManageProducts,
+        },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
   const choiceReassociations = useMemo(
     () =>
       new CopilotChoiceReassociationController(
@@ -338,6 +356,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           key={message.id}
           message={message}
           controller={choiceRetentions}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
+      readCopilotChoiceCreateProposal(message);
+      return (
+        <ChoiceCreateCard
+          key={message.id}
+          message={message}
+          controller={choiceCreates}
           canConfirm={canManageProducts}
         />
       );
@@ -470,6 +501,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               webResearch: true,
               choiceUpdate: canManageProducts,
               choiceRetention: canManageProducts,
+              choiceCreate: canManageProducts,
               choiceReassociation: canManageProducts,
               choiceWithdrawal: canManageProducts,
               preparationProposals: canPrepareCommercialWeek,

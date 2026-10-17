@@ -11,7 +11,7 @@ import {
   currentCommercialWeek,
   commercialEntryWeekStatus,
   commercialItemWeekStatus,
-  commercialOfferProposal,
+  projectCommercialSourceOffer,
 } from "@fl-copilot/commercial-core";
 const hash = (v: unknown) =>
   createHash("sha256").update(JSON.stringify(v)).digest("hex");
@@ -79,30 +79,9 @@ export async function readSourceOffers(db: Db, storeId: string, raw: unknown) {
         excludedOffers++;
         return;
       }
-      const proposal = commercialOfferProposal(operation, item);
-      offers.push({
-        source: {
-          sourceDocumentId: input.sourceDocumentId,
-          readingId: page.id,
-          checksum: page.checksum,
-          operationIndex,
-          itemIndex,
-        },
-        pageNumber: page.pageNumber,
-        operationKind: operation.kind,
-        operationLabel: operation.label,
-        rawProductLabel: item.label,
-        operationFields: operation.fields,
-        itemFields: item.fields,
-        operationEvidence: operation.evidence,
-        itemEvidence: item.evidence,
-        proposal: {
-          saleStart: proposal.saleStart || null,
-          saleEnd: proposal.saleEnd || null,
-          mechanism: proposal.mechanism,
-        },
-        validationStatus: "TO_VALIDATE",
-      });
+      offers.push(
+        projectCommercialSourceOffer(page, operationIndex, itemIndex),
+      );
     });
   });
   const available = !!page?.reading;

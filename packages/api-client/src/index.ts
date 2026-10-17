@@ -70,6 +70,7 @@ export class ApiClient {
       webResearch?: boolean;
       choiceUpdate?: boolean;
       choiceRetention?: boolean;
+      choiceCreate?: boolean;
       choiceReassociation?: boolean;
       choiceWithdrawal?: boolean;
       preparationProposals?: boolean;
@@ -101,6 +102,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.choiceRetention
                   ? { "x-copilot-choice-retention": "1" }
+                  : {}),
+                ...(streaming.choiceCreate
+                  ? { "x-copilot-choice-create": "1" }
                   : {}),
                 ...(streaming.choiceReassociation
                   ? { "x-copilot-choice-reassociation": "1" }

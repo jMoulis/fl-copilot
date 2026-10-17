@@ -15,16 +15,11 @@ import { useState, useCallback } from "react";
 import { Text, View, AppState } from "react-native";
 import type { SynchronizedCommercialVisualReading } from "@fl-copilot/sync-contracts";
 import { SectionCard, InlineAlert, SecondaryButton } from "@/components/ui";
-import { commercialFieldLabels } from "./review-presentation";
-const extraFieldLabels: Record<string, string> = {
-  variety: "Variété",
-  origin: "Origine",
-  grade: "Catégorie",
-  calibre: "Calibre",
-  packaging: "Conditionnement",
-  announcedFigure: "Chiffre annoncé par le document",
-  documentYear: "Année indiquée dans le document",
-};
+import {
+  commercialFieldLabels,
+  commercialExtraFieldLabels,
+} from "./review-presentation";
+
 const kinds: Record<string, string> = {
   DRAMAT: "Dramat",
   PROSPECTUS: "Prospectus",
@@ -141,7 +136,7 @@ export function CommercialVisualView({
       <View key={i} className="gap-1">
         <Text className="font-semibold text-ink">
           {commercialFieldLabels[f.name] ??
-            extraFieldLabels[f.name] ??
+            commercialExtraFieldLabels[f.name] ??
             "Information source"}
         </Text>
         <Text selectable className="text-base text-ink">
