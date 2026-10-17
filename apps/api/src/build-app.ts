@@ -1,3 +1,4 @@
+import { readSourceOffers } from "./copilot/source-offers-tool.js";
 import { previewChoiceRetention } from "./copilot/choice-retention-tool.js";
 import { previewChoiceReassociation } from "./copilot/choice-reassociation-tool.js";
 import { previewChoiceUpdate } from "./copilot/choice-update-tool.js";
@@ -847,6 +848,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
+              sourceOffers: async (input) => {
+                await authorize();
+                const result = await readSourceOffers(db, storeId, input);
+                await authorize();
+                return result;
+              },
               commercialChoice: async (input) => {
                 await authorize();
                 const result = await readCommercialChoice(db, storeId, input);
