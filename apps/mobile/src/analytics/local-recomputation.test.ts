@@ -127,10 +127,63 @@ describe("local analytics recomputation", () => {
     });
 
     const first = scheduler.process("store-1");
-    const second = scheduler.process("store-1");
+    const second = new LocalAnalyticsRecomputationScheduler(adapter, {
+      async recomputeProduct() {
+        throw Error("duplicate scheduler must not run");
+      },
+      async recomputeDepartment() {
+        throw Error("duplicate scheduler must not run");
+      },
+    }).process("store-1");
     expect(second).toBe(first);
     await first;
     expect(releases).toBe(1);
+    database.close();
+  });
+
+  it("recovers six interrupted local calculations without republishing or recovering another store", async () => {
+    const { adapter, database } = await openDatabase();
+    const { readPendingWork } = await import("../sync/pending-work");
+    for (let i = 0; i < 7; i++) {
+      await enqueueAnalyticsRecomputationJob(adapter, {
+        jobId: `interrupted-${i}`,
+        storeId: i === 6 ? "other-store" : "store-1",
+        scopes: [{ productId: "product-1", businessDate: "2026-10-03" }],
+        createdAt: now,
+      });
+    }
+    database.exec("UPDATE local_jobs SET status='RUNNING',attempt_count=1");
+    expect(await readPendingWork(adapter, "store-1")).toEqual([
+      {
+        label: "Calcul des indicateurs locaux",
+        count: 6,
+        state: "En cours",
+        code: null,
+      },
+    ]);
+    let recomputed = 0;
+    const scheduler = new LocalAnalyticsRecomputationScheduler(
+      adapter,
+      {
+        async recomputeProduct() {
+          recomputed++;
+        },
+        async recomputeDepartment() {},
+      },
+      { now: () => now },
+    );
+    expect((await scheduler.process("store-1")).completedJobs).toBe(6);
+    expect(recomputed).toBe(6);
+    expect(await readPendingWork(adapter, "store-1")).toEqual([]);
+    expect(
+      database
+        .prepare("SELECT status FROM local_jobs WHERE id='interrupted-6'")
+        .get(),
+    ).toEqual({ status: "RUNNING" });
+    expect(
+      database.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+    ).toEqual({ n: 0 });
+    expect((await scheduler.process("store-1")).attemptedJobs).toBe(0);
     database.close();
   });
 
