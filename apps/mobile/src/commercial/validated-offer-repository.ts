@@ -7,6 +7,7 @@ import {
   commercialOfferValidationSource,
   commercialValidatedOfferSameBusiness,
   commercialOfferValidationCurrent,
+  commercialChoiceProductUnitMatches,
 } from "@fl-copilot/commercial-core";
 import { readCommercialChoices } from "./offer-choice-repository";
 import { readCommercialVisualReadings } from "./visual-repository";
@@ -105,12 +106,17 @@ export class ValidatedOfferRepository {
           ["ERROR", "CONFLICT"].includes(c.syncState)
         )
           throw Error("COMMERCIAL_VALIDATION_CHOICE_CHANGED");
-        const product = await tx.getFirstAsync<{ id: string }>(
-          "SELECT id FROM products WHERE id=? AND store_id=? AND status='ACTIVE' AND deleted_at IS NULL",
+        const product = await tx.getFirstAsync<{
+          id: string;
+          sales_unit: string;
+        }>(
+          "SELECT id,sales_unit FROM products WHERE id=? AND store_id=? AND status='ACTIVE' AND deleted_at IS NULL",
           c.entity.productId,
           storeId,
         );
         if (!product) throw Error("COMMERCIAL_VALIDATION_PRODUCT_INVALID");
+        if (!commercialChoiceProductUnitMatches(c.entity, product.sales_unit))
+          throw Error("COMMERCIAL_VALIDATION_UNIT_MISMATCH");
         const pages = await readCommercialVisualReadings(
           tx,
           storeId,

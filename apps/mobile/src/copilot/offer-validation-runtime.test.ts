@@ -292,3 +292,190 @@ it("preserves failed validation records and forbids foreign or mismatched cached
     s.db.close();
   }
 });
+
+async function validationCard(s: Awaited<ReturnType<typeof setup>>) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain");
+  const { projectCommercialSourceOffer } =
+    await import("@fl-copilot/commercial-core");
+  const { applyCopilotRecord } = await import("./conversation-repository");
+  const entries = await Promise.all(
+    s.fixtures.map(async (f) => {
+      const row = await s.a.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM commercial_validated_offers WHERE choice_id=?",
+        f.choice.id,
+      );
+      return {
+        choice: f.choice,
+        product: (await new ProductMasterRepository(s.a).getProduct(
+          f.product.id,
+        ))!.entity,
+        offer: projectCommercialSourceOffer(f.reading, 0, 0),
+        validation: row ? JSON.parse(row.payload_json) : null,
+      };
+    }),
+  );
+  const assistant = copilotMessageSchema.parse({
+    ...s.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: s.f.message.id,
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "OFFER_VALIDATION_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input: { choiceIds: entries.map((e) => e.choice.id) },
+      basis: { storeId: s.f.storeId, entries },
+    }),
+  });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", message);
+  });
+  return message;
+}
+async function validationController(
+  s: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+) {
+  const { CopilotOfferValidationController } =
+    await import("./offer-validation-controller");
+  return new CopilotOfferValidationController(
+    s.a,
+    {
+      storeId: s.f.storeId,
+      ownerId: s.f.ownerId,
+      deviceId: s.authority(s.request).deviceId,
+      canValidateCommercialOffers: allowed,
+    },
+    testChoiceDigest,
+    randomUUID,
+  );
+}
+it("confirms a private reviewed batch, preserves an existing validation and replays without duplicate writes", async () => {
+  const s = await setup();
+  try {
+    const first = {
+      ...s.request,
+      input: { selection: [s.request.input.selection[0]] },
+    };
+    const old = await s.runtime.execute(first, {
+      ...s.authority(first),
+      reviewedSources: [s.authority(first).reviewedSources[0]!],
+    });
+    const message = await validationCard(s),
+      c = await validationController(s);
+    expect((await c.open(message)).status).toBe("READY");
+    await expect(c.confirm(message, false)).rejects.toThrow("REVIEW_REQUIRED");
+    await expect(
+      (await validationController(s, false)).confirm(message, true),
+    ).rejects.toThrow("FORBIDDEN");
+    s.a.fail = true;
+    await expect(c.confirm(message, true)).rejects.toThrow();
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+    ).toEqual({ n: 1 });
+    s.a.fail = false;
+    expect((await c.confirm(message, true)).status).toBe("COMPLETED");
+    expect(
+      (await (await validationController(s)).confirm(message, true)).status,
+    ).toBe("COMPLETED");
+    const journal = await s.a.getFirstAsync<{ result_json: string }>(
+      "SELECT result_json FROM copilot_tool_results WHERE operation_id=?",
+      message.id,
+    );
+    const result = JSON.parse(journal!.result_json);
+    expect(result.validations[0].entity).toEqual(old.validations[0]!.entity);
+    expect(result.validations[0].commandId).toBeNull();
+    expect(
+      s.db
+        .prepare("SELECT COUNT(*) n FROM commercial_offer_validation_history")
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      s.db
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE command_type='COMMERCIAL_OFFER_VALIDATE'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    s.db.close();
+  }
+});
+it.each(["product", "choice", "source", "validation"])(
+  "rejects an entire private review when %s changes",
+  async (kind) => {
+    const s = await setup();
+    try {
+      const message = await validationCard(s),
+        c = await validationController(s);
+      expect((await c.open(message)).status).toBe("READY");
+      if (kind === "product")
+        s.db
+          .prepare("UPDATE products SET version=version+1 WHERE id=?")
+          .run(s.fixtures[1]!.product.id);
+      if (kind === "choice")
+        s.db
+          .prepare(
+            "UPDATE commercial_offer_choices SET sync_state='CONFLICT' WHERE id=?",
+          )
+          .run(s.fixtures[1]!.choice.id);
+      if (kind === "source")
+        s.db
+          .prepare("DELETE FROM commercial_visual_readings WHERE id=?")
+          .run(s.fixtures[1]!.reading.id);
+      if (kind === "validation")
+        await s.runtime.execute(
+          {
+            ...s.request,
+            input: { selection: [s.request.input.selection[1]] },
+          },
+          {
+            ...s.authority(s.request),
+            authorizedRequestJson: offerValidationIntent({
+              ...s.request,
+              input: { selection: [s.request.input.selection[1]] },
+            }),
+            reviewedSources: [s.authority(s.request).reviewedSources[1]!],
+          },
+        );
+      expect((await c.open(message)).status).toBe("STALE");
+      await expect(c.confirm(message, true)).rejects.toThrow("STALE");
+      expect(
+        s.db
+          .prepare("SELECT COUNT(*) n FROM commercial_validated_offers")
+          .get(),
+      ).toEqual({ n: kind === "validation" ? 1 : 0 });
+    } finally {
+      s.db.close();
+    }
+  },
+);
+
+it("refuses validation when retained price units disagree with the active product", async () => {
+  const s = await setup();
+  try {
+    s.db
+      .prepare("UPDATE products SET sales_unit='PIECE' WHERE id=?")
+      .run(s.fixtures[1]!.product.id);
+    await expect(
+      s.runtime.execute(s.request, s.authority(s.request)),
+    ).rejects.toThrow();
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      s.db
+        .prepare("SELECT COUNT(*) n FROM commercial_offer_validation_history")
+        .get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});

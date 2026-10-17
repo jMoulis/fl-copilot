@@ -1,3 +1,4 @@
+import { previewOfferValidation } from "./copilot/offer-validation-tool.js";
 import { previewChoiceCreate } from "./copilot/choice-create-tool.js";
 import { readSourceOffers } from "./copilot/source-offers-tool.js";
 import { previewChoiceRetention } from "./copilot/choice-retention-tool.js";
@@ -826,6 +827,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     choiceCreate: async (input) => {
                       await authorize();
                       const result = await previewChoiceCreate(
+                        db,
+                        storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-offer-validation"] === "1"
+                ? {
+                    offerValidation: async (input) => {
+                      await authorize();
+                      const result = await previewOfferValidation(
                         db,
                         storeId,
                         input,

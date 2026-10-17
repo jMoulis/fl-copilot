@@ -46,19 +46,33 @@ export function commercialOfferValidationSource(
     item.label !== choice.rawProductLabel
   )
     throw Error("COMMERCIAL_VALIDATION_SOURCE_INVALID");
-  const evidence = (e: (typeof op.evidence)[number]) => ({
+  return commercialOfferValidationReviewData({
+    operationFields: op.fields,
+    itemFields: item.fields,
+    operationEvidence: op.evidence,
+    itemEvidence: item.evidence,
+  });
+}
+/** Same immutable field/citation projection for source-backed chat review and canonical validation. */
+export function commercialOfferValidationReviewData(offer: {
+  operationFields: CommercialValidatedOffer["sourceFields"];
+  itemFields: CommercialValidatedOffer["sourceFields"];
+  operationEvidence: CommercialValidatedOffer["evidence"];
+  itemEvidence: CommercialValidatedOffer["evidence"];
+}) {
+  const ref = (e: CommercialValidatedOffer["evidence"][number]) => ({
     pageNumber: e.pageNumber,
     quote: e.quote,
     region: e.region,
   });
   return {
-    sourceFields: [...op.fields, ...item.fields].map((f) => ({
+    sourceFields: [...offer.operationFields, ...offer.itemFields].map((f) => ({
       name: f.name,
       rawValue: f.rawValue,
       confidence: f.confidence,
-      evidence: f.evidence.map(evidence),
+      evidence: f.evidence.map(ref),
     })),
-    evidence: [...op.evidence, ...item.evidence].map(evidence),
+    evidence: [...offer.operationEvidence, ...offer.itemEvidence].map(ref),
   };
 }
 export function commercialValidatedOfferSameBusiness(

@@ -5,7 +5,10 @@ import {
   ProductClassificationError,
   type OfferValidationAuthority,
 } from "@fl-copilot/domain";
-import { commercialValidatedOfferId } from "@fl-copilot/commercial-core";
+import {
+  commercialValidatedOfferId,
+  commercialChoiceProductUnitMatches,
+} from "@fl-copilot/commercial-core";
 import {
   ValidatedOfferRepository,
   readValidatedOffers,
@@ -96,6 +99,15 @@ export class CopilotOfferValidationRuntime {
             throw new ProductClassificationError("PRODUCT_UNAVAILABLE");
           if (["ERROR", "CONFLICT"].includes(product.syncState))
             throw new ProductClassificationError("SYNC_CONFLICT");
+          if (
+            !commercialChoiceProductUnitMatches(
+              c.entity,
+              product.entity.salesUnit,
+            )
+          )
+            throw new ProductClassificationError(
+              "COMMERCIAL_CHOICE_UNIT_MISMATCH",
+            );
           if (product.entity.version !== ref.productVersion)
             throw new ProductClassificationError("VERSION_CONFLICT");
           const id = await commercialValidatedOfferId(
