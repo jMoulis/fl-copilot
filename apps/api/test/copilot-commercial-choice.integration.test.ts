@@ -1,3 +1,5 @@
+import { previewChoiceRetention } from "../src/copilot/choice-retention-tool";
+import { readCopilotChoiceRetentionProposal } from "@fl-copilot/domain";
 import { previewChoiceReassociation } from "../src/copilot/choice-reassociation-tool";
 import { readCopilotChoiceReassociationProposal } from "@fl-copilot/domain";
 import { previewChoiceUpdate } from "../src/copilot/choice-update-tool";
@@ -671,5 +673,219 @@ describe.skipIf(!uri)("exact owned commercial choice inspection", () => {
     expect((await choices.findOne({ _id: f.choice.id }))!.productId).toBe(
       f.choice.productId,
     );
+  });
+  it
+    .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
+    .each([false, true])(
+    "persists reviewed choice-retention cards atomically and rejects foreign product scope (%s)",
+    async (foreign) => {
+      const f = await commercialChoiceFixture(),
+        chat = chatFixture(randomUUID);
+      chat.storeId = f.choice.storeId;
+      chat.conversation.storeId = f.choice.storeId;
+      chat.message.storeId = f.choice.storeId;
+      chat.message.attachments = [];
+      chat.message.text = "Retiens à nouveau cette offre retirée.";
+      await db
+        .collection<Document & { _id: string }>("commercialOfferChoices")
+        .insertOne({
+          _id: f.choice.id,
+          duplicateKey: randomUUID(),
+          ...f.choice,
+          status: "WITHDRAWN",
+        });
+      await db.collection<Document & { _id: string }>("products").insertOne({
+        _id: f.product.id,
+        ...f.product,
+        schemaVersion: 1,
+        createdAt: new Date(f.product.createdAt),
+        updatedAt: new Date(f.product.updatedAt),
+        deletedAt: null,
+        packaging: f.product.packaging
+          ? {
+              ...f.product.packaging,
+              quantity: Decimal128.fromString(
+                String(f.product.packaging.quantity),
+              ),
+            }
+          : null,
+      });
+      await db
+        .collection<Document & { _id: string }>("copilotConversations")
+        .insertOne({ _id: chat.conversation.id, ...chat.conversation });
+      await db
+        .collection<Document & { _id: string }>("copilotMessages")
+        .insertOne({ _id: chat.message.id, ...chat.message });
+      const preview = await previewChoiceRetention(db, f.choice.storeId, {
+        choiceId: f.choice.id,
+      });
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Modification préparée, à confirmer.",
+          facts: preview.evidence.map((e) => ({ evidenceId: e.id })),
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "test-edit",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        toolEvidence: preview.evidence,
+        choiceRetentions: [
+          foreign
+            ? {
+                ...preview,
+                basis: {
+                  ...preview.basis!,
+                  product: { ...preview.basis!.product, storeId: randomUUID() },
+                },
+              }
+            : preview,
+        ],
+      }));
+      const deps = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => ({
+          storeId: f.choice.storeId,
+          ownerId: chat.ownerId,
+          canRespond: true,
+        }),
+        loadContext: async () =>
+          detectCopilotConflicts({
+            batch: scoreCopilotPriorities({
+              storeId: f.choice.storeId,
+              evaluatedAt: chat.message.createdAt,
+              candidates: [],
+            }),
+            intents: [],
+          }),
+      };
+      const turn = {
+        conversationId: chat.conversation.id,
+        userMessageId: chat.message.id,
+        replyId: randomUUID(),
+      };
+      if (foreign) {
+        await expect(runCopilotTurn(deps, turn)).rejects.toThrow();
+        expect(
+          await db.collection("copilotMessages").countDocuments({
+            conversationId: chat.conversation.id,
+            role: { $in: ["ASSISTANT", "TOOL"] },
+          }),
+        ).toBe(0);
+        return;
+      }
+      await runCopilotTurn(deps, turn);
+      const cards = await db
+        .collection("copilotMessages")
+        .find({ conversationId: chat.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(cards).toHaveLength(1);
+      const { _id, ...payload } = cards[0];
+      expect(
+        readCopilotChoiceRetentionProposal(payload).request.input.draft.status,
+      ).toBe("RETAINED");
+      expect(
+        await db.collection("syncChanges").countDocuments({ entityId: _id }),
+      ).toBe(1);
+      expect((await runCopilotTurn(deps, turn)).alreadyApplied).toBe(true);
+      expect(generate).toHaveBeenCalledOnce();
+      expect(
+        (await db
+          .collection("commercialOfferChoices")
+          .findOne({ _id: f.choice.id } as Document))!.note,
+      ).toBe(f.choice.note);
+    },
+  );
+  it("previews re-retention without writes, blocking unavailable products, units and new duplicates", async () => {
+    const f = await commercialChoiceFixture(),
+      choices = db.collection<Document & { _id: string }>(
+        "commercialOfferChoices",
+      ),
+      products = db.collection<Document & { _id: string }>("products"),
+      input = { choiceId: f.choice.id };
+    await choices.insertOne({
+      ...f.choice,
+      _id: f.choice.id,
+      status: "WITHDRAWN",
+      duplicateKey: randomUUID(),
+    });
+    expect(
+      (await previewChoiceRetention(db, f.choice.storeId, input)).status,
+    ).toBe("UNAVAILABLE");
+    await products.insertOne({
+      ...f.product,
+      _id: f.product.id,
+      schemaVersion: 1,
+      createdAt: new Date(f.product.createdAt),
+      updatedAt: new Date(f.product.updatedAt),
+      deletedAt: null,
+      packaging: null,
+    });
+    expect(
+      (await previewChoiceRetention(db, f.choice.storeId, input)).status,
+    ).toBe("READY");
+    expect((await previewChoiceRetention(db, randomUUID(), input)).status).toBe(
+      "UNAVAILABLE",
+    );
+    await products.updateOne(
+      { _id: f.product.id },
+      { $set: { salesUnit: "PIECE" } },
+    );
+    expect(
+      (await previewChoiceRetention(db, f.choice.storeId, input)).status,
+    ).toBe("BLOCKED");
+    await products.updateOne(
+      { _id: f.product.id },
+      { $set: { salesUnit: f.product.salesUnit, status: "INACTIVE" } },
+    );
+    expect(
+      (await previewChoiceRetention(db, f.choice.storeId, input)).status,
+    ).toBe("UNAVAILABLE");
+    await products.updateOne(
+      { _id: f.product.id },
+      { $set: { status: "ACTIVE", storeId: randomUUID() } },
+    );
+    expect(
+      (await previewChoiceRetention(db, f.choice.storeId, input)).status,
+    ).toBe("UNAVAILABLE");
+    await products.updateOne(
+      { _id: f.product.id },
+      { $set: { storeId: f.choice.storeId } },
+    );
+    const { commercialChoiceDuplicateKey } =
+        await import("@fl-copilot/commercial-core"),
+      duplicate = {
+        ...f.choice,
+        id: randomUUID(),
+        source: { ...f.choice.source, itemIndex: 1 },
+      };
+    await choices.insertOne({
+      ...duplicate,
+      _id: duplicate.id,
+      duplicateKey: createHash("sha256")
+        .update(commercialChoiceDuplicateKey(duplicate))
+        .digest("hex"),
+    });
+    expect(
+      (await previewChoiceRetention(db, f.choice.storeId, input)).status,
+    ).toBe("BLOCKED");
+    await choices.deleteOne({ _id: duplicate.id });
+    expect((await choices.findOne({ _id: f.choice.id }))!.status).toBe(
+      "WITHDRAWN",
+    );
+    await choices.updateOne(
+      { _id: f.choice.id },
+      { $set: { status: "RETAINED" } },
+    );
+    expect(
+      (await previewChoiceRetention(db, f.choice.storeId, input)).status,
+    ).toBe("UNCHANGED");
   });
 });
