@@ -1,3 +1,6 @@
+import { ChoiceUpdateCard } from "@/copilot/choice-update-card";
+import { CopilotChoiceUpdateController } from "@/copilot/choice-update-controller";
+import { readCopilotChoiceUpdateProposal } from "@fl-copilot/domain";
 import { ChoiceWithdrawalCard } from "@/copilot/choice-withdrawal-card";
 import { CopilotChoiceWithdrawalController } from "@/copilot/choice-withdrawal-controller";
 import { readCopilotChoiceWithdrawalProposal } from "@fl-copilot/domain";
@@ -198,6 +201,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canDeclareCommercialExecution],
   );
+  const choiceUpdates = useMemo(
+    () =>
+      new CopilotChoiceUpdateController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canManageCommercialChoices: canManageProducts,
+        },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
   const choiceWithdrawals = useMemo(
     () =>
       new CopilotChoiceWithdrawalController(
@@ -250,6 +268,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       );
     } catch {
       /* Other supported tool artifacts are handled below. */
+    }
+    try {
+      readCopilotChoiceUpdateProposal(message);
+      return (
+        <ChoiceUpdateCard
+          key={message.id}
+          message={message}
+          controller={choiceUpdates}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
     }
     try {
       readCopilotChoiceWithdrawalProposal(message);
@@ -375,6 +406,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              choiceUpdate: canManageProducts,
               choiceWithdrawal: canManageProducts,
               preparationProposals: canPrepareCommercialWeek,
               preparationLayout: canPrepareCommercialWeek,

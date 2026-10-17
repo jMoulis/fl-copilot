@@ -68,6 +68,7 @@ export class ApiClient {
       onActivity?(activity: CopilotActivity): void;
       memorySuggestions?: boolean;
       webResearch?: boolean;
+      choiceUpdate?: boolean;
       choiceWithdrawal?: boolean;
       preparationProposals?: boolean;
       preparationLayout?: boolean;
@@ -93,6 +94,9 @@ export class ApiClient {
                 ...authorizedStoreHeaders(accessToken, storeId),
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
+                ...(streaming.choiceUpdate
+                  ? { "x-copilot-choice-update": "1" }
+                  : {}),
                 ...(streaming.choiceWithdrawal
                   ? { "x-copilot-choice-withdrawal": "1" }
                   : {}),

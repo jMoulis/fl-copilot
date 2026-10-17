@@ -101,6 +101,7 @@ export class ProductClassificationError extends Error {
       | "COMMERCIAL_OFFERS_CHANGED"
       | "COMMERCIAL_SOURCE_INVALID"
       | "COMMERCIAL_CHOICE_UNAVAILABLE"
+      | "COMMERCIAL_CHOICE_UNIT_MISMATCH"
       | "COMMERCIAL_CHOICE_DUPLICATE"
       | "COMMERCIAL_PLAN_REVIEW_REQUIRED"
       | "COMMERCIAL_SOURCE_REVIEW_REQUIRED"
@@ -157,6 +158,8 @@ export class ProductClassificationError extends Error {
           "L’aperçu est absent, incomplet ou a changé. Consultez un nouvel aperçu avant de valider le plan.",
         COMMERCIAL_CHOICE_UNAVAILABLE:
           "Ce choix commercial n’existe pas encore. Aucun retrait n’a été enregistré.",
+        COMMERCIAL_CHOICE_UNIT_MISMATCH:
+          "L’unité du prix ne correspond pas à l’unité de vente du produit associé.",
         COMMERCIAL_CHOICE_DUPLICATE:
           "Une offre équivalente est déjà retenue dans ce document. Consultez les choix existants.",
         COMMERCIAL_OFFERS_CHANGED:
