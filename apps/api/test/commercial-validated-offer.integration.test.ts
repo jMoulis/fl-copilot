@@ -180,6 +180,18 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       );
       await x.db
         .collection<{ _id: string }>("products")
+        .updateOne({ _id: x.productId }, { $set: { salesUnit: "PIECE" } });
+      expect(
+        (await push.push(request(x.v), "unit-mismatch")).results[0]?.error
+          ?.code,
+      ).toBe("COMMERCIAL_VALIDATION_UNIT_MISMATCH");
+      expect(
+        await x.db
+          .collection("commercialValidatedOffers")
+          .countDocuments({ storeId: x.storeId }),
+      ).toBe(0);
+      await x.db
+        .collection<{ _id: string }>("products")
         .updateOne({ _id: x.productId }, { $set: { status: "ARCHIVED" } });
       expect(
         (await push.push(request(x.v), "archived")).results[0]?.error?.code,

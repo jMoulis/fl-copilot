@@ -1,3 +1,4 @@
+import { buildOfferValidationProposalMessages } from "./offer-validation-messages.js";
 import { buildChoiceCreateProposalMessages } from "./choice-create-messages.js";
 import { buildChoiceRetentionProposalMessages } from "./choice-retention-messages.js";
 import { buildChoiceReassociationProposalMessages } from "./choice-reassociation-messages.js";
@@ -305,6 +306,10 @@ export async function runCopilotTurn(
             ...buildChoiceCreateProposalMessages(
               message,
               generation.choiceCreates ?? [],
+            ),
+            ...buildOfferValidationProposalMessages(
+              message,
+              generation.offerValidations ?? [],
             ),
             ...buildChoiceReassociationProposalMessages(
               message,

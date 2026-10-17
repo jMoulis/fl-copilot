@@ -284,6 +284,7 @@ it("opts into optional proposal and source tools only when the client supports t
         choiceUpdate: enabled,
         choiceRetention: enabled,
         choiceCreate: enabled,
+        offerValidation: enabled,
         choiceReassociation: enabled,
         choiceWithdrawal: enabled,
         preparationProposals: enabled,
@@ -298,6 +299,9 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-offer-validation", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-offer-validation");
     if (enabled) expect(headers).toHaveProperty("x-copilot-choice-create", "1");
     else expect(headers).not.toHaveProperty("x-copilot-choice-create");
     if (enabled)

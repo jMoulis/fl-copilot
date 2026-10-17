@@ -71,6 +71,7 @@ export class ApiClient {
       choiceUpdate?: boolean;
       choiceRetention?: boolean;
       choiceCreate?: boolean;
+      offerValidation?: boolean;
       choiceReassociation?: boolean;
       choiceWithdrawal?: boolean;
       preparationProposals?: boolean;
@@ -105,6 +106,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.choiceCreate
                   ? { "x-copilot-choice-create": "1" }
+                  : {}),
+                ...(streaming.offerValidation
+                  ? { "x-copilot-offer-validation": "1" }
                   : {}),
                 ...(streaming.choiceReassociation
                   ? { "x-copilot-choice-reassociation": "1" }

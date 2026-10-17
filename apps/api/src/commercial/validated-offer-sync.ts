@@ -9,6 +9,7 @@ import {
   commercialOfferValidationSource,
   commercialValidatedOfferSameBusiness,
   commercialOfferValidationCurrent,
+  commercialChoiceProductUnitMatches,
 } from "@fl-copilot/commercial-core";
 import {
   serializeCommercialChoice,
@@ -93,17 +94,21 @@ export async function applyValidatedOfferCommand(
       "COMMERCIAL_VALIDATION_CHOICE_CHANGED",
       "Le choix a été modifié, retiré ou est en conflit. Revoyez sa version avant de le valider.",
     );
-  if (
-    !(await ctx.database
-      .collection<{ _id: string }>("products")
-      .findOne(
-        { _id: choice.productId, storeId, status: "ACTIVE", deletedAt: null },
-        { session: ctx.session },
-      ))
-  )
+  const product = await ctx.database
+    .collection<{ _id: string; salesUnit: string }>("products")
+    .findOne(
+      { _id: choice.productId, storeId, status: "ACTIVE", deletedAt: null },
+      { session: ctx.session },
+    );
+  if (!product)
     return reject(
       "COMMERCIAL_VALIDATION_PRODUCT_INVALID",
       "Le produit associé n’est plus actif dans ce magasin. Revoyez l’offre.",
+    );
+  if (!commercialChoiceProductUnitMatches(choice, product.salesUnit))
+    return reject(
+      "COMMERCIAL_VALIDATION_UNIT_MISMATCH",
+      "L’unité du prix ne correspond plus à l’unité de vente du produit. Revoyez l’offre avant de la valider.",
     );
   const pages = await ctx.database
     .collection<VisualReadingDocument>("commercialVisualReadings")
