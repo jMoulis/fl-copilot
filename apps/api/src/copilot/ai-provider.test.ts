@@ -3377,3 +3377,90 @@ it.each([false, true])(
     ).generate(f.request, schema);
   },
 );
+
+it.each([false, true])(
+  "prepares a scoped commercial update only for capable clients (foreign=%s)",
+  async (foreign) => {
+    const f = fixture(),
+      { commercialChoiceFixture } =
+        await import("../../../../scripts/test-commercial-choice-fixtures");
+    const data = await commercialChoiceFixture({ storeId: f.request.storeId }),
+      input = {
+        choiceId: data.choice.id,
+        productId: randomUUID(),
+      };
+    const value = {
+      input,
+      status: "READY" as const,
+      basis: {
+        before: data.choice,
+        previousProduct: data.product,
+        product: {
+          ...data.product,
+          id: input.productId,
+          storeId: foreign ? randomUUID() : f.request.storeId,
+        },
+      },
+      evidence: [
+        {
+          id: "choice-reassociation",
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: data.choice.id,
+          sourceVersion: 1,
+          label: "Modification",
+          value: "À confirmer",
+          factKind: "QUALITY" as const,
+        },
+      ],
+    };
+    const choiceReassociation = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "commercial_choice_reassociation",
+        );
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.properties).toHaveProperty("productId");
+      expect(definition.parameters.properties).not.toHaveProperty("patch");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_edit",
+            call_id: "call_edit",
+            name: "commercial_choice_reassociation",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      choiceReassociation,
+    }).generate(f.request, schema);
+    expect(choiceReassociation).toHaveBeenCalledExactlyOnceWith(input);
+    expect(r.choiceReassociations).toEqual(foreign ? [] : [value]);
+    await createCopilotAiProvider(
+      f.config,
+      async (_url, init) => {
+        expect(
+          JSON.parse(String(init?.body)).tools.some(
+            (t: { name: string }) =>
+              t.name === "commercial_choice_reassociation",
+          ),
+        ).toBe(false);
+        return response();
+      },
+      { daily: vi.fn() },
+    ).generate(f.request, schema);
+  },
+);
