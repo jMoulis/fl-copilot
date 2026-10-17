@@ -1,5 +1,6 @@
 import {
   commercialVersionDecisionSchema,
+  commercialVersionDecisionSnapshotsSchema,
   type CommercialVersionDecision,
 } from "@fl-copilot/domain";
 import { commercialUuidFromText } from "./offer-choice";
@@ -39,6 +40,21 @@ export function commercialVersionDecisionSourcesValid(
   pages: readonly CommercialComparisonPage[],
 ) {
   const d = commercialVersionDecisionSchema.parse(input);
+  return commercialVersionDecisionSnapshotsValid(
+    { storeId: d.storeId, before: d.before, after: d.after },
+    pages,
+  );
+}
+export function commercialVersionDecisionSnapshotsValid(
+  input: Pick<CommercialVersionDecision, "storeId" | "before" | "after">,
+  pages: readonly CommercialComparisonPage[],
+) {
+  const d = commercialVersionDecisionSnapshotsSchema.parse(input);
+  if (
+    d.before.documentId === d.after.documentId ||
+    d.before.checksum === d.after.checksum
+  )
+    return false;
   const selected = (s: CommercialVersionDecision["before"]) =>
     pages.filter((p) => s.readingIds.includes(p.id));
   const before = selected(d.before),

@@ -33,3 +33,9 @@ export const commercialVersionDecisionSchema = z
 export type CommercialVersionDecision = z.infer<
   typeof commercialVersionDecisionSchema
 >;
+
+export const commercialVersionDecisionSnapshotsSchema = z.strictObject({
+  storeId: commercialVersionDecisionSchema.shape.storeId,
+  before: commercialVersionDecisionSchema.shape.before,
+  after: commercialVersionDecisionSchema.shape.after,
+});

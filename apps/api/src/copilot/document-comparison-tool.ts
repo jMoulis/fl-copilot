@@ -21,6 +21,72 @@ const sourceSchema = z.object({
   checksum: z.string().min(1),
   originalFilename: z.string().min(1).max(240),
 });
+export async function loadCommercialComparisonOriginal(
+  db: Db,
+  storeId: string,
+  documentId: string,
+) {
+  const row = await db
+    .collection<Document & { _id: string }>("sourceDocuments")
+    .findOne(
+      {
+        _id: documentId,
+        storeId,
+        sourceType: "WEEKLY_COMMERCIAL_PDF",
+        remoteUploadStatus: "CONFIRMED",
+        deletedAt: null,
+      },
+      { maxTimeMS: 2000 },
+    );
+  if (!row) return null;
+  const source = sourceSchema.parse(row);
+  if (source._id !== documentId || source.storeId !== storeId)
+    throw Error("DOCUMENT_COMPARISON_SCOPE");
+  const rows = await db
+    .collection<Document & { _id: string }>("commercialVisualReadings")
+    .aggregate<Document & { _id: string }>(
+      [
+        {
+          $match: {
+            storeId,
+            sourceDocumentId: documentId,
+            checksum: source.checksum,
+            schemaVersion: COMMERCIAL_VISUAL_SCHEMA_VERSION,
+            status: { $in: ["READY", "FAILED"] },
+          },
+        },
+        { $sort: { updatedAt: -1, _id: -1 } },
+        { $group: { _id: "$pageNumber", reading: { $first: "$$ROOT" } } },
+        { $replaceRoot: { newRoot: "$reading" } },
+        { $sort: { pageNumber: 1 } },
+        { $limit: 17 },
+      ],
+      { maxTimeMS: 2000 },
+    )
+    .toArray();
+  if (rows.length > 16) return { source, pages: [], limited: true };
+  const pages = rows.map((r) => {
+    const p = synchronizedCommercialVisualReadingSchema.parse(r);
+    if (
+      p.id !== r._id ||
+      p.storeId !== storeId ||
+      p.sourceDocumentId !== documentId ||
+      p.checksum !== source.checksum
+    )
+      throw Error("DOCUMENT_COMPARISON_SCOPE");
+    return p;
+  });
+  const count = pages.reduce(
+    (n, p) =>
+      n +
+      (p.reading?.operations.reduce(
+        (n, op) => n + op.items.filter((i) => i.kind === "OFFER").length,
+        0,
+      ) ?? 0),
+    0,
+  );
+  return { source, pages, limited: count > 1000 };
+}
 export async function readCommercialDocumentComparison(
   db: Db,
   storeId: string,
@@ -29,71 +95,10 @@ export async function readCommercialDocumentComparison(
   z.uuid().parse(storeId);
   const input = copilotDocumentComparisonInputSchema.parse(raw),
     week = currentCommercialWeek(new Date(`${input.businessDate}T12:00:00Z`));
-  const load = async (documentId: string) => {
-    const row = await db
-      .collection<Document & { _id: string }>("sourceDocuments")
-      .findOne(
-        {
-          _id: documentId,
-          storeId,
-          sourceType: "WEEKLY_COMMERCIAL_PDF",
-          remoteUploadStatus: "CONFIRMED",
-          deletedAt: null,
-        },
-        { maxTimeMS: 2000 },
-      );
-    if (!row) return null;
-    const source = sourceSchema.parse(row);
-    if (source._id !== documentId || source.storeId !== storeId)
-      throw Error("DOCUMENT_COMPARISON_SCOPE");
-    const rows = await db
-      .collection<Document & { _id: string }>("commercialVisualReadings")
-      .aggregate<Document & { _id: string }>(
-        [
-          {
-            $match: {
-              storeId,
-              sourceDocumentId: documentId,
-              checksum: source.checksum,
-              schemaVersion: COMMERCIAL_VISUAL_SCHEMA_VERSION,
-              status: { $in: ["READY", "FAILED"] },
-            },
-          },
-          { $sort: { updatedAt: -1, _id: -1 } },
-          { $group: { _id: "$pageNumber", reading: { $first: "$$ROOT" } } },
-          { $replaceRoot: { newRoot: "$reading" } },
-          { $sort: { pageNumber: 1 } },
-          { $limit: 17 },
-        ],
-        { maxTimeMS: 2000 },
-      )
-      .toArray();
-    if (rows.length > 16) return { source, pages: [], limited: true };
-    const pages = rows.map((r) => {
-      const p = synchronizedCommercialVisualReadingSchema.parse(r);
-      if (
-        p.id !== r._id ||
-        p.storeId !== storeId ||
-        p.sourceDocumentId !== documentId ||
-        p.checksum !== source.checksum
-      )
-        throw Error("DOCUMENT_COMPARISON_SCOPE");
-      return p;
-    });
-    const count = pages.reduce(
-      (n, p) =>
-        n +
-        (p.reading?.operations.reduce(
-          (n, op) => n + op.items.filter((i) => i.kind === "OFFER").length,
-          0,
-        ) ?? 0),
-      0,
-    );
-    return { source, pages, limited: count > 1000 };
-  };
+
   const [before, after] = await Promise.all([
-    load(input.beforeDocumentId),
-    load(input.afterDocumentId),
+    loadCommercialComparisonOriginal(db, storeId, input.beforeDocumentId),
+    loadCommercialComparisonOriginal(db, storeId, input.afterDocumentId),
   ]);
   type Result = ReturnType<typeof copilotDocumentComparisonResultSchema.parse>;
   let state: Result["status"] =
