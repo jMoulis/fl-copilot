@@ -1,3 +1,4 @@
+import { readPriceScenario } from "./copilot/price-scenario-tool.js";
 import { inspectCommercialReference } from "./copilot/reference-inspection-tool.js";
 import { previewCommercialReference } from "./copilot/reference-preview-tool.js";
 import { readCommercialDocumentComparison } from "./copilot/document-comparison-tool.js";
@@ -778,6 +779,21 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 const result = await readCommercialDocuments(
                   db,
                   storeId,
+                  input,
+                );
+                await authorize();
+                return result;
+              },
+              priceScenario: async (input) => {
+                const principal = await authorize();
+                const result = await readPriceScenario(
+                  db,
+                  {
+                    storeId: principal.storeId,
+                    ownerId: principal.ownerId,
+                    conversationId: request.body.conversationId,
+                    parentMessageId: request.body.userMessageId,
+                  },
                   input,
                 );
                 await authorize();

@@ -41,3 +41,7 @@ it("shows reference review preparation without exposing source arguments", () =>
   expect(
     readActivityStage(JSON.stringify(["reference-preview", { private: true }])),
   ).toBe("PROPOSAL"));
+it("shows scenario calculation progress without exposing hypotheses", () =>
+  expect(
+    readActivityStage(JSON.stringify(["price-scenario", { private: true }])),
+  ).toBe("ANALYTICS"));

@@ -4232,3 +4232,114 @@ it.each(["OWNED", "FOREIGN", "WRONG_PAIR", "DISABLED"])(
     );
   },
 );
+it.each(["FORM", "CALCULATED", "FOREIGN", "DISABLED"])(
+  "connects counter-promotion forms and declared calculations without model amounts (%s)",
+  async (mode) => {
+    const { scenarioChatFixture } =
+      await import("../../../../scripts/test-price-scenario-fixtures");
+    const { calculatePriceScenario } =
+      await import("@fl-copilot/analytics-core");
+    const f = fixture(),
+      data = scenarioChatFixture();
+    const input =
+      mode === "CALCULATED"
+        ? {
+            action: "CALCULATE" as const,
+            unit: null,
+            answerMessageId: data.answer.id,
+          }
+        : {
+            action: "PREPARE" as const,
+            answerMessageId: null,
+            unit: "KG" as const,
+          };
+    const q = (amount: string) => ({
+      amount,
+      unit: "KG" as const,
+      currency: "EUR" as const,
+      taxBasis: "EXCLUDING_VAT" as const,
+    });
+    const calculation = calculatePriceScenario({
+      currentPrice: q("3"),
+      proposedPrice: q("2.5"),
+      purchaseCost: { ...q("1"), quality: "KNOWN" },
+      currentVolume: { amount: "100", unit: "KG" },
+    });
+    const evidence = {
+      id: "scenario/test",
+      sourceType: "DATA_QUALITY" as const,
+      sourceId: mode === "CALCULATED" ? data.answer.id : f.request.storeId,
+      sourceVersion: null,
+      label: "Simulation",
+      value: "Hypothèses déclarées, pas une prévision.",
+      factKind: "QUALITY" as const,
+    };
+    const value = {
+      storeId: mode === "FOREIGN" ? randomUUID() : f.request.storeId,
+      input,
+      status:
+        mode === "CALCULATED"
+          ? ("CALCULATED" as const)
+          : ("FORM_REQUIRED" as const),
+      form: mode === "CALCULATED" ? null : data.state,
+      calculation: mode === "CALCULATED" ? calculation : null,
+      answerMessageId: mode === "CALCULATED" ? data.answer.id : null,
+      evidence: [evidence],
+    };
+    const priceScenario = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "counter_promotion_scenario",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /purchaseCost|currentPrice|storeId|quality/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_scenario",
+            call_id: "call_scenario",
+            name: "counter_promotion_scenario",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (v: { type: string }) => v.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "FOREIGN" ? { unavailable: true } : { status: value.status },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { priceScenario }),
+    }).generate(f.request, schema);
+    expect(priceScenario).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(result.priceScenarioForms).toEqual(
+      mode === "FORM" ? [data.state] : [],
+    );
+    expect(result.toolEvidence).toEqual(
+      ["FORM", "CALCULATED"].includes(mode) ? [evidence] : [],
+    );
+  },
+);

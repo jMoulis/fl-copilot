@@ -1,4 +1,10 @@
 import {
+  copilotPriceScenarioInputSchema,
+  copilotPriceScenarioResultSchema,
+  priceScenarioFormStateSchema,
+  validateCopilotPriceScenarioResult,
+} from "@fl-copilot/domain";
+import {
   copilotReferenceInspectionInputSchema,
   copilotReferenceInspectionResultSchema,
   validateReferenceInspectionResult,
@@ -278,6 +284,7 @@ export interface CopilotAiProvider {
     knowledgeSuggestions?: KnowledgeSuggestionInput[];
     contextCheckpoint?: ContextCheckpointInput;
     informationRequests?: Array<z.infer<typeof copilotInformationInputSchema>>;
+    priceScenarioForms?: Array<z.infer<typeof priceScenarioFormStateSchema>>;
     choiceUpdates?: Array<z.infer<typeof copilotChoiceUpdatePreviewSchema>>;
     choiceRetentions?: Array<
       z.infer<typeof copilotChoiceRetentionPreviewSchema>
@@ -442,6 +449,9 @@ export function createCopilotAiProvider(
     sourceOffers?(
       input: z.infer<typeof copilotSourceOffersInputSchema>,
     ): Promise<ReturnType<typeof validateSourceOffersResult>>;
+    priceScenario?(
+      input: z.infer<typeof copilotPriceScenarioInputSchema>,
+    ): Promise<z.infer<typeof copilotPriceScenarioResultSchema>>;
     referenceInspection?(
       input: z.infer<typeof copilotReferenceInspectionInputSchema>,
     ): Promise<z.infer<typeof copilotReferenceInspectionResultSchema>>;
@@ -603,6 +613,9 @@ export function createCopilotAiProvider(
         > = [];
         const productPreviews: NonNullable<
           Awaited<ReturnType<CopilotAiProvider["generate"]>>["productPreviews"]
+        > = [];
+        const priceScenarioForms: Array<
+          z.infer<typeof priceScenarioFormStateSchema>
         > = [];
         const informationRequests = new Map<
           string,
@@ -1198,6 +1211,36 @@ export function createCopilotAiProvider(
                               knowledgeSuggestionInputSchema.parse(
                                 value.suggestion,
                               ),
+                            );
+                          return value;
+                        },
+                      }),
+                    }
+                  : {}),
+                ...(reads.priceScenario
+                  ? {
+                      counter_promotion_scenario: tool({
+                        description:
+                          "Simulate theoretical contribution preservation using declared excluding-VAT EUR assumptions, never model arithmetic. PREPARE requires KG/PIECE/PACK from user context and null answerMessageId; it creates a concise native hypothesis form. Clarify unknown units first. CALCULATE requires null unit and a private canonical form's USER answer ID (null means current reply); call it after a Simulation de prix answer. Amounts and cost-known authority are never model arguments. Blocked values produce a targeted correction form retaining other assumptions: do not restart PREPARE for one correction. Present engine figures naturally in a short sourced table; state that the threshold is not a demand forecast. Unknown cost permits qualitative discussion, no invented numeric scenario. No official KPI, price, cost, plan or business record is changed. Only the latest scenario form is shown.",
+                        inputSchema: copilotPriceScenarioInputSchema,
+                        execute: async (input) => {
+                          priceScenarioForms.length = 0;
+                          const value = await executeRead(
+                            JSON.stringify(["price-scenario", input]),
+                            async () =>
+                              validateCopilotPriceScenarioResult(
+                                request.storeId,
+                                input,
+                                await reads.priceScenario!(input),
+                              ),
+                          );
+                          if (
+                            !("unavailable" in value) &&
+                            "form" in value &&
+                            value.form
+                          )
+                            priceScenarioForms.push(
+                              priceScenarioFormStateSchema.parse(value.form),
                             );
                           return value;
                         },
@@ -2251,6 +2294,7 @@ export function createCopilotAiProvider(
                 knowledgeSuggestions,
                 contextCheckpoint,
                 informationRequests: [...informationRequests.values()],
+                priceScenarioForms,
                 choiceUpdates: choiceUpdates.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
