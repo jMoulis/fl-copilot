@@ -466,3 +466,80 @@ it("allows explicit missing-reference cleanup but rejects invalid selections and
     }).success,
   ).toBe(false);
 });
+
+it("refreshes only explicitly named pinned revisions, preserves TGs and versions the review", async () => {
+  const { f, basis, assistant, evidence } = await fixture();
+  const current = { ...f.choice, version: 2, note: "Conditions corrigées" };
+  const input = copilotPreparationPatchSchema.parse({
+    weekStart: f.preparation.weekStart,
+    patch: { refreshChoiceIds: [f.choice.id] },
+  });
+  const review = { ...basis, choices: [current] };
+  const request = prepareWeekPatch(input, review, randomUUID());
+  expect(request.input.draft.offerRefs).toEqual([
+    { choiceId: f.choice.id, choiceVersion: 2 },
+  ]);
+  expect(request.input.draft.placements).toEqual(f.preparation.placements);
+  expect(basis.preparation.offerRefs[0].choiceVersion).toBe(1);
+  const cards = buildPreparationProposalMessages(assistant, [
+    { input, basis: review, evidence, status: "READY" },
+  ]);
+  const decoded = readCopilotPreparationProposal(cards[0]);
+  expect(decoded.content.schemaVersion).toBe(5);
+  expect(() =>
+    readCopilotPreparationProposal({
+      ...cards[0],
+      text: JSON.stringify({ ...decoded.content, schemaVersion: 4 }),
+    }),
+  ).toThrow("VERSION");
+  const {
+    copilotPreparationRetainedSelectionPatchSchema,
+    copilotPreparationSelectionPatchSchema,
+  } = await import("@fl-copilot/domain");
+  for (const schema of [
+    copilotPreparationRetainedSelectionPatchSchema,
+    copilotPreparationSelectionPatchSchema,
+  ])
+    expect(schema.safeParse(input).success).toBe(false);
+  for (const patch of [
+    { refreshChoiceIds: [] },
+    { refreshChoiceIds: [f.choice.id, f.choice.id] },
+    {
+      refreshChoiceIds: [f.choice.id],
+      offerSelection: { removeChoiceIds: [f.choice.id] },
+    },
+    {
+      refreshChoiceIds: [f.choice.id],
+      offerSelection: { addChoiceIds: [f.choice.id] },
+    },
+  ])
+    expect(
+      copilotPreparationPatchSchema.safeParse({ ...input, patch }).success,
+    ).toBe(false);
+  expect(() =>
+    prepareWeekPatch(
+      { ...input, patch: { refreshChoiceIds: [randomUUID()] } },
+      review,
+      randomUUID(),
+    ),
+  ).toThrow("REFRESH_INVALID");
+  expect(() =>
+    prepareWeekPatch(
+      input,
+      {
+        ...review,
+        preparation: {
+          ...f.preparation,
+          offerRefs: [{ choiceId: f.choice.id, choiceVersion: 3 }],
+        },
+      },
+      randomUUID(),
+    ),
+  ).toThrow("REFRESH_INVALID");
+  expect(
+    copilotPreparationPatchSchema.safeParse({
+      ...input,
+      create: { choiceIds: [] },
+    }).success,
+  ).toBe(false);
+});

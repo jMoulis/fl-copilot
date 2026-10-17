@@ -577,6 +577,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
               ...(request.headers["x-copilot-preparation-proposals"] === "1"
                 ? {
+                    preparationRefresh:
+                      request.headers["x-copilot-preparation-layout"] === "1" &&
+                      request.headers["x-copilot-preparation-selection"] ===
+                        "1" &&
+                      request.headers["x-copilot-preparation-refresh"] === "1",
                     preparationSelection:
                       request.headers["x-copilot-preparation-layout"] === "1" &&
                       request.headers["x-copilot-preparation-selection"] ===

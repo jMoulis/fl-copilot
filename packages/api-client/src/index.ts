@@ -72,6 +72,7 @@ export class ApiClient {
       preparationLayout?: boolean;
       preparationCreate?: boolean;
       preparationSelection?: boolean;
+      preparationRefresh?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
       catalogueProposals?: boolean;
@@ -92,6 +93,12 @@ export class ApiClient {
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
                 ...(streaming.onActivity ? { "x-copilot-activity": "1" } : {}),
+                ...(streaming.preparationRefresh &&
+                streaming.preparationSelection &&
+                streaming.preparationLayout &&
+                streaming.preparationProposals
+                  ? { "x-copilot-preparation-refresh": "1" }
+                  : {}),
                 ...(streaming.preparationSelection &&
                 streaming.preparationLayout &&
                 streaming.preparationProposals

@@ -367,22 +367,29 @@ async function preparationCard(
       },
     },
   );
+  if (input.patch.refreshChoiceIds)
+    for (const choice of extraChoices)
+      await applyCommercialChoice(x.a, x.f.storeId, choice);
   const message = copilotMessageSchema.parse({
     ...assistant,
     id: randomUUID(),
     role: "TOOL",
     text: JSON.stringify({
       kind: "COMMERCIAL_PREPARATION_PROPOSAL",
-      schemaVersion: input.patch.offerSelection
-        ? 4
-        : hasPreparationLayoutChange(input)
-          ? 2
-          : 1,
+      schemaVersion: input.patch.refreshChoiceIds
+        ? 5
+        : input.patch.offerSelection
+          ? 4
+          : hasPreparationLayoutChange(input)
+            ? 2
+            : 1,
       assistantMessageId: assistant.id,
       input,
       basis: {
         preparation: after,
-        choices: [x.choice.choice, ...extraChoices],
+        choices: input.patch.refreshChoiceIds
+          ? extraChoices
+          : [x.choice.choice, ...extraChoices],
       },
     }),
   });
@@ -876,5 +883,108 @@ it("saves offer selection atomically and preserves retained choices on restart r
       /* closed */
     }
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("refreshes reviewed references atomically with rollback/replay and blocks a later changed choice", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "offer-refresh-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const current = {
+      ...x.choice.choice,
+      version: 2,
+      note: "Conditions corrigées",
+    };
+    const m = await preparationCard(
+      x,
+      {
+        weekStart: x.request.input.draft.weekStart,
+        patch: { refreshChoiceIds: [current.id] },
+      },
+      [current],
+    );
+    const c = await preparationController(x);
+    expect((await c.open(m)).status).toBe("READY");
+    x.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    x.a.fail = false;
+    expect(
+      x.db
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 1 });
+    await expect(
+      (await preparationController(x, false)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    await c.confirm(m);
+    x.db.close();
+    reopened = new DatabaseSync(path);
+    expect(
+      (
+        await (
+          await preparationController(x, true, new Adapter(reopened))
+        ).confirm(m)
+      ).status,
+    ).toBe("COMPLETED");
+    const row = reopened
+      .prepare("SELECT payload_json FROM commercial_week_preparations")
+      .get() as { payload_json: string };
+    const saved = JSON.parse(row.payload_json);
+    expect(saved.offerRefs).toEqual([
+      { choiceId: current.id, choiceVersion: 2 },
+    ]);
+    expect(saved.placements).toEqual(x.request.input.draft.placements);
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='commercial_week_preparation'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    reopened?.close();
+    try {
+      x.db.close();
+    } catch {
+      /* closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("refuses a refresh when the reviewed current offer changes again", async () => {
+  const x = await setup();
+  try {
+    const current = { ...x.choice.choice, version: 2 };
+    const m = await preparationCard(
+      x,
+      {
+        weekStart: x.request.input.draft.weekStart,
+        patch: { refreshChoiceIds: [current.id] },
+      },
+      [current],
+    );
+    const c = await preparationController(x);
+    expect((await c.open(m)).status).toBe("READY");
+    await applyCommercialChoice(x.a, x.f.storeId, { ...current, version: 3 });
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+    expect(
+      x.db
+        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+        .get(),
+    ).toEqual({ n: 1 });
+  } finally {
+    x.db.close();
   }
 });

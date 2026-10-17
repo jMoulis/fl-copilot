@@ -2981,12 +2981,13 @@ it.each([false, true])(
   },
 );
 
-it.each(["EDIT", "LAYOUT", "CREATE", "SELECTION"])(
+it.each(["EDIT", "LAYOUT", "CREATE", "SELECTION", "REFRESH"])(
   "offers compatible TG preview schemas and grounds native cards (layout=%s)",
   async (mode) => {
     const layout = mode !== "EDIT",
       create = mode === "CREATE",
-      selection = mode === "SELECTION";
+      selection = mode === "SELECTION" || mode === "REFRESH",
+      refresh = mode === "REFRESH";
     const { commercialPlanFixture } =
         await import("../../../../scripts/test-commercial-plan-fixtures"),
       data = await commercialPlanFixture();
@@ -3005,42 +3006,47 @@ it.each(["EDIT", "LAYOUT", "CREATE", "SELECTION"])(
     const input = {
       weekStart: data.preparation.weekStart,
       ...(create ? { create: { choiceIds: [data.choice.id] } } : {}),
-      patch: selection
+      patch: refresh
         ? {
-            offerSelection: { addChoiceIds: [data.choice.id] },
-            note: "Sélection confirmée",
+            refreshChoiceIds: [data.choice.id],
+            note: "Actualisation explicite",
           }
-        : create
+        : selection
           ? {
-              tgCapacity: 1,
-              tgAdditions: [
-                {
-                  label: "TG nouvelle",
-                  theme: "Saison",
-                  offerIds: [data.choice.id],
-                },
-              ],
+              offerSelection: { addChoiceIds: [data.choice.id] },
+              note: "Sélection confirmée",
             }
-          : {
-              ...(layout
-                ? {
-                    tgCapacity: 2,
-                    tgAdditions: [
-                      {
-                        label: "TG ajoutée",
-                        theme: "Saison",
-                        offerIds: [data.choice.id],
-                      },
-                    ],
-                  }
-                : {}),
-              tgUpdates: [
-                {
-                  placementId: data.preparation.placements[0].id,
-                  theme: "Nouveau thème",
-                },
-              ],
-            },
+          : create
+            ? {
+                tgCapacity: 1,
+                tgAdditions: [
+                  {
+                    label: "TG nouvelle",
+                    theme: "Saison",
+                    offerIds: [data.choice.id],
+                  },
+                ],
+              }
+            : {
+                ...(layout
+                  ? {
+                      tgCapacity: 2,
+                      tgAdditions: [
+                        {
+                          label: "TG ajoutée",
+                          theme: "Saison",
+                          offerIds: [data.choice.id],
+                        },
+                      ],
+                    }
+                  : {}),
+                tgUpdates: [
+                  {
+                    placementId: data.preparation.placements[0].id,
+                    theme: "Nouveau thème",
+                  },
+                ],
+              },
     };
     const evidence = {
       id: "tg-preview",
@@ -3086,6 +3092,9 @@ it.each(["EDIT", "LAYOUT", "CREATE", "SELECTION"])(
       expect(
         "offerSelection" in definition.parameters.properties.patch.properties,
       ).toBe(selection);
+      expect(
+        "refreshChoiceIds" in definition.parameters.properties.patch.properties,
+      ).toBe(refresh);
       if (calls++ === 0) {
         const envelope = z
           .record(z.string(), z.unknown())
@@ -3112,6 +3121,7 @@ it.each(["EDIT", "LAYOUT", "CREATE", "SELECTION"])(
       preparationLayout: layout,
       preparationCreate: create,
       preparationSelection: selection,
+      preparationRefresh: refresh,
     }).generate(f.request, schema);
     expect(preparationPreview).toHaveBeenCalledExactlyOnceWith(input);
     expect(r.preparationPreviews).toEqual([value]);

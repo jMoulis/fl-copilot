@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "expo-router";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotPreparationProposalController } from "./preparation-proposal-controller";
+import { commercialMechanismDescription } from "@fl-copilot/commercial-core";
 import { colors } from "../design/tokens";
 const date = (v: string) =>
   new Intl.DateTimeFormat("fr-FR", {
@@ -106,6 +108,57 @@ export function PreparationProposalCard({
                 {state.request.input.draft.tgCapacity ?? "Non renseignée"}. Ce
                 brouillon n’est pas un plan validé. Les offres ne sont pas
                 validées par cette création.
+              </Text>
+            </View>
+          ) : null}
+          {state.content.input.patch.refreshChoiceIds ? (
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontWeight: "700" }}>
+                Actualiser les références d’offres
+              </Text>
+              {state.content.input.patch.refreshChoiceIds.map((id) => {
+                const choice = state.content.basis.choices.find(
+                  (c) => c.id === id,
+                )!;
+                const before = state.content.basis.preparation!.offerRefs.find(
+                  (r) => r.choiceId === id,
+                )!;
+                return (
+                  <View key={id} style={{ gap: 4 }}>
+                    <Text>
+                      {choice.rawProductLabel} · version {before.choiceVersion}{" "}
+                      → {choice.version}
+                    </Text>
+                    <Text>
+                      {commercialMechanismDescription(choice.mechanism)} · du{" "}
+                      {date(choice.saleStart)} au {date(choice.saleEnd)}
+                    </Text>
+                    {choice.note ? <Text>{choice.note}</Text> : null}
+                    <Link
+                      href={{
+                        pathname: "/commercial-offer/[id]",
+                        params: {
+                          id: choice.source.readingId,
+                          operationIndex: choice.source.operationIndex,
+                          itemIndex: choice.source.itemIndex,
+                        },
+                      }}
+                      accessibilityLabel={`Consulter l’offre ${choice.rawProductLabel} et son produit associé`}
+                      style={{
+                        color: colors.forest,
+                        textDecorationLine: "underline",
+                      }}
+                    >
+                      Consulter l’offre et son produit associé
+                    </Link>
+                  </View>
+                );
+              })}
+              <Text>
+                Le brouillon utilisera ces conditions actuelles. Les anciennes
+                conditions ne sont pas disponibles dans cet aperçu. Les
+                affectations TG restent conservées sauf modification indiquée
+                ci-dessous. Aucune offre ni plan n’est validé.
               </Text>
             </View>
           ) : null}
@@ -295,9 +348,11 @@ export function PreparationProposalCard({
                     ? "Confirmer les retraits et enregistrer"
                     : state.content.input.patch.tgRemovals?.length
                       ? `Confirmer le retrait de ${state.content.input.patch.tgRemovals.length} TG et enregistrer`
-                      : state.content.input.create
-                        ? "Créer le brouillon"
-                        : "Enregistrer le brouillon"}
+                      : state.content.input.patch.refreshChoiceIds
+                        ? "Confirmer l’actualisation et enregistrer"
+                        : state.content.input.create
+                          ? "Créer le brouillon"
+                          : "Enregistrer le brouillon"}
               </Text>
             </Pressable>
           ) : null}
