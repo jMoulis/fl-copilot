@@ -220,3 +220,39 @@ it("keeps the model's conversational Markdown without appending a diagnostic rep
     /Faits disponibles|Confiance :|Lecture\n|Suivi :/,
   );
 });
+
+it("keeps both cited comparison originals available without embedding private download URLs", () => {
+  const f = fixture(),
+    ids = [randomUUID(), randomUUID()],
+    evidence = ids.map((id, i) => ({
+      id: `commercial-pdf-source/comparison-${i}`,
+      sourceType: "SOURCE_DOCUMENT" as const,
+      sourceId: id,
+      sourceVersion: null,
+      label: "PDF original",
+      value: i ? "corrige.pdf" : "original.pdf",
+      factKind: "QUALITY" as const,
+    }));
+  const message = buildCopilotResponseMessage({
+    ...f,
+    generation: {
+      mode: "AI",
+      metadata: null,
+      evidence,
+      response: {
+        language: "fr-FR",
+        summary: "Voici les sources de la comparaison.",
+        facts: evidence.map((e) => ({ evidenceId: e.id })),
+        interpretation: [],
+        recommendations: [],
+        questions: [],
+      },
+    },
+  });
+  expect(message.attachments.map((a) => a.sourceDocumentId)).toEqual(ids);
+  expect(message.attachments.map((a) => a.filename)).toEqual([
+    "original.pdf",
+    "corrige.pdf",
+  ]);
+  expect(JSON.stringify(message)).not.toContain("https://");
+});

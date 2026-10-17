@@ -167,3 +167,59 @@ describe("corrected commercial PDF source comparison", () => {
     expect(() => compare(x)).toThrow("STORE_SOURCE_INVALID");
   });
 });
+
+it("compares only known requested-week offers without renumbering source coordinates", async () => {
+  const x = await sample(),
+    base = clone(x.before.reading!.operations[0]!),
+    outside = {
+      ...clone(base),
+      fields: base.fields.map((f) =>
+        f.name === "saleStart"
+          ? { ...f, rawValue: "2026-09-01" }
+          : f.name === "saleEnd"
+            ? { ...f, rawValue: "2026-09-03" }
+            : f,
+      ),
+    },
+    unknown = {
+      ...clone(base),
+      fields: [],
+      items: base.items.map((i) => ({ ...i, fields: [] })),
+    };
+  x.before.reading!.operations = [
+    outside,
+    {
+      ...base,
+      items: [{ ...base.items[0]!, kind: "INSTRUCTION" }, base.items[0]!],
+    },
+    unknown,
+  ];
+  x.after.reading = clone(x.before.reading);
+  const week = {
+    year: 2026,
+    number: 41,
+    start: "2026-10-05",
+    end: "2026-10-11",
+    date: "2026-10-08",
+  };
+  const r = compareCommercialDocumentVersions({
+    storeId: x.f.storeId,
+    beforeDocumentId: x.before.sourceDocumentId,
+    afterDocumentId: x.after.sourceDocumentId,
+    before: [x.before],
+    after: [x.after],
+    week,
+  });
+  expect(r.differences).toHaveLength(1);
+  expect(r.differences[0]?.before[0]).toMatchObject({
+    operationIndex: 1,
+    itemIndex: 1,
+  });
+  const { commercialComparisonPeriodCoverage } =
+    await import("./document-version-comparison");
+  expect(commercialComparisonPeriodCoverage([x.before], week)).toEqual({
+    included: 1,
+    excluded: 1,
+    unknown: 1,
+  });
+});

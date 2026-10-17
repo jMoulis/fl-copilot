@@ -1,3 +1,8 @@
+import {
+  commercialEntryWeekStatus,
+  commercialItemWeekStatus,
+  type CommercialWeek,
+} from "./commercial-week";
 import type { CommercialVisualPageOutput } from "@fl-copilot/domain";
 import { commercialOfferProposal } from "./offer-choice";
 export type CommercialComparisonPage = {
@@ -45,12 +50,49 @@ function literal(v: string) {
     .replace(/\s+/g, " ")
     .trim();
 }
-function sourceOffers(pages: readonly CommercialComparisonPage[]) {
+function offerWeekStatus(
+  op: CommercialVisualPageOutput["operations"][number],
+  item: CommercialVisualPageOutput["operations"][number]["items"][number],
+  week: CommercialWeek,
+) {
+  const parent = commercialEntryWeekStatus(op, week),
+    own = commercialItemWeekStatus(item, op, week);
+  return parent === "UNKNOWN" || own === "UNKNOWN"
+    ? "UNKNOWN"
+    : parent === "CURRENT" && own === "CURRENT"
+      ? "CURRENT"
+      : "OUTSIDE";
+}
+export function commercialComparisonPeriodCoverage(
+  pages: readonly CommercialComparisonPage[],
+  week: CommercialWeek,
+) {
+  const result = { included: 0, excluded: 0, unknown: 0 };
+  for (const page of pages)
+    if (page.status === "READY" && page.reading)
+      for (const op of page.reading.operations)
+        for (const item of op.items)
+          if (item.kind === "OFFER") {
+            const status = offerWeekStatus(op, item, week);
+            if (status === "CURRENT") result.included++;
+            else if (status === "UNKNOWN") result.unknown++;
+            else result.excluded++;
+          }
+  return result;
+}
+function sourceOffers(
+  pages: readonly CommercialComparisonPage[],
+  week?: CommercialWeek,
+) {
   return pages.flatMap((page) =>
     page.status === "READY" && page.reading
       ? page.reading.operations.flatMap((op, operationIndex) =>
           op.items.flatMap((item, itemIndex) => {
-            if (item.kind !== "OFFER") return [];
+            if (
+              item.kind !== "OFFER" ||
+              (week && offerWeekStatus(op, item, week) !== "CURRENT")
+            )
+              return [];
             const own = (name: string) =>
               item.fields
                 .filter((f) => f.name === name && f.rawValue !== null)
@@ -174,6 +216,7 @@ export function compareCommercialDocumentVersions(input: {
   afterDocumentId: string;
   before: readonly CommercialComparisonPage[];
   after: readonly CommercialComparisonPage[];
+  week?: CommercialWeek;
 }) {
   if (input.beforeDocumentId === input.afterDocumentId)
     throw Error("COMMERCIAL_COMPARISON_SAME_SOURCE");
@@ -190,8 +233,8 @@ export function compareCommercialDocumentVersions(input: {
     if (new Set(pages.map((p) => p.checksum)).size > 1)
       throw Error("COMMERCIAL_COMPARISON_CHECKSUM_INVALID");
   }
-  const before = sourceOffers(input.before),
-    after = sourceOffers(input.after),
+  const before = sourceOffers(input.before, input.week),
+    after = sourceOffers(input.after, input.week),
     groups = new Map<
       string,
       { before: CommercialComparedOffer[]; after: CommercialComparedOffer[] }
