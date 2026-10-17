@@ -1,4 +1,8 @@
 import {
+  copilotSourceOffersInputSchema,
+  validateSourceOffersResult,
+} from "@fl-copilot/domain";
+import {
   copilotChoiceRetentionInputSchema,
   copilotChoiceRetentionPreviewSchema,
   choiceRetentionRequest,
@@ -393,6 +397,9 @@ export function createCopilotAiProvider(
     commercialDocuments?(
       input: z.infer<typeof copilotDocumentsInputSchema>,
     ): Promise<z.infer<typeof copilotDocumentsResultSchema>>;
+    sourceOffers?(
+      input: z.infer<typeof copilotSourceOffersInputSchema>,
+    ): Promise<ReturnType<typeof validateSourceOffersResult>>;
     commercialPdf?(
       input: z.infer<typeof copilotPdfInputSchema>,
     ): Promise<z.infer<typeof copilotPdfResultSchema>>;
@@ -1741,6 +1748,25 @@ export function createCopilotAiProvider(
                               choiceWithdrawals.push(value);
                               return value;
                             },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.sourceOffers
+                  ? {
+                      commercial_source_offers: tool({
+                        description:
+                          "Read exact OFFER source coordinates and full extracted fields on one authorized PDF page for the explicit businessDate week. Use before proposing initial retention; never guess indices from labels or filtered positions. Preserve returned readingId/checksum/operationIndex/itemIndex and use source raw fields/citations, confidence and TEXT_SUPPORTED/VISUAL_TO_VERIFY. Proposals use the existing deterministic parser and remain TO_VALIDATE, never human-approved, retained, associated with a product or a saved plan. UNKNOWN dates stay null. Follow nextOffset and other document pages; excluded/unknown periods are not current offers. LIMIT_EXCEEDED requires opening the source, never skip an oversized offer or infer missing terms. Existing retained/withdrawn store choices are not checked by this source read. No paid extraction or business write.",
+                        inputSchema: copilotSourceOffersInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["source-offers", input]),
+                            async () =>
+                              validateSourceOffersResult(
+                                request.storeId,
+                                input,
+                                await reads.sourceOffers!(input),
+                              ),
                           ),
                       }),
                     }

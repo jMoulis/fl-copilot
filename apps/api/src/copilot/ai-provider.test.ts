@@ -3557,3 +3557,63 @@ it.each([
     ).generate(f.request, schema);
   },
 );
+it.each([false, true])(
+  "reads exact source offers with scoped SDK transport and rejects foreign results (%s)",
+  async (foreign) => {
+    const f = fixture(),
+      { sourceOffersFixture } =
+        await import("../../../../scripts/test-source-offers-fixtures"),
+      data = await sourceOffersFixture(f.request.storeId),
+      value = {
+        ...data.result,
+        storeId: foreign ? randomUUID() : f.request.storeId,
+      },
+      sourceOffers = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "commercial_source_offers",
+        );
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.properties).not.toHaveProperty("storeId");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_source_offers",
+            call_id: "call_source_offers",
+            name: "commercial_source_offers",
+            arguments: JSON.stringify(data.input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      sourceOffers,
+    }).generate(f.request, schema);
+    expect(sourceOffers).toHaveBeenCalledExactlyOnceWith(data.input);
+    expect(r.toolEvidence).toEqual(foreign ? [] : value.evidence);
+    await createCopilotAiProvider(
+      f.config,
+      async (_url, init) => {
+        expect(
+          JSON.parse(String(init?.body)).tools.some(
+            (t: { name: string }) => t.name === "commercial_source_offers",
+          ),
+        ).toBe(false);
+        return response();
+      },
+      { daily: vi.fn() },
+    ).generate(f.request, schema);
+  },
+);
