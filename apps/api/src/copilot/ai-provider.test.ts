@@ -3209,3 +3209,80 @@ it.each(["VALID", "FOREIGN_STORE", "WRONG_CHOICE", "MISSING"])(
     );
   },
 );
+
+it.each([false, true])(
+  "gates commercial withdrawal behind a native capability and rejects foreign scope (%s)",
+  async (foreign) => {
+    const f = fixture();
+    const { commercialChoiceFixture } =
+      await import("../../../../scripts/test-commercial-choice-fixtures");
+    const data = await commercialChoiceFixture({ storeId: f.request.storeId }),
+      input = { choiceId: data.choice.id };
+    const value = {
+      input,
+      status: "READY" as const,
+      before: {
+        ...data.choice,
+        storeId: foreign ? randomUUID() : f.request.storeId,
+      },
+      evidence: [
+        {
+          id: "withdrawal",
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: data.choice.id,
+          sourceVersion: 1,
+          label: "Retrait",
+          value: "À confirmer",
+          factKind: "QUALITY" as const,
+        },
+      ],
+    };
+    const choiceWithdrawal = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(
+        body.tools.find(
+          (t: { name: string }) => t.name === "commercial_choice_withdrawal",
+        ).parameters.properties,
+      ).toHaveProperty("choiceId");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_withdraw",
+            call_id: "call_withdraw",
+            name: "commercial_choice_withdrawal",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      choiceWithdrawal,
+    }).generate(f.request, schema);
+    expect(choiceWithdrawal).toHaveBeenCalledExactlyOnceWith(input);
+    expect(r.choiceWithdrawals).toEqual(foreign ? [] : [value]);
+    await createCopilotAiProvider(
+      f.config,
+      async (_url, init) => {
+        expect(
+          JSON.parse(String(init?.body)).tools.some(
+            (t: { name: string }) => t.name === "commercial_choice_withdrawal",
+          ),
+        ).toBe(false);
+        return response();
+      },
+      { daily: vi.fn() },
+    ).generate(f.request, schema);
+  },
+);

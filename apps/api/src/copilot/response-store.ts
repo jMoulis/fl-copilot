@@ -1,3 +1,4 @@
+import { readCopilotChoiceWithdrawalProposal } from "@fl-copilot/domain";
 import { readCopilotPreparationProposal } from "@fl-copilot/domain";
 import { readCopilotOperationsProposal } from "@fl-copilot/domain";
 import { readCopilotNeedProposal } from "@fl-copilot/domain";
@@ -109,23 +110,25 @@ export async function appendCopilotToolRecord(
   const decoded = copilotMessageSchema.parse(raw);
   const kind = JSON.parse(decoded.text).kind;
   const artifact =
-    kind === "MISSING_INFORMATION_REQUEST"
-      ? readCopilotInformationRequest(decoded)
-      : kind === "CONTEXT_CHECKPOINT"
-        ? readContextCheckpoint(decoded)
-        : kind === "COMMERCIAL_PREPARATION_PROPOSAL"
-          ? readCopilotPreparationProposal(decoded)
-          : kind === "STORE_OPERATIONS_PROPOSAL"
-            ? readCopilotOperationsProposal(decoded)
-            : kind === "NEED_MUTATION_PROPOSAL"
-              ? readCopilotNeedProposal(decoded)
-              : kind === "PRODUCT_CATALOGUE_PROPOSAL"
-                ? readCopilotCatalogueProposal(decoded)
-                : kind === "COMMERCIAL_EXECUTION_PROPOSAL"
-                  ? readCopilotExecutionProposal(decoded)
-                  : kind === "KNOWLEDGE_SUGGESTION"
-                    ? readKnowledgeSuggestion(decoded)
-                    : readCopilotProductProposal(decoded);
+    kind === "COMMERCIAL_CHOICE_WITHDRAWAL_PROPOSAL"
+      ? readCopilotChoiceWithdrawalProposal(decoded)
+      : kind === "MISSING_INFORMATION_REQUEST"
+        ? readCopilotInformationRequest(decoded)
+        : kind === "CONTEXT_CHECKPOINT"
+          ? readContextCheckpoint(decoded)
+          : kind === "COMMERCIAL_PREPARATION_PROPOSAL"
+            ? readCopilotPreparationProposal(decoded)
+            : kind === "STORE_OPERATIONS_PROPOSAL"
+              ? readCopilotOperationsProposal(decoded)
+              : kind === "NEED_MUTATION_PROPOSAL"
+                ? readCopilotNeedProposal(decoded)
+                : kind === "PRODUCT_CATALOGUE_PROPOSAL"
+                  ? readCopilotCatalogueProposal(decoded)
+                  : kind === "COMMERCIAL_EXECUTION_PROPOSAL"
+                    ? readCopilotExecutionProposal(decoded)
+                    : kind === "KNOWLEDGE_SUGGESTION"
+                      ? readKnowledgeSuggestion(decoded)
+                      : readCopilotProductProposal(decoded);
   const message = artifact.message;
   const assistantMessageId =
     "content" in artifact

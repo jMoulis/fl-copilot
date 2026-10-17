@@ -1,3 +1,4 @@
+import { buildChoiceWithdrawalProposalMessages } from "./choice-withdrawal-messages.js";
 import { buildPreparationProposalMessages } from "./preparation-proposal-messages.js";
 import { buildOperationsProposalMessages } from "./operations-proposal-messages.js";
 import { buildNeedProposalMessages } from "./need-proposal-messages.js";
@@ -289,6 +290,10 @@ export async function runCopilotTurn(
         }
         if (generation.mode === "AI")
           for (const proposal of [
+            ...buildChoiceWithdrawalProposalMessages(
+              message,
+              generation.choiceWithdrawals ?? [],
+            ),
             ...buildPreparationProposalMessages(
               message,
               generation.preparationPreviews ?? [],
