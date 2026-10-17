@@ -282,6 +282,7 @@ it("opts into optional proposal and source tools only when the client supports t
         memorySuggestions: enabled,
         webResearch: enabled,
         choiceUpdate: enabled,
+        choiceRetention: enabled,
         choiceReassociation: enabled,
         choiceWithdrawal: enabled,
         preparationProposals: enabled,
@@ -296,6 +297,9 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-choice-retention", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-choice-retention");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-choice-reassociation", "1");
     else expect(headers).not.toHaveProperty("x-copilot-choice-reassociation");

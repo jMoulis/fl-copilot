@@ -914,3 +914,174 @@ it("repairs an association even when the old product profile is no longer on the
     s.db.close();
   }
 });
+
+async function retentionCard(s: Awaited<ReturnType<typeof setup>>) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain"),
+    { applyCopilotRecord } = await import("./conversation-repository");
+  await s.runtime.execute(s.request, s.authority(s.request));
+  const withdrawal = {
+    ...s.request,
+    operationId: randomUUID(),
+    input: {
+      expectedVersion: 1,
+      productVersion: null,
+      draft: { ...s.request.input.draft, status: "WITHDRAWN" },
+    },
+  };
+  const before = (await s.runtime.execute(withdrawal, s.authority(withdrawal)))
+    .after;
+  s.f.message = {
+    ...s.f.message,
+    id: randomUUID(),
+    text: "Je veux retenir à nouveau cette offre retirée.",
+    attachments: [],
+  };
+  await new CopilotConversationRepository(s.a, s.f).append(s.f.message, {
+    commandId: randomUUID(),
+    deviceId: s.authority(s.request).deviceId,
+  });
+  const product = (await new ProductMasterRepository(s.a).getProduct(
+    before.productId,
+  ))!.entity;
+  const assistant = copilotMessageSchema.parse({
+    ...s.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: s.f.message.id,
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "COMMERCIAL_CHOICE_RETENTION_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input: { choiceId: before.id },
+      basis: { before, product },
+    }),
+  });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", message);
+  });
+  return message;
+}
+async function retentionController(
+  s: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  db = s.a,
+) {
+  const { CopilotChoiceRetentionController } =
+    await import("./choice-retention-controller");
+  return new CopilotChoiceRetentionController(
+    db,
+    {
+      storeId: s.f.storeId,
+      ownerId: s.f.ownerId,
+      deviceId: s.authority(s.request).deviceId,
+      canManageCommercialChoices: allowed,
+    },
+    testChoiceDigest,
+    randomUUID,
+  );
+}
+it("retains a previously withdrawn choice only after a new review, atomically and once after restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "choice-edit-")),
+    path = join(dir, "local.db"),
+    s = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const m = await retentionCard(s),
+      c = await retentionController(s);
+    expect((await c.open(m)).status).toBe("READY");
+    const source = JSON.stringify(
+      s.db.prepare("SELECT * FROM commercial_visual_readings").get(),
+    );
+    s.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    s.a.fail = false;
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 2 });
+    await expect(
+      (await retentionController(s, false)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    await c.confirm(m);
+    const row = s.db
+      .prepare("SELECT payload_json FROM commercial_offer_choices")
+      .get() as { payload_json: string };
+    expect(JSON.parse(row.payload_json)).toMatchObject({
+      source: s.fixture.choice.source,
+      productId: s.fixture.product.id,
+      mechanism: s.fixture.choice.mechanism,
+      saleEnd: s.fixture.choice.saleEnd,
+      saleStart: s.fixture.choice.saleStart,
+      note: s.fixture.choice.note,
+      status: "RETAINED",
+      version: 3,
+    });
+    expect(
+      JSON.stringify(
+        s.db.prepare("SELECT * FROM commercial_visual_readings").get(),
+      ),
+    ).toBe(source);
+    s.db.close();
+    reopened = new DatabaseSync(path);
+    expect(
+      (
+        await (
+          await retentionController(s, true, new Adapter(reopened))
+        ).confirm(m)
+      ).status,
+    ).toBe("COMPLETED");
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_choice_history")
+        .get(),
+    ).toEqual({ n: 3 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE command_type='COMMERCIAL_OFFER_CHOICE_UPSERT'",
+        )
+        .get(),
+    ).toEqual({ n: 3 });
+  } finally {
+    reopened?.close();
+    try {
+      s.db.close();
+    } catch {
+      /* closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("rejects re-retention on a changed product, forged card or cancellation", async () => {
+  const s = await setup();
+  try {
+    const m = await retentionCard(s),
+      c = await retentionController(s);
+    await expect(
+      c.confirm({
+        ...m,
+        text: m.text.replace(s.fixture.product.label, "Autre produit"),
+      }),
+    ).rejects.toThrow();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(c.confirm(m, abort.signal)).rejects.toThrow();
+    await new ProductMasterRepository(s.a).upsertProduct(
+      { ...s.fixture.product, label: "Autre libellé", version: 2 },
+      { commandId: randomUUID(), deviceId: s.authority(s.request).deviceId },
+    );
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    s.db.close();
+  }
+});

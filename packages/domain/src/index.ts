@@ -1,3 +1,4 @@
+export * from "./copilot-choice-retention";
 export * from "./copilot-choice-reassociation";
 export * from "./products";
 export * from "./product-matching";

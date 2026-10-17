@@ -69,6 +69,7 @@ export class ApiClient {
       memorySuggestions?: boolean;
       webResearch?: boolean;
       choiceUpdate?: boolean;
+      choiceRetention?: boolean;
       choiceReassociation?: boolean;
       choiceWithdrawal?: boolean;
       preparationProposals?: boolean;
@@ -97,6 +98,9 @@ export class ApiClient {
                 accept: "application/x-ndjson",
                 ...(streaming.choiceUpdate
                   ? { "x-copilot-choice-update": "1" }
+                  : {}),
+                ...(streaming.choiceRetention
+                  ? { "x-copilot-choice-retention": "1" }
                   : {}),
                 ...(streaming.choiceReassociation
                   ? { "x-copilot-choice-reassociation": "1" }

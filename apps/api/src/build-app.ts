@@ -1,3 +1,4 @@
+import { previewChoiceRetention } from "./copilot/choice-retention-tool.js";
 import { previewChoiceReassociation } from "./copilot/choice-reassociation-tool.js";
 import { previewChoiceUpdate } from "./copilot/choice-update-tool.js";
 import { previewChoiceWithdrawal } from "./copilot/choice-withdrawal-tool.js";
@@ -795,6 +796,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     choiceUpdate: async (input) => {
                       await authorize();
                       const result = await previewChoiceUpdate(
+                        db,
+                        storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-choice-retention"] === "1"
+                ? {
+                    choiceRetention: async (input) => {
+                      await authorize();
+                      const result = await previewChoiceRetention(
                         db,
                         storeId,
                         input,
