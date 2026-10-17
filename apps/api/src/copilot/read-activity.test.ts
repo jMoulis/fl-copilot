@@ -29,3 +29,8 @@ it("maps real tool keys without disclosing private arguments", () => {
       "DOCUMENTS",
     );
 });
+
+it("shows plan validation preparation without exposing its arguments", () =>
+  expect(
+    readActivityStage(JSON.stringify(["plan-validation", { private: true }])),
+  ).toBe("PROPOSAL"));

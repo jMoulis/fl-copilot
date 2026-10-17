@@ -3857,3 +3857,101 @@ it.each(["OWNED", "FOREIGN", "WRONG_WEEK"])(
     expect(r.toolEvidence).toEqual(mode === "OWNED" ? [evidence] : []);
   },
 );
+
+it.each(["READY", "FOREIGN", "DISABLED"])(
+  "gates plan validation and binds complete cards (%s)",
+  async (mode) => {
+    const { commercialPlanFixture } =
+        await import("../../../../scripts/test-commercial-plan-fixtures"),
+      data = await commercialPlanFixture(),
+      f = fixture(),
+      input = { weekStart: data.plan.weekStart };
+    f.request.storeId = data.storeId;
+    f.request.context = detectCopilotConflicts({
+      batch: scoreCopilotPriorities({
+        storeId: data.storeId,
+        evaluatedAt,
+        candidates: [],
+      }),
+      intents: [],
+    });
+    const evidence = {
+      id: "plan-validation/test",
+      sourceType: "DATA_QUALITY" as const,
+      sourceId: data.storeId,
+      sourceVersion: null,
+      label: "Plan à valider",
+      value: "Revue du plan",
+      factKind: "QUALITY" as const,
+    };
+    const value = {
+      storeId: mode === "FOREIGN" ? randomUUID() : data.storeId,
+      input,
+      status: "READY" as const,
+      preview: {
+        operationId: randomUUID(),
+        schemaVersion: 1 as const,
+        tool: "commercial.plan.preview" as const,
+        status: "COMPLETED" as const,
+        observedAt: data.plan.validatedAt,
+        message: "À confirmer",
+        expectedPlanVersion: null,
+        candidate: data.plan,
+        issues: [],
+      },
+      issues: [],
+      evidence: [evidence],
+    };
+    const planValidation = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "commercial_plan_validation",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.properties).not.toHaveProperty("storeId");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_plan",
+            call_id: "call_plan",
+            name: "commercial_plan_validation",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "FOREIGN"
+          ? { unavailable: true }
+          : { status: "READY", preview: { candidate: data.plan } },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { planValidation }),
+    }).generate(f.request, schema);
+    expect(planValidation).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(result.planValidations).toEqual(mode === "READY" ? [value] : []);
+    expect(result.toolEvidence).toEqual(mode === "READY" ? [evidence] : []);
+  },
+);

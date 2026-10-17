@@ -7,6 +7,7 @@ import {
 import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
   commercialPlanIssues,
+  type CommercialPlanContext,
   commercialValidatedOfferId,
   commercialChoiceProductUnitMatches,
 } from "@fl-copilot/commercial-core";
@@ -27,7 +28,7 @@ import type { VisualReadingDocument } from "../commercial/visual-reading-store";
 const digest = async (s: string) =>
   createHash("sha256").update(s).digest("hex");
 /** Advisory synchronized readiness only; native confirmation rechecks current local dependencies. */
-export async function readCommercialPlanReadiness(
+export async function loadCommercialPlanReadiness(
   db: Db,
   storeId: string,
   raw: unknown,
@@ -54,6 +55,7 @@ export async function readCommercialPlanReadiness(
   let issues: ReturnType<
     typeof copilotPlanReadinessResultSchema.parse
   >["issues"] = [];
+  let context: CommercialPlanContext | null = null;
   if (prep) {
     const readingIds = [
       ...new Set([
@@ -132,14 +134,19 @@ export async function readCommercialPlanReadiness(
       ] as const)
         if (rows.some((row, i) => row._id !== parsed[i]!.id))
           throw Error("COPILOT_PLAN_READINESS_SCOPE");
-      issues = commercialPlanIssues(prep, {
+      context = {
         preparation: prep,
         choices,
-        products,
+        products: products.map((p) => ({
+          id: p.id,
+          label: p.label,
+          version: p.version,
+        })),
         validated,
         preferences,
         pages,
-      }).map((i) => ({
+      };
+      issues = commercialPlanIssues(prep, context).map((i) => ({
         ...i,
         label: i.choiceId
           ? (choices.find((c) => c.id === i.choiceId)?.rawProductLabel ?? null)
@@ -190,7 +197,7 @@ export async function readCommercialPlanReadiness(
     value =
       "Contrôle complet trop volumineux. Aucun résultat partiel ne vaut autorisation de validation ; examiner le plan dans Ma semaine.";
   }
-  return copilotPlanReadinessResultSchema.parse({
+  const result = copilotPlanReadinessResultSchema.parse({
     storeId,
     weekStart: input.weekStart,
     status,
@@ -208,4 +215,12 @@ export async function readCommercialPlanReadiness(
       },
     ],
   });
+  return { result, context, preparation: prep };
+}
+export async function readCommercialPlanReadiness(
+  db: Db,
+  storeId: string,
+  raw: unknown,
+) {
+  return (await loadCommercialPlanReadiness(db, storeId, raw)).result;
 }

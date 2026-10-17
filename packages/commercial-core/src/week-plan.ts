@@ -159,7 +159,9 @@ export function commercialPlanIssues(
     issues.push({
       code,
       messageFr:
-        "Une donnée de préparation est en erreur ou en conflit. Résolvez-la dans Synchronisation avant de confirmer le plan.",
+        code === "UNIT_MISMATCH"
+          ? "L’unité du prix d’une offre ne correspond pas à l’unité de vente du produit. Revoyez cette offre avant de confirmer le plan."
+          : "Une donnée de préparation est en erreur ou en conflit. Résolvez-la dans Synchronisation avant de confirmer le plan.",
     });
   return issues;
 }

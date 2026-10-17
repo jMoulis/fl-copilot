@@ -1,3 +1,5 @@
+import type { Product } from "@fl-copilot/domain";
+import { commercialChoiceProductUnitMatches } from "@fl-copilot/commercial-core";
 import {
   commercialWeekPreparationSchema,
   commercialVersionDecisionSchema,
@@ -29,8 +31,9 @@ export async function readWeekPlanContext(
       label: string;
       version: number;
       sync_state: string;
+      sales_unit: Product["salesUnit"];
     }>(
-      "SELECT id,label,version,sync_state FROM products WHERE store_id=? AND status='ACTIVE' AND deleted_at IS NULL",
+      "SELECT id,label,version,sync_state,sales_unit FROM products WHERE store_id=? AND status='ACTIVE' AND deleted_at IS NULL",
       prep.storeId,
     ),
     db.getAllAsync<{ payload_json: string }>(
@@ -64,6 +67,14 @@ export async function readWeekPlanContext(
       ),
     ),
     blocked: [
+      ...selected
+        .filter((c) => {
+          const p = products.find((p) => p.id === c.entity.productId);
+          return (
+            p && !commercialChoiceProductUnitMatches(c.entity, p.sales_unit)
+          );
+        })
+        .map(() => "UNIT_MISMATCH"),
       ...products
         .filter(
           (p) =>
