@@ -133,12 +133,11 @@ export async function enqueueAnalyticsRecomputationJob(
   return payload;
 }
 
+const activeRecomputations = new WeakMap<
+  OutboxDatabase,
+  Map<string, Promise<AnalyticsRecomputationRun>>
+>();
 export class LocalAnalyticsRecomputationScheduler {
-  private readonly inFlight = new Map<
-    string,
-    Promise<AnalyticsRecomputationRun>
-  >();
-
   constructor(
     private readonly database: OutboxDatabase,
     private readonly recomputer: ProductDateRecomputer,
@@ -151,12 +150,17 @@ export class LocalAnalyticsRecomputationScheduler {
   ) {}
 
   process(storeId: string): Promise<AnalyticsRecomputationRun> {
-    const current = this.inFlight.get(storeId);
+    let cycles = activeRecomputations.get(this.database);
+    if (!cycles) {
+      cycles = new Map();
+      activeRecomputations.set(this.database, cycles);
+    }
+    const current = cycles.get(storeId);
     if (current) return current;
     const run = this.processPending(storeId).finally(() => {
-      this.inFlight.delete(storeId);
+      cycles.delete(storeId);
     });
-    this.inFlight.set(storeId, run);
+    cycles.set(storeId, run);
     return run;
   }
 
@@ -178,6 +182,16 @@ export class LocalAnalyticsRecomputationScheduler {
     const now = this.options.now ?? (() => new Date().toISOString());
     const yieldToInterface =
       this.options.yieldToInterface ?? defaultYieldToInterface;
+    // No scheduler is active for this database/store. A RUNNING claim left by
+    // termination is safe to recompute: deterministic projections are upserts.
+    await this.database.runAsync(
+      `UPDATE local_jobs SET status='RETRY', next_attempt_at=NULL,
+       last_error='ANALYTICS_RECOMPUTE_INTERRUPTED', updated_at=?
+       WHERE type=? AND status='RUNNING' AND json_extract(payload_json,'$.storeId')=?`,
+      now(),
+      ANALYTICS_RECOMPUTE_JOB_TYPE,
+      storeId,
+    );
     const rows = await this.database.getAllAsync<PendingJobRow>(
       `
         SELECT id, payload_json, attempt_count

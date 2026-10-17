@@ -1,3 +1,4 @@
+import { readPendingWork, type PendingWorkGroup } from "./pending-work";
 import { randomUUID } from "expo-crypto";
 import { repairMercalysPublications } from "../documents/mercalys-publication-sync";
 import { OutboxRepository } from "./outbox-repository";
@@ -28,6 +29,7 @@ export type SyncRuntimeStatus =
   "synced" | "offline" | "pending" | "syncing" | "conflict" | "error";
 
 interface LocalSyncSnapshot {
+  pendingDetails?: PendingWorkGroup[];
   pendingCount: number;
   conflictCount: number;
   failedCount: number;
@@ -328,6 +330,7 @@ async function readLocalSyncSnapshot(
     storeId,
   );
   return {
+    pendingDetails: await readPendingWork(database, storeId),
     pendingCount:
       Number(outboxCounts?.pending_count ?? 0) +
       Number(jobCounts?.pending_count ?? 0),

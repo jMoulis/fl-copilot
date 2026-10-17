@@ -20,6 +20,7 @@ export default function SynchronizationScreen() {
   const {
     status,
     pendingCount,
+    pendingDetails,
     conflictCount,
     failedCount,
     lastSyncedAt,
@@ -66,6 +67,28 @@ export default function SynchronizationScreen() {
           }}
         />
       </SectionCard>
+
+      {pendingDetails && pendingDetails.length > 0 ? (
+        <SectionCard title="Détail des éléments en attente">
+          <Text className="text-sm leading-5 text-muted">
+            Les calculs locaux ne sont pas des envois vers le serveur. Une
+            synchronisation réussie peut laisser un traitement en attente.
+          </Text>
+          {pendingDetails.map((item, index) => (
+            <View key={index} className="gap-1 border-t border-line pt-3">
+              <Text className="text-base font-semibold text-ink">
+                {item.label} · {item.count}
+              </Text>
+              <Text className="text-sm text-muted">{item.state}</Text>
+              {item.code ? (
+                <Text selectable className="text-sm text-muted">
+                  Code : {item.code}
+                </Text>
+              ) : null}
+            </View>
+          ))}
+        </SectionCard>
+      ) : null}
 
       {status === "offline" ? (
         <InlineAlert
