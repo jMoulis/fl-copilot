@@ -1,4 +1,9 @@
 import {
+  copilotPlanReadinessInputSchema,
+  copilotPlanReadinessResultSchema,
+  validatePlanReadinessResult,
+} from "@fl-copilot/domain";
+import {
   copilotOfferValidationInputSchema,
   copilotOfferValidationPreviewSchema,
   offerValidationPreviewRequest,
@@ -337,6 +342,9 @@ export function createCopilotAiProvider(
   >,
   transport?: typeof fetch,
   reads?: {
+    planReadiness?(
+      input: z.infer<typeof copilotPlanReadinessInputSchema>,
+    ): Promise<z.infer<typeof copilotPlanReadinessResultSchema>>;
     commercialPreparation?(
       input: z.infer<typeof copilotPreparationReadInputSchema>,
     ): Promise<z.infer<typeof copilotPreparationReadResultSchema>>;
@@ -702,7 +710,8 @@ export function createCopilotAiProvider(
                   reads.needPreview ||
                   reads.cataloguePreview
                   ? 4
-                  : reads.commercialPreparation ||
+                  : reads.planReadiness ||
+                      reads.commercialPreparation ||
                       reads.executionPreview ||
                       reads.analyticsQuery ||
                       reads.publicResearch ||
@@ -731,7 +740,8 @@ export function createCopilotAiProvider(
                 reads.needPreview ||
                 reads.cataloguePreview
                   ? 3
-                  : reads.commercialPreparation ||
+                  : reads.planReadiness ||
+                      reads.commercialPreparation ||
                       reads.executionPreview ||
                       reads.analyticsQuery ||
                       reads.publicResearch ||
@@ -1338,6 +1348,25 @@ export function createCopilotAiProvider(
                                 throw Error("READ_SCOPE_INVALID");
                               return result;
                             },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.planReadiness
+                  ? {
+                      commercial_plan_readiness: tool({
+                        description:
+                          "Check an explicit Monday week's synchronized draft before final plan validation, or explain what blocks it. Uses canonical complete selected-offer, validation, active-product, source, reference and TG checks. READY is advisory only, never a saved or executed plan; native validation must recheck local state. BLOCKED supplies precise affected offers/TGs and French corrections: address those, do not ask the user to reconfirm every unaffected offer. NO_DRAFT can mean pending local work; LIMIT_EXCEEDED is unknown readiness, use Ma semaine. No mutation, extraction or automatic business action.",
+                        inputSchema: copilotPlanReadinessInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["plan-readiness", input]),
+                            async () =>
+                              validatePlanReadinessResult(
+                                request.storeId,
+                                input,
+                                await reads.planReadiness!(input),
+                              ),
                           ),
                       }),
                     }

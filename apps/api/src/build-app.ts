@@ -1,3 +1,4 @@
+import { readCommercialPlanReadiness } from "./copilot/plan-readiness-tool.js";
 import { previewOfferValidation } from "./copilot/offer-validation-tool.js";
 import { previewChoiceCreate } from "./copilot/choice-create-tool.js";
 import { readSourceOffers } from "./copilot/source-offers-tool.js";
@@ -781,6 +782,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               commercialPdf: async (input) => {
                 await authorize();
                 const result = await readCommercialPdf(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              planReadiness: async (input) => {
+                await authorize();
+                const result = await readCommercialPlanReadiness(
+                  db,
+                  storeId,
+                  input,
+                );
                 await authorize();
                 return result;
               },

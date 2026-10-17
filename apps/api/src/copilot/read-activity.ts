@@ -33,6 +33,7 @@ export function readActivityStage(key: string): CopilotActivity["stage"] {
     [
       "commercial-plan",
       "commercial-preparation",
+      "plan-readiness",
       "documents",
       "pdf",
       "offers",
