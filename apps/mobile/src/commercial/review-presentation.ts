@@ -109,3 +109,13 @@ export const commercialConflictLabels: Record<string, string> = {
   UNRESOLVED_MECHANISM_CONFLICT:
     "Les mécanismes bruts de cette offre diffèrent et restent à préciser.",
 };
+
+export const commercialExtraFieldLabels: Record<string, string> = {
+  variety: "Variété",
+  origin: "Origine",
+  grade: "Catégorie",
+  calibre: "Calibre",
+  packaging: "Conditionnement",
+  announcedFigure: "Chiffre annoncé par le document",
+  documentYear: "Année indiquée dans le document",
+};
