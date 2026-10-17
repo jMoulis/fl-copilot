@@ -114,3 +114,4 @@ export * from "./copilot-choice-update";
 export * from "./copilot-plan-readiness";
 export * from "./copilot-plan-validation-preview";
 export * from "./copilot-document-comparison";
+export * from "./copilot-commercial-reference";

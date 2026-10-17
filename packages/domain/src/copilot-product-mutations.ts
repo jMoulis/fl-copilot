@@ -103,6 +103,7 @@ export class ProductClassificationError extends Error {
       | "COMMERCIAL_CHOICE_UNAVAILABLE"
       | "COMMERCIAL_CHOICE_UNIT_MISMATCH"
       | "COMMERCIAL_CHOICE_DUPLICATE"
+      | "COMMERCIAL_REFERENCE_REVIEW_REQUIRED"
       | "COMMERCIAL_PLAN_REVIEW_REQUIRED"
       | "COMMERCIAL_SOURCE_REVIEW_REQUIRED"
       | "COMMERCIAL_EXECUTION_UNAVAILABLE"
@@ -154,6 +155,8 @@ export class ProductClassificationError extends Error {
           "Cette tâche ne correspond plus au plan courant. Consultez sa liste actuelle avant de déclarer la mise en place.",
         COMMERCIAL_SOURCE_REVIEW_REQUIRED:
           "La source de chaque offre doit être revue pour sa version actuelle avant de la valider.",
+        COMMERCIAL_REFERENCE_REVIEW_REQUIRED:
+          "La comparaison ou ses sources ne sont plus disponibles dans les versions revues. Demandez un nouvel aperçu avant de choisir la référence.",
         COMMERCIAL_PLAN_REVIEW_REQUIRED:
           "L’aperçu est absent, incomplet ou a changé. Consultez un nouvel aperçu avant de valider le plan.",
         COMMERCIAL_CHOICE_UNAVAILABLE:

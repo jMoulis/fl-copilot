@@ -1,3 +1,4 @@
+import { previewCommercialReference } from "./copilot/reference-preview-tool.js";
 import { readCommercialDocumentComparison } from "./copilot/document-comparison-tool.js";
 import { previewCommercialPlanValidation } from "./copilot/plan-validation-tool.js";
 import { readCommercialPlanReadiness } from "./copilot/plan-readiness-tool.js";
@@ -850,6 +851,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     choiceCreate: async (input) => {
                       await authorize();
                       const result = await previewChoiceCreate(
+                        db,
+                        storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-commercial-reference"] === "1"
+                ? {
+                    referencePreview: async (input) => {
+                      await authorize();
+                      const result = await previewCommercialReference(
                         db,
                         storeId,
                         input,

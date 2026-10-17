@@ -35,3 +35,8 @@ it("shows plan validation preparation without exposing its arguments", () =>
   expect(
     readActivityStage(JSON.stringify(["plan-validation", { private: true }])),
   ).toBe("PROPOSAL"));
+
+it("shows reference review preparation without exposing source arguments", () =>
+  expect(
+    readActivityStage(JSON.stringify(["reference-preview", { private: true }])),
+  ).toBe("PROPOSAL"));
