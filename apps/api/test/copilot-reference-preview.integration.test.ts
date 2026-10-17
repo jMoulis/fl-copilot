@@ -1,3 +1,4 @@
+import { inspectCommercialReference } from "../src/copilot/reference-inspection-tool";
 import { runCopilotTurn } from "../src/copilot/turn-service";
 import { chatFixture } from "../../../scripts/test-chat-fixtures";
 import { readCopilotReferenceProposal } from "@fl-copilot/domain";
@@ -58,6 +59,126 @@ describe.skipIf(!uri)("reference preview on disposable Mongo", () => {
       });
     return f;
   }
+  it("retrieves the recorded decision in either order without writes", async () => {
+    const f = await fixture(true);
+    const input = {
+      firstDocumentId: f.input.afterDocumentId,
+      secondDocumentId: f.input.beforeDocumentId,
+    };
+    const r = await inspectCommercialReference(db, f.f.storeId, input);
+    expect(r).toMatchObject({
+      status: "RECORDED",
+      reviewStatus: "MATCHING_SNAPSHOTS",
+      decision: f.decision,
+      first: { filename: f.basis.afterFilename },
+      second: { filename: f.basis.beforeFilename },
+    });
+    expect(
+      r.evidence
+        .filter((e) => e.id.startsWith("commercial-pdf-source/"))
+        .map((e) => e.value),
+    ).toEqual([f.basis.afterFilename, f.basis.beforeFilename]);
+    expect(r.evidence.at(-1)?.value).toContain(f.basis.beforeFilename);
+    expect(
+      await collection("syncChanges").countDocuments({ storeId: f.f.storeId }),
+    ).toBe(0);
+  });
+  it("distinguishes missing decisions and unavailable foreign originals", async () => {
+    const f = await fixture();
+    const input = {
+      firstDocumentId: f.input.beforeDocumentId,
+      secondDocumentId: f.input.afterDocumentId,
+    };
+    expect(
+      await inspectCommercialReference(db, f.f.storeId, input),
+    ).toMatchObject({
+      status: "NO_DECISION",
+      decision: null,
+      reviewStatus: null,
+    });
+    const foreign = await inspectCommercialReference(db, randomUUID(), input);
+    expect(foreign).toMatchObject({
+      status: "UNAVAILABLE",
+      first: null,
+      second: null,
+      decision: null,
+      reviewStatus: null,
+    });
+    expect(JSON.stringify(foreign)).not.toContain(f.decision.note);
+  });
+  it.each(["CHECKSUM", "NEW_READING", "MISSING", "EXTRA_PAGE"])(
+    "qualifies the historical choice when source snapshots change (%s)",
+    async (mode) => {
+      const f = await fixture(true);
+      const input = {
+        firstDocumentId: f.input.beforeDocumentId,
+        secondDocumentId: f.input.afterDocumentId,
+      };
+      if (mode === "CHECKSUM")
+        await collection("sourceDocuments").updateOne(
+          { _id: f.input.afterDocumentId },
+          { $set: { checksum: "sha256:changed" } },
+        );
+      else if (mode === "MISSING")
+        await collection("commercialVisualReadings").deleteOne({
+          _id: f.g.reading.id,
+        });
+      else {
+        const id = randomUUID();
+        await collection("commercialVisualReadings").insertOne({
+          ...f.g.reading,
+          _id: id,
+          id,
+          model: mode === "NEW_READING" ? "test-new" : f.g.reading.model,
+          pageNumber: mode === "EXTRA_PAGE" ? 2 : 1,
+          pageCount: mode === "EXTRA_PAGE" ? 2 : 1,
+          updatedAt: new Date(Date.now() + 1000),
+        });
+      }
+      const r = await inspectCommercialReference(db, f.f.storeId, input);
+      expect(r).toMatchObject({
+        status: "RECORDED",
+        reviewStatus: "REVIEW_REQUIRED",
+        decision: f.decision,
+      });
+    },
+  );
+  it("bounds snapshot work and complete result size without hiding the limit", async () => {
+    const f = await fixture(true);
+    const input = {
+      firstDocumentId: f.input.beforeDocumentId,
+      secondDocumentId: f.input.afterDocumentId,
+    };
+    for (let page = 2; page <= 17; page++) {
+      const id = randomUUID();
+      await collection("commercialVisualReadings").insertOne({
+        ...f.g.reading,
+        _id: id,
+        id,
+        pageNumber: page,
+        pageCount: 17,
+        updatedAt: new Date(Date.now() + 1000),
+      });
+    }
+    expect(
+      await inspectCommercialReference(db, f.f.storeId, input),
+    ).toMatchObject({
+      status: "RECORDED",
+      decision: f.decision,
+      reviewStatus: "LIMIT_EXCEEDED",
+    });
+    await collection("commercialVersionDecisions").updateOne(
+      { _id: f.decision.id },
+      { $set: { "before.checksum": "x".repeat(15000) } },
+    );
+    expect(
+      await inspectCommercialReference(db, f.f.storeId, input),
+    ).toMatchObject({
+      status: "LIMIT_EXCEEDED",
+      decision: null,
+      reviewStatus: null,
+    });
+  });
   it("prepares exact snapshots without business writes", async () => {
     const f = await fixture();
     const r = await previewCommercialReference(db, f.f.storeId, f.input);

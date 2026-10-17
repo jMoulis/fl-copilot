@@ -1,4 +1,9 @@
 import {
+  copilotReferenceInspectionInputSchema,
+  copilotReferenceInspectionResultSchema,
+  validateReferenceInspectionResult,
+} from "@fl-copilot/domain";
+import {
   copilotReferenceInputSchema,
   copilotReferencePreviewSchema,
 } from "@fl-copilot/domain";
@@ -437,6 +442,9 @@ export function createCopilotAiProvider(
     sourceOffers?(
       input: z.infer<typeof copilotSourceOffersInputSchema>,
     ): Promise<ReturnType<typeof validateSourceOffersResult>>;
+    referenceInspection?(
+      input: z.infer<typeof copilotReferenceInspectionInputSchema>,
+    ): Promise<z.infer<typeof copilotReferenceInspectionResultSchema>>;
     documentComparison?(
       input: z.infer<typeof copilotDocumentComparisonInputSchema>,
     ): Promise<z.infer<typeof copilotDocumentComparisonResultSchema>>;
@@ -751,6 +759,7 @@ export function createCopilotAiProvider(
                       reads.conversationHistory ||
                       reads.period ||
                       reads.commercialOffers ||
+                      reads.referenceInspection ||
                       reads.documentComparison ||
                       reads.commercialPdf ||
                       reads.receiptDocuments ||
@@ -784,6 +793,7 @@ export function createCopilotAiProvider(
                       reads.conversationHistory ||
                       reads.period ||
                       reads.commercialOffers ||
+                      reads.referenceInspection ||
                       reads.documentComparison ||
                       reads.commercialPdf ||
                       reads.receiptDocuments ||
@@ -1648,6 +1658,25 @@ export function createCopilotAiProvider(
                             async () =>
                               copilotDocumentsResultSchema.parse(
                                 await reads.commercialDocuments!(input),
+                              ),
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.referenceInspection
+                  ? {
+                      commercial_reference_inspect: tool({
+                        description:
+                          "Read the synchronized saved reference choice for two exact owned commercial PDFs, in either request order. Use commercial_documents to resolve their IDs. The returned decision preserves its stored original/corrected orientation; request order never reverses it. Report the chosen filename, note and revision with original source citations. MATCHING_SNAPSHOTS is an exact current synchronized-reading check, not a new human attestation; REVIEW_REQUIRED or LIMIT_EXCEEDED qualifies the historical choice rather than validating it. NO_DECISION means no synchronized choice for this pair, not no pending local work. A reference choice does not prove retained offers, TGs, a saved plan or field execution are updated. Read only: no selection, mutation or paid extraction.",
+                        inputSchema: copilotReferenceInspectionInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["reference-inspection", input]),
+                            async () =>
+                              validateReferenceInspectionResult(
+                                request.storeId,
+                                input,
+                                await reads.referenceInspection!(input),
                               ),
                           ),
                       }),
