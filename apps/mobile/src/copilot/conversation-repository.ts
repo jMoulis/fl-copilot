@@ -1,3 +1,4 @@
+import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { applyKnowledgeRecord } from "./knowledge-repository";
 import { ConflictRepository } from "../sync/conflict-repository";
 import {
@@ -167,6 +168,15 @@ export class CopilotConversationRepository {
       const prior = row
         ? copilotConversationSchema.parse(JSON.parse(row.payload_json))
         : null;
+      if (
+        prior &&
+        ((prior.deletedAt &&
+          (prior.deletedAt !== e.deletedAt || e.status !== "ARCHIVED")) ||
+          (prior.deletedMessageIds ?? []).some(
+            (id) => !e.deletedMessageIds?.includes(id),
+          ))
+      )
+        throw Error("COPILOT_DELETION_IMMUTABLE");
       if (row?.sync_state === "CONFLICT" || row?.sync_state === "ERROR")
         throw Error("COPILOT_CONVERSATION_RECONCILE_REQUIRED");
       if (
@@ -202,6 +212,87 @@ export class CopilotConversationRepository {
       });
     });
     return e;
+  }
+  async remove(
+    conversationId: string,
+    messageId: string | null,
+    ctx: { commandId: string; deviceId: string },
+    timestamp: string,
+  ) {
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      const joined = {
+        getFirstAsync: tx.getFirstAsync.bind(tx),
+        getAllAsync: tx.getAllAsync.bind(tx),
+        runAsync: tx.runAsync.bind(tx),
+        withExclusiveTransactionAsync: (
+          work: (t: OutboxDatabase) => Promise<void>,
+        ) => work(tx),
+      };
+      const repo = new CopilotConversationRepository(joined, this.scope);
+      const before = await repo.get(conversationId);
+      if (!before) throw Error("COPILOT_CONVERSATION_MISSING");
+      if (before.deletedAt) return;
+      if (before.status !== "ACTIVE")
+        throw Error("COPILOT_CONVERSATION_ARCHIVED");
+      if (messageId) {
+        const row = await tx.getFirstAsync<Row>(
+          "SELECT * FROM copilot_messages WHERE id=? AND conversation_id=? AND store_id=? AND owner_id=?",
+          messageId,
+          conversationId,
+          this.scope.storeId,
+          this.scope.ownerId,
+        );
+        if (!row) throw Error("COPILOT_MESSAGE_MISSING");
+        const message = copilotMessageSchema.parse(
+          JSON.parse(row.payload_json),
+        );
+        if (message.role === "TOOL")
+          throw Error("COPILOT_MESSAGE_ROLE_INVALID");
+        if (copilotMessageIsDeleted(message, before)) return;
+        await repo.save(
+          {
+            ...before,
+            deletedMessageIds: [...(before.deletedMessageIds ?? []), messageId],
+            version: before.version + 1,
+            updatedAt: timestamp,
+          },
+          ctx,
+        );
+        const pendingParent =
+          message.role === "USER" ? message.id : message.replyToMessageId;
+        if (pendingParent)
+          await tx.runAsync(
+            "DELETE FROM copilot_pending_turns WHERE store_id=? AND owner_id=? AND conversation_id=? AND user_message_id=?",
+            this.scope.storeId,
+            this.scope.ownerId,
+            conversationId,
+            pendingParent,
+          );
+      } else {
+        await repo.save(
+          {
+            ...before,
+            status: "ARCHIVED",
+            deletedAt: timestamp,
+            version: before.version + 1,
+            updatedAt: timestamp,
+          },
+          ctx,
+        );
+        await tx.runAsync(
+          "DELETE FROM copilot_pending_turns WHERE store_id=? AND owner_id=? AND conversation_id=?",
+          this.scope.storeId,
+          this.scope.ownerId,
+          conversationId,
+        );
+        await tx.runAsync(
+          "DELETE FROM copilot_drafts WHERE store_id=? AND owner_id=? AND conversation_id=?",
+          this.scope.storeId,
+          this.scope.ownerId,
+          conversationId,
+        );
+      }
+    });
   }
   async resolve(
     conflictId: string,

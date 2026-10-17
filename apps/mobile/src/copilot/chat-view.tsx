@@ -1,3 +1,4 @@
+import { showMessageMenu } from "./message-menu";
 import { CopyMessage } from "./copy-message";
 import { CopilotActivityTrail } from "./activity-trail";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
@@ -39,6 +40,7 @@ export function CopilotChatView({
   onSend,
   onConversations,
   onRemember,
+  onDeleteMessage,
   onAttach,
   onRetry,
   renderAttachment,
@@ -65,6 +67,7 @@ export function CopilotChatView({
   onSend(): void;
   onConversations(): void;
   onRemember?(message: CopilotMessage): void;
+  onDeleteMessage?(message: CopilotMessage): void;
   onAttach?(): void;
   onRetry?(): void;
   onOlder?(): void;
@@ -194,7 +197,13 @@ export function CopilotChatView({
               {renderToolMessage?.(item)}
             </View>
           ) : (
-            <View
+            <Pressable
+              onLongPress={
+                status !== "GENERATING" && onDeleteMessage
+                  ? () => showMessageMenu(item, () => onDeleteMessage(item))
+                  : undefined
+              }
+              delayLongPress={450}
               style={
                 item.role === "USER"
                   ? styles.userMessage
@@ -207,6 +216,7 @@ export function CopilotChatView({
               {item.role === "ASSISTANT" ? (
                 <AssistantAnswer
                   text={item.text}
+                  selectable={false}
                   renderSource={(id) => {
                     const a = item.attachments.find(
                       (a) => a.sourceDocumentId === id,
@@ -215,9 +225,7 @@ export function CopilotChatView({
                   }}
                 />
               ) : (
-                <Text selectable style={styles.message}>
-                  {item.text}
-                </Text>
+                <Text style={styles.message}>{item.text}</Text>
               )}
               <View
                 style={{
@@ -252,7 +260,7 @@ export function CopilotChatView({
                   {renderAttachment?.(attachment, item)}
                 </View>
               ))}
-            </View>
+            </Pressable>
           )
         }
       />

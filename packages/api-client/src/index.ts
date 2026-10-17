@@ -468,6 +468,9 @@ export class ApiClient {
       response = await fetch(`${this.baseUrl}${path}`, {
         ...init,
         headers: {
+          ...(/\/sync\/(bootstrap|pull)|\/copilot\/history/.test(path)
+            ? { "x-copilot-history-deletion": "1" }
+            : {}),
           ...(init.body ? { "content-type": "application/json" } : {}),
           ...init.headers,
         },

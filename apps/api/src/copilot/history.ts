@@ -1,4 +1,9 @@
 import {
+  copilotMessageIsDeleted,
+  type CopilotConversation,
+  type CopilotMessage,
+} from "@fl-copilot/domain";
+import {
   copilotHistoryQuerySchema as historyQuerySchema,
   copilotHistoryPageSchema as historyPageSchema,
 } from "@fl-copilot/sync-contracts";
@@ -7,20 +12,31 @@ export {
   copilotHistoryPageSchema as historyPageSchema,
 } from "@fl-copilot/sync-contracts";
 import { z } from "zod";
-import { serializeChat, type ChatRecordDocument } from "./conversation-store";
+import {
+  serializeChatForClient,
+  type ChatRecordDocument,
+} from "./conversation-store";
 import type { Db } from "mongodb";
 export async function readCopilotHistory(
   db: Db,
   storeId: string,
   ownerId: string,
   query: z.infer<typeof historyQuerySchema>,
+  supportsDeletion = false,
 ) {
   const scope = { storeId, ownerId };
+  const topic = query.conversationId
+    ? await db
+        .collection<CopilotConversation & { _id: string }>(
+          "copilotConversations",
+        )
+        .findOne({ _id: query.conversationId, ...scope })
+    : null;
   if (
     query.conversationId &&
-    !(await db
-      .collection<ChatRecordDocument>("copilotConversations")
-      .findOne({ _id: query.conversationId, ...scope }))
+    (!topic ||
+      topic.deletedAt ||
+      (!supportsDeletion && topic.deletedMessageIds?.length))
   )
     return historyPageSchema.parse({
       ...scope,
@@ -55,7 +71,12 @@ export async function readCopilotHistory(
     .toArray();
   const selected = rows.slice(0, query.limit),
     last = selected.at(-1),
-    data = selected.map((r) => serializeChat(type, r));
+    data = selected
+      .map((r) => serializeChatForClient(type, r, supportsDeletion))
+      .filter(
+        (record) =>
+          !topic || !copilotMessageIsDeleted(record as CopilotMessage, topic),
+      );
   return historyPageSchema.parse({
     ...scope,
     conversationId: query.conversationId ?? null,

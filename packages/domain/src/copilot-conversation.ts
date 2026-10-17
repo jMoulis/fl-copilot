@@ -18,13 +18,24 @@ export const copilotConversationSchema = z
     ownerId: id,
     title: z.string().trim().min(1).max(120),
     status: z.enum(["ACTIVE", "ARCHIVED"]),
+    deletedAt: time.optional(),
+    deletedMessageIds: z
+      .array(id)
+      .max(500)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
     version: z.number().int().positive(),
     createdAt: time,
     updatedAt: time,
   })
   .strict()
   .refine(
-    (e) => Date.parse(e.updatedAt) >= Date.parse(e.createdAt),
+    (e) =>
+      Date.parse(e.updatedAt) >= Date.parse(e.createdAt) &&
+      (!e.deletedAt ||
+        (e.status === "ARCHIVED" &&
+          Date.parse(e.deletedAt) >= Date.parse(e.createdAt) &&
+          Date.parse(e.deletedAt) <= Date.parse(e.updatedAt))),
     "Invalid conversation timestamps",
   );
 export const copilotMessageSchema = z
@@ -77,3 +88,31 @@ export const copilotDraftSchema = z
 export type CopilotConversation = z.infer<typeof copilotConversationSchema>;
 export type CopilotMessage = z.infer<typeof copilotMessageSchema>;
 export type CopilotDraft = z.infer<typeof copilotDraftSchema>;
+
+/** Logical deletion hides a question's replies and a removed answer's private cards.
+ * Immutable business actions and explicitly saved shared memory are independent. */
+export function copilotMessageIsDeleted(
+  message: CopilotMessage,
+  conversation: Pick<CopilotConversation, "deletedAt" | "deletedMessageIds">,
+): boolean {
+  if (conversation.deletedAt) return true;
+  const ids = new Set(conversation.deletedMessageIds ?? []);
+  if (
+    ids.has(message.id) ||
+    (message.replyToMessageId && ids.has(message.replyToMessageId))
+  )
+    return true;
+  if (message.role === "TOOL") {
+    try {
+      const artifact = JSON.parse(message.text) as {
+        assistantMessageId?: string;
+      };
+      return (
+        !!artifact.assistantMessageId && ids.has(artifact.assistantMessageId)
+      );
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}

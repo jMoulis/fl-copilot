@@ -46,6 +46,26 @@ export class CopilotLocalChatController {
       return conversation;
     });
   }
+  removeMessage(conversationId: string, messageId: string) {
+    return this.serial(() =>
+      this.repo.remove(
+        conversationId,
+        messageId,
+        { commandId: this.id(), deviceId: this.scope.deviceId },
+        this.now(),
+      ),
+    );
+  }
+  removeConversation(conversationId: string) {
+    return this.serial(() =>
+      this.repo.remove(
+        conversationId,
+        null,
+        { commandId: this.id(), deviceId: this.scope.deviceId },
+        this.now(),
+      ),
+    );
+  }
   open(conversationId: string, through?: { createdAt: string; id: string }) {
     return this.serial(async () => {
       const conversation = await this.active(conversationId);

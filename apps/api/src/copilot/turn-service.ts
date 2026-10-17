@@ -1,3 +1,4 @@
+import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { buildOfferValidationProposalMessages } from "./offer-validation-messages.js";
 import { buildChoiceCreateProposalMessages } from "./choice-create-messages.js";
 import { buildChoiceRetentionProposalMessages } from "./choice-retention-messages.js";
@@ -104,6 +105,8 @@ export async function runCopilotTurn(
     const { _id: parentKey, ...parentPayload } = row;
     void parentKey;
     const parent = copilotMessageSchema.parse(parentPayload);
+    if (copilotMessageIsDeleted(parent, payload))
+      throw new CopilotTurnError("PARENT_INVALID");
     if (
       parent.role !== "USER" ||
       parent.id !== input.userMessageId ||
@@ -127,6 +130,8 @@ export async function runCopilotTurn(
         message.role !== "ASSISTANT"
       )
         throw new CopilotTurnError("IDENTITY_CONFLICT");
+      if (copilotMessageIsDeleted(message, payload))
+        throw new CopilotTurnError("PARENT_INVALID");
       return { parent, cached: message };
     }
     return { parent, cached: null };
@@ -292,6 +297,21 @@ export async function runCopilotTurn(
             checkpoint,
             changes,
           );
+        }
+        if (
+          generation.mode === "FALLBACK" &&
+          generation.productPreviews?.length
+        ) {
+          for (const card of buildProductProposalMessages(
+            message,
+            generation.productPreviews,
+          ))
+            await appendCopilotToolRecord(
+              { database: dependencies.db, session },
+              renewed,
+              card,
+              changes,
+            );
         }
         if (generation.mode === "AI")
           for (const proposal of [

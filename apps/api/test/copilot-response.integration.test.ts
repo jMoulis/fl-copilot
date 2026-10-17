@@ -2475,102 +2475,111 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(generate).not.toHaveBeenCalled();
       expect(loadContext).not.toHaveBeenCalled();
     });
-    it("persists generated proposal cards through the real turn service and restores them on cached retry", async () => {
-      const f = await fixture(),
-        data = await membershipFixture();
-      const before = {
-        ...data.product,
-        storeId: f.storeId,
-        nature: "UNKNOWN" as const,
-      };
-      const input = {
-        productId: before.id,
-        patch: { nature: "BULK" as const },
-      };
-      const evidence = {
-        id: "generated-preview",
-        sourceType: "DATA_QUALITY" as const,
-        sourceId: before.id,
-        sourceVersion: before.version,
-        label: "Correction proposée",
-        value: "Aucune modification enregistrée.",
-        factKind: "QUALITY" as const,
-      };
-      const generate = vi.fn(async () => ({
-        output: {
-          language: "fr-FR",
-          summary: "Voici une correction proposée, à confirmer.",
-          facts: [{ evidenceId: evidence.id }],
-          interpretation: [],
-          recommendations: [],
-          questions: [],
-        },
-        metadata: {
-          requestedModel: "test",
-          resolvedModel: "test",
-          responseId: "test-proposal",
-          inputTokens: null,
-          outputTokens: null,
-        },
-        toolEvidence: [evidence],
-        productPreviews: [
-          {
-            input,
-            result: {
-              productId: before.id,
-              status: "PREVIEW",
-              preview: compareProductClassification(before, input.patch),
-              evidence: [evidence],
-            },
-          },
-        ],
-      }));
-      const context = detectCopilotConflicts({
-        batch: scoreCopilotPriorities({
+    it.each([false, true])(
+      "persists generated proposal cards even after narrative grounding failure and restores cached retries (%s)",
+      async (badNarrative) => {
+        const f = await fixture(),
+          data = await membershipFixture();
+        const before = {
+          ...data.product,
           storeId: f.storeId,
-          evaluatedAt: f.message.createdAt,
-          candidates: [],
-        }),
-        intents: [],
-      });
-      const dependencies = {
-        db,
-        provider: { model: "test", generate } as CopilotAiProvider,
-        authorize: async () => f.authority,
-        loadContext: async () => context,
-      };
-      const turn = {
-        replyId: f.response.id,
-        userMessageId: f.message.id,
-        conversationId: f.conversation.id,
-      };
-      const first = await runCopilotTurn(dependencies, turn);
-      expect(first.alreadyApplied).toBe(false);
-      expect(first.message.text).toContain("à confirmer");
-      const cards = await db
-        .collection("copilotMessages")
-        .find({ conversationId: f.conversation.id, role: "TOOL" })
-        .toArray();
-      expect(cards).toHaveLength(1);
-      expect(cards[0]?.replyToMessageId).toBe(f.message.id);
-      expect(JSON.parse(String(cards[0]?.text)).assistantMessageId).toBe(
-        f.response.id,
-      );
-      expect(
-        await db
-          .collection("syncChanges")
-          .countDocuments({ entityId: cards[0]?.id }),
-      ).toBe(1);
-      expect((await runCopilotTurn(dependencies, turn)).alreadyApplied).toBe(
-        true,
-      );
-      expect(generate).toHaveBeenCalledTimes(1);
-      expect(
-        await db
+          nature: "UNKNOWN" as const,
+        };
+        const input = {
+          productId: before.id,
+          patch: { nature: "BULK" as const },
+        };
+        const evidence = {
+          id: "generated-preview",
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: before.id,
+          sourceVersion: before.version,
+          label: "Correction proposée",
+          value: "Aucune modification enregistrée.",
+          factKind: "QUALITY" as const,
+        };
+        const generate = vi.fn(async () => ({
+          output: {
+            language: "fr-FR",
+            summary: badNarrative
+              ? "999 euros"
+              : "Voici une correction proposée, à confirmer.",
+            facts: [{ evidenceId: evidence.id }],
+            interpretation: [],
+            recommendations: [],
+            questions: [],
+          },
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: "test-proposal",
+            inputTokens: null,
+            outputTokens: null,
+          },
+          toolEvidence: [evidence],
+          productPreviews: [
+            {
+              input,
+              result: {
+                productId: before.id,
+                status: "PREVIEW",
+                preview: compareProductClassification(before, input.patch),
+                evidence: [evidence],
+              },
+            },
+          ],
+        }));
+        const context = detectCopilotConflicts({
+          batch: scoreCopilotPriorities({
+            storeId: f.storeId,
+            evaluatedAt: f.message.createdAt,
+            candidates: [],
+          }),
+          intents: [],
+        });
+        const dependencies = {
+          db,
+          provider: { model: "test", generate } as CopilotAiProvider,
+          authorize: async () => f.authority,
+          loadContext: async () => context,
+        };
+        const turn = {
+          replyId: f.response.id,
+          userMessageId: f.message.id,
+          conversationId: f.conversation.id,
+        };
+        const first = await runCopilotTurn(dependencies, turn);
+        expect(first.alreadyApplied).toBe(false);
+        expect(first.message.text).toContain(
+          badNarrative ? "Rien n’a encore été modifié" : "à confirmer",
+        );
+        expect(first.message.text).not.toContain("999");
+        const cards = await db
           .collection("copilotMessages")
-          .countDocuments({ conversationId: f.conversation.id, role: "TOOL" }),
-      ).toBe(1);
-    });
+          .find({ conversationId: f.conversation.id, role: "TOOL" })
+          .toArray();
+        expect(cards).toHaveLength(1);
+        expect(cards[0]?.replyToMessageId).toBe(f.message.id);
+        expect(JSON.parse(String(cards[0]?.text)).assistantMessageId).toBe(
+          f.response.id,
+        );
+        expect(
+          await db
+            .collection("syncChanges")
+            .countDocuments({ entityId: cards[0]?.id }),
+        ).toBe(1);
+        expect((await runCopilotTurn(dependencies, turn)).alreadyApplied).toBe(
+          true,
+        );
+        expect(generate).toHaveBeenCalledTimes(1);
+        expect(
+          await db.collection("copilotMessages").countDocuments({
+            conversationId: f.conversation.id,
+            role: "TOOL",
+          }),
+        ).toBe(1);
+      },
+    );
     it("persists and restores versioned private context checkpoints across a long conversation without business writes", async () => {
       const f = await fixture();
       const base = Date.parse(f.message.createdAt);
