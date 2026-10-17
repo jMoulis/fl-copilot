@@ -1,3 +1,5 @@
+import { previewChoiceReassociation } from "../src/copilot/choice-reassociation-tool";
+import { readCopilotChoiceReassociationProposal } from "@fl-copilot/domain";
 import { previewChoiceUpdate } from "../src/copilot/choice-update-tool";
 import { readCopilotChoiceUpdateProposal } from "@fl-copilot/domain";
 import { vi } from "vitest";
@@ -10,7 +12,7 @@ import {
 } from "@fl-copilot/analytics-core";
 import { readCopilotChoiceWithdrawalProposal } from "@fl-copilot/domain";
 import { previewChoiceWithdrawal } from "../src/copilot/choice-withdrawal-tool";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { MongoClient, Decimal128, type Db, type Document } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { commercialChoiceFixture } from "../../../scripts/test-commercial-choice-fixtures";
@@ -436,4 +438,238 @@ describe.skipIf(!uri)("exact owned commercial choice inspection", () => {
       ).toBe(f.choice.note);
     },
   );
+  it
+    .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
+    .each([false, true])(
+    "persists reviewed choice-reassociation cards atomically and rejects foreign product scope (%s)",
+    async (foreign) => {
+      const f = await commercialChoiceFixture(),
+        chat = chatFixture(randomUUID);
+      chat.storeId = f.choice.storeId;
+      chat.conversation.storeId = f.choice.storeId;
+      chat.message.storeId = f.choice.storeId;
+      chat.message.attachments = [];
+      chat.message.text = "Modifie la note de cette offre.";
+      await db
+        .collection<Document & { _id: string }>("commercialOfferChoices")
+        .insertOne({
+          _id: f.choice.id,
+          duplicateKey: randomUUID(),
+          ...f.choice,
+        });
+      const targetId = randomUUID();
+      await db.collection<Document & { _id: string }>("products").insertOne({
+        ...f.product,
+        _id: targetId,
+        id: targetId,
+        schemaVersion: 1,
+        createdAt: new Date(f.product.createdAt),
+        updatedAt: new Date(f.product.updatedAt),
+        deletedAt: null,
+        packaging: f.product.packaging
+          ? {
+              ...f.product.packaging,
+              quantity: Decimal128.fromString(
+                String(f.product.packaging.quantity),
+              ),
+            }
+          : null,
+      });
+      await db
+        .collection<Document & { _id: string }>("copilotConversations")
+        .insertOne({ _id: chat.conversation.id, ...chat.conversation });
+      await db
+        .collection<Document & { _id: string }>("copilotMessages")
+        .insertOne({ _id: chat.message.id, ...chat.message });
+      const preview = await previewChoiceReassociation(db, f.choice.storeId, {
+        choiceId: f.choice.id,
+        productId: targetId,
+      });
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Modification préparée, à confirmer.",
+          facts: preview.evidence.map((e) => ({ evidenceId: e.id })),
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "test-edit",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        toolEvidence: preview.evidence,
+        choiceReassociations: [
+          foreign
+            ? {
+                ...preview,
+                basis: {
+                  ...preview.basis!,
+                  product: { ...preview.basis!.product, storeId: randomUUID() },
+                },
+              }
+            : preview,
+        ],
+      }));
+      const deps = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => ({
+          storeId: f.choice.storeId,
+          ownerId: chat.ownerId,
+          canRespond: true,
+        }),
+        loadContext: async () =>
+          detectCopilotConflicts({
+            batch: scoreCopilotPriorities({
+              storeId: f.choice.storeId,
+              evaluatedAt: chat.message.createdAt,
+              candidates: [],
+            }),
+            intents: [],
+          }),
+      };
+      const turn = {
+        conversationId: chat.conversation.id,
+        userMessageId: chat.message.id,
+        replyId: randomUUID(),
+      };
+      if (foreign) {
+        await expect(runCopilotTurn(deps, turn)).rejects.toThrow();
+        expect(
+          await db.collection("copilotMessages").countDocuments({
+            conversationId: chat.conversation.id,
+            role: { $in: ["ASSISTANT", "TOOL"] },
+          }),
+        ).toBe(0);
+        return;
+      }
+      await runCopilotTurn(deps, turn);
+      const cards = await db
+        .collection("copilotMessages")
+        .find({ conversationId: chat.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(cards).toHaveLength(1);
+      const { _id, ...payload } = cards[0];
+      expect(
+        readCopilotChoiceReassociationProposal(payload).request.input.draft
+          .productId,
+      ).toBe(targetId);
+      expect(
+        await db.collection("syncChanges").countDocuments({ entityId: _id }),
+      ).toBe(1);
+      expect((await runCopilotTurn(deps, turn)).alreadyApplied).toBe(true);
+      expect(generate).toHaveBeenCalledOnce();
+      expect(
+        (await db
+          .collection("commercialOfferChoices")
+          .findOne({ _id: f.choice.id } as Document))!.note,
+      ).toBe(f.choice.note);
+    },
+  );
+  it("previews exact active target products, blocks units/duplicates/withdrawal and never changes choices", async () => {
+    const f = await commercialChoiceFixture(),
+      target = { ...f.product, id: randomUUID() },
+      choices = db.collection<Document & { _id: string }>(
+        "commercialOfferChoices",
+      ),
+      products = db.collection<Document & { _id: string }>("products");
+    await choices.insertOne({
+      _id: f.choice.id,
+      ...f.choice,
+      duplicateKey: randomUUID(),
+    });
+    const putProduct = async (p: typeof f.product) =>
+      products.insertOne({
+        ...p,
+        _id: p.id,
+        schemaVersion: 1,
+        createdAt: new Date(p.createdAt),
+        updatedAt: new Date(p.updatedAt),
+        deletedAt: null,
+        packaging: null,
+      });
+    await putProduct(target);
+    const input = { choiceId: f.choice.id, productId: target.id };
+    const ready = await previewChoiceReassociation(db, f.choice.storeId, input);
+    expect(ready.status).toBe("READY");
+    expect(ready.basis?.previousProduct).toBeNull();
+    expect(
+      (await previewChoiceReassociation(db, randomUUID(), input)).status,
+    ).toBe("UNAVAILABLE");
+    expect(
+      (
+        await previewChoiceReassociation(db, f.choice.storeId, {
+          ...input,
+          productId: randomUUID(),
+        })
+      ).status,
+    ).toBe("UNAVAILABLE");
+    await putProduct(f.product);
+    expect(
+      (
+        await previewChoiceReassociation(db, f.choice.storeId, {
+          ...input,
+          productId: f.product.id,
+        })
+      ).status,
+    ).toBe("UNCHANGED");
+    await products.updateOne(
+      { _id: target.id },
+      { $set: { salesUnit: "PIECE" } },
+    );
+    expect(
+      (await previewChoiceReassociation(db, f.choice.storeId, input)).status,
+    ).toBe("BLOCKED");
+    await products.updateOne(
+      { _id: target.id },
+      { $set: { salesUnit: f.product.salesUnit, status: "INACTIVE" } },
+    );
+    expect(
+      (await previewChoiceReassociation(db, f.choice.storeId, input)).status,
+    ).toBe("UNAVAILABLE");
+    await products.updateOne(
+      { _id: target.id },
+      { $set: { status: "ACTIVE", storeId: randomUUID() } },
+    );
+    expect(
+      (await previewChoiceReassociation(db, f.choice.storeId, input)).status,
+    ).toBe("UNAVAILABLE");
+    await products.updateOne(
+      { _id: target.id },
+      { $set: { storeId: f.choice.storeId } },
+    );
+    const { commercialChoiceDuplicateKey } =
+      await import("@fl-copilot/commercial-core");
+    const duplicate = {
+      ...f.choice,
+      id: randomUUID(),
+      productId: target.id,
+      source: { ...f.choice.source, itemIndex: 1 },
+    };
+    await choices.insertOne({
+      ...duplicate,
+      _id: duplicate.id,
+      duplicateKey: createHash("sha256")
+        .update(commercialChoiceDuplicateKey(duplicate))
+        .digest("hex"),
+    });
+    expect(
+      (await previewChoiceReassociation(db, f.choice.storeId, input)).status,
+    ).toBe("BLOCKED");
+    await choices.deleteOne({ _id: duplicate.id });
+    await choices.updateOne(
+      { _id: f.choice.id },
+      { $set: { status: "WITHDRAWN" } },
+    );
+    expect(
+      (await previewChoiceReassociation(db, f.choice.storeId, input)).status,
+    ).toBe("BLOCKED");
+    expect((await choices.findOne({ _id: f.choice.id }))!.productId).toBe(
+      f.choice.productId,
+    );
+  });
 });

@@ -1,3 +1,6 @@
+import { ChoiceReassociationCard } from "@/copilot/choice-reassociation-card";
+import { CopilotChoiceReassociationController } from "@/copilot/choice-reassociation-controller";
+import { readCopilotChoiceReassociationProposal } from "@fl-copilot/domain";
 import { ChoiceUpdateCard } from "@/copilot/choice-update-card";
 import { CopilotChoiceUpdateController } from "@/copilot/choice-update-controller";
 import { readCopilotChoiceUpdateProposal } from "@fl-copilot/domain";
@@ -216,6 +219,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
+  const choiceReassociations = useMemo(
+    () =>
+      new CopilotChoiceReassociationController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canManageCommercialChoices: canManageProducts,
+        },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
   const choiceWithdrawals = useMemo(
     () =>
       new CopilotChoiceWithdrawalController(
@@ -268,6 +286,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       );
     } catch {
       /* Other supported tool artifacts are handled below. */
+    }
+    try {
+      readCopilotChoiceReassociationProposal(message);
+      return (
+        <ChoiceReassociationCard
+          key={message.id}
+          message={message}
+          controller={choiceReassociations}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
     }
     try {
       readCopilotChoiceUpdateProposal(message);
@@ -407,6 +438,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               memorySuggestions: true,
               webResearch: true,
               choiceUpdate: canManageProducts,
+              choiceReassociation: canManageProducts,
               choiceWithdrawal: canManageProducts,
               preparationProposals: canPrepareCommercialWeek,
               preparationLayout: canPrepareCommercialWeek,

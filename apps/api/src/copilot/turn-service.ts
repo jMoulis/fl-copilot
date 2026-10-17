@@ -1,3 +1,4 @@
+import { buildChoiceReassociationProposalMessages } from "./choice-reassociation-messages.js";
 import { buildChoiceUpdateProposalMessages } from "./choice-update-messages.js";
 import { buildChoiceWithdrawalProposalMessages } from "./choice-withdrawal-messages.js";
 import { buildPreparationProposalMessages } from "./preparation-proposal-messages.js";
@@ -294,6 +295,10 @@ export async function runCopilotTurn(
             ...buildChoiceUpdateProposalMessages(
               message,
               generation.choiceUpdates ?? [],
+            ),
+            ...buildChoiceReassociationProposalMessages(
+              message,
+              generation.choiceReassociations ?? [],
             ),
             ...buildChoiceWithdrawalProposalMessages(
               message,

@@ -697,3 +697,220 @@ it("refuses incompatible price units through the canonical retained-choice write
     s.db.close();
   }
 });
+
+async function reassociationCard(
+  s: Awaited<ReturnType<typeof setup>>,
+  targetId = randomUUID(),
+  missingOldProfile = false,
+) {
+  const { copilotMessageSchema } = await import("@fl-copilot/domain"),
+    { applyCopilotRecord } = await import("./conversation-repository");
+  const before = (await s.runtime.execute(s.request, s.authority(s.request)))
+    .after;
+  const previousProduct = (await new ProductMasterRepository(s.a).getProduct(
+    before.productId,
+  ))!.entity;
+  await new ProductMasterRepository(s.a).upsertProduct(
+    { ...previousProduct, id: targetId, label: "Produit cible", version: 1 },
+    { commandId: randomUUID(), deviceId: s.authority(s.request).deviceId },
+  );
+  const product = (await new ProductMasterRepository(s.a).getProduct(targetId))!
+    .entity;
+  if (missingOldProfile)
+    s.db.prepare("DELETE FROM products WHERE id=?").run(before.productId);
+  const assistant = copilotMessageSchema.parse({
+    ...s.f.message,
+    id: randomUUID(),
+    role: "ASSISTANT",
+    replyToMessageId: s.f.message.id,
+    attachments: [],
+  });
+  const message = copilotMessageSchema.parse({
+    ...assistant,
+    id: randomUUID(),
+    role: "TOOL",
+    text: JSON.stringify({
+      kind: "COMMERCIAL_CHOICE_REASSOCIATION_PROPOSAL",
+      schemaVersion: 1,
+      assistantMessageId: assistant.id,
+      input: { choiceId: before.id, productId: targetId },
+      basis: {
+        before,
+        product,
+        previousProduct: missingOldProfile ? null : previousProduct,
+      },
+    }),
+  });
+  await s.a.withExclusiveTransactionAsync(async (tx) => {
+    await applyCopilotRecord(tx, s.f, "copilot_message", assistant);
+    await applyCopilotRecord(tx, s.f, "copilot_message", message);
+  });
+  return message;
+}
+async function reassociationController(
+  s: Awaited<ReturnType<typeof setup>>,
+  allowed = true,
+  db = s.a,
+) {
+  const { CopilotChoiceReassociationController } =
+    await import("./choice-reassociation-controller");
+  return new CopilotChoiceReassociationController(
+    db,
+    {
+      storeId: s.f.storeId,
+      ownerId: s.f.ownerId,
+      deviceId: s.authority(s.request).deviceId,
+      canManageCommercialChoices: allowed,
+    },
+    testChoiceDigest,
+    randomUUID,
+  );
+}
+it("reassociates a reviewed product atomically, preserves source/terms and replays once after restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "choice-edit-")),
+    path = join(dir, "local.db"),
+    s = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const targetId = randomUUID(),
+      m = await reassociationCard(s, targetId),
+      c = await reassociationController(s);
+    expect((await c.open(m)).status).toBe("READY");
+    const source = JSON.stringify(
+      s.db.prepare("SELECT * FROM commercial_visual_readings").get(),
+    );
+    s.a.fail = true;
+    await expect(c.confirm(m)).rejects.toThrow();
+    s.a.fail = false;
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 1 });
+    await expect(
+      (await reassociationController(s, false)).confirm(m),
+    ).rejects.toThrow("FORBIDDEN");
+    await c.confirm(m);
+    const row = s.db
+      .prepare("SELECT payload_json FROM commercial_offer_choices")
+      .get() as { payload_json: string };
+    expect(JSON.parse(row.payload_json)).toMatchObject({
+      source: s.fixture.choice.source,
+      productId: targetId,
+      mechanism: s.fixture.choice.mechanism,
+      saleEnd: s.fixture.choice.saleEnd,
+      saleStart: s.fixture.choice.saleStart,
+      note: s.fixture.choice.note,
+      status: "RETAINED",
+      version: 2,
+    });
+    expect(
+      JSON.stringify(
+        s.db.prepare("SELECT * FROM commercial_visual_readings").get(),
+      ),
+    ).toBe(source);
+    s.db.close();
+    reopened = new DatabaseSync(path);
+    expect(
+      (
+        await (
+          await reassociationController(s, true, new Adapter(reopened))
+        ).confirm(m)
+      ).status,
+    ).toBe("COMPLETED");
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_choice_history")
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE command_type='COMMERCIAL_OFFER_CHOICE_UPSERT'",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+  } finally {
+    reopened?.close();
+    try {
+      s.db.close();
+    } catch {
+      /* closed */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("rejects a reviewed reassociation when the old product changes, a card is forged or the action is cancelled", async () => {
+  const s = await setup();
+  try {
+    const m = await reassociationCard(s),
+      c = await reassociationController(s);
+    await expect(
+      c.confirm({
+        ...m,
+        text: m.text.replace("Produit cible", "Autre produit"),
+      }),
+    ).rejects.toThrow();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(c.confirm(m, abort.signal)).rejects.toThrow();
+    await new ProductMasterRepository(s.a).upsertProduct(
+      { ...s.fixture.product, label: "Autre libellé", version: 2 },
+      { commandId: randomUUID(), deviceId: s.authority(s.request).deviceId },
+    );
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_choice_history").get(),
+    ).toEqual({ n: 1 });
+  } finally {
+    s.db.close();
+  }
+});
+it("invalidates reassociation when the target changes and preserves the old association", async () => {
+  const s = await setup();
+  try {
+    const targetId = randomUUID(),
+      m = await reassociationCard(s, targetId),
+      c = await reassociationController(s);
+    const target = (await new ProductMasterRepository(s.a).getProduct(
+      targetId,
+    ))!.entity;
+    await new ProductMasterRepository(s.a).upsertProduct(
+      { ...target, label: "Cible modifiée", version: 2 },
+      { commandId: randomUUID(), deviceId: s.authority(s.request).deviceId },
+    );
+    expect((await c.open(m)).status).toBe("STALE");
+    await expect(c.confirm(m)).rejects.toThrow("STALE");
+    expect(
+      JSON.parse(
+        (
+          s.db
+            .prepare("SELECT payload_json FROM commercial_offer_choices")
+            .get() as { payload_json: string }
+        ).payload_json,
+      ).productId,
+    ).toBe(s.fixture.product.id);
+  } finally {
+    s.db.close();
+  }
+});
+it("repairs an association even when the old product profile is no longer on the device", async () => {
+  const s = await setup();
+  try {
+    const targetId = randomUUID(),
+      m = await reassociationCard(s, targetId, true),
+      c = await reassociationController(s);
+    expect((await c.open(m)).status).toBe("READY");
+    expect((await c.confirm(m)).status).toBe("COMPLETED");
+    expect(
+      JSON.parse(
+        (
+          s.db
+            .prepare("SELECT payload_json FROM commercial_offer_choices")
+            .get() as { payload_json: string }
+        ).payload_json,
+      ).productId,
+    ).toBe(targetId);
+  } finally {
+    s.db.close();
+  }
+});
