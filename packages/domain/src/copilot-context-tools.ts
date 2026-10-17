@@ -221,3 +221,15 @@ export const copilotOffersReadResultSchema = z.strictObject({
   nextAfterId: z.string().uuid().nullable(),
   evidence: z.array(copilotEvidenceSchema).max(21),
 });
+
+/** Exact current synchronized choice; absence is scoped to the authenticated store. */
+export const copilotChoiceReadInputSchema = z.strictObject({
+  choiceId: z.uuid(),
+});
+export const copilotChoiceReadResultSchema = z
+  .strictObject({
+    choiceId: z.uuid(),
+    choice: commercialOfferChoiceSchema.nullable(),
+    evidence: z.array(copilotEvidenceSchema).min(1).max(2),
+  })
+  .refine((v) => v.choice === null || v.choice.id === v.choiceId);

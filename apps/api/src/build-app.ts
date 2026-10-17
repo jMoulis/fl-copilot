@@ -32,6 +32,7 @@ import {
   readCommercialDocuments,
   readCommercialPdf,
 } from "./copilot/commercial-documents-tool.js";
+import { readCommercialChoice } from "./copilot/commercial-choice-tool.js";
 import { readCommercialOffers } from "./copilot/commercial-offers-tool.js";
 import { readPeriodAnalysis } from "./copilot/period-analysis-tool.js";
 import { readProductAnalysis } from "./copilot/product-analysis-tool.js";
@@ -783,6 +784,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                   storeId,
                   input,
                 );
+                await authorize();
+                return result;
+              },
+              commercialChoice: async (input) => {
+                await authorize();
+                const result = await readCommercialChoice(db, storeId, input);
                 await authorize();
                 return result;
               },

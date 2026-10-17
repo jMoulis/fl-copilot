@@ -3141,3 +3141,71 @@ it.each(["EDIT", "LAYOUT", "CREATE", "SELECTION", "REFRESH"])(
     ).generate(f.request, schema);
   },
 );
+
+it.each(["VALID", "FOREIGN_STORE", "WRONG_CHOICE", "MISSING"])(
+  "scopes the exact commercial choice SDK read (%s)",
+  async (mode) => {
+    const f = fixture();
+    const { commercialChoiceFixture } =
+      await import("../../../../scripts/test-commercial-choice-fixtures");
+    const data = await commercialChoiceFixture({ storeId: f.request.storeId });
+    const input = { choiceId: data.choice.id };
+    const evidence = {
+      id: "choice-exact",
+      sourceType: "COMMERCIAL_OPERATION" as const,
+      sourceId: data.choice.source.sourceDocumentId,
+      sourceVersion: 1,
+      label: "Choix",
+      value: "État enregistré, pas une validation",
+      factKind: "QUALITY" as const,
+    };
+    const commercialChoice = vi.fn(async () => ({
+      choiceId: input.choiceId,
+      choice:
+        mode === "MISSING"
+          ? null
+          : {
+              ...data.choice,
+              storeId:
+                mode === "FOREIGN_STORE" ? randomUUID() : data.choice.storeId,
+              id: mode === "WRONG_CHOICE" ? randomUUID() : data.choice.id,
+            },
+      evidence: [evidence],
+    }));
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      expect(
+        body.tools.find((t: { name: string }) => t.name === "commercial_choice")
+          .parameters.type,
+      ).toBe("object");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_choice",
+            call_id: "call_choice",
+            name: "commercial_choice",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      commercialChoice,
+    }).generate(f.request, schema);
+    expect(commercialChoice).toHaveBeenCalledExactlyOnceWith(input);
+    expect(r.toolEvidence).toEqual(
+      ["VALID", "MISSING"].includes(mode) ? [evidence] : [],
+    );
+  },
+);
