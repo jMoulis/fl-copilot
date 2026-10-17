@@ -211,6 +211,9 @@ export async function generateCopilotResponse(
   informationRequests?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["informationRequests"];
+  choiceUpdates?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["choiceUpdates"];
   choiceWithdrawals?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["choiceWithdrawals"];
@@ -297,6 +300,7 @@ export async function generateCopilotResponse(
       response: validateCopilotResponse(generated.output, request),
       metadata: generated.metadata,
       productPreviews: generated.productPreviews,
+      choiceUpdates: generated.choiceUpdates,
       choiceWithdrawals: generated.choiceWithdrawals,
       preparationPreviews: generated.preparationPreviews,
       operationsPreviews: generated.operationsPreviews,

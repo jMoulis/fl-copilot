@@ -6,7 +6,10 @@ import {
   ProductClassificationError,
   type ChoiceSaveAuthority,
 } from "@fl-copilot/domain";
-import { commercialChoiceId } from "@fl-copilot/commercial-core";
+import {
+  commercialChoiceProductUnitMatches,
+  commercialChoiceId,
+} from "@fl-copilot/commercial-core";
 import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
@@ -86,6 +89,12 @@ export class CopilotCommercialChoiceRuntime {
             throw new ProductClassificationError("PRODUCT_UNAVAILABLE");
           if (["ERROR", "CONFLICT"].includes(p.syncState))
             throw new ProductClassificationError("SYNC_CONFLICT");
+          if (
+            !commercialChoiceProductUnitMatches(input.draft, p.entity.salesUnit)
+          )
+            throw new ProductClassificationError(
+              "COMMERCIAL_CHOICE_UNIT_MISMATCH",
+            );
           if (p.entity.version !== input.productVersion)
             throw new ProductClassificationError("VERSION_CONFLICT");
         }

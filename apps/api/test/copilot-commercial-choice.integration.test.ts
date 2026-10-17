@@ -1,3 +1,5 @@
+import { previewChoiceUpdate } from "../src/copilot/choice-update-tool";
+import { readCopilotChoiceUpdateProposal } from "@fl-copilot/domain";
 import { vi } from "vitest";
 import { chatFixture } from "../../../scripts/test-chat-fixtures";
 import { runCopilotTurn } from "../src/copilot/turn-service";
@@ -9,7 +11,7 @@ import {
 import { readCopilotChoiceWithdrawalProposal } from "@fl-copilot/domain";
 import { previewChoiceWithdrawal } from "../src/copilot/choice-withdrawal-tool";
 import { randomUUID } from "node:crypto";
-import { MongoClient, type Db, type Document } from "mongodb";
+import { MongoClient, Decimal128, type Db, type Document } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { commercialChoiceFixture } from "../../../scripts/test-commercial-choice-fixtures";
 import { readCommercialChoice } from "../src/copilot/commercial-choice-tool";
@@ -222,6 +224,216 @@ describe.skipIf(!uri)("exact owned commercial choice inspection", () => {
           .collection("commercialOfferChoices")
           .findOne({ _id: f.choice.id } as Document))!.status,
       ).toBe("RETAINED");
+    },
+  );
+  it("prepares only requested retained-choice updates against an active product, preserves data and blocks invalid conditions", async () => {
+    const f = await commercialChoiceFixture(),
+      input = {
+        choiceId: f.choice.id,
+        patch: { note: "Adapter la présentation" },
+      };
+    await db
+      .collection<Document & { _id: string }>("commercialOfferChoices")
+      .insertOne({ _id: f.choice.id, duplicateKey: randomUUID(), ...f.choice });
+    await db.collection<Document & { _id: string }>("products").insertOne({
+      _id: f.product.id,
+      ...f.product,
+      schemaVersion: 1,
+      createdAt: new Date(f.product.createdAt),
+      updatedAt: new Date(f.product.updatedAt),
+      deletedAt: null,
+      packaging: f.product.packaging
+        ? {
+            ...f.product.packaging,
+            quantity: Decimal128.fromString(
+              String(f.product.packaging.quantity),
+            ),
+          }
+        : null,
+    });
+    expect(
+      (await previewChoiceUpdate(db, f.choice.storeId, input)).status,
+    ).toBe("READY");
+    expect(
+      (
+        await previewChoiceUpdate(db, f.choice.storeId, {
+          ...input,
+          patch: { note: f.choice.note },
+        })
+      ).status,
+    ).toBe("UNCHANGED");
+    expect((await previewChoiceUpdate(db, randomUUID(), input)).status).toBe(
+      "UNAVAILABLE",
+    );
+    expect(
+      (
+        await previewChoiceUpdate(db, f.choice.storeId, {
+          ...input,
+          patch: { saleEnd: "2020-01-01" },
+        })
+      ).status,
+    ).toBe("BLOCKED");
+    await db
+      .collection("products")
+      .updateOne({ _id: f.product.id } as Document, {
+        $set: { salesUnit: "KG" },
+      });
+    expect(
+      (
+        await previewChoiceUpdate(db, f.choice.storeId, {
+          ...input,
+          patch: {
+            mechanism: {
+              type: "FIXED_PRICE",
+              amount: 2,
+              currency: "EUR",
+              unit: "PIECE",
+            },
+          },
+        })
+      ).status,
+    ).toBe("BLOCKED");
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: f.choice.id } as Document, {
+        $set: { status: "WITHDRAWN" },
+      });
+    expect(
+      (await previewChoiceUpdate(db, f.choice.storeId, input)).status,
+    ).toBe("BLOCKED");
+    expect(
+      (await db
+        .collection("commercialOfferChoices")
+        .findOne({ _id: f.choice.id } as Document))!.note,
+    ).toBe(f.choice.note);
+  });
+  it
+    .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
+    .each([false, true])(
+    "persists reviewed choice-update cards atomically and rejects foreign product scope (%s)",
+    async (foreign) => {
+      const f = await commercialChoiceFixture(),
+        chat = chatFixture(randomUUID);
+      chat.storeId = f.choice.storeId;
+      chat.conversation.storeId = f.choice.storeId;
+      chat.message.storeId = f.choice.storeId;
+      chat.message.attachments = [];
+      chat.message.text = "Modifie la note de cette offre.";
+      await db
+        .collection<Document & { _id: string }>("commercialOfferChoices")
+        .insertOne({
+          _id: f.choice.id,
+          duplicateKey: randomUUID(),
+          ...f.choice,
+        });
+      await db.collection<Document & { _id: string }>("products").insertOne({
+        _id: f.product.id,
+        ...f.product,
+        schemaVersion: 1,
+        createdAt: new Date(f.product.createdAt),
+        updatedAt: new Date(f.product.updatedAt),
+        deletedAt: null,
+        packaging: f.product.packaging
+          ? {
+              ...f.product.packaging,
+              quantity: Decimal128.fromString(
+                String(f.product.packaging.quantity),
+              ),
+            }
+          : null,
+      });
+      await db
+        .collection<Document & { _id: string }>("copilotConversations")
+        .insertOne({ _id: chat.conversation.id, ...chat.conversation });
+      await db
+        .collection<Document & { _id: string }>("copilotMessages")
+        .insertOne({ _id: chat.message.id, ...chat.message });
+      const preview = await previewChoiceUpdate(db, f.choice.storeId, {
+        choiceId: f.choice.id,
+        patch: { note: "Modification demandée" },
+      });
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Modification préparée, à confirmer.",
+          facts: preview.evidence.map((e) => ({ evidenceId: e.id })),
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "test-edit",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        toolEvidence: preview.evidence,
+        choiceUpdates: [
+          foreign
+            ? {
+                ...preview,
+                basis: {
+                  ...preview.basis!,
+                  product: { ...preview.basis!.product, storeId: randomUUID() },
+                },
+              }
+            : preview,
+        ],
+      }));
+      const deps = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => ({
+          storeId: f.choice.storeId,
+          ownerId: chat.ownerId,
+          canRespond: true,
+        }),
+        loadContext: async () =>
+          detectCopilotConflicts({
+            batch: scoreCopilotPriorities({
+              storeId: f.choice.storeId,
+              evaluatedAt: chat.message.createdAt,
+              candidates: [],
+            }),
+            intents: [],
+          }),
+      };
+      const turn = {
+        conversationId: chat.conversation.id,
+        userMessageId: chat.message.id,
+        replyId: randomUUID(),
+      };
+      if (foreign) {
+        await expect(runCopilotTurn(deps, turn)).rejects.toThrow();
+        expect(
+          await db.collection("copilotMessages").countDocuments({
+            conversationId: chat.conversation.id,
+            role: { $in: ["ASSISTANT", "TOOL"] },
+          }),
+        ).toBe(0);
+        return;
+      }
+      await runCopilotTurn(deps, turn);
+      const cards = await db
+        .collection("copilotMessages")
+        .find({ conversationId: chat.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(cards).toHaveLength(1);
+      const { _id, ...payload } = cards[0];
+      expect(
+        readCopilotChoiceUpdateProposal(payload).request.input.draft.note,
+      ).toBe("Modification demandée");
+      expect(
+        await db.collection("syncChanges").countDocuments({ entityId: _id }),
+      ).toBe(1);
+      expect((await runCopilotTurn(deps, turn)).alreadyApplied).toBe(true);
+      expect(generate).toHaveBeenCalledOnce();
+      expect(
+        (await db
+          .collection("commercialOfferChoices")
+          .findOne({ _id: f.choice.id } as Document))!.note,
+      ).toBe(f.choice.note);
     },
   );
 });
