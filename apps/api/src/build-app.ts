@@ -1,3 +1,4 @@
+import { readCommercialDocumentComparison } from "./copilot/document-comparison-tool.js";
 import { previewCommercialPlanValidation } from "./copilot/plan-validation-tool.js";
 import { readCommercialPlanReadiness } from "./copilot/plan-readiness-tool.js";
 import { previewOfferValidation } from "./copilot/offer-validation-tool.js";
@@ -773,6 +774,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               commercialDocuments: async (input) => {
                 await authorize();
                 const result = await readCommercialDocuments(
+                  db,
+                  storeId,
+                  input,
+                );
+                await authorize();
+                return result;
+              },
+              documentComparison: async (input) => {
+                await authorize();
+                const result = await readCommercialDocumentComparison(
                   db,
                   storeId,
                   input,

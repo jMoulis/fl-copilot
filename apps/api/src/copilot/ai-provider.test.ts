@@ -3955,3 +3955,107 @@ it.each(["READY", "FOREIGN", "DISABLED"])(
     expect(result.toolEvidence).toEqual(mode === "READY" ? [evidence] : []);
   },
 );
+
+it.each(["OWNED", "FOREIGN", "WRONG_SOURCE", "DISABLED"])(
+  "compares source PDFs within tool authority and source scope (%s)",
+  async (mode) => {
+    const f = fixture(),
+      input = {
+        beforeDocumentId: randomUUID(),
+        afterDocumentId: randomUUID(),
+        businessDate: "2026-10-08",
+        offset: 0,
+        limit: 5,
+      };
+    const metadata = (documentId: string) => ({
+      documentId,
+      filename: "Original.pdf",
+      checksum: documentId,
+      coverage: null,
+      period: null,
+      warningCount: 0,
+    });
+    const evidence = {
+      id: "document-comparison/test",
+      sourceType: "DATA_QUALITY" as const,
+      sourceId: input.afterDocumentId,
+      sourceVersion: null,
+      label: "Comparaison",
+      value: "Lecture visuelle indisponible",
+      factKind: "QUALITY" as const,
+    };
+    const value = {
+      storeId: mode === "FOREIGN" ? randomUUID() : f.request.storeId,
+      input,
+      week: {
+        date: input.businessDate,
+        year: 2026,
+        number: 41,
+        start: "2026-10-05",
+        end: "2026-10-11",
+      },
+      status: "NOT_READY" as const,
+      before: metadata(
+        mode === "WRONG_SOURCE" ? randomUUID() : input.beforeDocumentId,
+      ),
+      after: metadata(input.afterDocumentId),
+      counts: null,
+      differenceCount: null,
+      differences: [],
+      nextOffset: null,
+      evidence: [evidence],
+    };
+    const documentComparison = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "commercial_document_comparison",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.properties).not.toHaveProperty("storeId");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_diff",
+            call_id: "call_diff",
+            name: "commercial_document_comparison",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "OWNED"
+          ? { status: "NOT_READY", before: metadata(input.beforeDocumentId) }
+          : { unavailable: true },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { documentComparison }),
+    }).generate(f.request, schema);
+    expect(documentComparison).toHaveBeenCalledTimes(
+      mode === "DISABLED" ? 0 : 1,
+    );
+    expect(result.toolEvidence).toEqual(mode === "OWNED" ? [evidence] : []);
+  },
+);

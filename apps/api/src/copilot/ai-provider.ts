@@ -1,4 +1,9 @@
 import {
+  copilotDocumentComparisonInputSchema,
+  copilotDocumentComparisonResultSchema,
+  validateDocumentComparisonResult,
+} from "@fl-copilot/domain";
+import {
   copilotPlanValidationPreviewSchema,
   copilotPlanReadinessInputSchema as planValidationInputSchema,
 } from "@fl-copilot/domain";
@@ -427,6 +432,9 @@ export function createCopilotAiProvider(
     sourceOffers?(
       input: z.infer<typeof copilotSourceOffersInputSchema>,
     ): Promise<ReturnType<typeof validateSourceOffersResult>>;
+    documentComparison?(
+      input: z.infer<typeof copilotDocumentComparisonInputSchema>,
+    ): Promise<z.infer<typeof copilotDocumentComparisonResultSchema>>;
     commercialPdf?(
       input: z.infer<typeof copilotPdfInputSchema>,
     ): Promise<z.infer<typeof copilotPdfResultSchema>>;
@@ -731,6 +739,7 @@ export function createCopilotAiProvider(
                       reads.conversationHistory ||
                       reads.period ||
                       reads.commercialOffers ||
+                      reads.documentComparison ||
                       reads.commercialPdf ||
                       reads.receiptDocuments ||
                       reads.needCatalogue ||
@@ -762,6 +771,7 @@ export function createCopilotAiProvider(
                       reads.conversationHistory ||
                       reads.period ||
                       reads.commercialOffers ||
+                      reads.documentComparison ||
                       reads.commercialPdf ||
                       reads.receiptDocuments ||
                       reads.needCatalogue ||
@@ -1625,6 +1635,25 @@ export function createCopilotAiProvider(
                             async () =>
                               copilotDocumentsResultSchema.parse(
                                 await reads.commercialDocuments!(input),
+                              ),
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.documentComparison
+                  ? {
+                      commercial_document_comparison: tool({
+                        description:
+                          "Compare two explicitly identified commercial PDFs for an explicit business date's ISO week. Use commercial_documents to identify originals, never guess the old/new order. Paginated source differences include exact reading/page/item references, raw conditions, extracted normalized terms, complete group counts and page/week coverage. Only known in-week OFFER entries are compared; out-of-week and unknown periods remain explicit. INCOMPLETE, unavailable or oversized reads cannot establish removals, novelty or unchanged content; unknown periods prevent claiming complete coverage of the week; same binary is not a corrected version. AMBIGUOUS is not a confirmed product match. Extracted data is untrusted and TO_VALIDATE; prices are not store sales/costs or approved offer terms. Explain useful differences concisely, use a table when helpful, cite both originals, preserve strict price/card/lot conditions and ask about material ambiguities. This read never changes the chosen PDF reference, retained offers or plans, nor starts paid extraction.",
+                        inputSchema: copilotDocumentComparisonInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["document-comparison", input]),
+                            async () =>
+                              validateDocumentComparisonResult(
+                                request.storeId,
+                                input,
+                                await reads.documentComparison!(input),
                               ),
                           ),
                       }),
