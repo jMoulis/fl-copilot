@@ -24,6 +24,7 @@ it("maps real tool keys without disclosing private arguments", () => {
     "waste-receipt",
     "commercial-preparation",
     "document-comparison",
+    "reference-inspection",
     "plan-readiness",
   ])
     expect(readActivityStage(JSON.stringify([key, { private: true }]))).toBe(

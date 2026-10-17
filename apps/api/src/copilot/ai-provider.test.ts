@@ -4147,3 +4147,88 @@ it.each(["OWNED", "FOREIGN", "DISABLED"])(
     expect(result.referencePreviews).toEqual(mode === "OWNED" ? [value] : []);
   },
 );
+
+it.each(["OWNED", "FOREIGN", "WRONG_PAIR", "DISABLED"])(
+  "reads a synchronized reference choice with exact source scope (%s)",
+  async (mode) => {
+    const { referenceInspectionFixture } =
+      await import("../../../../scripts/test-reference-inspection-fixtures");
+    const data = await referenceInspectionFixture();
+    const f = fixture();
+    f.request.storeId = data.f.storeId;
+    f.request.context = detectCopilotConflicts({
+      batch: scoreCopilotPriorities({
+        storeId: data.f.storeId,
+        evaluatedAt,
+        candidates: [],
+      }),
+      intents: [],
+    });
+    const value = {
+      ...data.result,
+      ...(mode === "FOREIGN"
+        ? { storeId: randomUUID() }
+        : mode === "WRONG_PAIR"
+          ? {
+              decision: {
+                ...data.decision,
+                before: { ...data.decision.before, documentId: randomUUID() },
+              },
+            }
+          : {}),
+    };
+    const referenceInspection = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const definition = body.tools.find(
+        (t: { name: string }) => t.name === "commercial_reference_inspect",
+      );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.properties).not.toHaveProperty("storeId");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_inspect",
+            call_id: "call_inspect",
+            name: "commercial_reference_inspect",
+            arguments: JSON.stringify(data.inspectInput),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "OWNED"
+          ? { status: "RECORDED", reviewStatus: "MATCHING_SNAPSHOTS" }
+          : { unavailable: true },
+      );
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { referenceInspection }),
+    }).generate(f.request, schema);
+    expect(referenceInspection).toHaveBeenCalledTimes(
+      mode === "DISABLED" ? 0 : 1,
+    );
+    expect(r.toolEvidence).toEqual(
+      mode === "OWNED" ? data.result.evidence : [],
+    );
+  },
+);

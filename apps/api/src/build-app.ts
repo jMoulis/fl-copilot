@@ -1,3 +1,4 @@
+import { inspectCommercialReference } from "./copilot/reference-inspection-tool.js";
 import { previewCommercialReference } from "./copilot/reference-preview-tool.js";
 import { readCommercialDocumentComparison } from "./copilot/document-comparison-tool.js";
 import { previewCommercialPlanValidation } from "./copilot/plan-validation-tool.js";
@@ -775,6 +776,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               commercialDocuments: async (input) => {
                 await authorize();
                 const result = await readCommercialDocuments(
+                  db,
+                  storeId,
+                  input,
+                );
+                await authorize();
+                return result;
+              },
+              referenceInspection: async (input) => {
+                await authorize();
+                const result = await inspectCommercialReference(
                   db,
                   storeId,
                   input,
