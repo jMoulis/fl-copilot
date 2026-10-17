@@ -285,6 +285,7 @@ it("opts into optional proposal and source tools only when the client supports t
         preparationLayout: enabled,
         preparationCreate: enabled,
         preparationSelection: enabled,
+        preparationRefresh: enabled,
         storeOperations: enabled,
         needProposals: enabled,
         catalogueProposals: enabled,
@@ -292,6 +293,9 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-preparation-refresh", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-preparation-refresh");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-memory-suggestions", "1");
     else expect(headers).not.toHaveProperty("x-copilot-memory-suggestions");

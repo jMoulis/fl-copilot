@@ -65,7 +65,12 @@ export async function readPreparationPreview(
     );
   if (input.create && r.preparation) status = "ALREADY_EXISTS";
   else if (!basis) status = "UNAVAILABLE";
-  else if (r.issues.length && !input.patch.offerSelection) status = "BLOCKED";
+  else if (
+    r.issues.length &&
+    !input.patch.offerSelection &&
+    !input.patch.refreshChoiceIds
+  )
+    status = "BLOCKED";
   else
     try {
       const request = prepareWeekPatch(
@@ -86,7 +91,7 @@ export async function readPreparationPreview(
       )
         status = "BLOCKED";
       if (
-        input.patch.offerSelection &&
+        (input.patch.offerSelection || input.patch.refreshChoiceIds) &&
         basis.preparation &&
         commercialPreparationOfferIssues(
           commercialWeekPreparationSchema.parse({

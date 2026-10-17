@@ -123,6 +123,75 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
         .findOne({ _id: f.preparation.id } as Document))!.offerRefs,
     ).toEqual(f.preparation.offerRefs);
   });
+  it("refreshes only selected current applicable retained references, never downgrades and keeps invalid remaining choices blocked", async () => {
+    const f = await fixture();
+    const input = {
+      weekStart: f.preparation.weekStart,
+      patch: { refreshChoiceIds: [f.choice.id] },
+    };
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "UNCHANGED",
+    );
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: f.choice.id } as Document, { $set: { version: 2 } });
+    expect((await readPreparationPreview(db, f.storeId, f.input)).status).toBe(
+      "BLOCKED",
+    );
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "READY",
+    );
+    expect(
+      (
+        await readPreparationPreview(db, f.storeId, {
+          ...input,
+          patch: { refreshChoiceIds: [randomUUID()] },
+        })
+      ).status,
+    ).toBe("BLOCKED");
+    await db
+      .collection("commercialWeekPreparations")
+      .updateOne({ _id: f.preparation.id } as Document, {
+        $set: { offerRefs: [{ choiceId: f.choice.id, choiceVersion: 3 }] },
+      });
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "BLOCKED",
+    );
+    await db
+      .collection("commercialWeekPreparations")
+      .updateOne({ _id: f.preparation.id } as Document, {
+        $set: { offerRefs: f.preparation.offerRefs },
+      });
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: f.choice.id } as Document, {
+        $set: { status: "WITHDRAWN" },
+      });
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "BLOCKED",
+    );
+    await db
+      .collection("commercialOfferChoices")
+      .updateOne({ _id: f.choice.id } as Document, {
+        $set: {
+          status: "RETAINED",
+          saleStart: "2027-01-01",
+          saleEnd: "2027-01-02",
+        },
+      });
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "BLOCKED",
+    );
+    expect((await readPreparationPreview(db, randomUUID(), input)).status).toBe(
+      "UNAVAILABLE",
+    );
+    await db
+      .collection("commercialOfferChoices")
+      .deleteOne({ _id: f.choice.id } as Document);
+    expect((await readPreparationPreview(db, f.storeId, input)).status).toBe(
+      "UNAVAILABLE",
+    );
+  });
   it("prepares without writing, preserves no-op and rejects missing, foreign or impossible draft changes", async () => {
     const f = await fixture();
     const r = await readPreparationPreview(db, f.storeId, f.input);
@@ -275,7 +344,7 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
   });
   it
     .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
-    .each(["EDIT", "LAYOUT", "SELECTION"])(
+    .each(["EDIT", "LAYOUT", "SELECTION", "REFRESH"])(
     "atomically persists a compatible private TG review card (mode=%s) without business writes",
     async (mode) => {
       const layout = mode === "LAYOUT";
@@ -292,32 +361,46 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       await db
         .collection<Document & { _id: string }>("copilotMessages")
         .insertOne({ _id: chat.message.id, ...chat.message });
+      if (mode === "REFRESH")
+        await db
+          .collection("commercialOfferChoices")
+          .updateOne({ _id: f.choice.id } as Document, {
+            $set: { version: 2 },
+          });
       const input =
-        mode === "SELECTION"
+        mode === "REFRESH"
           ? {
               weekStart: f.preparation.weekStart,
-              patch: {
-                offerSelection: { removeChoiceIds: [f.choice.id] },
-                tgUpdates: [
-                  { placementId: f.preparation.placements[0].id, offerIds: [] },
-                ],
-              },
+              patch: { refreshChoiceIds: [f.choice.id] },
             }
-          : layout
+          : mode === "SELECTION"
             ? {
                 weekStart: f.preparation.weekStart,
                 patch: {
-                  tgRemovals: [f.preparation.placements[0].id],
-                  tgAdditions: [
+                  offerSelection: { removeChoiceIds: [f.choice.id] },
+                  tgUpdates: [
                     {
-                      label: "Nouvelle TG",
-                      theme: "Saison",
-                      offerIds: [f.choice.id],
+                      placementId: f.preparation.placements[0].id,
+                      offerIds: [],
                     },
                   ],
                 },
               }
-            : f.input;
+            : layout
+              ? {
+                  weekStart: f.preparation.weekStart,
+                  patch: {
+                    tgRemovals: [f.preparation.placements[0].id],
+                    tgAdditions: [
+                      {
+                        label: "Nouvelle TG",
+                        theme: "Saison",
+                        offerIds: [f.choice.id],
+                      },
+                    ],
+                  },
+                }
+              : f.input;
       const preview = await readPreparationPreview(db, f.storeId, input);
       const generate = vi.fn(async () => ({
         output: {

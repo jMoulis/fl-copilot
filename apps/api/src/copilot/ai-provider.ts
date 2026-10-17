@@ -1,5 +1,7 @@
 import {
   copilotPreparationCreatePatchSchema,
+  copilotPreparationRetainedSelectionPatchSchema,
+  copilotPreparationRefreshPatchSchema,
   copilotPreparationSelectionPatchSchema,
   copilotPreparationEditPatchSchema,
   copilotPreparationLayoutPatchSchema,
@@ -296,6 +298,7 @@ export function createCopilotAiProvider(
     preparationLayout?: boolean;
     preparationCreate?: boolean;
     preparationSelection?: boolean;
+    preparationRefresh?: boolean;
     preparationPreview?(
       input: z.infer<typeof copilotPreparationPatchSchema>,
     ): Promise<z.infer<typeof copilotPreparationPreviewSchema>>;
@@ -660,16 +663,23 @@ export function createCopilotAiProvider(
                             : " Creating a new week's draft is unavailable on this client.") +
                           (reads.preparationSelection
                             ? " offerSelection on an existing draft adds/removes exact retained choices found through commercial_offers. Only explicit requested selection changes: addChoiceIds pins current revisions for new selections, already-selected additions preserve their prior revisions; removeChoiceIds must be currently selected. Do not infer offer removal from a suggested TG layout. Removed offers stay retained outside this draft. Before removal, explicitly update or remove affected TGs in the same patch; the tool will not clear assignments automatically. Kept stale/withdrawn/out-of-week references block saving; removing such a reference is allowed with explicit reviewed consequences. This is not offer retention/validation or plan validation. Creation uses create.choiceIds instead, never offerSelection."
-                            : " Changing selected offers of an existing draft is unavailable on this client."),
-                        inputSchema: reads.preparationSelection
+                            : " Changing selected offers of an existing draft is unavailable on this client.") +
+                          (reads.preparationRefresh
+                            ? " refreshChoiceIds explicitly adopts current revisions of named already-selected retained offers after reviewing commercial_preparation and commercial_offers. Ask for missing business intent; never refresh every changed reference silently. The review shows old/current revision and current terms, not unavailable historical prices. Missing, withdrawn, outside-week or older revisions cannot be adopted. TG assignments and unrequested references are preserved. This does not validate an offer or a plan."
+                            : " Updating pinned offer revisions is unavailable on this client."),
+                        inputSchema: reads.preparationRefresh
                           ? reads.preparationCreate
                             ? copilotPreparationPatchSchema
-                            : copilotPreparationSelectionPatchSchema
-                          : reads.preparationCreate
-                            ? copilotPreparationCreatePatchSchema
-                            : reads.preparationLayout
-                              ? copilotPreparationLayoutPatchSchema
-                              : copilotPreparationEditPatchSchema,
+                            : copilotPreparationRefreshPatchSchema
+                          : reads.preparationSelection
+                            ? reads.preparationCreate
+                              ? copilotPreparationRetainedSelectionPatchSchema
+                              : copilotPreparationSelectionPatchSchema
+                            : reads.preparationCreate
+                              ? copilotPreparationCreatePatchSchema
+                              : reads.preparationLayout
+                                ? copilotPreparationLayoutPatchSchema
+                                : copilotPreparationEditPatchSchema,
                         execute: (input) =>
                           executeRead(
                             JSON.stringify(["preparation-preview", input]),

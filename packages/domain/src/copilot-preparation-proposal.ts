@@ -19,6 +19,7 @@ export const copilotPreparationPatchSchema = z
       })
       .optional(),
     patch: z.strictObject({
+      refreshChoiceIds: z.array(z.uuid()).min(1).max(100).optional(),
       offerSelection: z
         .strictObject({
           addChoiceIds: z.array(z.uuid()).min(1).max(100).optional(),
@@ -81,13 +82,30 @@ export const copilotPreparationPatchSchema = z
       v.create &&
       (v.patch.tgUpdates !== undefined ||
         v.patch.tgRemovals !== undefined ||
-        v.patch.offerSelection !== undefined)
+        v.patch.offerSelection !== undefined ||
+        v.patch.refreshChoiceIds !== undefined)
     )
       c.addIssue({
         code: "custom",
         path: ["patch"],
         message:
           "Une nouvelle semaine ne contient pas de TG à modifier ou retirer.",
+      });
+    const refresh = v.patch.refreshChoiceIds ?? [];
+    if (
+      new Set(refresh).size !== refresh.length ||
+      refresh.some((id) =>
+        [
+          ...(v.patch.offerSelection?.addChoiceIds ?? []),
+          ...(v.patch.offerSelection?.removeChoiceIds ?? []),
+        ].includes(id),
+      )
+    )
+      c.addIssue({
+        code: "custom",
+        path: ["patch", "refreshChoiceIds"],
+        message:
+          "Une référence ne peut être actualisée deux fois, ajoutée ou retirée ensemble.",
       });
     const ids = v.patch.tgUpdates?.map((p) => p.placementId) ?? [];
     const removals = v.patch.tgRemovals ?? [];
@@ -123,7 +141,7 @@ export const copilotPreparationEditPatchSchema = z
   .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
 const previousPreparationPatchSchema = z
   .strictObject(copilotPreparationPatchSchema.shape.patch.shape)
-  .omit({ offerSelection: true });
+  .omit({ offerSelection: true, refreshChoiceIds: true });
 export const copilotPreparationLayoutPatchSchema = z
   .strictObject({
     weekStart: copilotPreparationPatchSchema.shape.weekStart,
@@ -137,10 +155,26 @@ export const copilotPreparationCreatePatchSchema = z
     patch: previousPreparationPatchSchema,
   })
   .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
-export const copilotPreparationSelectionPatchSchema = z
+const selectionOnlyPatch = z
+  .strictObject(copilotPreparationPatchSchema.shape.patch.shape)
+  .omit({ refreshChoiceIds: true });
+export const copilotPreparationRetainedSelectionPatchSchema = z
+  .strictObject({
+    weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    create: copilotPreparationPatchSchema.shape.create,
+    patch: selectionOnlyPatch,
+  })
+  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+export const copilotPreparationRefreshPatchSchema = z
   .strictObject({
     weekStart: copilotPreparationPatchSchema.shape.weekStart,
     patch: copilotPreparationPatchSchema.shape.patch,
+  })
+  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+export const copilotPreparationSelectionPatchSchema = z
+  .strictObject({
+    weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    patch: selectionOnlyPatch,
   })
   .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
 export function hasPreparationLayoutChange(
@@ -237,9 +271,26 @@ export function prepareWeekPatch(
     selected = p.offerRefs.map((r) => r.choiceId);
   if (selection?.removeChoiceIds?.some((id) => !selected.includes(id)))
     throw Error("PREPARATION_OFFER_UNAVAILABLE");
+  if (
+    input.patch.refreshChoiceIds?.some(
+      (id) =>
+        !selected.includes(id) ||
+        b.choices.find((c) => c.id === id)!.version <
+          p.offerRefs.find((r) => r.choiceId === id)!.choiceVersion,
+    )
+  )
+    throw Error("PREPARATION_OFFER_REFRESH_INVALID");
+  const refreshedRefs = p.offerRefs.map((r) =>
+    input.patch.refreshChoiceIds?.includes(r.choiceId)
+      ? {
+          choiceId: r.choiceId,
+          choiceVersion: b.choices.find((c) => c.id === r.choiceId)!.version,
+        }
+      : r,
+  );
   const offerRefs = selection
     ? [
-        ...p.offerRefs.filter(
+        ...refreshedRefs.filter(
           (r) => !selection.removeChoiceIds?.includes(r.choiceId),
         ),
         ...(selection.addChoiceIds ?? [])
@@ -249,7 +300,7 @@ export function prepareWeekPatch(
             choiceVersion: b.choices.find((c) => c.id === choiceId)!.version,
           })),
       ]
-    : p.offerRefs;
+    : refreshedRefs;
   const updates = input.patch.tgUpdates ?? [];
   const removals = input.patch.tgRemovals ?? [];
   if (
@@ -314,6 +365,7 @@ export const copilotPreparationProposalSchema = z.strictObject({
     z.literal(2),
     z.literal(3),
     z.literal(4),
+    z.literal(5),
   ]),
   assistantMessageId: z.uuid(),
   input: copilotPreparationPatchSchema,
@@ -332,8 +384,14 @@ export function readCopilotPreparationProposal(raw: unknown) {
   );
   validatePreparationBasis(message.storeId, content.input, content.basis);
   if (
+    Boolean(content.input.patch.refreshChoiceIds) !==
+    (content.schemaVersion === 5)
+  )
+    throw Error("PREPARATION_PROPOSAL_VERSION");
+  if (
+    content.schemaVersion !== 5 &&
     Boolean(content.input.patch.offerSelection) !==
-    (content.schemaVersion === 4)
+      (content.schemaVersion === 4)
   )
     throw Error("PREPARATION_PROPOSAL_VERSION");
   if (Boolean(content.input.create) !== (content.schemaVersion === 3))
