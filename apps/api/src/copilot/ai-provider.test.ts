@@ -3786,3 +3786,74 @@ it.each(["READY", "FOREIGN_READY", "FOREIGN_UNCHANGED"])(
     ).generate(f.request, schema);
   },
 );
+
+it.each(["OWNED", "FOREIGN", "WRONG_WEEK"])(
+  "exposes complete plan readiness as a bounded read (%s)",
+  async (mode) => {
+    const f = fixture(),
+      input = { weekStart: "2026-10-05" };
+    const evidence = {
+      id: "plan-readiness/test",
+      sourceType: "DATA_QUALITY" as const,
+      sourceId: f.request.storeId,
+      sourceVersion: null,
+      label: "Vérification du plan",
+      value: "Aucun brouillon synchronisé",
+      factKind: "QUALITY" as const,
+    };
+    const value = {
+      storeId: mode === "FOREIGN" ? randomUUID() : f.request.storeId,
+      weekStart: mode === "WRONG_WEEK" ? "2026-10-12" : input.weekStart,
+      status: "NO_DRAFT" as const,
+      preparation: null,
+      issues: [],
+      evidence: [evidence],
+    };
+    const planReadiness = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const definition = body.tools.find(
+        (t: { name: string }) => t.name === "commercial_plan_readiness",
+      );
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.properties).toHaveProperty("weekStart");
+      expect(definition.parameters.properties).not.toHaveProperty("storeId");
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_readiness",
+            call_id: "call_readiness",
+            name: "commercial_plan_readiness",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const result = JSON.parse(
+        body.input.find(
+          (x: { type: string }) => x.type === "function_call_output",
+        ).output,
+      );
+      expect(result).toMatchObject(
+        mode === "OWNED"
+          ? { status: "NO_DRAFT", preparation: null }
+          : { unavailable: true },
+      );
+      return response();
+    };
+    const r = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      planReadiness,
+    }).generate(f.request, schema);
+    expect(planReadiness).toHaveBeenCalledExactlyOnceWith(input);
+    expect(r.toolEvidence).toEqual(mode === "OWNED" ? [evidence] : []);
+  },
+);
