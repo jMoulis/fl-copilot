@@ -1,3 +1,4 @@
+import { previewCommercialPlanValidation } from "./copilot/plan-validation-tool.js";
 import { readCommercialPlanReadiness } from "./copilot/plan-readiness-tool.js";
 import { previewOfferValidation } from "./copilot/offer-validation-tool.js";
 import { previewChoiceCreate } from "./copilot/choice-create-tool.js";
@@ -838,6 +839,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     choiceCreate: async (input) => {
                       await authorize();
                       const result = await previewChoiceCreate(
+                        db,
+                        storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-plan-validation"] === "1"
+                ? {
+                    planValidation: async (input) => {
+                      await authorize();
+                      const result = await previewCommercialPlanValidation(
                         db,
                         storeId,
                         input,

@@ -1,3 +1,4 @@
+import { buildPlanValidationProposalMessages } from "./plan-validation-messages.js";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { buildOfferValidationProposalMessages } from "./offer-validation-messages.js";
 import { buildChoiceCreateProposalMessages } from "./choice-create-messages.js";
@@ -326,6 +327,10 @@ export async function runCopilotTurn(
             ...buildChoiceCreateProposalMessages(
               message,
               generation.choiceCreates ?? [],
+            ),
+            ...buildPlanValidationProposalMessages(
+              message,
+              generation.planValidations ?? [],
             ),
             ...buildOfferValidationProposalMessages(
               message,

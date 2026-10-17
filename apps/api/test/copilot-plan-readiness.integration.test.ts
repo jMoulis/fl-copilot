@@ -1,3 +1,13 @@
+import { previewCommercialPlanValidation } from "../src/copilot/plan-validation-tool";
+import { runCopilotTurn } from "../src/copilot/turn-service";
+import { chatFixture } from "../../../scripts/test-chat-fixtures";
+import { readCopilotPlanValidationProposal } from "@fl-copilot/domain";
+import {
+  detectCopilotConflicts,
+  scoreCopilotPriorities,
+} from "@fl-copilot/analytics-core";
+import { vi } from "vitest";
+import type { CopilotAiProvider } from "../src/copilot/ai-provider";
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db, type Document } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -212,4 +222,151 @@ describe.skipIf(!uri)("complete synchronized commercial plan readiness", () => {
       ]),
     );
   });
+  it("prepares a complete deterministic plan and suppresses an unchanged saved plan", async () => {
+    const f = await fixture(),
+      result = await previewCommercialPlanValidation(
+        db,
+        f.storeId,
+        input,
+        () => "2026-10-11T12:00:00.000Z",
+      );
+    expect(result.status).toBe("READY");
+    expect(result.preview?.candidate?.preparation).toEqual(f.preparation);
+    expect(
+      await db
+        .collection("commercialWeekPlans")
+        .countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
+    await db
+      .collection<Document & { _id: string }>("commercialWeekPlans")
+      .insertOne({ _id: f.plan.id, ...f.plan });
+    const repeat = await previewCommercialPlanValidation(db, f.storeId, input);
+    expect(repeat.status).toBe("UNCHANGED");
+    expect(repeat.preview).toBeNull();
+    await db
+      .collection("commercialValidatedOffers")
+      .deleteMany({ storeId: f.storeId });
+    const blocked = await previewCommercialPlanValidation(db, f.storeId, input);
+    expect(blocked.status).toBe("BLOCKED");
+    expect(blocked.preview).toBeNull();
+  });
+  it("refuses an oversized complete plan card without dropping offers or TGs", async () => {
+    const f = await fixture();
+    await db
+      .collection("commercialWeekPreparations")
+      .updateOne({ _id: f.preparation.id } as Document, {
+        $set: {
+          tgCapacity: 30,
+          placements: Array.from({ length: 30 }, (_, i) => ({
+            ...f.preparation.placements[0]!,
+            id: randomUUID(),
+            label: `TG ${i} ` + "x".repeat(70),
+            theme: "x".repeat(240),
+          })),
+        },
+      });
+    const result = await previewCommercialPlanValidation(db, f.storeId, input);
+    expect(result.status).toBe("LIMIT_EXCEEDED");
+    expect(result.preview).toBeNull();
+  });
+  it
+    .skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true")
+    .each([false, true])(
+    "persists plan cards atomically and rejects foreign candidates (%s)",
+    async (foreign) => {
+      const f = await fixture(),
+        chat = chatFixture(randomUUID);
+      chat.storeId = f.storeId;
+      chat.conversation.storeId = f.storeId;
+      chat.message.storeId = f.storeId;
+      chat.message.attachments = [];
+      chat.message.text = "Je veux valider le plan de la semaine.";
+      await db
+        .collection<Document & { _id: string }>("copilotConversations")
+        .insertOne({ _id: chat.conversation.id, ...chat.conversation });
+      await db
+        .collection<Document & { _id: string }>("copilotMessages")
+        .insertOne({ _id: chat.message.id, ...chat.message });
+      const preview = await previewCommercialPlanValidation(
+          db,
+          f.storeId,
+          input,
+        ),
+        generate = vi.fn(async () => ({
+          output: {
+            language: "fr-FR",
+            summary: "Plan préparé, à confirmer.",
+            facts: preview.evidence.map((e) => ({ evidenceId: e.id })),
+            interpretation: [],
+            recommendations: [],
+            questions: [],
+          },
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: "test-plan",
+            inputTokens: null,
+            outputTokens: null,
+          },
+          toolEvidence: preview.evidence,
+          planValidations: [
+            foreign ? { ...preview, storeId: randomUUID() } : preview,
+          ],
+        }));
+      const deps = {
+          db,
+          provider: { model: "test", generate } as CopilotAiProvider,
+          authorize: async () => ({
+            storeId: f.storeId,
+            ownerId: chat.ownerId,
+            canRespond: true,
+          }),
+          loadContext: async () =>
+            detectCopilotConflicts({
+              batch: scoreCopilotPriorities({
+                storeId: f.storeId,
+                evaluatedAt: chat.message.createdAt,
+                candidates: [],
+              }),
+              intents: [],
+            }),
+        },
+        turn = {
+          conversationId: chat.conversation.id,
+          userMessageId: chat.message.id,
+          replyId: randomUUID(),
+        };
+      if (foreign) {
+        await expect(runCopilotTurn(deps, turn)).rejects.toThrow();
+        expect(
+          await db.collection("copilotMessages").countDocuments({
+            conversationId: chat.conversation.id,
+            role: { $in: ["ASSISTANT", "TOOL"] },
+          }),
+        ).toBe(0);
+        return;
+      }
+      await runCopilotTurn(deps, turn);
+      const cards = await db
+        .collection("copilotMessages")
+        .find({ conversationId: chat.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(cards).toHaveLength(1);
+      const { _id, ...card } = cards[0]!;
+      expect(
+        readCopilotPlanValidationProposal(card).content.preview.candidate
+          ?.preparation,
+      ).toEqual(f.preparation);
+      expect(
+        await db.collection("syncChanges").countDocuments({ entityId: _id }),
+      ).toBe(1);
+      expect((await runCopilotTurn(deps, turn)).alreadyApplied).toBe(true);
+      expect(generate).toHaveBeenCalledOnce();
+      expect(
+        await db
+          .collection("commercialWeekPlans")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(0);
+    },
+  );
 });

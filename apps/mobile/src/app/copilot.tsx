@@ -1,3 +1,6 @@
+import { PlanValidationCard } from "@/copilot/plan-validation-card";
+import { CopilotPlanValidationController } from "@/copilot/plan-validation-controller";
+import { readCopilotPlanValidationProposal } from "@fl-copilot/domain";
 import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Pressable, Alert } from "react-native";
 import { OfferValidationCard } from "@/copilot/offer-validation-card";
@@ -260,6 +263,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
+  const planValidations = useMemo(
+    () =>
+      new CopilotPlanValidationController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canValidateCommercialPlan: canManageProducts,
+        },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
   const offerValidations = useMemo(
     () =>
       new CopilotOfferValidationController(
@@ -390,6 +408,20 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           message={message}
           controller={choiceCreates}
           canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
+      readCopilotPlanValidationProposal(message);
+      return (
+        <PlanValidationCard
+          key={message.id}
+          message={message}
+          controller={planValidations}
+          canConfirm={canManageProducts}
+          onSubmitted={onSubmitted}
         />
       );
     } catch {
@@ -536,6 +568,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               choiceRetention: canManageProducts,
               choiceCreate: canManageProducts,
               offerValidation: canManageProducts,
+              planValidation: canManageProducts,
               choiceReassociation: canManageProducts,
               choiceWithdrawal: canManageProducts,
               preparationProposals: canPrepareCommercialWeek,
