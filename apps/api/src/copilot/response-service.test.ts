@@ -351,3 +351,37 @@ it("keeps the verified butternut nature/unit card when final prose fails groundi
   expect(card).toBeDefined();
   expect(JSON.parse(card!.text).patch).toEqual(input.patch);
 });
+it("preserves a verified price hypothesis form when the final prose invents a number", async () => {
+  const { scenarioChatFixture } =
+    await import("../../../../scripts/test-price-scenario-fixtures");
+  const { buildCopilotResponseMessage } = await import("./response-message");
+  const { buildPriceScenarioFormMessages } =
+    await import("./price-scenario-messages");
+  const { readPriceScenarioQuestion } = await import("@fl-copilot/domain");
+  const f = scenarioChatFixture(),
+    r = request();
+  const provider = {
+    model: "test",
+    generate: vi.fn().mockResolvedValue({
+      output: { ...answer, summary: "999 euros" },
+      priceScenarioForms: [f.state],
+      metadata: null,
+    }),
+  } as CopilotAiProvider;
+  const generated = await generateCopilotResponse(provider, r);
+  expect(generated.mode).toBe("FALLBACK");
+  expect(generated.priceScenarioForms).toEqual([f.state]);
+  const message = buildCopilotResponseMessage({
+    id: randomUUID(),
+    createdAt: f.assistant.createdAt,
+    parent: { ...f.chat.message, storeId: r.storeId },
+    request: r,
+    generation: generated,
+  });
+  const [card] = buildPriceScenarioFormMessages(
+    message,
+    generated.priceScenarioForms!,
+  );
+  expect(readPriceScenarioQuestion(card).state).toEqual(f.state);
+  expect(message.text).not.toContain("999");
+});

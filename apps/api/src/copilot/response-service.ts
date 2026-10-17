@@ -363,6 +363,11 @@ export async function generateCopilotResponse(
       ...(error instanceof CopilotGroundingError && completed?.productPreviews
         ? { productPreviews: completed.productPreviews }
         : {}),
+      // A verified read-only hypothesis form remains usable when only the prose failed.
+      ...(error instanceof CopilotGroundingError &&
+      completed?.priceScenarioForms
+        ? { priceScenarioForms: completed.priceScenarioForms }
+        : {}),
     };
   }
 }
