@@ -2801,3 +2801,8 @@ Deliver in the dependency order in `../M7_CONVERSATIONAL_DELIVERY_PLAN.md`, not 
 - **M7-T29 — Complete primary-Copilot acceptance:** file → persisted trusted numbers → discussion → targeted clarification → correction/plan → explicit decision/execution → review; two conversations share authorized knowledge without context leakage; compacted/offline/restart/retry flows and constrained visual scenario.
 
 Expanded M7 exit: all current manual business-function tools have coverage or an explicit owner-approved deferral, chat UX is accepted on the pilot iPhone, grounding/authority/privacy gates pass, source imports persist correctly, shared memory/compaction are inspectable and one constrained implantation scenario is accepted. No silent operational write from source text/model output.
+
+
+### M7-T13a — current-plan task outcome review (18 October 2026)
+
+Code-ready scope: expose the existing deterministic product-period and field-event readers as one bounded primary-chat review for an exact current-plan task/product, with explicit before/during/optional-after windows, source citations, declaration identity and no causal overclaim. Acceptance checks cover scope, stale/oversized targets, missing versus zero, partial/different-duration periods, nonexecution, Paris DST, paginated events, concurrent change refusal, SDK/context bounds and private reply/restart replay. No business mutation or additional native module. See `docs/qa/M7_ACTION_REVIEW_SCENARIOS.md` for pending real dialogue acceptance. This is not completion of T10–T13/T15: the durable initial recommendation/decision linkage, archived context and complete offline-to-review pilot gate remain open.

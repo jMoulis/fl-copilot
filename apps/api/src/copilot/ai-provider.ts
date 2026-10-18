@@ -1,3 +1,5 @@
+import { copilotActionReviewInputSchema } from "@fl-copilot/domain";
+import { actionReviewResultSchema } from "./action-review-tool.js";
 import {
   storeConflictLegacyInputSchema,
   storeConflictInputSchema,
@@ -466,6 +468,9 @@ export function createCopilotAiProvider(
     needMemberships?(
       input: z.infer<typeof copilotNeedMembershipInputSchema>,
     ): Promise<z.infer<typeof copilotNeedMembershipResultSchema>>;
+    actionReview?(
+      input: z.infer<typeof copilotActionReviewInputSchema>,
+    ): Promise<z.infer<typeof actionReviewResultSchema>>;
     commercialPlan?(
       input: z.infer<typeof copilotPlanReadInputSchema>,
     ): Promise<z.infer<typeof copilotPlanReadResultSchema>>;
@@ -839,6 +844,7 @@ export function createCopilotAiProvider(
                       reads.analyticsQuery ||
                       reads.publicResearch ||
                       reads.retailExpertise ||
+                      reads.actionReview ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
                       reads.period ||
@@ -879,6 +885,7 @@ export function createCopilotAiProvider(
                       reads.analyticsQuery ||
                       reads.publicResearch ||
                       reads.retailExpertise ||
+                      reads.actionReview ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
                       reads.period ||
@@ -1819,6 +1826,38 @@ export function createCopilotAiProvider(
                                 input,
                                 await reads.commercialPreparation!(input),
                               );
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.actionReview
+                  ? {
+                      commercial_action_review: tool({
+                        description:
+                          "Review observed results for ONE exact current saved signage/TG task and ONE product already linked in that plan. Discover task/product with commercial_plan first. Supply explicit ordered nonoverlapping before/during/optional-after windows, at most 31 days each, a span of at most 93 calendar days, none future; during must be inside a saved offer interval. Do not guess ambiguous dates; after=null if not yet observed. Reuses deterministic product KPI comparisons to before plus at most 5 recorded product events. Preserve coverage, pagination, different lengths/weekdays and declared completion versus actual exposure. Printed signage is not installed TG. Missing declaration means unknown completion. Weather, traffic, other promotions, prices, stock and cannibalization are not controlled: descriptive variations NEVER prove causal uplift or ROI. Present a concise before/during/after table and source links, ask only the discriminating missing field. No writes, decision, automatic execution or persistent evaluation.",
+                        inputSchema: copilotActionReviewInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["action-review", input]),
+                            async () => {
+                              const result = actionReviewResultSchema.parse(
+                                await reads.actionReview!(input),
+                              );
+                              if (
+                                JSON.stringify(result.input) !==
+                                  JSON.stringify(
+                                    copilotActionReviewInputSchema.parse(input),
+                                  ) ||
+                                (result.task &&
+                                  result.task.proposal.storeId !==
+                                    request.storeId) ||
+                                result.fieldEvents?.events.some(
+                                  (e) => e.event.storeId !== request.storeId,
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
                               return result;
                             },
                           ),
