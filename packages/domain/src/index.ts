@@ -119,3 +119,4 @@ export * from "./copilot-reference-inspection";
 export * from "./price-scenario";
 export * from "./copilot-price-scenario";
 export * from "./copilot-identity-review";
+export * from "./copilot-receipt-publication";

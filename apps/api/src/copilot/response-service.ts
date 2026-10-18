@@ -247,6 +247,9 @@ export async function generateCopilotResponse(
   needPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["needPreviews"];
+  receiptPublicationPreviews?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["receiptPublicationPreviews"];
   identityReviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["identityReviews"];
@@ -337,6 +340,7 @@ export async function generateCopilotResponse(
       preparationPreviews: generated.preparationPreviews,
       operationsPreviews: generated.operationsPreviews,
       needPreviews: generated.needPreviews,
+      receiptPublicationPreviews: generated.receiptPublicationPreviews,
       identityReviews: generated.identityReviews,
       cataloguePreviews: generated.cataloguePreviews,
       executionPreviews: generated.executionPreviews,
@@ -366,6 +370,10 @@ export async function generateCopilotResponse(
       // classification preview. It still requires the native confirmation card.
       ...(error instanceof CopilotGroundingError && completed?.productPreviews
         ? { productPreviews: completed.productPreviews }
+        : {}),
+      ...(error instanceof CopilotGroundingError &&
+      completed?.receiptPublicationPreviews
+        ? { receiptPublicationPreviews: completed.receiptPublicationPreviews }
         : {}),
       ...(error instanceof CopilotGroundingError && completed?.identityReviews
         ? { identityReviews: completed.identityReviews }

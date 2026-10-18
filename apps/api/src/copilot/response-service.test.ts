@@ -409,3 +409,21 @@ it("keeps a checked identity decision card when only the generated prose fails g
   expect(generated.mode).toBe("FALLBACK");
   expect(generated.identityReviews).toEqual([preview]);
 });
+it("preserves the separate native receipt review when only the generated narrative fails grounding", async () => {
+  const { receiptPublicationChatFixture } =
+    await import("../../../../scripts/test-receipt-publication-fixtures");
+  const f = receiptPublicationChatFixture(),
+    r = request(),
+    preview = { ...f.preview, source: { ...f.source, storeId: r.storeId } };
+  const provider = {
+    model: "test",
+    generate: vi.fn().mockResolvedValue({
+      output: { ...answer, summary: "999 euros" },
+      receiptPublicationPreviews: [preview],
+      metadata: null,
+    }),
+  } as CopilotAiProvider;
+  const generated = await generateCopilotResponse(provider, r);
+  expect(generated.mode).toBe("FALLBACK");
+  expect(generated.receiptPublicationPreviews).toEqual([preview]);
+});

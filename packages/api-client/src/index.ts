@@ -83,6 +83,7 @@ export class ApiClient {
       preparationRefresh?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
+      receiptPublication?: boolean;
       identityReview?: boolean;
       catalogueProposals?: boolean;
       executionProposals?: boolean;
@@ -154,6 +155,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.needProposals
                   ? { "x-copilot-need-proposals": "1" }
+                  : {}),
+                ...(streaming.receiptPublication
+                  ? { "x-copilot-receipt-publication": "1" }
                   : {}),
                 ...(streaming.identityReview
                   ? { "x-copilot-identity-review": "1" }
