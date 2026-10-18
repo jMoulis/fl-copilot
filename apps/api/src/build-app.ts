@@ -1,3 +1,9 @@
+import {
+  importClassificationRequestSchema,
+  importClassificationResultSchema,
+  validateImportClassification,
+} from "@fl-copilot/domain";
+import { createImportClassifier } from "./copilot/import-classification-provider.js";
 import { readPriceScenario } from "./copilot/price-scenario-tool.js";
 import { inspectCommercialReference } from "./copilot/reference-inspection-tool.js";
 import { previewCommercialReference } from "./copilot/reference-preview-tool.js";
@@ -156,6 +162,7 @@ import { createMongoWasteReceiptProductMatchingService } from "./uploads/waste-r
 
 type AppDependencies = {
   database: DatabaseService;
+  importClassifier?: ReturnType<typeof createImportClassifier>;
   copilotContext?: (
     storeId: string,
     parent: CopilotMessage,
@@ -1105,6 +1112,59 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             "Cette conversation doit être actualisée avant de continuer.",
           );
         throw error;
+      }
+    },
+  );
+  app.post(
+    "/api/v1/copilot/import-classification",
+    {
+      schema: {
+        body: importClassificationRequestSchema,
+        response: { 200: importClassificationResultSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization,
+        storeId = request.headers["x-store-id"];
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      if (typeof storeId !== "string")
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      const principal = await auth.authorizeStore(token.slice(7), storeId);
+      if (principal.role !== "MANAGER")
+        throw new AuthError(
+          403,
+          "STORE_ACCESS_DENIED",
+          "Cette action demande les droits responsable.",
+        );
+      try {
+        const result = validateImportClassification(
+          await (
+            dependencies.importClassifier ?? createImportClassifier(config)
+          )(request.body),
+          request.body.labels,
+        );
+        if (
+          (await auth.authorizeStore(token.slice(7), storeId)).role !==
+          "MANAGER"
+        )
+          throw new AuthError(
+            403,
+            "STORE_ACCESS_DENIED",
+            "Cette action demande les droits responsable.",
+          );
+        return result;
+      } catch {
+        throw new AuthError(
+          503,
+          "IMPORT_CLASSIFICATION_UNAVAILABLE",
+          "La classification reste à compléter ; l’import des chiffres peut continuer.",
+          true,
+        );
       }
     },
   );

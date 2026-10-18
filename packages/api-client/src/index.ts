@@ -1,3 +1,7 @@
+import {
+  importClassificationRequestSchema,
+  importClassificationResultSchema,
+} from "@fl-copilot/sync-contracts";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { readCopilotStream } from "./copilot-stream";
 import {
@@ -240,6 +244,23 @@ export class ApiClient {
         retryable: false,
       });
     return result;
+  }
+  importClassification(
+    accessToken: string,
+    storeId: string,
+    raw: unknown,
+    signal?: AbortSignal,
+  ) {
+    return this.request(
+      "/api/v1/copilot/import-classification",
+      {
+        method: "POST",
+        headers: syncHeaders(accessToken, storeId),
+        body: JSON.stringify(importClassificationRequestSchema.parse(raw)),
+        signal,
+      },
+      importClassificationResultSchema,
+    );
   }
   weeklyContext(accessToken: string, storeId: string, weekStart: string) {
     return this.request(

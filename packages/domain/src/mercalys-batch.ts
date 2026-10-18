@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { importClassificationResultSchema } from "./copilot-import-assistance";
 export const MAX_MERCALYS_BATCH_FILES = 100;
 export const MAX_MERCALYS_BATCH_FILE_BYTES = 20 * 1024 * 1024;
 export const MAX_MERCALYS_BATCH_BYTES = 100 * 1024 * 1024;
@@ -66,6 +67,13 @@ export const mercalysBatchResultSchema = z.discriminatedUnion("status", [
 ]);
 export const mercalysBatchItemSchema = retainedMercalysBatchFileSchema.extend({
   batchId: uuid,
+  assistance: z
+    .strictObject({
+      labelsHash: z.string().regex(/^[a-f0-9]{64}$/),
+      attemptedCount: z.number().int().nonnegative().max(200).default(0),
+      result: importClassificationResultSchema.nullable(),
+    })
+    .optional(),
   position: z
     .number()
     .int()

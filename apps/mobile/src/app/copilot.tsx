@@ -1,3 +1,20 @@
+import { readCopilotImportReference } from "@fl-copilot/domain";
+import {
+  CopilotMercalysImportController,
+  importManifestHash,
+} from "@/copilot/mercalys-import-controller";
+import { MercalysImportCard } from "@/copilot/mercalys-import-card";
+import {
+  captureMercalysBatch,
+  nativeMercalysBatchStorage,
+} from "@/documents/mercalys-batch-capture";
+import {
+  retainMercalysZip,
+  extractRetainedMercalysZip,
+  nativeMercalysZipStorage,
+} from "@/documents/mercalys-zip-capture";
+import { MercalysArchiveRepository } from "@/documents/mercalys-archive-repository";
+import { File } from "expo-file-system";
 import { ReferenceCard } from "@/copilot/reference-card";
 import { CopilotReferenceController } from "@/copilot/reference-controller";
 import { readCopilotReferenceProposal } from "@fl-copilot/domain";
@@ -75,6 +92,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import {
   randomUUID,
+  digest,
   digestStringAsync,
   CryptoDigestAlgorithm,
 } from "expo-crypto";
@@ -387,10 +405,51 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId],
   );
+  const { syncNow } = useSync();
+  const importAutomation = useMemo(
+    () =>
+      new CopilotMercalysImportController(
+        sqlite,
+        { storeId, ownerId, deviceId, canImport: !!canManageProducts },
+        {
+          id: randomUUID,
+          digest: executionDigest,
+          read: (uri) => new File(uri).bytes(),
+          checksum: async (bytes) =>
+            `sha256:${Array.from(new Uint8Array(await digest(CryptoDigestAlgorithm.SHA256, bytes)), (b) => b.toString(16).padStart(2, "0")).join("")}`,
+          classify: (labels, signal) =>
+            withAccessToken((token) =>
+              new ApiClient(getApiBaseUrl()).importClassification(
+                token,
+                storeId,
+                { labels },
+                signal,
+              ),
+            ),
+        },
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts, withAccessToken],
+  );
+  const onImportUpdated = useCallback(() => {
+    void syncNow(storeId).catch(() => undefined);
+  }, [syncNow, storeId]);
   const renderProposal = (
     message: CopilotMessage,
     onSubmitted: () => Promise<void>,
   ) => {
+    try {
+      readCopilotImportReference(message);
+      return (
+        <MercalysImportCard
+          key={message.id}
+          message={message}
+          controller={importAutomation}
+          onUpdated={onImportUpdated}
+        />
+      );
+    } catch {
+      /* Other private artifacts follow. */
+    }
     try {
       readContextCheckpoint(message);
       return <ContextCheckpointCard key={message.id} message={message} />;
@@ -644,7 +703,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       />
     );
   };
-  const { syncNow } = useSync();
   const repo = useMemo(
     () => new CopilotConversationRepository(sqlite, { storeId, ownerId }),
     [sqlite, storeId, ownerId],
@@ -753,6 +811,129 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   const [draftRefresh, setDraftRefresh] = useState(0);
   const [intakeRevision, setIntakeRevision] = useState(0);
   const [intakeBusy, setIntakeBusy] = useState(false);
+  const [importMessageRevision, setImportMessageRevision] = useState(0),
+    [captureStatus, setCaptureStatus] = useState<string>();
+  const captureAbort = useRef<AbortController | undefined>(undefined);
+  useEffect(
+    () => () => {
+      captureAbort.current?.abort();
+    },
+    [],
+  );
+  async function importFiles() {
+    if (!active || !canManageProducts || captureAbort.current) return;
+    const conversationId = active,
+      a = new AbortController();
+    captureAbort.current = a;
+    setCaptureStatus(
+      "Choisissez vos exports XLSX ou une archive ZIP. Les références uniques et les fichiers sans ambiguïté seront enregistrés automatiquement.",
+    );
+    try {
+      if (!pdfPicker) throw Error("PICKER_UNAVAILABLE");
+      const selected = await pdfPicker.getDocumentAsync({
+        type: [
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "application/zip",
+          "application/x-zip-compressed",
+        ],
+        copyToCacheDirectory: true,
+        multiple: true,
+        base64: false,
+      });
+      if (selected.canceled || a.signal.aborted) return;
+      const files = selected.assets;
+      if (
+        files.length > 100 ||
+        !files.length ||
+        files.some((f) => !/\.(xlsx|zip)$/i.test(f.name)) ||
+        (files.some((f) => /\.zip$/i.test(f.name)) && files.length !== 1)
+      )
+        throw Error("SELECTION_INVALID");
+      setCaptureStatus("Conservation des originaux…");
+      const batches = new MercalysBatchRepository(sqlite, {
+        storeId,
+        ownerId,
+        conversationId,
+      });
+      let batchId: string | null = null;
+      if (/\.zip$/i.test(files[0]!.name)) {
+        const archives = new MercalysArchiveRepository(sqlite, {
+          storeId,
+          ownerId,
+          conversationId,
+        });
+        const archiveId = await retainMercalysZip(
+          files[0]!,
+          archives,
+          nativeMercalysZipStorage,
+          randomUUID,
+          a.signal,
+        );
+        const extracted = await extractRetainedMercalysZip(
+          archiveId,
+          archives,
+          batches,
+          nativeMercalysZipStorage,
+          a.signal,
+        );
+        batchId =
+          extracted.outcome.status === "PROCESSED" &&
+          extracted.outcome.retainedCount
+            ? extracted.batchId
+            : null;
+        if (
+          extracted.outcome.status !== "PROCESSED" ||
+          extracted.outcome.failures.length
+        )
+          setCaptureStatus(
+            "Certains fichiers du ZIP restent à reprendre. L’archive originale est conservée.",
+          );
+      } else {
+        const captured = await captureMercalysBatch(
+          { files, storeId, ownerId, conversationId },
+          batches,
+          nativeMercalysBatchStorage,
+          randomUUID,
+          a.signal,
+        );
+        batchId = captured.batchId;
+        if (captured.failures.length)
+          setCaptureStatus(
+            `Copies à reprendre : ${captured.failures.join(", ")}.`,
+          );
+      }
+      if (batchId) {
+        const batch = await batches.header(batchId);
+        if (a.signal.aborted) return;
+        await controller.sendImportReference(conversationId, {
+          kind: "MERCALYS_CHAT_IMPORT",
+          schemaVersion: 1,
+          policyVersion: 1,
+          batchId,
+          label:
+            files.length === 1
+              ? files[0]!.name
+              : `${files.length} fichiers Mercalys`,
+          manifestHash: await importManifestHash(batch, executionDigest),
+        });
+        setImportMessageRevision((v) => v + 1);
+        setIntakeRevision((v) => v + 1);
+        setCaptureStatus((value) =>
+          value?.startsWith("Certains") || value?.startsWith("Copies")
+            ? value
+            : undefined,
+        );
+      }
+    } catch {
+      if (!a.signal.aborted)
+        setCaptureStatus(
+          "L’import est interrompu. Les originaux copiés restent conservés. Sélectionnez plusieurs XLSX ou un seul ZIP pour reprendre.",
+        );
+    } finally {
+      if (captureAbort.current === a) captureAbort.current = undefined;
+    }
+  }
+
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string>();
   const createLocked = useRef(false);
@@ -938,18 +1119,32 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           })
         }
         onAttachPdf={attachPdf}
-        onOpenMercalys={() => setIntakeConversation(active)}
+        onOpenMercalys={() => {
+          void importFiles();
+        }}
+        externalMessageRevision={importMessageRevision}
         externalDraftRevision={draftRefresh}
         intakeSummary={
-          <CopilotIntakeSummary
-            key={active}
-            db={sqlite}
-            storeId={storeId}
-            ownerId={ownerId}
-            conversationId={active}
-            revision={intakeRevision}
-            onOpen={() => setIntakeConversation(active)}
-          />
+          <>
+            {captureStatus ? (
+              <View style={{ padding: 12, gap: 8 }}>
+                <Text accessibilityLiveRegion="polite">{captureStatus}</Text>
+                <SecondaryButton
+                  label="Masquer"
+                  onPress={() => setCaptureStatus(undefined)}
+                />
+              </View>
+            ) : null}
+            <CopilotIntakeSummary
+              key={active}
+              db={sqlite}
+              storeId={storeId}
+              ownerId={ownerId}
+              conversationId={active}
+              revision={intakeRevision}
+              onOpen={() => setIntakeConversation(active)}
+            />
+          </>
         }
         renderToolMessage={renderProposal}
       />

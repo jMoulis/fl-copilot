@@ -4190,3 +4190,12 @@ IMPLEMENTATION_PLAN.md
 The plan should decompose development into milestones, tickets, dependencies, acceptance criteria and recommended agent execution order.
 
 It must use the native Expo offline-first architecture and the screens defined in this document.
+
+
+## M7 conversational Mercalys refinement — owner-approved 18 October 2026
+
+Normal chat intake: attach multiple XLSX or one ZIP → retain originals → inline progress → automatic unique-reference preparation and complete unambiguous-file publication → concise inline outcome. The file action explicitly announces routine creation/publication. Preserve the user's draft and existing attachments. Do not send the user through the full import screen for this normal journey.
+
+Ask only for grouped identity uncertainty, invalid source facts or corrected overlap. Present candidate choices or explicit distinct creation when supported; resume automatically after the choice. Present all changed financial fields before keep/apply replacement. Retain unsupported cases with an explanation and access to detailed source inspection. Unknown optional catalogue metadata must not become a compulsory form campaign. AI category suggestions may fill UNKNOWN fields under the scoped import policy; unit/nature require explicit source support and known fields are preserved. Source numbers remain deterministic and immutable.
+
+Visible results distinguish newly published, already recorded, pending decision and failed files. Device publication and remote synchronization remain distinct. Existing manual import/reconciliation screens continue to serve detailed exceptions. This refinement does not close cross-device binary restoration, email/photo intake or all import/conflict CRUD coverage.

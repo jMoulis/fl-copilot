@@ -1,3 +1,4 @@
+import { copilotImportMessageText } from "@fl-copilot/domain";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 import type { CopilotMessage } from "@fl-copilot/domain";
 /** Native long-press actions; copy strips private citation payloads. */
@@ -6,7 +7,7 @@ export function showMessageMenu(message: CopilotMessage, onDelete: () => void) {
   const copy = async () => {
     try {
       const clipboard = await import("expo-clipboard");
-      const text = message.text.replace(
+      const text = copilotImportMessageText(message).replace(
         /\[([^\]]+)\]\(copilot-source:[^)]+\)/g,
         "$1",
       );

@@ -1,3 +1,7 @@
+import {
+  copilotImportMessageText,
+  readCopilotImportReference,
+} from "@fl-copilot/domain";
 import { showMessageMenu } from "./message-menu";
 import { CopyMessage } from "./copy-message";
 import { CopilotActivityTrail } from "./activity-trail";
@@ -20,6 +24,14 @@ import {
 import type { CopilotMessage } from "@fl-copilot/domain";
 import { colors } from "../design/tokens";
 
+function isImportMessage(message: CopilotMessage) {
+  try {
+    readCopilotImportReference(message);
+    return true;
+  } catch {
+    return false;
+  }
+}
 export type CopilotChatStatus = "IDLE" | "QUEUED" | "GENERATING" | "OFFLINE";
 const statusLabels: Record<CopilotChatStatus, string> = {
   IDLE: "",
@@ -225,7 +237,19 @@ export function CopilotChatView({
                   }}
                 />
               ) : (
-                <Text style={styles.message}>{item.text}</Text>
+                <View style={{ gap: 12 }}>
+                  <Text style={styles.message}>
+                    {copilotImportMessageText(item)}
+                  </Text>
+                  {(() => {
+                    try {
+                      readCopilotImportReference(item);
+                      return renderToolMessage?.(item);
+                    } catch {
+                      return null;
+                    }
+                  })()}
+                </View>
               )}
               <View
                 style={{
@@ -235,7 +259,10 @@ export function CopilotChatView({
                   flexWrap: "wrap",
                 }}
               >
-                {item.role === "USER" && item.text.trim() && onRemember ? (
+                {item.role === "USER" &&
+                item.text.trim() &&
+                onRemember &&
+                !isImportMessage(item) ? (
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="Mémoriser une pratique à partir de ce message"
@@ -246,7 +273,7 @@ export function CopilotChatView({
                   </Pressable>
                 ) : null}
                 <CopyMessage
-                  text={item.text}
+                  text={copilotImportMessageText(item)}
                   assistant={item.role === "ASSISTANT"}
                 />
               </View>

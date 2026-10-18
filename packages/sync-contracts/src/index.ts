@@ -105,3 +105,8 @@ export {
 
 export * from "./mercalys-publication";
 export * from "./copilot-activity";
+
+export {
+  importClassificationRequestSchema,
+  importClassificationResultSchema,
+} from "@fl-copilot/domain";
