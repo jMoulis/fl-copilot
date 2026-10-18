@@ -344,6 +344,21 @@ export class MercalysBatchRepository {
   async get(batchId: string, itemId: string) {
     return this.readItem(this.db, batchId, itemId);
   }
+  /** Resolve a replaced device copy without changing the immutable intake request. */
+  async retainedLocation(batchId: string, itemId: string) {
+    const item = await this.readItem(this.db, batchId, itemId);
+    const rows = await this.db.getAllAsync<{ local_uri: string }>(
+      `SELECT DISTINCT f.local_uri FROM source_documents d JOIN local_files f ON f.source_document_id=d.id AND f.store_id=d.store_id
+       WHERE d.store_id=? AND d.checksum=? AND d.deleted_at IS NULL AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+       AND f.checksum=d.checksum AND f.size_bytes=? AND f.local_uri=d.local_file_uri AND f.retention_status='RETAINED'
+       AND EXISTS (SELECT 1 FROM source_original_restorations h WHERE h.store_id=d.store_id AND h.source_document_id=d.id AND h.local_file_id=f.id AND h.restored_uri=f.local_uri) LIMIT 2`,
+      this.scope.storeId,
+      item.checksum,
+      item.sizeBytes,
+    );
+    if (rows.length > 1) throw Error("MERCALYS_RESTORED_LOCATION_AMBIGUOUS");
+    return rows[0]?.local_uri ?? item.localUri;
+  }
   private async readItem(tx: OutboxDatabase, batchId: string, itemId: string) {
     const batch = await this.owned(tx, batchId);
     const row = await tx.getFirstAsync<{ payload_json: string }>(

@@ -1,3 +1,11 @@
+import { requireOptionalNativeModule } from "expo-modules-core";
+import { sourceOriginalCopySchema } from "@fl-copilot/domain";
+import { randomUUID } from "expo-crypto";
+import {
+  restoreSourceOriginal,
+  nativeOriginalRestorationStorage,
+  pickSourceOriginal,
+} from "./restore-source-original";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
@@ -9,6 +17,8 @@ import {
   SourceUploadRecoveryRepository,
   type UploadIntakeScope,
 } from "./source-upload-recovery";
+const canSelectOriginal =
+  requireOptionalNativeModule("ExpoDocumentPicker") !== null;
 const digest = (text: string) =>
   digestStringAsync(CryptoDigestAlgorithm.SHA256, text);
 type Page = Awaited<ReturnType<SourceUploadRecoveryRepository["list"]>>;
@@ -101,10 +111,13 @@ export function SourceUploadRecoveryPanel({
     setNotice(undefined);
     try {
       await task(version, cancellation.signal);
-    } catch {
+    } catch (error) {
       if (revision.current === version) {
         setError(
-          "La reprise n’a pas pu être confirmée. Relisez l’état actuel avant de réessayer ; aucune ligne n’a été republiée.",
+          error instanceof Error &&
+            error.message === "SOURCE_RESTORATION_DIFFERENT_FILE"
+            ? "Le fichier choisi est différent de l’original enregistré. Choisissez la version exacte ; un fichier modifié doit passer par le rapprochement normal."
+            : "La reprise n’a pas pu être confirmée. Relisez l’état actuel avant de réessayer ; vos données et les originaux conservés sont préservés.",
         );
         await load(version).catch(() => undefined);
       }
@@ -143,6 +156,44 @@ export function SourceUploadRecoveryPanel({
             <Text selectable className="text-sm text-muted">
               Code : {item.code}
             </Text>
+          ) : null}
+          {item.canRestore && canRetry && canSelectOriginal ? (
+            <SecondaryButton
+              label="Retrouver l’original"
+              disabled={busy || disabled}
+              onPress={() =>
+                void run(async (version, signal) => {
+                  const mimeType =
+                    sourceOriginalCopySchema.shape.mimeType.parse(
+                      item.original?.mimeType,
+                    );
+                  const uri = await pickSourceOriginal(mimeType);
+                  if (!uri) return;
+                  if (revision.current !== version || signal.aborted) return;
+                  await restoreSourceOriginal(
+                    {
+                      storeId,
+                      sourceDocumentId: item.sourceDocumentId,
+                      basisHash: item.basisHash,
+                      selectedUri: uri,
+                      operationId: randomUUID(),
+                    },
+                    repo,
+                    nativeOriginalRestorationStorage,
+                    { canRetry: () => allowed.current, signal },
+                    ownerId && conversationId
+                      ? { ownerId, conversationId }
+                      : undefined,
+                  );
+                  if (revision.current !== version) return;
+                  setNotice(
+                    "Original retrouvé. Le même import et ses lignes sont conservés ; son envoi reprend avec la connexion.",
+                  );
+                  await sync();
+                  await load(version);
+                })
+              }
+            />
           ) : null}
           {item.canRetry && canRetry ? (
             <SecondaryButton

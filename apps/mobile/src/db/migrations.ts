@@ -797,6 +797,12 @@ CREATE INDEX mercalys_publication_sync_store ON mercalys_publication_sync(store_
 CREATE TABLE product_master_conflict_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,local_json TEXT NOT NULL,remote_json TEXT NOT NULL,resolved_json TEXT NOT NULL,decision TEXT NOT NULL,created_at TEXT NOT NULL);
 CREATE INDEX product_master_conflict_history_scope ON product_master_conflict_history(store_id,entity_type,entity_id);`,
   },
+  {
+    version: 43,
+    name: "source-original-restoration",
+    sql: `CREATE TABLE source_original_restorations(operation_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,source_document_id TEXT NOT NULL,local_file_id TEXT NOT NULL,job_id TEXT NOT NULL,request_json TEXT NOT NULL,previous_uri TEXT NOT NULL,restored_uri TEXT NOT NULL,restored_at TEXT NOT NULL);
+CREATE INDEX source_original_restorations_scope ON source_original_restorations(store_id,source_document_id,restored_at);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {
