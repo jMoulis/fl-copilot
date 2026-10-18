@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import { randomUUID, createHash } from "node:crypto";
 import {
   storeContextSettingsSchema,
@@ -6,6 +7,7 @@ import {
   storeEventCapturePayload,
   closeStoreProductEvent,
   prepareStoreProductEvent,
+  type storeConflictInputSchema,
 } from "../packages/domain/src/index";
 import {
   nativeReceiptPublicationFixture,
@@ -27,10 +29,7 @@ import { applyCopilotRecord } from "../apps/mobile/src/copilot/conversation-repo
 import { CopilotStoreConflictController } from "../apps/mobile/src/copilot/store-conflict-controller";
 export function storeConflictPreview<
   T extends { id: string; storeId: string; version: number },
->(
-  kind: "FIELD_EVENT" | "SETTINGS" | "NEED" | "MEMBERSHIP" | "SUBSTITUTION",
-  remote: T,
-) {
+>(kind: z.infer<typeof storeConflictInputSchema>["kind"], remote: T) {
   const visible =
     kind === "SETTINGS"
       ? (({ position, ...rest }) => {
@@ -52,6 +51,9 @@ export function storeConflictPreview<
       ...(kind === "NEED" ? { need: remote } : {}),
       ...(kind === "MEMBERSHIP" ? { membership: remote } : {}),
       ...(kind === "SUBSTITUTION" ? { substitution: remote } : {}),
+      ...(kind === "COMMERCIAL_CHOICE" ? { choice: remote } : {}),
+      ...(kind === "COMMERCIAL_PREPARATION" ? { preparation: remote } : {}),
+      ...(kind === "COMMERCIAL_PLAN" ? { plan: remote } : {}),
     },
     evidence: [
       {

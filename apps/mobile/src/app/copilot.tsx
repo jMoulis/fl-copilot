@@ -241,6 +241,9 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           canCaptureStoreEvents,
           canManageStoreSettings,
           canManageProducts,
+          canManageCommercialChoices: canManageProducts,
+          canPrepareCommercialWeek: canManageProducts,
+          canValidateCommercialPlan: canManageProducts,
         },
         executionDigest,
         randomUUID,
@@ -815,7 +818,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 canCaptureStoreEvents ||
                 canManageStoreSettings ||
                 canManageProducts
-                  ? 2
+                  ? 3
                   : false,
               receiptRecovery: canManageProducts,
               receiptCorrection: canManageProducts,

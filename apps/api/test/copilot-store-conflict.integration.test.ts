@@ -1,3 +1,10 @@
+import { nativeCommercialConflictFixture } from "../../../scripts/test-commercial-conflict-fixtures";
+import { applyCommercialChoice } from "../../mobile/src/commercial/offer-choice-repository";
+import { applyCommercialPreparation } from "../../mobile/src/commercial/week-preparation-repository";
+import { applyCommercialPlan } from "../../mobile/src/commercial/week-plan-repository";
+import { applyCommercialChoiceCommand } from "../src/commercial/offer-choice-sync";
+import { applyCommercialPreparationCommand } from "../src/commercial/week-preparation-sync";
+import { applyCommercialPlanCommand } from "../src/commercial/week-plan-sync";
 import { nativeNeedConflictFixture } from "../../../scripts/test-need-conflict-fixtures";
 import { applyNeedUnit } from "../../mobile/src/needs/repository";
 import { applyNeedMembership } from "../../mobile/src/needs/membership-repository";
@@ -95,6 +102,13 @@ describe.skipIf(!uri)(
       ["SETTINGS", "KEEP_LOCAL", "AI"],
       ["SETTINGS", "ADOPT_REMOTE", "FALLBACK"],
       ["SETTINGS", "KEEP_LOCAL", "FOREIGN"],
+      ["COMMERCIAL_CHOICE", "KEEP_LOCAL", "AI"],
+      ["COMMERCIAL_CHOICE", "ADOPT_REMOTE", "AI"],
+      ["COMMERCIAL_PREPARATION", "KEEP_LOCAL", "AI"],
+      ["COMMERCIAL_PREPARATION", "ADOPT_REMOTE", "AI"],
+      ["COMMERCIAL_PLAN", "KEEP_LOCAL", "AI"],
+      ["COMMERCIAL_PLAN", "ADOPT_REMOTE", "FALLBACK"],
+      ["COMMERCIAL_PLAN", "KEEP_LOCAL", "FOREIGN"],
       ["NEED", "KEEP_LOCAL", "AI"],
       ["NEED", "ADOPT_REMOTE", "AI"],
       ["MEMBERSHIP", "KEEP_LOCAL", "AI"],
@@ -108,18 +122,27 @@ describe.skipIf(!uri)(
       "commits the private comparison then resolves and syncs canonically (%s/%s/%s)",
       async (kind, decision, mode) => {
         const s =
-            kind === "NEED" || kind === "MEMBERSHIP" || kind === "SUBSTITUTION"
-              ? await nativeNeedConflictFixture(
-                  kind,
-                  ":memory:",
-                  mode === "REACTIVATION" ? "REMOTE" : undefined,
-                )
-              : await nativeStoreConflictFixture(kind),
+            kind === "COMMERCIAL_CHOICE" ||
+            kind === "COMMERCIAL_PREPARATION" ||
+            kind === "COMMERCIAL_PLAN"
+              ? await nativeCommercialConflictFixture(kind)
+              : kind === "NEED" ||
+                  kind === "MEMBERSHIP" ||
+                  kind === "SUBSTITUTION"
+                ? await nativeNeedConflictFixture(
+                    kind,
+                    ":memory:",
+                    mode === "REACTIVATION" ? "REMOTE" : undefined,
+                  )
+                : await nativeStoreConflictFixture(kind),
           r = s.review,
           chat = s.f.chat,
           session = client.startSession();
         try {
           const name = {
+            COMMERCIAL_CHOICE: "commercialOfferChoices",
+            COMMERCIAL_PREPARATION: "commercialWeekPreparations",
+            COMMERCIAL_PLAN: "commercialWeekPlans",
             FIELD_EVENT: "storeProductEvents",
             SETTINGS: "storeContextSettings",
             NEED: "needUnits",
@@ -141,6 +164,33 @@ describe.skipIf(!uri)(
                 _id: r.need.id,
                 ...r.need,
               });
+          }
+          if ("fixture" in r) {
+            const f = r.fixture,
+              { id: productId, ...product } = f.product;
+            await collection("products").insertOne({
+              ...product,
+              _id: productId,
+              createdAt: new Date(f.product.createdAt),
+              updatedAt: new Date(f.product.updatedAt),
+            });
+            const parents = [
+              ["commercialVisualReadings", f.reading],
+              ["commercialValidatedOffers", f.validated],
+              ...(kind === "COMMERCIAL_CHOICE"
+                ? []
+                : [["commercialOfferChoices", f.choice]]),
+              ...(kind === "COMMERCIAL_PREPARATION"
+                ? []
+                : [["commercialWeekPreparations", f.preparation]]),
+            ] as const;
+            for (const [parentName, value] of parents) {
+              const entity = value as { id: string };
+              await collection(parentName as string).insertOne({
+                ...entity,
+                _id: entity.id,
+              });
+            }
           }
           await collection("copilotConversations").insertOne({
             _id: chat.conversation.id,
@@ -290,6 +340,9 @@ describe.skipIf(!uri)(
             });
             await session.withTransaction(async () => {
               const apply = {
+                COMMERCIAL_CHOICE: applyCommercialChoiceCommand,
+                COMMERCIAL_PREPARATION: applyCommercialPreparationCommand,
+                COMMERCIAL_PLAN: applyCommercialPlanCommand,
                 FIELD_EVENT: applyStoreProductEventCommand,
                 SETTINGS: applyStoreContextCommand,
                 NEED: applyNeedUnitCommand,
@@ -314,9 +367,13 @@ describe.skipIf(!uri)(
           try {
             await runLocalMigrations(adapter);
             const saved = await collection(name).findOne({ _id: r.remote.id });
-            const { _id, ...payload } = saved!;
+            const { _id, duplicateKey, ...payload } = saved!;
             void _id;
+            void duplicateKey;
             const apply = {
+              COMMERCIAL_CHOICE: applyCommercialChoice,
+              COMMERCIAL_PREPARATION: applyCommercialPreparation,
+              COMMERCIAL_PLAN: applyCommercialPlan,
               FIELD_EVENT: applyStoreProductEvent,
               SETTINGS: applyStoreContext,
               NEED: applyNeedUnit,
@@ -325,6 +382,9 @@ describe.skipIf(!uri)(
             }[kind];
             await apply(adapter, chat.storeId, payload);
             const table = {
+              COMMERCIAL_CHOICE: "commercial_offer_choices",
+              COMMERCIAL_PREPARATION: "commercial_week_preparations",
+              COMMERCIAL_PLAN: "commercial_week_plans",
               FIELD_EVENT: "store_product_events",
               SETTINGS: "store_context_settings",
               NEED: "need_units",

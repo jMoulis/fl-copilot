@@ -1,3 +1,6 @@
+import { commercialOfferChoiceSchema } from "./commercial-offer-choice";
+import { commercialWeekPreparationSchema } from "./commercial-week-preparation";
+import { commercialWeekPlanSchema } from "./commercial-week-plan";
 import { needUnitSchema } from "./need-unit";
 import { needMembershipSchema } from "./need-membership";
 import { productSubstitutionSchema } from "./product-substitution";
@@ -23,9 +26,33 @@ export const needConflictKinds = [
 export function isNeedConflictKind(kind: string) {
   return (needConflictKinds as readonly string[]).includes(kind);
 }
-export const storeConflictInputSchema = z
+export const storeConflictV2InputSchema = z
   .strictObject({
     kind: z.enum(["FIELD_EVENT", "SETTINGS", ...needConflictKinds]),
+    entityId: z.uuid().nullable(),
+  })
+  .refine((v) =>
+    v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
+  );
+export const commercialConflictKinds = [
+  "COMMERCIAL_CHOICE",
+  "COMMERCIAL_PREPARATION",
+  "COMMERCIAL_PLAN",
+] as const;
+export function isCommercialConflictKind(kind: string) {
+  return (commercialConflictKinds as readonly string[]).includes(kind);
+}
+export function storeConflictArtifactVersion(kind: string) {
+  return isCommercialConflictKind(kind) ? 3 : isNeedConflictKind(kind) ? 2 : 1;
+}
+export const storeConflictInputSchema = z
+  .strictObject({
+    kind: z.enum([
+      "FIELD_EVENT",
+      "SETTINGS",
+      ...needConflictKinds,
+      ...commercialConflictKinds,
+    ]),
     entityId: z.uuid().nullable(),
   })
   .refine((v) =>
@@ -41,6 +68,9 @@ export const storeConflictBasisSchema = z.strictObject({
   need: needUnitSchema.optional(),
   membership: needMembershipSchema.optional(),
   substitution: productSubstitutionSchema.optional(),
+  choice: commercialOfferChoiceSchema.optional(),
+  preparation: commercialWeekPreparationSchema.optional(),
+  plan: commercialWeekPlanSchema.optional(),
 });
 export function validateStoreConflictBasis(
   storeId: string,
@@ -58,13 +88,22 @@ export function validateStoreConflictBasis(
           ? basis.need
           : input.kind === "MEMBERSHIP"
             ? basis.membership
-            : basis.substitution;
+            : input.kind === "SUBSTITUTION"
+              ? basis.substitution
+              : input.kind === "COMMERCIAL_CHOICE"
+                ? basis.choice
+                : input.kind === "COMMERCIAL_PREPARATION"
+                  ? basis.preparation
+                  : basis.plan;
   const present = [
     basis.event,
     basis.settings,
     basis.need,
     basis.membership,
     basis.substitution,
+    basis.choice,
+    basis.preparation,
+    basis.plan,
   ].filter(Boolean);
   if (
     basis.storeId !== storeId ||
@@ -87,7 +126,7 @@ export const storeConflictPreviewSchema = z.strictObject({
 });
 export const storeConflictProposalSchema = z.strictObject({
   kind: z.literal("STORE_CONFLICT_PROPOSAL"),
-  schemaVersion: z.union([z.literal(1), z.literal(2)]),
+  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   assistantMessageId: z.uuid(),
   input: storeConflictInputSchema,
   basis: storeConflictBasisSchema,
@@ -103,7 +142,7 @@ export function readStoreConflictProposal(raw: unknown) {
   const content = storeConflictProposalSchema.parse(JSON.parse(message.text));
   validateStoreConflictBasis(message.storeId, content.input, content.basis);
   if (
-    content.schemaVersion !== (isNeedConflictKind(content.input.kind) ? 2 : 1)
+    content.schemaVersion !== storeConflictArtifactVersion(content.input.kind)
   )
     throw Error("STORE_CONFLICT_PROPOSAL_VERSION");
   return { message, content };
@@ -120,6 +159,7 @@ export const storeConflictRequestSchema = z.strictObject({
   basisHash: z.string().regex(/^[a-f0-9]{64}$/),
   decision: storeConflictDecisionSchema,
   reactivateRejected: z.boolean().optional(),
+  retainWithdrawn: z.boolean().optional(),
 });
 export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
   .omit({ canManageProducts: true })
@@ -128,6 +168,9 @@ export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
     canManageStoreSettings: z.boolean(),
     comparisonReviewed: z.boolean(),
     canManageProducts: z.boolean().default(false),
+    canManageCommercialChoices: z.boolean().default(false),
+    canPrepareCommercialWeek: z.boolean().default(false),
+    canValidateCommercialPlan: z.boolean().default(false),
   });
 export type StoreConflictAuthority = z.infer<
   typeof storeConflictAuthoritySchema
