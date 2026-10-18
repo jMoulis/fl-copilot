@@ -138,3 +138,5 @@ export * from "./receipt-photo-bundle";
 
 export * from "./retail-expertise";
 export * from "./retail-expertise-reference";
+
+export * from "./copilot-action-review";

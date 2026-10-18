@@ -1,3 +1,4 @@
+import { readActionReview } from "./copilot/action-review-tool.js";
 import {
   createCommercialProcessingRecovery,
   type CommercialProcessingRecoveryService,
@@ -872,6 +873,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               needMemberships: async (input) => {
                 await authorize();
                 const result = await readNeedMemberships(db, storeId, input);
+                await authorize();
+                return result;
+              },
+              actionReview: async (input) => {
+                await authorize();
+                const result = await readActionReview(db, storeId, input);
                 await authorize();
                 return result;
               },

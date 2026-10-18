@@ -33,7 +33,7 @@ const placementOfferProjection = taskShape.placementOffers.element.strip();
 const mechanism = (m: Parameters<typeof commercialMechanismDescription>[0]) =>
   commercialMechanismDescription(m) +
   (m.type === "CARD_BENEFIT" && m.scope ? " ; portée carte : " + m.scope : "");
-async function readExecutionContext(
+export async function readExecutionContext(
   db: Db,
   storeId: string,
   weekStart: string,
