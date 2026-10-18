@@ -169,7 +169,7 @@ export class CopilotReceiptViewsIntake {
         capturedAt,
         file: {
           ...file,
-          originalFilename: `Ticket de casse · ${views.length} vues.flreceipt`,
+          originalFilename: `Ticket de casse · ${views.length} vues`,
         },
       });
       await tx.runAsync(
