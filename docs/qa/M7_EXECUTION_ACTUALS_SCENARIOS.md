@@ -10,6 +10,8 @@ Code acceptance uses shared schemas, actual SQLite transactions and disposable t
 - API-client negotiation appends arguments; native bootstrap adoption is separate from prior execution adoption. SDK parameters expose actuals only with capability; transport is mocked, no real model call.
 - Commercial review cites actual details, flags incompatible exposure windows and keeps selected periods and canonical numbers unchanged. Existing private recommendation links retain the original task snapshot projection and still validate historical versions.
 
+The native-to-server acceptance test saves offline in actual SQLite, pushes the durable Outbox through `MobileSyncService` to transactional MongoDB, synchronizes again without another history row, and restores the complete task/actuals in a second fresh SQLite database. The targeted commercial Mongo suite passes all nine cases.
+
 ## Pending grouped iPhone acceptance
 
 1. Ask the chat to declare a particular saved task done with real dates, a price/unit and location. Inspect all values in the card before confirming; correct in conversation if necessary. No default price, unit or date should be invented.

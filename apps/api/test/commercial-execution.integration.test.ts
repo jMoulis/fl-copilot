@@ -1,3 +1,9 @@
+import { MercalysTestDatabase } from "../../../scripts/test-mercalys-sync-fixtures";
+import { testChoiceDigest } from "../../../scripts/test-commercial-choice-fixtures";
+import { runLocalMigrations } from "../../mobile/src/db/migrations";
+import { CommercialExecutionRepository } from "../../mobile/src/commercial/execution-repository";
+import { applyCommercialPlan } from "../../mobile/src/commercial/week-plan-repository";
+import { MobileSyncService } from "../../mobile/src/sync/sync-service";
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { commercialExecutionFixture } from "../../../scripts/test-commercial-execution-fixtures";
@@ -395,6 +401,86 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .collection("commercialExecutionHistory")
           .countDocuments({ storeId: x.storeId }),
       ).toBe(0);
+    }, 60000);
+
+    it("moves an offline SQLite declaration and actual details through Outbox/Mongo and restores them on another native database exactly once", async () => {
+      const x = await seed(),
+        first = new MercalysTestDatabase(),
+        second = new MercalysTestDatabase();
+      try {
+        await x.db
+          .collection<{ _id: string }>("commercialWeekPlans")
+          .insertOne({ _id: x.plan.id, ...x.plan });
+        for (const device of [first, second]) await runLocalMigrations(device);
+        await applyCommercialPlan(first, x.storeId, x.plan);
+        const actuals = {
+          start: "2026-10-08",
+          end: "2026-10-09",
+          price: "1.89",
+          priceUnit: "KG" as const,
+          location: "TG entrée",
+        };
+        const task = { ...x.task, actuals, updatedAt: "2026-10-18T12:00:00Z" };
+        const repo = new CommercialExecutionRepository(first, testChoiceDigest),
+          deviceId = randomUUID();
+        await repo.save(task, { commandId: randomUUID(), deviceId });
+        expect((await repo.get(x.storeId, task.id))?.syncState).toBe("PENDING");
+        const push = createMongoSyncPushService(database),
+          pull = createMongoSyncPullService(database),
+          boot = createMongoSyncBootstrapService(database),
+          authority = {
+            storeId: x.storeId,
+            storeName: "Test",
+            role: "MANAGER" as const,
+            userId: randomUUID(),
+            sessionId: randomUUID(),
+            deviceId,
+          },
+          q = {
+            commercialExecution: "true" as const,
+            commercialExecutionActuals: "true" as const,
+            commercialPlans: "true" as const,
+          };
+        const sync = (device: MercalysTestDatabase) =>
+          new MobileSyncService(
+            device,
+            {
+              push: (r) => push.push(r, randomUUID()),
+              pull: (storeId, cursor) =>
+                pull.pull(storeId, { ...q, cursor, limit: 500 }),
+              bootstrap: () =>
+                boot.bootstrap(authority, { ...q, rawObservationDays: 90 }),
+            },
+            {
+              appVersion: "test",
+              deviceId,
+              commercialExecution: true,
+              commercialExecutionActuals: true,
+              commercialPlans: true,
+            },
+          );
+        await sync(first).sync(x.storeId);
+        await sync(first).sync(x.storeId);
+        expect(await repo.get(x.storeId, task.id)).toMatchObject({
+          syncState: "SYNCED",
+          entity: { actuals },
+        });
+        await sync(second).sync(x.storeId);
+        expect(
+          await new CommercialExecutionRepository(second, testChoiceDigest).get(
+            x.storeId,
+            task.id,
+          ),
+        ).toMatchObject({ syncState: "SYNCED", entity: { actuals } });
+        expect(
+          await x.db
+            .collection("commercialExecutionHistory")
+            .countDocuments({ storeId: x.storeId }),
+        ).toBe(1);
+      } finally {
+        first.db.close();
+        second.db.close();
+      }
     }, 60000);
   },
 );
