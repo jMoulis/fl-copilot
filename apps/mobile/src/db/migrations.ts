@@ -790,6 +790,13 @@ CREATE INDEX mercalys_publication_sync_store ON mercalys_publication_sync(store_
     name: "copilot-confirmed-knowledge",
     sql: `CREATE TABLE copilot_knowledge(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1); CREATE INDEX copilot_knowledge_scope ON copilot_knowledge(store_id,owner_id);`,
   },
+  {
+    version: 42,
+    name: "product-master-conflict-review",
+    sql: `CREATE TABLE product_master_remote_snapshots(store_id TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,version INTEGER NOT NULL,operation TEXT NOT NULL,payload_json TEXT,PRIMARY KEY(store_id,entity_type,entity_id));
+CREATE TABLE product_master_conflict_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,local_json TEXT NOT NULL,remote_json TEXT NOT NULL,resolved_json TEXT NOT NULL,decision TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE INDEX product_master_conflict_history_scope ON product_master_conflict_history(store_id,entity_type,entity_id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -1,3 +1,5 @@
+import { isCatalogueConflictKind } from "@fl-copilot/domain";
+import { catalogueConflictSummary } from "../products/conflict-presentation";
 import {
   commercialVersionDecisionSchema,
   commercialExecutionTaskSchema,
@@ -97,8 +99,12 @@ export function StoreConflictCard({
         decision,
         true,
         cancel.signal,
-        !!reactivationRequired && !retentionRequired && reactivateRejected,
+        !!reactivationRequired &&
+          !retentionRequired &&
+          !activationRequired &&
+          reactivateRejected,
         !!retentionRequired && reactivateRejected,
+        !!activationRequired && reactivateRejected,
       );
       if (revision.current === v) setState(next);
     } catch {
@@ -125,14 +131,29 @@ export function StoreConflictCard({
       : decision === "ADOPT_REMOTE"
         ? review?.commercialPolicy?.retainRemote
         : false;
+  const activationRequired =
+    decision === "KEEP_LOCAL"
+      ? review?.cataloguePolicy?.activateLocal
+      : decision === "ADOPT_REMOTE"
+        ? review?.cataloguePolicy?.activateRemote
+        : false;
   const reactivationRequired =
+    activationRequired ||
     retentionRequired ||
     (decision === "KEEP_LOCAL"
-      ? review?.needPolicy?.reactivateLocal
+      ? review?.needPolicy?.reactivateLocal ||
+        review?.cataloguePolicy?.reactivateLocal
       : decision === "ADOPT_REMOTE"
-        ? review?.needPolicy?.reactivateRemote
+        ? review?.needPolicy?.reactivateRemote ||
+          review?.cataloguePolicy?.reactivateRemote
         : false);
   const summary = (raw: unknown) => {
+    if (state && isCatalogueConflictKind(state.content.input.kind))
+      return catalogueConflictSummary(
+        state.content.input.kind,
+        raw,
+        review?.cataloguePolicy?.products,
+      );
     switch (state?.content.input.kind) {
       case "COMMERCIAL_REFERENCE": {
         const e = commercialVersionDecisionSchema.parse(raw),
@@ -221,6 +242,9 @@ export function StoreConflictCard({
       <Text style={{ fontWeight: "700", color: colors.forest }}>
         {state
           ? {
+              PRODUCT: "Comparer la fiche produit",
+              IDENTIFIER: "Comparer le code produit",
+              ALIAS: "Comparer le libellé associé",
               COMMERCIAL_REFERENCE: "Comparer la référence PDF",
               COMMERCIAL_EXECUTION: "Comparer la déclaration d’exécution",
               COMMERCIAL_CHOICE: "Comparer le choix d’offre",
@@ -309,6 +333,13 @@ export function StoreConflictCard({
               Ce choix retient un réglage déjà enregistré. Il ne demande pas de
               nouvelle position au téléphone.
             </Text>
+          ) : review.cataloguePolicy ? (
+            <Text>
+              Seule la version choisie de cette fiche ou identité est retenue.
+              Les autres codes et associations restent conservés. Pour un alias,
+              la confiance synchronisée est préservée ; une réactivation exige
+              une confirmation distincte.
+            </Text>
           ) : review.commercialDecisionPolicy ? (
             <Text>
               {state.content.input.kind === "COMMERCIAL_REFERENCE"
@@ -343,6 +374,9 @@ export function StoreConflictCard({
             "Adopter la version synchronisée",
             review.canAdoptRemote,
           )}
+          {review.cataloguePolicy && !review.canKeepLocal ? (
+            <Text>{review.cataloguePolicy.reason}</Text>
+          ) : null}
           {review.commercialDecisionPolicy && !review.canKeepLocal ? (
             <Text>{review.commercialDecisionPolicy.reason}</Text>
           ) : null}
@@ -361,18 +395,22 @@ export function StoreConflictCard({
             >
               <Switch
                 accessibilityLabel={
-                  retentionRequired
-                    ? "Je confirme explicitement de retenir cette offre retirée"
-                    : "Je confirme explicitement la réactivation de cette association rejetée"
+                  activationRequired
+                    ? "Je confirme explicitement la remise en activité du produit"
+                    : retentionRequired
+                      ? "Je confirme explicitement de retenir cette offre retirée"
+                      : "Je confirme explicitement la réactivation de cette association rejetée"
                 }
                 disabled={saving}
                 value={reactivateRejected}
                 onValueChange={setReactivateRejected}
               />
               <Text style={{ flex: 1 }}>
-                {retentionRequired
-                  ? "Cette offre a été retirée. Je confirme explicitement de la retenir à nouveau."
-                  : "Cette association a été rejetée. Je confirme explicitement sa réactivation."}
+                {activationRequired
+                  ? "Je confirme explicitement la remise en activité du produit."
+                  : retentionRequired
+                    ? "Cette offre a été retirée. Je confirme explicitement de la retenir à nouveau."
+                    : "Cette association a été rejetée. Je confirme explicitement sa réactivation."}
               </Text>
             </View>
           ) : null}

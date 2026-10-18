@@ -123,3 +123,25 @@ it.each(["COMMERCIAL_REFERENCE", "COMMERCIAL_EXECUTION"] as const)(
     }
   },
 );
+
+it.each(["PRODUCT", "IDENTIFIER", "ALIAS"] as const)(
+  "binds %s to artifact version 5 and rejects downgrade",
+  async (kind) => {
+    const { nativeCatalogueConflictFixture } =
+      await import("../../../../scripts/test-catalogue-conflict-fixtures");
+    const s = await nativeCatalogueConflictFixture(kind);
+    try {
+      const { content } = readStoreConflictProposal(s.review.message);
+      expect(content.schemaVersion).toBe(5);
+      for (const schemaVersion of [1, 2, 3, 4])
+        expect(() =>
+          readStoreConflictProposal({
+            ...s.review.message,
+            text: JSON.stringify({ ...content, schemaVersion }),
+          }),
+        ).toThrow();
+    } finally {
+      s.db.close();
+    }
+  },
+);

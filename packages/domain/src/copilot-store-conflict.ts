@@ -1,3 +1,12 @@
+import {
+  catalogueConflictKinds,
+  isCatalogueConflictKind,
+} from "./product-master-conflict";
+import {
+  productSchema,
+  productAliasSchema,
+  productIdentifierSchema,
+} from "./products";
 import { commercialVersionDecisionSchema } from "./commercial-version-decision";
 import { commercialExecutionTaskSchema } from "./commercial-execution-task";
 import { commercialOfferChoiceSchema } from "./commercial-offer-choice";
@@ -56,13 +65,15 @@ export function isCommercialConflictKind(kind: string) {
   return (commercialConflictKinds as readonly string[]).includes(kind);
 }
 export function storeConflictArtifactVersion(kind: string) {
-  return isCommercialDecisionConflictKind(kind)
-    ? 4
-    : isCommercialConflictKind(kind)
-      ? 3
-      : isNeedConflictKind(kind)
-        ? 2
-        : 1;
+  return isCatalogueConflictKind(kind)
+    ? 5
+    : isCommercialDecisionConflictKind(kind)
+      ? 4
+      : isCommercialConflictKind(kind)
+        ? 3
+        : isNeedConflictKind(kind)
+          ? 2
+          : 1;
 }
 export const storeConflictV3InputSchema = z
   .strictObject({
@@ -77,6 +88,19 @@ export const storeConflictV3InputSchema = z
   .refine((v) =>
     v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
   );
+export const storeConflictV4InputSchema = z
+  .strictObject({
+    kind: z.enum([
+      "FIELD_EVENT",
+      "SETTINGS",
+      ...needConflictKinds,
+      ...commercialConflictKinds,
+    ]),
+    entityId: z.uuid().nullable(),
+  })
+  .refine((v) =>
+    v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
+  );
 export const storeConflictInputSchema = z
   .strictObject({
     kind: z.enum([
@@ -84,6 +108,7 @@ export const storeConflictInputSchema = z
       "SETTINGS",
       ...needConflictKinds,
       ...commercialConflictKinds,
+      ...catalogueConflictKinds,
     ]),
     entityId: z.uuid().nullable(),
   })
@@ -105,6 +130,9 @@ export const storeConflictBasisSchema = z.strictObject({
   plan: commercialWeekPlanSchema.optional(),
   reference: commercialVersionDecisionSchema.optional(),
   execution: commercialExecutionTaskSchema.optional(),
+  product: productSchema.optional(),
+  identifier: productIdentifierSchema.optional(),
+  alias: productAliasSchema.optional(),
 });
 export function validateStoreConflictBasis(
   storeId: string,
@@ -132,7 +160,13 @@ export function validateStoreConflictBasis(
                     ? basis.plan
                     : input.kind === "COMMERCIAL_REFERENCE"
                       ? basis.reference
-                      : basis.execution;
+                      : input.kind === "COMMERCIAL_EXECUTION"
+                        ? basis.execution
+                        : input.kind === "PRODUCT"
+                          ? basis.product
+                          : input.kind === "IDENTIFIER"
+                            ? basis.identifier
+                            : basis.alias;
   const present = [
     basis.event,
     basis.settings,
@@ -144,6 +178,9 @@ export function validateStoreConflictBasis(
     basis.plan,
     basis.reference,
     basis.execution,
+    basis.product,
+    basis.identifier,
+    basis.alias,
   ].filter(Boolean);
   if (
     basis.storeId !== storeId ||
@@ -171,6 +208,7 @@ export const storeConflictProposalSchema = z.strictObject({
     z.literal(2),
     z.literal(3),
     z.literal(4),
+    z.literal(5),
   ]),
   assistantMessageId: z.uuid(),
   input: storeConflictInputSchema,
@@ -205,6 +243,7 @@ export const storeConflictRequestSchema = z.strictObject({
   decision: storeConflictDecisionSchema,
   reactivateRejected: z.boolean().optional(),
   retainWithdrawn: z.boolean().optional(),
+  activateProduct: z.boolean().optional(),
 });
 export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
   .omit({ canManageProducts: true })

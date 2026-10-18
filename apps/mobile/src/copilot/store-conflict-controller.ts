@@ -1,3 +1,5 @@
+import { isCatalogueConflictKind } from "@fl-copilot/domain";
+import { ProductMasterConflictRepository } from "../products/conflict-repository";
 import {
   isCommercialConflictKind,
   isCommercialDecisionConflictKind,
@@ -57,6 +59,7 @@ function allowed(
   scope: Scope,
   kind: z.infer<typeof storeConflictInputSchema>["kind"],
 ) {
+  if (isCatalogueConflictKind(kind)) return !!scope.canManageProducts;
   if (kind === "COMMERCIAL_REFERENCE")
     return !!scope.canManageCommercialReferences;
   if (kind === "COMMERCIAL_EXECUTION")
@@ -183,10 +186,18 @@ export class CopilotStoreConflictRuntime {
           throw Error("STORE_CONFLICT_STALE");
         const reactivation =
           request.decision === "KEEP_LOCAL"
-            ? review.needPolicy?.reactivateLocal
-            : review.needPolicy?.reactivateRemote;
+            ? review.needPolicy?.reactivateLocal ||
+              review.cataloguePolicy?.reactivateLocal
+            : review.needPolicy?.reactivateRemote ||
+              review.cataloguePolicy?.reactivateRemote;
         if (reactivation && request.reactivateRejected !== true)
           throw Error("STORE_CONFLICT_REACTIVATION_REQUIRED");
+        const activation =
+          request.decision === "KEEP_LOCAL"
+            ? review.cataloguePolicy?.activateLocal
+            : review.cataloguePolicy?.activateRemote;
+        if (activation && !request.activateProduct)
+          throw Error("STORE_CONFLICT_ACTIVATION_REQUIRED");
         const retention =
           request.decision === "KEEP_LOCAL"
             ? review.commercialPolicy?.retainLocal
@@ -197,7 +208,26 @@ export class CopilotStoreConflictRuntime {
           commandId = this.id(),
           appliedAt = this.now(),
           useLocal = request.decision === "KEEP_LOCAL";
-        if (request.kind === "COMMERCIAL_REFERENCE")
+        if (isCatalogueConflictKind(request.kind)) {
+          const repository = new ProductMasterConflictRepository(
+              joined,
+              this.digest,
+            ),
+            canonical = await repository.review(
+              ctx.storeId,
+              request.conflictId,
+            );
+          await repository.resolve(ctx.storeId, request.conflictId, useLocal, {
+            commandId,
+            deviceId: ctx.deviceId,
+            reviewHash: canonical.hash,
+            jobId: this.id(),
+            reactivateRejected: request.reactivateRejected,
+            activateProduct: request.activateProduct,
+            canResolve: () => allowed(authority, request.kind),
+            signal,
+          });
+        } else if (request.kind === "COMMERCIAL_REFERENCE")
           await new CommercialVersionDecisionRepository(
             joined,
             this.digest,
@@ -335,6 +365,9 @@ export class CopilotStoreConflictController {
             kind: result.kind,
             basisHash: result.basisHash,
             decision: result.decision,
+            ...(result.activateProduct !== undefined
+              ? { activateProduct: result.activateProduct }
+              : {}),
             ...(result.retainWithdrawn !== undefined
               ? { retainWithdrawn: result.retainWithdrawn }
               : {}),
@@ -362,6 +395,7 @@ export class CopilotStoreConflictController {
     signal?: AbortSignal,
     reactivateRejected = false,
     retainWithdrawn = false,
+    activateProduct = false,
   ) {
     const decision = storeConflictDecisionSchema.parse(rawDecision),
       state = await this.open(message);
@@ -388,7 +422,9 @@ export class CopilotStoreConflictController {
       !isCommercialDecisionConflictKind(state.content.input.kind)
         ? { retainWithdrawn }
         : {}),
-      ...(isNeedConflictKind(state.content.input.kind)
+      ...(state.content.input.kind === "PRODUCT" ? { activateProduct } : {}),
+      ...(isNeedConflictKind(state.content.input.kind) ||
+      state.content.input.kind === "ALIAS"
         ? { reactivateRejected }
         : {}),
     });

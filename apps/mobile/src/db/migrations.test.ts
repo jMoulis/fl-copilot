@@ -130,6 +130,8 @@ describe("local SQLite migrations", () => {
       "product_aliases",
       "product_daily_performance",
       "product_identifiers",
+      "product_master_conflict_history",
+      "product_master_remote_snapshots",
       "product_substitution_history",
       "product_substitutions",
       "products",
@@ -472,4 +474,32 @@ describe("device identity", () => {
     reopened.close();
     clean.database.close();
   });
+});
+
+it("upgrades the v41 catalogue without changing local edits or pending conflicts", async () => {
+  const { adapter, database } = openTemporaryDatabase();
+  try {
+    await runLocalMigrations(adapter, localMigrations.slice(0, 41));
+    database.exec(`INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at,sync_state,dirty,remote_version) VALUES('legacy-product','legacy-store','Figues','FRUIT','BULK','KG','ACTIVE',2,'2026-10-01T00:00:00Z','2026-10-02T00:00:00Z','CONFLICT',1,1);
+INSERT INTO sync_outbox(command_id,store_id,device_id,local_sequence,command_type,entity_type,entity_id,expected_remote_version,payload_json,created_at,status,attempt_count) VALUES('legacy-command','legacy-store','legacy-device',1,'PRODUCT_UPSERT','product','legacy-product',1,'{}','2026-10-02T00:00:00Z','CONFLICT',0);
+INSERT INTO sync_conflicts(id,store_id,command_id,entity_type,entity_id,local_payload_json,remote_payload_json,local_expected_version,remote_version,conflict_type,status,created_at) VALUES('legacy-command','legacy-store','legacy-command','product','legacy-product','{}','{}',1,2,'SYNC_VERSION_CONFLICT','OPEN','2026-10-02T00:00:00Z');`);
+    const tables = ["products", "sync_outbox", "sync_conflicts"],
+      before = tables.map((t) => database.prepare(`SELECT * FROM ${t}`).all());
+    await runLocalMigrations(adapter);
+    expect(
+      tables.map((t) => database.prepare(`SELECT * FROM ${t}`).all()),
+    ).toEqual(before);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM product_master_conflict_history")
+        .get()!.n,
+    ).toBe(0);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM product_master_remote_snapshots")
+        .get()!.n,
+    ).toBe(0);
+  } finally {
+    database.close();
+  }
 });

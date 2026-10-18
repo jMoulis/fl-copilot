@@ -1,3 +1,13 @@
+import { nativeCatalogueConflictFixture } from "../../../scripts/test-catalogue-conflict-fixtures";
+import {
+  isCatalogueConflictKind,
+  catalogueConflictSchemas,
+} from "@fl-copilot/domain";
+import {
+  applyProductMasterCommand,
+  serializeProductMasterDocument,
+} from "../src/products/product-master";
+import { applyProductMasterChange } from "../../mobile/src/products/apply-product-master";
 import { nativeCommercialDecisionConflictFixture } from "../../../scripts/test-commercial-decision-conflict-fixtures";
 import { applyCommercialVersionDecision } from "../../mobile/src/commercial/version-decision-repository";
 import { applyCommercialExecution } from "../../mobile/src/commercial/execution-repository";
@@ -107,6 +117,16 @@ describe.skipIf(!uri)(
       ["SETTINGS", "KEEP_LOCAL", "AI"],
       ["SETTINGS", "ADOPT_REMOTE", "FALLBACK"],
       ["SETTINGS", "KEEP_LOCAL", "FOREIGN"],
+      ["PRODUCT", "KEEP_LOCAL", "AI"],
+      ["PRODUCT", "ADOPT_REMOTE", "AI"],
+      ["IDENTIFIER", "KEEP_LOCAL", "AI"],
+      ["IDENTIFIER", "ADOPT_REMOTE", "AI"],
+      ["ALIAS", "KEEP_LOCAL", "AI"],
+      ["ALIAS", "ADOPT_REMOTE", "FALLBACK"],
+      ["PRODUCT", "KEEP_LOCAL", "FOREIGN"],
+      ["ALIAS", "KEEP_LOCAL", "FOREIGN"],
+      ["ALIAS", "KEEP_LOCAL", "REACTIVATION"],
+      ["PRODUCT", "KEEP_LOCAL", "REACTIVATION"],
       ["COMMERCIAL_REFERENCE", "KEEP_LOCAL", "AI"],
       ["COMMERCIAL_REFERENCE", "ADOPT_REMOTE", "FALLBACK"],
       ["COMMERCIAL_REFERENCE", "KEEP_LOCAL", "REVERSED"],
@@ -133,8 +153,13 @@ describe.skipIf(!uri)(
     ] as const)(
       "commits the private comparison then resolves and syncs canonically (%s/%s/%s)",
       async (kind, decision, mode) => {
-        const s =
-            kind === "COMMERCIAL_REFERENCE" || kind === "COMMERCIAL_EXECUTION"
+        const s = isCatalogueConflictKind(kind)
+            ? await nativeCatalogueConflictFixture(
+                kind,
+                ":memory:",
+                mode === "REACTIVATION" ? "REMOTE" : undefined,
+              )
+            : kind === "COMMERCIAL_REFERENCE" || kind === "COMMERCIAL_EXECUTION"
               ? await nativeCommercialDecisionConflictFixture(
                   kind,
                   ":memory:",
@@ -158,6 +183,9 @@ describe.skipIf(!uri)(
           session = client.startSession();
         try {
           const name = {
+            PRODUCT: "products",
+            IDENTIFIER: "productIdentifiers",
+            ALIAS: "productAliases",
             COMMERCIAL_REFERENCE: "commercialVersionDecisions",
             COMMERCIAL_EXECUTION: "commercialExecutionTasks",
             COMMERCIAL_CHOICE: "commercialOfferChoices",
@@ -169,11 +197,36 @@ describe.skipIf(!uri)(
             MEMBERSHIP: "needMemberships",
             SUBSTITUTION: "productSubstitutions",
           }[kind];
-          await collection(name).insertOne({ _id: r.remote.id, ...r.remote });
-          await collection("products").insertOne({
-            _id: s.product.id,
-            ...("product" in r ? r.product : s.product),
-          });
+          const mongoCatalogue = (entity: {
+            id: string;
+            createdAt: string;
+            updatedAt: string;
+            deletedAt?: string | null;
+          }) => {
+            const { id, ...rest } = entity;
+            return {
+              ...rest,
+              _id: id,
+              schemaVersion: 1,
+              createdAt: new Date(entity.createdAt),
+              updatedAt: new Date(entity.updatedAt),
+              deletedAt: entity.deletedAt ? new Date(entity.deletedAt) : null,
+            };
+          };
+          await collection(name).insertOne(
+            isCatalogueConflictKind(kind)
+              ? mongoCatalogue(r.remote)
+              : { _id: r.remote.id, ...r.remote },
+          );
+          if (kind !== "PRODUCT")
+            await collection("products").insertOne(
+              isCatalogueConflictKind(kind) && "product" in r
+                ? mongoCatalogue(r.product)
+                : {
+                    _id: s.product.id,
+                    ...("product" in r ? r.product : s.product),
+                  },
+            );
           if ("need" in r) {
             await collection("products").insertOne({
               _id: r.substitute.id,
@@ -340,7 +393,9 @@ describe.skipIf(!uri)(
                 decision,
                 true,
                 undefined,
-                mode === "REACTIVATION",
+                mode === "REACTIVATION" && kind !== "PRODUCT",
+                false,
+                mode === "REACTIVATION" && kind === "PRODUCT",
               )
             ).status,
           ).toBe("COMPLETED");
@@ -352,7 +407,9 @@ describe.skipIf(!uri)(
                 decision,
                 true,
                 undefined,
-                mode === "REACTIVATION",
+                mode === "REACTIVATION" && kind !== "PRODUCT",
+                false,
+                mode === "REACTIVATION" && kind === "PRODUCT",
               )
             ).status,
           ).toBe("COMPLETED");
@@ -372,7 +429,25 @@ describe.skipIf(!uri)(
               createdAt: command.createdAt,
             });
             await session.withTransaction(async () => {
+              const applyCatalogue: typeof applyNeedUnitCommand = (
+                ctx,
+                store,
+                command,
+                requestId,
+                changes,
+              ) =>
+                applyProductMasterCommand(
+                  ctx,
+                  store,
+                  command,
+                  requestId,
+                  () => new Date(),
+                  changes,
+                );
               const apply = {
+                PRODUCT: applyCatalogue,
+                IDENTIFIER: applyCatalogue,
+                ALIAS: applyCatalogue,
                 COMMERCIAL_REFERENCE: applyCommercialVersionDecisionCommand,
                 COMMERCIAL_EXECUTION: applyCommercialExecutionCommand,
                 COMMERCIAL_CHOICE: applyCommercialChoiceCommand,
@@ -402,23 +477,45 @@ describe.skipIf(!uri)(
           try {
             await runLocalMigrations(adapter);
             const saved = await collection(name).findOne({ _id: r.remote.id });
-            const { _id, duplicateKey, ...payload } = saved!;
+            const { _id, duplicateKey, ...restoredPayload } = saved!;
+            const payload = isCatalogueConflictKind(kind)
+              ? serializeProductMasterDocument(
+                  r.entityType,
+                  saved as unknown as Parameters<
+                    typeof serializeProductMasterDocument
+                  >[1],
+                )
+              : restoredPayload;
             void _id;
             void duplicateKey;
-            const apply = {
-              COMMERCIAL_REFERENCE: applyCommercialVersionDecision,
-              COMMERCIAL_EXECUTION: applyCommercialExecution,
-              COMMERCIAL_CHOICE: applyCommercialChoice,
-              COMMERCIAL_PREPARATION: applyCommercialPreparation,
-              COMMERCIAL_PLAN: applyCommercialPlan,
-              FIELD_EVENT: applyStoreProductEvent,
-              SETTINGS: applyStoreContext,
-              NEED: applyNeedUnit,
-              MEMBERSHIP: applyNeedMembership,
-              SUBSTITUTION: applyProductSubstitution,
-            }[kind];
-            await apply(adapter, chat.storeId, payload);
+            if (isCatalogueConflictKind(kind)) {
+              const entity = catalogueConflictSchemas[kind].parse(payload);
+              await applyProductMasterChange(adapter, chat.storeId, {
+                entityType: r.entityType,
+                entityId: entity.id,
+                entityVersion: entity.version,
+                operation: "UPSERT",
+                entity,
+              });
+            } else {
+              const apply = {
+                COMMERCIAL_REFERENCE: applyCommercialVersionDecision,
+                COMMERCIAL_EXECUTION: applyCommercialExecution,
+                COMMERCIAL_CHOICE: applyCommercialChoice,
+                COMMERCIAL_PREPARATION: applyCommercialPreparation,
+                COMMERCIAL_PLAN: applyCommercialPlan,
+                FIELD_EVENT: applyStoreProductEvent,
+                SETTINGS: applyStoreContext,
+                NEED: applyNeedUnit,
+                MEMBERSHIP: applyNeedMembership,
+                SUBSTITUTION: applyProductSubstitution,
+              }[kind];
+              await apply(adapter, chat.storeId, payload);
+            }
             const table = {
+              PRODUCT: "products",
+              IDENTIFIER: "product_identifiers",
+              ALIAS: "product_aliases",
               COMMERCIAL_REFERENCE: "commercial_version_decisions",
               COMMERCIAL_EXECUTION: "commercial_execution_tasks",
               COMMERCIAL_CHOICE: "commercial_offer_choices",
@@ -439,6 +536,10 @@ describe.skipIf(!uri)(
               store_id: chat.storeId,
               sync_state: "SYNCED",
             });
+            if (kind === "IDENTIFIER")
+              expect(payload).toMatchObject({ value: "00042" });
+            if (kind === "ALIAS")
+              expect(payload).toMatchObject({ confidence: 0.8 });
             if (kind === "COMMERCIAL_REFERENCE") {
               const data = payload as {
                 preference: string;

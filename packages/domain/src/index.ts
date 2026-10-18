@@ -128,3 +128,5 @@ export * from "./mercalys-product-target";
 export * from "./copilot-receipt-recovery";
 
 export * from "./copilot-store-conflict";
+
+export * from "./product-master-conflict";

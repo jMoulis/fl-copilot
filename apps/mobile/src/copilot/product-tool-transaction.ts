@@ -10,7 +10,6 @@ import {
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import { ProductMasterRepository } from "../products/product-master-repository";
-import { enqueueAnalyticsRecomputationJob } from "../analytics/local-recomputation";
 export function joinedProductToolDatabase(tx: OutboxDatabase) {
   return {
     getFirstAsync: tx.getFirstAsync.bind(tx),
@@ -24,31 +23,7 @@ export function joinedProductToolDatabase(tx: OutboxDatabase) {
 export function productToolRepository(tx: OutboxDatabase) {
   return new ProductMasterRepository(joinedProductToolDatabase(tx));
 }
-export async function queueProductToolRecomputation(
-  tx: OutboxDatabase,
-  storeId: string,
-  productId: string,
-  jobId: string,
-  createdAt: string,
-) {
-  const dates = await tx.getAllAsync<{ business_date: string }>(
-    `SELECT business_date FROM sales_observations WHERE store_id=? AND product_id=? AND deleted_at IS NULL UNION SELECT business_date FROM waste_observations WHERE store_id=? AND product_id=? AND deleted_at IS NULL UNION SELECT business_date FROM product_daily_performance WHERE store_id=? AND product_id=?`,
-    storeId,
-    productId,
-    storeId,
-    productId,
-    storeId,
-    productId,
-  );
-  if (!dates.length) return null;
-  await enqueueAnalyticsRecomputationJob(tx, {
-    jobId,
-    storeId,
-    scopes: dates.map((d) => ({ productId, businessDate: d.business_date })),
-    createdAt,
-  });
-  return jobId;
-}
+export { queueProductRecomputation as queueProductToolRecomputation } from "../products/recomputation";
 export const reviewedStoreOperationAuthoritySchema =
   productClassificationAuthoritySchema
     .omit({ canManageProducts: true })
