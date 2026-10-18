@@ -110,6 +110,86 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authority: { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
       };
     }
+    it("reads photo receipt attachments as pending or extracted drafts without treating them as published waste", async () => {
+      const f = await fixture(),
+        id = randomUUID();
+      const reference = {
+        sourceDocumentId: id,
+        filename: "Ticket photo.jpg",
+        mediaType: "image/jpeg",
+      };
+      await db.collection<{ _id: string }>("sourceDocuments").insertOne({
+        _id: id,
+        storeId: f.storeId,
+        sourceType: "WASTE_RECEIPT",
+        originalFilename: "Ticket photo.jpg",
+        mimeType: "image/jpeg",
+        checksum: `sha256:${"b".repeat(64)}`,
+        createdAt: new Date(),
+        remoteUploadStatus: "PENDING",
+        objectKey: "private/never-expose-photo",
+      } as never);
+      expect(
+        await readAttachedSources(db, f.storeId, [reference]),
+      ).toMatchObject([
+        {
+          sourceDocumentId: id,
+          sourceType: "WASTE_RECEIPT",
+          status: "PENDING_UPLOAD",
+        },
+      ]);
+      await db
+        .collection<{ _id: string }>("sourceDocuments")
+        .updateOne({ _id: id }, { $set: { remoteUploadStatus: "CONFIRMED" } });
+      const reader = {
+        read: vi.fn(async () =>
+          wasteReceiptDraftSchema.parse({
+            detectedReceiptDate: "2026-10-18",
+            detectedCashierNumber: "000009",
+            extractionModelVersion: "test",
+            arithmeticValidatorVersion: "test",
+            productMatcherVersion: "test",
+            lines: [],
+          }),
+        ),
+      };
+      expect(
+        await readAttachedSources(db, f.storeId, [reference]),
+      ).toMatchObject([
+        {
+          sourceDocumentId: id,
+          sourceType: "WASTE_RECEIPT",
+          status: "CONFIRMED",
+        },
+      ]);
+      const extracted = await readWasteReceipt(
+        db,
+        f.storeId,
+        { sourceDocumentId: id, offset: 0, limit: 10 },
+        reader,
+      );
+      expect(extracted).toMatchObject({
+        status: "EXTRACTED",
+        published: null,
+        lineCount: 0,
+        extracted: { header: { detectedCashierNumber: "000009" } },
+      });
+      expect(JSON.stringify(extracted)).not.toContain("never-expose-photo");
+      expect(
+        await readAttachedSources(db, randomUUID(), [reference]),
+      ).toMatchObject([
+        { status: "UNAVAILABLE", filename: null, sourceType: null },
+      ]);
+      await expect(
+        readWasteReceipt(
+          db,
+          randomUUID(),
+          { sourceDocumentId: id, offset: 0, limit: 10 },
+          reader,
+        ),
+      ).rejects.toThrow("COPILOT_RECEIPT_UNAVAILABLE");
+      expect(reader.read).toHaveBeenCalledTimes(1);
+    });
     it("binds current message attachments to owned upload metadata and withholds unavailable/private source fields", async () => {
       const storeId = randomUUID();
       const refs = Array.from({ length: 7 }, () => ({

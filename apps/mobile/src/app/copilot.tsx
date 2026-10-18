@@ -91,6 +91,8 @@ import {
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { captureCommercialPdf } from "@/documents/commercial-pdf-capture";
 import { SourceDocumentRepository } from "@/documents/source-document-repository";
+import { CopilotReceiptPhotoIntake } from "@/copilot/receipt-photo-intake";
+import { resolveWasteReceiptImageExtension } from "@/documents/waste-receipt-capture";
 import { selectCopilotPdfs } from "@/copilot/pdf-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Text, View } from "react-native";
@@ -174,6 +176,8 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     session?.stores.some(
       (store) => store.storeId === storeId && store.role === "MANAGER",
     ) ?? false;
+  const receiptCaptureAllowed = useRef(canManageProducts);
+  receiptCaptureAllowed.current = canManageProducts;
   const canDeclareCommercialExecution = canManageProducts; // Current MANAGER role policy.
   const proposals = useMemo(
     () =>
@@ -881,6 +885,61 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       capacity,
     );
   };
+  const attachReceipts = async (
+    conversationId: string,
+    signal: AbortSignal,
+    capacity: number,
+  ) => {
+    if (!receiptCaptureAllowed.current)
+      throw Error("COPILOT_RECEIPT_CAPTURE_FORBIDDEN");
+    if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
+    if (capacity < 1) throw Error("COPILOT_ATTACHMENT_LIMIT");
+    if (!requireOptionalNativeModule("ExponentImagePicker"))
+      throw Error("COPILOT_RECEIPT_PICKER_UNAVAILABLE");
+    const picker = await import("expo-image-picker");
+    const selected = await picker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: false,
+      allowsMultipleSelection: true,
+      selectionLimit: capacity,
+      quality: 1,
+      exif: false,
+    });
+    if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
+    if (selected.canceled) return undefined;
+    return new CopilotReceiptPhotoIntake(
+      sqlite,
+      { storeId, ownerId },
+      randomUUID,
+    ).capture(
+      conversationId,
+      {
+        mode: "ONE_PHOTO_PER_RECEIPT",
+        assets: selected.assets.map((asset, index) => {
+          const extension = resolveWasteReceiptImageExtension({
+            temporaryUri: asset.uri,
+            mimeType: asset.mimeType,
+            originalFilename: asset.fileName,
+          });
+          return {
+            uri: asset.uri,
+            filename:
+              asset.fileName ?? `Ticket de casse ${index + 1}.${extension}`,
+            mimeType: (
+              {
+                jpg: "image/jpeg",
+                png: "image/png",
+                heic: "image/heic",
+                heif: "image/heif",
+              } as const
+            )[extension],
+          };
+        }),
+      },
+      { canCapture: () => receiptCaptureAllowed.current, signal },
+      capacity,
+    );
+  };
   const [conversations, setConversations] = useState<
     Awaited<ReturnType<CopilotConversationRepository["list"]>>
   >([]);
@@ -1198,6 +1257,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           })
         }
         onAttachPdf={attachPdf}
+        onAttachReceipts={canManageProducts ? attachReceipts : undefined}
         onOpenMercalys={() => {
           void importFiles();
         }}

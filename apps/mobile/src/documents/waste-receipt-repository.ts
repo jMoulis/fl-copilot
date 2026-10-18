@@ -257,6 +257,29 @@ export class WasteReceiptRepository {
     return rows.map(mapLine);
   }
 
+  /** Bounded local attachment status; this never hydrates another store or loads all lines. */
+  async sourceSummary(
+    storeId: string,
+    sourceDocumentId: string,
+  ): Promise<LocalWasteReceiptSummary | null> {
+    const rows = await this.database.getAllAsync<WasteReceiptSummaryRow>(
+      `SELECT r.*, f.local_uri, (SELECT COUNT(*) FROM waste_lines l WHERE l.receipt_id=r.id AND l.store_id=r.store_id AND l.deleted_at IS NULL) AS line_count
+       FROM waste_receipts r JOIN source_documents d ON d.id=r.source_document_id AND d.store_id=r.store_id
+       LEFT JOIN local_files f ON f.id=r.local_file_id AND f.store_id=r.store_id AND f.source_document_id=d.id AND f.checksum=d.checksum AND f.retention_status='RETAINED'
+       WHERE d.id=? AND d.store_id=? AND d.source_type='WASTE_RECEIPT' AND d.deleted_at IS NULL AND r.deleted_at IS NULL LIMIT 2`,
+      sourceDocumentId,
+      storeId,
+    );
+    if (rows.length !== 1) return null;
+    const row = rows[0]!;
+    return {
+      receipt: mapReceipt(row),
+      localFileUri: row.local_uri,
+      lineCount: row.line_count,
+      uploadJob: await this.readUploadJob(storeId, sourceDocumentId),
+    };
+  }
+
   async getReceiptDetail(id: string): Promise<LocalWasteReceiptDetail | null> {
     const row = await this.database.getFirstAsync<
       WasteReceiptRow & { local_uri: string | null }

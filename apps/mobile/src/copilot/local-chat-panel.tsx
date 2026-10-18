@@ -2,6 +2,8 @@ import { readCopilotImportStatus } from "@fl-copilot/domain";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { BottomSheet, MenuRow } from "../components/ui";
+import { ReceiptAttachmentPanel } from "./receipt-attachment-panel";
+import type { ReceiptPhotoSelection } from "./receipt-photo-intake";
 import type { CopilotPdfSelection } from "./pdf-selection";
 import type { ReactNode } from "react";
 import { mergeCopilotHistory } from "./history-window";
@@ -38,6 +40,11 @@ type PanelProps = {
   onOpenMercalys?(): void;
   externalDraftRevision?: number;
   externalMessageRevision?: number;
+  onAttachReceipts?(
+    conversationId: string,
+    signal: AbortSignal,
+    capacity: number,
+  ): Promise<ReceiptPhotoSelection | undefined>;
   onAttachPdf?(
     signal: AbortSignal,
     capacity: number,
@@ -59,6 +66,7 @@ function LocalChatPanel({
   onRemember,
   delivery,
   onAttachPdf,
+  onAttachReceipts,
   renderToolMessage,
   onOpenMercalys,
   intakeSummary,
@@ -85,7 +93,9 @@ function LocalChatPanel({
     [delivery, conversationId],
   );
   const [fileMenu, setFileMenu] = useState(false);
-  const queuedFileAction = useRef<"PDF" | "MERCALYS" | undefined>(undefined);
+  const queuedFileAction = useRef<"PDF" | "MERCALYS" | "RECEIPTS" | undefined>(
+    undefined,
+  );
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [loadedController, setLoadedController] =
     useState<CopilotLocalChatController>();
@@ -322,12 +332,13 @@ function LocalChatPanel({
       if (isCurrent()) setLoadingOlder(false);
     }
   }
-  function performFileAction(kind: "PDF" | "MERCALYS") {
+  function performFileAction(kind: "PDF" | "MERCALYS" | "RECEIPTS") {
     if (!isCurrent()) return;
     if (kind === "PDF") void attach();
+    else if (kind === "RECEIPTS") void attachReceipts();
     else onOpenMercalys?.();
   }
-  function selectFileAction(kind: "PDF" | "MERCALYS") {
+  function selectFileAction(kind: "PDF" | "MERCALYS" | "RECEIPTS") {
     setFileMenu(false);
     // UIKit must finish dismissing this sheet before another modal/picker opens.
     if (Platform.OS === "ios") queuedFileAction.current = kind;
@@ -371,6 +382,45 @@ function LocalChatPanel({
     } catch (reason) {
       if (isCurrent() && !attempt.signal.aborted)
         setError(attachmentError(reason));
+    } finally {
+      if (attachmentAbort.current === attempt)
+        attachmentAbort.current = undefined;
+      if (isCurrent()) setAttaching(false);
+    }
+  }
+  async function attachReceipts() {
+    if (!onAttachReceipts || attachmentAbort.current || locked.current) return;
+    const attempt = new AbortController();
+    attachmentAbort.current = attempt;
+    setAttaching(true);
+    setError(undefined);
+    try {
+      const selection = await onAttachReceipts(
+        conversationId,
+        attempt.signal,
+        10 - (snapshot?.draft?.attachments.length ?? 0),
+      );
+      if (!selection || !isCurrent() || attempt.signal.aborted) return;
+      setSnapshot((previous) =>
+        previous ? { ...previous, draft: selection.draft } : previous,
+      );
+      if (selection.failures.length)
+        setError(
+          selection.failures
+            .map((f) => `${f.filename} : ${attachmentError(new Error(f.code))}`)
+            .join("\n"),
+        );
+    } catch (reason) {
+      if (isCurrent() && !attempt.signal.aborted) {
+        setError(attachmentError(reason));
+        const refreshed = await controller
+          .open(conversationId)
+          .catch(() => undefined);
+        if (refreshed && isCurrent())
+          setSnapshot((previous) =>
+            previous ? { ...previous, draft: refreshed.draft } : previous,
+          );
+      }
     } finally {
       if (attachmentAbort.current === attempt)
         attachmentAbort.current = undefined;
@@ -421,9 +471,9 @@ function LocalChatPanel({
         draftAttachments={snapshot.draft?.attachments ?? []}
         attaching={attaching}
         onAttach={
-          onAttachPdf || onOpenMercalys
+          onAttachPdf || onOpenMercalys || onAttachReceipts
             ? () => {
-                if (onOpenMercalys) setFileMenu(true);
+                if (onOpenMercalys || onAttachReceipts) setFileMenu(true);
                 else void attach();
               }
             : undefined
@@ -531,6 +581,14 @@ function LocalChatPanel({
           if (kind) performFileAction(kind);
         }}
       >
+        {onAttachReceipts ? (
+          <MenuRow
+            title="Tickets de casse"
+            description="Une photo par ticket. Les vues d’un même ticket ne sont pas regroupées ici."
+            icon="images-outline"
+            onPress={() => selectFileAction("RECEIPTS")}
+          />
+        ) : null}
         {onAttachPdf ? (
           <MenuRow
             title="PDF commerciaux"
@@ -573,8 +631,12 @@ function renderCommercialOriginal(
   attachment: CopilotMessage["attachments"][number],
   message: CopilotMessage,
 ) {
-  return message.role !== "TOOL" &&
-    attachment.mediaType === "application/pdf" ? (
+  if (message.role === "TOOL") return null;
+  if (attachment.mediaType.startsWith("image/"))
+    return (
+      <ReceiptAttachmentPanel sourceDocumentId={attachment.sourceDocumentId} />
+    );
+  return attachment.mediaType === "application/pdf" ? (
     <View className="gap-2">
       <CommercialOriginalButton
         sourceDocumentId={attachment.sourceDocumentId}
@@ -588,6 +650,18 @@ function renderCommercialOriginal(
 
 function attachmentError(error: unknown) {
   const code = error instanceof Error ? error.message : "";
+  if (code === "WASTE_RECEIPT_IMAGE_UNSUPPORTED")
+    return "Choisissez des photos JPEG, PNG ou HEIC de tickets de casse.";
+  if (code === "COPILOT_RECEIPT_PICKER_UNAVAILABLE")
+    return "La photothèque est indisponible dans cette version de l’application.";
+  if (code === "COPILOT_RECEIPT_CAPTURE_FORBIDDEN")
+    return "Votre rôle ne permet plus d’importer des tickets. Les photos déjà enregistrées restent dans Casse et le brouillon de cette conversation.";
+  if (code === "COPILOT_RECEIPT_PHOTO_SIZE_LIMIT")
+    return "Chaque photo doit peser au maximum 20 Mio.";
+  if (code === "COPILOT_RECEIPT_BATCH_SIZE_LIMIT")
+    return "La sélection dépasse 80 Mio. Importez moins de tickets à la fois.";
+  if (code === "COPILOT_RECEIPT_PHOTO_NOT_SAVED")
+    return "Cette photo n’a pas été enregistrée. Les autres tickets du lot restent conservés ; réessayez seulement celle-ci.";
   if (code === "COPILOT_PDF_PICKER_UNAVAILABLE")
     return "Le sélecteur de fichiers est indisponible dans cette version de l’application. Une version incluant ce module est nécessaire.";
   if (code === "COPILOT_ATTACHMENT_LIMIT")
