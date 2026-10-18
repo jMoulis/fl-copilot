@@ -7,9 +7,12 @@ export function canDisplayConflict(
 ) {
   if (!storeId || c.storeId !== storeId) return false;
   if (
-    !["copilot_conversation", "copilot_message", "copilot_knowledge"].includes(
-      c.entityType,
-    )
+    ![
+      "copilot_conversation",
+      "copilot_message",
+      "copilot_knowledge",
+      "copilot_decision",
+    ].includes(c.entityType)
   )
     return true;
   if (!ownerId) return false;

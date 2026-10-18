@@ -1,3 +1,6 @@
+import { CopilotDecisionRepository } from "@/copilot/decision-repository";
+import { RecommendationDecisionCard } from "@/copilot/recommendation-decision-card";
+import { readRecommendationTrackingCard } from "@fl-copilot/domain";
 import { CopilotReceiptCameraIntake } from "@/copilot/receipt-camera-intake";
 import { ReceiptCameraSession } from "@/copilot/receipt-camera-session";
 import type { ReceiptPhotoSelection } from "@/copilot/receipt-photo-intake";
@@ -344,6 +347,16 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const recommendationDecisions = useMemo(
+    () =>
+      new CopilotDecisionRepository(
+        sqlite,
+        { storeId, ownerId, deviceId, canDecide: true },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId],
   );
   const executionProposals = useMemo(
     () =>
@@ -786,6 +799,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readRecommendationTrackingCard(message);
+      return (
+        <RecommendationDecisionCard
+          key={message.id}
+          message={message}
+          repository={recommendationDecisions}
+          canConfirm={true}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readCopilotExecutionProposal(message);
       return (
         <ExecutionProposalCard
@@ -839,6 +865,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              recommendationTracking: true,
               retailExpertise: true,
               choiceUpdate: canManageProducts,
               choiceRetention: canManageProducts,

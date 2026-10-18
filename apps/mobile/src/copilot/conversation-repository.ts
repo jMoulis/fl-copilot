@@ -1,3 +1,4 @@
+import { applyDecisionRecord } from "./decision-repository";
 import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
 import { readReceiptPhotoViews } from "../documents/receipt-photo-views";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
@@ -47,10 +48,12 @@ function scoped(e: Scope, s: Scope) {
 export async function applyCopilotRecord(
   db: OutboxDatabase,
   scope: Scope,
-  type: keyof typeof schemas | "copilot_knowledge",
+  type: keyof typeof schemas | "copilot_knowledge" | "copilot_decision",
   payload: unknown,
   ackVersion?: number,
 ) {
+  if (type === "copilot_decision")
+    return applyDecisionRecord(db, scope, payload, ackVersion);
   if (type === "copilot_knowledge")
     return applyKnowledgeRecord(db, scope, payload, ackVersion);
   const e = schemas[type].parse(payload);

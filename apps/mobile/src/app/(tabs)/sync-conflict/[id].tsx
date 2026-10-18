@@ -1,3 +1,4 @@
+import { RecommendationDecisionConflict } from "@/copilot/recommendation-decision-conflict";
 import { ProductMasterConflict } from "@/products/conflict";
 import { StoreEventConflict } from "@/needs/store-event-conflict";
 import { ProductSubstitutionConflict } from "@/needs/substitution-conflict";
@@ -75,6 +76,8 @@ export default function SyncConflictDetailScreen() {
             <NeedMembershipConflict conflict={conflict} />
           ) : conflict.entityType === "need_unit" ? (
             <NeedUnitConflict conflict={conflict} />
+          ) : conflict.entityType === "copilot_decision" ? (
+            <RecommendationDecisionConflict conflict={conflict} />
           ) : conflict.entityType === "copilot_knowledge" ? (
             <SectionCard title="Pratique mémorisée">
               <Text>

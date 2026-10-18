@@ -1,3 +1,11 @@
+import {
+  recommendationDecisionReadInputSchema,
+  recommendationDecisionReadResultSchema,
+} from "@fl-copilot/domain";
+import {
+  recommendationTrackingInputSchema,
+  recommendationTrackingPreviewSchema,
+} from "@fl-copilot/domain";
 import { copilotActionReviewInputSchema } from "@fl-copilot/domain";
 import { actionReviewResultSchema } from "./action-review-tool.js";
 import {
@@ -302,6 +310,9 @@ export interface CopilotAiProvider {
     output: T;
     metadata: CopilotGenerationMetadata;
     toolEvidence?: CopilotGenerationRequest["evidence"];
+    recommendationTrackingPreviews?: Array<
+      z.infer<typeof recommendationTrackingPreviewSchema>
+    >;
     knowledgeSuggestions?: KnowledgeSuggestionInput[];
     contextCheckpoint?: ContextCheckpointInput;
     informationRequests?: Array<z.infer<typeof copilotInformationInputSchema>>;
@@ -468,6 +479,12 @@ export function createCopilotAiProvider(
     needMemberships?(
       input: z.infer<typeof copilotNeedMembershipInputSchema>,
     ): Promise<z.infer<typeof copilotNeedMembershipResultSchema>>;
+    recommendationDecisions?(
+      input: z.infer<typeof recommendationDecisionReadInputSchema>,
+    ): Promise<z.infer<typeof recommendationDecisionReadResultSchema>>;
+    recommendationTracking?(
+      input: z.infer<typeof recommendationTrackingInputSchema>,
+    ): Promise<z.infer<typeof recommendationTrackingPreviewSchema>>;
     actionReview?(
       input: z.infer<typeof copilotActionReviewInputSchema>,
     ): Promise<z.infer<typeof actionReviewResultSchema>>;
@@ -676,6 +693,9 @@ export function createCopilotAiProvider(
         const cataloguePreviews: Array<
           z.infer<typeof copilotCataloguePreviewSchema>
         > = [];
+        const recommendationTrackingPreviews: Array<
+          z.infer<typeof recommendationTrackingPreviewSchema>
+        > = [];
         const executionPreviews: NonNullable<
           Awaited<
             ReturnType<CopilotAiProvider["generate"]>
@@ -845,6 +865,8 @@ export function createCopilotAiProvider(
                       reads.publicResearch ||
                       reads.retailExpertise ||
                       reads.actionReview ||
+                      reads.recommendationTracking ||
+                      reads.recommendationDecisions ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
                       reads.period ||
@@ -886,6 +908,8 @@ export function createCopilotAiProvider(
                       reads.publicResearch ||
                       reads.retailExpertise ||
                       reads.actionReview ||
+                      reads.recommendationTracking ||
+                      reads.recommendationDecisions ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
                       reads.period ||
@@ -1832,6 +1856,65 @@ export function createCopilotAiProvider(
                       }),
                     }
                   : {}),
+                ...(reads.recommendationDecisions
+                  ? {
+                      recommendation_decisions: tool({
+                        description:
+                          "Read the authenticated user's synchronized saved advice decisions, the latest choice per workflow and original exact quote, with bounded pages in UUID order (not chronological ranking). Use current known conversationId for this chat; null explicitly searches that user's store-wide saved choices across their private chats. recommendationId=null lists; an exact known ID selects one. Preserve missing local-only choices and remaining pages. These are saved intentions, NOT execution or fact/context validation. To change a tracked choice in this conversation, reuse its original basis.sourceMessageId and exact basis.quote with recommendation_tracking_preview; for another conversation ask the user to reopen that source conversation. repeated cards for the same original quote keep one decision history. No writes or automatic business action.",
+                        inputSchema: recommendationDecisionReadInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["recommendation-decisions", input]),
+                            async () => {
+                              const r =
+                                recommendationDecisionReadResultSchema.parse(
+                                  await reads.recommendationDecisions!(input),
+                                );
+                              if (
+                                JSON.stringify(r.input) !==
+                                JSON.stringify(
+                                  recommendationDecisionReadInputSchema.parse(
+                                    input,
+                                  ),
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              return r;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.recommendationTracking
+                  ? {
+                      recommendation_tracking_preview: tool({
+                        description:
+                          "Prepare a decision card to follow one specific suggestion from an EARLIER assistant message in this private conversation, when the user wants to retain, modify, postpone or decline it. Pass its known message ID and exact contiguous quote (max1200 characters), never a paraphrase or an invented ID. This is conversational advice with context not revalidated, not a formally eligible operational recommendation. A native card records the user's explicit choice offline; READY means prepared only, not accepted or executed. No business action, factual validation, publication or physical execution occurs. If source is missing/hidden, ask for the specific original suggestion.",
+                        inputSchema: recommendationTrackingInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["recommendation-tracking", input]),
+                            async () => {
+                              const result =
+                                recommendationTrackingPreviewSchema.parse(
+                                  await reads.recommendationTracking!(input),
+                                );
+                              if (
+                                JSON.stringify(result.input) !==
+                                JSON.stringify(
+                                  recommendationTrackingInputSchema.parse(
+                                    input,
+                                  ),
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              recommendationTrackingPreviews.push(result);
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
                 ...(reads.actionReview
                   ? {
                       commercial_action_review: tool({
@@ -2674,6 +2757,7 @@ export function createCopilotAiProvider(
           ...(reads
             ? {
                 toolEvidence: [...evidence.values()],
+                recommendationTrackingPreviews,
                 knowledgeSuggestions,
                 contextCheckpoint,
                 informationRequests: [...informationRequests.values()],

@@ -1,4 +1,10 @@
 import {
+  canAccessDecision,
+  applyDecision,
+  serializeDecision,
+  type DecisionDocument,
+} from "./decision-store";
+import {
   canAccessKnowledge,
   applyKnowledge,
   serializeKnowledge,
@@ -21,15 +27,18 @@ export const chatCollections = {
   copilot_conversation: "copilotConversations",
   copilot_message: "copilotMessages",
   copilot_knowledge: "copilotKnowledge",
+  copilot_decision: "copilotDecisions",
 };
 export const isChatType = (type: string) =>
   Object.hasOwn(chatCollections, type);
 export type ChatRecordDocument = (
-  CopilotConversation | CopilotMessage | KnowledgeDocument
+  CopilotConversation | CopilotMessage | KnowledgeDocument | DecisionDocument
 ) & {
   _id: string;
 };
 export function serializeChat(type: string, row: ChatRecordDocument) {
+  if (type === "copilot_decision")
+    return serializeDecision(row as DecisionDocument);
   if (type === "copilot_knowledge")
     return serializeKnowledge(row as KnowledgeDocument);
   const { _id, ...payload } = row;
@@ -63,6 +72,8 @@ export async function canAccessChatCommand(
   ownerId: string | undefined,
   c: SyncCommand,
 ) {
+  if (c.entityType === "copilot_decision")
+    return canAccessDecision(db, storeId, ownerId, c);
   if (c.entityType === "copilot_knowledge")
     return canAccessKnowledge(db, storeId, ownerId, c);
   if (!ownerId || !isChatType(c.entityType)) return false;
@@ -111,6 +122,8 @@ export async function applyChatCommand(
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
 ): Promise<CommandMutationResult> {
+  if (c.entityType === "copilot_decision")
+    return applyDecision(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_knowledge")
     return applyKnowledge(ctx, storeId, ownerId, c, requestId, changes);
   const reject = (code: string): CommandMutationResult => ({

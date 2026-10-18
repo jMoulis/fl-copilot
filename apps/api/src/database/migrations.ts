@@ -792,6 +792,21 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ status: 1, nextDispatchAt: 1, requestedAt: 1 });
     },
   },
+  {
+    version: 39,
+    name: "private-recommendation-decisions",
+    async up(database) {
+      await database
+        .collection("copilotDecisions")
+        .createIndex({ storeId: 1, ownerId: 1, conversationId: 1 });
+      await database
+        .collection("copilotDecisions")
+        .createIndex({ storeId: 1, ownerId: 1, _id: 1 });
+      await database
+        .collection("copilotDecisionCounters")
+        .createIndex({ storeId: 1, ownerId: 1 }, { unique: true });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

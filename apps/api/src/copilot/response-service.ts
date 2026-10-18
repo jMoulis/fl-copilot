@@ -265,6 +265,9 @@ export async function generateCopilotResponse(
   cataloguePreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["cataloguePreviews"];
+  recommendationTrackingPreviews?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["recommendationTrackingPreviews"];
   executionPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["executionPreviews"];
@@ -356,6 +359,7 @@ export async function generateCopilotResponse(
       identityReviews: generated.identityReviews,
       cataloguePreviews: generated.cataloguePreviews,
       executionPreviews: generated.executionPreviews,
+      recommendationTrackingPreviews: generated.recommendationTrackingPreviews,
       informationRequests: generated.informationRequests,
       priceScenarioForms: generated.priceScenarioForms,
       knowledgeSuggestions: generated.knowledgeSuggestions,

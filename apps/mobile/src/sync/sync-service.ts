@@ -70,6 +70,7 @@ export interface MobileSyncServiceOptions {
   storeProductEvents?: boolean;
   substitutionEvidence?: boolean;
   substitutionScores?: boolean;
+  copilotDecisions?: boolean;
   copilotKnowledge?: boolean;
   copilotHistory?: boolean;
   copilotOwnerId?: string;
@@ -218,6 +219,12 @@ export class MobileSyncService {
             `mercalys-record-updates:${storeId}`,
           )
         : true;
+    const decisionsAdopted = this.options.copilotDecisions
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `copilot-decisions:${storeId}:${this.options.copilotOwnerId}`,
+        )
+      : true;
     const knowledgeAdopted = this.options.copilotKnowledge
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -290,6 +297,7 @@ export class MobileSyncService {
       !chatAdopted ||
       !historyDeletionAdopted ||
       !knowledgeAdopted ||
+      !decisionsAdopted ||
       !mercalysAdopted ||
       !mercalysUpdatesAdopted ||
       !executionAdopted ||
@@ -397,6 +405,7 @@ export class MobileSyncService {
                 "copilot_conversation",
                 "copilot_message",
                 "copilot_knowledge",
+                "copilot_decision",
                 "product_alias",
                 "commercial_offer_choice",
                 "commercial_week_preparation",
@@ -500,7 +509,8 @@ export class MobileSyncService {
           if (
             command.entityType === "copilot_conversation" ||
             command.entityType === "copilot_message" ||
-            command.entityType === "copilot_knowledge"
+            command.entityType === "copilot_knowledge" ||
+            command.entityType === "copilot_decision"
           ) {
             const ownerId = this.options.copilotOwnerId;
             if (!ownerId) throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
@@ -682,10 +692,11 @@ export class MobileSyncService {
           if (
             command.entityType === "copilot_conversation" ||
             command.entityType === "copilot_message" ||
-            command.entityType === "copilot_knowledge"
+            command.entityType === "copilot_knowledge" ||
+            command.entityType === "copilot_decision"
           )
             await transaction.runAsync(
-              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : "copilot_messages"} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
               command.entityId,
               storeId,
             );
@@ -784,10 +795,11 @@ export class MobileSyncService {
           if (
             command.entityType === "copilot_conversation" ||
             command.entityType === "copilot_message" ||
-            command.entityType === "copilot_knowledge"
+            command.entityType === "copilot_knowledge" ||
+            command.entityType === "copilot_decision"
           )
             await transaction.runAsync(
-              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : "copilot_messages"} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
               command.entityId,
               storeId,
             );

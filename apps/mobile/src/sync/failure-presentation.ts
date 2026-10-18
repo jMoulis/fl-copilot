@@ -6,6 +6,7 @@ const labels: Record<string, string> = {
   waste_receipt_publication: "Publication de casse",
   copilot_conversation: "Conversation privée",
   copilot_message: "Message privé",
+  copilot_decision: "Décision du copilote",
   copilot_knowledge: "Pratique mémorisée",
   need_unit: "Unité de besoin",
   need_membership: "Association produit/besoin",

@@ -5192,3 +5192,183 @@ it.each([
       );
   },
 );
+
+it.each(["READY", "DISABLED", "RETARGETED", "UNAVAILABLE"])(
+  "prepares a source-bound advice decision card without recording a choice (%s)",
+  async (mode) => {
+    const { decisionFixture } =
+        await import("../../../../scripts/test-copilot-decision-fixtures"),
+      business = decisionFixture(),
+      f = fixture();
+    const value = structuredClone(business.preview);
+    if (mode === "RETARGETED") value.input.sourceMessageId = randomUUID();
+    if (mode === "UNAVAILABLE")
+      Object.assign(value, { status: "SOURCE_UNAVAILABLE", basis: null });
+    const recommendationTracking = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const definition = body.tools.find(
+        (t: { name: string }) => t.name === "recommendation_tracking_preview",
+      );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /ownerId|storeId|authority|decisionLevel/,
+      ); // source input carries no decision
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_track",
+            call_id: "call_track",
+            name: "recommendation_tracking_preview",
+            arguments: JSON.stringify(business.input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const result = JSON.parse(
+        body.input.find(
+          (x: { type: string }) => x.type === "function_call_output",
+        ).output,
+      );
+      expect(result).toMatchObject(
+        mode === "RETARGETED"
+          ? { unavailable: true }
+          : { status: mode === "UNAVAILABLE" ? "SOURCE_UNAVAILABLE" : "READY" },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { recommendationTracking }),
+    }).generate(f.request, schema);
+    expect(recommendationTracking).toHaveBeenCalledTimes(
+      mode === "DISABLED" ? 0 : 1,
+    );
+    expect(result.recommendationTrackingPreviews ?? []).toEqual(
+      ["READY", "UNAVAILABLE"].includes(mode) ? [value] : [],
+    );
+  },
+);
+
+it.each(["READY", "WRONG_SCOPE", "DISABLED"])(
+  "reads saved advice decisions through the bounded SDK loop (%s)",
+  async (mode) => {
+    const { decisionNativeFixture, saveDecision } =
+        await import("../../../../scripts/test-copilot-decision-fixtures"),
+      native = await decisionNativeFixture();
+    try {
+      const { recommendationDecisionReadResultSchema } =
+          await import("@fl-copilot/domain"),
+        f = fixture(),
+        saved = (await saveDecision(native, "ACCEPT")).decision!;
+      f.request.storeId = native.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: native.storeId,
+          evaluatedAt: "2026-10-18T12:00:00.000Z",
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const input = {
+        conversationId: native.conversation.id,
+        recommendationId: null,
+        afterId: null,
+        limit: 5,
+      };
+      const value = recommendationDecisionReadResultSchema.parse({
+        input,
+        status: "READY",
+        entries: [
+          {
+            id: saved.id,
+            conversationId: saved.conversationId,
+            version: 1,
+            createdAt: saved.createdAt,
+            updatedAt: saved.updatedAt,
+            latest: saved.revisions[0],
+            historyCount: 1,
+            basis: native.preview.basis,
+            sourceState: "ACTIVE",
+          },
+        ],
+        hasMore: false,
+        nextAfterId: null,
+        evidence: [
+          {
+            id: "decision-fixture",
+            sourceId: saved.id,
+            sourceType: "EVENT",
+            sourceVersion: 1,
+            label: "Décision enregistrée",
+            value: "Piste acceptée, sans exécution.",
+            factKind: "OBSERVED",
+          },
+        ],
+      });
+      if (mode === "WRONG_SCOPE")
+        value.entries[0]!.conversationId = randomUUID();
+      const recommendationDecisions = vi.fn(async () => value);
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body)),
+          definition = body.tools.find(
+            (t: { name: string }) => t.name === "recommendation_decisions",
+          );
+        if (mode === "DISABLED") {
+          expect(definition).toBeUndefined();
+          return response();
+        }
+        expect(definition.parameters.type).toBe("object");
+        if (calls++ === 0) {
+          const envelope = z
+            .record(z.string(), z.unknown())
+            .parse(await response().json());
+          envelope.output = [
+            {
+              type: "function_call",
+              id: "fc_decisions",
+              call_id: "call_decisions",
+              name: "recommendation_decisions",
+              arguments: JSON.stringify(input),
+              status: "completed",
+            },
+          ];
+          return new Response(JSON.stringify(envelope), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const output = JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        );
+        expect(output).toMatchObject(
+          mode === "READY" ? { status: "READY" } : { unavailable: true },
+        );
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        ...(mode === "DISABLED" ? {} : { recommendationDecisions }),
+      }).generate(f.request, schema);
+      expect(result.toolEvidence ?? []).toEqual(
+        mode === "READY" ? value.evidence : [],
+      );
+    } finally {
+      native.db.db.close();
+    }
+  },
+);

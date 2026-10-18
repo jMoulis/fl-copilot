@@ -1,3 +1,4 @@
+import { applyDecisionRecord } from "../copilot/decision-repository";
 import { applyKnowledgeRecord } from "../copilot/knowledge-repository";
 import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
 import { applyCopilotRecord } from "../copilot/conversation-repository";
@@ -52,6 +53,18 @@ export async function applyBootstrap(
   });
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
+    if (bootstrap.entities.copilotDecisions) {
+      if (!ownerId || ownerId !== bootstrap.entities.copilotDecisionOwnerId)
+        throw Error("COPILOT_DECISION_SCOPE_INVALID");
+      for (const e of bootstrap.entities.copilotDecisions)
+        await applyDecisionRecord(transaction, { storeId, ownerId }, e);
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `copilot-decisions:${storeId}:${ownerId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
     if (bootstrap.entities.copilotKnowledge) {
       if (!ownerId || ownerId !== bootstrap.entities.copilotKnowledgeOwnerId)
         throw Error("COPILOT_KNOWLEDGE_SCOPE_INVALID");
@@ -317,6 +330,8 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialWeekPreparations",
     "commercialExecutionTasks",
     "storeContextSettings",
+    "copilotDecisions",
+    "copilotDecisionOwnerId",
     "copilotKnowledge",
     "copilotKnowledgeOwnerId",
     "copilotHistoryOwnerId",
