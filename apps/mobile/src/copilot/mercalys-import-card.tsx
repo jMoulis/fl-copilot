@@ -1,9 +1,16 @@
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
-import type { CopilotMessage } from "@fl-copilot/domain";
+import {
+  mercalysProductTargetBlocker,
+  type CopilotMessage,
+} from "@fl-copilot/domain";
 import { SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
+import {
+  MercalysImportProductPicker,
+  mercalysTargetBlockerText,
+} from "./mercalys-import-product-picker";
 import type {
   CopilotMercalysImportController,
   ImportReport,
@@ -189,24 +196,58 @@ export function MercalysImportCard({
                           </Text>
                         ) : null}
                         {r.candidateProductIds.map((id) => {
-                          const p = item.candidates.find((p) => p.id === id);
+                          const p = item.catalog.products.find(
+                            (p) => p.id === id,
+                          );
+                          const blocker = item.conflictedProductIds.includes(id)
+                            ? ("SYNC_CONFLICT" as const)
+                            : mercalysProductTargetBlocker(
+                                message.storeId,
+                                r,
+                                id,
+                                item.catalog,
+                              );
                           return p ? (
-                            <SecondaryButton
-                              key={id}
-                              label={`Associer à ${p.label}`}
-                              disabled={busy}
-                              onPress={() =>
-                                void run({
-                                  review: item,
-                                  value: {
-                                    resolutionKey: r.key,
-                                    productId: id,
-                                  },
-                                })
-                              }
-                            />
+                            <View key={id} style={{ gap: 4 }}>
+                              <SecondaryButton
+                                label={`Associer à ${p.label}`}
+                                disabled={busy || blocker !== null}
+                                onPress={() =>
+                                  void run({
+                                    review: item,
+                                    value: {
+                                      resolutionKey: r.key,
+                                      productId: id,
+                                    },
+                                  })
+                                }
+                              />
+                              {blocker ? (
+                                <Text>
+                                  {mercalysTargetBlockerText[blocker]}
+                                </Text>
+                              ) : null}
+                            </View>
                           ) : null;
                         })}
+                        <MercalysImportProductPicker
+                          key={`${item.basisHash}:${r.key}`}
+                          storeId={message.storeId}
+                          source={r}
+                          catalog={item.catalog}
+                          conflictedProductIds={item.conflictedProductIds}
+                          busy={busy}
+                          onConfirm={(productId) =>
+                            void run({
+                              review: item,
+                              value: {
+                                resolutionKey: r.key,
+                                productId,
+                                catalogueSelection: true,
+                              },
+                            })
+                          }
+                        />
                         {r.canCreateAsDistinct ? (
                           <SecondaryButton
                             label={`Créer « ${r.label} » comme produit distinct`}
@@ -225,9 +266,10 @@ export function MercalysImportCard({
                         {!r.candidateProductIds.length &&
                         !r.canCreateAsDistinct ? (
                           <Text>
-                            La référence source est contradictoire ou incomplète
-                            ; une décision produit plus détaillée est
-                            nécessaire.
+                            Si aucune proposition ne convient, recherchez le
+                            produit dans le référentiel. Un code déjà attribué
+                            ou un alias refusé nécessite un examen d’identité
+                            distinct.
                           </Text>
                         ) : null}
                       </View>

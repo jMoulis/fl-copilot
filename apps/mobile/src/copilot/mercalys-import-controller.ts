@@ -13,6 +13,8 @@ import {
   importAutomationResultSchema,
   validateImportClassification,
   importSourceClassification,
+  copilotImportResolutionChoiceSchema,
+  mercalysProductTargetBlocker,
   normalizeProductLabel,
   type CopilotMessage,
   type ProductMatchCatalog,
@@ -915,7 +917,20 @@ export class CopilotMercalysImportController {
                 this.catalogBasis(catalog.records),
               ]),
             ),
-            candidates: catalog.catalog.products,
+            catalog: catalog.catalog,
+            conflictedProductIds: [
+              ...new Set(
+                [
+                  ...catalog.records.products,
+                  ...catalog.records.identifiers,
+                  ...catalog.records.aliases,
+                ]
+                  .filter((r) => ["ERROR", "CONFLICT"].includes(r.syncState))
+                  .map((r) =>
+                    "productId" in r.entity ? r.entity.productId : r.entity.id,
+                  ),
+              ),
+            ],
           });
           continue;
         }
@@ -993,11 +1008,10 @@ export class CopilotMercalysImportController {
   async resolve(
     message: CopilotMessage,
     review: Extract<ImportReport["items"][number], { status: "REVIEW" }>,
-    choice:
-      | { resolutionKey: string; productId: string | null }
-      | { overlap: "KEEP_EXISTING" | "APPLY_NEW" },
+    choiceInput: z.input<typeof copilotImportResolutionChoiceSchema>,
     signal?: AbortSignal,
   ) {
+    const choice = copilotImportResolutionChoiceSchema.parse(choiceInput);
     const { reference } = await this.proof(this.db, message);
     const phase =
       "overlap" in choice && choice.overlap === "KEEP_EXISTING"
@@ -1137,8 +1151,19 @@ export class CopilotMercalysImportController {
           const product = catalog.catalog.products.find(
             (p) => p.id === choice.productId && p.status === "ACTIVE",
           );
-          if (!product || !resolution.candidateProductIds.includes(product.id))
+          if (
+            !product ||
+            (!choice.catalogueSelection &&
+              !resolution.candidateProductIds.includes(product.id))
+          )
             throw Error("IMPORT_CANDIDATE_INVALID");
+          const blocker = mercalysProductTargetBlocker(
+            this.scope.storeId,
+            resolution,
+            product.id,
+            catalog.catalog,
+          );
+          if (blocker) throw Error(`IMPORT_${blocker}`);
           this.assertCatalog(catalog.records, [product.id]);
           await confirmMercalysProductMapping(
             repository,
@@ -1150,6 +1175,16 @@ export class CopilotMercalysImportController {
               generateId: this.deps.id,
             },
           );
+          return {
+            mapping: {
+              sourceLabel: resolution.label,
+              sourceIndexes: resolution.sourceIndexes,
+              identifiers: resolution.identifiers,
+              productId: product.id,
+              productLabel: product.label,
+              selection: choice.catalogueSelection ? "CATALOGUE" : "SUGGESTION",
+            },
+          };
         } else {
           if (!resolution.canCreateAsDistinct)
             throw Error("IMPORT_IDENTITY_CONFLICT");
@@ -1200,7 +1235,8 @@ export type ImportReport = {
           ReturnType<MercalysImportPublicationRepository["analyzeOverlap"]>
         >;
         basisHash: string;
-        candidates: ProductMatchCatalog["products"];
+        catalog: ProductMatchCatalog;
+        conflictedProductIds: string[];
       }
   >;
 };
