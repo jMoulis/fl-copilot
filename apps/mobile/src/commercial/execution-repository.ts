@@ -1,5 +1,7 @@
 import {
   commercialExecutionTaskSchema,
+  commercialExecutionActualsNotFuture,
+  executionActualsUpdate,
   type CommercialExecutionTask,
 } from "@fl-copilot/sync-contracts";
 import {
@@ -126,15 +128,17 @@ export class CommercialExecutionRepository {
     input: CommercialExecutionTask,
     ctx: { commandId: string; deviceId: string },
   ) {
-    const choice = commercialExecutionTaskSchema.parse(input),
-      id = await commercialExecutionTaskId(
-        choice.storeId,
-        choice.planRevisionId,
-        choice.planChecksum,
-        choice.kind,
-        choice.targetId,
-        this.digest,
-      );
+    let choice = commercialExecutionTaskSchema.parse(input);
+    if (!commercialExecutionActualsNotFuture(choice.actuals, choice.updatedAt))
+      throw Error("COMMERCIAL_EXECUTION_ACTUALS_INVALID");
+    const id = await commercialExecutionTaskId(
+      choice.storeId,
+      choice.planRevisionId,
+      choice.planChecksum,
+      choice.kind,
+      choice.targetId,
+      this.digest,
+    );
     if (id !== choice.id) throw Error("COMMERCIAL_EXECUTION_ID_INVALID");
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       const row = await tx.getFirstAsync<Row>(
@@ -143,6 +147,10 @@ export class CommercialExecutionRepository {
           choice.storeId,
         ),
         previous = row ? mapped(row) : null;
+      choice = commercialExecutionTaskSchema.parse({
+        ...choice,
+        ...executionActualsUpdate(previous?.entity, choice),
+      });
       if (row?.sync_state === "CONFLICT")
         throw Error("COMMERCIAL_EXECUTION_RESOLVE_REQUIRED");
       const expected =

@@ -36,6 +36,7 @@ export const syncPushRequestSchema = z.object({
   deviceId: idSchema,
   storeId: idSchema,
   commands: z.array(syncCommandSchema).max(MAX_SYNC_PUSH_COMMANDS),
+  commercialExecutionActuals: z.boolean().optional(),
 });
 export type SyncPushRequest = z.infer<typeof syncPushRequestSchema>;
 
@@ -84,6 +85,7 @@ export const syncPullQuerySchema = z.object({
   commercialChoices: z.enum(["true", "false"]).optional(),
   commercialPreparation: z.enum(["true", "false"]).optional(),
   commercialExecution: z.enum(["true", "false"]).optional(),
+  commercialExecutionActuals: z.enum(["true", "false"]).optional(),
   storeContext: z.enum(["true", "false"]).optional(),
   needUnits: z.enum(["true", "false"]).optional(),
   needMemberships: z.enum(["true", "false"]).optional(),
@@ -124,6 +126,7 @@ export const bootstrapQuerySchema = z.object({
   commercialChoices: z.enum(["true", "false"]).optional(),
   commercialPreparation: z.enum(["true", "false"]).optional(),
   commercialExecution: z.enum(["true", "false"]).optional(),
+  commercialExecutionActuals: z.enum(["true", "false"]).optional(),
   storeContext: z.enum(["true", "false"]).optional(),
   needUnits: z.enum(["true", "false"]).optional(),
   needMemberships: z.enum(["true", "false"]).optional(),
@@ -175,6 +178,7 @@ export const bootstrapEntitiesSchema = z.object({
   commercialOfferChoices: z.array(jsonObjectSchema).optional(),
   commercialWeekPreparations: z.array(jsonObjectSchema).optional(),
   commercialExecutionTasks: z.array(jsonObjectSchema).optional(),
+  commercialExecutionActuals: z.boolean().optional(),
   storeContextSettings: z.array(jsonObjectSchema).optional(),
   needUnitCatalogue: z.array(jsonObjectSchema).optional(),
   productNeedMemberships: z.array(jsonObjectSchema).optional(),

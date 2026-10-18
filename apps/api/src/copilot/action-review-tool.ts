@@ -1,3 +1,4 @@
+import { commercialExecutionActualsSummary } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db } from "mongodb";
@@ -356,6 +357,13 @@ export async function readActionReview(
     task
       ? `Tâche : ${task.proposal.label} ; plan version ${task.proposal.planVersion}, révision ${task.proposal.planRevisionId}. ${declaration ? `Déclaration utilisateur : ${declaration.status}, version ${declaration.version}, date déclarée ${declaration.completedAt ?? "non renseignée"}, note : ${declaration.note || "aucune"}.` : "Aucune déclaration correspondante : À faire, réalisation inconnue."}`
       : "",
+    commercialExecutionActualsSummary(declaration?.actuals),
+    declaration?.actuals?.start &&
+    (input.during.start < declaration.actuals.start ||
+      (declaration.actuals.end && input.during.end > declaration.actuals.end))
+      ? "La fenêtre pendant déborde les dates réelles déclarées : ce bilan n’isole pas la durée de réalisation renseignée."
+      : "",
+    "Les périodes du bilan restent celles explicitement choisies ; les dates réelles déclarées ne les remplacent pas. Un prix déclaré pour une tâche ne prouve pas le prix appliqué en caisse. Un écart avec les dates du plan doit être signalé, pas corrigé silencieusement.",
     "Plan enregistré et déclaration ne prouvent ni installation réelle ni effet commercial. Une date de déclaration n’est pas la durée d’exposition. Une affiche imprimée n’est pas une TG installée. Les sources actuelles du plan ne sont pas revalidées.",
     status === "READY"
       ? `Périodes pendant/après comparées séparément à avant, agrégation ${input.aggregation}. Durées et jours de semaine peuvent différer ; ne pas comparer des cumuls de durées différentes comme une performance équivalente. Les manques restent inconnus, jamais zéro. ${input.after ? "" : "Période après non demandée : aucun résultat après observé."} ${(input.after?.end ?? input.during.end) === today ? "La journée en cours peut être incomplète." : ""} Signalements produit consultés sur l’ensemble de la fenêtre, y compris ses éventuels intervalles ; vérifier leur chevauchement avec chaque période. L’absence de signalement ne prouve pas l’absence de rupture. Météo, trafic, autres promotions, prix effectifs, stock et cannibalisation ne sont pas contrôlés par ce bilan. Une variation descriptive ne démontre ni causalité, ni gain incrémental, ni ROI.`

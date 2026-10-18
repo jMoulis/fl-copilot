@@ -1,3 +1,4 @@
+import { legacyCommercialExecution } from "@fl-copilot/domain";
 import {
   copilotExecutionLinkSchema,
   sameExecutionLinkIdentity,
@@ -171,8 +172,9 @@ export class CopilotExecutionLinkRepository {
         )) !== decision.proposalDigest ||
         !taskRow ||
         ["ERROR", "CONFLICT"].includes(taskRow.sync_state) ||
-        JSON.stringify(JSON.parse(taskRow.payload_json)) !==
-          JSON.stringify(s.task) ||
+        JSON.stringify(
+          legacyCommercialExecution(JSON.parse(taskRow.payload_json)),
+        ) !== JSON.stringify(s.task) ||
         !plan ||
         ["ERROR", "CONFLICT"].includes(plan.syncState) ||
         !target ||

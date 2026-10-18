@@ -3,6 +3,8 @@ import {
   executionSaveAuthoritySchema,
   executionSaveResultSchema,
   commercialExecutionTaskSchema,
+  executionActualsUpdate,
+  commercialExecutionActualsNotFuture,
   ProductClassificationError,
   type ExecutionSaveAuthority,
 } from "@fl-copilot/domain";
@@ -74,20 +76,26 @@ export class CopilotCommercialExecutionRuntime {
           throw new ProductClassificationError(
             "COMMERCIAL_EXECUTION_UNAVAILABLE",
           );
-        const appliedAt = this.now(),
-          common = {
-            operationId: request.operationId,
-            schemaVersion: 1 as const,
-            tool: request.tool,
-            status: "COMPLETED" as const,
-            userMessageId: ctx.userMessageId,
-            appliedAt,
-            before: before?.entity ?? null,
-          };
+        const appliedAt = this.now();
+        if (!commercialExecutionActualsNotFuture(input.actuals, appliedAt))
+          throw new ProductClassificationError("INVALID_INPUT");
+        const common = {
+          operationId: request.operationId,
+          schemaVersion: 1 as const,
+          tool: request.tool,
+          status: "COMPLETED" as const,
+          userMessageId: ctx.userMessageId,
+          appliedAt,
+          before: before?.entity ?? null,
+        };
         if (
           before &&
           before.entity.status === input.status &&
-          before.entity.note === input.note
+          before.entity.note === input.note &&
+          JSON.stringify(before.entity.actuals ?? null) ===
+            JSON.stringify(
+              executionActualsUpdate(before.entity, input).actuals ?? null,
+            )
         )
           return {
             ...common,
@@ -99,6 +107,7 @@ export class CopilotCommercialExecutionRuntime {
           };
         const after = commercialExecutionTaskSchema.parse({
             ...proposal,
+            ...executionActualsUpdate(before?.entity, input),
             status: input.status,
             note: input.note,
             completedAt:

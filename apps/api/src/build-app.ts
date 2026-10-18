@@ -846,12 +846,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 : {}),
               ...(request.headers["x-copilot-execution-proposals"] === "1"
                 ? {
+                    executionActuals:
+                      request.headers["x-copilot-execution-actuals"] === "1",
                     executionPreview: async (input) => {
                       await authorize();
                       const result = await readCommercialExecutionPreview(
                         db,
                         storeId,
                         input,
+                        request.headers["x-copilot-execution-actuals"] === "1",
                       );
                       await authorize();
                       return result;

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   commercialExecutionTaskSchema,
+  commercialExecutionActualsNotFuture,
+  executionActualsUpdate,
   type CommercialExecutionTask,
   type SyncCommand,
 } from "@fl-copilot/sync-contracts";
@@ -32,6 +34,7 @@ export async function applyCommercialExecutionCommand(
   command: SyncCommand,
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
+  now: () => Date = () => new Date(),
 ): Promise<CommandMutationResult> {
   const reject = (code: string, messageFr: string): CommandMutationResult => ({
     resultStatus: "REJECTED",
@@ -49,15 +52,20 @@ export async function applyCommercialExecutionCommand(
       "COMMERCIAL_EXECUTION_INVALID",
       "Vérifiez le statut de la tâche et sa note.",
     );
-  const plan = parsed.data,
-    id = await commercialExecutionTaskId(
-      storeId,
-      plan.planRevisionId,
-      plan.planChecksum,
-      plan.kind,
-      plan.targetId,
-      async (text) => createHash("sha256").update(text).digest("hex"),
+  let plan = parsed.data;
+  if (!commercialExecutionActualsNotFuture(plan.actuals, command.createdAt))
+    return reject(
+      "COMMERCIAL_EXECUTION_ACTUALS_INVALID",
+      "Les dates de réalisation ne peuvent pas être futures à la déclaration.",
     );
+  const id = await commercialExecutionTaskId(
+    storeId,
+    plan.planRevisionId,
+    plan.planChecksum,
+    plan.kind,
+    plan.targetId,
+    async (text) => createHash("sha256").update(text).digest("hex"),
+  );
   if (id !== plan.id)
     return reject(
       "COMMERCIAL_EXECUTION_ID_INVALID",
@@ -87,6 +95,10 @@ export async function applyCommercialExecutionCommand(
         },
       },
     };
+  plan = commercialExecutionTaskSchema.parse({
+    ...plan,
+    ...executionActualsUpdate(previous, plan),
+  });
   if (
     plan.version !== (previous?.version ?? 0) + 1 ||
     (previous &&
@@ -102,6 +114,11 @@ export async function applyCommercialExecutionCommand(
   const revision = await ctx.database
     .collection<PlanRevisionDocument>("commercialPlanRevisions")
     .findOne({ _id: plan.planRevisionId, storeId }, { session: ctx.session });
+  if (!commercialExecutionActualsNotFuture(plan.actuals, now().toISOString()))
+    return reject(
+      "COMMERCIAL_EXECUTION_ACTUALS_INVALID",
+      "Les dates de réalisation ne peuvent pas être futures.",
+    );
   if (!revision) throw Error("COMMERCIAL_EXECUTION_PLAN_PENDING");
   const proposals = await commercialExecutionChecklist(
     serializeCommercialPlanRevision(revision).plan,

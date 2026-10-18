@@ -1,3 +1,7 @@
+import {
+  commercialExecutionTaskSchema,
+  legacyCommercialExecution,
+} from "@fl-copilot/domain";
 import { KnowledgeParentPendingError } from "../copilot/knowledge-store";
 import type { PrivateSourceReader } from "../imports/import-verification-service.js";
 import { applyMercalysPublicationCommand } from "../imports/mercalys-publication-sync.js";
@@ -192,6 +196,17 @@ export function createMongoSyncPushService(
           );
         }
       }
+      if (!input.commercialExecutionActuals)
+        for (const result of results) {
+          if (
+            result.entityType === "commercial_execution_task" &&
+            result.remoteEntity
+          ) {
+            result.remoteEntity = legacyCommercialExecution(
+              commercialExecutionTaskSchema.parse(result.remoteEntity),
+            );
+          }
+        }
       return { results, serverTime: now().toISOString() };
     },
   };
@@ -299,6 +314,7 @@ async function applyCommand(
       command,
       requestId,
       syncChanges,
+      now,
     );
   if (command.type === "COMMERCIAL_WEEK_PREPARATION_UPSERT")
     return applyCommercialPreparationCommand(

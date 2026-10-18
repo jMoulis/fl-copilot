@@ -168,3 +168,38 @@ it("retains a confirmed historical link after the current task or decision chang
     f.db.db.close();
   }
 });
+
+it("confirms a version-1 immutable association against a task carrying additional actual details without changing its snapshot", async () => {
+  const f = await executionLinkFixture();
+  try {
+    const task = {
+      ...f.business.task,
+      actuals: {
+        start: null,
+        end: null,
+        price: null,
+        priceUnit: null,
+        location: "TG entrée",
+      },
+    };
+    await f.db.runAsync(
+      "UPDATE commercial_execution_tasks SET payload_json=? WHERE id=?",
+      JSON.stringify(task),
+      task.id,
+    );
+    const review = await f.repository.open(f.linkCard);
+    expect(review.status).toBe("READY");
+    const saved = await f.repository.save(f.linkCard, review.review);
+    expect(saved.link?.snapshot.task).not.toHaveProperty("actuals");
+    expect(
+      JSON.parse(
+        (await f.db.getFirstAsync<{ payload_json: string }>(
+          "SELECT payload_json FROM commercial_execution_tasks WHERE id=?",
+          task.id,
+        ))!.payload_json,
+      ).actuals,
+    ).toEqual(task.actuals);
+  } finally {
+    f.db.db.close();
+  }
+});

@@ -1,3 +1,4 @@
+import { legacyCommercialExecution } from "@fl-copilot/domain";
 import { synchronizedMercalysPublicationSchema } from "@fl-copilot/sync-contracts";
 import type { MercalysPublicationDocument } from "../imports/mercalys-publication-sync.js";
 import {
@@ -472,7 +473,12 @@ export function createMongoSyncPullService(
                 entityId: change.entityId,
                 operation: change.operation,
                 entityVersion: row.version,
-                entity: serializeCommercialExecution(row),
+                entity:
+                  query.commercialExecutionActuals === "true"
+                    ? serializeCommercialExecution(row)
+                    : legacyCommercialExecution(
+                        serializeCommercialExecution(row),
+                      ),
                 changedAt: change.changedAt.toISOString(),
               };
             }

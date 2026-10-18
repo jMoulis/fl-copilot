@@ -1,3 +1,4 @@
+import { legacyCommercialExecution } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import { z } from "zod";
@@ -53,7 +54,7 @@ export async function readExecutionLinkPreview(
             basis: entry!.basis,
           },
           weekStart: input.weekStart,
-          task,
+          task: legacyCommercialExecution(task!),
         }
       : null;
   const digest = createHash("sha256")

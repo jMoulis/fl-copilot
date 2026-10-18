@@ -229,3 +229,25 @@ it("keeps signage printing separate from TG installation, even for the same prod
     "Une affiche imprimée n’est pas une TG installée",
   );
 });
+
+it("quotes actual details separately and warns of mismatched exposure without changing selected periods or canonical amounts", async () => {
+  const f = await actionReviewFixture(),
+    { db, state } = actionReviewDatabase(f);
+  Object.assign(state.tasks[0]!, {
+    actuals: {
+      start: f.input.during.end,
+      end: f.input.during.end,
+      price: "0.99",
+      priceUnit: "KG",
+      location: "TG entrée",
+    },
+  });
+  const result = await readActionReview(db, f.storeId, f.input, now);
+  expect(result.status).toBe("READY");
+  expect(result.duringComparison?.currentPeriod).toEqual(f.input.during);
+  expect(result.evidence[0]?.value).toContain("0,99 € / kg");
+  expect(result.evidence[0]?.value).toContain("déborde les dates réelles");
+  expect(
+    result.evidence.some((e) => e.sourceType === "KPI" && e.value === "200"),
+  ).toBe(true);
+});

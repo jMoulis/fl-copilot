@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { commercialExecutionTaskSchema } from "./commercial-execution-task";
+import {
+  commercialExecutionTaskSchema,
+  commercialExecutionActualsPatchSchema,
+} from "./commercial-execution-task";
 import { preparationReadInputSchema } from "./copilot-commercial-preparation";
 import { productClassificationAuthoritySchema } from "./copilot-product-mutations";
 const {
@@ -90,6 +93,7 @@ export const executionSaveInputSchema = z
     planVersion,
     taskId: id,
     expectedVersion: z.number().int().positive().nullable(),
+    actuals: commercialExecutionActualsPatchSchema.nullable().optional(),
     status,
     note,
   })

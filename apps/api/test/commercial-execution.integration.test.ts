@@ -25,14 +25,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         }),
       );
       await database.getDb();
-    });
+    }, 60000);
     afterAll(async () => {
       try {
         await (await database.getDb()).dropDatabase();
       } finally {
         await database.close();
       }
-    });
+    }, 60000);
 
     async function seed() {
       const f = await commercialExecutionFixture(),
@@ -204,5 +204,197 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ).entities.commercialExecutionTasks,
       ).toHaveLength(1);
     }, 20000);
+
+    it("syncs actual details with opt-in, projects all legacy responses, and preserves them on an older client's update", async () => {
+      const x = await seed(),
+        push = createMongoSyncPushService(database);
+      const actuals = {
+        start: "2026-10-08",
+        end: "2026-10-09",
+        price: "0",
+        priceUnit: "KG" as const,
+        location: "TG entrée",
+      };
+      const r = {
+        ...request({ ...x.task, actuals, updatedAt: "2026-10-18T12:00:00Z" }),
+        commercialExecutionActuals: true,
+      };
+      expect((await push.push(r, "details")).results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { actuals },
+      });
+      expect(
+        (
+          await push.push(
+            { ...r, commercialExecutionActuals: false },
+            "legacy-replay",
+          )
+        ).results[0]?.remoteEntity,
+      ).not.toHaveProperty("actuals");
+      const pull = createMongoSyncPullService(database);
+      expect(
+        (
+          await pull.pull(x.storeId, {
+            limit: 500,
+            commercialExecution: "true",
+          })
+        ).changes[0]?.entity,
+      ).not.toHaveProperty("actuals");
+      expect(
+        (
+          await pull.pull(x.storeId, {
+            limit: 500,
+            commercialExecution: "true",
+            commercialExecutionActuals: "true",
+          })
+        ).changes[0]?.entity,
+      ).toMatchObject({ actuals });
+      const boot = createMongoSyncBootstrapService(database),
+        store = {
+          storeId: x.storeId,
+          storeName: "Test",
+          role: "MANAGER",
+          userId: randomUUID(),
+          sessionId: randomUUID(),
+          deviceId: randomUUID(),
+        };
+      expect(
+        (
+          await boot.bootstrap(store, {
+            rawObservationDays: 90,
+            commercialExecution: "true",
+          })
+        ).entities.commercialExecutionTasks?.[0],
+      ).not.toHaveProperty("actuals");
+      const snapshot = await boot.bootstrap(store, {
+        rawObservationDays: 90,
+        commercialExecution: "true",
+        commercialExecutionActuals: "true",
+      });
+      expect(snapshot.entities.commercialExecutionActuals).toBe(true);
+      expect(snapshot.entities.commercialExecutionTasks?.[0]).toMatchObject({
+        actuals,
+      });
+      // Older software reopens status without ever seeing actual details: preserve them on the canonical head.
+      const legacy = request(
+        {
+          ...x.task,
+          status: "TODO",
+          completedAt: null,
+          note: "À revoir",
+          version: 2,
+        },
+        1,
+      );
+      expect(
+        (await push.push(legacy, "legacy-update")).results[0]?.remoteEntity,
+      ).not.toHaveProperty("actuals");
+      expect(
+        await x.db
+          .collection("commercialExecutionTasks")
+          .findOne({ storeId: x.storeId }),
+      ).toMatchObject({ version: 2, status: "TODO", actuals });
+      expect(
+        await x.db
+          .collection("commercialExecutionHistory")
+          .countDocuments({ storeId: x.storeId }),
+      ).toBe(2);
+    }, 60000);
+    it("keeps competing actual locations in a version conflict and clears only on an explicit reviewed revision", async () => {
+      const x = await seed(),
+        push = createMongoSyncPushService(database);
+      const actuals = {
+        start: null,
+        end: null,
+        price: null,
+        priceUnit: null,
+        location: "TG entrée",
+      };
+      const first = {
+        ...request({ ...x.task, actuals, updatedAt: "2026-10-18T12:00:00Z" }),
+        commercialExecutionActuals: true,
+      };
+      await push.push(first, "first");
+      const contender = {
+        ...request(
+          {
+            ...x.task,
+            actuals: { ...actuals, location: "TG fond" },
+            version: 2,
+          },
+          1,
+        ),
+        commercialExecutionActuals: true,
+      };
+      await push.push(contender, "second");
+      expect(
+        (
+          await push.push(
+            {
+              ...request({ ...x.task, actuals, version: 2 }, 1),
+              commercialExecutionActuals: true,
+            },
+            "stale",
+          )
+        ).results[0],
+      ).toMatchObject({
+        status: "CONFLICT",
+        remoteEntity: { actuals: { location: "TG fond" } },
+      });
+      expect(
+        (
+          await push.push(
+            request({ ...x.task, version: 2 }, 1),
+            "legacy-conflict",
+          )
+        ).results[0]?.remoteEntity,
+      ).not.toHaveProperty("actuals");
+      const clear = {
+        ...request({ ...x.task, actuals: null, version: 3 }, 2),
+        commercialExecutionActuals: true,
+      };
+      expect((await push.push(clear, "clear")).results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { actuals: null },
+      });
+      await push.push(first, "late-old-replay");
+      expect(
+        await x.db
+          .collection("commercialExecutionTasks")
+          .findOne({ storeId: x.storeId }),
+      ).toMatchObject({ version: 3, actuals: null });
+      expect(
+        await x.db
+          .collection("commercialExecutionHistory")
+          .countDocuments({ storeId: x.storeId }),
+      ).toBe(3);
+    }, 60000);
+    it("rejects future or contradictory actual dates without canonical writes", async () => {
+      const x = await seed(),
+        push = createMongoSyncPushService(database);
+      const actuals = {
+        start: "2099-01-01",
+        end: null,
+        price: null,
+        priceUnit: null,
+        location: null,
+      };
+      expect(
+        (await push.push(request({ ...x.task, actuals }), "future")).results[0],
+      ).toMatchObject({
+        status: "REJECTED",
+        error: { code: "COMMERCIAL_EXECUTION_ACTUALS_INVALID" },
+      });
+      expect(
+        await x.db
+          .collection("commercialExecutionTasks")
+          .countDocuments({ storeId: x.storeId }),
+      ).toBe(0);
+      expect(
+        await x.db
+          .collection("commercialExecutionHistory")
+          .countDocuments({ storeId: x.storeId }),
+      ).toBe(0);
+    }, 60000);
   },
 );

@@ -890,6 +890,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               webResearch: true,
               recommendationTracking: true,
               executionLinks: true,
+              executionActuals: true,
               retailExpertise: true,
               choiceUpdate: canManageProducts,
               choiceRetention: canManageProducts,

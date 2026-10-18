@@ -81,6 +81,7 @@ export class ApiClient {
       webResearch?: boolean;
       recommendationTracking?: boolean;
       executionLinks?: boolean;
+      executionActuals?: boolean;
       retailExpertise?: boolean;
       choiceUpdate?: boolean;
       choiceRetention?: boolean;
@@ -180,6 +181,9 @@ export class ApiClient {
                           ? "1"
                           : String(streaming.storeConflicts),
                     }
+                  : {}),
+                ...(streaming.executionActuals
+                  ? { "x-copilot-execution-actuals": "1" }
                   : {}),
                 ...(streaming.executionLinks
                   ? { "x-copilot-execution-links": "1" }
@@ -374,6 +378,7 @@ export class ApiClient {
     mercalysRecordUpdates = false,
     copilotDecisions = false,
     copilotExecutionLinks = false,
+    commercialExecutionActuals = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -384,6 +389,8 @@ export class ApiClient {
     if (commercialValidation) query.set("commercialValidation", "true");
     if (commercialPlans) query.set("commercialPlans", "true");
     if (commercialExecution) query.set("commercialExecution", "true");
+    if (commercialExecutionActuals)
+      query.set("commercialExecutionActuals", "true");
     if (storeContext) query.set("storeContext", "true");
     if (needUnits) query.set("needUnits", "true");
     if (needMemberships) query.set("needMemberships", "true");
@@ -433,6 +440,7 @@ export class ApiClient {
     mercalysRecordUpdates = false,
     copilotDecisions = false,
     copilotExecutionLinks = false,
+    commercialExecutionActuals = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -445,6 +453,8 @@ export class ApiClient {
     if (commercialValidation) query.set("commercialValidation", "true");
     if (commercialPlans) query.set("commercialPlans", "true");
     if (commercialExecution) query.set("commercialExecution", "true");
+    if (commercialExecutionActuals)
+      query.set("commercialExecutionActuals", "true");
     if (storeContext) query.set("storeContext", "true");
     if (needUnits) query.set("needUnits", "true");
     if (needMemberships) query.set("needMemberships", "true");

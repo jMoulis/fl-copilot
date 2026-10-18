@@ -1,3 +1,7 @@
+import {
+  commercialExecutionActualsSummary,
+  executionActualsUpdate,
+} from "@fl-copilot/domain";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { CopilotMessage } from "@fl-copilot/domain";
@@ -99,6 +103,26 @@ export function ExecutionProposalCard({
             {statuses[state.content.before?.status ?? "TODO"]} →{" "}
             {statuses[state.content.input.status]}
           </Text>
+          <Text>
+            {commercialExecutionActualsSummary(
+              executionActualsUpdate(state.content.before, state.content.input)
+                .actuals,
+            )}
+          </Text>
+          {state.content.input.actuals === null &&
+          state.content.before?.actuals ? (
+            <Text>
+              Les détails de réalisation précédents seront effacés de la version
+              courante ; leur historique reste conservé.
+            </Text>
+          ) : null}
+          {state.content.before?.actuals &&
+          state.content.input.actuals !== undefined ? (
+            <Text>
+              Détails précédents :{" "}
+              {commercialExecutionActualsSummary(state.content.before.actuals)}
+            </Text>
+          ) : null}
           {state.content.input.note ? (
             <Text>Note : {state.content.input.note}</Text>
           ) : null}

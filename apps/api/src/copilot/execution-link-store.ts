@@ -1,3 +1,4 @@
+import { legacyCommercialExecution } from "@fl-copilot/domain";
 import type { Db, ClientSession } from "mongodb";
 import { createHash } from "node:crypto";
 import {
@@ -119,7 +120,12 @@ export async function validateExecutionLinkSnapshot(
   const current = taskRow
     ? commercialExecutionTaskSchema.parse(messagePayload(taskRow))
     : null;
-  if (current && JSON.stringify(current) === JSON.stringify(s.task)) return;
+  if (
+    current &&
+    JSON.stringify(legacyCommercialExecution(current)) ===
+      JSON.stringify(s.task)
+  )
+    return;
   const history = await db
     .collection("commercialExecutionHistory")
     .findOne(
@@ -128,8 +134,11 @@ export async function validateExecutionLinkSnapshot(
     );
   if (
     !history ||
-    JSON.stringify(commercialExecutionTaskSchema.parse(history.plan)) !==
-      JSON.stringify(s.task)
+    JSON.stringify(
+      legacyCommercialExecution(
+        commercialExecutionTaskSchema.parse(history.plan),
+      ),
+    ) !== JSON.stringify(s.task)
   )
     throw Error("COPILOT_EXECUTION_LINK_TASK_UNAVAILABLE");
 }
