@@ -1,4 +1,12 @@
 import {
+  serializeProductDocument,
+  serializeProductIdentifierDocument,
+  serializeProductAliasDocument,
+  type ProductDocument,
+  type ProductIdentifierDocument,
+  type ProductAliasDocument,
+} from "../products/product-master.js";
+import {
   serializeCommercialVersionDecision,
   type VersionDecisionDocument,
 } from "../commercial/version-decision-sync.js";
@@ -118,6 +126,29 @@ export async function previewStoreConflict(
     execution = executionRow
       ? serializeCommercialExecution(executionRow)
       : null;
+  const productRow =
+    input.kind === "PRODUCT"
+      ? await db
+          .collection<ProductDocument>("products")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const identifierRow =
+    input.kind === "IDENTIFIER"
+      ? await db
+          .collection<ProductIdentifierDocument>("productIdentifiers")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const aliasRow =
+    input.kind === "ALIAS"
+      ? await db
+          .collection<ProductAliasDocument>("productAliases")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const product = productRow ? serializeProductDocument(productRow) : null,
+    identifier = identifierRow
+      ? serializeProductIdentifierDocument(identifierRow)
+      : null,
+    alias = aliasRow ? serializeProductAliasDocument(aliasRow) : null;
   const choice = choiceRow ? serializeCommercialChoice(choiceRow) : null,
     preparation = preparationRow
       ? serializeCommercialPreparation(preparationRow)
@@ -140,7 +171,10 @@ export async function previewStoreConflict(
       preparation ??
       plan ??
       reference ??
-      execution;
+      execution ??
+      product ??
+      identifier ??
+      alias;
   if (!entity) throw Error("STORE_CONFLICT_TARGET_UNAVAILABLE");
   if (JSON.stringify(entity).length > 96000)
     throw Error("STORE_CONFLICT_REVIEW_LIMIT");
@@ -167,6 +201,9 @@ export async function previewStoreConflict(
     ...(plan ? { plan } : {}),
     ...(reference ? { reference } : {}),
     ...(execution ? { execution } : {}),
+    ...(product ? { product } : {}),
+    ...(identifier ? { identifier } : {}),
+    ...(alias ? { alias } : {}),
   });
   return storeConflictPreviewSchema.parse({
     input,
@@ -182,9 +219,11 @@ export async function previewStoreConflict(
             ? "Comparer les réglages du magasin"
             : input.kind === "FIELD_EVENT"
               ? "Comparer un signalement magasin"
-              : choice || preparation || plan || reference || execution
-                ? "Comparer les versions commerciales"
-                : "Comparer le besoin ou l’association",
+              : product || identifier || alias
+                ? "Comparer le référentiel produit"
+                : choice || preparation || plan || reference || execution
+                  ? "Comparer les versions commerciales"
+                  : "Comparer le besoin ou l’association",
         factKind: "QUALITY",
         value:
           "Comparaison proposée uniquement. L’appareil vérifiera le conflit local, les deux versions et les choix métier autorisés. Aucune version n’est choisie ni modifiée ici. La présence d’un conflit sur l’appareil reste à vérifier.",

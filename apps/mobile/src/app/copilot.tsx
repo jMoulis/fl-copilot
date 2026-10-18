@@ -821,7 +821,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 canCaptureStoreEvents ||
                 canManageStoreSettings ||
                 canManageProducts
-                  ? 4
+                  ? 5
                   : false,
               receiptRecovery: canManageProducts,
               receiptCorrection: canManageProducts,

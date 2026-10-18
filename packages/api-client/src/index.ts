@@ -87,7 +87,7 @@ export class ApiClient {
       preparationRefresh?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
-      storeConflicts?: boolean | 2 | 3 | 4;
+      storeConflicts?: boolean | 2 | 3 | 4 | 5;
       receiptRecovery?: boolean;
       receiptCorrection?: boolean;
       receiptPublication?: boolean;

@@ -1,4 +1,12 @@
 import {
+  isCatalogueConflictKind,
+  catalogueConflictSchemas,
+} from "@fl-copilot/domain";
+import {
+  readCatalogueConflictCurrent,
+  readCatalogueConflictPolicy,
+} from "../products/conflict-repository";
+import {
   isCommercialDecisionConflictKind,
   commercialVersionDecisionSchema,
   commercialExecutionTaskSchema,
@@ -45,6 +53,13 @@ export async function readStoreConflictCurrent(
     throw Error("STORE_CONFLICT_DIGEST_REQUIRED");
   },
 ) {
+  if (isCatalogueConflictKind(content.input.kind))
+    return readCatalogueConflictCurrent(
+      db,
+      content.basis.storeId,
+      content.input.kind,
+      content.basis.entityId,
+    );
   const joined = joinedProductToolDatabase(db),
     { basis, input } = content;
   switch (input.kind) {
@@ -106,6 +121,9 @@ export async function readStoreConflictReview(
     content.basis,
   );
   const entityType = {
+    PRODUCT: "product",
+    IDENTIFIER: "product_identifier",
+    ALIAS: "product_alias",
     COMMERCIAL_REFERENCE: "commercial_version_decision",
     COMMERCIAL_EXECUTION: "commercial_execution_task",
     COMMERCIAL_CHOICE: "commercial_offer_choice",
@@ -139,8 +157,9 @@ export async function readStoreConflictReview(
     status = "BLOCKED";
     reason = message;
   };
-  const remoteSchema =
-    input.kind === "COMMERCIAL_REFERENCE"
+  const remoteSchema = isCatalogueConflictKind(input.kind)
+    ? catalogueConflictSchemas[input.kind]
+    : input.kind === "COMMERCIAL_REFERENCE"
       ? commercialVersionDecisionSchema
       : input.kind === "COMMERCIAL_EXECUTION"
         ? commercialExecutionTaskSchema
@@ -219,6 +238,27 @@ export async function readStoreConflictReview(
       input.kind === "FIELD_EVENT" && remote
         ? storeProductEventSchema.parse(remote)
         : null;
+  const cataloguePolicy = isCatalogueConflictKind(input.kind)
+    ? await readCatalogueConflictPolicy(db, input.kind, current.entity, remote)
+    : null;
+  if (cataloguePolicy && !cataloguePolicy.identityValid && remote)
+    block(
+      "L’identité pointe vers une autre fiche ou une autre origine. Examinez les fiches sans réaffectation automatique.",
+    );
+  if (cataloguePolicy && !cataloguePolicy.canKeep && !cataloguePolicy.canAdopt)
+    block(
+      cataloguePolicy.reason ??
+        "Cette version ne peut pas être retenue dans ce parcours.",
+    );
+  if (
+    cataloguePolicy &&
+    "snapshot" in current &&
+    current.snapshot?.operation === "DELETE" &&
+    current.snapshot.version >= (remote?.version ?? 0)
+  )
+    block(
+      "Une suppression plus récente a été reçue. Synchronisez avant de choisir une version.",
+    );
   const needPolicy = isNeedConflictKind(input.kind)
     ? await readNeedConflictPolicy(
         db,
@@ -259,25 +299,28 @@ export async function readStoreConflictReview(
     );
   const canKeepLocal =
     !!remote &&
-    (commercialDecisionPolicy
-      ? commercialDecisionPolicy.canKeep
-      : commercialPolicy
-        ? commercialPolicy.canKeep
-        : needPolicy
-          ? needPolicy.canKeep
-          : input.kind === "SETTINGS" ||
-            (!!localEvent &&
-              !!remoteEvent &&
-              localEvent.source === "USER" &&
-              remoteEvent.source === "USER" &&
-              localEvent.status === "CLOSED" &&
-              sameStoreEventCapture(localEvent, remoteEvent)));
+    (cataloguePolicy
+      ? cataloguePolicy.canKeep
+      : commercialDecisionPolicy
+        ? commercialDecisionPolicy.canKeep
+        : commercialPolicy
+          ? commercialPolicy.canKeep
+          : needPolicy
+            ? needPolicy.canKeep
+            : input.kind === "SETTINGS" ||
+              (!!localEvent &&
+                !!remoteEvent &&
+                localEvent.source === "USER" &&
+                remoteEvent.source === "USER" &&
+                localEvent.status === "CLOSED" &&
+                sameStoreEventCapture(localEvent, remoteEvent)));
   const basisHash = await digest(
     JSON.stringify({
       content,
       current,
       conflict,
       commands,
+      ...(cataloguePolicy ? { catalogue: cataloguePolicy.snapshots } : {}),
       ...(needPolicy ? { parents: needPolicy.parentSnapshots } : {}),
       ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
       ...(commercialDecisionPolicy
@@ -292,13 +335,16 @@ export async function readStoreConflictReview(
     remote,
     conflict,
     canKeepLocal,
-    canAdoptRemote: commercialDecisionPolicy
-      ? commercialDecisionPolicy.canAdopt
-      : commercialPolicy
-        ? commercialPolicy.canAdopt
-        : needPolicy
-          ? needPolicy.canAdopt
-          : !!remote,
+    canAdoptRemote: cataloguePolicy
+      ? cataloguePolicy.canAdopt
+      : commercialDecisionPolicy
+        ? commercialDecisionPolicy.canAdopt
+        : commercialPolicy
+          ? commercialPolicy.canAdopt
+          : needPolicy
+            ? needPolicy.canAdopt
+            : !!remote,
+    cataloguePolicy,
     commercialPolicy,
     commercialDecisionPolicy,
     needPolicy,

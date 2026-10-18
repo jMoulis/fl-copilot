@@ -1,3 +1,4 @@
+import { recordProductMasterRemote } from "./remote-snapshot";
 import {
   productAliasSchema,
   productIdentifierSchema,
@@ -27,10 +28,42 @@ export async function applyProductMasterSnapshot(
     productAliasSchema.parse(value),
   );
   assertStore(storeId, [...products, ...identifiers, ...aliases]);
-  for (const product of products) await upsertProduct(database, product);
-  for (const identifier of identifiers)
+  for (const product of products) {
+    await recordProductMasterRemote(
+      database,
+      storeId,
+      "product",
+      product.id,
+      product.version,
+      "UPSERT",
+      product,
+    );
+    await upsertProduct(database, product);
+  }
+  for (const identifier of identifiers) {
+    await recordProductMasterRemote(
+      database,
+      storeId,
+      "product_identifier",
+      identifier.id,
+      identifier.version,
+      "UPSERT",
+      identifier,
+    );
     await upsertIdentifier(database, identifier);
-  for (const alias of aliases) await upsertAlias(database, alias);
+  }
+  for (const alias of aliases) {
+    await recordProductMasterRemote(
+      database,
+      storeId,
+      "product_alias",
+      alias.id,
+      alias.version,
+      "UPSERT",
+      alias,
+    );
+    await upsertAlias(database, alias);
+  }
 }
 
 export async function applyProductMasterChange(
@@ -48,6 +81,15 @@ export async function applyProductMasterChange(
   const table = tableFor(change.entityType);
   if (!table) return false;
   if (change.operation === "DELETE") {
+    await recordProductMasterRemote(
+      database,
+      storeId,
+      change.entityType,
+      change.entityId,
+      change.entityVersion,
+      "DELETE",
+      null,
+    );
     await database.runAsync(
       `
         DELETE FROM ${table}
@@ -64,14 +106,41 @@ export async function applyProductMasterChange(
   if (change.entityType === "product") {
     const entity = productSchema.parse(change.entity);
     assertEnvelope(storeId, change, entity);
+    await recordProductMasterRemote(
+      database,
+      storeId,
+      change.entityType,
+      entity.id,
+      entity.version,
+      "UPSERT",
+      entity,
+    );
     await upsertProduct(database, entity, expectedLocalVersion);
   } else if (change.entityType === "product_identifier") {
     const entity = productIdentifierSchema.parse(change.entity);
     assertEnvelope(storeId, change, entity);
+    await recordProductMasterRemote(
+      database,
+      storeId,
+      change.entityType,
+      entity.id,
+      entity.version,
+      "UPSERT",
+      entity,
+    );
     await upsertIdentifier(database, entity, expectedLocalVersion);
   } else {
     const entity = productAliasSchema.parse(change.entity);
     assertEnvelope(storeId, change, entity);
+    await recordProductMasterRemote(
+      database,
+      storeId,
+      change.entityType,
+      entity.id,
+      entity.version,
+      "UPSERT",
+      entity,
+    );
     await upsertAlias(database, entity, expectedLocalVersion);
   }
   return true;

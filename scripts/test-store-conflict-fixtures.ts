@@ -56,6 +56,9 @@ export function storeConflictPreview<
       ...(kind === "COMMERCIAL_PLAN" ? { plan: remote } : {}),
       ...(kind === "COMMERCIAL_REFERENCE" ? { reference: remote } : {}),
       ...(kind === "COMMERCIAL_EXECUTION" ? { execution: remote } : {}),
+      ...(kind === "PRODUCT" ? { product: remote } : {}),
+      ...(kind === "IDENTIFIER" ? { identifier: remote } : {}),
+      ...(kind === "ALIAS" ? { alias: remote } : {}),
     },
     evidence: [
       {
