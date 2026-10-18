@@ -4412,3 +4412,73 @@ it.each(["OWNED", "FOREIGN", "RETARGETED", "DISABLED"])(
     expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
   },
 );
+it.each(["OWNED", "FOREIGN", "RETARGETED", "DISABLED"])(
+  "exposes receipt publication as a native review rather than a model write (%s)",
+  async (mode) => {
+    const { receiptPublicationChatFixture } =
+      await import("../../../../scripts/test-receipt-publication-fixtures");
+    const f = fixture(),
+      data = receiptPublicationChatFixture(),
+      value = {
+        ...data.preview,
+        source: { ...data.source, storeId: f.request.storeId },
+      };
+    if (mode === "FOREIGN") value.source.storeId = randomUUID();
+    if (mode === "RETARGETED") value.source.sourceDocumentId = randomUUID();
+    const receiptPublication = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "waste_receipt_publish_preview",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(Object.keys(definition.parameters.properties)).toEqual([
+        "sourceDocumentId",
+      ]);
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_receipt",
+            call_id: "call_receipt",
+            name: "waste_receipt_publish_preview",
+            arguments: JSON.stringify(data.preview.input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "OWNED" ? { status: "REVIEW_LOCAL" } : { unavailable: true },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { receiptPublication }),
+    }).generate(f.request, schema);
+    expect(receiptPublication).toHaveBeenCalledTimes(
+      mode === "DISABLED" ? 0 : 1,
+    );
+    expect(result.receiptPublicationPreviews ?? []).toEqual(
+      mode === "OWNED" ? [value] : [],
+    );
+    expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
+  },
+);

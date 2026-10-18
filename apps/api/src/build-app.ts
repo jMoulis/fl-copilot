@@ -15,6 +15,7 @@ import { readPreparationPreview } from "./copilot/preparation-preview-tool.js";
 import { readCommercialPreparation } from "./copilot/commercial-preparation-tool.js";
 import { readOperationsPreview } from "./copilot/operations-preview-tool.js";
 import { readNeedPreview } from "./copilot/need-preview-tool.js";
+import { previewReceiptPublication } from "./copilot/receipt-publication-tool.js";
 import { readIdentityReviewPreview } from "./copilot/identity-review-tool.js";
 import { readCataloguePreview } from "./copilot/catalogue-preview-tool.js";
 import { readCommercialExecutionPreview } from "./copilot/commercial-plan-tool.js";
@@ -637,6 +638,23 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     needPreview: async (input) => {
                       await authorize();
                       const result = await readNeedPreview(db, storeId, input);
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-receipt-publication"] === "1"
+                ? {
+                    receiptPublication: async (input) => {
+                      await authorize();
+                      const result = await previewReceiptPublication(
+                        db,
+                        storeId,
+                        input,
+                        createMongoWasteReceiptDraftReader(
+                          dependencies.database,
+                        ),
+                      );
                       await authorize();
                       return result;
                     },

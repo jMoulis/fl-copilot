@@ -83,6 +83,8 @@ import {
   copilotNeedPreviewSchema,
 } from "@fl-copilot/domain";
 import {
+  receiptPublicationInputSchema,
+  receiptPublicationPreviewSchema,
   identityReviewInputSchema,
   identityReviewPreviewSchema,
   copilotCatalogueInputSchema,
@@ -308,6 +310,9 @@ export interface CopilotAiProvider {
     >;
     operationsPreviews?: Array<z.infer<typeof copilotOperationsPreviewSchema>>;
     needPreviews?: Array<z.infer<typeof copilotNeedPreviewSchema>>;
+    receiptPublicationPreviews?: Array<
+      z.infer<typeof receiptPublicationPreviewSchema>
+    >;
     identityReviews?: Array<z.infer<typeof identityReviewPreviewSchema>>;
     cataloguePreviews?: Array<z.infer<typeof copilotCataloguePreviewSchema>>;
     executionPreviews?: Array<
@@ -391,6 +396,9 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
+    receiptPublication?(
+      input: z.infer<typeof receiptPublicationInputSchema>,
+    ): Promise<z.infer<typeof receiptPublicationPreviewSchema>>;
     identityReview?(
       input: z.infer<typeof identityReviewInputSchema>,
     ): Promise<z.infer<typeof identityReviewPreviewSchema>>;
@@ -609,6 +617,9 @@ export function createCopilotAiProvider(
         > = [];
         const needPreviews: Array<z.infer<typeof copilotNeedPreviewSchema>> =
           [];
+        const receiptPublicationPreviews: Array<
+          z.infer<typeof receiptPublicationPreviewSchema>
+        > = [];
         const identityReviews: Array<
           z.infer<typeof identityReviewPreviewSchema>
         > = [];
@@ -770,6 +781,7 @@ export function createCopilotAiProvider(
                   reads.preparationPreview ||
                   reads.operationsPreview ||
                   reads.needPreview ||
+                  reads.receiptPublication ||
                   reads.identityReview ||
                   reads.cataloguePreview
                   ? 4
@@ -805,6 +817,7 @@ export function createCopilotAiProvider(
                 reads.preparationPreview ||
                 reads.operationsPreview ||
                 reads.needPreview ||
+                reads.receiptPublication ||
                 reads.identityReview ||
                 reads.cataloguePreview
                   ? 3
@@ -984,6 +997,51 @@ export function createCopilotAiProvider(
                               )
                                 throw Error("NEED_PROPOSAL_LIMIT");
                               needPreviews.push(result);
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.receiptPublication
+                  ? {
+                      waste_receipt_publish_preview: tool({
+                        description:
+                          "Prepare a publication review only when the user explicitly asks to publish one known waste receipt source. Discover the source with waste_documents/waste_receipt first. No amounts, dates, product matches or human-validation flags are supplied by you. REVIEW_LOCAL creates a native card that reads current local corrections and complete canonical checks; it is NOT a publication or an assertion that the ticket is ready. The user must inspect date/lines/exclusions and explicitly confirm. Blockers link to the existing receipt editor. Unknown catalogue nature/unit can be a warning, not a mandatory catalogue campaign. ALREADY_PUBLISHED is no-op; NOT_READY/LIMIT_EXCEEDED require processing or the receipt screen. Never claim publication from this preview. At most three source cards per turn.",
+                        inputSchema: receiptPublicationInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["receipt-publication", input]),
+                            async () => {
+                              const result =
+                                receiptPublicationPreviewSchema.parse(
+                                  await reads.receiptPublication!(input),
+                                );
+                              if (
+                                JSON.stringify(result.input) !==
+                                  JSON.stringify(
+                                    receiptPublicationInputSchema.parse(input),
+                                  ) ||
+                                result.source.storeId !== request.storeId ||
+                                result.source.sourceDocumentId !==
+                                  input.sourceDocumentId
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              const old = receiptPublicationPreviews.findIndex(
+                                (p) =>
+                                  p.input.sourceDocumentId ===
+                                  input.sourceDocumentId,
+                              );
+                              if (old >= 0)
+                                receiptPublicationPreviews.splice(old, 1);
+                              if (
+                                result.status === "REVIEW_LOCAL" &&
+                                receiptPublicationPreviews.filter(
+                                  (p) => p.status === "REVIEW_LOCAL",
+                                ).length >= 3
+                              )
+                                throw Error("RECEIPT_PUBLICATION_LIMIT");
+                              receiptPublicationPreviews.push(result);
                               return result;
                             },
                           ),
@@ -2389,6 +2447,9 @@ export function createCopilotAiProvider(
                 ),
                 needPreviews: needPreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
+                ),
+                receiptPublicationPreviews: receiptPublicationPreviews.filter(
+                  (p) => p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 identityReviews: identityReviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
