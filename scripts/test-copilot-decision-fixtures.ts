@@ -112,7 +112,7 @@ export async function decisionNativeFixture(
   return { ...f, db, scope, repo };
 }
 export async function saveDecision(
-  f: Awaited<ReturnType<typeof decisionNativeFixture>>,
+  f: Pick<Awaited<ReturnType<typeof decisionNativeFixture>>, "repo" | "card">,
   type: RecommendationChoice["type"],
 ) {
   const s = await f.repo.open(f.card);

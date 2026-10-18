@@ -2818,3 +2818,8 @@ Acceptance checks cover offline/restart/no-op, failed enqueue/cancellation rollb
 ## M7-T13b delivery note — choice-context review (18 October 2026)
 
 The bounded descriptive review can select one exact private retained choice/version and show it alongside the separately selected task declaration and canonical before/during/after comparison. Ownership, source visibility, version drift, unknown data and citations are checked without business writes. This does not complete T12 or the T10–T13/T15 gate: a user-confirmed persisted decision→execution association, formal candidate/current-fact invalidation and pilot acceptance remain open. See `docs/qa/M7_ACTION_REVIEW_SCENARIOS.md` for acceptance scenarios and the M7 seven-workstream tracker for grouped delivery state.
+
+
+## M7-T12b/T13c delivery note — explicit versioned association (18 October 2026)
+
+A capability-gated private preview and native confirmation associate an existing retained decision with a separately recorded commercial execution task. Link + Outbox and one-way withdrawal are local-first; exact snapshots/dates restore across devices and remain private. The model can read the association for the existing descriptive review without changing either original record. Duplicate replay, withdrawal, historical proof after changes, owner/legacy isolation and capacity refusal are checked. This advances T12/T13/T15 within the existing commercial-task scope; generic actual execution price/location/dates, operational eligibility/current-fact invalidation and real pilot acceptance remain open. See `docs/qa/M7_EXECUTION_LINK_SCENARIOS.md` and the seven-workstream tracker.

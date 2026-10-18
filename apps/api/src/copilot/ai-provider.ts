@@ -1,4 +1,10 @@
 import {
+  executionLinkInputSchema,
+  executionLinkPreviewSchema,
+  executionLinksReadInputSchema,
+  executionLinksReadResultSchema,
+} from "@fl-copilot/domain";
+import {
   recommendationDecisionReadInputSchema,
   recommendationDecisionReadResultSchema,
 } from "@fl-copilot/domain";
@@ -310,6 +316,7 @@ export interface CopilotAiProvider {
     output: T;
     metadata: CopilotGenerationMetadata;
     toolEvidence?: CopilotGenerationRequest["evidence"];
+    executionLinkPreviews?: Array<z.infer<typeof executionLinkPreviewSchema>>;
     recommendationTrackingPreviews?: Array<
       z.infer<typeof recommendationTrackingPreviewSchema>
     >;
@@ -451,6 +458,12 @@ export function createCopilotAiProvider(
     cataloguePreview?(
       input: z.infer<typeof copilotCatalogueInputSchema>,
     ): Promise<z.infer<typeof copilotCataloguePreviewSchema>>;
+    executionLinkPreview?(
+      input: z.infer<typeof executionLinkInputSchema>,
+    ): Promise<z.infer<typeof executionLinkPreviewSchema>>;
+    executionLinks?(
+      input: z.infer<typeof executionLinksReadInputSchema>,
+    ): Promise<z.infer<typeof executionLinksReadResultSchema>>;
     executionPreview?(
       input: z.infer<typeof copilotExecutionPreviewInputSchema>,
     ): Promise<z.infer<typeof copilotExecutionPreviewResultSchema>>;
@@ -693,6 +706,9 @@ export function createCopilotAiProvider(
         const cataloguePreviews: Array<
           z.infer<typeof copilotCataloguePreviewSchema>
         > = [];
+        const executionLinkPreviews: Array<
+          z.infer<typeof executionLinkPreviewSchema>
+        > = [];
         const recommendationTrackingPreviews: Array<
           z.infer<typeof recommendationTrackingPreviewSchema>
         > = [];
@@ -860,6 +876,8 @@ export function createCopilotAiProvider(
                   ? 4
                   : reads.planReadiness ||
                       reads.commercialPreparation ||
+                      reads.executionLinkPreview ||
+                      reads.executionLinks ||
                       reads.executionPreview ||
                       reads.analyticsQuery ||
                       reads.publicResearch ||
@@ -903,6 +921,8 @@ export function createCopilotAiProvider(
                   ? 3
                   : reads.planReadiness ||
                       reads.commercialPreparation ||
+                      reads.executionLinkPreview ||
+                      reads.executionLinks ||
                       reads.executionPreview ||
                       reads.analyticsQuery ||
                       reads.publicResearch ||
@@ -1353,6 +1373,66 @@ export function createCopilotAiProvider(
                                 throw Error("READ_SCOPE_INVALID");
                               cataloguePreviews.push(result);
                               return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.executionLinkPreview
+                  ? {
+                      recommendation_execution_link_preview: tool({
+                        description:
+                          "Only when the user asks to associate them, prepare a PRIVATE link between one exact retained choice/version (from recommendation_decisions) and an already recorded current-plan task declaration/version (from commercial_plan). This only prepares a native comparison/confirmation card: never say linked until the user confirms. It changes neither choice nor declaration and proves no physical completion or causality. Preserve modified/postponed/rejected choices as such; do not invent their equivalence to the task. Missing or changed records need reconsultation, not recreating data.",
+                        inputSchema: executionLinkInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["execution-link-preview", input]),
+                            async () => {
+                              const value = executionLinkPreviewSchema.parse(
+                                await reads.executionLinkPreview!(input),
+                              );
+                              if (
+                                JSON.stringify(value.input) !==
+                                  JSON.stringify(
+                                    executionLinkInputSchema.parse(input),
+                                  ) ||
+                                (value.snapshot &&
+                                  value.snapshot.task.storeId !==
+                                    request.storeId)
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              executionLinkPreviews.push(value);
+                              return value;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.executionLinks
+                  ? {
+                      recommendation_execution_links: tool({
+                        description:
+                          "Start here for a linked-action review: the snapshot already includes the retained choice; no separate decision read is needed. Read this user's synchronized private choice→declaration links, including withdrawn history. Filter one known recommendationId or null, UUID cursor and max five records. A confirmed link binds only the stored choice and task versions, not later revisions. Withdrawn links are history, never active proof. Use saved task/week identifiers to read the current plan and descriptive commercial_action_review if still applicable (omit its optional decision when reviewing these historical snapshots); never reassign a historical task to a new plan. Links are references, never execution counts. Keep accepted intent, declared execution and observed figures separate, with concise source links and missing-page/local-only coverage. No writes or causal claim.",
+                        inputSchema: executionLinksReadInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["execution-links", input]),
+                            async () => {
+                              const value =
+                                executionLinksReadResultSchema.parse(
+                                  await reads.executionLinks!(input),
+                                );
+                              if (
+                                JSON.stringify(value.input) !==
+                                  JSON.stringify(
+                                    executionLinksReadInputSchema.parse(input),
+                                  ) ||
+                                value.entries.some(
+                                  (e) => e.storeId !== request.storeId,
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              return value;
                             },
                           ),
                       }),
@@ -2757,6 +2837,9 @@ export function createCopilotAiProvider(
           ...(reads
             ? {
                 toolEvidence: [...evidence.values()],
+                executionLinkPreviews: executionLinkPreviews.filter((p) =>
+                  p.evidence.every((e) => evidence.has(e.id)),
+                ),
                 recommendationTrackingPreviews,
                 knowledgeSuggestions,
                 contextCheckpoint,

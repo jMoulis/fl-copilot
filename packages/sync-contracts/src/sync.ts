@@ -95,6 +95,7 @@ export const syncPullQuerySchema = z.object({
   mercalysRecordUpdates: z.enum(["true", "false"]).optional(),
   copilotHistory: z.enum(["true", "false"]).optional(),
   copilotDecisions: z.enum(["true", "false"]).optional(),
+  copilotExecutionLinks: z.enum(["true", "false"]).optional(),
   copilotKnowledge: z.enum(["true", "false"]).optional(),
   commercialVersions: z.enum(["true", "false"]).optional(),
   commercialValidation: z.enum(["true", "false"]).optional(),
@@ -134,6 +135,7 @@ export const bootstrapQuerySchema = z.object({
   mercalysRecordUpdates: z.enum(["true", "false"]).optional(),
   copilotHistory: z.enum(["true", "false"]).optional(),
   copilotDecisions: z.enum(["true", "false"]).optional(),
+  copilotExecutionLinks: z.enum(["true", "false"]).optional(),
   copilotKnowledge: z.enum(["true", "false"]).optional(),
   commercialVersions: z.enum(["true", "false"]).optional(),
   commercialValidation: z.enum(["true", "false"]).optional(),
@@ -149,6 +151,8 @@ export type BootstrapQuery = z.infer<typeof bootstrapQuerySchema>;
 
 export const bootstrapEntitiesSchema = z.object({
   copilotDecisions: z.array(jsonObjectSchema).optional(),
+  copilotExecutionLinks: z.array(jsonObjectSchema).optional(),
+  copilotExecutionLinkOwnerId: idSchema.optional(),
   copilotDecisionOwnerId: z.string().uuid().optional(),
   copilotKnowledge: z.array(jsonObjectSchema).optional(),
   copilotKnowledgeOwnerId: z.string().uuid().optional(),

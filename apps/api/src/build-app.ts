@@ -1,3 +1,7 @@
+import {
+  readExecutionLinkPreview,
+  readExecutionLinks,
+} from "./copilot/execution-link-tool";
 import { readRecommendationDecisions } from "./copilot/decision-read-tool.js";
 import { readRecommendationTracking } from "./copilot/recommendation-tracking-tool.js";
 import { readActionReview } from "./copilot/action-review-tool.js";
@@ -813,6 +817,30 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                       );
                       await authorize();
                       return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-execution-links"] === "1"
+                ? {
+                    executionLinkPreview: async (input) => {
+                      const p = await authorize();
+                      const r = await readExecutionLinkPreview(
+                        db,
+                        { storeId, ownerId: p.ownerId },
+                        input,
+                      );
+                      await authorize();
+                      return r;
+                    },
+                    executionLinks: async (input) => {
+                      const p = await authorize();
+                      const r = await readExecutionLinks(
+                        db,
+                        { storeId, ownerId: p.ownerId },
+                        input,
+                      );
+                      await authorize();
+                      return r;
                     },
                   }
                 : {}),

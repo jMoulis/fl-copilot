@@ -1,3 +1,4 @@
+import { buildExecutionLinkMessages } from "./execution-link-messages";
 import { buildRecommendationTrackingMessages } from "./recommendation-tracking-messages.js";
 import { buildStoreConflictMessages } from "./store-conflict-messages.js";
 import { buildReceiptRecoveryMessages } from "./receipt-recovery-messages.js";
@@ -417,6 +418,10 @@ export async function runCopilotTurn(
             ...buildRecommendationTrackingMessages(
               message,
               generation.recommendationTrackingPreviews ?? [],
+            ),
+            ...buildExecutionLinkMessages(
+              message,
+              generation.executionLinkPreviews ?? [],
             ),
             ...buildExecutionProposalMessages(
               message,
