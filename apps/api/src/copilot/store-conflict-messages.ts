@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  isNeedConflictKind,
   copilotMessageSchema,
   storeConflictPreviewSchema,
   storeConflictProposalSchema,
@@ -24,7 +25,7 @@ export function buildStoreConflictMessages(
   return [...latest.values()].map((p) => {
     const content = storeConflictProposalSchema.parse({
       kind: "STORE_CONFLICT_PROPOSAL",
-      schemaVersion: 1,
+      schemaVersion: isNeedConflictKind(p.input.kind) ? 2 : 1,
       assistantMessageId: assistant.id,
       input: p.input,
       basis: p.basis,

@@ -47,3 +47,31 @@ it("binds a private deterministic artifact, replaces an earlier target snapshot 
     readStoreConflictProposal({ ...card, storeId: randomUUID() }),
   ).toThrow();
 });
+
+it.each(["NEED", "MEMBERSHIP", "SUBSTITUTION"] as const)(
+  "binds new %s cards to version 2 without widening version 1",
+  async (kind) => {
+    const { nativeNeedConflictFixture } =
+      await import("../../../../scripts/test-need-conflict-fixtures");
+    const s = await nativeNeedConflictFixture(kind);
+    try {
+      const card = s.review.message,
+        content = readStoreConflictProposal(card).content;
+      expect(content.schemaVersion).toBe(2);
+      expect(() =>
+        readStoreConflictProposal({
+          ...card,
+          text: JSON.stringify({ ...content, schemaVersion: 1 }),
+        }),
+      ).toThrow("VERSION");
+      expect(
+        storeConflictInputSchema.safeParse({
+          ...content.input,
+          reactivateRejected: true,
+        }).success,
+      ).toBe(false);
+    } finally {
+      s.db.close();
+    }
+  },
+);

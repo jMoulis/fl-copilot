@@ -1,3 +1,7 @@
+import { isNeedConflictKind } from "@fl-copilot/domain";
+import { NeedUnitRepository } from "../needs/repository";
+import { NeedMembershipRepository } from "../needs/membership-repository";
+import { ProductSubstitutionRepository } from "../needs/substitution-repository";
 import {
   copilotConversationSchema,
   copilotMessageSchema,
@@ -23,7 +27,7 @@ import {
   readStoreConflictCurrent,
   readStoreConflictReview,
 } from "./store-conflict-review";
-type Scope = Pick<
+type Scope = { canManageProducts?: boolean } & Pick<
   StoreConflictAuthority,
   | "storeId"
   | "ownerId"
@@ -31,7 +35,11 @@ type Scope = Pick<
   | "canCaptureStoreEvents"
   | "canManageStoreSettings"
 >;
-function allowed(scope: Scope, kind: "FIELD_EVENT" | "SETTINGS") {
+function allowed(
+  scope: Scope,
+  kind: "FIELD_EVENT" | "SETTINGS" | "NEED" | "MEMBERSHIP" | "SUBSTITUTION",
+) {
+  if (isNeedConflictKind(kind)) return !!scope.canManageProducts;
   return kind === "FIELD_EVENT"
     ? scope.canCaptureStoreEvents
     : scope.canManageStoreSettings;
@@ -98,11 +106,7 @@ export class CopilotStoreConflictRuntime {
     private id: () => string,
     private now = () => new Date().toISOString(),
   ) {}
-  async execute(
-    raw: unknown,
-    rawAuthority: StoreConflictAuthority,
-    signal?: AbortSignal,
-  ) {
+  async execute(raw: unknown, rawAuthority: unknown, signal?: AbortSignal) {
     const request = storeConflictRequestSchema.parse(raw),
       authority = storeConflictAuthoritySchema.parse(rawAuthority);
     if (!authority.comparisonReviewed || !allowed(authority, request.kind))
@@ -111,11 +115,13 @@ export class CopilotStoreConflictRuntime {
       canCaptureStoreEvents,
       canManageStoreSettings,
       comparisonReviewed,
+      canManageProducts,
       ...scope
     } = authority;
     void canCaptureStoreEvents;
     void canManageStoreSettings;
     void comparisonReviewed;
+    void canManageProducts;
     const initial = await proof(this.db, scope, request.operationId);
     if (
       initial.content.input.kind !== request.kind ||
@@ -139,6 +145,12 @@ export class CopilotStoreConflictRuntime {
             : !review.canAdoptRemote)
         )
           throw Error("STORE_CONFLICT_STALE");
+        const reactivation =
+          request.decision === "KEEP_LOCAL"
+            ? review.needPolicy?.reactivateLocal
+            : review.needPolicy?.reactivateRemote;
+        if (reactivation && request.reactivateRejected !== true)
+          throw Error("STORE_CONFLICT_REACTIVATION_REQUIRED");
         const joined = joinedProductToolDatabase(tx),
           commandId = this.id(),
           appliedAt = this.now(),
@@ -149,13 +161,31 @@ export class CopilotStoreConflictRuntime {
             useLocal,
             { commandId, deviceId: ctx.deviceId, capturedAt: appliedAt },
           );
-        else
+        else if (request.kind === "SETTINGS")
           await new StoreContextRepository(joined).resolve(
             request.conflictId,
             useLocal,
             { commandId, deviceId: ctx.deviceId },
           );
-        const after = await readStoreConflictCurrent(tx, content);
+        else if (request.kind === "NEED")
+          await new NeedUnitRepository(joined).resolve(
+            request.conflictId,
+            useLocal,
+            { commandId, deviceId: ctx.deviceId },
+          );
+        else if (request.kind === "MEMBERSHIP")
+          await new NeedMembershipRepository(joined, this.digest).resolve(
+            request.conflictId,
+            useLocal,
+            { commandId, deviceId: ctx.deviceId },
+          );
+        else
+          await new ProductSubstitutionRepository(joined, this.digest).resolve(
+            request.conflictId,
+            useLocal,
+            { commandId, deviceId: ctx.deviceId },
+          );
+        const after = await readStoreConflictCurrent(tx, content, this.digest);
         if (!after || !["PENDING", "SYNCED"].includes(after.syncState))
           throw Error("STORE_CONFLICT_RESULT_INVALID");
         return {
@@ -229,6 +259,9 @@ export class CopilotStoreConflictController {
             kind: result.kind,
             basisHash: result.basisHash,
             decision: result.decision,
+            ...(result.reactivateRejected !== undefined
+              ? { reactivateRejected: result.reactivateRejected }
+              : {}),
           })
       )
         throw Error("STORE_CONFLICT_SCOPE");
@@ -248,6 +281,7 @@ export class CopilotStoreConflictController {
     rawDecision: unknown,
     reviewed: boolean,
     signal?: AbortSignal,
+    reactivateRejected = false,
   ) {
     const decision = storeConflictDecisionSchema.parse(rawDecision),
       state = await this.open(message);
@@ -270,6 +304,9 @@ export class CopilotStoreConflictController {
       kind: state.content.input.kind,
       basisHash,
       decision,
+      ...(isNeedConflictKind(state.content.input.kind)
+        ? { reactivateRejected }
+        : {}),
     });
     await new CopilotStoreConflictRuntime(
       this.db,
@@ -279,6 +316,7 @@ export class CopilotStoreConflictController {
       request,
       {
         ...this.scope,
+        canManageProducts: this.scope.canManageProducts ?? false,
         comparisonReviewed: true,
         conversationId: message.conversationId,
         userMessageId: message.replyToMessageId!,

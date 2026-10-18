@@ -240,6 +240,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           deviceId,
           canCaptureStoreEvents,
           canManageStoreSettings,
+          canManageProducts,
         },
         executionDigest,
         randomUUID,
@@ -251,6 +252,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       deviceId,
       canCaptureStoreEvents,
       canManageStoreSettings,
+      canManageProducts,
     ],
   );
   const receiptRecoveries = useMemo(
@@ -809,7 +811,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationRefresh: canPrepareCommercialWeek,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
-              storeConflicts: canCaptureStoreEvents || canManageStoreSettings,
+              storeConflicts:
+                canCaptureStoreEvents ||
+                canManageStoreSettings ||
+                canManageProducts
+                  ? 2
+                  : false,
               receiptRecovery: canManageProducts,
               receiptCorrection: canManageProducts,
               receiptPublication: canManageProducts,

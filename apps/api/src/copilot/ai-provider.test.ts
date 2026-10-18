@@ -4698,3 +4698,73 @@ it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
     expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
   },
 );
+
+it.each(["NEED", "MEMBERSHIP", "SUBSTITUTION"] as const)(
+  "exposes %s conflict review only with capability version 2",
+  async (kind) => {
+    const { nativeNeedConflictFixture } =
+      await import("../../../../scripts/test-need-conflict-fixtures");
+    const native = await nativeNeedConflictFixture(kind);
+    try {
+      for (const version of [1, 2] as const) {
+        const f = fixture(),
+          value = structuredClone(native.review.preview);
+        f.request.storeId = value.basis.storeId;
+        f.request.context = detectCopilotConflicts({
+          batch: scoreCopilotPriorities({
+            storeId: value.basis.storeId,
+            evaluatedAt,
+            candidates: [],
+          }),
+          intents: [],
+        });
+        const read = vi.fn(async () => value);
+        let calls = 0;
+        const transport: typeof fetch = async (_url, init) => {
+          const body = JSON.parse(String(init?.body)),
+            definition = body.tools.find(
+              (t: { name: string }) => t.name === "store_conflict_review",
+            );
+          expect(definition.parameters.type).toBe("object");
+          expect(
+            definition.parameters.properties.kind.enum.includes(kind),
+          ).toBe(version === 2);
+          expect(JSON.stringify(definition.parameters)).not.toMatch(
+            /reactivateRejected|storeId|basisHash|decision/,
+          );
+          if (version === 1) return response();
+          if (calls++ === 0) {
+            const envelope = z
+              .record(z.string(), z.unknown())
+              .parse(await response().json());
+            envelope.output = [
+              {
+                type: "function_call",
+                id: "fc_need_conflict",
+                call_id: "call_need_conflict",
+                name: "store_conflict_review",
+                arguments: JSON.stringify(value.input),
+                status: "completed",
+              },
+            ];
+            return new Response(JSON.stringify(envelope), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return response();
+        };
+        const result = await createCopilotAiProvider(f.config, transport, {
+          daily: vi.fn(),
+          storeConflict: read,
+          storeConflictVersion: version,
+        }).generate(f.request, schema);
+        expect(read).toHaveBeenCalledTimes(version === 2 ? 1 : 0);
+        expect(result.storeConflictPreviews ?? []).toEqual(
+          version === 2 ? [value] : [],
+        );
+      }
+    } finally {
+      native.db.close();
+    }
+  },
+);
