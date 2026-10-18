@@ -1,3 +1,4 @@
+import { buildReceiptRecoveryMessages } from "./receipt-recovery-messages.js";
 import { buildPriceScenarioFormMessages } from "./price-scenario-messages.js";
 import { buildReferenceProposalMessages } from "./reference-messages.js";
 import { buildPlanValidationProposalMessages } from "./plan-validation-messages.js";
@@ -319,6 +320,17 @@ export async function runCopilotTurn(
               changes,
             );
         }
+        if (generation.mode === "FALLBACK")
+          for (const card of buildReceiptRecoveryMessages(
+            message,
+            generation.receiptRecoveryPreviews ?? [],
+          ))
+            await appendCopilotToolRecord(
+              { database: dependencies.db, session },
+              renewed,
+              card,
+              changes,
+            );
         if (generation.mode === "AI")
           for (const proposal of [
             ...buildChoiceUpdateProposalMessages(
@@ -364,6 +376,10 @@ export async function runCopilotTurn(
             ...buildNeedProposalMessages(
               message,
               generation.needPreviews ?? [],
+            ),
+            ...buildReceiptRecoveryMessages(
+              message,
+              generation.receiptRecoveryPreviews ?? [],
             ),
             ...buildReceiptCorrectionMessages(
               message,

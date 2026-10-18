@@ -9,14 +9,14 @@ import {
 } from "@fl-copilot/domain";
 import { readWasteReceipt } from "./waste-receipt-tool.js";
 import type { WasteReceiptDraftReader } from "../uploads/waste-receipt-draft.js";
-export async function previewReceiptPublication(
+/** Owned immutable receipt metadata, without extraction or provider work. */
+export async function readReceiptSource(
   db: Db,
   storeId: string,
-  raw: unknown,
-  reader: WasteReceiptDraftReader,
+  sourceDocumentId: string,
 ) {
   z.uuid().parse(storeId);
-  const input = receiptPublicationInputSchema.parse(raw);
+  z.uuid().parse(sourceDocumentId);
   const row = await db
     .collection<{
       _id: string;
@@ -26,7 +26,7 @@ export async function previewReceiptPublication(
     }>("sourceDocuments")
     .findOne(
       {
-        _id: input.sourceDocumentId,
+        _id: sourceDocumentId,
         storeId,
         sourceType: "WASTE_RECEIPT",
         remoteUploadStatus: "CONFIRMED",
@@ -43,9 +43,21 @@ export async function previewReceiptPublication(
   });
   if (
     source.storeId !== storeId ||
-    source.sourceDocumentId !== input.sourceDocumentId
+    source.sourceDocumentId !== sourceDocumentId
   )
     throw Error("READ_SCOPE_INVALID");
+  return source;
+}
+
+export async function previewReceiptPublication(
+  db: Db,
+  storeId: string,
+  raw: unknown,
+  reader: WasteReceiptDraftReader,
+) {
+  z.uuid().parse(storeId);
+  const input = receiptPublicationInputSchema.parse(raw);
+  const source = await readReceiptSource(db, storeId, input.sourceDocumentId);
   const reading = await readWasteReceipt(
     db,
     storeId,

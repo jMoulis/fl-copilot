@@ -1,3 +1,4 @@
+import { previewReceiptRecovery } from "./copilot/receipt-recovery-tool.js";
 import {
   importClassificationRequestSchema,
   importClassificationResultSchema,
@@ -646,6 +647,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     needPreview: async (input) => {
                       await authorize();
                       const result = await readNeedPreview(db, storeId, input);
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-receipt-recovery"] === "1"
+                ? {
+                    receiptRecovery: async (input) => {
+                      await authorize();
+                      const result = await previewReceiptRecovery(
+                        db,
+                        storeId,
+                        input,
+                      );
                       await authorize();
                       return result;
                     },
