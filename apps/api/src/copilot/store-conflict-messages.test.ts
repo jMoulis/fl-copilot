@@ -1,0 +1,49 @@
+import { randomUUID } from "node:crypto";
+import { expect, it } from "vitest";
+import {
+  storeConflictInputSchema,
+  readStoreConflictProposal,
+} from "@fl-copilot/domain";
+import { storeContextFixture } from "../../../../scripts/test-store-context-fixtures";
+import { receiptRecoveryFixture } from "../../../../scripts/test-receipt-recovery-fixtures";
+import { storeConflictPreview } from "../../../../scripts/test-store-conflict-fixtures";
+import { buildStoreConflictMessages } from "./store-conflict-messages";
+it("requires a known event or scoped settings, with no model decision or permission", () => {
+  for (const bad of [
+    { kind: "FIELD_EVENT", entityId: null },
+    { kind: "SETTINGS", entityId: randomUUID() },
+    { kind: "SETTINGS", entityId: null, decision: "KEEP_LOCAL" },
+    { kind: "SETTINGS", entityId: null, canManageStoreSettings: true },
+  ])
+    expect(storeConflictInputSchema.safeParse(bad).success).toBe(false);
+});
+it("binds a private deterministic artifact, replaces an earlier target snapshot and bounds comparisons", () => {
+  const f = receiptRecoveryFixture(),
+    settings = {
+      ...storeContextFixture(),
+      id: f.chat.storeId,
+      storeId: f.chat.storeId,
+    },
+    preview = storeConflictPreview("SETTINGS", settings),
+    card = buildStoreConflictMessages(f.assistant, [preview])[0]!;
+  expect(readStoreConflictProposal(card).content.assistantMessageId).toBe(
+    f.assistant.id,
+  );
+  expect(card.replyToMessageId).toBe(f.chat.message.id);
+  expect(buildStoreConflictMessages(f.assistant, [preview])).toEqual([card]);
+  const latest = storeConflictPreview("SETTINGS", { ...settings, version: 2 });
+  expect(
+    readStoreConflictProposal(
+      buildStoreConflictMessages(f.assistant, [preview, latest])[0],
+    ).content.basis.remoteVersion,
+  ).toBe(2);
+  expect(() =>
+    buildStoreConflictMessages(f.assistant, [
+      { ...preview, basis: { ...preview.basis, storeId: randomUUID() } },
+    ]),
+  ).toThrow();
+  expect(() => readStoreConflictProposal({ ...card, role: "USER" })).toThrow();
+  expect(() =>
+    readStoreConflictProposal({ ...card, storeId: randomUUID() }),
+  ).toThrow();
+});

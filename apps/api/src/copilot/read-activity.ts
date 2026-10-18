@@ -24,6 +24,7 @@ export function readActivityStage(key: string): CopilotActivity["stage"] {
     kind === "product-classification-preview"
   )
     return "PROPOSAL";
+  if (kind === "store-conflict") return "PROPOSAL";
   if (kind === "receipt-recovery") return "PROPOSAL";
   if (kind === "receipt-correction") return "PROPOSAL";
   if (kind === "receipt-publication") return "PROPOSAL";

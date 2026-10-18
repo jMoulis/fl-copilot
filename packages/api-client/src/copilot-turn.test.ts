@@ -296,6 +296,7 @@ it("opts into optional proposal and source tools only when the client supports t
         preparationRefresh: enabled,
         storeOperations: enabled,
         needProposals: enabled,
+        storeConflicts: enabled,
         receiptRecovery: enabled,
         receiptCorrection: enabled,
         receiptPublication: enabled,
@@ -305,6 +306,9 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-store-conflicts", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-store-conflicts");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-receipt-recovery", "1");
     else expect(headers).not.toHaveProperty("x-copilot-receipt-recovery");

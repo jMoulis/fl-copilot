@@ -1,3 +1,4 @@
+import { previewStoreConflict } from "./copilot/store-conflict-tool.js";
 import { previewReceiptRecovery } from "./copilot/receipt-recovery-tool.js";
 import {
   importClassificationRequestSchema,
@@ -647,6 +648,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     needPreview: async (input) => {
                       await authorize();
                       const result = await readNeedPreview(db, storeId, input);
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-store-conflicts"] === "1"
+                ? {
+                    storeConflict: async (input) => {
+                      await authorize();
+                      const result = await previewStoreConflict(
+                        db,
+                        storeId,
+                        input,
+                      );
                       await authorize();
                       return result;
                     },
