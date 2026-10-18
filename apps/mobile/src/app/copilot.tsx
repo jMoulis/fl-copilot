@@ -33,6 +33,9 @@ import { readCopilotOperationsProposal } from "@fl-copilot/domain";
 import { NeedProposalCard } from "@/copilot/need-proposal-card";
 import { CopilotNeedProposalController } from "@/copilot/need-proposal-controller";
 import { readCopilotNeedProposal } from "@fl-copilot/domain";
+import { ReceiptCorrectionCard } from "@/copilot/receipt-correction-card";
+import { CopilotReceiptCorrectionController } from "@/copilot/receipt-correction-controller";
+import { readReceiptCorrectionProposal } from "@fl-copilot/domain";
 import { ReceiptPublicationCard } from "@/copilot/receipt-publication-card";
 import { CopilotReceiptPublicationController } from "@/copilot/receipt-publication-controller";
 import { readReceiptPublicationProposal } from "@fl-copilot/domain";
@@ -200,6 +203,15 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         { storeId, ownerId, deviceId, canManageProducts },
         executionDigest,
         randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const receiptCorrections = useMemo(
+    () =>
+      new CopilotReceiptCorrectionController(
+        sqlite,
+        { storeId, ownerId, deviceId, canCorrectWaste: canManageProducts },
+        executionDigest,
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
@@ -554,6 +566,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readReceiptCorrectionProposal(message);
+      return (
+        <ReceiptCorrectionCard
+          key={message.id}
+          message={message}
+          controller={receiptCorrections}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readReceiptPublicationProposal(message);
       return (
         <ReceiptPublicationCard
@@ -662,6 +687,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationRefresh: canPrepareCommercialWeek,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
+              receiptCorrection: canManageProducts,
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
               catalogueProposals: canManageProducts,

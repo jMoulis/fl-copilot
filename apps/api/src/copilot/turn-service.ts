@@ -11,6 +11,7 @@ import { buildChoiceWithdrawalProposalMessages } from "./choice-withdrawal-messa
 import { buildPreparationProposalMessages } from "./preparation-proposal-messages.js";
 import { buildOperationsProposalMessages } from "./operations-proposal-messages.js";
 import { buildNeedProposalMessages } from "./need-proposal-messages.js";
+import { buildReceiptCorrectionMessages } from "./receipt-correction-messages.js";
 import { buildReceiptPublicationMessages } from "./receipt-publication-messages.js";
 import { buildIdentityReviewMessages } from "./identity-review-messages.js";
 import { buildCatalogueProposalMessages } from "./catalogue-proposal-messages.js";
@@ -363,6 +364,10 @@ export async function runCopilotTurn(
             ...buildNeedProposalMessages(
               message,
               generation.needPreviews ?? [],
+            ),
+            ...buildReceiptCorrectionMessages(
+              message,
+              generation.receiptCorrectionPreviews ?? [],
             ),
             ...buildReceiptPublicationMessages(
               message,
