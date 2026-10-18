@@ -19,6 +19,12 @@ export async function nativeReceiptCorrectionFixture(
   path = ":memory:",
   data = receiptCorrectionFixture(),
   patch = data.input.patch,
+  options?: {
+    schemaVersion?: 2;
+    beforeReview?(
+      fixture: Awaited<ReturnType<typeof nativeReceiptPublicationFixture>>,
+    ): Promise<void>;
+  },
 ) {
   const s = await nativeReceiptPublicationFixture(path, {
     ...data,
@@ -41,11 +47,16 @@ export async function nativeReceiptCorrectionFixture(
     ]),
     s.f.p.lines[1]!.id,
   );
+  await options?.beforeReview?.(s);
   const input: ReceiptCorrectionInput = receiptCorrectionInputSchema.parse({
       sourceDocumentId: s.f.source.sourceDocumentId,
       patch,
     }),
-    preview = receiptCorrectionPreviewSchema.parse({ ...data.preview, input });
+    preview = receiptCorrectionPreviewSchema.parse({
+      ...data.preview,
+      input,
+      ...(options?.schemaVersion === 2 ? { schemaVersion: 2 } : {}),
+    });
   const message = buildReceiptCorrectionMessages(s.f.assistant, [preview])[0]!;
   await s.a.withExclusiveTransactionAsync((tx) =>
     applyCopilotRecord(tx, s.f.chat, "copilot_message", message).then(

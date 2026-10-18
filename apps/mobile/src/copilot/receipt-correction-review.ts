@@ -5,6 +5,7 @@ import {
   type ReceiptCorrectionChange,
   type receiptPublicationSourceSchema,
   type Product,
+  type ProductIdentifier,
 } from "@fl-copilot/domain";
 import { z } from "zod";
 import { validateWasteReceiptArithmetic } from "@fl-copilot/analytics-core";
@@ -16,6 +17,7 @@ export async function readReceiptCorrectionReview(
   source: z.infer<typeof receiptPublicationSourceSchema>,
   raw: unknown,
   digest: (text: string) => Promise<string>,
+  schemaVersion: 1 | 2 = 1,
 ) {
   const input = receiptCorrectionInputSchema.parse(raw);
   if (source.sourceDocumentId !== input.sourceDocumentId)
@@ -30,6 +32,7 @@ export async function readReceiptCorrectionReview(
       basisHash: current.basisHash,
       warnings: [] as string[],
       header: {},
+      productChoices: [],
     };
   if (
     current.receipt.processingStatus !== "TO_VALIDATE" ||
@@ -90,6 +93,7 @@ export async function readReceiptCorrectionReview(
       lineId: string;
       candidates: z.infer<typeof wasteReceiptDraftCandidateSchema>[];
       product: Product | null;
+      identifiers?: ProductIdentifier[];
     }> = [],
     warnings: string[] = [];
   const updates = [];
@@ -130,6 +134,7 @@ export async function readReceiptCorrectionReview(
         .max(25)
         .parse(JSON.parse(row?.match_candidates_json ?? "[]"));
       if (
+        schemaVersion === 1 &&
         patch.productId !== line.matchedProductId &&
         !candidates.some((c) => c.productId === patch.productId)
       )
@@ -141,10 +146,37 @@ export async function readReceiptCorrectionReview(
         !product ||
         product.entity.storeId !== source.storeId ||
         product.entity.deletedAt ||
+        product.entity.status === "INACTIVE" ||
         ["ERROR", "CONFLICT"].includes(product.syncState)
       )
         throw Error("RECEIPT_CORRECTION_PRODUCT_UNAVAILABLE");
-      targets.push({ lineId: line.id, candidates, product: product.entity });
+      const identifierRows =
+        schemaVersion === 2
+          ? await productToolRepository(db).listIdentifiers(
+              product.entity.id,
+              21,
+            )
+          : [];
+      if (identifierRows.length > 20)
+        throw Error("RECEIPT_CORRECTION_PRODUCT_LIMIT");
+      const identifiers =
+        schemaVersion === 2
+          ? identifierRows
+              .filter(
+                (row) =>
+                  row.entity.storeId === source.storeId &&
+                  !row.entity.deletedAt &&
+                  row.entity.status === "VALIDATED" &&
+                  !["ERROR", "CONFLICT"].includes(row.syncState),
+              )
+              .map((row) => row.entity)
+          : undefined;
+      targets.push({
+        lineId: line.id,
+        candidates,
+        product: product.entity,
+        ...(identifiers ? { identifiers } : {}),
+      });
       if (
         patch.productId !== line.matchedProductId ||
         line.matchStatus !== "MATCHED"
@@ -199,7 +231,11 @@ export async function readReceiptCorrectionReview(
     }
   }
   const basisHash = await digest(
-    JSON.stringify({ current: current.basisHash, targets }),
+    JSON.stringify({
+      current: current.basisHash,
+      targets,
+      ...(schemaVersion === 2 ? { schemaVersion } : {}),
+    }),
   );
   return {
     current,
@@ -209,5 +245,15 @@ export async function readReceiptCorrectionReview(
     changes,
     warnings,
     basisHash,
+    productChoices:
+      schemaVersion === 2
+        ? targets.map((target) => ({
+            lineId: target.lineId,
+            label: target.product!.label,
+            nature: target.product!.nature,
+            salesUnit: target.product!.salesUnit,
+            identifiers: target.identifiers ?? [],
+          }))
+        : [],
   };
 }

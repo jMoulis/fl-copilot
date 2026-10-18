@@ -706,6 +706,24 @@ export class WasteReceiptRepository {
     lineId: string,
     productId: string,
   ) {
+    return this.selectProduct(receiptId, lineId, productId, false);
+  }
+
+  /** Explicitly reviewed catalogue choice; no candidate or learned alias is manufactured. */
+  async selectCatalogueProduct(
+    receiptId: string,
+    lineId: string,
+    productId: string,
+  ) {
+    return this.selectProduct(receiptId, lineId, productId, true);
+  }
+
+  private async selectProduct(
+    receiptId: string,
+    lineId: string,
+    productId: string,
+    fromCatalogue: boolean,
+  ) {
     await this.assertEditable(receiptId);
     const row = await this.database.getFirstAsync<WasteLineRow>(
       `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
@@ -716,13 +734,13 @@ export class WasteReceiptRepository {
     const candidate = parseCandidates(row.match_candidates_json).find(
       (item) => item.productId === productId,
     );
-    if (!candidate && row.matched_product_id !== productId)
+    if (!fromCatalogue && !candidate && row.matched_product_id !== productId)
       throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
     const product = await this.database.getFirstAsync<{
       label: string;
       nature: WasteLine["productNature"];
     }>(
-      "SELECT label, nature FROM products WHERE id = ? AND store_id = ? AND deleted_at IS NULL",
+      "SELECT label, nature FROM products WHERE id = ? AND store_id = ? AND deleted_at IS NULL AND status != 'INACTIVE' AND sync_state NOT IN ('ERROR','CONFLICT')",
       productId,
       row.store_id,
     );
@@ -737,7 +755,9 @@ export class WasteReceiptRepository {
        WHERE id = ? AND receipt_id = ?`,
       productId,
       product.label,
-      candidate?.score ?? row.match_confidence,
+      fromCatalogue && !candidate && row.matched_product_id !== productId
+        ? null
+        : (candidate?.score ?? row.match_confidence),
       product.nature,
       row.validation_status === "EXCLUDED"
         ? "EXCLUDED"

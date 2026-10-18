@@ -309,14 +309,21 @@ export class ProductMasterRepository {
     return row ? mapAlias(row) : null;
   }
 
-  async listIdentifiers(productId: string) {
+  async listIdentifiers(productId: string, limit?: number) {
+    if (
+      limit !== undefined &&
+      (!Number.isInteger(limit) || limit < 1 || limit > 100)
+    )
+      throw Error("PRODUCT_IDENTIFIER_LIMIT_INVALID");
     const rows = await this.database.getAllAsync<IdentifierRow>(
       `
         SELECT * FROM product_identifiers
         WHERE product_id = ? AND deleted_at IS NULL
         ORDER BY type, value, id
+        LIMIT ?
       `,
       productId,
+      limit ?? -1,
     );
     return rows.map(mapIdentifier);
   }

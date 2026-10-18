@@ -861,7 +861,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                   ? 5
                   : false,
               receiptRecovery: canManageProducts,
-              receiptCorrection: canManageProducts,
+              receiptCorrection: canManageProducts ? 2 : false,
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
               catalogueProposals: canManageProducts,

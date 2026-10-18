@@ -92,3 +92,24 @@ it("does not silently truncate more than three requested source cards", () => {
     "LIMIT",
   );
 });
+
+it("keeps legacy cards candidate-only and preserves the trusted v2 catalogue marker outside model input", () => {
+  const f = receiptCorrectionFixture();
+  const old = buildReceiptCorrectionMessages(f.assistant, [f.preview])[0]!;
+  const current = buildReceiptCorrectionMessages(f.assistant, [
+    { ...f.preview, schemaVersion: 2 },
+  ])[0]!;
+  expect(readReceiptCorrectionProposal(old).content.schemaVersion).toBe(1);
+  expect(readReceiptCorrectionProposal(current).content.schemaVersion).toBe(2);
+  expect(current.id).not.toBe(old.id);
+  expect(
+    receiptCorrectionInputSchema.safeParse({ ...f.input, schemaVersion: 2 })
+      .success,
+  ).toBe(false);
+  expect(() =>
+    readReceiptCorrectionProposal({
+      ...current,
+      text: current.text.replace('"schemaVersion":2', '"schemaVersion":3'),
+    }),
+  ).toThrow();
+});

@@ -29,7 +29,7 @@ export function buildReceiptCorrectionMessages(
   return ready.map((result) => {
     const content = receiptCorrectionProposalSchema.parse({
       kind: "WASTE_CORRECTION_PROPOSAL",
-      schemaVersion: 1,
+      schemaVersion: result.schemaVersion ?? 1,
       assistantMessageId: assistant.id,
       source: result.source,
       input: result.input,

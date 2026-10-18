@@ -475,3 +475,26 @@ it("sends only bounded labels to authenticated import classification with cancel
     }),
   );
 });
+
+it("advertises catalogue receipt correction v2 explicitly without adding model mutation authority to the body", async () => {
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(JSON.stringify({ message, alreadyApplied: false }), {
+        status: 200,
+      }),
+  );
+  vi.stubGlobal("fetch", transport);
+  await new ApiClient("https://test.invalid").copilotTurn(
+    "test-token",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { receiptCorrection: 2, onProgress: vi.fn() },
+  );
+  expect(transport.mock.calls[0]![1]!.headers).toHaveProperty(
+    "x-copilot-receipt-correction",
+    "2",
+  );
+  expect(JSON.parse(String(transport.mock.calls[0]![1]!.body))).toEqual(input);
+});

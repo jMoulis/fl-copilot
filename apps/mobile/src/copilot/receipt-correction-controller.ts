@@ -76,6 +76,7 @@ export class CopilotReceiptCorrectionRuntime {
             content.source,
             content.input,
             this.digest,
+            content.schemaVersion,
           );
         if (
           review.status !== "READY" ||
@@ -103,12 +104,20 @@ export class CopilotReceiptCorrectionRuntime {
               update.lineId,
               update.values,
             );
-          if (update.productId !== undefined)
-            await repo.selectProductCandidate(
-              request.receiptId,
-              update.lineId,
-              update.productId,
-            );
+          if (update.productId !== undefined) {
+            if (content.schemaVersion === 2)
+              await repo.selectCatalogueProduct(
+                request.receiptId,
+                update.lineId,
+                update.productId,
+              );
+            else
+              await repo.selectProductCandidate(
+                request.receiptId,
+                update.lineId,
+                update.productId,
+              );
+          }
           if (update.excluded !== undefined)
             await repo.setLineExcluded(
               request.receiptId,
@@ -121,6 +130,7 @@ export class CopilotReceiptCorrectionRuntime {
           content.source,
           content.input,
           this.digest,
+          content.schemaVersion,
         );
         return {
           ...request,
@@ -193,6 +203,7 @@ export class CopilotReceiptCorrectionController {
       content.source,
       content.input,
       this.digest,
+      content.schemaVersion,
     );
     return { ...artifact, status: review.status, review, result: null };
   }

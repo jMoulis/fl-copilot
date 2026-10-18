@@ -155,6 +155,36 @@ export function ReceiptCorrectionCard({
                   ? "Ce ticket est déjà publié. Ses données ne peuvent pas être réécrites."
                   : "Seuls les champs affichés seront modifiés. Cette correction ne publie pas le ticket et ne crée pas d’alias."}
           </Text>
+          {state.review?.productChoices.map((choice) => (
+            <View key={choice.lineId} style={{ gap: 3 }}>
+              <Text style={{ fontWeight: "600" }}>
+                Produit du catalogue : {choice.label}
+              </Text>
+              <Text>
+                {
+                  {
+                    BULK: "Vrac",
+                    PACKAGED: "Conditionné",
+                    UNKNOWN: "Nature non précisée",
+                  }[choice.nature]
+                }{" "}
+                ·{" "}
+                {
+                  {
+                    KG: "kg",
+                    PIECE: "pièce",
+                    PACK: "unité conditionnée",
+                    UNKNOWN: "Unité non précisée",
+                  }[choice.salesUnit]
+                }
+              </Text>
+              {choice.identifiers.map((identifier) => (
+                <Text key={identifier.id} selectable>
+                  {identifier.type} : {identifier.value}
+                </Text>
+              ))}
+            </View>
+          ))}
           {state.review ? (
             <Pressable
               accessibilityRole="button"

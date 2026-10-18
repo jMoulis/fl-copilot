@@ -4482,7 +4482,15 @@ it.each(["OWNED", "FOREIGN", "RETARGETED", "DISABLED"])(
     expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
   },
 );
-it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
+it.each([
+  "OWNED",
+  "FOREIGN",
+  "INPUT_CHANGED",
+  "DISABLED",
+  "CATALOGUE",
+  "UPGRADE",
+  "DOWNGRADE",
+])(
   "prepares bounded receipt corrections only for a compatible client and unchanged requested patch (%s)",
   async (mode) => {
     const { receiptCorrectionFixture } =
@@ -4496,6 +4504,9 @@ it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
     if (mode === "FOREIGN") value.source.storeId = randomUUID();
     if (mode === "INPUT_CHANGED")
       value.input = { ...value.input, patch: { cashierNumber: "000999" } };
+    if (["CATALOGUE", "UPGRADE"].includes(mode)) value.schemaVersion = 2;
+    const isCatalogue = ["CATALOGUE", "DOWNGRADE"].includes(mode);
+    const successful = ["OWNED", "CATALOGUE"].includes(mode);
     const receiptCorrection = vi.fn(async () => value);
     let calls = 0;
     const transport: typeof fetch = async (_url, init) => {
@@ -4507,6 +4518,11 @@ it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
         expect(definition).toBeUndefined();
         return response();
       }
+      expect(definition.description).toContain(
+        isCatalogue
+          ? "product_search"
+          : "limited to an exact extracted candidate",
+      );
       expect(definition.parameters.type).toBe("object");
       expect(JSON.stringify(definition.parameters)).not.toMatch(
         /storeId|ownerId|basisHash|correctionReviewed|version/,
@@ -4536,21 +4552,23 @@ it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
           ).output,
         ),
       ).toMatchObject(
-        mode === "OWNED" ? { status: "REVIEW_LOCAL" } : { unavailable: true },
+        successful ? { status: "REVIEW_LOCAL" } : { unavailable: true },
       );
       return response();
     };
     const result = await createCopilotAiProvider(f.config, transport, {
       daily: vi.fn(),
-      ...(mode === "DISABLED" ? {} : { receiptCorrection }),
+      ...(mode === "DISABLED"
+        ? {}
+        : { receiptCorrection, receiptCorrectionVersion: isCatalogue ? 2 : 1 }),
     }).generate(f.request, schema);
     expect(receiptCorrection).toHaveBeenCalledTimes(
       mode === "DISABLED" ? 0 : 1,
     );
     expect(result.receiptCorrectionPreviews ?? []).toEqual(
-      mode === "OWNED" ? [value] : [],
+      successful ? [value] : [],
     );
-    expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
+    expect(result.toolEvidence).toEqual(successful ? value.evidence : []);
   },
 );
 
