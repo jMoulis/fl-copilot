@@ -281,6 +281,7 @@ it("opts into optional proposal and source tools only when the client supports t
         onProgress: vi.fn(),
         memorySuggestions: enabled,
         webResearch: enabled,
+        retailExpertise: enabled,
         choiceUpdate: enabled,
         choiceRetention: enabled,
         choiceCreate: enabled,
@@ -306,6 +307,9 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-retail-expertise", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-retail-expertise");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-store-conflicts", "1");
     else expect(headers).not.toHaveProperty("x-copilot-store-conflicts");

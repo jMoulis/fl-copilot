@@ -8,19 +8,17 @@ import {
   Pressable,
 } from "react-native";
 import {
-  copilotExternalResearchSourceSchema,
+  retailExpertiseFreshness,
   isPublicResearchUrl,
 } from "@fl-copilot/domain";
-import type { z } from "zod";
+import {
+  readAnswerSource,
+  formatSourcePublication,
+  type AnswerSource,
+} from "./answer-source";
 import { BottomSheet } from "../components/ui";
 import { colors } from "../design/tokens";
 import { markdownBlocks } from "./markdown-blocks";
-type Source = {
-  label: string;
-  value: string | number | null;
-  sourceId: string;
-  externalResearch?: z.infer<typeof copilotExternalResearchSourceSchema>;
-};
 /** Small native Markdown surface: no HTML, arbitrary URL navigation or webview. */
 export function AssistantAnswer({
   text,
@@ -31,35 +29,26 @@ export function AssistantAnswer({
   selectable?: boolean;
   renderSource?(id: string): ReactNode;
 }) {
-  const [source, setSource] = useState<Source>();
+  const [source, setSource] = useState<AnswerSource>();
   const [linkError, setLinkError] = useState(false);
   const blocks = useMemo(() => markdownBlocks(text), [text]);
   function openSource(encoded: string) {
     try {
-      const value: unknown = JSON.parse(decodeURIComponent(encoded));
-      if (!value || typeof value !== "object") return;
-      const v = value as Source;
-      if (
-        typeof v.label === "string" &&
-        v.label.length <= 1000 &&
-        typeof v.sourceId === "string" &&
-        (v.value === null ||
-          typeof v.value === "number" ||
-          typeof v.value === "string")
-      ) {
-        if (
-          v.externalResearch &&
-          !copilotExternalResearchSourceSchema.safeParse(v.externalResearch)
-            .success
-        )
-          return;
-        setLinkError(false);
-        setSource(v);
-      }
+      const value = readAnswerSource(encoded);
+      setLinkError(false);
+      setSource(value);
     } catch {
       /* Partial citations become clickable only after their token closes. */
     }
   }
+  const citations =
+    source?.retailExpertise?.sources ??
+    source?.externalResearch?.citations.map((citation) => ({
+      ...citation,
+      publishedOn: null,
+      publisher: undefined,
+    })) ??
+    [];
   function inline(value: string): ReactNode[] {
     const parts = value.split(
       /(\*\*[^*]+\*\*|\[[^\]]+\]\(copilot-source:[^)]+\))/g,
@@ -142,15 +131,27 @@ export function AssistantAnswer({
                 ? "Valeur non disponible"
                 : String(source.value)}
             </Text>
-            {source.externalResearch ? (
+            {source.externalResearch || source.retailExpertise ? (
               <View style={styles.answer}>
                 <Text style={styles.text}>
-                  Recherche web · consultée le{" "}
-                  {new Date(
-                    source.externalResearch.accessedAt,
-                  ).toLocaleDateString("fr-FR")}
+                  {source.retailExpertise
+                    ? `Référentiel métier · version ${source.retailExpertise.version} · relu le ${new Date(source.retailExpertise.reviewedOn + "T12:00:00Z").toLocaleDateString("fr-FR", { timeZone: "UTC" })}`
+                    : `Recherche web · consultée le ${new Date(source.externalResearch!.accessedAt).toLocaleDateString("fr-FR")}`}
                 </Text>
-                {source.externalResearch.citations.map((citation) => (
+                {source.retailExpertise ? (
+                  <Text style={styles.text}>
+                    {retailExpertiseFreshness(
+                      source.retailExpertise,
+                      new Date().toISOString(),
+                    ) === "CURRENT"
+                      ? "Prochaine revue prévue avant le "
+                      : "Repère à revalider · date de revue : "}
+                    {new Date(
+                      source.retailExpertise.reviewAfterOn + "T12:00:00Z",
+                    ).toLocaleDateString("fr-FR", { timeZone: "UTC" })}
+                  </Text>
+                ) : null}
+                {citations.map((citation) => (
                   <Pressable
                     key={citation.url}
                     accessibilityRole="link"
@@ -168,6 +169,15 @@ export function AssistantAnswer({
                     }}
                   >
                     <Text style={styles.text}>{citation.title}</Text>
+                    {citation.publisher ? (
+                      <Text style={styles.text}>
+                        {citation.publisher}
+                        {` · ${formatSourcePublication(citation.publishedOn)}`}
+                      </Text>
+                    ) : null}
+                    {"scope" in citation ? (
+                      <Text style={styles.text}>{String(citation.scope)}</Text>
+                    ) : null}
                     <Text style={styles.link}>
                       {new URL(citation.url).hostname}
                     </Text>

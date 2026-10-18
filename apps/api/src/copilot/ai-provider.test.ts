@@ -5000,3 +5000,95 @@ it.each(["PRODUCT", "IDENTIFIER", "ALIAS"] as const)(
     }
   },
 );
+
+it.each([
+  "CURRENT",
+  "DISABLED",
+  "OTHER_TOPIC",
+  "TAMPERED",
+  "STALE",
+  "UNREVIEWED",
+])(
+  "consults curated expertise through the SDK without live search or business authority (%s)",
+  async (mode) => {
+    const { readRetailExpertise } = await import("./retail-expertise-tool");
+    const f = fixture(),
+      input = { topics: ["VISIBILITY", "SEASONALITY"] };
+    const value = readRetailExpertise(
+      input,
+      mode === "STALE"
+        ? "2027-04-18T00:00:00.000Z"
+        : mode === "UNREVIEWED"
+          ? "2026-10-17T12:00:00.000Z"
+          : "2026-10-18T12:00:00.000Z",
+    );
+    if (mode === "OTHER_TOPIC") value.input.topics = ["ASSOCIATIONS"];
+    if (mode === "TAMPERED")
+      value.cards[0]!.applicationHypothesis = "An invented guarantee";
+    const retailExpertise = vi.fn(async () => value),
+      publicResearch = vi.fn();
+    let calls = 0;
+    const activity = vi.fn();
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const definition = body.tools.find(
+        (t: { name: string }) => t.name === "retail_expertise",
+      );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|productId|query|asOf|url|amount|authority/,
+      );
+      if (calls++ === 0) {
+        if (mode === "CURRENT")
+          expect(JSON.stringify(body)).not.toContain(
+            value.cards[0]!.sourceFinding,
+          );
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_expertise",
+            call_id: "call_expertise",
+            name: "retail_expertise",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const output = JSON.parse(
+        body.input.find(
+          (x: { type: string }) => x.type === "function_call_output",
+        ).output,
+      );
+      expect(output).toMatchObject(
+        ["OTHER_TOPIC", "TAMPERED"].includes(mode)
+          ? { unavailable: true }
+          : { status: value.status },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      publicResearch,
+      ...(mode === "DISABLED" ? {} : { retailExpertise }),
+    }).generate(f.request, schema, undefined, undefined, activity);
+    expect(publicResearch).not.toHaveBeenCalled();
+    expect(retailExpertise).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(result.toolEvidence ?? []).toEqual(
+      mode === "CURRENT" ? value.evidence : [],
+    );
+    if (mode === "CURRENT")
+      expect(activity).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: "CONTEXT", status: "DONE" }),
+      );
+  },
+);

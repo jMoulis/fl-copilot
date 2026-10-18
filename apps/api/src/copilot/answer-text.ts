@@ -50,11 +50,16 @@ export function renderAnswerText(
     const source = encodeURIComponent(
       JSON.stringify({
         label: item.label,
-        value: item.externalResearch
-          ? "Informations publiques externes, distinctes des chiffres du magasin."
-          : (item.detail ?? item.value),
+        value: item.retailExpertise
+          ? (item.detail ?? item.value)
+          : item.externalResearch
+            ? "Informations publiques externes, distinctes des chiffres du magasin."
+            : (item.detail ?? item.value),
         ...(item.externalResearch
           ? { externalResearch: item.externalResearch }
+          : {}),
+        ...(item.retailExpertise
+          ? { retailExpertise: item.retailExpertise }
           : {}),
         sourceType: item.sourceType,
         sourceId: item.sourceId,

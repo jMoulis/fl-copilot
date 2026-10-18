@@ -113,6 +113,8 @@ import {
   type AnalyticsQueryResult,
 } from "./analytics-query-tool.js";
 import { copilotPublicResearchInputSchema } from "@fl-copilot/domain";
+import { retailExpertiseInputSchema } from "@fl-copilot/domain";
+import { retailExpertiseToolResultSchema } from "./retail-expertise-tool.js";
 import { publicResearchToolResultSchema } from "./public-research-tool.js";
 import {
   isContextCheckpointUnchanged,
@@ -442,6 +444,9 @@ export function createCopilotAiProvider(
     analyticsQuery?(
       input: z.infer<typeof copilotAnalyticsQuerySchema>,
     ): Promise<AnalyticsQueryResult>;
+    retailExpertise?(
+      input: z.infer<typeof retailExpertiseInputSchema>,
+    ): Promise<z.infer<typeof retailExpertiseToolResultSchema>>;
     publicResearch?(
       input: z.infer<typeof copilotPublicResearchInputSchema>,
       signal?: AbortSignal,
@@ -833,6 +838,7 @@ export function createCopilotAiProvider(
                       reads.executionPreview ||
                       reads.analyticsQuery ||
                       reads.publicResearch ||
+                      reads.retailExpertise ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
                       reads.period ||
@@ -872,6 +878,7 @@ export function createCopilotAiProvider(
                       reads.executionPreview ||
                       reads.analyticsQuery ||
                       reads.publicResearch ||
+                      reads.retailExpertise ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
                       reads.period ||
@@ -1370,6 +1377,33 @@ export function createCopilotAiProvider(
                                 JSON.stringify(result.query) !==
                                 JSON.stringify(
                                   copilotAnalyticsQuerySchema.parse(input),
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.retailExpertise
+                  ? {
+                      retail_expertise: tool({
+                        description:
+                          "Consult curated produce-retail/shopper guidance for at most two relevant topics: shopper criteria, purchase needs, complementary presentation, directed substitution, visibility, seasonality or waste diagnosis. This is a versioned external reference, not a store fact, live web search, customer profiling or permission to act. Keep sourceFinding separate from applicationHypothesis; use only relevant discriminating questions when local evidence is missing. Use existing analytics/catalogue/events/commercial/substitution tools for actual store facts. Explain competing hypotheses, not a proven cause or predicted uplift. Never infer basket attachment from aggregate sales, reverse a directed relation, invent stock/cost/elasticity, impose catalogue cleanup or convert monetary waste into food weight. Cite the source and its scope; revalidation-required/unreviewed returns no usable cards: verify current primary sources with public_research if needed. No business write or paid research is performed by this lookup.",
+                        inputSchema: retailExpertiseInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["retail-expertise", input]),
+                            async () => {
+                              const result =
+                                retailExpertiseToolResultSchema.parse(
+                                  await reads.retailExpertise!(input),
+                                );
+                              if (
+                                JSON.stringify(result.input) !==
+                                JSON.stringify(
+                                  retailExpertiseInputSchema.parse(input),
                                 )
                               )
                                 throw Error("READ_SCOPE_INVALID");

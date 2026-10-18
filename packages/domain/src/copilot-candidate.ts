@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { retailExpertiseCitationSchema } from "./retail-expertise";
 import { copilotExternalResearchSourceSchema } from "./copilot-web-research";
 const score = z.number().finite().min(0).max(1);
 const ref = z.string().min(1).max(1000);
@@ -43,6 +44,7 @@ export const copilotEvidenceSchema = z
     value: z.union([z.string().max(10000), z.number().finite(), z.null()]),
     detail: z.string().max(10000).optional(),
     externalResearch: copilotExternalResearchSourceSchema.optional(),
+    retailExpertise: retailExpertiseCitationSchema.optional(),
     factKind: z.enum([
       "OBSERVED",
       "SOURCE_INSTRUCTION",
@@ -59,6 +61,17 @@ export const copilotEvidenceSchema = z
         e.factKind === "SOURCE_INSTRUCTION" &&
         e.sourceVersion === null &&
         e.id.startsWith("public-web-research/")),
+  )
+  .refine(
+    (e) =>
+      !e.retailExpertise ||
+      (!e.externalResearch &&
+        e.sourceType === "SOURCE_DOCUMENT" &&
+        e.factKind === "SOURCE_INSTRUCTION" &&
+        e.sourceId === e.retailExpertise.referenceId &&
+        e.sourceVersion === e.retailExpertise.version &&
+        e.id ===
+          `retail-expertise/${e.retailExpertise.referenceId}/v${e.retailExpertise.version}`),
   );
 export const candidateContextSchema = z
   .object({
