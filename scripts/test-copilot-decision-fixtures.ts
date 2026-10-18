@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { chatFixture } from "./test-chat-fixtures";
 import {
   copilotMessageSchema,
+  recommendationDecisionReadResultSchema,
   type CopilotMessage,
   type RecommendationChoice,
 } from "../packages/domain/src/index";
@@ -12,8 +13,13 @@ import { MercalysTestDatabase } from "./test-mercalys-sync-fixtures";
 import { CopilotDecisionRepository } from "../apps/mobile/src/copilot/decision-repository";
 export const decisionDigest = async (s: string) =>
   createHash("sha256").update(s).digest("hex");
-export function decisionFixture() {
+export function decisionFixture(scope?: { storeId: string }) {
   const f = chatFixture(randomUUID);
+  if (scope) {
+    f.storeId = scope.storeId;
+    f.conversation.storeId = scope.storeId;
+    f.message.storeId = scope.storeId;
+  }
   f.message.attachments = [];
   const source = copilotMessageSchema.parse({
     ...f.message,
@@ -116,4 +122,66 @@ export function withoutMongoId(row: { _id: unknown; [key: string]: unknown }) {
   const { _id, ...e } = row;
   void _id;
   return e as unknown as CopilotMessage;
+}
+
+/** A schema-valid owned choice for SDK/reader tests; no live provider call. */
+export async function decisionReadFixture(
+  storeId: string,
+  type: RecommendationChoice["type"] = "ACCEPT",
+) {
+  const native = await decisionNativeFixture(decisionFixture({ storeId }));
+  try {
+    const saved = (await saveDecision(native, type)).decision!;
+    const decision = {
+      recommendationId: saved.id,
+      expectedVersion: saved.version,
+    };
+    const context = recommendationDecisionReadResultSchema.parse({
+      input: {
+        conversationId: null,
+        recommendationId: saved.id,
+        afterId: null,
+        limit: 1,
+      },
+      status: "READY",
+      entries: [
+        {
+          id: saved.id,
+          conversationId: saved.conversationId,
+          version: saved.version,
+          createdAt: saved.createdAt,
+          updatedAt: saved.updatedAt,
+          latest: saved.revisions.at(-1),
+          historyCount: saved.version,
+          basis: native.preview.basis,
+          sourceState: "ACTIVE",
+        },
+      ],
+      hasMore: false,
+      nextAfterId: null,
+      evidence: [
+        {
+          id: "decision-test",
+          sourceId: saved.id,
+          sourceType: "EVENT",
+          sourceVersion: saved.version,
+          label: "Votre choix",
+          value: "Choix conservé, pas une exécution.",
+          factKind: "OBSERVED",
+        },
+        {
+          id: "coverage-test",
+          sourceId: storeId,
+          sourceType: "DATA_QUALITY",
+          sourceVersion: null,
+          label: "Couverture",
+          value: "Choix synchronisés seulement.",
+          factKind: "QUALITY",
+        },
+      ],
+    });
+    return { ownerId: native.ownerId, decision, context };
+  } finally {
+    native.db.db.close();
+  }
 }

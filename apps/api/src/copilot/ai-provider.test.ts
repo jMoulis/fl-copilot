@@ -5100,6 +5100,10 @@ it.each([
   "RETARGETED",
   "BAD_PERIOD",
   "BYTE_BUDGET",
+  "WITH_DECISION",
+  "DECISION_RETARGETED",
+  "DECISION_VERSION",
+  "DECISION_STRIPPED",
 ])(
   "uses the existing bounded SDK loop for a sourced action review (%s)",
   async (mode) => {
@@ -5129,6 +5133,23 @@ it.each([
     if (mode === "BAD_PERIOD")
       value.afterComparison!.currentPeriod.start = "2026-10-12";
     if (mode === "BYTE_BUDGET") f.config.COPILOT_AI_MAX_INPUT_BYTES = 4096;
+    const input: import("zod").infer<
+      typeof import("@fl-copilot/domain").copilotActionReviewInputSchema
+    > = { ...business.input };
+    if (mode.startsWith("DECISION_") || mode === "WITH_DECISION") {
+      const { decisionReadFixture } =
+        await import("../../../../scripts/test-copilot-decision-fixtures");
+      const choice = await decisionReadFixture(business.storeId);
+      input.decision = choice.decision;
+      value.input.decision = { ...choice.decision };
+      value.decisionContext = choice.context;
+      value.evidence.splice(1, 0, ...choice.context.evidence);
+      if (mode === "DECISION_RETARGETED")
+        value.input.decision.recommendationId = randomUUID();
+      if (mode === "DECISION_VERSION") value.input.decision.expectedVersion = 2;
+      if (mode === "DECISION_STRIPPED") value.decisionContext = null;
+    }
+    const succeeds = ["READY", "WITH_DECISION"].includes(mode);
     const actionReview = vi.fn(async () => value),
       activity = vi.fn();
     let calls = 0;
@@ -5155,7 +5176,7 @@ it.each([
             id: "fc_action_review",
             call_id: "call_action_review",
             name: "commercial_action_review",
-            arguments: JSON.stringify(business.input),
+            arguments: JSON.stringify(input),
             status: "completed",
           },
         ];
@@ -5169,7 +5190,7 @@ it.each([
         ).output,
       );
       expect(output).toMatchObject(
-        mode === "READY"
+        succeeds
           ? {
               status: "READY",
               task: { proposal: { id: business.input.taskId } },
@@ -5183,10 +5204,8 @@ it.each([
       ...(mode === "DISABLED" ? {} : { actionReview }),
     }).generate(f.request, schema, undefined, undefined, activity);
     expect(actionReview).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
-    expect(result.toolEvidence ?? []).toEqual(
-      mode === "READY" ? value.evidence : [],
-    );
-    if (mode === "READY")
+    expect(result.toolEvidence ?? []).toEqual(succeeds ? value.evidence : []);
+    if (succeeds)
       expect(activity).toHaveBeenCalledWith(
         expect.objectContaining({ stage: "COMPARISON", status: "DONE" }),
       );

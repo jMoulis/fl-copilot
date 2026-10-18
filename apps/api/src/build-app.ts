@@ -907,8 +907,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                   }
                 : {}),
               actionReview: async (input) => {
-                await authorize();
-                const result = await readActionReview(db, storeId, input);
+                const principal = await authorize();
+                const result = await readActionReview(
+                  db,
+                  storeId,
+                  input,
+                  undefined,
+                  principal.ownerId,
+                );
                 await authorize();
                 return result;
               },
