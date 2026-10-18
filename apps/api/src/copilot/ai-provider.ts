@@ -2,6 +2,7 @@ import {
   storeConflictLegacyInputSchema,
   storeConflictInputSchema,
   storeConflictV2InputSchema,
+  storeConflictV3InputSchema,
   storeConflictPreviewSchema,
   validateStoreConflictBasis,
 } from "@fl-copilot/domain";
@@ -414,7 +415,7 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
-    storeConflictVersion?: 1 | 2 | 3;
+    storeConflictVersion?: 1 | 2 | 3 | 4;
     storeConflict?(
       input: z.infer<typeof storeConflictInputSchema>,
     ): Promise<z.infer<typeof storeConflictPreviewSchema>>;
@@ -1050,13 +1051,15 @@ export function createCopilotAiProvider(
                   ? {
                       store_conflict_review: tool({
                         description:
-                          "Prepare an explicitly requested conflict comparison for an allowed kind and known entityId (SETTINGS uses null). Discover the target first. Only synchronized data is read here; the device checks its actual conflict. The user chooses and confirms. Refused associations and withdrawn offers need separate reactivation consent; commercial plans never declare field execution; synchronized learned scores stay protected. No winner or business write is chosen by the model. At most three targets.",
+                          "Prepare an explicitly requested conflict comparison for an allowed kind and known entityId (SETTINGS uses null). Discover the target first. Only synchronized data is read here; the device checks its actual conflict. The user chooses and confirms. Refused associations and withdrawn offers need separate reactivation consent; PDF reference decisions keep the selected original; task conflicts keep an existing declaration on its exact plan revision; synchronized learned scores stay protected. No winner or business write is chosen by the model. At most three targets.",
                         inputSchema:
-                          reads.storeConflictVersion === 3
+                          reads.storeConflictVersion === 4
                             ? storeConflictInputSchema
-                            : reads.storeConflictVersion === 2
-                              ? storeConflictV2InputSchema
-                              : storeConflictLegacyInputSchema,
+                            : reads.storeConflictVersion === 3
+                              ? storeConflictV3InputSchema
+                              : reads.storeConflictVersion === 2
+                                ? storeConflictV2InputSchema
+                                : storeConflictLegacyInputSchema,
                         execute: (input) =>
                           executeRead(
                             JSON.stringify(["store-conflict", input]),

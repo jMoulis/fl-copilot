@@ -1,11 +1,14 @@
 import {
   isCommercialConflictKind,
+  isCommercialDecisionConflictKind,
   type storeConflictInputSchema,
 } from "@fl-copilot/domain";
 import type { z } from "zod";
 import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
 import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
 import { CommercialPlanRepository } from "../commercial/week-plan-repository";
+import { CommercialVersionDecisionRepository } from "../commercial/version-decision-repository";
+import { CommercialExecutionRepository } from "../commercial/execution-repository";
 import { isNeedConflictKind } from "@fl-copilot/domain";
 import { NeedUnitRepository } from "../needs/repository";
 import { NeedMembershipRepository } from "../needs/membership-repository";
@@ -40,6 +43,8 @@ type Scope = {
   canManageCommercialChoices?: boolean;
   canPrepareCommercialWeek?: boolean;
   canValidateCommercialPlan?: boolean;
+  canManageCommercialReferences?: boolean;
+  canDeclareCommercialExecution?: boolean;
 } & Pick<
   StoreConflictAuthority,
   | "storeId"
@@ -52,6 +57,10 @@ function allowed(
   scope: Scope,
   kind: z.infer<typeof storeConflictInputSchema>["kind"],
 ) {
+  if (kind === "COMMERCIAL_REFERENCE")
+    return !!scope.canManageCommercialReferences;
+  if (kind === "COMMERCIAL_EXECUTION")
+    return !!scope.canDeclareCommercialExecution;
   if (kind === "COMMERCIAL_CHOICE") return !!scope.canManageCommercialChoices;
   if (kind === "COMMERCIAL_PREPARATION")
     return !!scope.canPrepareCommercialWeek;
@@ -136,6 +145,8 @@ export class CopilotStoreConflictRuntime {
       canManageCommercialChoices,
       canPrepareCommercialWeek,
       canValidateCommercialPlan,
+      canManageCommercialReferences,
+      canDeclareCommercialExecution,
       ...scope
     } = authority;
     void canCaptureStoreEvents;
@@ -145,6 +156,8 @@ export class CopilotStoreConflictRuntime {
     void canManageCommercialChoices;
     void canPrepareCommercialWeek;
     void canValidateCommercialPlan;
+    void canManageCommercialReferences;
+    void canDeclareCommercialExecution;
     const initial = await proof(this.db, scope, request.operationId);
     if (
       initial.content.input.kind !== request.kind ||
@@ -184,7 +197,21 @@ export class CopilotStoreConflictRuntime {
           commandId = this.id(),
           appliedAt = this.now(),
           useLocal = request.decision === "KEEP_LOCAL";
-        if (request.kind === "COMMERCIAL_CHOICE")
+        if (request.kind === "COMMERCIAL_REFERENCE")
+          await new CommercialVersionDecisionRepository(
+            joined,
+            this.digest,
+          ).resolve(request.conflictId, useLocal, {
+            commandId,
+            deviceId: ctx.deviceId,
+          });
+        else if (request.kind === "COMMERCIAL_EXECUTION")
+          await new CommercialExecutionRepository(joined, this.digest).resolve(
+            request.conflictId,
+            useLocal,
+            { commandId, deviceId: ctx.deviceId },
+          );
+        else if (request.kind === "COMMERCIAL_CHOICE")
           await new CommercialChoiceRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
@@ -357,7 +384,8 @@ export class CopilotStoreConflictController {
       kind: state.content.input.kind,
       basisHash,
       decision,
-      ...(isCommercialConflictKind(state.content.input.kind)
+      ...(isCommercialConflictKind(state.content.input.kind) &&
+      !isCommercialDecisionConflictKind(state.content.input.kind)
         ? { retainWithdrawn }
         : {}),
       ...(isNeedConflictKind(state.content.input.kind)

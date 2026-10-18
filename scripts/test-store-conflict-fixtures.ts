@@ -54,6 +54,8 @@ export function storeConflictPreview<
       ...(kind === "COMMERCIAL_CHOICE" ? { choice: remote } : {}),
       ...(kind === "COMMERCIAL_PREPARATION" ? { preparation: remote } : {}),
       ...(kind === "COMMERCIAL_PLAN" ? { plan: remote } : {}),
+      ...(kind === "COMMERCIAL_REFERENCE" ? { reference: remote } : {}),
+      ...(kind === "COMMERCIAL_EXECUTION" ? { execution: remote } : {}),
     },
     evidence: [
       {

@@ -1,4 +1,12 @@
 import {
+  serializeCommercialVersionDecision,
+  type VersionDecisionDocument,
+} from "../commercial/version-decision-sync.js";
+import {
+  serializeCommercialExecution,
+  type ExecutionTaskDocument,
+} from "../commercial/execution-sync.js";
+import {
   serializeCommercialChoice,
   type OfferChoiceDocument,
 } from "../commercial/offer-choice-sync.js";
@@ -92,6 +100,24 @@ export async function previewStoreConflict(
           .collection<WeekPlanDocument>("commercialWeekPlans")
           .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
       : null;
+  const referenceRow =
+    input.kind === "COMMERCIAL_REFERENCE"
+      ? await db
+          .collection<VersionDecisionDocument>("commercialVersionDecisions")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const executionRow =
+    input.kind === "COMMERCIAL_EXECUTION"
+      ? await db
+          .collection<ExecutionTaskDocument>("commercialExecutionTasks")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const reference = referenceRow
+      ? serializeCommercialVersionDecision(referenceRow)
+      : null,
+    execution = executionRow
+      ? serializeCommercialExecution(executionRow)
+      : null;
   const choice = choiceRow ? serializeCommercialChoice(choiceRow) : null,
     preparation = preparationRow
       ? serializeCommercialPreparation(preparationRow)
@@ -112,7 +138,9 @@ export async function previewStoreConflict(
       substitution ??
       choice ??
       preparation ??
-      plan;
+      plan ??
+      reference ??
+      execution;
   if (!entity) throw Error("STORE_CONFLICT_TARGET_UNAVAILABLE");
   if (JSON.stringify(entity).length > 96000)
     throw Error("STORE_CONFLICT_REVIEW_LIMIT");
@@ -137,6 +165,8 @@ export async function previewStoreConflict(
     ...(choice ? { choice } : {}),
     ...(preparation ? { preparation } : {}),
     ...(plan ? { plan } : {}),
+    ...(reference ? { reference } : {}),
+    ...(execution ? { execution } : {}),
   });
   return storeConflictPreviewSchema.parse({
     input,
@@ -152,7 +182,7 @@ export async function previewStoreConflict(
             ? "Comparer les réglages du magasin"
             : input.kind === "FIELD_EVENT"
               ? "Comparer un signalement magasin"
-              : choice || preparation || plan
+              : choice || preparation || plan || reference || execution
                 ? "Comparer les versions commerciales"
                 : "Comparer le besoin ou l’association",
         factKind: "QUALITY",

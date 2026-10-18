@@ -1,4 +1,10 @@
 import {
+  commercialVersionDecisionSchema,
+  commercialExecutionTaskSchema,
+} from "@fl-copilot/domain";
+import { commercialExecutionSummary } from "../commercial/execution-presentation";
+import { CommercialOriginalButton } from "../commercial/original-button";
+import {
   commercialOfferChoiceSchema,
   commercialWeekPreparationSchema,
   commercialWeekPlanSchema,
@@ -128,6 +134,18 @@ export function StoreConflictCard({
         : false);
   const summary = (raw: unknown) => {
     switch (state?.content.input.kind) {
+      case "COMMERCIAL_REFERENCE": {
+        const e = commercialVersionDecisionSchema.parse(raw),
+          selected = e.preference === "KEEP_PREVIOUS" ? e.before : e.after;
+        const name = (id: string) =>
+          review?.commercialDecisionPolicy?.documents[id] ??
+          `PDF ${id === e.before.documentId ? e.before.checksum.slice(-8) : e.after.checksum.slice(-8)}`;
+        return `Référence choisie : ${name(selected.documentId)}\nDocuments comparés : ${name(e.before.documentId)} et ${name(e.after.documentId)}\nNote : ${e.note || "aucune"}`;
+      }
+      case "COMMERCIAL_EXECUTION":
+        return commercialExecutionSummary(
+          commercialExecutionTaskSchema.parse(raw),
+        );
       case "COMMERCIAL_CHOICE": {
         const e = commercialOfferChoiceSchema.parse(raw);
         return `${commercialChoiceSummary(e)}\nProduit associé : ${review?.commercialPolicy?.products[e.productId] ?? "Fiche indisponible"}\nNote : ${e.note || "aucune"}\nApplicabilité et champs critiques confirmés dans cette version. Extrait PDF conservé.`;
@@ -203,6 +221,8 @@ export function StoreConflictCard({
       <Text style={{ fontWeight: "700", color: colors.forest }}>
         {state
           ? {
+              COMMERCIAL_REFERENCE: "Comparer la référence PDF",
+              COMMERCIAL_EXECUTION: "Comparer la déclaration d’exécution",
               COMMERCIAL_CHOICE: "Comparer le choix d’offre",
               COMMERCIAL_PREPARATION: "Comparer le brouillon commercial",
               COMMERCIAL_PLAN: "Comparer le plan de semaine",
@@ -250,6 +270,24 @@ export function StoreConflictCard({
           </Text>
         </Pressable>
       ) : null}
+      {state?.content.basis.reference
+        ? [
+            state.content.basis.reference.before,
+            state.content.basis.reference.after,
+          ].map((source) => (
+            <View key={source.documentId} style={{ gap: 6 }}>
+              <Text>
+                {review?.commercialDecisionPolicy?.documents[
+                  source.documentId
+                ] ?? `PDF ${source.checksum.slice(-8)}`}
+              </Text>
+              <CommercialOriginalButton
+                sourceDocumentId={source.documentId}
+                label={`Consulter ${review?.commercialDecisionPolicy?.documents[source.documentId] ?? `PDF ${source.checksum.slice(-8)}`}`}
+              />
+            </View>
+          ))
+        : null}
       <Text accessibilityLiveRegion="polite">
         {state?.status === "COMPLETED"
           ? `Résolution enregistrée : ${state.result.decision === "KEEP_LOCAL" ? "votre version a été retenue" : "la version synchronisée a été adoptée"}. ${state.result.syncState === "PENDING" ? "L’envoi reste à synchroniser." : "Aucun nouvel envoi n’est nécessaire."}`
@@ -270,6 +308,12 @@ export function StoreConflictCard({
             <Text>
               Ce choix retient un réglage déjà enregistré. Il ne demande pas de
               nouvelle position au téléphone.
+            </Text>
+          ) : review.commercialDecisionPolicy ? (
+            <Text>
+              {state.content.input.kind === "COMMERCIAL_REFERENCE"
+                ? "Votre choix porte sur le fichier désigné, même si l’ordre des deux PDF diffère. Les originaux et les plans déjà enregistrés restent conservés."
+                : "Vous retenez une déclaration déjà enregistrée, avec sa date d’origine. Elle reste liée à la version exacte du plan ; ce choix ne constate pas une nouvelle exécution en rayon."}
             </Text>
           ) : review.commercialPolicy ? (
             <Text>
@@ -299,6 +343,9 @@ export function StoreConflictCard({
             "Adopter la version synchronisée",
             review.canAdoptRemote,
           )}
+          {review.commercialDecisionPolicy && !review.canKeepLocal ? (
+            <Text>{review.commercialDecisionPolicy.reason}</Text>
+          ) : null}
           {review.commercialPolicy && !review.canKeepLocal ? (
             <Text>{review.commercialPolicy.reason}</Text>
           ) : null}

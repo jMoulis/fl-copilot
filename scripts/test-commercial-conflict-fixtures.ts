@@ -1,3 +1,4 @@
+import { buildCommercialWeekPlan } from "../packages/commercial-core/src/index";
 import { randomUUID } from "node:crypto";
 import { commercialPlanFixture } from "./test-commercial-plan-fixtures";
 import {
@@ -35,13 +36,9 @@ export const commercialConflictEntities = {
   COMMERCIAL_PREPARATION: "commercial_week_preparation",
   COMMERCIAL_PLAN: "commercial_week_plan",
 } as const;
-export async function nativeCommercialConflictFixture(
-  kind: keyof typeof commercialConflictTables,
-  path = ":memory:",
-  withdrawal?: "LOCAL" | "REMOTE",
-) {
+export async function commercialConflictBase(path = ":memory:") {
   const s = await nativeReceiptPublicationFixture(path),
-    { storeId, ownerId, deviceId } = s.scope;
+    { storeId, deviceId } = s.scope;
   const fixture = await commercialPlanFixture();
   // Fixture helpers carry stable source-derived IDs, so align the private fixture to their store.
   // Rebuild the commercial fixture in the authenticated store using the canonical digest helpers.
@@ -51,7 +48,6 @@ export async function nativeCommercialConflictFixture(
     commercialWeekPreparationId,
     commercialValidatedOfferId,
     commercialOfferValidationSource,
-    buildCommercialWeekPlan,
   } = await import("../packages/commercial-core/src/index");
   const f = await makeCommercialChoiceFixture(
       { storeId },
@@ -120,6 +116,17 @@ export async function nativeCommercialConflictFixture(
   await applyValidatedOffer(s.a, storeId, validated);
   await applyCommercialPlan(s.a, storeId, plan);
   await s.a.runAsync("UPDATE sync_outbox SET status='ACKNOWLEDGED'");
+  return { ...s, fixture: { ...f, preparation, validated, plan, context } };
+}
+export async function nativeCommercialConflictFixture(
+  kind: keyof typeof commercialConflictTables,
+  path = ":memory:",
+  withdrawal?: "LOCAL" | "REMOTE",
+) {
+  const { fixture: f, ...s } = await commercialConflictBase(path),
+    { storeId, ownerId, deviceId } = s.scope,
+    { preparation, plan, context } = f,
+    ctx = { commandId: randomUUID(), deviceId };
   const local =
     kind === "COMMERCIAL_CHOICE"
       ? {
@@ -232,7 +239,7 @@ export async function nativeCommercialConflictFixture(
       kind,
       remote,
       local,
-      fixture: { ...f, preparation, validated, plan, context },
+      fixture: f,
       preview,
       message,
       scope,

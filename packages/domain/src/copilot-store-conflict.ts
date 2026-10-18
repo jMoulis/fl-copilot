@@ -1,3 +1,5 @@
+import { commercialVersionDecisionSchema } from "./commercial-version-decision";
+import { commercialExecutionTaskSchema } from "./commercial-execution-task";
 import { commercialOfferChoiceSchema } from "./commercial-offer-choice";
 import { commercialWeekPreparationSchema } from "./commercial-week-preparation";
 import { commercialWeekPlanSchema } from "./commercial-week-plan";
@@ -34,17 +36,47 @@ export const storeConflictV2InputSchema = z
   .refine((v) =>
     v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
   );
-export const commercialConflictKinds = [
+export const commercialConflictV3Kinds = [
   "COMMERCIAL_CHOICE",
   "COMMERCIAL_PREPARATION",
   "COMMERCIAL_PLAN",
 ] as const;
+export const commercialDecisionConflictKinds = [
+  "COMMERCIAL_REFERENCE",
+  "COMMERCIAL_EXECUTION",
+] as const;
+export const commercialConflictKinds = [
+  ...commercialConflictV3Kinds,
+  ...commercialDecisionConflictKinds,
+] as const;
+export function isCommercialDecisionConflictKind(kind: string) {
+  return (commercialDecisionConflictKinds as readonly string[]).includes(kind);
+}
 export function isCommercialConflictKind(kind: string) {
   return (commercialConflictKinds as readonly string[]).includes(kind);
 }
 export function storeConflictArtifactVersion(kind: string) {
-  return isCommercialConflictKind(kind) ? 3 : isNeedConflictKind(kind) ? 2 : 1;
+  return isCommercialDecisionConflictKind(kind)
+    ? 4
+    : isCommercialConflictKind(kind)
+      ? 3
+      : isNeedConflictKind(kind)
+        ? 2
+        : 1;
 }
+export const storeConflictV3InputSchema = z
+  .strictObject({
+    kind: z.enum([
+      "FIELD_EVENT",
+      "SETTINGS",
+      ...needConflictKinds,
+      ...commercialConflictV3Kinds,
+    ]),
+    entityId: z.uuid().nullable(),
+  })
+  .refine((v) =>
+    v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
+  );
 export const storeConflictInputSchema = z
   .strictObject({
     kind: z.enum([
@@ -71,6 +103,8 @@ export const storeConflictBasisSchema = z.strictObject({
   choice: commercialOfferChoiceSchema.optional(),
   preparation: commercialWeekPreparationSchema.optional(),
   plan: commercialWeekPlanSchema.optional(),
+  reference: commercialVersionDecisionSchema.optional(),
+  execution: commercialExecutionTaskSchema.optional(),
 });
 export function validateStoreConflictBasis(
   storeId: string,
@@ -94,7 +128,11 @@ export function validateStoreConflictBasis(
                 ? basis.choice
                 : input.kind === "COMMERCIAL_PREPARATION"
                   ? basis.preparation
-                  : basis.plan;
+                  : input.kind === "COMMERCIAL_PLAN"
+                    ? basis.plan
+                    : input.kind === "COMMERCIAL_REFERENCE"
+                      ? basis.reference
+                      : basis.execution;
   const present = [
     basis.event,
     basis.settings,
@@ -104,6 +142,8 @@ export function validateStoreConflictBasis(
     basis.choice,
     basis.preparation,
     basis.plan,
+    basis.reference,
+    basis.execution,
   ].filter(Boolean);
   if (
     basis.storeId !== storeId ||
@@ -126,7 +166,12 @@ export const storeConflictPreviewSchema = z.strictObject({
 });
 export const storeConflictProposalSchema = z.strictObject({
   kind: z.literal("STORE_CONFLICT_PROPOSAL"),
-  schemaVersion: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+  schemaVersion: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+  ]),
   assistantMessageId: z.uuid(),
   input: storeConflictInputSchema,
   basis: storeConflictBasisSchema,
@@ -171,6 +216,8 @@ export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
     canManageCommercialChoices: z.boolean().default(false),
     canPrepareCommercialWeek: z.boolean().default(false),
     canValidateCommercialPlan: z.boolean().default(false),
+    canManageCommercialReferences: z.boolean().default(false),
+    canDeclareCommercialExecution: z.boolean().default(false),
   });
 export type StoreConflictAuthority = z.infer<
   typeof storeConflictAuthoritySchema

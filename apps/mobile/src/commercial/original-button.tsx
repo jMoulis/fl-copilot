@@ -8,8 +8,10 @@ import { getApiBaseUrl } from "@/config/environment";
 import { SecondaryButton, InlineAlert } from "@/components/ui";
 export function CommercialOriginalButton({
   sourceDocumentId,
+  label = "Consulter le PDF original",
 }: {
   sourceDocumentId: string;
+  label?: string;
 }) {
   const { session, withAccessToken } = useAuth();
   const storeId = session?.stores[0]?.storeId;
@@ -65,7 +67,7 @@ export function CommercialOriginalButton({
   return (
     <>
       <SecondaryButton
-        label={busy ? "Ouverture du PDF…" : "Consulter le PDF original"}
+        label={busy ? "Ouverture du PDF…" : label}
         disabled={busy || !storeId}
         onPress={() => void open()}
       />

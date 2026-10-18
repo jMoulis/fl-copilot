@@ -1,3 +1,8 @@
+import { nativeCommercialDecisionConflictFixture } from "../../../scripts/test-commercial-decision-conflict-fixtures";
+import { applyCommercialVersionDecision } from "../../mobile/src/commercial/version-decision-repository";
+import { applyCommercialExecution } from "../../mobile/src/commercial/execution-repository";
+import { applyCommercialVersionDecisionCommand } from "../src/commercial/version-decision-sync";
+import { applyCommercialExecutionCommand } from "../src/commercial/execution-sync";
 import { nativeCommercialConflictFixture } from "../../../scripts/test-commercial-conflict-fixtures";
 import { applyCommercialChoice } from "../../mobile/src/commercial/offer-choice-repository";
 import { applyCommercialPreparation } from "../../mobile/src/commercial/week-preparation-repository";
@@ -102,6 +107,13 @@ describe.skipIf(!uri)(
       ["SETTINGS", "KEEP_LOCAL", "AI"],
       ["SETTINGS", "ADOPT_REMOTE", "FALLBACK"],
       ["SETTINGS", "KEEP_LOCAL", "FOREIGN"],
+      ["COMMERCIAL_REFERENCE", "KEEP_LOCAL", "AI"],
+      ["COMMERCIAL_REFERENCE", "ADOPT_REMOTE", "FALLBACK"],
+      ["COMMERCIAL_REFERENCE", "KEEP_LOCAL", "REVERSED"],
+      ["COMMERCIAL_REFERENCE", "KEEP_LOCAL", "FOREIGN"],
+      ["COMMERCIAL_EXECUTION", "KEEP_LOCAL", "AI"],
+      ["COMMERCIAL_EXECUTION", "ADOPT_REMOTE", "AI"],
+      ["COMMERCIAL_EXECUTION", "KEEP_LOCAL", "FOREIGN"],
       ["COMMERCIAL_CHOICE", "KEEP_LOCAL", "AI"],
       ["COMMERCIAL_CHOICE", "ADOPT_REMOTE", "AI"],
       ["COMMERCIAL_PREPARATION", "KEEP_LOCAL", "AI"],
@@ -122,24 +134,32 @@ describe.skipIf(!uri)(
       "commits the private comparison then resolves and syncs canonically (%s/%s/%s)",
       async (kind, decision, mode) => {
         const s =
-            kind === "COMMERCIAL_CHOICE" ||
-            kind === "COMMERCIAL_PREPARATION" ||
-            kind === "COMMERCIAL_PLAN"
-              ? await nativeCommercialConflictFixture(kind)
-              : kind === "NEED" ||
-                  kind === "MEMBERSHIP" ||
-                  kind === "SUBSTITUTION"
-                ? await nativeNeedConflictFixture(
-                    kind,
-                    ":memory:",
-                    mode === "REACTIVATION" ? "REMOTE" : undefined,
-                  )
-                : await nativeStoreConflictFixture(kind),
+            kind === "COMMERCIAL_REFERENCE" || kind === "COMMERCIAL_EXECUTION"
+              ? await nativeCommercialDecisionConflictFixture(
+                  kind,
+                  ":memory:",
+                  mode === "REVERSED",
+                )
+              : kind === "COMMERCIAL_CHOICE" ||
+                  kind === "COMMERCIAL_PREPARATION" ||
+                  kind === "COMMERCIAL_PLAN"
+                ? await nativeCommercialConflictFixture(kind)
+                : kind === "NEED" ||
+                    kind === "MEMBERSHIP" ||
+                    kind === "SUBSTITUTION"
+                  ? await nativeNeedConflictFixture(
+                      kind,
+                      ":memory:",
+                      mode === "REACTIVATION" ? "REMOTE" : undefined,
+                    )
+                  : await nativeStoreConflictFixture(kind),
           r = s.review,
           chat = s.f.chat,
           session = client.startSession();
         try {
           const name = {
+            COMMERCIAL_REFERENCE: "commercialVersionDecisions",
+            COMMERCIAL_EXECUTION: "commercialExecutionTasks",
             COMMERCIAL_CHOICE: "commercialOfferChoices",
             COMMERCIAL_PREPARATION: "commercialWeekPreparations",
             COMMERCIAL_PLAN: "commercialWeekPlans",
@@ -191,6 +211,19 @@ describe.skipIf(!uri)(
                 _id: entity.id,
               });
             }
+          }
+          if ("other" in r) {
+            await collection("commercialVisualReadings").insertOne({
+              ...r.other.reading,
+              _id: r.other.reading.id,
+            });
+            await collection("commercialPlanRevisions").insertOne({
+              _id: r.fixture.plan.revisionId,
+              id: r.fixture.plan.revisionId,
+              storeId: chat.storeId,
+              plan: r.fixture.plan,
+              version: 1,
+            });
           }
           await collection("copilotConversations").insertOne({
             _id: chat.conversation.id,
@@ -340,6 +373,8 @@ describe.skipIf(!uri)(
             });
             await session.withTransaction(async () => {
               const apply = {
+                COMMERCIAL_REFERENCE: applyCommercialVersionDecisionCommand,
+                COMMERCIAL_EXECUTION: applyCommercialExecutionCommand,
                 COMMERCIAL_CHOICE: applyCommercialChoiceCommand,
                 COMMERCIAL_PREPARATION: applyCommercialPreparationCommand,
                 COMMERCIAL_PLAN: applyCommercialPlanCommand,
@@ -371,6 +406,8 @@ describe.skipIf(!uri)(
             void _id;
             void duplicateKey;
             const apply = {
+              COMMERCIAL_REFERENCE: applyCommercialVersionDecision,
+              COMMERCIAL_EXECUTION: applyCommercialExecution,
               COMMERCIAL_CHOICE: applyCommercialChoice,
               COMMERCIAL_PREPARATION: applyCommercialPreparation,
               COMMERCIAL_PLAN: applyCommercialPlan,
@@ -382,6 +419,8 @@ describe.skipIf(!uri)(
             }[kind];
             await apply(adapter, chat.storeId, payload);
             const table = {
+              COMMERCIAL_REFERENCE: "commercial_version_decisions",
+              COMMERCIAL_EXECUTION: "commercial_execution_tasks",
               COMMERCIAL_CHOICE: "commercial_offer_choices",
               COMMERCIAL_PREPARATION: "commercial_week_preparations",
               COMMERCIAL_PLAN: "commercial_week_plans",
@@ -400,6 +439,38 @@ describe.skipIf(!uri)(
               store_id: chat.storeId,
               sync_state: "SYNCED",
             });
+            if (kind === "COMMERCIAL_REFERENCE") {
+              const data = payload as {
+                preference: string;
+                before: { documentId: string };
+                after: { documentId: string };
+              };
+              const local = "local" in r ? r.local : null;
+              if (local && "preference" in local) {
+                const chosen =
+                  decision === "KEEP_LOCAL"
+                    ? local.preference === "KEEP_PREVIOUS"
+                      ? local.before.documentId
+                      : local.after.documentId
+                    : r.preview.basis.reference!.preference === "KEEP_PREVIOUS"
+                      ? r.preview.basis.reference!.before.documentId
+                      : r.preview.basis.reference!.after.documentId;
+                expect(
+                  data.preference === "KEEP_PREVIOUS"
+                    ? data.before.documentId
+                    : data.after.documentId,
+                ).toBe(chosen);
+              }
+            }
+            if (kind === "COMMERCIAL_EXECUTION") {
+              expect(payload).toMatchObject({
+                planRevisionId: r.preview.basis.execution!.planRevisionId,
+                planChecksum: r.preview.basis.execution!.planChecksum,
+                status: decision === "KEEP_LOCAL" ? "DONE" : "SKIPPED",
+                completedAt:
+                  decision === "KEEP_LOCAL" ? "2026-10-10T09:00:00.000Z" : null,
+              });
+            }
             if (kind === "SUBSTITUTION")
               expect(payload).toMatchObject({
                 evidenceCount: 4,
