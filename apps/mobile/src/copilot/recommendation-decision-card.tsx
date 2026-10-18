@@ -73,6 +73,9 @@ export function RecommendationDecisionCard({
     [reason, setReason] = useState(""),
     [side, setSide] = useState<"LOCAL" | "REMOTE">(),
     [historyLimit, setHistoryLimit] = useState(5);
+  // Server TOOL messages are immutable: a refreshed object must not clear a draft.
+  const currentMessage = useRef(message);
+  currentMessage.current = message;
   const generation = useRef(0),
     locked = useRef(false),
     abort = useRef<AbortController | undefined>(undefined);
@@ -89,7 +92,7 @@ export function RecommendationDecisionCard({
     setReason("");
     setHistoryLimit(5);
     void repository
-      .open(message)
+      .open(currentMessage.current)
       .then((s) => {
         if (generation.current === token) setState(s);
       })
@@ -103,7 +106,7 @@ export function RecommendationDecisionCard({
       generation.current = token + 1;
       abort.current?.abort();
     };
-  }, [repository, message]);
+  }, [repository, message.id]);
   const refresh = async () => {
     if (locked.current) return;
     const token = generation.current;

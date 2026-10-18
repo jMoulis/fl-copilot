@@ -188,7 +188,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         b = new MercalysTestDatabase();
       try {
         await runLocalMigrations(b);
-        const saved = (await saveDecision(a, "ACCEPT")).decision!,
+        for (const type of ["ACCEPT", "MODIFY", "POSTPONE", "REJECT"] as const)
+          await saveDecision(a, type);
+        const saved = (await a.repo.open(f.card)).decision!,
           pending = (
             await new OutboxRepository(a.db).listPending(f.storeId)
           )[0]!;
