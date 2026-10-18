@@ -1,3 +1,11 @@
+import {
+  isCommercialConflictKind,
+  type storeConflictInputSchema,
+} from "@fl-copilot/domain";
+import type { z } from "zod";
+import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
+import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
+import { CommercialPlanRepository } from "../commercial/week-plan-repository";
 import { isNeedConflictKind } from "@fl-copilot/domain";
 import { NeedUnitRepository } from "../needs/repository";
 import { NeedMembershipRepository } from "../needs/membership-repository";
@@ -27,7 +35,12 @@ import {
   readStoreConflictCurrent,
   readStoreConflictReview,
 } from "./store-conflict-review";
-type Scope = { canManageProducts?: boolean } & Pick<
+type Scope = {
+  canManageProducts?: boolean;
+  canManageCommercialChoices?: boolean;
+  canPrepareCommercialWeek?: boolean;
+  canValidateCommercialPlan?: boolean;
+} & Pick<
   StoreConflictAuthority,
   | "storeId"
   | "ownerId"
@@ -37,8 +50,12 @@ type Scope = { canManageProducts?: boolean } & Pick<
 >;
 function allowed(
   scope: Scope,
-  kind: "FIELD_EVENT" | "SETTINGS" | "NEED" | "MEMBERSHIP" | "SUBSTITUTION",
+  kind: z.infer<typeof storeConflictInputSchema>["kind"],
 ) {
+  if (kind === "COMMERCIAL_CHOICE") return !!scope.canManageCommercialChoices;
+  if (kind === "COMMERCIAL_PREPARATION")
+    return !!scope.canPrepareCommercialWeek;
+  if (kind === "COMMERCIAL_PLAN") return !!scope.canValidateCommercialPlan;
   if (isNeedConflictKind(kind)) return !!scope.canManageProducts;
   return kind === "FIELD_EVENT"
     ? scope.canCaptureStoreEvents
@@ -116,12 +133,18 @@ export class CopilotStoreConflictRuntime {
       canManageStoreSettings,
       comparisonReviewed,
       canManageProducts,
+      canManageCommercialChoices,
+      canPrepareCommercialWeek,
+      canValidateCommercialPlan,
       ...scope
     } = authority;
     void canCaptureStoreEvents;
     void canManageStoreSettings;
     void comparisonReviewed;
     void canManageProducts;
+    void canManageCommercialChoices;
+    void canPrepareCommercialWeek;
+    void canValidateCommercialPlan;
     const initial = await proof(this.db, scope, request.operationId);
     if (
       initial.content.input.kind !== request.kind ||
@@ -151,11 +174,37 @@ export class CopilotStoreConflictRuntime {
             : review.needPolicy?.reactivateRemote;
         if (reactivation && request.reactivateRejected !== true)
           throw Error("STORE_CONFLICT_REACTIVATION_REQUIRED");
+        const retention =
+          request.decision === "KEEP_LOCAL"
+            ? review.commercialPolicy?.retainLocal
+            : review.commercialPolicy?.retainRemote;
+        if (retention && request.retainWithdrawn !== true)
+          throw Error("STORE_CONFLICT_RETENTION_REQUIRED");
         const joined = joinedProductToolDatabase(tx),
           commandId = this.id(),
           appliedAt = this.now(),
           useLocal = request.decision === "KEEP_LOCAL";
-        if (request.kind === "FIELD_EVENT")
+        if (request.kind === "COMMERCIAL_CHOICE")
+          await new CommercialChoiceRepository(joined, this.digest).resolve(
+            request.conflictId,
+            useLocal,
+            { commandId, deviceId: ctx.deviceId },
+          );
+        else if (request.kind === "COMMERCIAL_PREPARATION")
+          await new CommercialPreparationRepository(
+            joined,
+            this.digest,
+          ).resolve(request.conflictId, useLocal, {
+            commandId,
+            deviceId: ctx.deviceId,
+          });
+        else if (request.kind === "COMMERCIAL_PLAN")
+          await new CommercialPlanRepository(joined, this.digest).resolve(
+            request.conflictId,
+            useLocal,
+            { commandId, deviceId: ctx.deviceId },
+          );
+        else if (request.kind === "FIELD_EVENT")
           await new StoreProductEventRepository(joined).resolve(
             request.conflictId,
             useLocal,
@@ -259,6 +308,9 @@ export class CopilotStoreConflictController {
             kind: result.kind,
             basisHash: result.basisHash,
             decision: result.decision,
+            ...(result.retainWithdrawn !== undefined
+              ? { retainWithdrawn: result.retainWithdrawn }
+              : {}),
             ...(result.reactivateRejected !== undefined
               ? { reactivateRejected: result.reactivateRejected }
               : {}),
@@ -282,6 +334,7 @@ export class CopilotStoreConflictController {
     reviewed: boolean,
     signal?: AbortSignal,
     reactivateRejected = false,
+    retainWithdrawn = false,
   ) {
     const decision = storeConflictDecisionSchema.parse(rawDecision),
       state = await this.open(message);
@@ -304,6 +357,9 @@ export class CopilotStoreConflictController {
       kind: state.content.input.kind,
       basisHash,
       decision,
+      ...(isCommercialConflictKind(state.content.input.kind)
+        ? { retainWithdrawn }
+        : {}),
       ...(isNeedConflictKind(state.content.input.kind)
         ? { reactivateRejected }
         : {}),

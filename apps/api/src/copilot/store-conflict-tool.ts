@@ -1,3 +1,15 @@
+import {
+  serializeCommercialChoice,
+  type OfferChoiceDocument,
+} from "../commercial/offer-choice-sync.js";
+import {
+  serializeCommercialPreparation,
+  type PreparationDocument,
+} from "../commercial/week-preparation-sync.js";
+import {
+  serializeCommercialPlan,
+  type WeekPlanDocument,
+} from "../commercial/week-plan-sync.js";
 import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync.js";
 import {
   serializeNeedMembership,
@@ -62,6 +74,29 @@ export async function previewStoreConflict(
           .collection<ProductSubstitutionDocument>("productSubstitutions")
           .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
       : null;
+  const choiceRow =
+    input.kind === "COMMERCIAL_CHOICE"
+      ? await db
+          .collection<OfferChoiceDocument>("commercialOfferChoices")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const preparationRow =
+    input.kind === "COMMERCIAL_PREPARATION"
+      ? await db
+          .collection<PreparationDocument>("commercialWeekPreparations")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const planRow =
+    input.kind === "COMMERCIAL_PLAN"
+      ? await db
+          .collection<WeekPlanDocument>("commercialWeekPlans")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const choice = choiceRow ? serializeCommercialChoice(choiceRow) : null,
+    preparation = preparationRow
+      ? serializeCommercialPreparation(preparationRow)
+      : null,
+    plan = planRow ? serializeCommercialPlan(planRow) : null;
   const need = needRow ? serializeNeedUnit(needRow) : null,
     membership = membershipRow ? serializeNeedMembership(membershipRow) : null,
     substitution = substitutionRow
@@ -69,8 +104,18 @@ export async function previewStoreConflict(
       : null;
   const event = eventRow ? serializeStoreProductEvent(eventRow) : null,
     settings = settingsRow ? serializeStoreContext(settingsRow) : null,
-    entity = event ?? settings ?? need ?? membership ?? substitution;
+    entity =
+      event ??
+      settings ??
+      need ??
+      membership ??
+      substitution ??
+      choice ??
+      preparation ??
+      plan;
   if (!entity) throw Error("STORE_CONFLICT_TARGET_UNAVAILABLE");
+  if (JSON.stringify(entity).length > 96000)
+    throw Error("STORE_CONFLICT_REVIEW_LIMIT");
   const visible = settings
     ? (({ position, ...rest }) => {
         void position;
@@ -89,6 +134,9 @@ export async function previewStoreConflict(
     ...(need ? { need } : {}),
     ...(membership ? { membership } : {}),
     ...(substitution ? { substitution } : {}),
+    ...(choice ? { choice } : {}),
+    ...(preparation ? { preparation } : {}),
+    ...(plan ? { plan } : {}),
   });
   return storeConflictPreviewSchema.parse({
     input,
@@ -104,7 +152,9 @@ export async function previewStoreConflict(
             ? "Comparer les réglages du magasin"
             : input.kind === "FIELD_EVENT"
               ? "Comparer un signalement magasin"
-              : "Comparer le besoin ou l’association",
+              : choice || preparation || plan
+                ? "Comparer les versions commerciales"
+                : "Comparer le besoin ou l’association",
         factKind: "QUALITY",
         value:
           "Comparaison proposée uniquement. L’appareil vérifiera le conflit local, les deux versions et les choix métier autorisés. Aucune version n’est choisie ni modifiée ici. La présence d’un conflit sur l’appareil reste à vérifier.",

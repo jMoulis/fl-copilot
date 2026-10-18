@@ -87,7 +87,7 @@ export class ApiClient {
       preparationRefresh?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
-      storeConflicts?: boolean | 2;
+      storeConflicts?: boolean | 2 | 3;
       receiptRecovery?: boolean;
       receiptCorrection?: boolean;
       receiptPublication?: boolean;
@@ -166,7 +166,9 @@ export class ApiClient {
                 ...(streaming.storeConflicts
                   ? {
                       "x-copilot-store-conflicts":
-                        streaming.storeConflicts === 2 ? "2" : "1",
+                        streaming.storeConflicts === true
+                          ? "1"
+                          : String(streaming.storeConflicts),
                     }
                   : {}),
                 ...(streaming.receiptRecovery

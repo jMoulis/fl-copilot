@@ -75,3 +75,29 @@ it.each(["NEED", "MEMBERSHIP", "SUBSTITUTION"] as const)(
     }
   },
 );
+
+it.each([
+  "COMMERCIAL_CHOICE",
+  "COMMERCIAL_PREPARATION",
+  "COMMERCIAL_PLAN",
+] as const)(
+  "binds %s to artifact version 3 and rejects downgrade",
+  async (kind) => {
+    const { nativeCommercialConflictFixture } =
+      await import("../../../../scripts/test-commercial-conflict-fixtures");
+    const s = await nativeCommercialConflictFixture(kind);
+    try {
+      const { content } = readStoreConflictProposal(s.review.message);
+      expect(content.schemaVersion).toBe(3);
+      for (const schemaVersion of [1, 2])
+        expect(() =>
+          readStoreConflictProposal({
+            ...s.review.message,
+            text: JSON.stringify({ ...content, schemaVersion }),
+          }),
+        ).toThrow();
+    } finally {
+      s.db.close();
+    }
+  },
+);

@@ -1,8 +1,16 @@
+import {
+  commercialOfferChoiceSchema,
+  commercialWeekPreparationSchema,
+  commercialWeekPlanSchema,
+} from "@fl-copilot/domain";
+import { commercialChoiceSummary } from "../commercial/choice-presentation";
+import { commercialPreparationSummary } from "../commercial/preparation-presentation";
+import { commercialPlanSummary } from "../commercial/plan-presentation";
 import { needUnitSummary } from "../needs/presentation";
 import { membershipSummary } from "../needs/membership-presentation";
 import { substitutionSummary } from "../needs/substitution-presentation";
 import { useCallback, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { ActivityIndicator, Pressable, Switch, Text, View } from "react-native";
 import {
   needUnitSchema,
@@ -83,7 +91,8 @@ export function StoreConflictCard({
         decision,
         true,
         cancel.signal,
-        reactivateRejected,
+        !!reactivationRequired && !retentionRequired && reactivateRejected,
+        !!retentionRequired && reactivateRejected,
       );
       if (revision.current === v) setState(next);
     } catch {
@@ -104,14 +113,33 @@ export function StoreConflictCard({
     }
   };
   const review = state?.review;
-  const reactivationRequired =
+  const retentionRequired =
     decision === "KEEP_LOCAL"
+      ? review?.commercialPolicy?.retainLocal
+      : decision === "ADOPT_REMOTE"
+        ? review?.commercialPolicy?.retainRemote
+        : false;
+  const reactivationRequired =
+    retentionRequired ||
+    (decision === "KEEP_LOCAL"
       ? review?.needPolicy?.reactivateLocal
       : decision === "ADOPT_REMOTE"
         ? review?.needPolicy?.reactivateRemote
-        : false;
+        : false);
   const summary = (raw: unknown) => {
     switch (state?.content.input.kind) {
+      case "COMMERCIAL_CHOICE": {
+        const e = commercialOfferChoiceSchema.parse(raw);
+        return `${commercialChoiceSummary(e)}\nProduit associé : ${review?.commercialPolicy?.products[e.productId] ?? "Fiche indisponible"}\nNote : ${e.note || "aucune"}\nApplicabilité et champs critiques confirmés dans cette version. Extrait PDF conservé.`;
+      }
+      case "COMMERCIAL_PREPARATION": {
+        const e = commercialWeekPreparationSchema.parse(raw);
+        return `${commercialPreparationSummary(e)}\nOffres : ${e.offerRefs.map((r) => `${review?.commercialPolicy?.choices[r.choiceId] ?? "Offre indisponible"} (v${r.choiceVersion})`).join(" · ") || "aucune"}\nAffectations : ${e.placements.map((p) => `${p.label} : ${p.offerIds.map((id) => review?.commercialPolicy?.choices[id] ?? "Offre indisponible").join(" · ") || "aucune offre"}`).join("\n")}\nNote : ${e.note || "aucune"}`;
+      }
+      case "COMMERCIAL_PLAN": {
+        const e = commercialWeekPlanSchema.parse(raw);
+        return `${commercialPlanSummary(e)}\nNote du brouillon : ${e.preparation.note || "aucune"}`;
+      }
       case "FIELD_EVENT":
         return storeEventSummary(storeProductEventSchema.parse(raw));
       case "SETTINGS":
@@ -175,6 +203,9 @@ export function StoreConflictCard({
       <Text style={{ fontWeight: "700", color: colors.forest }}>
         {state
           ? {
+              COMMERCIAL_CHOICE: "Comparer le choix d’offre",
+              COMMERCIAL_PREPARATION: "Comparer le brouillon commercial",
+              COMMERCIAL_PLAN: "Comparer le plan de semaine",
               FIELD_EVENT: "Comparer le signalement magasin",
               SETTINGS: "Comparer les réglages magasin",
               NEED: "Comparer le besoin client",
@@ -195,6 +226,29 @@ export function StoreConflictCard({
             {review.remote ? summary(review.remote) : "Version indisponible."}
           </Text>
         </>
+      ) : null}
+      {state?.content.basis.choice ? (
+        <Pressable
+          accessibilityRole="button"
+          style={{ minHeight: 44, padding: 12 }}
+          onPress={() =>
+            router.push({
+              pathname: "/commercial-offer/[id]",
+              params: {
+                id: state.content.basis.choice!.source.readingId,
+                operationIndex:
+                  state.content.basis.choice!.source.operationIndex,
+                itemIndex: state.content.basis.choice!.source.itemIndex,
+              },
+            })
+          }
+        >
+          <Text
+            style={{ color: colors.forest, textDecorationLine: "underline" }}
+          >
+            Voir l’offre et sa source
+          </Text>
+        </Pressable>
       ) : null}
       <Text accessibilityLiveRegion="polite">
         {state?.status === "COMPLETED"
@@ -217,6 +271,13 @@ export function StoreConflictCard({
               Ce choix retient un réglage déjà enregistré. Il ne demande pas de
               nouvelle position au téléphone.
             </Text>
+          ) : review.commercialPolicy ? (
+            <Text>
+              Les sources restent conservées. Conserver un plan reconstruit ses
+              offres et opérations après vérification ; aucune exécution en
+              rayon n’est déclarée. Les validations antérieures peuvent
+              nécessiter une nouvelle revue.
+            </Text>
           ) : (
             <Text>
               {state.content.input.kind === "SUBSTITUTION"
@@ -238,6 +299,9 @@ export function StoreConflictCard({
             "Adopter la version synchronisée",
             review.canAdoptRemote,
           )}
+          {review.commercialPolicy && !review.canKeepLocal ? (
+            <Text>{review.commercialPolicy.reason}</Text>
+          ) : null}
           {review.needPolicy && !review.canKeepLocal ? (
             <Text>
               La version locale ne peut pas être renvoyée : vérifiez les
@@ -249,14 +313,19 @@ export function StoreConflictCard({
               style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
             >
               <Switch
-                accessibilityLabel="Je confirme explicitement la réactivation de cette association rejetée"
+                accessibilityLabel={
+                  retentionRequired
+                    ? "Je confirme explicitement de retenir cette offre retirée"
+                    : "Je confirme explicitement la réactivation de cette association rejetée"
+                }
                 disabled={saving}
                 value={reactivateRejected}
                 onValueChange={setReactivateRejected}
               />
               <Text style={{ flex: 1 }}>
-                Cette association a été rejetée. Je confirme explicitement sa
-                réactivation.
+                {retentionRequired
+                  ? "Cette offre a été retirée. Je confirme explicitement de la retenir à nouveau."
+                  : "Cette association a été rejetée. Je confirme explicitement sa réactivation."}
               </Text>
             </View>
           ) : null}

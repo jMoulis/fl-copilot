@@ -1,4 +1,14 @@
 import {
+  isCommercialConflictKind,
+  commercialOfferChoiceSchema,
+  commercialWeekPreparationSchema,
+  commercialWeekPlanSchema,
+} from "@fl-copilot/domain";
+import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
+import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
+import { CommercialPlanRepository } from "../commercial/week-plan-repository";
+import { readCommercialConflictPolicy } from "./commercial-conflict-policy";
+import {
   isNeedConflictKind,
   needUnitSchema,
   needMembershipSchema,
@@ -32,6 +42,21 @@ export async function readStoreConflictCurrent(
   const joined = joinedProductToolDatabase(db),
     { basis, input } = content;
   switch (input.kind) {
+    case "COMMERCIAL_CHOICE":
+      return new CommercialChoiceRepository(joined, digest).get(
+        basis.storeId,
+        basis.entityId,
+      );
+    case "COMMERCIAL_PREPARATION":
+      return new CommercialPreparationRepository(joined, digest).get(
+        basis.storeId,
+        basis.preparation!.weekStart,
+      );
+    case "COMMERCIAL_PLAN":
+      return new CommercialPlanRepository(joined, digest).get(
+        basis.storeId,
+        basis.plan!.weekStart,
+      );
     case "FIELD_EVENT":
       return new StoreProductEventRepository(joined).get(
         basis.storeId,
@@ -64,6 +89,9 @@ export async function readStoreConflictReview(
     content.basis,
   );
   const entityType = {
+    COMMERCIAL_CHOICE: "commercial_offer_choice",
+    COMMERCIAL_PREPARATION: "commercial_week_preparation",
+    COMMERCIAL_PLAN: "commercial_week_plan",
     FIELD_EVENT: "store_product_event",
     SETTINGS: "store_context_settings",
     NEED: "need_unit",
@@ -93,15 +121,21 @@ export async function readStoreConflictReview(
     reason = message;
   };
   const remoteSchema =
-    input.kind === "FIELD_EVENT"
-      ? storeProductEventSchema
-      : input.kind === "SETTINGS"
-        ? storeContextSettingsSchema
-        : input.kind === "NEED"
-          ? needUnitSchema
-          : input.kind === "MEMBERSHIP"
-            ? needMembershipSchema
-            : productSubstitutionSchema;
+    input.kind === "COMMERCIAL_CHOICE"
+      ? commercialOfferChoiceSchema
+      : input.kind === "COMMERCIAL_PREPARATION"
+        ? commercialWeekPreparationSchema
+        : input.kind === "COMMERCIAL_PLAN"
+          ? commercialWeekPlanSchema
+          : input.kind === "FIELD_EVENT"
+            ? storeProductEventSchema
+            : input.kind === "SETTINGS"
+              ? storeContextSettingsSchema
+              : input.kind === "NEED"
+                ? needUnitSchema
+                : input.kind === "MEMBERSHIP"
+                  ? needMembershipSchema
+                  : productSubstitutionSchema;
   const parsed = remoteSchema.safeParse(conflict?.remotePayload);
   const remote = parsed.success ? parsed.data : null;
   const commands = await db.getAllAsync<{
@@ -175,17 +209,32 @@ export async function readStoreConflictReview(
     block(
       "L’identité du besoin ou de la relation a changé. Examinez les versions dans Synchronisation ; aucune association n’est réaffectée.",
     );
+  const commercialPolicy = isCommercialConflictKind(input.kind)
+    ? await readCommercialConflictPolicy(
+        db,
+        input.kind,
+        current.entity,
+        remote,
+        digest,
+      )
+    : null;
+  if (commercialPolicy && !commercialPolicy.identityValid && remote)
+    block(
+      "L’identité commerciale a changé. Examinez ce conflit dans Synchronisation.",
+    );
   const canKeepLocal =
     !!remote &&
-    (needPolicy
-      ? needPolicy.canKeep
-      : input.kind === "SETTINGS" ||
-        (!!localEvent &&
-          !!remoteEvent &&
-          localEvent.source === "USER" &&
-          remoteEvent.source === "USER" &&
-          localEvent.status === "CLOSED" &&
-          sameStoreEventCapture(localEvent, remoteEvent)));
+    (commercialPolicy
+      ? commercialPolicy.canKeep
+      : needPolicy
+        ? needPolicy.canKeep
+        : input.kind === "SETTINGS" ||
+          (!!localEvent &&
+            !!remoteEvent &&
+            localEvent.source === "USER" &&
+            remoteEvent.source === "USER" &&
+            localEvent.status === "CLOSED" &&
+            sameStoreEventCapture(localEvent, remoteEvent)));
   const basisHash = await digest(
     JSON.stringify({
       content,
@@ -193,6 +242,7 @@ export async function readStoreConflictReview(
       conflict,
       commands,
       ...(needPolicy ? { parents: needPolicy.parentSnapshots } : {}),
+      ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
     }),
   );
   return {
@@ -202,7 +252,12 @@ export async function readStoreConflictReview(
     remote,
     conflict,
     canKeepLocal,
-    canAdoptRemote: needPolicy ? needPolicy.canAdopt : !!remote,
+    canAdoptRemote: commercialPolicy
+      ? commercialPolicy.canAdopt
+      : needPolicy
+        ? needPolicy.canAdopt
+        : !!remote,
+    commercialPolicy,
     needPolicy,
     basisHash,
   };
