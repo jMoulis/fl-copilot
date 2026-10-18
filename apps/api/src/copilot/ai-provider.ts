@@ -83,6 +83,8 @@ import {
   copilotNeedPreviewSchema,
 } from "@fl-copilot/domain";
 import {
+  identityReviewInputSchema,
+  identityReviewPreviewSchema,
   copilotCatalogueInputSchema,
   copilotCataloguePreviewSchema,
 } from "@fl-copilot/domain";
@@ -306,6 +308,7 @@ export interface CopilotAiProvider {
     >;
     operationsPreviews?: Array<z.infer<typeof copilotOperationsPreviewSchema>>;
     needPreviews?: Array<z.infer<typeof copilotNeedPreviewSchema>>;
+    identityReviews?: Array<z.infer<typeof identityReviewPreviewSchema>>;
     cataloguePreviews?: Array<z.infer<typeof copilotCataloguePreviewSchema>>;
     executionPreviews?: Array<
       z.infer<typeof copilotExecutionPreviewResultSchema>
@@ -388,6 +391,9 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
+    identityReview?(
+      input: z.infer<typeof identityReviewInputSchema>,
+    ): Promise<z.infer<typeof identityReviewPreviewSchema>>;
     cataloguePreview?(
       input: z.infer<typeof copilotCatalogueInputSchema>,
     ): Promise<z.infer<typeof copilotCataloguePreviewSchema>>;
@@ -603,6 +609,9 @@ export function createCopilotAiProvider(
         > = [];
         const needPreviews: Array<z.infer<typeof copilotNeedPreviewSchema>> =
           [];
+        const identityReviews: Array<
+          z.infer<typeof identityReviewPreviewSchema>
+        > = [];
         const cataloguePreviews: Array<
           z.infer<typeof copilotCataloguePreviewSchema>
         > = [];
@@ -761,6 +770,7 @@ export function createCopilotAiProvider(
                   reads.preparationPreview ||
                   reads.operationsPreview ||
                   reads.needPreview ||
+                  reads.identityReview ||
                   reads.cataloguePreview
                   ? 4
                   : reads.planReadiness ||
@@ -795,6 +805,7 @@ export function createCopilotAiProvider(
                 reads.preparationPreview ||
                 reads.operationsPreview ||
                 reads.needPreview ||
+                reads.identityReview ||
                 reads.cataloguePreview
                   ? 3
                   : reads.planReadiness ||
@@ -973,6 +984,57 @@ export function createCopilotAiProvider(
                               )
                                 throw Error("NEED_PROPOSAL_LIMIT");
                               needPreviews.push(result);
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.identityReview
+                  ? {
+                      product_identity_review: tool({
+                        description:
+                          "Prepare an explicitly requested decision on one existing product alias (VALIDATE or REJECT) or identifier (VALIDATE only). First use product_catalogue_preview INSPECT to get the exact entry ID and current status. Preserve leading zeroes; never invent, rename, reassign or create entries with this tool. Ambiguous identity requires a targeted human choice. A rejected alias requires separate explicit native reactivation. READY creates a confirmation card, never an applied write; UNCHANGED is no-op, AMBIGUOUS/UNAVAILABLE/LIMIT_EXCEEDED block the action. At most three current cards. Existing published figures remain unchanged.",
+                        inputSchema: identityReviewInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["identity-review", input]),
+                            async () => {
+                              const result = identityReviewPreviewSchema.parse(
+                                await reads.identityReview!(input),
+                              );
+                              if (
+                                JSON.stringify(result.input) !==
+                                  JSON.stringify(
+                                    identityReviewInputSchema.parse(input),
+                                  ) ||
+                                (result.before &&
+                                  (result.before.product.storeId !==
+                                    request.storeId ||
+                                    result.before.entry.storeId !==
+                                      request.storeId ||
+                                    result.before.product.id !==
+                                      input.productId ||
+                                    result.before.entry.productId !==
+                                      input.productId ||
+                                    result.before.entry.id !== input.entryId))
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              const key = (
+                                p: z.infer<typeof identityReviewPreviewSchema>,
+                              ) => `${p.input.kind}/${p.input.entryId}`;
+                              const old = identityReviews.findIndex(
+                                (p) => key(p) === key(result),
+                              );
+                              if (old >= 0) identityReviews.splice(old, 1);
+                              if (
+                                result.status === "READY" &&
+                                identityReviews.filter(
+                                  (p) => p.status === "READY",
+                                ).length >= 3
+                              )
+                                throw Error("IDENTITY_REVIEW_LIMIT");
+                              identityReviews.push(result);
                               return result;
                             },
                           ),
@@ -2326,6 +2388,9 @@ export function createCopilotAiProvider(
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 needPreviews: needPreviews.filter((p) =>
+                  p.evidence.every((e) => evidence.has(e.id)),
+                ),
+                identityReviews: identityReviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 cataloguePreviews: cataloguePreviews.filter((p) =>

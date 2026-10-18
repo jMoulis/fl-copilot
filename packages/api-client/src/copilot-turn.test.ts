@@ -296,11 +296,15 @@ it("opts into optional proposal and source tools only when the client supports t
         preparationRefresh: enabled,
         storeOperations: enabled,
         needProposals: enabled,
+        identityReview: enabled,
         catalogueProposals: enabled,
         executionProposals: enabled,
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-identity-review", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-identity-review");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-commercial-reference", "1");
     else expect(headers).not.toHaveProperty("x-copilot-commercial-reference");

@@ -83,6 +83,7 @@ export class ApiClient {
       preparationRefresh?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
+      identityReview?: boolean;
       catalogueProposals?: boolean;
       executionProposals?: boolean;
       fetch?: typeof fetch;
@@ -153,6 +154,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.needProposals
                   ? { "x-copilot-need-proposals": "1" }
+                  : {}),
+                ...(streaming.identityReview
+                  ? { "x-copilot-identity-review": "1" }
                   : {}),
                 ...(streaming.catalogueProposals
                   ? { "x-copilot-catalogue-proposals": "1" }

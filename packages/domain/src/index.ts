@@ -118,3 +118,4 @@ export * from "./copilot-commercial-reference";
 export * from "./copilot-reference-inspection";
 export * from "./price-scenario";
 export * from "./copilot-price-scenario";
+export * from "./copilot-identity-review";

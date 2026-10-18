@@ -247,6 +247,9 @@ export async function generateCopilotResponse(
   needPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["needPreviews"];
+  identityReviews?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["identityReviews"];
   cataloguePreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["cataloguePreviews"];
@@ -334,6 +337,7 @@ export async function generateCopilotResponse(
       preparationPreviews: generated.preparationPreviews,
       operationsPreviews: generated.operationsPreviews,
       needPreviews: generated.needPreviews,
+      identityReviews: generated.identityReviews,
       cataloguePreviews: generated.cataloguePreviews,
       executionPreviews: generated.executionPreviews,
       informationRequests: generated.informationRequests,
@@ -362,6 +366,9 @@ export async function generateCopilotResponse(
       // classification preview. It still requires the native confirmation card.
       ...(error instanceof CopilotGroundingError && completed?.productPreviews
         ? { productPreviews: completed.productPreviews }
+        : {}),
+      ...(error instanceof CopilotGroundingError && completed?.identityReviews
+        ? { identityReviews: completed.identityReviews }
         : {}),
       // A verified read-only hypothesis form remains usable when only the prose failed.
       ...(error instanceof CopilotGroundingError &&

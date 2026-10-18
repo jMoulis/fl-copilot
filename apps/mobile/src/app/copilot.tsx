@@ -33,6 +33,9 @@ import { readCopilotOperationsProposal } from "@fl-copilot/domain";
 import { NeedProposalCard } from "@/copilot/need-proposal-card";
 import { CopilotNeedProposalController } from "@/copilot/need-proposal-controller";
 import { readCopilotNeedProposal } from "@fl-copilot/domain";
+import { IdentityReviewCard } from "@/copilot/identity-review-card";
+import { CopilotIdentityReviewController } from "@/copilot/identity-review-controller";
+import { readIdentityReviewProposal } from "@fl-copilot/domain";
 import { CatalogueProposalCard } from "@/copilot/catalogue-proposal-card";
 import { CopilotCatalogueProposalController } from "@/copilot/catalogue-proposal-controller";
 import { readCopilotCatalogueProposal } from "@fl-copilot/domain";
@@ -193,6 +196,15 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         sqlite,
         { storeId, ownerId, deviceId, canManageProducts },
         executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const identityReviews = useMemo(
+    () =>
+      new CopilotIdentityReviewController(
+        sqlite,
+        { storeId, ownerId, deviceId, canManageProducts },
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
@@ -529,6 +541,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readIdentityReviewProposal(message);
+      return (
+        <IdentityReviewCard
+          key={message.id}
+          message={message}
+          controller={identityReviews}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readCopilotCatalogueProposal(message);
       return (
         <CatalogueProposalCard
@@ -611,6 +636,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationRefresh: canPrepareCommercialWeek,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
+              identityReview: canManageProducts,
               catalogueProposals: canManageProducts,
               executionProposals: canDeclareCommercialExecution,
               fetch: expoFetch as typeof fetch,

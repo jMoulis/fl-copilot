@@ -385,3 +385,27 @@ it("preserves a verified price hypothesis form when the final prose invents a nu
   expect(readPriceScenarioQuestion(card).state).toEqual(f.state);
   expect(message.text).not.toContain("999");
 });
+it("keeps a checked identity decision card when only the generated prose fails grounding", async () => {
+  const { identityFixture } =
+    await import("../../../../scripts/test-identity-review-fixtures");
+  const f = identityFixture(),
+    r = request();
+  const preview = {
+    ...f.preview,
+    before: {
+      product: { ...f.product, storeId: r.storeId },
+      entry: { ...f.entry, storeId: r.storeId },
+    },
+  };
+  const provider = {
+    model: "test",
+    generate: vi.fn().mockResolvedValue({
+      output: { ...answer, summary: "999 euros" },
+      identityReviews: [preview],
+      metadata: null,
+    }),
+  } as CopilotAiProvider;
+  const generated = await generateCopilotResponse(provider, r);
+  expect(generated.mode).toBe("FALLBACK");
+  expect(generated.identityReviews).toEqual([preview]);
+});
