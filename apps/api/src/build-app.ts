@@ -731,8 +731,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(request.headers["x-copilot-receipt-correction"] === "1"
+              ...(["1", "2"].includes(
+                String(request.headers["x-copilot-receipt-correction"]),
+              )
                 ? {
+                    receiptCorrectionVersion:
+                      request.headers["x-copilot-receipt-correction"] === "2"
+                        ? 2
+                        : 1,
                     receiptCorrection: async (input) => {
                       await authorize();
                       const result = await previewReceiptCorrection(
@@ -742,6 +748,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         createMongoWasteReceiptDraftReader(
                           dependencies.database,
                         ),
+                        request.headers["x-copilot-receipt-correction"] === "2"
+                          ? 2
+                          : 1,
                       );
                       await authorize();
                       return result;

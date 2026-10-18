@@ -423,6 +423,7 @@ export function createCopilotAiProvider(
     receiptRecovery?(
       input: z.infer<typeof receiptRecoveryInputSchema>,
     ): Promise<z.infer<typeof receiptRecoveryPreviewSchema>>;
+    receiptCorrectionVersion?: 1 | 2;
     receiptCorrection?(
       input: z.infer<typeof receiptCorrectionInputSchema>,
     ): Promise<z.infer<typeof receiptCorrectionPreviewSchema>>;
@@ -1146,7 +1147,10 @@ export function createCopilotAiProvider(
                   ? {
                       waste_receipt_correct_preview: tool({
                         description:
-                          "Prepare explicitly requested draft receipt corrections: wasteDate (ISO date), cashierNumber (string preserving zeroes; null explicitly clears it), or up to ten exact line IDs with partial values, excluded flag or exact proposed/current productId. Read waste_receipt first for line IDs and product candidates. Use only requested fields; omitted values and other lines are preserved. Decimal values are nonnegative strings, null explicitly clears a value. Never infer date from capture, invent an amount, silently balance arithmetic, pick an ambiguous product or create aliases. Ask a targeted question/form when needed. REVIEW_LOCAL creates a before/after native review, not a write or publication. The app checks current draft, candidate membership and product conflicts; published receipts are READ_ONLY. Local corrections stay on-device until explicit publication. At most three source cards; combine requested changes for the same source in one patch.",
+                          (reads.receiptCorrectionVersion === 2
+                            ? "For productId, an explicitly identified non-retired product from product_search or the current receipt in this store may be proposed even outside extracted candidates. Ask the user when identity remains ambiguous. The native review compares the actual catalogue choice; it never learns an alias, inherits another candidate’s score, edits product fields or publishes the ticket. "
+                            : "Product choice is limited to an exact extracted candidate or the current match. ") +
+                          "Prepare explicitly requested draft receipt corrections: wasteDate (ISO date), cashierNumber (string preserving zeroes; null explicitly clears it), or up to ten exact line IDs with partial values, excluded flag or exact productId. Read waste_receipt first for line IDs and product candidates. Use only requested fields; omitted values and other lines are preserved. Decimal values are nonnegative strings, null explicitly clears a value. Never infer date from capture, invent an amount, silently balance arithmetic, pick an ambiguous product or create aliases. Ask a targeted question/form when needed. REVIEW_LOCAL creates a before/after native review, not a write or publication. The app checks current draft, permitted product scope and product conflicts; published receipts are READ_ONLY. Local corrections stay on-device until explicit publication. At most three source cards; combine requested changes for the same source in one patch.",
                         inputSchema: receiptCorrectionInputSchema,
                         execute: (input) =>
                           executeRead(
@@ -1157,6 +1161,8 @@ export function createCopilotAiProvider(
                                   await reads.receiptCorrection!(input),
                                 );
                               if (
+                                (result.schemaVersion ?? 1) !==
+                                  (reads.receiptCorrectionVersion ?? 1) ||
                                 JSON.stringify(result.input) !==
                                   JSON.stringify(
                                     receiptCorrectionInputSchema.parse(input),

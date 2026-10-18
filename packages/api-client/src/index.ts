@@ -96,7 +96,7 @@ export class ApiClient {
       needProposals?: boolean;
       storeConflicts?: boolean | 2 | 3 | 4 | 5;
       receiptRecovery?: boolean;
-      receiptCorrection?: boolean;
+      receiptCorrection?: boolean | 2;
       receiptPublication?: boolean;
       identityReview?: boolean;
       catalogueProposals?: boolean;
@@ -182,7 +182,10 @@ export class ApiClient {
                   ? { "x-copilot-receipt-recovery": "1" }
                   : {}),
                 ...(streaming.receiptCorrection
-                  ? { "x-copilot-receipt-correction": "1" }
+                  ? {
+                      "x-copilot-receipt-correction":
+                        streaming.receiptCorrection === 2 ? "2" : "1",
+                    }
                   : {}),
                 ...(streaming.receiptPublication
                   ? { "x-copilot-receipt-publication": "1" }

@@ -44,6 +44,8 @@ export type ReceiptCorrectionInput = z.infer<
   typeof receiptCorrectionInputSchema
 >;
 export const receiptCorrectionPreviewSchema = z.strictObject({
+  /** Trusted capability marker; never part of model input. Absent means candidate-only v1. */
+  schemaVersion: z.literal(2).optional(),
   input: receiptCorrectionInputSchema,
   source: receiptPublicationSourceSchema,
   status: z.enum(["REVIEW_LOCAL", "READ_ONLY", "NOT_READY", "LIMIT_EXCEEDED"]),
@@ -51,7 +53,7 @@ export const receiptCorrectionPreviewSchema = z.strictObject({
 });
 export const receiptCorrectionProposalSchema = z.strictObject({
   kind: z.literal("WASTE_CORRECTION_PROPOSAL"),
-  schemaVersion: z.literal(1),
+  schemaVersion: z.union([z.literal(1), z.literal(2)]),
   assistantMessageId: z.uuid(),
   input: receiptCorrectionInputSchema,
   source: receiptPublicationSourceSchema,
