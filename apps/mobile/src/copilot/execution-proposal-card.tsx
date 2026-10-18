@@ -27,52 +27,60 @@ export function ExecutionProposalCard({
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const locked = useRef(false),
-    alive = useRef(true),
+    generation = useRef(0),
+    currentMessage = useRef(message),
     abort = useRef<AbortController | undefined>(undefined);
+  currentMessage.current = message;
   useEffect(() => {
-    alive.current = true;
-    let active = true;
+    const token = generation.current + 1;
+    generation.current = token;
+    locked.current = false;
+    setSaving(false);
     setState(undefined);
     setError(undefined);
     void controller
-      .open(message)
+      .open(currentMessage.current)
       .then((s) => {
-        if (active && alive.current) setState(s);
+        if (generation.current === token) setState(s);
       })
       .catch(() => {
-        if (active && alive.current)
+        if (generation.current === token)
           setError(
             "La déclaration ne peut pas être vérifiée sur cet appareil.",
           );
       });
     return () => {
-      active = false;
-      alive.current = false;
+      if (generation.current === token) generation.current = token + 1;
       abort.current?.abort();
     };
-  }, [controller, message]);
+  }, [controller, message.id]);
   const confirm = async () => {
     if (locked.current || !canConfirm) return;
+    const token = generation.current,
+      reviewedMessage = currentMessage.current;
     locked.current = true;
     setSaving(true);
     setError(undefined);
     const cancellation = new AbortController();
     abort.current = cancellation;
     try {
-      const value = await controller.confirm(message, cancellation.signal);
-      if (alive.current) setState(value);
+      const value = await controller.confirm(
+        reviewedMessage,
+        cancellation.signal,
+      );
+      if (generation.current === token) setState(value);
     } catch {
-      if (alive.current) {
+      if (generation.current === token) {
         setError(
           "La déclaration n’a pas pu être enregistrée. Vérifiez le plan et réessayez.",
         );
-        const s = await controller.open(message).catch(() => undefined);
-        if (alive.current && s) setState(s);
+        const s = await controller.open(reviewedMessage).catch(() => undefined);
+        if (generation.current === token && s) setState(s);
       }
     } finally {
-      locked.current = false;
+      if (generation.current === token) locked.current = false;
       if (abort.current === cancellation) abort.current = undefined;
-      if (alive.current) setSaving(false);
+      if (generation.current === token) setSaving(false);
     }
   };
   return (
