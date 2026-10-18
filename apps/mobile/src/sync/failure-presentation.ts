@@ -7,6 +7,7 @@ const labels: Record<string, string> = {
   copilot_conversation: "Conversation privée",
   copilot_message: "Message privé",
   copilot_decision: "Décision du copilote",
+  copilot_execution_link: "Association de mise en place",
   copilot_knowledge: "Pratique mémorisée",
   need_unit: "Unité de besoin",
   need_membership: "Association produit/besoin",
@@ -46,5 +47,13 @@ export function syncFailurePresentation(
   )
     message =
       "Ce code semble déjà associé à un produit. Examinez le référentiel avant de corriger l’association.";
+  if (
+    entityType === "copilot_execution_link" &&
+    code?.startsWith("COPILOT_EXECUTION_LINK_")
+  )
+    message =
+      code === "COPILOT_EXECUTION_LINK_LIMIT"
+        ? "La capacité de suivi synchronisé est atteinte. Le lien et son historique restent conservés sur cet appareil ; aucune tâche ni décision n’a été modifiée."
+        : "Cette association doit être vérifiée dans sa conversation d’origine. Le lien local, le choix et la déclaration restent conservés ; renvoyer la même commande ne changera pas le refus.";
   return { label: labels[entityType] ?? "Modification locale", message };
 }

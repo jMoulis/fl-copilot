@@ -818,6 +818,11 @@ CREATE INDEX source_original_restorations_scope ON source_original_restorations(
     name: "copilot-recommendation-decisions",
     sql: `CREATE TABLE copilot_decisions (id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0); CREATE INDEX copilot_decision_scope ON copilot_decisions(store_id,owner_id,conversation_id);`,
   },
+  {
+    version: 47,
+    name: "copilot-execution-links",
+    sql: `CREATE TABLE copilot_execution_links(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0); CREATE INDEX copilot_execution_link_scope ON copilot_execution_links(store_id,owner_id,id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

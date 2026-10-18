@@ -807,6 +807,21 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, ownerId: 1 }, { unique: true });
     },
   },
+  {
+    version: 40,
+    name: "private-execution-links",
+    async up(database) {
+      await database.collection("copilotExecutionLinks").createIndex({
+        storeId: 1,
+        ownerId: 1,
+        "snapshot.decision.id": 1,
+        _id: 1,
+      });
+      await database
+        .collection("copilotExecutionLinkCounters")
+        .createIndex({ storeId: 1, ownerId: 1 }, { unique: true });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

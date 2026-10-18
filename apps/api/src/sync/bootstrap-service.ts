@@ -1,4 +1,8 @@
 import {
+  serializeExecutionLink,
+  type ExecutionLinkDocument,
+} from "../copilot/execution-link-store";
+import {
   serializeDecision,
   type DecisionDocument,
 } from "../copilot/decision-store";
@@ -129,6 +133,20 @@ export function createMongoSyncBootstrapService(
                 { _id: store.storeId },
                 { session, promoteLongs: false },
               );
+            const links =
+              query.copilotExecutionLinks === "true" &&
+              query.copilotHistory === "true"
+                ? await mongoDatabase
+                    .collection<ExecutionLinkDocument>("copilotExecutionLinks")
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .limit(501)
+                    .toArray()
+                : null;
+            if (links && links.length > 500)
+              throw Error("COPILOT_EXECUTION_LINK_LIMIT");
             const decisions =
               query.copilotDecisions === "true" &&
               query.copilotHistory === "true"
@@ -371,6 +389,12 @@ export function createMongoSyncBootstrapService(
               },
               entities: {
                 ...copilotHistory,
+                ...(links
+                  ? {
+                      copilotExecutionLinks: links.map(serializeExecutionLink),
+                      copilotExecutionLinkOwnerId: store.userId,
+                    }
+                  : {}),
                 ...(decisions
                   ? {
                       copilotDecisions: decisions.map(serializeDecision),

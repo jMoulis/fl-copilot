@@ -11,6 +11,8 @@ export function readActivityStage(key: string): CopilotActivity["stage"] {
   if (kind === "price-scenario") return "ANALYTICS";
   if (kind === "analytics-query") return "ANALYTICS";
   if (kind === "recommendation-decisions") return "CONTEXT";
+  if (kind === "execution-links") return "CONTEXT";
+  if (kind === "execution-link-preview") return "PROPOSAL";
   if (kind === "recommendation-tracking") return "PROPOSAL";
   if (kind === "action-review") return "COMPARISON";
   if (kind === "daily") return "COMPARISON";

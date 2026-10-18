@@ -42,7 +42,8 @@ export async function applyPullPage(
         change.entityType === "copilot_conversation" ||
         change.entityType === "copilot_message" ||
         change.entityType === "copilot_knowledge" ||
-        change.entityType === "copilot_decision"
+        change.entityType === "copilot_decision" ||
+        change.entityType === "copilot_execution_link"
       ) {
         if (
           !ownerId ||

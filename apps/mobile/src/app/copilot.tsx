@@ -373,6 +373,16 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canDeclareCommercialExecution],
   );
+  const executionLinks = useMemo(
+    () =>
+      new CopilotExecutionLinkRepository(
+        sqlite,
+        { storeId, ownerId, deviceId, canLink: true },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId],
+  );
   const choiceUpdates = useMemo(
     () =>
       new CopilotChoiceUpdateController(
@@ -812,6 +822,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readExecutionLinkProposal(message);
+      return (
+        <ExecutionLinkCard
+          key={message.id}
+          message={message}
+          repository={executionLinks}
+          canConfirm={true}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readCopilotExecutionProposal(message);
       return (
         <ExecutionProposalCard
@@ -866,6 +889,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               memorySuggestions: true,
               webResearch: true,
               recommendationTracking: true,
+              executionLinks: true,
               retailExpertise: true,
               choiceUpdate: canManageProducts,
               choiceRetention: canManageProducts,
@@ -1505,3 +1529,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     </SafeAreaView>
   );
 }
+import { readExecutionLinkProposal } from "@fl-copilot/domain";
+import { CopilotExecutionLinkRepository } from "@/copilot/execution-link-repository";
+import { ExecutionLinkCard } from "@/copilot/execution-link-card";

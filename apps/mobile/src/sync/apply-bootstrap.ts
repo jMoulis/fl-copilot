@@ -1,3 +1,4 @@
+import { applyExecutionLinkRecord } from "../copilot/execution-link-repository";
 import { applyDecisionRecord } from "../copilot/decision-repository";
 import { applyKnowledgeRecord } from "../copilot/knowledge-repository";
 import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
@@ -53,6 +54,21 @@ export async function applyBootstrap(
   });
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
+    if (bootstrap.entities.copilotExecutionLinks) {
+      if (
+        !ownerId ||
+        ownerId !== bootstrap.entities.copilotExecutionLinkOwnerId
+      )
+        throw Error("COPILOT_EXECUTION_LINK_SCOPE_INVALID");
+      for (const e of bootstrap.entities.copilotExecutionLinks)
+        await applyExecutionLinkRecord(transaction, { storeId, ownerId }, e);
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `copilot-execution-links:${storeId}:${ownerId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
     if (bootstrap.entities.copilotDecisions) {
       if (!ownerId || ownerId !== bootstrap.entities.copilotDecisionOwnerId)
         throw Error("COPILOT_DECISION_SCOPE_INVALID");
@@ -330,6 +346,8 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialWeekPreparations",
     "commercialExecutionTasks",
     "storeContextSettings",
+    "copilotExecutionLinks",
+    "copilotExecutionLinkOwnerId",
     "copilotDecisions",
     "copilotDecisionOwnerId",
     "copilotKnowledge",

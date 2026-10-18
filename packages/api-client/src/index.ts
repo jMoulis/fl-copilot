@@ -80,6 +80,7 @@ export class ApiClient {
       memorySuggestions?: boolean;
       webResearch?: boolean;
       recommendationTracking?: boolean;
+      executionLinks?: boolean;
       retailExpertise?: boolean;
       choiceUpdate?: boolean;
       choiceRetention?: boolean;
@@ -179,6 +180,9 @@ export class ApiClient {
                           ? "1"
                           : String(streaming.storeConflicts),
                     }
+                  : {}),
+                ...(streaming.executionLinks
+                  ? { "x-copilot-execution-links": "1" }
                   : {}),
                 ...(streaming.recommendationTracking
                   ? { "x-copilot-recommendation-tracking": "1" }
@@ -369,6 +373,7 @@ export class ApiClient {
     copilotKnowledge = false,
     mercalysRecordUpdates = false,
     copilotDecisions = false,
+    copilotExecutionLinks = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -389,6 +394,7 @@ export class ApiClient {
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
+    if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
     if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
     if (cursor) query.set("cursor", cursor);
@@ -426,6 +432,7 @@ export class ApiClient {
     copilotKnowledge = false,
     mercalysRecordUpdates = false,
     copilotDecisions = false,
+    copilotExecutionLinks = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -448,6 +455,7 @@ export class ApiClient {
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
+    if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
     if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
     const suffix = query.toString() ? `?${query}` : "";

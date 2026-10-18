@@ -142,3 +142,4 @@ export * from "./retail-expertise-reference";
 export * from "./copilot-action-review";
 
 export * from "./copilot-recommendation-decision";
+export * from "./copilot-execution-link";

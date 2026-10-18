@@ -5391,3 +5391,184 @@ it.each(["READY", "WRONG_SCOPE", "DISABLED"])(
     }
   },
 );
+
+it.each(["READY", "DISABLED", "RETARGETED", "BYTE_BUDGET"])(
+  "prepares a private choice/execution comparison through the bounded SDK loop (%s)",
+  async (mode) => {
+    const { executionLinkFixture } =
+      await import("../../../../scripts/test-execution-link-fixtures");
+    const n = await executionLinkFixture();
+    try {
+      const f = fixture();
+      f.request.storeId = n.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: n.storeId,
+          evaluatedAt: "2026-10-18T12:00:00.000Z",
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const value = structuredClone(n.preview);
+      if (mode === "RETARGETED") value.input.taskId = randomUUID();
+      if (mode === "BYTE_BUDGET") {
+        f.config.COPILOT_AI_MAX_INPUT_BYTES = 4096;
+        value.evidence[0]!.value = "x".repeat(5000);
+      }
+      const executionLinkPreview = vi.fn(async () => value),
+        activity = vi.fn();
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body)),
+          definition = body.tools.find(
+            (t: { name: string }) =>
+              t.name === "recommendation_execution_link_preview",
+          );
+        if (mode === "DISABLED") {
+          expect(definition).toBeUndefined();
+          return response();
+        }
+        expect(JSON.stringify(definition.parameters)).not.toMatch(
+          /storeId|ownerId|authority|createdAt|amount/,
+        );
+        if (calls++ === 0) {
+          const envelope = z
+            .record(z.string(), z.unknown())
+            .parse(await response().json());
+          envelope.output = [
+            {
+              type: "function_call",
+              id: "fc_link",
+              call_id: "call_link",
+              name: "recommendation_execution_link_preview",
+              arguments: JSON.stringify(n.input),
+              status: "completed",
+            },
+          ];
+          return new Response(JSON.stringify(envelope), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const output = JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        );
+        expect(output).toMatchObject(
+          mode === "READY" ? { status: "READY" } : { unavailable: true },
+        );
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        ...(mode === "DISABLED" ? {} : { executionLinkPreview }),
+      }).generate(f.request, schema, undefined, undefined, activity);
+      expect(executionLinkPreview).toHaveBeenCalledTimes(
+        mode === "DISABLED" ? 0 : 1,
+      );
+      expect(result.executionLinkPreviews ?? []).toEqual(
+        mode === "READY" ? [value] : [],
+      );
+      if (mode === "READY")
+        expect(activity).toHaveBeenCalledWith(
+          expect.objectContaining({ stage: "PROPOSAL", status: "DONE" }),
+        );
+    } finally {
+      n.db.db.close();
+    }
+  },
+);
+it.each(["READY", "DISABLED", "FOREIGN_STORE", "RETARGETED"])(
+  "reads immutable and withdrawn associations through the bounded SDK loop (%s)",
+  async (mode) => {
+    const { executionLinkFixture } =
+        await import("../../../../scripts/test-execution-link-fixtures"),
+      { executionLinksReadResultSchema } = await import("@fl-copilot/domain");
+    const n = await executionLinkFixture();
+    try {
+      const s = await n.repository.open(n.linkCard),
+        saved = await n.repository.save(n.linkCard, s.review),
+        withdrawn = await n.repository.save(n.linkCard, saved.review, true),
+        f = fixture();
+      f.request.storeId = n.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: n.storeId,
+          evaluatedAt: "2026-10-18T12:00:00.000Z",
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const input = {
+        recommendationId: n.decision.id,
+        afterId: null,
+        limit: 5,
+      };
+      const value = executionLinksReadResultSchema.parse({
+        input,
+        entries: [withdrawn.link],
+        hasMore: false,
+        nextAfterId: null,
+        evidence: n.preview.evidence,
+      });
+      if (mode === "FOREIGN_STORE") {
+        const id = randomUUID();
+        value.entries[0]!.storeId = id;
+        value.entries[0]!.snapshot.task.storeId = id;
+      }
+      if (mode === "RETARGETED") value.input.recommendationId = randomUUID();
+      const executionLinks = vi.fn(async () => value);
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body)),
+          definition = body.tools.find(
+            (t: { name: string }) =>
+              t.name === "recommendation_execution_links",
+          );
+        if (mode === "DISABLED") {
+          expect(definition).toBeUndefined();
+          return response();
+        }
+        if (calls++ === 0) {
+          const envelope = z
+            .record(z.string(), z.unknown())
+            .parse(await response().json());
+          envelope.output = [
+            {
+              type: "function_call",
+              id: "fc_links",
+              call_id: "call_links",
+              name: "recommendation_execution_links",
+              arguments: JSON.stringify(input),
+              status: "completed",
+            },
+          ];
+          return new Response(JSON.stringify(envelope), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const output = JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        );
+        expect(output).toMatchObject(
+          mode === "READY"
+            ? { entries: [{ version: 2 }] }
+            : { unavailable: true },
+        );
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        ...(mode === "DISABLED" ? {} : { executionLinks }),
+      }).generate(f.request, schema);
+      expect(executionLinks).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+      expect(result.toolEvidence ?? []).toEqual(
+        mode === "READY" ? value.evidence : [],
+      );
+    } finally {
+      n.db.db.close();
+    }
+  },
+);

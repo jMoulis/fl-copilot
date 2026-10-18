@@ -1,3 +1,5 @@
+import { readExecutionLinkProposal } from "@fl-copilot/domain";
+import { validateExecutionLinkSnapshot } from "./execution-link-store";
 import { recommendationSourceDigest } from "./recommendation-tracking-tool.js";
 import { readRecommendationTrackingCard } from "@fl-copilot/domain";
 import { readStoreConflictProposal } from "@fl-copilot/domain";
@@ -127,62 +129,73 @@ export async function appendCopilotToolRecord(
   const decoded = copilotMessageSchema.parse(raw);
   const kind = JSON.parse(decoded.text).kind;
   const artifact =
-    kind === "RECOMMENDATION_TRACKING"
-      ? readRecommendationTrackingCard(decoded)
-      : kind === "STORE_CONFLICT_PROPOSAL"
-        ? readStoreConflictProposal(decoded)
-        : kind === "WASTE_RECOVERY_PROPOSAL"
-          ? readReceiptRecoveryProposal(decoded)
-          : kind === "WASTE_CORRECTION_PROPOSAL"
-            ? readReceiptCorrectionProposal(decoded)
-            : kind === "WASTE_PUBLICATION_PROPOSAL"
-              ? readReceiptPublicationProposal(decoded)
-              : kind === "PRODUCT_IDENTITY_REVIEW"
-                ? readIdentityReviewProposal(decoded)
-                : kind === "COMMERCIAL_REFERENCE_PROPOSAL"
-                  ? readCopilotReferenceProposal(decoded)
-                  : kind === "PLAN_VALIDATION_PROPOSAL"
-                    ? readCopilotPlanValidationProposal(decoded)
-                    : kind === "COMMERCIAL_CHOICE_UPDATE_PROPOSAL"
-                      ? readCopilotChoiceUpdateProposal(decoded)
-                      : kind === "OFFER_VALIDATION_PROPOSAL"
-                        ? readCopilotOfferValidationProposal(decoded)
-                        : kind === "COMMERCIAL_CHOICE_CREATE_PROPOSAL"
-                          ? readCopilotChoiceCreateProposal(decoded)
-                          : kind === "COMMERCIAL_CHOICE_RETENTION_PROPOSAL"
-                            ? readCopilotChoiceRetentionProposal(decoded)
-                            : kind ===
-                                "COMMERCIAL_CHOICE_REASSOCIATION_PROPOSAL"
-                              ? readCopilotChoiceReassociationProposal(decoded)
-                              : kind === "COMMERCIAL_CHOICE_WITHDRAWAL_PROPOSAL"
-                                ? readCopilotChoiceWithdrawalProposal(decoded)
-                                : kind === "MISSING_INFORMATION_REQUEST"
-                                  ? readCopilotInformationRequest(decoded)
-                                  : kind === "CONTEXT_CHECKPOINT"
-                                    ? readContextCheckpoint(decoded)
-                                    : kind === "COMMERCIAL_PREPARATION_PROPOSAL"
-                                      ? readCopilotPreparationProposal(decoded)
-                                      : kind === "STORE_OPERATIONS_PROPOSAL"
-                                        ? readCopilotOperationsProposal(decoded)
-                                        : kind === "NEED_MUTATION_PROPOSAL"
-                                          ? readCopilotNeedProposal(decoded)
-                                          : kind ===
-                                              "PRODUCT_CATALOGUE_PROPOSAL"
-                                            ? readCopilotCatalogueProposal(
-                                                decoded,
-                                              )
+    kind === "EXECUTION_LINK_PROPOSAL"
+      ? readExecutionLinkProposal(decoded)
+      : kind === "RECOMMENDATION_TRACKING"
+        ? readRecommendationTrackingCard(decoded)
+        : kind === "STORE_CONFLICT_PROPOSAL"
+          ? readStoreConflictProposal(decoded)
+          : kind === "WASTE_RECOVERY_PROPOSAL"
+            ? readReceiptRecoveryProposal(decoded)
+            : kind === "WASTE_CORRECTION_PROPOSAL"
+              ? readReceiptCorrectionProposal(decoded)
+              : kind === "WASTE_PUBLICATION_PROPOSAL"
+                ? readReceiptPublicationProposal(decoded)
+                : kind === "PRODUCT_IDENTITY_REVIEW"
+                  ? readIdentityReviewProposal(decoded)
+                  : kind === "COMMERCIAL_REFERENCE_PROPOSAL"
+                    ? readCopilotReferenceProposal(decoded)
+                    : kind === "PLAN_VALIDATION_PROPOSAL"
+                      ? readCopilotPlanValidationProposal(decoded)
+                      : kind === "COMMERCIAL_CHOICE_UPDATE_PROPOSAL"
+                        ? readCopilotChoiceUpdateProposal(decoded)
+                        : kind === "OFFER_VALIDATION_PROPOSAL"
+                          ? readCopilotOfferValidationProposal(decoded)
+                          : kind === "COMMERCIAL_CHOICE_CREATE_PROPOSAL"
+                            ? readCopilotChoiceCreateProposal(decoded)
+                            : kind === "COMMERCIAL_CHOICE_RETENTION_PROPOSAL"
+                              ? readCopilotChoiceRetentionProposal(decoded)
+                              : kind ===
+                                  "COMMERCIAL_CHOICE_REASSOCIATION_PROPOSAL"
+                                ? readCopilotChoiceReassociationProposal(
+                                    decoded,
+                                  )
+                                : kind ===
+                                    "COMMERCIAL_CHOICE_WITHDRAWAL_PROPOSAL"
+                                  ? readCopilotChoiceWithdrawalProposal(decoded)
+                                  : kind === "MISSING_INFORMATION_REQUEST"
+                                    ? readCopilotInformationRequest(decoded)
+                                    : kind === "CONTEXT_CHECKPOINT"
+                                      ? readContextCheckpoint(decoded)
+                                      : kind ===
+                                          "COMMERCIAL_PREPARATION_PROPOSAL"
+                                        ? readCopilotPreparationProposal(
+                                            decoded,
+                                          )
+                                        : kind === "STORE_OPERATIONS_PROPOSAL"
+                                          ? readCopilotOperationsProposal(
+                                              decoded,
+                                            )
+                                          : kind === "NEED_MUTATION_PROPOSAL"
+                                            ? readCopilotNeedProposal(decoded)
                                             : kind ===
-                                                "COMMERCIAL_EXECUTION_PROPOSAL"
-                                              ? readCopilotExecutionProposal(
+                                                "PRODUCT_CATALOGUE_PROPOSAL"
+                                              ? readCopilotCatalogueProposal(
                                                   decoded,
                                                 )
-                                              : kind === "KNOWLEDGE_SUGGESTION"
-                                                ? readKnowledgeSuggestion(
+                                              : kind ===
+                                                  "COMMERCIAL_EXECUTION_PROPOSAL"
+                                                ? readCopilotExecutionProposal(
                                                     decoded,
                                                   )
-                                                : readCopilotProductProposal(
-                                                    decoded,
-                                                  );
+                                                : kind ===
+                                                    "KNOWLEDGE_SUGGESTION"
+                                                  ? readKnowledgeSuggestion(
+                                                      decoded,
+                                                    )
+                                                  : readCopilotProductProposal(
+                                                      decoded,
+                                                    );
   if (kind === "RECOMMENDATION_TRACKING") {
     const card = readRecommendationTrackingCard(decoded);
     const source = await ctx.database
@@ -227,6 +240,13 @@ export async function appendCopilotToolRecord(
     )
       throw Error("RECOMMENDATION_SOURCE_INVALID");
   }
+  if (kind === "EXECUTION_LINK_PROPOSAL")
+    await validateExecutionLinkSnapshot(
+      ctx.database,
+      { storeId: authority.storeId, ownerId: authority.ownerId },
+      decoded,
+      ctx.session,
+    );
   const message = artifact.message;
   const assistantMessageId =
     "content" in artifact

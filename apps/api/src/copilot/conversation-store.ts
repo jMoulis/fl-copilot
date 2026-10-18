@@ -28,15 +28,22 @@ export const chatCollections = {
   copilot_message: "copilotMessages",
   copilot_knowledge: "copilotKnowledge",
   copilot_decision: "copilotDecisions",
+  copilot_execution_link: "copilotExecutionLinks",
 };
 export const isChatType = (type: string) =>
   Object.hasOwn(chatCollections, type);
 export type ChatRecordDocument = (
-  CopilotConversation | CopilotMessage | KnowledgeDocument | DecisionDocument
+  | CopilotConversation
+  | CopilotMessage
+  | KnowledgeDocument
+  | DecisionDocument
+  | ExecutionLinkDocument
 ) & {
   _id: string;
 };
 export function serializeChat(type: string, row: ChatRecordDocument) {
+  if (type === "copilot_execution_link")
+    return serializeExecutionLink(row as ExecutionLinkDocument);
   if (type === "copilot_decision")
     return serializeDecision(row as DecisionDocument);
   if (type === "copilot_knowledge")
@@ -72,6 +79,8 @@ export async function canAccessChatCommand(
   ownerId: string | undefined,
   c: SyncCommand,
 ) {
+  if (c.entityType === "copilot_execution_link")
+    return canAccessExecutionLink(db, storeId, ownerId, c);
   if (c.entityType === "copilot_decision")
     return canAccessDecision(db, storeId, ownerId, c);
   if (c.entityType === "copilot_knowledge")
@@ -122,6 +131,8 @@ export async function applyChatCommand(
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
 ): Promise<CommandMutationResult> {
+  if (c.entityType === "copilot_execution_link")
+    return applyExecutionLink(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_decision")
     return applyDecision(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_knowledge")
@@ -335,3 +346,9 @@ export async function chatBootstrap(
     copilotHistoryPartial: true,
   };
 }
+import {
+  canAccessExecutionLink,
+  applyExecutionLink,
+  serializeExecutionLink,
+  type ExecutionLinkDocument,
+} from "./execution-link-store";
