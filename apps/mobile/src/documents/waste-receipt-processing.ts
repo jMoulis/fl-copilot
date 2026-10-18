@@ -1,3 +1,4 @@
+import { receiptMultiViewBlockingCodes } from "@fl-copilot/domain";
 import type { LocalWasteReceiptUploadJob } from "./waste-receipt-repository";
 import type { WasteReceipt } from "@fl-copilot/domain";
 
@@ -48,6 +49,18 @@ export function receiptProcessingPresentation(
           : "Vérifiez la date, les produits et les valeurs avant de publier la casse.",
       canRetry: false,
       status: lineCount === 0 ? ("incomplete" as const) : ("local" as const),
+    };
+  if (receiptMultiViewBlockingCodes.includes(job?.lastError ?? ""))
+    return {
+      title: "Photos à examiner",
+      message:
+        job?.lastError === "WASTE_RECEIPT_MULTIVIEW_MODEL_CHANGED"
+          ? "La configuration de cette analyse a changé. Vos photos sont conservées ; contactez le support avant de la reprendre."
+          : job?.lastError === "WASTE_RECEIPT_MULTIVIEW_ATTEMPTS_EXHAUSTED"
+            ? "Les tentatives d’analyse de ce ticket sont épuisées. Vos photos sont conservées ; contactez le support avant une nouvelle analyse."
+            : "Vérifiez que les vues montrent un seul ticket dans l’ordre, avec un léger recouvrement. Importez les photos corrigées ; les originaux restent conservés.",
+      canRetry: false,
+      status: "error" as const,
     };
   const blocked = [
     "SOURCE_UPLOAD_INVALID",

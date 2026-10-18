@@ -1,4 +1,5 @@
 import {
+  receiptMultiViewBlockingCodes,
   localFileMetadataSchema,
   localSourceDocumentSchema,
   wasteLineSchema,
@@ -351,9 +352,11 @@ export class WasteReceiptRepository {
       if (
         !job ||
         job.status === "RUNNING" ||
-        ["SOURCE_UPLOAD_INVALID", "SOURCE_UPLOAD_LOCAL_FILE_MISSING"].includes(
-          job.last_error ?? "",
-        )
+        [
+          "SOURCE_UPLOAD_INVALID",
+          "SOURCE_UPLOAD_LOCAL_FILE_MISSING",
+          ...receiptMultiViewBlockingCodes,
+        ].includes(job.last_error ?? "")
       )
         throw new Error("WASTE_RECEIPT_RETRY_UNAVAILABLE");
       await tx.runAsync(

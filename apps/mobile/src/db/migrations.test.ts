@@ -153,6 +153,7 @@ describe("local SQLite migrations", () => {
       "sync_test_entities",
       "waste_lines",
       "waste_observations",
+      "waste_receipt_photo_groups",
       "waste_receipts",
       "weekly_context_cache",
     ]);

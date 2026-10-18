@@ -87,6 +87,54 @@ const validOutput = {
 };
 
 describe("waste receipt Vision extraction", () => {
+  it("sends ordered views together in one non-stored request with retries disabled for the leased group call", async () => {
+    const requests: Array<{
+      input: Record<string, unknown>;
+      options: unknown;
+    }> = [];
+    const provider = createOpenAIReceiptVisionProvider({ model: "gpt-test" }, {
+      responses: {
+        parse: async (input: Record<string, unknown>, options: unknown) => {
+          requests.push({ input, options });
+          return {
+            status: "completed",
+            output_parsed: {},
+            id: "group",
+            model: "gpt-test",
+          };
+        },
+      },
+    } as never);
+    const second = new Uint8Array([9, 8]);
+    await provider.extractViews!([image, second]);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.options).toEqual({ timeout: 90_000, maxRetries: 0 });
+    const request = requests[0]!.input;
+    expect(request).toMatchObject({ model: "gpt-test", store: false });
+    const content = (
+      request.input as Array<{ content: Array<Record<string, unknown>> }>
+    )[0]!.content;
+    expect(content.slice(1).map((item) => item.image_url)).toEqual(
+      [image, second].map(
+        (bytes) =>
+          `data:image/jpeg;base64,${Buffer.from(bytes).toString("base64")}`,
+      ),
+    );
+    expect(request.instructions).toEqual(
+      expect.stringContaining("Distinct repeated occurrences"),
+    );
+    expect(request.instructions).toEqual(
+      expect.stringContaining("overlapResolved=false"),
+    );
+    expect(request.instructions).toEqual(
+      expect.stringContaining("untrusted document data"),
+    );
+    expect(request.instructions).toEqual(expect.stringContaining("DD/MM/YYYY"));
+    expect(() => provider.extractViews!([image])).toThrow(
+      "WASTE_RECEIPT_VIEW_COUNT_INVALID",
+    );
+  });
+
   it("preserves cashier identifiers as text and leaves absent cashier evidence nullable", () => {
     expect(
       wasteReceiptVisionOutputSchema.parse(validOutput).cashierNumber,

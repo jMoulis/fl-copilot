@@ -1,3 +1,4 @@
+import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
 import { randomUUID } from "node:crypto";
 import {
   BlobNotFoundError,
@@ -480,6 +481,18 @@ async function findExactWasteReceiptDuplicate(
       sourceType: "WASTE_RECEIPT",
       checksum: upload.checksum,
       remoteUploadStatus: "CONFIRMED",
+      ...(upload.mimeType === RECEIPT_PHOTO_BUNDLE_MIME
+        ? {
+            mimeType: RECEIPT_PHOTO_BUNDLE_MIME,
+            $or: [
+              { createdAt: { $lt: upload.createdAt } },
+              {
+                createdAt: upload.createdAt,
+                _id: { $lt: upload.sourceDocumentId },
+              },
+            ],
+          }
+        : {}),
     });
   return candidate
     ? {

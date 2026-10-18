@@ -1,3 +1,9 @@
+import { CopilotReceiptViewsIntake } from "@/copilot/receipt-views-intake";
+import { ReceiptViewsReview } from "@/copilot/receipt-views-review";
+import {
+  MAX_RECEIPT_VIEWS,
+  type CopilotReceiptViewsSelection,
+} from "@fl-copilot/domain";
 import { readStoreConflictProposal } from "@fl-copilot/domain";
 import { CopilotStoreConflictController } from "@/copilot/store-conflict-controller";
 import { StoreConflictCard } from "@/copilot/store-conflict-card";
@@ -178,6 +184,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     ) ?? false;
   const receiptCaptureAllowed = useRef(canManageProducts);
   receiptCaptureAllowed.current = canManageProducts;
+  const [receiptViewsReview, setReceiptViewsReview] = useState<{
+    assets: CopilotReceiptViewsSelection["assets"];
+    finish(assets: CopilotReceiptViewsSelection["assets"] | null): void;
+  } | null>(null);
+  const cancelReceiptViewsReview = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => {
+    receiptCaptureAllowed.current = canManageProducts;
+    if (!canManageProducts) cancelReceiptViewsReview.current?.();
+    return () => {
+      receiptCaptureAllowed.current = false;
+      cancelReceiptViewsReview.current?.();
+    };
+  }, [canManageProducts]);
   const canDeclareCommercialExecution = canManageProducts; // Current MANAGER role policy.
   const proposals = useMemo(
     () =>
@@ -889,6 +908,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     conversationId: string,
     signal: AbortSignal,
     capacity: number,
+    grouped = false,
   ) => {
     if (!receiptCaptureAllowed.current)
       throw Error("COPILOT_RECEIPT_CAPTURE_FORBIDDEN");
@@ -901,41 +921,75 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       mediaTypes: ["images"],
       allowsEditing: false,
       allowsMultipleSelection: true,
-      selectionLimit: capacity,
+      orderedSelection: grouped,
+      selectionLimit: grouped ? MAX_RECEIPT_VIEWS : capacity,
       quality: 1,
       exif: false,
     });
     if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
     if (selected.canceled) return undefined;
+    const assets = selected.assets.map((asset, index) => {
+      const extension = resolveWasteReceiptImageExtension({
+        temporaryUri: asset.uri,
+        mimeType: asset.mimeType,
+        originalFilename: asset.fileName,
+      });
+      return {
+        uri: asset.uri,
+        filename: asset.fileName ?? `Ticket de casse ${index + 1}.${extension}`,
+        mimeType: (
+          {
+            jpg: "image/jpeg",
+            png: "image/png",
+            heic: "image/heic",
+            heif: "image/heif",
+          } as const
+        )[extension],
+      };
+    });
+    if (grouped) {
+      if (assets.length < 2 || assets.length > MAX_RECEIPT_VIEWS)
+        throw Error("COPILOT_RECEIPT_VIEW_COUNT_INVALID");
+      if (signal.aborted || !receiptCaptureAllowed.current)
+        throw Error("COPILOT_ATTACHMENT_CANCELLED");
+      const ordered = await new Promise<
+        CopilotReceiptViewsSelection["assets"] | null
+      >((resolve) => {
+        let done = false;
+        const finish = (
+          value: CopilotReceiptViewsSelection["assets"] | null,
+        ) => {
+          if (done) return;
+          done = true;
+          signal.removeEventListener("abort", cancel);
+          cancelReceiptViewsReview.current = undefined;
+          setReceiptViewsReview(null);
+          resolve(value);
+        };
+        const cancel = () => finish(null);
+        cancelReceiptViewsReview.current = cancel;
+        signal.addEventListener("abort", cancel, { once: true });
+        setReceiptViewsReview({ assets, finish });
+      });
+      if (!ordered) return undefined;
+      return new CopilotReceiptViewsIntake(
+        sqlite,
+        { storeId, ownerId },
+        randomUUID,
+      ).capture(
+        conversationId,
+        { mode: "ONE_RECEIPT_MULTIPLE_PHOTOS", assets: ordered },
+        { canCapture: () => receiptCaptureAllowed.current, signal },
+        capacity,
+      );
+    }
     return new CopilotReceiptPhotoIntake(
       sqlite,
       { storeId, ownerId },
       randomUUID,
     ).capture(
       conversationId,
-      {
-        mode: "ONE_PHOTO_PER_RECEIPT",
-        assets: selected.assets.map((asset, index) => {
-          const extension = resolveWasteReceiptImageExtension({
-            temporaryUri: asset.uri,
-            mimeType: asset.mimeType,
-            originalFilename: asset.fileName,
-          });
-          return {
-            uri: asset.uri,
-            filename:
-              asset.fileName ?? `Ticket de casse ${index + 1}.${extension}`,
-            mimeType: (
-              {
-                jpg: "image/jpeg",
-                png: "image/png",
-                heic: "image/heic",
-                heif: "image/heif",
-              } as const
-            )[extension],
-          };
-        }),
-      },
+      { mode: "ONE_PHOTO_PER_RECEIPT", assets },
       { canCapture: () => receiptCaptureAllowed.current, signal },
       capacity,
     );
@@ -1258,6 +1312,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         }
         onAttachPdf={attachPdf}
         onAttachReceipts={canManageProducts ? attachReceipts : undefined}
+        onAttachReceiptViews={
+          canManageProducts
+            ? (conversationId, signal, capacity) =>
+                attachReceipts(conversationId, signal, capacity, true)
+            : undefined
+        }
         onOpenMercalys={() => {
           void importFiles();
         }}
@@ -1323,6 +1383,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           />
         ) : null}
       </Modal>
+      {receiptViewsReview ? (
+        <ReceiptViewsReview
+          assets={receiptViewsReview.assets}
+          onFinish={receiptViewsReview.finish}
+        />
+      ) : null}
       <BottomSheet
         visible={menu}
         title="Conversations"
