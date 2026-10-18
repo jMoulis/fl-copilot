@@ -1,3 +1,4 @@
+import { readDeclaredActionReview } from "./copilot/declared-action-review-tool";
 import {
   readActionExecutionPreview,
   readActionExecutions,
@@ -835,6 +836,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                           ownerId: p.ownerId,
                           conversationId: request.body.conversationId,
                         },
+                        input,
+                      );
+                      await authorize();
+                      return v;
+                    },
+                    declaredActionReview: async (input) => {
+                      const p = await authorize();
+                      const v = await readDeclaredActionReview(
+                        db,
+                        { storeId, ownerId: p.ownerId },
                         input,
                       );
                       await authorize();

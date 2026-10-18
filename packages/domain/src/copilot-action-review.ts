@@ -28,25 +28,49 @@ export const copilotActionReviewInputSchema = z
     aggregation: periodAnalysisInputSchema.shape.aggregation,
     metrics: periodAnalysisInputSchema.shape.metrics,
   })
-  .superRefine((v, c) => {
-    if (new Set(v.metrics).size !== v.metrics.length)
-      c.addIssue({ code: "custom", message: "Indicateurs dupliqués." });
-    if (
-      v.before.end >= v.during.start ||
-      (v.after && v.during.end >= v.after.start)
-    )
-      c.addIssue({
-        code: "custom",
-        message:
-          "Les périodes avant, pendant et après doivent être ordonnées et distinctes.",
-      });
-    if (
-      (Date.parse(v.after?.end ?? v.during.end) - Date.parse(v.before.start)) /
-        86400000 >=
-      93
-    )
-      c.addIssue({
-        code: "custom",
-        message: "Le bilan ciblé couvre 93 jours calendaires maximum.",
-      });
-  });
+  .superRefine(validateActionReviewWindows);
+
+export function validateActionReviewWindows(
+  v: {
+    before: z.infer<typeof window>;
+    during: z.infer<typeof window>;
+    after: z.infer<typeof window> | null;
+    metrics: string[];
+  },
+  c: z.RefinementCtx,
+) {
+  if (new Set(v.metrics).size !== v.metrics.length)
+    c.addIssue({ code: "custom", message: "Indicateurs dupliqués." });
+  if (
+    v.before.end >= v.during.start ||
+    (v.after && v.during.end >= v.after.start)
+  )
+    c.addIssue({
+      code: "custom",
+      message:
+        "Les périodes avant, pendant et après doivent être ordonnées et distinctes.",
+    });
+  if (
+    (Date.parse(v.after?.end ?? v.during.end) - Date.parse(v.before.start)) /
+      86400000 >=
+    93
+  )
+    c.addIssue({
+      code: "custom",
+      message: "Le bilan ciblé couvre 93 jours calendaires maximum.",
+    });
+}
+
+/** A selected private realization, never a commercial task or inferred product link. */
+export const declaredActionReviewInputSchema = z
+  .strictObject({
+    executionId: z.uuid(),
+    expectedVersion: z.union([z.literal(1), z.literal(2)]),
+    productId: z.uuid(),
+    before: window,
+    during: window,
+    after: window.nullable(),
+    aggregation: periodAnalysisInputSchema.shape.aggregation,
+    metrics: periodAnalysisInputSchema.shape.metrics,
+  })
+  .superRefine(validateActionReviewWindows);

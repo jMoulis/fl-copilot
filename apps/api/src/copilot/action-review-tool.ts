@@ -242,59 +242,13 @@ export async function readActionReview(
   let afterComparison: ActionReviewResult["afterComparison"] = null;
   let fieldEvents: ActionReviewResult["fieldEvents"] = null;
   if (status === "READY") {
-    const nextDate = new Date(
-      Date.parse(input.after?.end ?? input.during.end) + 86400000,
-    )
-      .toISOString()
-      .slice(0, 10);
-    [duringComparison, afterComparison, fieldEvents] = await Promise.all([
-      readPeriodAnalysis(db, storeId, {
-        productId: input.productId,
-        currentPeriod: input.during,
-        referencePeriod: input.before,
-        aggregation: input.aggregation,
-        metrics: input.metrics,
-      }),
-      input.after
-        ? readPeriodAnalysis(db, storeId, {
-            productId: input.productId,
-            currentPeriod: input.after,
-            referencePeriod: input.before,
-            aggregation: input.aggregation,
-            metrics: input.metrics,
-          })
-        : Promise.resolve(null),
-      readFieldEvents(db, storeId, {
-        productId: input.productId,
-        startAt: selectStoreEventTime(input.before.start, "00:00"),
-        endAt: selectStoreEventTime(nextDate, "00:00"),
-        afterId: null,
-        limit: 5,
-      }),
-    ]);
+    ({ duringComparison, afterComparison, fieldEvents } =
+      await readActionReviewObservations(db, storeId, input));
     // Do not label a concurrent plan/declaration revision as the reviewed action.
     const latest = await readExecutionContext(db, storeId, input.weekStart);
     if (
       JSON.stringify([p, records]) !==
       JSON.stringify([latest.p, latest.records])
-    )
-      throw Error("COPILOT_ACTION_REVIEW_CHANGED");
-    // Reference values/coverage must agree across the two bounded canonical reads.
-    const reference = (
-      r: NonNullable<ActionReviewResult["duringComparison"]>,
-    ) => ({
-      coverage: r.coverage.map((c) => [c.metric, c.reference]),
-      values: r.evidence
-        .filter((e) =>
-          ["reference", "reference-coverage"].includes(JSON.parse(e.id).at(-1)),
-        )
-        .map((e) => [e.label, e.value, e.detail]),
-      wasteRate: r.wasteRates?.[1] ?? null,
-    });
-    if (
-      afterComparison &&
-      JSON.stringify(reference(duringComparison)) !==
-        JSON.stringify(reference(afterComparison))
     )
       throw Error("COPILOT_ACTION_REVIEW_CHANGED");
   }
@@ -397,4 +351,64 @@ export async function readActionReview(
     fieldEvents,
     evidence: [...new Map(evidence.map((e) => [e.id, e])).values()],
   });
+}
+
+/** Same deterministic reads for commercial tasks and private declared actions. */
+export async function readActionReviewObservations(
+  db: Db,
+  storeId: string,
+  input: Pick<
+    z.infer<typeof inputSchema>,
+    "productId" | "before" | "during" | "after" | "aggregation" | "metrics"
+  >,
+) {
+  const nextDate = new Date(
+    Date.parse(input.after?.end ?? input.during.end) + 86400000,
+  )
+    .toISOString()
+    .slice(0, 10);
+  const [duringComparison, afterComparison, fieldEvents] = await Promise.all([
+    readPeriodAnalysis(db, storeId, {
+      productId: input.productId,
+      currentPeriod: input.during,
+      referencePeriod: input.before,
+      aggregation: input.aggregation,
+      metrics: input.metrics,
+    }),
+    input.after
+      ? readPeriodAnalysis(db, storeId, {
+          productId: input.productId,
+          currentPeriod: input.after,
+          referencePeriod: input.before,
+          aggregation: input.aggregation,
+          metrics: input.metrics,
+        })
+      : Promise.resolve(null),
+    readFieldEvents(db, storeId, {
+      productId: input.productId,
+      startAt: selectStoreEventTime(input.before.start, "00:00"),
+      endAt: selectStoreEventTime(nextDate, "00:00"),
+      afterId: null,
+      limit: 5,
+    }),
+  ]);
+  // Reference values/coverage must agree across the two bounded canonical reads.
+  const reference = (
+    r: NonNullable<ActionReviewResult["duringComparison"]>,
+  ) => ({
+    coverage: r.coverage.map((c) => [c.metric, c.reference]),
+    values: r.evidence
+      .filter((e) =>
+        ["reference", "reference-coverage"].includes(JSON.parse(e.id).at(-1)),
+      )
+      .map((e) => [e.label, e.value, e.detail]),
+    wasteRate: r.wasteRates?.[1] ?? null,
+  });
+  if (
+    afterComparison &&
+    JSON.stringify(reference(duringComparison)) !==
+      JSON.stringify(reference(afterComparison))
+  )
+    throw Error("COPILOT_ACTION_REVIEW_CHANGED");
+  return { duringComparison, afterComparison, fieldEvents };
 }

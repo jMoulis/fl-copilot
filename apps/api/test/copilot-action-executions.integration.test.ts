@@ -1,3 +1,5 @@
+import { readDeclaredActionReview } from "../src/copilot/declared-action-review-tool";
+import { actionReviewPerformance } from "../../../scripts/test-action-review-fixtures";
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db, type Document } from "mongodb";
 import {
@@ -489,6 +491,111 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           entityType: "copilot_action_execution",
         }),
       ).toBe(2);
+    }, 60000);
+    it("reviews a real offline-confirmed and synchronized realization, without any commercial task or accepted choice", async () => {
+      const f = await seed();
+      const local = await confirm(f);
+      await sync(f).sync(f.storeId);
+      const productId = randomUUID();
+      await db.collection<Document & { _id: string }>("products").insertOne({
+        _id: productId,
+        storeId: f.storeId,
+        label: "Tomate vrac",
+      });
+      for (const [date, sales, waste] of [
+        ["2026-10-14", "100", "5"],
+        ["2026-10-16", "200", "0"],
+        ["2026-10-18", "150", null],
+      ])
+        await db
+          .collection<Document & { _id: string }>("productDailyPerformance")
+          .insertOne(
+            actionReviewPerformance(
+              f.storeId,
+              productId,
+              date!,
+              sales!,
+              waste!,
+              date === "2026-10-16",
+            ),
+          );
+      const scope = { storeId: f.storeId, ownerId: f.ownerId };
+      const input = {
+        executionId: local.link!.id,
+        expectedVersion: 1,
+        productId,
+        before: { start: "2026-10-14", end: "2026-10-15" },
+        during: { start: "2026-10-16", end: "2026-10-17" },
+        after: { start: "2026-10-18", end: "2026-10-18" },
+        aggregation: "SUM",
+        metrics: ["sales", "margin", "waste"],
+      };
+      const before = await db
+        .collection("syncChanges")
+        .countDocuments({ storeId: f.storeId });
+      const r = await readDeclaredActionReview(
+        db,
+        scope,
+        input,
+        "2026-10-18T12:01:00.000Z",
+      );
+      expect(r.status).toBe("READY");
+      expect(r.duringComparison?.coverage[0]?.current).toMatchObject({
+        expectedDays: 2,
+        partialDays: 1,
+        missingDays: 1,
+      });
+      expect(
+        r.evidence.some((e) => e.sourceType === "KPI" && e.value === "200"),
+      ).toBe(true);
+      for (const name of [
+        "copilotDecisions",
+        "commercialWeekPlans",
+        "commercialExecutionTasks",
+      ])
+        expect(
+          await db.collection(name).countDocuments({ storeId: f.storeId }),
+        ).toBe(0);
+      expect(
+        await db
+          .collection("syncChanges")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(before);
+      for (const other of [
+        { ...scope, ownerId: randomUUID() },
+        { ...scope, storeId: randomUUID() },
+      ]) {
+        const hidden = await readDeclaredActionReview(
+          db,
+          other,
+          input,
+          "2026-10-18T12:01:00.000Z",
+        );
+        expect(hidden.status).toBe("EXECUTION_UNAVAILABLE");
+        expect(hidden.duringComparison).toBeNull();
+        expect(JSON.stringify(hidden)).not.toContain(f.input.action);
+      }
+      const withdrawal = await f.repository.open(f.actionCard);
+      await f.repository.save(f.actionCard, withdrawal.review, true);
+      await sync(f).sync(f.storeId);
+      expect(
+        (
+          await readDeclaredActionReview(
+            db,
+            scope,
+            input,
+            "2026-10-18T12:01:00.000Z",
+          )
+        ).status,
+      ).toBe("EXECUTION_CHANGED");
+      const withdrawn = await readDeclaredActionReview(
+        db,
+        scope,
+        { ...input, expectedVersion: 2 },
+        "2026-10-18T12:01:00.000Z",
+      );
+      expect(withdrawn.status).toBe("EXECUTION_WITHDRAWN");
+      expect(withdrawn.duringComparison).toBeNull();
     }, 60000);
   },
 );

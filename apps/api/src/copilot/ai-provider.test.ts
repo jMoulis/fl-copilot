@@ -5742,3 +5742,96 @@ it.each([false, true])(
     }
   },
 );
+
+it.each(["READY", "DISABLED", "INPUT_MISMATCH", "FOREIGN"])(
+  "bounds the private realization review at the SDK boundary (%s)",
+  async (mode) => {
+    const { declaredActionReviewFixture } =
+      await import("../../../../scripts/test-declared-action-review-fixtures");
+    const { readDeclaredActionReview } =
+      await import("./declared-action-review-tool");
+    const n = await declaredActionReviewFixture(),
+      f = fixture();
+    try {
+      f.request.storeId = n.scope.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: n.scope.storeId,
+          evaluatedAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const value = await readDeclaredActionReview(
+        n.db,
+        n.scope,
+        n.input,
+        "2026-10-18T12:01:00.000Z",
+      );
+      if (mode === "INPUT_MISMATCH") value.input.expectedVersion = 2;
+      if (mode === "FOREIGN") value.declaration!.storeId = randomUUID();
+      const declaredActionReview = vi.fn(async () => value);
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        if (calls++ === 0) {
+          expect(
+            body.tools.some(
+              (t: { name: string }) =>
+                t.name === "recommendation_action_review",
+            ),
+          ).toBe(mode !== "DISABLED");
+          if (mode !== "DISABLED") {
+            const envelope = z
+              .record(z.string(), z.unknown())
+              .parse(await response().json());
+            envelope.output = [
+              {
+                type: "function_call",
+                id: "fc_review",
+                call_id: "call_review",
+                name: "recommendation_action_review",
+                arguments: JSON.stringify(n.input),
+                status: "completed",
+              },
+            ];
+            return new Response(JSON.stringify(envelope), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+        } else {
+          const output = JSON.parse(
+            body.input.find(
+              (x: { type: string }) => x.type === "function_call_output",
+            ).output,
+          );
+          expect(output).toMatchObject(
+            mode === "READY" ? { status: "READY" } : { unavailable: true },
+          );
+          if (mode !== "READY")
+            expect(JSON.stringify(output)).not.toContain(
+              n.declaration.snapshot.action,
+            );
+        }
+        return response();
+      };
+      const activities: Array<{ stage: string }> = [];
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        ...(mode === "DISABLED" ? {} : { declaredActionReview }),
+      }).generate(f.request, schema, undefined, undefined, (a) =>
+        activities.push(a),
+      );
+      expect(declaredActionReview).toHaveBeenCalledTimes(
+        mode === "DISABLED" ? 0 : 1,
+      );
+      expect(result.toolEvidence ?? []).toEqual(
+        mode === "READY" ? value.evidence : [],
+      );
+      if (mode === "READY")
+        expect(activities.some((a) => a.stage === "COMPARISON")).toBe(true);
+    } finally {
+      n.n.db.db.close();
+    }
+  },
+);
