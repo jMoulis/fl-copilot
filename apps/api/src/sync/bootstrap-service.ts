@@ -1,3 +1,7 @@
+import {
+  serializeActionExecution,
+  type ActionExecutionDocument,
+} from "../copilot/action-execution-store";
 import { legacyCommercialExecution } from "@fl-copilot/domain";
 import {
   serializeExecutionLink,
@@ -134,6 +138,20 @@ export function createMongoSyncBootstrapService(
                 { _id: store.storeId },
                 { session, promoteLongs: false },
               );
+            const actions =
+              query.copilotActionExecutions === "true" &&
+              query.copilotHistory === "true"
+                ? await mongoDatabase
+                    .collection<ActionExecutionDocument>("actionExecutions")
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .limit(501)
+                    .toArray()
+                : null;
+            if (actions && actions.length > 500)
+              throw Error("COPILOT_ACTION_EXECUTION_LIMIT");
             const links =
               query.copilotExecutionLinks === "true" &&
               query.copilotHistory === "true"
@@ -390,6 +408,14 @@ export function createMongoSyncBootstrapService(
               },
               entities: {
                 ...copilotHistory,
+                ...(actions
+                  ? {
+                      copilotActionExecutions: actions.map(
+                        serializeActionExecution,
+                      ),
+                      copilotActionExecutionOwnerId: store.userId,
+                    }
+                  : {}),
                 ...(links
                   ? {
                       copilotExecutionLinks: links.map(serializeExecutionLink),

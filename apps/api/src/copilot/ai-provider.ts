@@ -1,4 +1,10 @@
 import {
+  actionExecutionInputSchema,
+  actionExecutionPreviewSchema,
+  actionExecutionsReadInputSchema,
+  actionExecutionsReadResultSchema,
+} from "@fl-copilot/domain";
+import {
   executionLinkInputSchema,
   executionLinkPreviewSchema,
   executionLinksReadInputSchema,
@@ -318,6 +324,9 @@ export interface CopilotAiProvider {
     metadata: CopilotGenerationMetadata;
     toolEvidence?: CopilotGenerationRequest["evidence"];
     executionLinkPreviews?: Array<z.infer<typeof executionLinkPreviewSchema>>;
+    actionExecutionPreviews?: Array<
+      z.infer<typeof actionExecutionPreviewSchema>
+    >;
     recommendationTrackingPreviews?: Array<
       z.infer<typeof recommendationTrackingPreviewSchema>
     >;
@@ -459,6 +468,12 @@ export function createCopilotAiProvider(
     cataloguePreview?(
       input: z.infer<typeof copilotCatalogueInputSchema>,
     ): Promise<z.infer<typeof copilotCataloguePreviewSchema>>;
+    actionExecutionPreview?(
+      input: z.infer<typeof actionExecutionInputSchema>,
+    ): Promise<z.infer<typeof actionExecutionPreviewSchema>>;
+    actionExecutions?(
+      input: z.infer<typeof actionExecutionsReadInputSchema>,
+    ): Promise<z.infer<typeof actionExecutionsReadResultSchema>>;
     executionLinkPreview?(
       input: z.infer<typeof executionLinkInputSchema>,
     ): Promise<z.infer<typeof executionLinkPreviewSchema>>;
@@ -708,6 +723,9 @@ export function createCopilotAiProvider(
         const cataloguePreviews: Array<
           z.infer<typeof copilotCataloguePreviewSchema>
         > = [];
+        const actionExecutionPreviews: Array<
+          z.infer<typeof actionExecutionPreviewSchema>
+        > = [];
         const executionLinkPreviews: Array<
           z.infer<typeof executionLinkPreviewSchema>
         > = [];
@@ -878,6 +896,8 @@ export function createCopilotAiProvider(
                   ? 4
                   : reads.planReadiness ||
                       reads.commercialPreparation ||
+                      reads.actionExecutionPreview ||
+                      reads.actionExecutions ||
                       reads.executionLinkPreview ||
                       reads.executionLinks ||
                       reads.executionPreview ||
@@ -923,6 +943,8 @@ export function createCopilotAiProvider(
                   ? 3
                   : reads.planReadiness ||
                       reads.commercialPreparation ||
+                      reads.actionExecutionPreview ||
+                      reads.actionExecutions ||
                       reads.executionLinkPreview ||
                       reads.executionLinks ||
                       reads.executionPreview ||
@@ -1404,6 +1426,65 @@ export function createCopilotAiProvider(
                               )
                                 throw Error("READ_SCOPE_INVALID");
                               executionLinkPreviews.push(value);
+                              return value;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.actionExecutionPreview
+                  ? {
+                      recommendation_action_execution_preview: tool({
+                        description:
+                          "Prepare a user-reported realization of one earlier suggestion in this chat, even without a saved choice or commercial-plan task. Use the exact earlier assistant sourceMessageId and quote, describe only what the user says they actually did, and leave unknown real dates/price/unit/location and notes null. Never infer execution from acceptance or intent. READY prepares a native unchecked confirmation card; nothing is saved until the user confirms. Keep official figures unchanged; no physical execution or causal proof.",
+                        inputSchema: actionExecutionInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["action-execution-preview", input]),
+                            async () => {
+                              const value = actionExecutionPreviewSchema.parse(
+                                await reads.actionExecutionPreview!(input),
+                              );
+                              if (
+                                JSON.stringify(value.input) !==
+                                JSON.stringify(
+                                  actionExecutionInputSchema.parse(input),
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              actionExecutionPreviews.push(value);
+                              return value;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.actionExecutions
+                  ? {
+                      recommendation_action_executions: tool({
+                        description:
+                          "Read this account's synchronized private declarations of actions realized from chat advice, including withdrawals. Filter a known recommendationId or null; UUID cursor and up to five records. Records may still be offline or on later pages. Withdrawn statements are historical; multiple statements may describe the same physical action. These are user reports, separate from decisions, commercial-plan tasks, official figures and causal effects. Withdrawals use the original native card. No writes; cite the returned sources concisely.",
+                        inputSchema: actionExecutionsReadInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["action-executions", input]),
+                            async () => {
+                              const value =
+                                actionExecutionsReadResultSchema.parse(
+                                  await reads.actionExecutions!(input),
+                                );
+                              if (
+                                JSON.stringify(value.input) !==
+                                  JSON.stringify(
+                                    actionExecutionsReadInputSchema.parse(
+                                      input,
+                                    ),
+                                  ) ||
+                                value.entries.some(
+                                  (e) => e.storeId !== request.storeId,
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
                               return value;
                             },
                           ),
@@ -2841,6 +2922,9 @@ export function createCopilotAiProvider(
           ...(reads
             ? {
                 toolEvidence: [...evidence.values()],
+                actionExecutionPreviews: actionExecutionPreviews.filter((p) =>
+                  p.evidence.every((e) => evidence.has(e.id)),
+                ),
                 executionLinkPreviews: executionLinkPreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),

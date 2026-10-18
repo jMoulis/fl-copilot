@@ -22,6 +22,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     need_unit: "Unité de besoin",
     copilot_decision: "Décision du copilote",
     copilot_execution_link: "Association de mise en place",
+    copilot_action_execution: "Réalisation déclarée",
     copilot_knowledge: "Pratique mémorisée",
     store_context_settings: "Réglages du magasin",
     commercial_week_plan: "Plan commercial validé",

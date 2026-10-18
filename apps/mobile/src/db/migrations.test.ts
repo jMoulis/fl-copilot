@@ -83,6 +83,7 @@ describe("local SQLite migrations", () => {
       .all()
       .map((row) => row.name);
     expect(tables).toEqual([
+      "action_executions",
       "app_metadata",
       "commercial_choice_history",
       "commercial_execution_history",
