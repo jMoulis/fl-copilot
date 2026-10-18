@@ -72,7 +72,8 @@ export function importSourceClassification(label: string) {
 export const copilotImportReferenceSchema = z.strictObject({
   kind: z.literal("MERCALYS_CHAT_IMPORT"),
   schemaVersion: z.literal(1),
-  policyVersion: z.literal(1),
+  // V1 waits for the whole file; V2 authorizes progressive unambiguous subsets.
+  policyVersion: z.union([z.literal(1), z.literal(2)]),
   batchId: z.uuid(),
   label: z.string().trim().min(1).max(240),
   manifestHash: z.string().regex(/^[a-f0-9]{64}$/),

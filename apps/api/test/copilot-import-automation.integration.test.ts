@@ -106,42 +106,57 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               localRecordCount: p!.records.length,
             },
           );
-          const outbox = (
-            await new OutboxRepository(s.a).listPending(s.scope.storeId)
-          ).filter((c) => !c.entityType.startsWith("copilot_"));
-          const request = syncPushRequestSchema.parse({
-            syncProtocolVersion: 1,
-            appVersion: "test",
-            storeId: s.scope.storeId,
-            deviceId: s.scope.deviceId,
-            commands: outbox.map((c) => ({
-              commandId: c.commandId,
-              localSequence: c.localSequence,
-              type: c.commandType,
-              entityType: c.entityType,
-              entityId: c.entityId,
-              expectedRemoteVersion: c.expectedRemoteVersion,
-              payload: c.payload,
-              createdAt: c.createdAt,
-            })),
-          });
+          const outbox = new OutboxRepository(s.a);
           const push = createMongoSyncPushService(
             service,
             () => new Date(),
             reader,
           );
-          for (let n = 0; n < 2; n++) {
-            const response = await push.push(
-              request,
-              randomUUID(),
-              s.scope.ownerId,
+          // A safe subset can already be frozen before the identity decision.
+          // Drain in entity order, checking exactly-once replay for every packet.
+          for (let round = 0; round < 3; round++) {
+            const pending = (await outbox.listPending(s.scope.storeId)).filter(
+              (c) => !c.entityType.startsWith("copilot_"),
             );
-            expect(response.results.map((r) => r.status)).toEqual(
-              request.commands.map(() =>
-                n === 0 ? "APPLIED" : "ALREADY_APPLIED",
-              ),
-            );
+            if (!pending.length) break;
+            const request = syncPushRequestSchema.parse({
+              syncProtocolVersion: 1,
+              appVersion: "test",
+              storeId: s.scope.storeId,
+              deviceId: s.scope.deviceId,
+              commands: pending.map((c) => ({
+                commandId: c.commandId,
+                localSequence: c.localSequence,
+                type: c.commandType,
+                entityType: c.entityType,
+                entityId: c.entityId,
+                expectedRemoteVersion: c.expectedRemoteVersion,
+                payload: c.payload,
+                createdAt: c.createdAt,
+              })),
+            });
+            for (let n = 0; n < 2; n++) {
+              const response = await push.push(
+                request,
+                randomUUID(),
+                s.scope.ownerId,
+              );
+              expect(response.results.map((r) => r.status)).toEqual(
+                request.commands.map(() =>
+                  n === 0 ? "APPLIED" : "ALREADY_APPLIED",
+                ),
+              );
+            }
+            for (const command of pending) {
+              await outbox.markSyncing(command.commandId);
+              await outbox.markAcknowledged(command.commandId);
+            }
           }
+          expect(
+            (await outbox.listPending(s.scope.storeId)).filter(
+              (c) => !c.entityType.startsWith("copilot_"),
+            ),
+          ).toHaveLength(0);
           expect(
             await db
               .collection("products")

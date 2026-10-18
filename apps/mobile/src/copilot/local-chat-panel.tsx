@@ -542,9 +542,9 @@ function LocalChatPanel({
         ) : null}
         {onOpenMercalys ? (
           <Text style={{ padding: 12 }}>
-            Les références uniques sont créées et les fichiers sans ambiguïté
-            sont publiés automatiquement. Les doutes et les remplacements vous
-            seront demandés ici.
+            Les références uniques sont créées et les lignes sans ambiguïté sont
+            publiées automatiquement, sans attendre les autres produits. Les
+            doutes et les remplacements vous seront demandés ici.
           </Text>
         ) : null}
         {onOpenMercalys ? (

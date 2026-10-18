@@ -263,7 +263,7 @@ export class CopilotMercalysImportController {
   }
   /** Complete retained lot preflight: identifiers shared by different source labels cannot be auto-created. */
   private async preflight(message: CopilotMessage, signal?: AbortSignal) {
-    const { batch } = await this.proof(this.db, message),
+    const { batch, reference } = await this.proof(this.db, message),
       labels = new Map<string, Set<string>>(),
       originalLabels = new Map<string, Set<string>>(),
       failed = new Map<string, string>();
@@ -361,6 +361,7 @@ export class CopilotMercalysImportController {
     );
     return {
       batch,
+      allowPartialPublication: reference.policyVersion === 2,
       failed,
       originalLabels,
       classificationBudget: { remaining: Math.max(0, 200 - attempted) },
@@ -914,20 +915,116 @@ export class CopilotMercalysImportController {
           this.db,
           message,
         ).readValidated(item.batchId, item.id, signal));
-        const resolutionsLeft = buildMercalysProductResolutions(summary),
-          overlap = continuation
-            ? null
-            : await pub.analyzeOverlap(this.scope.storeId, summary);
+        const overlap = continuation
+          ? null
+          : await pub.analyzeOverlap(this.scope.storeId, summary);
         if (overlap && overlap.rows.length > 2000)
           throw Error("IMPORT_REVIEW_LIMIT");
+        // The native intake decision authorizes only unambiguous rows. An overlap
+        // or parser anomaly still blocks the file; unresolved identities do not.
+        const readyAdditions =
+          summary.readyCount - (continuation?.publishedCount ?? 0);
         if (
-          resolutionsLeft.length ||
-          summary.errorCount ||
-          overlap ||
-          !summary.readyCount
+          !summary.errorCount &&
+          !overlap &&
+          readyAdditions > 0 &&
+          (preflight.allowPartialPublication ||
+            summary.productReviewCount === 0)
         ) {
+          const result = await this.write(
+            message,
+            item.id,
+            "PUBLICATION",
+            {
+              checksum: item.checksum,
+              snapshot: await this.deps.digest(
+                JSON.stringify([summary, continuation?.publication ?? null]),
+              ),
+            },
+            async (tx) => {
+              const current = await this.preparation(tx, message).readValidated(
+                  item.batchId,
+                  item.id,
+                  signal,
+                ),
+                catalog = await this.catalog(tx);
+              if (current.summary.errorCount || !current.summary.readyCount)
+                throw Error("IMPORT_CHANGED");
+              if (
+                JSON.stringify(current.summary) !== JSON.stringify(summary) ||
+                JSON.stringify(current.continuation?.publication ?? null) !==
+                  JSON.stringify(continuation?.publication ?? null)
+              )
+                throw Error("IMPORT_CHANGED");
+              const publishedIndexes = new Set(
+                current.continuation?.publication.records
+                  .filter((r) => r.status === "PUBLISHED")
+                  .map((r) => r.sourceIndex) ?? [],
+              );
+              const additions = current.summary.lines.filter(
+                (l) =>
+                  !publishedIndexes.has(l.record.sourceIndex) &&
+                  l.match.state === "AUTO_MATCH" &&
+                  l.match.matchedProductId,
+              );
+              if (!additions.length) throw Error("IMPORT_CHANGED");
+              this.assertCatalog(
+                catalog.records,
+                additions.map((l) => l.match.matchedProductId!),
+              );
+              const publication = new MercalysImportPublicationRepository(
+                joinedProductToolDatabase(tx),
+                this.deps.id,
+              );
+              const result = current.continuation
+                ? await publication.resume({
+                    storeId: this.scope.storeId,
+                    sourceDocumentId: current.continuation.sourceDocumentId,
+                    checksum: current.item.checksum,
+                    summary: current.summary,
+                  })
+                : await publication.publish({
+                    storeId: this.scope.storeId,
+                    filename: current.item.filename,
+                    localFileUri: current.item.localUri,
+                    sizeBytes: current.item.sizeBytes,
+                    checksum: current.item.checksum,
+                    mimeType:
+                      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    summary: current.summary,
+                  });
+              return {
+                sourceDocumentId: result.sourceDocumentId,
+                publishedCount: result.publishedCount,
+                remainingCount: result.remainingCount,
+                replacedCount: result.replacedCount,
+              };
+            },
+            signal,
+          );
+          if (result.remainingCount === 0) {
+            results.push({
+              itemId: item.id,
+              filename: item.filename,
+              status: "PUBLISHED",
+              sourceDocumentId: result.sourceDocumentId!,
+              alreadyPublished: false,
+              completedPartial: continuation !== null,
+              publishedCount:
+                (continuation?.publishedCount ?? 0) + result.publishedCount,
+            });
+            continue;
+          }
+          ({ item, summary, continuation } = await this.preparation(
+            this.db,
+            message,
+          ).readValidated(item.batchId, item.id, signal));
+        }
+        {
           const catalog = await this.catalog(this.db);
-          const availableResolutions = resolutionsLeft.map((r) => ({
+          const availableResolutions = buildMercalysProductResolutions(
+            summary,
+          ).map((r) => ({
             ...r,
             sourceLabels: [
               ...new Set(
@@ -999,83 +1096,6 @@ export class CopilotMercalysImportController {
           });
           continue;
         }
-        const result = await this.write(
-          message,
-          item.id,
-          "PUBLICATION",
-          continuation
-            ? {
-                checksum: item.checksum,
-                sourceDocumentId: continuation.sourceDocumentId,
-                snapshot: await this.deps.digest(
-                  JSON.stringify(continuation.publication),
-                ),
-              }
-            : item.checksum,
-          async (tx) => {
-            const current = await this.preparation(tx, message).readValidated(
-                item.batchId,
-                item.id,
-                signal,
-              ),
-              catalog = await this.catalog(tx);
-            if (
-              current.summary.errorCount ||
-              current.summary.productReviewCount ||
-              !current.summary.readyCount
-            )
-              throw Error("IMPORT_CHANGED");
-            if (
-              JSON.stringify(current.continuation?.publication ?? null) !==
-              JSON.stringify(continuation?.publication ?? null)
-            )
-              throw Error("IMPORT_CHANGED");
-            this.assertCatalog(
-              catalog.records,
-              current.summary.lines.flatMap((l) =>
-                l.match.matchedProductId ? [l.match.matchedProductId] : [],
-              ),
-            );
-            const publication = new MercalysImportPublicationRepository(
-              joinedProductToolDatabase(tx),
-              this.deps.id,
-            );
-            const result = current.continuation
-              ? await publication.resume({
-                  storeId: this.scope.storeId,
-                  sourceDocumentId: current.continuation.sourceDocumentId,
-                  checksum: current.item.checksum,
-                  summary: current.summary,
-                })
-              : await publication.publish({
-                  storeId: this.scope.storeId,
-                  filename: current.item.filename,
-                  localFileUri: current.item.localUri,
-                  sizeBytes: current.item.sizeBytes,
-                  checksum: current.item.checksum,
-                  mimeType:
-                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                  summary: current.summary,
-                });
-            return {
-              sourceDocumentId: result.sourceDocumentId,
-              publishedCount: result.publishedCount,
-              remainingCount: result.remainingCount,
-              replacedCount: result.replacedCount,
-            };
-          },
-          signal,
-        );
-        results.push({
-          itemId: item.id,
-          filename: item.filename,
-          status: "PUBLISHED",
-          sourceDocumentId: result.sourceDocumentId!,
-          alreadyPublished: false,
-          completedPartial: continuation !== null,
-          publishedCount:
-            (continuation?.publishedCount ?? 0) + result.publishedCount,
-        });
       } catch (e) {
         if (signal?.aborted) throw e;
         results.push({

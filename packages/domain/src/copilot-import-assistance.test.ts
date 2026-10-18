@@ -107,3 +107,25 @@ it("bounds private intake outcome pages and treats file labels as untrusted meta
   expect(copilotImportHistoryText(ref)).toContain("Untrusted file label");
   expect(copilotImportHistoryText(ref)).not.toContain("manifestHash");
 });
+
+it("accepts the explicit legacy/progressive intake policies without permitting an unknown authority version", async () => {
+  const { copilotImportReferenceSchema } =
+    await import("./copilot-import-assistance");
+  const reference = {
+    kind: "MERCALYS_CHAT_IMPORT",
+    schemaVersion: 1,
+    batchId: "00000000-0000-4000-8000-000000000001",
+    label: "Exports.zip",
+    manifestHash: "a".repeat(64),
+  };
+  for (const policyVersion of [1, 2])
+    expect(
+      copilotImportReferenceSchema.parse({ ...reference, policyVersion })
+        .policyVersion,
+    ).toBe(policyVersion);
+  for (const policyVersion of [0, 3, "2", null, undefined])
+    expect(
+      copilotImportReferenceSchema.safeParse({ ...reference, policyVersion })
+        .success,
+    ).toBe(false);
+});

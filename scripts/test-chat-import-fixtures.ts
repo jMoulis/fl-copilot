@@ -79,6 +79,8 @@ export async function chatImportFixture(path = ":memory:") {
   async function add(
     options: {
       review?: boolean;
+      policyVersion?: 1 | 2;
+      invalidQuantity?: boolean;
       flow?: "MERCALYS_SALES" | "MERCALYS_WASTE";
       sales?: number;
       date?: string;
@@ -97,9 +99,15 @@ export async function chatImportFixture(path = ":memory:") {
       ),
       id = randomUUID(),
       uri = `file:///retained/${id}.xlsx`;
-    if (options.unknownLabel || options.unknownCode || options.extraUnknown) {
+    if (
+      options.unknownLabel ||
+      options.unknownCode !== undefined ||
+      options.extraUnknown ||
+      options.invalidQuantity
+    ) {
       const workbook = XLSX.read(f.bytes, { type: "array" }),
         sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
+      if (options.invalidQuantity) sheet["E5"] = { t: "s", v: "illisible" };
       if (options.unknownLabel)
         sheet["C5"] = { t: "s", v: options.unknownLabel };
       if (options.unknownCode !== undefined)
@@ -151,7 +159,7 @@ export async function chatImportFixture(path = ":memory:") {
     const message = await chat.sendImportReference(conversation.id, {
       kind: "MERCALYS_CHAT_IMPORT",
       schemaVersion: 1,
-      policyVersion: 1,
+      policyVersion: options.policyVersion ?? 2,
       batchId: batch.id,
       label: f.input.filename,
       manifestHash: await importManifestHash(batch, chatImportDigest),
@@ -262,5 +270,38 @@ export async function chatImportCatalogueChoice(
       productId: targetId,
       catalogueSelection: true as const,
     },
+  };
+}
+
+/** Normal conversational intake publishes its first safe subset without a manual publisher. */
+export async function automaticPartialChatImportFixture(
+  flow: "MERCALYS_SALES" | "MERCALYS_WASTE" = "MERCALYS_SALES",
+  path = ":memory:",
+) {
+  const s = await chatImportFixture(path);
+  await s.a.runAsync(
+    "UPDATE products SET label='PRODUIT A CONFIRMER' WHERE id=?",
+    s.productId,
+  );
+  const file = await s.add({ flow, unknownLabel: "PRODUIT A CONFIRMER VRAC" });
+  const review = (await s.controller.run(file.message)).items[0]!;
+  if (
+    review.status !== "REVIEW" ||
+    !review.priorSourceDocumentId ||
+    review.publishedCount !== 1
+  )
+    throw Error("Expected an automatic partial publication");
+  const initial = (await readMercalysPublication(
+    s.a,
+    s.scope.storeId,
+    review.priorSourceDocumentId,
+  ))!;
+  return {
+    ...s,
+    file,
+    review,
+    summary: review.summary,
+    publication: { sourceDocumentId: review.priorSourceDocumentId },
+    initial,
   };
 }

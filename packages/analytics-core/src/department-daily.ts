@@ -12,6 +12,11 @@ export interface DepartmentDailyPerformanceInput {
   readonly businessDate: string;
   readonly productPerformances: readonly ProductDailyPerformance[];
   readonly computedAt: string;
+  /** Pending source identities make department totals incomplete, without changing known money values. */
+  readonly incompleteSources?: {
+    readonly sales: boolean;
+    readonly waste: boolean;
+  };
 }
 
 export interface DepartmentDailyPerformance {
@@ -95,13 +100,31 @@ export function buildDepartmentDailyPerformance(
       salesValue: wasteSalesValue.value,
     },
     availability: {
-      salesValue: availabilityOf(salesValue),
-      salesPurchaseValue: availabilityOf(salesPurchaseValue),
-      salesMarginValue: availabilityOf(salesMarginValue),
+      salesValue: sourceAvailability(
+        salesValue,
+        input.incompleteSources?.sales,
+      ),
+      salesPurchaseValue: sourceAvailability(
+        salesPurchaseValue,
+        input.incompleteSources?.sales,
+      ),
+      salesMarginValue: sourceAvailability(
+        salesMarginValue,
+        input.incompleteSources?.sales,
+      ),
       salesMarginRate: unavailableMarginRate(input.productPerformances),
-      wastePurchaseValueKnown: availabilityOf(wastePurchaseValueKnown),
-      wastePurchaseValueEstimated: availabilityOf(wastePurchaseValueEstimated),
-      wasteSalesValue: availabilityOf(wasteSalesValue),
+      wastePurchaseValueKnown: sourceAvailability(
+        wastePurchaseValueKnown,
+        input.incompleteSources?.waste,
+      ),
+      wastePurchaseValueEstimated: sourceAvailability(
+        wastePurchaseValueEstimated,
+        input.incompleteSources?.waste,
+      ),
+      wasteSalesValue: sourceAvailability(
+        wasteSalesValue,
+        input.incompleteSources?.waste,
+      ),
     },
     productCount: input.productPerformances.length,
     sourceLineageIds: sortedUnique(
@@ -109,7 +132,10 @@ export function buildDepartmentDailyPerformance(
         (performance) => performance.sourceLineageIds,
       ),
     ),
-    inputRevision: buildInputRevision(input.productPerformances),
+    inputRevision:
+      buildInputRevision(input.productPerformances) +
+      (input.incompleteSources?.sales ? "|unresolved-source:sales" : "") +
+      (input.incompleteSources?.waste ? "|unresolved-source:waste" : ""),
     formulaVersion: DEPARTMENT_DAILY_FORMULA_VERSION,
     computedAt: input.computedAt,
   };
@@ -138,6 +164,16 @@ function aggregateCurrencyMetric(
     return { ...result, status: "PARTIAL" };
   }
   return result;
+}
+
+function sourceAvailability(
+  result: DecimalFormulaResult,
+  incomplete: boolean | undefined,
+): MetricAvailability {
+  const availability = availabilityOf(result);
+  return incomplete && result.status !== "UNAVAILABLE"
+    ? { ...availability, status: "PARTIAL", reason: "MISSING_INPUT" }
+    : availability;
 }
 
 function availabilityOf(result: DecimalFormulaResult): MetricAvailability {

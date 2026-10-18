@@ -1,11 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db, type Document } from "mongodb";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
-import { partialChatImportFixture } from "../../../scripts/test-chat-import-fixtures";
+import {
+  partialChatImportFixture,
+  automaticPartialChatImportFixture,
+} from "../../../scripts/test-chat-import-fixtures";
 import {
   MercalysTestDatabase,
   mercalysLocalFixture,
 } from "../../../scripts/test-mercalys-sync-fixtures";
+import {
+  RemoteAnalyticsConfirmationService,
+  createMongoRemoteAnalyticsRepository,
+} from "../src/analytics/remote-confirmation";
 import { runMongoMigrations } from "../src/database/migrations";
 import { createMongoSyncPushService } from "../src/sync/push-service";
 import { createMongoSyncPullService } from "../src/sync/pull-service";
@@ -39,14 +46,18 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       }
     });
     it.each([
-      { flow: "MERCALYS_SALES", beforeFirstAck: false },
-      { flow: "MERCALYS_WASTE", beforeFirstAck: false },
-      { flow: "MERCALYS_SALES", beforeFirstAck: true },
-      { flow: "MERCALYS_WASTE", beforeFirstAck: true },
+      { flow: "MERCALYS_SALES", beforeFirstAck: false, automatic: false },
+      { flow: "MERCALYS_WASTE", beforeFirstAck: false, automatic: false },
+      { flow: "MERCALYS_SALES", beforeFirstAck: true, automatic: false },
+      { flow: "MERCALYS_WASTE", beforeFirstAck: true, automatic: false },
+      { flow: "MERCALYS_SALES", beforeFirstAck: false, automatic: true },
+      { flow: "MERCALYS_WASTE", beforeFirstAck: true, automatic: true },
     ] as const)(
-      "keeps IDs and all previously published facts ($flow, complete before first ack: $beforeFirstAck)",
-      async ({ flow, beforeFirstAck }) => {
-        const s = await partialChatImportFixture(flow),
+      "keeps IDs and all previously published facts ($flow, complete before first ack: $beforeFirstAck, automatic initial subset: $automatic)",
+      async ({ flow, beforeFirstAck, automatic }) => {
+        const s = await (automatic
+            ? automaticPartialChatImportFixture(flow)
+            : partialChatImportFixture(flow)),
           other = new MercalysTestDatabase();
         try {
           const sourceId = s.publication.sourceDocumentId,
@@ -169,6 +180,16 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               conflicts: 0,
               failed: 0,
             });
+            const initialMetrics = await new RemoteAnalyticsConfirmationService(
+              createMongoRemoteAnalyticsRepository(service),
+            ).confirm(s.scope.storeId, [
+              { productId: s.productId, businessDate: "2026-10-07" },
+            ]);
+            const metric =
+              flow === "MERCALYS_SALES" ? "salesValue" : "wasteSalesValue";
+            expect(
+              initialMetrics.departments[0]!.availability[metric].status,
+            ).toBe("PARTIAL");
             await otherSync.sync(s.scope.storeId);
             expect(
               (await readMercalysPublication(other, s.scope.storeId, sourceId))!
@@ -199,6 +220,21 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             conflicts: 0,
             failed: 0,
           });
+          const finalMetrics = await new RemoteAnalyticsConfirmationService(
+            createMongoRemoteAnalyticsRepository(service),
+          ).confirm(s.scope.storeId, [
+            { productId: s.productId, businessDate: "2026-10-07" },
+          ]);
+          expect(
+            finalMetrics.departments[0]!.availability[
+              flow === "MERCALYS_SALES" ? "salesValue" : "wasteSalesValue"
+            ].status,
+          ).toBe("AVAILABLE");
+          expect(
+            flow === "MERCALYS_SALES"
+              ? finalMetrics.departments[0]!.sales.salesValue
+              : finalMetrics.departments[0]!.waste.salesValue,
+          ).toBe("17.40");
           let additionalSourceId: string | undefined;
           if (flow === "MERCALYS_SALES" && !beforeFirstAck) {
             // A legacy reader must not consume later v1 publications while missing
@@ -317,7 +353,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           ).toBe(additionalSourceId ? 2 : 1);
           const remote = await db
             .collection("mercalysPublications")
-            .findOne({ storeId: s.scope.storeId });
+            .findOne({ storeId: s.scope.storeId, id: sourceId });
           expect(remote?.remoteVersion).toBe(2);
           expect(
             await db
@@ -334,6 +370,75 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         } finally {
           s.db.close();
           other.db.close();
+        }
+      },
+    );
+    it.each(["MERCALYS_SALES", "MERCALYS_WASTE"] as const)(
+      "scopes source incompleteness and ignores a superseded partial aggregate (%s)",
+      async (flow) => {
+        const s = await automaticPartialChatImportFixture(flow);
+        try {
+          const sourceId = s.publication.sourceDocumentId;
+          await db
+            .collection<Document & { _id: string }>("mercalysPublications")
+            .insertOne({
+              _id: sourceId,
+              id: sourceId,
+              storeId: s.scope.storeId,
+              version: 1,
+              remoteVersion: 1,
+              publication: s.initial,
+            });
+          const repository = createMongoRemoteAnalyticsRepository({
+            getDb: async () => db,
+            checkHealth: async () => "connected" as const,
+            close: async () => {},
+          });
+          expect(
+            await repository.loadDepartmentSourceCompleteness(
+              s.scope.storeId,
+              "2026-10-07",
+            ),
+          ).toEqual({
+            sales: flow === "MERCALYS_SALES",
+            waste: flow === "MERCALYS_WASTE",
+          });
+          expect(
+            await repository.loadDepartmentSourceCompleteness(
+              s.scope.storeId,
+              "2026-10-08",
+            ),
+          ).toEqual({ sales: false, waste: false });
+          expect(
+            await repository.loadDepartmentSourceCompleteness(
+              randomUUID(),
+              "2026-10-07",
+            ),
+          ).toEqual({ sales: false, waste: false });
+          const channel = flow === "MERCALYS_SALES" ? "sales" : "waste";
+          await db.collection("mercalysPublications").updateOne(
+            { id: sourceId, storeId: s.scope.storeId },
+            {
+              $set: {
+                [`publication.${channel}.0.deletedAt`]:
+                  new Date().toISOString(),
+              },
+            },
+          );
+          expect(
+            await repository.loadDepartmentSourceCompleteness(
+              s.scope.storeId,
+              "2026-10-07",
+            ),
+          ).toEqual({ sales: false, waste: false });
+          expect(
+            await db.collection("mercalysPublications").countDocuments({
+              id: sourceId,
+              "publication.records": { $elemMatch: { status: "WARNING" } },
+            }),
+          ).toBe(1);
+        } finally {
+          s.db.close();
         }
       },
     );

@@ -3,6 +3,7 @@ import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
 import {
   mercalysProductTargetBlocker,
+  readCopilotImportReference,
   type CopilotMessage,
 } from "@fl-copilot/domain";
 import { SecondaryButton } from "../components/ui";
@@ -117,9 +118,9 @@ export function MercalysImportCard({
         Import Mercalys
       </Text>
       <Text>
-        Les références uniques et les fichiers sans ambiguïté sont traités
-        automatiquement. Les décisions ci-dessous concernent uniquement les
-        doutes.
+        {readCopilotImportReference(message).reference.policyVersion === 2
+          ? "Les lignes sûres sont publiées automatiquement, même si d’autres produits restent à confirmer. Les décisions ci-dessous concernent uniquement les doutes."
+          : "Cet import conserve son fonctionnement initial : les lignes seront publiées après confirmation des produits restants."}
       </Text>
       {busy ? (
         <View style={{ gap: 8 }}>
@@ -157,9 +158,16 @@ export function MercalysImportCard({
               ).length
             }{" "}
             déjà enregistrés ·{" "}
-            {report.items.filter((i) => i.status === "REVIEW").length} à
-            examiner · {report.items.filter((i) => i.status === "ERROR").length}{" "}
-            à reprendre
+            {
+              report.items.filter(
+                (i) => i.status === "REVIEW" && i.publishedCount > 0,
+              ).length
+            }{" "}
+            partiellement publiés ·{" "}
+            {report.items.filter((i) => i.status === "REVIEW").length} avec des
+            points à examiner ·{" "}
+            {report.items.filter((i) => i.status === "ERROR").length} à
+            reprendre
           </Text>
           {report.items
             .filter((i) => i.status !== "PUBLISHED")
@@ -199,6 +207,18 @@ export function MercalysImportCard({
                       prêtes restantes · {item.summary.productReviewCount} à
                       rapprocher · {item.summary.errorCount} anomalies
                     </Text>
+                    {item.publishedCount > 0 ? (
+                      <Text>
+                        Ces lignes sont enregistrées. Le bilan reste partiel
+                        tant que les produits restants ne sont pas confirmés.
+                      </Text>
+                    ) : null}
+                    {item.summary.errorCount > 0 ? (
+                      <Text>
+                        La lecture contient des anomalies à examiner avant
+                        publication automatique. L’original reste conservé.
+                      </Text>
+                    ) : null}
                     {item.resolutions.slice(0, 5).map((r) => (
                       <View key={r.key} style={{ gap: 8 }}>
                         <Text style={{ fontWeight: "600" }}>

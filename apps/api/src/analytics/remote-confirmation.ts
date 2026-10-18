@@ -31,6 +31,10 @@ export interface RemoteAnalyticsRepository {
     storeId: string,
     businessDate: string,
   ): Promise<readonly ProductDailyPerformance[]>;
+  loadDepartmentSourceCompleteness(
+    storeId: string,
+    businessDate: string,
+  ): Promise<{ sales: boolean; waste: boolean }>;
   saveDepartmentDay(performance: DepartmentDailyPerformance): Promise<void>;
 }
 
@@ -83,6 +87,11 @@ export class RemoteAnalyticsConfirmationService {
         storeId,
         businessDate,
         productPerformances,
+        incompleteSources:
+          await this.repository.loadDepartmentSourceCompleteness(
+            storeId,
+            businessDate,
+          ),
         computedAt: this.now(),
       });
       await this.repository.saveDepartmentDay(department);
@@ -253,6 +262,38 @@ export function createMongoRemoteAnalyticsRepository(
         .sort({ productId: 1 })
         .toArray();
       return documents.map((document) => document.performance);
+    },
+
+    async loadDepartmentSourceCompleteness(storeId, businessDate) {
+      const db = await database.getDb();
+      const pending = (sourceType: "MERCALYS_SALES" | "MERCALYS_WASTE") =>
+        db.collection("mercalysPublications").findOne(
+          {
+            storeId,
+            "publication.source.sourceType": sourceType,
+            "publication.source.deletedAt": null,
+            "publication.records": {
+              $elemMatch: {
+                status: "WARNING",
+                deletedAt: null,
+                "normalizedPayload.businessDate": businessDate,
+              },
+            },
+            // A superseded source cannot block the completeness of its replacement.
+            "publication.sales": {
+              $not: { $elemMatch: { deletedAt: { $ne: null } } },
+            },
+            "publication.waste": {
+              $not: { $elemMatch: { deletedAt: { $ne: null } } },
+            },
+          },
+          { projection: { _id: 1 }, maxTimeMS: 5000 },
+        );
+      const [sales, waste] = await Promise.all([
+        pending("MERCALYS_SALES"),
+        pending("MERCALYS_WASTE"),
+      ]);
+      return { sales: !!sales, waste: !!waste };
     },
 
     async saveDepartmentDay(performance) {

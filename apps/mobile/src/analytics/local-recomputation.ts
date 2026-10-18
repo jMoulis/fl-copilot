@@ -358,12 +358,28 @@ export class SQLiteProductDateRecomputer implements ProductDateRecomputer {
         businessDate,
       );
       const computedAt = this.now();
+      const incomplete = await transaction.getAllAsync<{ source_type: string }>(
+        `SELECT DISTINCT d.source_type FROM source_records r
+         JOIN source_documents d ON d.id=r.source_document_id AND d.store_id=r.store_id
+         WHERE r.store_id=? AND r.status='WARNING' AND r.deleted_at IS NULL
+           AND json_extract(r.normalized_payload_json,'$.businessDate')=?
+           AND d.deleted_at IS NULL AND d.local_processing_status='PUBLISHED'
+           AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+           AND NOT EXISTS (SELECT 1 FROM sales_observations o WHERE o.source_document_id=d.id AND o.store_id=d.store_id AND o.deleted_at IS NOT NULL)
+           AND NOT EXISTS (SELECT 1 FROM waste_observations o WHERE o.source_document_id=d.id AND o.store_id=d.store_id AND o.deleted_at IS NOT NULL)`,
+        storeId,
+        businessDate,
+      );
       const department = buildDepartmentDailyPerformance({
         storeId,
         businessDate,
         productPerformances: productPerformances.map((row) =>
           parseProductPerformance(row.payload_json),
         ),
+        incompleteSources: {
+          sales: incomplete.some((r) => r.source_type === "MERCALYS_SALES"),
+          waste: incomplete.some((r) => r.source_type === "MERCALYS_WASTE"),
+        },
         computedAt,
       });
       await transaction.runAsync(
