@@ -128,6 +128,62 @@ export async function repairMercalysPublications(
     ),
   );
 }
+/** Frozen snapshots queue in source order, including an initial packet not yet acknowledged. */
+export async function enqueueMercalysContinuation(
+  tx: OutboxDatabase,
+  storeId: string,
+  sourceId: string,
+  generateId: () => string,
+  now: string,
+) {
+  const prior = await tx.getFirstAsync<{
+    status: string;
+    expected_remote_version: number | null;
+    payload_json: string;
+  }>(
+    "SELECT status,expected_remote_version,payload_json FROM sync_outbox WHERE store_id=? AND entity_type='mercalys_publication' AND entity_id=? AND status IN ('PENDING','SYNCING','CONFLICT','FAILED') ORDER BY local_sequence DESC LIMIT 1",
+    storeId,
+    sourceId,
+  );
+  if (prior && ["CONFLICT", "FAILED"].includes(prior.status))
+    throw Error("MERCALYS_CONTINUATION_CONFLICT");
+  const payload = await readMercalysPublication(tx, storeId, sourceId);
+  if (!payload) throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+  const json = JSON.stringify(payload);
+  if (prior?.payload_json === json) return;
+  const journal = await tx.getFirstAsync<{ remote_version: number | null }>(
+    "SELECT remote_version FROM mercalys_publication_sync WHERE store_id=? AND source_document_id=?",
+    storeId,
+    sourceId,
+  );
+  const device = await tx.getFirstAsync<{ value: string }>(
+    "SELECT value FROM app_metadata WHERE key='device_id'",
+  );
+  if (!device) throw Error("MERCALYS_DEVICE_ID_REQUIRED");
+  await new OutboxRepository(tx, () => now).enqueue({
+    commandId: generateId(),
+    storeId,
+    deviceId: device.value,
+    commandType: "MERCALYS_PUBLISH",
+    entityType: "mercalys_publication",
+    entityId: sourceId,
+    expectedRemoteVersion: prior
+      ? (prior.expected_remote_version ?? 0) + 1
+      : (journal?.remote_version ?? null),
+    payload,
+    createdAt: now,
+  });
+  await tx.runAsync(
+    "UPDATE source_documents SET sync_state='PENDING',dirty=1 WHERE id=? AND store_id=?",
+    sourceId,
+    storeId,
+  );
+  await tx.runAsync(
+    "UPDATE local_files SET retention_status='RETAINED' WHERE source_document_id=? AND store_id=? AND retention_status!='REMOVED'",
+    sourceId,
+    storeId,
+  );
+}
 function snake(key: string) {
   return key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 }
@@ -196,8 +252,9 @@ export async function applyMercalysPublication(
     const exists = await tx.getFirstAsync<{
       store_id: string;
       source_document_id: string;
+      version: number;
     }>(
-      "SELECT store_id,source_document_id FROM source_records WHERE id=?",
+      "SELECT store_id,source_document_id,version FROM source_records WHERE id=?",
       r.id,
     );
     if (
@@ -222,6 +279,20 @@ export async function applyMercalysPublication(
         errorCodesJson: JSON.stringify(errorCodes),
         warningCodesJson: JSON.stringify(warningCodes),
       });
+    } else if (r.version > exists.version) {
+      await tx.runAsync(
+        "UPDATE source_records SET normalized_payload_json=?,status=?,error_codes_json=?,warning_codes_json=?,version=?,updated_at=? WHERE id=? AND store_id=? AND source_document_id=? AND version<?",
+        JSON.stringify(r.normalizedPayload),
+        r.status,
+        JSON.stringify(r.errorCodes),
+        JSON.stringify(r.warningCodes),
+        r.version,
+        r.updatedAt,
+        r.id,
+        storeId,
+        snapshot.id,
+        r.version,
+      );
     }
   }
   for (const [table, observations] of [

@@ -165,6 +165,8 @@ export const copilotImportStatusSchema = z.strictObject({
         itemId: z.uuid(),
         status: z.enum(["PUBLISHED", "REVIEW", "ERROR", "KEPT"]),
         sourceDocumentId: z.uuid().nullable(),
+        publishedCount: z.number().int().nonnegative().optional(),
+        remainingCount: z.number().int().nonnegative().optional(),
         sourceType: z.enum(["MERCALYS_SALES", "MERCALYS_WASTE"]).nullable(),
         start: z.iso.date().nullable(),
         end: z.iso.date().nullable(),

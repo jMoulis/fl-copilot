@@ -66,6 +66,7 @@ export class SyncChangeService<TContext> {
 interface SyncStoreCounterDocument {
   _id: string;
   nextSequence: Long;
+  mercalysRecordUpdatesRequired?: boolean;
 }
 
 class MongoSyncChangeStore implements SyncChangeStore<MongoCommandMutationContext> {

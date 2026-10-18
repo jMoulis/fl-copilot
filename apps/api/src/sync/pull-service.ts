@@ -168,11 +168,27 @@ export function createMongoSyncPullService(
           }),
         );
       }
+      // Freeze the whole legacy import channel once row revisions exist. Sending a later
+      // replacement while withholding its revised predecessor would double-count old rows.
+      const legacyMercalysFrozen =
+        query.mercalysPublications === "true" &&
+        query.mercalysRecordUpdates !== "true" &&
+        selected.some((c) => c.entityType === "mercalys_publication") &&
+        !!(await mongoDatabase
+          .collection<{ _id: string; mercalysRecordUpdatesRequired?: boolean }>(
+            "syncStoreCounters",
+          )
+          .findOne(
+            { _id: storeId, mercalysRecordUpdatesRequired: true },
+            { projection: { _id: 1 }, maxTimeMS: 2000 },
+          ));
       const changes = await Promise.all(
         selected
           .filter(
             (change) =>
               (query.mercalysPublications === "true" ||
+                change.entityType !== "mercalys_publication") &&
+              (!legacyMercalysFrozen ||
                 change.entityType !== "mercalys_publication") &&
               (change.entityType !== "copilot_knowledge" ||
                 query.copilotKnowledge === "true") &&
@@ -533,6 +549,12 @@ export function createMongoSyncPullService(
                 .collection<MercalysPublicationDocument>("mercalysPublications")
                 .findOne({ _id: change.entityId, storeId });
               if (!entity) throw Error("MERCALYS_PUBLICATION_MISSING");
+              // Legacy clients only insert source records and cannot safely consume row revisions.
+              if (
+                query.mercalysRecordUpdates !== "true" &&
+                entity.publication.records.some((r) => r.version > 1)
+              )
+                return null;
               return {
                 sequence: change.sequence.toString(),
                 entityType: change.entityType,

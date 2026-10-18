@@ -336,6 +336,7 @@ export class ApiClient {
     copilotHistory = false,
     mercalysPublications = false,
     copilotKnowledge = false,
+    mercalysRecordUpdates = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -356,6 +357,7 @@ export class ApiClient {
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
+    if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
     const encodedQuery = query.toString();
@@ -389,6 +391,7 @@ export class ApiClient {
     copilotHistory = false,
     mercalysPublications = false,
     copilotKnowledge = false,
+    mercalysRecordUpdates = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -411,6 +414,7 @@ export class ApiClient {
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
+    if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
     const suffix = query.toString() ? `?${query}` : "";
     return this.request(
       `/api/v1/sync/bootstrap${suffix}`,
