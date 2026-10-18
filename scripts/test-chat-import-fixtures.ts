@@ -10,6 +10,10 @@ import { MercalysBatchRepository } from "../apps/mobile/src/documents/mercalys-b
 import { CopilotConversationRepository } from "../apps/mobile/src/copilot/conversation-repository";
 import { CopilotLocalChatController } from "../apps/mobile/src/copilot/local-chat-controller";
 import { ProductMasterRepository } from "../apps/mobile/src/products/product-master-repository";
+import { SheetJsSpreadsheetParser } from "../apps/mobile/src/documents/sheetjs-spreadsheet-parser";
+import { validateMercalysImport } from "../apps/mobile/src/documents/mercalys-import-validation";
+import { MercalysImportPublicationRepository } from "../apps/mobile/src/documents/mercalys-import-publication";
+import { readMercalysPublication } from "../apps/mobile/src/documents/mercalys-publication-sync";
 import {
   emptyProductDraft,
   saveProductEditor,
@@ -169,6 +173,53 @@ export async function chatImportFixture(path = ":memory:") {
     controller: new CopilotMercalysImportController(a, scope, deps),
     calls: () => calls,
   };
+}
+
+export async function partialChatImportFixture(
+  flow: "MERCALYS_SALES" | "MERCALYS_WASTE" = "MERCALYS_SALES",
+  path = ":memory:",
+  fuzzy = true,
+) {
+  const s = await chatImportFixture(path);
+  if (fuzzy)
+    await s.a.runAsync(
+      "UPDATE products SET label='PRODUIT A CONFIRMER' WHERE id=?",
+      s.productId,
+    );
+  const file = await s.add(
+    fuzzy ? { flow, unknownLabel: "PRODUIT A CONFIRMER VRAC" } : { flow },
+  );
+  const repository = new ProductMasterRepository(s.a);
+  const catalog = {
+    products: (await repository.listProducts(s.scope.storeId)).map(
+      (r) => r.entity,
+    ),
+    identifiers: (await repository.listIdentifiersByStore(s.scope.storeId)).map(
+      (r) => r.entity,
+    ),
+    aliases: (await repository.listAliasesByStore(s.scope.storeId)).map(
+      (r) => r.entity,
+    ),
+  };
+  const summary = validateMercalysImport(
+    new SheetJsSpreadsheetParser().parse(file.f.bytes),
+    s.scope.storeId,
+    catalog,
+  );
+  const publication = await new MercalysImportPublicationRepository(
+    s.a,
+    randomUUID,
+  ).publish({
+    ...file.f.input,
+    localFileUri: file.batch.files[0]!.localUri,
+    summary,
+  });
+  const initial = (await readMercalysPublication(
+    s.a,
+    s.scope.storeId,
+    publication.sourceDocumentId,
+  ))!;
+  return { ...s, file, summary, publication, initial };
 }
 
 export async function chatImportCatalogueChoice(

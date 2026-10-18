@@ -15,6 +15,16 @@ import type {
   CopilotMercalysImportController,
   ImportReport,
 } from "./mercalys-import-controller";
+const continuationErrors: Record<string, string> = {
+  MERCALYS_CONTINUATION_SOURCE_CHANGED:
+    "Les lignes de cet import ne correspondent plus à l’original conservé. Aucun chiffre publié n’a été modifié.",
+  MERCALYS_CONTINUATION_SUPERSEDED:
+    "Cet import a déjà été remplacé par un fichier corrigé. Ses anciennes lignes ne seront pas réactivées.",
+  MERCALYS_CONTINUATION_CONFLICT:
+    "La synchronisation de cet import présente un conflit ou une erreur à résoudre avant de le compléter. Les lignes locales restent conservées.",
+  MERCALYS_CONTINUATION_OVERLAP:
+    "Une ligne restante recouvre un autre import pour le même produit et la même date. Ce chevauchement demande une décision distincte ; aucun remplacement automatique.",
+};
 export function MercalysImportCard({
   message,
   controller,
@@ -128,10 +138,19 @@ export function MercalysImportCard({
           <Text accessibilityLiveRegion="polite">
             {
               report.items.filter(
-                (i) => i.status === "PUBLISHED" && !i.alreadyPublished,
+                (i) =>
+                  i.status === "PUBLISHED" &&
+                  !i.alreadyPublished &&
+                  !i.completedPartial,
               ).length
             }{" "}
             nouveaux fichiers publiés ·{" "}
+            {
+              report.items.filter(
+                (i) => i.status === "PUBLISHED" && i.completedPartial,
+              ).length
+            }{" "}
+            imports partiels complétés ·{" "}
             {
               report.items.filter(
                 (i) => i.status === "PUBLISHED" && i.alreadyPublished,
@@ -159,22 +178,26 @@ export function MercalysImportCard({
                   <Text>Version existante conservée.</Text>
                 ) : item.status === "ERROR" ? (
                   <Text>
-                    {item.code === "IMPORT_REVIEW_LIMIT"
-                      ? "Ce fichier dépasse la taille de revue automatique. Son original est conservé."
-                      : item.code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
-                        ? "Ce fichier contient une période agrégée sans dates quotidiennes. Il faut un export détaillé ; aucune journée ne sera inventée."
-                        : item.code === "MERCALYS_BATCH_FILE_CHANGED"
-                          ? "L’original conservé a changé. Sélectionnez de nouveau le fichier."
-                          : item.code === "FORMAT_UNRECOGNIZED"
-                            ? "Ce fichier n’est pas reconnu comme un export Mercalys de ventes ou de casse."
-                            : "Ce fichier reste à reprendre. Aucun remplacement automatique."}
+                    {continuationErrors[item.code] ??
+                      (item.code === "IMPORT_REVIEW_LIMIT"
+                        ? "Ce fichier dépasse la taille de revue automatique. Son original est conservé."
+                        : item.code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
+                          ? "Ce fichier contient une période agrégée sans dates quotidiennes. Il faut un export détaillé ; aucune journée ne sera inventée."
+                          : item.code === "MERCALYS_BATCH_FILE_CHANGED"
+                            ? "L’original conservé a changé. Sélectionnez de nouveau le fichier."
+                            : item.code === "FORMAT_UNRECOGNIZED"
+                              ? "Ce fichier n’est pas reconnu comme un export Mercalys de ventes ou de casse."
+                              : "Ce fichier reste à reprendre. Aucun remplacement automatique.")}
                   </Text>
                 ) : (
                   <>
                     <Text>
-                      {item.summary.readyCount} lignes prêtes ·{" "}
-                      {item.summary.productReviewCount} à rapprocher ·{" "}
-                      {item.summary.errorCount} anomalies
+                      {item.publishedCount > 0
+                        ? `${item.publishedCount} lignes déjà publiées · `
+                        : ""}
+                      {item.summary.readyCount - item.publishedCount} lignes
+                      prêtes restantes · {item.summary.productReviewCount} à
+                      rapprocher · {item.summary.errorCount} anomalies
                     </Text>
                     {item.resolutions.slice(0, 5).map((r) => (
                       <View key={r.key} style={{ gap: 8 }}>

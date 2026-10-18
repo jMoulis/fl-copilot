@@ -195,7 +195,7 @@ export class OutboxRepository {
       `
         SELECT * FROM sync_outbox
         WHERE store_id = ? AND status = 'PENDING'
-          AND (entity_type NOT IN ('copilot_knowledge','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','need_unit','need_membership','product_substitution','store_product_event','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
+          AND (entity_type NOT IN ('mercalys_publication','copilot_knowledge','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','need_unit','need_membership','product_substitution','store_product_event','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
             SELECT 1 FROM sync_outbox prior
             WHERE prior.store_id = sync_outbox.store_id
               AND prior.entity_type = sync_outbox.entity_type

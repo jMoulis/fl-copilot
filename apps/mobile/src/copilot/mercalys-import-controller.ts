@@ -44,6 +44,12 @@ import {
 } from "./product-tool-transaction";
 export type ImportDb = OutboxDatabase & AtomicMutationDatabase;
 type Assistance = z.infer<typeof importClassificationResultSchema>;
+const continuationCodes = [
+  "MERCALYS_CONTINUATION_SOURCE_CHANGED",
+  "MERCALYS_CONTINUATION_SUPERSEDED",
+  "MERCALYS_CONTINUATION_CONFLICT",
+  "MERCALYS_CONTINUATION_OVERLAP",
+];
 type Scope = {
   storeId: string;
   ownerId: string;
@@ -157,15 +163,33 @@ export class CopilotMercalysImportController {
   private preparation(db: OutboxDatabase, message: CopilotMessage) {
     const joined = joinedProductToolDatabase(db),
       batches = this.batches(joined, message.conversationId);
-    return new MercalysBatchPreparation(batches, {
+    const publication = new MercalysImportPublicationRepository(
+      joined,
+      this.deps.id,
+    );
+    const preparation = new MercalysBatchPreparation(batches, {
       read: this.deps.read,
       checksum: this.deps.checksum,
       catalog: async () => (await this.catalog(db)).catalog,
-      publication: new MercalysImportPublicationRepository(
-        joined,
-        this.deps.id,
-      ),
+      publication,
     });
+    return {
+      readValidated: async (
+        ...args: Parameters<MercalysBatchPreparation["readValidated"]>
+      ) => {
+        const current = await preparation.readValidated(...args);
+        const continuation = await publication.continuation(
+          this.scope.storeId,
+          current.item.checksum,
+          current.summary,
+        );
+        return {
+          ...current,
+          summary: continuation?.summary ?? current.summary,
+          continuation,
+        };
+      },
+    };
   }
   private async key(text: string) {
     const h = await this.deps.digest(text);
@@ -259,10 +283,15 @@ export class CopilotMercalysImportController {
       if (state.assistance?.result) cached.push(state.assistance.result);
       if (signal?.aborted) throw Error("IMPORT_CANCELLED");
       try {
-        const { summary } = await this.preparation(
+        const { summary, continuation } = await this.preparation(
           this.db,
           message,
         ).readValidated(batch.id, item.id, signal);
+        const publishedIndexes = new Set(
+          continuation?.publication.records
+            .filter((r) => r.status === "PUBLISHED")
+            .map((r) => r.sourceIndex) ?? [],
+        );
         if (summary.lines.length > 2000) throw Error("IMPORT_REVIEW_LIMIT");
         for (const resolution of buildMercalysProductResolutions(summary))
           if (
@@ -281,6 +310,7 @@ export class CopilotMercalysImportController {
         for (const line of summary.lines)
           if (
             line.match.state === "AUTO_MATCH" &&
+            !publishedIndexes.has(line.record.sourceIndex) &&
             initial.catalog.products.some(
               (p) =>
                 p.id === line.match.matchedProductId &&
@@ -313,9 +343,11 @@ export class CopilotMercalysImportController {
           e instanceof MercalysImportValidationError
             ? e.code
             : e instanceof Error &&
-                ["IMPORT_REVIEW_LIMIT", "MERCALYS_BATCH_FILE_CHANGED"].includes(
-                  e.message,
-                )
+                [
+                  "IMPORT_REVIEW_LIMIT",
+                  "MERCALYS_BATCH_FILE_CHANGED",
+                  ...continuationCodes,
+                ].includes(e.message)
               ? e.message
               : "IMPORT_FILE_UNAVAILABLE",
         );
@@ -433,15 +465,23 @@ export class CopilotMercalysImportController {
     signal?: AbortSignal,
   ) {
     const readChanges = async (db: OutboxDatabase) => {
-      const { summary } = await this.preparation(db, message).readValidated(
-          item.batchId,
-          item.id,
-          signal,
-        ),
+      const { summary, continuation } = await this.preparation(
+          db,
+          message,
+        ).readValidated(item.batchId, item.id, signal),
         { records } = await this.catalog(db);
       const byProduct = new Map<string, string[]>();
+      const publishedIndexes = new Set(
+        continuation?.publication.records
+          .filter((r) => r.status === "PUBLISHED")
+          .map((r) => r.sourceIndex) ?? [],
+      );
       for (const line of summary.lines)
-        if (line.match.state === "AUTO_MATCH" && line.match.matchedProductId) {
+        if (
+          line.match.state === "AUTO_MATCH" &&
+          line.match.matchedProductId &&
+          !publishedIndexes.has(line.record.sourceIndex)
+        ) {
           const id = line.match.matchedProductId;
           byProduct.set(id, [
             ...(byProduct.get(id) ?? []),
@@ -590,14 +630,17 @@ export class CopilotMercalysImportController {
     const items = [];
     for (const item of report.items) {
       const source =
-        item.status === "PUBLISHED"
+        item.status === "PUBLISHED" ||
+        (item.status === "REVIEW" && item.priorSourceDocumentId)
           ? await this.db.getFirstAsync<{
               source_type: "MERCALYS_SALES" | "MERCALYS_WASTE";
               business_period_start: string;
               business_period_end: string;
             }>(
               "SELECT source_type,business_period_start,business_period_end FROM source_documents WHERE id=? AND store_id=? AND deleted_at IS NULL",
-              item.sourceDocumentId,
+              item.status === "PUBLISHED"
+                ? item.sourceDocumentId
+                : item.priorSourceDocumentId!,
               this.scope.storeId,
             )
           : null;
@@ -605,7 +648,23 @@ export class CopilotMercalysImportController {
         itemId: item.itemId,
         status: item.status,
         sourceDocumentId:
-          item.status === "PUBLISHED" ? item.sourceDocumentId : null,
+          item.status === "PUBLISHED"
+            ? item.sourceDocumentId
+            : item.status === "REVIEW"
+              ? item.priorSourceDocumentId
+              : null,
+        publishedCount:
+          item.status === "PUBLISHED" || item.status === "REVIEW"
+            ? item.publishedCount
+            : undefined,
+        remainingCount:
+          item.status === "PUBLISHED"
+            ? 0
+            : item.status === "REVIEW"
+              ? item.summary.lines.length -
+                item.publishedCount +
+                item.summary.errorCount
+              : undefined,
         sourceType:
           source?.source_type ??
           (item.status === "REVIEW" ? item.summary.sourceType : null),
@@ -711,7 +770,7 @@ export class CopilotMercalysImportController {
         continue;
       }
       try {
-        let { item, summary } = await this.preparation(
+        let { item, summary, continuation } = await this.preparation(
           this.db,
           message,
         ).readValidated(preflight.batch.id, file.id, signal);
@@ -754,13 +813,14 @@ export class CopilotMercalysImportController {
           summary.sourceType,
           item.checksum,
         );
-        if (duplicate) {
+        if (duplicate && continuation?.remainingCount === 0) {
           results.push({
             itemId: item.id,
             filename: item.filename,
             status: "PUBLISHED",
             sourceDocumentId: duplicate.sourceDocumentId,
             alreadyPublished: true,
+            publishedCount: continuation.publishedCount,
           });
           continue;
         }
@@ -850,12 +910,14 @@ export class CopilotMercalysImportController {
             signal,
           );
         }
-        ({ item, summary } = await this.preparation(
+        ({ item, summary, continuation } = await this.preparation(
           this.db,
           message,
         ).readValidated(item.batchId, item.id, signal));
         const resolutionsLeft = buildMercalysProductResolutions(summary),
-          overlap = await pub.analyzeOverlap(this.scope.storeId, summary);
+          overlap = continuation
+            ? null
+            : await pub.analyzeOverlap(this.scope.storeId, summary);
         if (overlap && overlap.rows.length > 2000)
           throw Error("IMPORT_REVIEW_LIMIT");
         if (
@@ -907,6 +969,8 @@ export class CopilotMercalysImportController {
             filename: item.filename,
             status: "REVIEW",
             summary,
+            priorSourceDocumentId: continuation?.sourceDocumentId ?? null,
+            publishedCount: continuation?.publishedCount ?? 0,
             resolutions: availableResolutions,
             overlap,
             basisHash: await this.deps.digest(
@@ -915,6 +979,7 @@ export class CopilotMercalysImportController {
                 summary,
                 overlap,
                 this.catalogBasis(catalog.records),
+                continuation?.publication ?? null,
               ]),
             ),
             catalog: catalog.catalog,
@@ -938,7 +1003,15 @@ export class CopilotMercalysImportController {
           message,
           item.id,
           "PUBLICATION",
-          item.checksum,
+          continuation
+            ? {
+                checksum: item.checksum,
+                sourceDocumentId: continuation.sourceDocumentId,
+                snapshot: await this.deps.digest(
+                  JSON.stringify(continuation.publication),
+                ),
+              }
+            : item.checksum,
           async (tx) => {
             const current = await this.preparation(tx, message).readValidated(
                 item.batchId,
@@ -952,25 +1025,38 @@ export class CopilotMercalysImportController {
               !current.summary.readyCount
             )
               throw Error("IMPORT_CHANGED");
+            if (
+              JSON.stringify(current.continuation?.publication ?? null) !==
+              JSON.stringify(continuation?.publication ?? null)
+            )
+              throw Error("IMPORT_CHANGED");
             this.assertCatalog(
               catalog.records,
               current.summary.lines.flatMap((l) =>
                 l.match.matchedProductId ? [l.match.matchedProductId] : [],
               ),
             );
-            const result = await new MercalysImportPublicationRepository(
+            const publication = new MercalysImportPublicationRepository(
               joinedProductToolDatabase(tx),
               this.deps.id,
-            ).publish({
-              storeId: this.scope.storeId,
-              filename: current.item.filename,
-              localFileUri: current.item.localUri,
-              sizeBytes: current.item.sizeBytes,
-              checksum: current.item.checksum,
-              mimeType:
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-              summary: current.summary,
-            });
+            );
+            const result = current.continuation
+              ? await publication.resume({
+                  storeId: this.scope.storeId,
+                  sourceDocumentId: current.continuation.sourceDocumentId,
+                  checksum: current.item.checksum,
+                  summary: current.summary,
+                })
+              : await publication.publish({
+                  storeId: this.scope.storeId,
+                  filename: current.item.filename,
+                  localFileUri: current.item.localUri,
+                  sizeBytes: current.item.sizeBytes,
+                  checksum: current.item.checksum,
+                  mimeType:
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  summary: current.summary,
+                });
             return {
               sourceDocumentId: result.sourceDocumentId,
               publishedCount: result.publishedCount,
@@ -986,6 +1072,9 @@ export class CopilotMercalysImportController {
           status: "PUBLISHED",
           sourceDocumentId: result.sourceDocumentId!,
           alreadyPublished: false,
+          completedPartial: continuation !== null,
+          publishedCount:
+            (continuation?.publishedCount ?? 0) + result.publishedCount,
         });
       } catch (e) {
         if (signal?.aborted) throw e;
@@ -994,7 +1083,10 @@ export class CopilotMercalysImportController {
           filename: file.filename,
           status: "ERROR",
           code:
-            e instanceof Error && e.message === "IMPORT_PRODUCT_CONFLICT"
+            e instanceof Error &&
+            ["IMPORT_PRODUCT_CONFLICT", ...continuationCodes].includes(
+              e.message,
+            )
               ? e.message
               : "IMPORT_FILE_PENDING",
         });
@@ -1033,10 +1125,9 @@ export class CopilotMercalysImportController {
             joinedProductToolDatabase(tx),
             this.deps.id,
           ),
-          overlap = await pub.analyzeOverlap(
-            this.scope.storeId,
-            current.summary,
-          );
+          overlap = current.continuation
+            ? null
+            : await pub.analyzeOverlap(this.scope.storeId, current.summary);
         if (
           (await this.deps.digest(
             JSON.stringify([
@@ -1044,6 +1135,7 @@ export class CopilotMercalysImportController {
               current.summary,
               overlap,
               this.catalogBasis(catalog.records),
+              current.continuation?.publication ?? null,
             ]),
           )) !== review.basisHash
         )
@@ -1219,12 +1311,16 @@ export type ImportReport = {
         status: "PUBLISHED";
         sourceDocumentId: string;
         alreadyPublished: boolean;
+        completedPartial?: boolean;
+        publishedCount?: number;
       }
     | { itemId: string; filename: string; status: "ERROR"; code: string }
     | {
         itemId: string;
         filename: string;
         status: "REVIEW";
+        priorSourceDocumentId: string | null;
+        publishedCount: number;
         summary: Awaited<
           ReturnType<MercalysBatchPreparation["readValidated"]>
         >["summary"];

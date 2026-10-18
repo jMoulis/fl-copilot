@@ -1,6 +1,15 @@
-import { enqueueMercalysPublications } from "./mercalys-publication-sync";
+import {
+  enqueueMercalysPublications,
+  enqueueMercalysContinuation,
+  readMercalysPublication,
+} from "./mercalys-publication-sync";
+import {
+  canonicalMercalysRecords,
+  type ParsedMercalysArticleRecord,
+} from "@fl-copilot/import-core";
 import {
   salesObservationSchema,
+  productMatchResultSchema,
   sourceRecordSchema,
   wasteObservationSchema,
   type ProductNature,
@@ -11,7 +20,10 @@ import {
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { enqueueAnalyticsRecomputationJob } from "../analytics/local-recomputation";
-import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
+import type {
+  MercalysImportValidationLine,
+  MercalysImportValidationSummary,
+} from "./mercalys-import-validation";
 import {
   analyzeMercalysReconciliation,
   type MercalysReconciliation,
@@ -89,6 +101,224 @@ export class MercalysImportPublicationRepository {
     summary: MercalysImportValidationSummary,
   ) {
     return analyzeMercalysReconciliation(this.database, storeId, summary);
+  }
+
+  /** Retain historical mappings and source-row IDs; only WARNING rows may be completed. */
+  async continuation(
+    storeId: string,
+    checksum: string,
+    summary: MercalysImportValidationSummary,
+  ) {
+    const duplicate = await this.findExactDuplicate(
+      storeId,
+      summary.sourceType,
+      checksum,
+    );
+    if (!duplicate) return null;
+    const publication = await readMercalysPublication(
+      this.database,
+      storeId,
+      duplicate.sourceDocumentId,
+    );
+    if (
+      !publication ||
+      publication.source.checksum !== checksum ||
+      publication.source.businessPeriodStart !== summary.businessPeriodStart ||
+      publication.source.businessPeriodEnd !== summary.businessPeriodEnd ||
+      publication.source.parserVersion !== summary.parserVersion ||
+      publication.records.length !== summary.lines.length
+    )
+      throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+    if ([...publication.sales, ...publication.waste].some((o) => o.deletedAt))
+      throw Error("MERCALYS_CONTINUATION_SUPERSEDED");
+    const state = await this.database.getFirstAsync<{ sync_state: string }>(
+      "SELECT sync_state FROM source_documents WHERE id=? AND store_id=?",
+      publication.source.id,
+      storeId,
+    );
+    if (
+      !state ||
+      ["ERROR", "CONFLICT"].includes(state.sync_state) ||
+      (await this.database.getFirstAsync(
+        "SELECT command_id FROM sync_outbox WHERE store_id=? AND entity_type='mercalys_publication' AND entity_id=? AND status IN ('CONFLICT','FAILED') LIMIT 1",
+        storeId,
+        publication.source.id,
+      ))
+    )
+      throw Error("MERCALYS_CONTINUATION_CONFLICT");
+    const records = new Map(publication.records.map((r) => [r.sourceIndex, r]));
+    const lines = summary.lines.map((line) => {
+      const old = records.get(line.record.sourceIndex);
+      if (
+        !old ||
+        !["PUBLISHED", "WARNING"].includes(old.status) ||
+        JSON.stringify(
+          canonicalMercalysRecords([
+            old.normalizedPayload as unknown as ParsedMercalysArticleRecord,
+          ]),
+        ) !== JSON.stringify(canonicalMercalysRecords([line.record]))
+      )
+        throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+      return old.status === "PUBLISHED"
+        ? {
+            ...line,
+            match: productMatchResultSchema.parse(
+              (old.normalizedPayload as Record<string, unknown>).match,
+            ),
+          }
+        : line;
+    });
+    const readyCount = lines.filter(
+      (line) => line.match.state === "AUTO_MATCH",
+    ).length;
+    const table =
+      summary.sourceType === "MERCALYS_SALES"
+        ? "sales_observations"
+        : "waste_observations";
+    const others = await this.database.getAllAsync<{
+      product_id: string;
+      business_date: string;
+    }>(
+      `SELECT product_id,business_date FROM ${table} WHERE store_id=? AND source_document_id!=? AND business_date>=? AND business_date<=? AND deleted_at IS NULL ${table === "waste_observations" ? "AND source_type='MERCALYS'" : ""}`,
+      storeId,
+      publication.source.id,
+      summary.businessPeriodStart,
+      summary.businessPeriodEnd,
+    );
+    const occupied = new Set(
+      others.map((o) => `${o.product_id}:${o.business_date}`),
+    );
+    if (
+      lines.some(
+        (line) =>
+          records.get(line.record.sourceIndex)?.status === "WARNING" &&
+          line.match.state === "AUTO_MATCH" &&
+          occupied.has(
+            `${line.match.matchedProductId}:${line.record.businessDate}`,
+          ),
+      )
+    )
+      throw Error("MERCALYS_CONTINUATION_OVERLAP");
+    return {
+      sourceDocumentId: publication.source.id,
+      publication,
+      publishedCount: publication.records.filter(
+        (r) => r.status === "PUBLISHED",
+      ).length,
+      remainingCount:
+        publication.records.filter((r) => r.status !== "PUBLISHED").length +
+        summary.errorCount,
+      summary: {
+        ...summary,
+        lines,
+        readyCount,
+        productReviewCount: lines.length - readyCount,
+      },
+    };
+  }
+
+  /** Complete an existing partial source atomically; never replace its published observations. */
+  async resume(
+    input: Pick<
+      PublishMercalysImportInput,
+      "storeId" | "checksum" | "summary"
+    > & { sourceDocumentId: string },
+  ): Promise<
+    Pick<
+      PublishedMercalysImport,
+      "sourceDocumentId" | "publishedCount" | "remainingCount" | "replacedCount"
+    >
+  > {
+    let result:
+      | Pick<
+          PublishedMercalysImport,
+          | "sourceDocumentId"
+          | "publishedCount"
+          | "remainingCount"
+          | "replacedCount"
+        >
+      | undefined;
+    await this.database.withExclusiveTransactionAsync(async (tx) => {
+      const joined = {
+        getFirstAsync: tx.getFirstAsync.bind(tx),
+        getAllAsync: tx.getAllAsync.bind(tx),
+        runAsync: tx.runAsync.bind(tx),
+        withExclusiveTransactionAsync: (
+          task: (db: OutboxDatabase) => Promise<void>,
+        ) => task(tx),
+      };
+      const current = await new MercalysImportPublicationRepository(
+        joined,
+        this.generateId,
+        this.now,
+      ).continuation(input.storeId, input.checksum, input.summary);
+      if (!current || current.sourceDocumentId !== input.sourceDocumentId)
+        throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+      const byIndex = new Map(
+        current.publication.records.map((r) => [r.sourceIndex, r]),
+      );
+      const additions = current.summary.lines.filter(
+        (l) =>
+          byIndex.get(l.record.sourceIndex)?.status === "WARNING" &&
+          l.match.state === "AUTO_MATCH" &&
+          l.match.matchedProductId,
+      );
+      const now = this.now(),
+        jobId = this.generateId();
+      for (const line of additions) {
+        const record = byIndex.get(line.record.sourceIndex)!;
+        await insertObservationFromLine(
+          tx,
+          input.storeId,
+          current.summary.sourceType,
+          input.sourceDocumentId,
+          record.id,
+          line,
+          this.generateId,
+          now,
+        );
+        const changed = await tx.runAsync(
+          "UPDATE source_records SET normalized_payload_json=?,status='PUBLISHED',warning_codes_json='[]',version=version+1,updated_at=? WHERE id=? AND store_id=? AND source_document_id=? AND status='WARNING' AND version=?",
+          JSON.stringify({
+            ...(record.normalizedPayload as Record<string, unknown>),
+            match: line.match,
+          }),
+          now,
+          record.id,
+          input.storeId,
+          input.sourceDocumentId,
+          record.version,
+        );
+        if (Number(changed.changes) !== 1)
+          throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+      }
+      if (additions.length) {
+        await enqueueAnalyticsRecomputationJob(tx, {
+          jobId,
+          storeId: input.storeId,
+          sourceDocumentId: input.sourceDocumentId,
+          scopes: additions.map((l) => ({
+            productId: l.match.matchedProductId!,
+            businessDate: l.record.businessDate,
+          })),
+          createdAt: now,
+        });
+        await enqueueMercalysContinuation(
+          tx,
+          input.storeId,
+          input.sourceDocumentId,
+          this.generateId,
+          now,
+        );
+      }
+      result = {
+        sourceDocumentId: input.sourceDocumentId,
+        publishedCount: additions.length,
+        remainingCount: current.remainingCount - additions.length,
+        replacedCount: 0,
+      };
+    });
+    return result!;
   }
 
   async keepExisting(input: {
@@ -222,71 +452,16 @@ export class MercalysImportPublicationRepository {
         await insertSourceRecord(transaction, record);
         if (!ready || !line.match.matchedProductId) continue;
 
-        const product = await activeProduct(
+        await insertObservationFromLine(
           transaction,
           input.storeId,
-          line.match.matchedProductId,
+          input.summary.sourceType,
+          sourceDocumentId,
+          sourceRecordId,
+          line,
+          this.generateId,
+          createdAt,
         );
-        if (!product) {
-          throw new Error("Matched product is no longer active in this store.");
-        }
-
-        if (input.summary.sourceType === "MERCALYS_SALES") {
-          await insertSalesObservation(
-            transaction,
-            salesObservationSchema.parse({
-              id: this.generateId(),
-              storeId: input.storeId,
-              productId: product.id,
-              businessDate: line.record.businessDate,
-              quantity: decimal(line.record.quantity),
-              purchaseValue: nullableDecimal(line.record.purchaseValue),
-              rceValue: nullableDecimal(line.record.rceValue),
-              salesValue: nullableDecimal(line.record.salesValue),
-              vatValue: nullableDecimal(line.record.vatValue),
-              marginValue: nullableDecimal(line.record.marginValue),
-              marginRate: nullableDecimal(line.record.marginRate),
-              sourceDocumentId,
-              sourceRecordId,
-              validationStatus: "VALIDATED",
-              version: 1,
-              createdAt,
-              updatedAt: createdAt,
-              deletedAt: null,
-              syncState: "PENDING",
-              remoteVersion: null,
-              dirty: true,
-            }),
-          );
-        } else {
-          await insertWasteObservation(
-            transaction,
-            wasteObservationSchema.parse({
-              id: this.generateId(),
-              storeId: input.storeId,
-              productId: product.id,
-              businessDate: line.record.businessDate,
-              productNature: product.nature,
-              quantity: decimal(line.record.quantity),
-              purchaseValueKnown: nullableDecimal(line.record.purchaseValue),
-              purchaseValueEstimated: null,
-              salesValue: nullableDecimal(line.record.salesValue),
-              costQuality:
-                line.record.purchaseValue === null ? "UNAVAILABLE" : "KNOWN",
-              sourceType: "MERCALYS",
-              sourceDocumentId,
-              sourceRecordId,
-              validationStatus: "VALIDATED",
-              version: 1,
-              createdAt,
-              updatedAt: createdAt,
-              deletedAt: null,
-              syncState: "PENDING",
-              remoteVersion: null,
-              dirty: true,
-            }),
-          );
-        }
         publishedCount += 1;
       }
 
@@ -658,4 +833,82 @@ function decimal(value: number) {
 
 function nullableDecimal(value: number | null) {
   return value === null ? null : decimal(value);
+}
+
+async function insertObservationFromLine(
+  transaction: OutboxDatabase,
+  storeId: string,
+  sourceType: MercalysSourceType,
+  sourceDocumentId: string,
+  sourceRecordId: string,
+  line: MercalysImportValidationLine,
+  generateId: GenerateId,
+  createdAt: string,
+) {
+  if (!line.match.matchedProductId) throw Error("MERCALYS_PRODUCT_REQUIRED");
+  const product = await activeProduct(
+    transaction,
+    storeId,
+    line.match.matchedProductId,
+  );
+  if (!product) {
+    throw new Error("Matched product is no longer active in this store.");
+  }
+
+  if (sourceType === "MERCALYS_SALES") {
+    await insertSalesObservation(
+      transaction,
+      salesObservationSchema.parse({
+        id: generateId(),
+        storeId,
+        productId: product.id,
+        businessDate: line.record.businessDate,
+        quantity: decimal(line.record.quantity),
+        purchaseValue: nullableDecimal(line.record.purchaseValue),
+        rceValue: nullableDecimal(line.record.rceValue),
+        salesValue: nullableDecimal(line.record.salesValue),
+        vatValue: nullableDecimal(line.record.vatValue),
+        marginValue: nullableDecimal(line.record.marginValue),
+        marginRate: nullableDecimal(line.record.marginRate),
+        sourceDocumentId,
+        sourceRecordId,
+        validationStatus: "VALIDATED",
+        version: 1,
+        createdAt,
+        updatedAt: createdAt,
+        deletedAt: null,
+        syncState: "PENDING",
+        remoteVersion: null,
+        dirty: true,
+      }),
+    );
+  } else {
+    await insertWasteObservation(
+      transaction,
+      wasteObservationSchema.parse({
+        id: generateId(),
+        storeId,
+        productId: product.id,
+        businessDate: line.record.businessDate,
+        productNature: product.nature,
+        quantity: decimal(line.record.quantity),
+        purchaseValueKnown: nullableDecimal(line.record.purchaseValue),
+        purchaseValueEstimated: null,
+        salesValue: nullableDecimal(line.record.salesValue),
+        costQuality:
+          line.record.purchaseValue === null ? "UNAVAILABLE" : "KNOWN",
+        sourceType: "MERCALYS",
+        sourceDocumentId,
+        sourceRecordId,
+        validationStatus: "VALIDATED",
+        version: 1,
+        createdAt,
+        updatedAt: createdAt,
+        deletedAt: null,
+        syncState: "PENDING",
+        remoteVersion: null,
+        dirty: true,
+      }),
+    );
+  }
 }

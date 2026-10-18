@@ -330,6 +330,16 @@ export async function applyMercalysPublicationCommand(
     operation: "UPSERT",
     entityVersion: version,
   });
+  if (p.records.some((r) => r.version > 1))
+    await context.database
+      .collection<{ _id: string; mercalysRecordUpdatesRequired?: boolean }>(
+        "syncStoreCounters",
+      )
+      .updateOne(
+        { _id: storeId },
+        { $set: { mercalysRecordUpdatesRequired: true } },
+        options,
+      );
   return {
     resultStatus: "APPLIED",
     resultingVersion: version,

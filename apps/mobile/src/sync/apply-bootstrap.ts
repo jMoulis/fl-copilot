@@ -36,6 +36,7 @@ export async function applyBootstrap(
   storeId: string,
   bootstrap: BootstrapResponse,
   ownerId?: string,
+  mercalysRecordUpdates = false,
 ) {
   const store = bootstrapStoreSchema.parse(bootstrap.store);
   if (store.id !== storeId) {
@@ -256,6 +257,13 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `mercalys-publications:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    if (bootstrap.entities.mercalysPublications && mercalysRecordUpdates)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `mercalys-record-updates:${storeId}`,
         "1",
         bootstrap.serverTime,
       );

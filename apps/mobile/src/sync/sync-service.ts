@@ -79,6 +79,7 @@ export interface MobileSyncServiceOptions {
   appVersion: string;
   deviceId: string;
   mercalysPublications?: boolean;
+  mercalysRecordUpdates?: boolean;
   maxRetries?: number;
   baseRetryDelayMs?: number;
   now?: () => string;
@@ -210,6 +211,13 @@ export class MobileSyncService {
           `mercalys-publications:${storeId}`,
         )
       : true;
+    const mercalysUpdatesAdopted =
+      this.options.mercalysRecordUpdates && this.options.mercalysPublications
+        ? await this.database.getFirstAsync(
+            "SELECT value FROM app_metadata WHERE key=?",
+            `mercalys-record-updates:${storeId}`,
+          )
+        : true;
     const knowledgeAdopted = this.options.copilotKnowledge
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -283,6 +291,7 @@ export class MobileSyncService {
       !historyDeletionAdopted ||
       !knowledgeAdopted ||
       !mercalysAdopted ||
+      !mercalysUpdatesAdopted ||
       !executionAdopted ||
       !prepAdopted
     ) {
@@ -306,6 +315,7 @@ export class MobileSyncService {
       storeId,
       snapshot,
       this.options.copilotOwnerId,
+      this.options.mercalysRecordUpdates,
     );
   }
 
