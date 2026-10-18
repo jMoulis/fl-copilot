@@ -186,3 +186,42 @@ function unavailable(inputCount: number) {
     reason: "MISSING_INPUT" as const,
   };
 }
+
+it.each([
+  { sales: true, waste: false },
+  { sales: false, waste: true },
+  { sales: true, waste: true },
+])(
+  "qualifies only the incomplete source channel without changing known totals or converting missing into zero (%o)",
+  (incompleteSources) => {
+    const input = {
+      storeId: STORE_ID,
+      businessDate: BUSINESS_DATE,
+      productPerformances: productPerformances(),
+      computedAt: COMPUTED_AT,
+    };
+    const baseline = buildDepartmentDailyPerformance(input);
+    const partial = buildDepartmentDailyPerformance({
+      ...input,
+      incompleteSources,
+    });
+    expect(partial.sales).toEqual(baseline.sales);
+    expect(partial.waste).toEqual(baseline.waste);
+    expect(partial.availability.salesValue.status).toBe(
+      incompleteSources.sales ? "PARTIAL" : "AVAILABLE",
+    );
+    expect(partial.availability.wasteSalesValue.status).toBe(
+      incompleteSources.waste ? "PARTIAL" : "AVAILABLE",
+    );
+    expect(partial.inputRevision).not.toBe(baseline.inputRevision);
+    const empty = buildDepartmentDailyPerformance({
+      ...input,
+      productPerformances: [],
+      incompleteSources,
+    });
+    expect(empty.sales.salesValue).toBeNull();
+    expect(empty.waste.salesValue).toBeNull();
+    expect(empty.availability.salesValue.status).toBe("UNAVAILABLE");
+    expect(empty.availability.wasteSalesValue.status).toBe("UNAVAILABLE");
+  },
+);

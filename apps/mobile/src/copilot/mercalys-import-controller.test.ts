@@ -25,7 +25,7 @@ it.each([false, true])(
         .prepare("SELECT * FROM products WHERE id=?")
         .get(targetId);
       expect(resolution.candidateProductIds).not.toContain(targetId);
-      expect(count(s, "sales_observations")).toBe(0);
+      expect(count(s, "sales_observations")).toBe(1);
       await expect(
         s.controller.resolve(file.message, review, {
           resolutionKey: resolution.key,
@@ -140,7 +140,7 @@ it.each([
       expect(count(s, "sync_outbox")).toBe(commands);
       expect(count(s, "copilot_tool_results")).toBe(journals);
       expect(count(s, "product_identifiers")).toBe(identifiers);
-      expect(count(s, "sales_observations")).toBe(0);
+      expect(count(s, "sales_observations")).toBe(1);
     } finally {
       s.db.close();
     }
@@ -163,7 +163,7 @@ it("does not bypass an existing owner's code with a fresh explicit catalogue sel
     await expect(
       s.controller.resolve(file.message, fresh, choice),
     ).rejects.toThrow();
-    expect(count(s, "sales_observations")).toBe(0);
+    expect(count(s, "sales_observations")).toBe(1);
     expect(
       Number(
         s.db
@@ -452,7 +452,7 @@ it("asks only about fuzzy identities, persists an explicit choice and continues 
     expect(review.status).toBe("REVIEW");
     if (review.status !== "REVIEW") throw Error("review");
     expect(review.resolutions).toHaveLength(1);
-    expect(count(s, "sales_observations")).toBe(0);
+    expect(count(s, "sales_observations")).toBe(1);
     expect(count(s, "products")).toBe(1);
     const resolution = review.resolutions[0]!;
     expect(resolution.candidateProductIds).toContain(s.productId);
@@ -561,7 +561,7 @@ it("preflights the complete lot before auto-creating an identifier claimed by di
     const message = await s.chat.sendImportReference(s.conversation.id, {
       kind: "MERCALYS_CHAT_IMPORT",
       schemaVersion: 1,
-      policyVersion: 1,
+      policyVersion: 2,
       batchId: batch.id,
       label: "Deux fichiers",
       manifestHash: await importManifestHash(batch, chatImportDigest),
@@ -569,7 +569,7 @@ it("preflights the complete lot before auto-creating an identifier claimed by di
     const report = await s.controller.run(message);
     expect(report.items.map((i) => i.status)).toEqual(["REVIEW", "REVIEW"]);
     expect(count(s, "products")).toBe(1);
-    expect(count(s, "sales_observations")).toBe(0);
+    expect(count(s, "sales_observations")).toBe(2);
     expect(s.calls()).toBe(0);
   } finally {
     s.db.close();
@@ -635,7 +635,7 @@ it("pools semantic work across distinct daily files rather than calling the mode
     const message = await s.chat.sendImportReference(s.conversation.id, {
       kind: "MERCALYS_CHAT_IMPORT",
       schemaVersion: 1,
-      policyVersion: 1,
+      policyVersion: 2,
       batchId: batch.id,
       label: "Deux jours",
       manifestHash: await importManifestHash(batch, chatImportDigest),
@@ -705,7 +705,7 @@ it("prepares a newly unambiguous reference after an earlier partial preparation 
     });
     expect((await s.controller.run(f.message)).items[0]?.status).toBe("REVIEW");
     expect(count(s, "products")).toBe(3);
-    expect(count(s, "sales_observations")).toBe(0);
+    expect(count(s, "sales_observations")).toBe(2);
     const { ProductMasterRepository } =
       await import("../products/product-master-repository");
     await new ProductMasterRepository(s.a).delete(

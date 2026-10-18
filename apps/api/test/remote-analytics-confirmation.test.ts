@@ -64,6 +64,10 @@ class MemoryRemoteAnalyticsRepository implements RemoteAnalyticsRepository {
     );
   }
 
+  async loadDepartmentSourceCompleteness() {
+    return { sales: false, waste: false };
+  }
+
   async saveDepartmentDay(performance: DepartmentDailyPerformance) {
     this.savedDepartments.set(performance.date, performance);
   }

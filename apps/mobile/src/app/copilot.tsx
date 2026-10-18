@@ -908,7 +908,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         await controller.sendImportReference(conversationId, {
           kind: "MERCALYS_CHAT_IMPORT",
           schemaVersion: 1,
-          policyVersion: 1,
+          policyVersion: 2,
           batchId,
           label:
             files.length === 1
