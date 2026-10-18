@@ -9,3 +9,5 @@ apps/mobile/ios
 apps/mobile/android
 docs/specs
 AGENTS.md
+# Preserve the supplied UX specification archive byte for byte.
+docs/ux/FL_Copilot_Implementation_Specs_v1_1
