@@ -1,0 +1,27 @@
+# M7 — curated retail expertise business scenarios
+
+Edition: `produce-retail.2026-10-18.v1`. This is a real-dialogue acceptance checklist, not a record of successful live-model/device testing. Automated fixtures check transport, provenance, boundaries and persistence; they cannot establish expert reasoning quality. Run these cases in a grouped acceptance session with the configured model and known pilot data. Do not trigger a paid build or provider request merely by reading this file.
+
+For every case: keep the response natural; consult only relevant reference topics if useful, distinguish store facts/source findings/application hypotheses, cite a useful primary source, reuse already known information and ask only a material missing fact. Do not turn the reference’s sample questions into a mandatory list. Any business write requires the existing explicit decision path.
+
+| User question                                                                 | Relevant reference           | Acceptance observations                                                                                                                                                                  |
+| ----------------------------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| « Le CA baisse malgré la promo, pourquoi ? »                                  | SHOPPER_CHOICE, VISIBILITY   | Read actual period/coverage and commercial execution; present competing explanations. No assertion that price or visibility caused the decline, no unsupported uplift or invented stock. |
+| « Quelle idée de TG pour aider à préparer un repas rapide ? »                 | SHOPPING_NEEDS, ASSOCIATIONS | Use the applicable weekly offers and declared space; propose a practical use, not a botanical grouping or an automatic plan validation. Missing dimensions stay unknown.                 |
+| « Tomates et oignons montent ensemble : mes clients les achètent ensemble ? » | ASSOCIATIONS                 | Aggregate daily sales cannot establish shared baskets or attachment rates. A meal-based association remains a test hypothesis.                                                           |
+| « Si la courgette manque, l’aubergine récupérera toutes les ventes ? »        | SUBSTITUTION                 | Check confirmed directed relations and recorded events; availability remains unknown without a fact. No reverse-edge assumption, individual transfer or lost-sales estimate.             |
+| « Mettre l’offre à l’entrée me garantit une hausse ? »                        | VISIBILITY                   | Explain contextual limits of the nonrandomized English trial and simultaneous range/position changes. Do not transfer numeric effects to a French TG. Propose a dated, observable test.  |
+| « Les tomates disponibles en hiver sont forcément de saison ? »               | SEASONALITY                  | Distinguish availability, season and peak; ask only materially missing variety/origin/week and use current primary research for live campaign/supply claims.                             |
+| « La casse en euros est-elle ma marge perdue ou un poids gaspillé ? »         | WASTE_DIAGNOSIS              | Explain canonical sales-value waste, unknown purchase cost and incompatible/unavailable quantities. Do not relabel it a regulatory diagnosis or invent a performance threshold.          |
+
+Also verify: unsupported client has no new tool; expired edition produces no usable cards and the assistant explains the need for current verification; source links retain their dates/caveats after private history restoration; a different store/owner cannot recover the private discussion. No memory entry, business observation, product, directed relation or plan is written by a lookup.
+
+## Reviewed primary provenance
+
+- [Interfel/CSA — 2025 survey, synthesis published February 2026](https://www.interfel.com/services/documentation/synthese-du-barometre-de-confiance-fruits-et-legumes-2025/): national declared preferences, not observed local customers.
+- [CTIFL — public synthesis, 12 March 2026](https://www.ctifl.fr/fruits-et-legumes-frais-pourquoi-les-francais-en-achetent-ils-moins): the full gated report was not consulted. Application association/substitution checks are explicitly application guidance, not established pairwise effects in this study.
+- [Vogel et al., PLOS Medicine, 31 March 2026](https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.1004575): original matched controlled, nonrandomized English study; range and placement changed together, not a local TG forecast.
+- [Interfel calendar methodology, 4 October 2023](https://www.interfel.com/actualites/filiere-fruits-et-legumes/calendrier-de-consommation-des-fruits-et-legumes-frais/): method distinctions, not live supplier availability.
+- [ADEME public diagnostic memo notice, 25 September 2025](https://librairie.ademe.fr/agriculture-alimentation-foret-bioeconomie/8599-realiser-un-diagnostic-du-gaspillage-alimentaire-dans-le-secteur-des-grandes-et-moyennes-surfaces.html): the gated PDF was not consulted; no detailed regulatory protocol or certification is claimed.
+
+Reviewed 18 October 2026; next reference review due before 18 April 2027. Future content changes require versioned review, preserving existing conversation snapshots.

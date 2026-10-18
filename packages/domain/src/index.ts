@@ -135,3 +135,6 @@ export * from "./source-original-restoration";
 export * from "./copilot-receipt-intake";
 
 export * from "./receipt-photo-bundle";
+
+export * from "./retail-expertise";
+export * from "./retail-expertise-reference";

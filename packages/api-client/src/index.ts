@@ -79,6 +79,7 @@ export class ApiClient {
       onActivity?(activity: CopilotActivity): void;
       memorySuggestions?: boolean;
       webResearch?: boolean;
+      retailExpertise?: boolean;
       choiceUpdate?: boolean;
       choiceRetention?: boolean;
       choiceCreate?: boolean;
@@ -177,6 +178,9 @@ export class ApiClient {
                           ? "1"
                           : String(streaming.storeConflicts),
                     }
+                  : {}),
+                ...(streaming.retailExpertise
+                  ? { "x-copilot-retail-expertise": "1" }
                   : {}),
                 ...(streaming.receiptRecovery
                   ? { "x-copilot-receipt-recovery": "1" }

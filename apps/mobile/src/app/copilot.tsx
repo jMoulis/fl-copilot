@@ -839,6 +839,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               onActivity,
               memorySuggestions: true,
               webResearch: true,
+              retailExpertise: true,
               choiceUpdate: canManageProducts,
               choiceRetention: canManageProducts,
               choiceCreate: canManageProducts,

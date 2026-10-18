@@ -46,6 +46,7 @@ import { readCommercialExecutionPreview } from "./copilot/commercial-plan-tool.j
 import { readAnalyticsQuery } from "./copilot/analytics-query-tool.js";
 import { createCopilotWebResearchJournal } from "./copilot/web-research-journal.js";
 import { createCopilotWebResearch } from "./copilot/web-research.js";
+import { readRetailExpertise } from "./copilot/retail-expertise-tool.js";
 import { publicResearchToolResult } from "./copilot/public-research-tool.js";
 import { prepareContextCheckpoint } from "./copilot/context-checkpoint.js";
 import { readConversationContext } from "./copilot/conversation-history-tool.js";
@@ -599,6 +600,16 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 return result;
               },
+              ...(request.headers["x-copilot-retail-expertise"] === "1"
+                ? {
+                    retailExpertise: async (input) => {
+                      await authorize();
+                      const result = readRetailExpertise(input);
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
               ...(request.headers["x-copilot-web-research"] === "1"
                 ? {
                     publicResearch: async (input, signal) =>

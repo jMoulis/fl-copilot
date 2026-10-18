@@ -1,0 +1,59 @@
+import { expect, it } from "vitest";
+import { readRetailExpertiseReference } from "@fl-copilot/domain";
+import { readAnswerSource, formatSourcePublication } from "./answer-source";
+const citation = readRetailExpertiseReference(
+  { topics: ["SHOPPER_CHOICE"] },
+  "2026-10-18T12:00:00.000Z",
+).cards[0]!.citation;
+const base = {
+  label: "Repère métier",
+  value: "Donnée externe, pas un fait magasin",
+  sourceType: "SOURCE_DOCUMENT",
+  sourceId: citation.referenceId,
+  retailExpertise: citation,
+};
+const parse = (value: unknown) =>
+  readAnswerSource(encodeURIComponent(JSON.stringify(value)));
+it("opens both canonical legacy sources and curated citations without a remote call", () => {
+  expect(parse(base).retailExpertise).toEqual(citation);
+  expect(parse({ label: "CA", value: 10, sourceId: "canonical" })).toEqual({
+    label: "CA",
+    value: 10,
+    sourceId: "canonical",
+  });
+});
+it.each([
+  "PRIVATE_URL",
+  "WRONG_SOURCE",
+  "WRONG_TYPE",
+  "BOTH_KINDS",
+  "BAD_DATE",
+  "OVERLONG",
+])("rejects malformed citation payloads before navigation (%s)", (mode) => {
+  const value = structuredClone(base);
+  if (mode === "PRIVATE_URL")
+    value.retailExpertise.sources[0]!.url = "https://localhost/private";
+  if (mode === "WRONG_SOURCE") value.sourceId = "another";
+  if (mode === "WRONG_TYPE") value.sourceType = "KPI";
+  if (mode === "BAD_DATE") value.retailExpertise.reviewAfterOn = "2025-01-01";
+  if (mode === "BOTH_KINDS")
+    Object.assign(value, {
+      externalResearch: {
+        kind: "EXTERNAL_RESEARCH",
+        accessedAt: "2026-10-18T12:00:00.000Z",
+        citations: [
+          { url: "https://example.org/", title: "External", publishedAt: null },
+        ],
+      },
+    });
+  if (mode === "OVERLONG") value.value = "a".repeat(10001);
+  expect(() => parse(value)).toThrow();
+});
+
+it("presents precise publication dates in French without inventing a day for a month-only source", () => {
+  expect(formatSourcePublication("2026-02")).toBe("février 2026");
+  expect(formatSourcePublication("2026-03-31")).toBe("31 mars 2026");
+  expect(formatSourcePublication(null)).toBe(
+    "date de publication non précisée",
+  );
+});
