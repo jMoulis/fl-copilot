@@ -133,3 +133,5 @@ export * from "./product-master-conflict";
 
 export * from "./source-original-restoration";
 export * from "./copilot-receipt-intake";
+
+export * from "./receipt-photo-bundle";

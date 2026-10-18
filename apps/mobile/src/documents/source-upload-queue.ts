@@ -1,3 +1,7 @@
+import {
+  RECEIPT_PHOTO_BUNDLE_MIME,
+  receiptMultiViewBlockingCodes,
+} from "@fl-copilot/domain";
 import { sourceFileDirectory } from "./source-file-directory";
 import { ApiClientError } from "@fl-copilot/api-client";
 import type {
@@ -339,6 +343,41 @@ export class SourceUploadQueue {
         ].includes(error.response.code)
       ) {
         await this.markInvalid(row.job_id, payload, storeId);
+        return false;
+      }
+      if (
+        row.source_type === "WASTE_RECEIPT" &&
+        row.mime_type === RECEIPT_PHOTO_BUNDLE_MIME &&
+        error instanceof ApiClientError &&
+        receiptMultiViewBlockingCodes.includes(error.response.code)
+      ) {
+        await this.database.withExclusiveTransactionAsync(async (tx) => {
+          const timestamp = this.now().toISOString();
+          await tx.runAsync(
+            "UPDATE local_jobs SET status='FAILED',next_attempt_at=NULL,last_error=?,updated_at=? WHERE id=?",
+            error.response.code,
+            timestamp,
+            row.job_id,
+          );
+          await tx.runAsync(
+            "UPDATE source_documents SET remote_upload_status='CONFIRMED',remote_processing_status='FAILED',updated_at=? WHERE id=? AND store_id=?",
+            timestamp,
+            payload.sourceDocumentId,
+            storeId,
+          );
+          await tx.runAsync(
+            "UPDATE local_files SET upload_status='CONFIRMED',updated_at=? WHERE id=? AND store_id=?",
+            timestamp,
+            payload.localFileId,
+            storeId,
+          );
+          await tx.runAsync(
+            "UPDATE waste_receipts SET processing_status='FAILED',ai_status='FAILED',updated_at=? WHERE source_document_id=? AND store_id=?",
+            timestamp,
+            payload.sourceDocumentId,
+            storeId,
+          );
+        });
         return false;
       }
       await this.scheduleRetry(

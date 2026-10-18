@@ -1,5 +1,6 @@
+import { ReceiptSourcePhotos } from "@/documents/receipt-source-photos";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 import { normalizeProductLabel, type ProductAlias } from "@fl-copilot/domain";
 import { ProductMasterRepository } from "@/products/product-master-repository";
 import { randomUUID } from "expo-crypto";
@@ -369,7 +370,7 @@ export default function WasteReceiptValidationScreen() {
       {detail.receipt.duplicateStatus === "POSSIBLE_DUPLICATE" ? (
         <SectionCard
           title="Doublon possible"
-          description="Un ticket avec exactement la même image existe déjà. Aucun rapprochement n’est décidé à partir des seuls produits ou de la date."
+          description="Les mêmes photos ont déjà été enregistrées pour un ticket. Aucun rapprochement n’est décidé à partir des seuls produits ou de la date."
         >
           <InlineAlert
             title="Examen nécessaire"
@@ -393,16 +394,15 @@ export default function WasteReceiptValidationScreen() {
           {comparingDuplicate ? (
             <View className="gap-3 rounded-2xl border border-line bg-canvas p-4">
               <Text className="font-semibold text-ink">Ticket existant</Text>
-              {detail.duplicateCandidate?.localFileUri ? (
-                <Image
-                  source={{ uri: detail.duplicateCandidate.localFileUri }}
-                  resizeMode="contain"
-                  className="h-64 w-full rounded-2xl bg-surface-muted"
-                  accessibilityLabel="Photo du ticket existant"
+              {detail.duplicateCandidate ? (
+                <ReceiptSourcePhotos
+                  storeId={detail.receipt.storeId}
+                  sourceDocumentId={detail.duplicateCandidate.sourceDocumentId}
+                  fallbackUri={detail.duplicateCandidate.localFileUri}
                 />
               ) : (
                 <Text className="text-sm text-muted">
-                  Photo existante indisponible sur cet appareil.
+                  Photos existantes indisponibles sur cet appareil.
                 </Text>
               )}
             </View>
@@ -527,18 +527,13 @@ export default function WasteReceiptValidationScreen() {
       )}
       <SectionCard
         title="Photo source"
-        description="L’original reste conservé sur cet appareil."
+        description="Les photos originales restent conservées sur cet appareil."
       >
-        {detail.localFileUri ? (
-          <Image
-            source={{ uri: detail.localFileUri }}
-            resizeMode="contain"
-            className="h-80 w-full rounded-2xl bg-surface-muted"
-            accessibilityLabel="Photo du ticket de casse"
-          />
-        ) : (
-          <Text className="text-sm text-muted">Photo locale indisponible.</Text>
-        )}
+        <ReceiptSourcePhotos
+          storeId={detail.receipt.storeId}
+          sourceDocumentId={detail.receipt.sourceDocumentId}
+          fallbackUri={detail.localFileUri}
+        />
       </SectionCard>
 
       {detail.receipt.processingStatus !== "PUBLISHED" ? (

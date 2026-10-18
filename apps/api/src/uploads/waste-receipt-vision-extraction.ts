@@ -1,8 +1,9 @@
+import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
+import { extractReceiptViews } from "./waste-receipt-multiview-extraction.js";
 import { randomUUID } from "node:crypto";
 import type { Collection } from "mongodb";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
-import { z } from "zod";
 import type { DatabaseService } from "../database/types.js";
 import {
   createVercelReceiptImageStorage,
@@ -11,56 +12,13 @@ import {
 
 export const WASTE_RECEIPT_VISION_SCHEMA_VERSION = "waste-receipt.vision.v2";
 
-const confidenceSchema = z
-  .object({
-    label: z.number().min(0).max(1),
-    quantity: z.number().min(0).max(1),
-    unitPrice: z.number().min(0).max(1),
-    totalPrice: z.number().min(0).max(1),
-  })
-  .strict();
-
-const sourceRegionSchema = z
-  .object({
-    x: z.number().min(0).max(1),
-    y: z.number().min(0).max(1),
-    width: z.number().min(0).max(1),
-    height: z.number().min(0).max(1),
-  })
-  .strict();
-
-export const wasteReceiptVisionOutputSchema = z
-  .object({
-    detectedReceiptDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .nullable(),
-    cashierNumber: z.string().min(1).max(64).nullable(),
-    cashierNumberConfidence: z.number().min(0).max(1).nullable(),
-    cashierNumberRegion: sourceRegionSchema.nullable(),
-    lines: z
-      .array(
-        z
-          .object({
-            sourceLineIndex: z.number().int().nonnegative(),
-            rawLabel: z.string().trim().min(1).max(240),
-            quantity: z.number().nonnegative().nullable(),
-            weight: z.number().nonnegative().nullable(),
-            quantityUnit: z.string().trim().min(1).max(32).nullable(),
-            unitPrice: z.number().nonnegative().nullable(),
-            totalPrice: z.number().nonnegative().nullable(),
-            extractionConfidence: confidenceSchema,
-            sourceRegion: sourceRegionSchema.nullable(),
-          })
-          .strict(),
-      )
-      .max(500),
-  })
-  .strict();
-
-export type WasteReceiptVisionOutput = z.infer<
-  typeof wasteReceiptVisionOutputSchema
->;
+export { wasteReceiptVisionOutputSchema } from "./waste-receipt-vision-output.js";
+import {
+  wasteReceiptVisionOutputSchema,
+  wasteReceiptMultiViewVisionOutputSchema,
+  type WasteReceiptVisionOutput,
+} from "./waste-receipt-vision-output.js";
+export type { WasteReceiptVisionOutput } from "./waste-receipt-vision-output.js";
 
 export interface ReceiptVisionProviderResult {
   output: unknown;
@@ -72,6 +30,9 @@ export interface ReceiptVisionProvider {
   readonly provider: string;
   readonly model: string;
   extract(image: Uint8Array): Promise<ReceiptVisionProviderResult>;
+  extractViews?(
+    images: readonly Uint8Array[],
+  ): Promise<ReceiptVisionProviderResult>;
 }
 
 export interface WasteReceiptVisionExtractionService {
@@ -85,6 +46,7 @@ type RemoteSourceDocumentRecord = {
   remoteUploadStatus: string;
   normalizationStatus?: "READY" | "FAILED";
   normalizedObjectKey?: string;
+  mimeType?: string;
 };
 
 type WasteReceiptExtractionRecord = {
@@ -114,6 +76,11 @@ If the footer is cropped, unreadable, contains conflicting dates, or the year ca
 Find the cashier number in the receipt footer. In the pilot format it begins with 000; this is a hint, never a reason to add missing zeroes or truncate digits. Preserve its complete printed text and every leading zero; it is an identifier, never a numeric quantity. Do not substitute a till/register number, transaction number, EAN or receipt number. If the cashier identifier is unclear or absent return null, with null confidence/region. Otherwise provide confidence and its image region when reliable.
 sourceRegion coordinates are fractions of the full image between 0 and 1, or null when a reliable region cannot be provided.`;
 
+const multiViewInstructions = `The photos are ordered views of one long receipt, not independent tickets.
+Return singleReceipt=false if evidence shows different receipts. Return overlapResolved=false if overlap or missing continuity prevents reliable occurrence counting; do not guess.
+A line visible in overlapping photos is ONE occurrence: consolidate it and list all supporting zero-based sourceImageIndexes. Distinct repeated occurrences on the actual ticket must remain separate lines even when label and amounts match. Do not merge lines merely because their text or amounts match.
+sourceRegion is relative to the first supporting image. cashierImageIndex identifies the image supporting the cashier region, or is null when unavailable. Use the footer image for the French date and cashier identifier. Do not manufacture a total or infer invisible lines.`;
+
 export function createOpenAIReceiptVisionProvider(
   input: {
     apiKey?: string;
@@ -130,64 +97,84 @@ export function createOpenAIReceiptVisionProvider(
   const model = usesGateway
     ? `openai/${input.model.replace(/^openai\//, "")}`
     : input.model;
-  return {
-    provider: usesGateway ? "vercel-ai-gateway/openai" : "openai",
-    model,
-    async extract(image) {
-      const gatewayCredential =
-        input.gatewayApiKey ??
-        input.vercelOidcToken ??
-        input.getVercelOidcToken?.();
-      if (!input.apiKey && !gatewayCredential && !client) {
-        throw new Error("WASTE_RECEIPT_VISION_NOT_CONFIGURED");
-      }
-      const openai =
-        client ??
-        new OpenAI({
-          apiKey: gatewayCredential ?? input.apiKey,
-          baseURL: gatewayCredential
-            ? "https://ai-gateway.vercel.sh/v1"
-            : undefined,
-          maxRetries: 2,
-        });
-      const response = await openai.responses.parse({
+  async function extractImages(
+    images: readonly Uint8Array[],
+    grouped: boolean,
+  ) {
+    const gatewayCredential =
+      input.gatewayApiKey ??
+      input.vercelOidcToken ??
+      input.getVercelOidcToken?.();
+    if (!input.apiKey && !gatewayCredential && !client) {
+      throw new Error("WASTE_RECEIPT_VISION_NOT_CONFIGURED");
+    }
+    const openai =
+      client ??
+      new OpenAI({
+        apiKey: gatewayCredential ?? input.apiKey,
+        baseURL: gatewayCredential
+          ? "https://ai-gateway.vercel.sh/v1"
+          : undefined,
+        maxRetries: 2,
+      });
+    const response = await openai.responses.parse(
+      {
         model,
         store: false,
-        instructions: extractionInstructions,
+        instructions: grouped
+          ? `${extractionInstructions}\n${multiViewInstructions}`
+          : extractionInstructions,
         input: [
           {
             role: "user",
             content: [
               {
                 type: "input_text",
-                text: "Extract every readable waste line from this receipt image.",
+                text: grouped
+                  ? "These ordered photos show ONE long receipt, from top to bottom. Extract it once."
+                  : "Extract every readable waste line from this receipt image.",
               },
-              {
-                type: "input_image",
+              ...images.map((image) => ({
+                type: "input_image" as const,
                 image_url: `data:image/jpeg;base64,${Buffer.from(image).toString("base64")}`,
-                detail: "high",
-              },
+                detail: "high" as const,
+              })),
             ],
           },
         ],
         text: {
           format: zodTextFormat(
-            wasteReceiptVisionOutputSchema,
-            "waste_receipt_extraction",
+            grouped
+              ? wasteReceiptMultiViewVisionOutputSchema
+              : wasteReceiptVisionOutputSchema,
+            grouped
+              ? "waste_receipt_multiview_extraction"
+              : "waste_receipt_extraction",
           ),
         },
-      });
-      if (response.status !== "completed") {
-        throw new Error("WASTE_RECEIPT_VISION_INCOMPLETE");
-      }
-      if (!response.output_parsed) {
-        throw new Error("WASTE_RECEIPT_VISION_SCHEMA_INVALID");
-      }
-      return {
-        output: response.output_parsed,
-        responseId: response.id,
-        model: response.model,
-      };
+      },
+      grouped ? { timeout: 90_000, maxRetries: 0 } : undefined,
+    );
+    if (response.status !== "completed") {
+      throw new Error("WASTE_RECEIPT_VISION_INCOMPLETE");
+    }
+    if (!response.output_parsed) {
+      throw new Error("WASTE_RECEIPT_VISION_SCHEMA_INVALID");
+    }
+    return {
+      output: response.output_parsed,
+      responseId: response.id,
+      model: response.model,
+    };
+  }
+  return {
+    provider: usesGateway ? "vercel-ai-gateway/openai" : "openai",
+    model,
+    extract: (image) => extractImages([image], false),
+    extractViews: (images) => {
+      if (images.length < 2 || images.length > 5)
+        throw new Error("WASTE_RECEIPT_VIEW_COUNT_INVALID");
+      return extractImages(images, true);
     },
   };
 }
@@ -223,6 +210,10 @@ export function createMongoWasteReceiptVisionExtractionService(
         throw new Error("WASTE_RECEIPT_NORMALIZED_SOURCE_NOT_READY");
       }
 
+      if (document.mimeType === RECEIPT_PHOTO_BUNDLE_MIME) {
+        await extractReceiptViews(db, input, provider, storage, now);
+        return;
+      }
       const identity = {
         storeId: input.storeId,
         sourceDocumentId: input.sourceDocumentId,

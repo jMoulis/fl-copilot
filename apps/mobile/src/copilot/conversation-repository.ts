@@ -1,3 +1,5 @@
+import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
+import { readReceiptPhotoViews } from "../documents/receipt-photo-views";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { applyKnowledgeRecord } from "./knowledge-repository";
 import { ConflictRepository } from "../sync/conflict-repository";
@@ -696,7 +698,7 @@ export class CopilotConversationRepository {
         const files =
           kind === "WASTE_RECEIPT"
             ? await tx.getAllAsync<{ id: string; mime_type: string }>(
-                "SELECT f.id,f.mime_type FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum JOIN waste_receipts r ON r.source_document_id=d.id AND r.store_id=d.store_id AND r.local_file_id=f.id WHERE d.id=? AND d.store_id=? AND d.source_type='WASTE_RECEIPT' AND d.deleted_at IS NULL AND r.deleted_at IS NULL AND f.retention_status='RETAINED' AND f.mime_type IN ('image/jpeg','image/png','image/heic','image/heif') LIMIT 2",
+                "SELECT f.id,f.mime_type FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum JOIN waste_receipts r ON r.source_document_id=d.id AND r.store_id=d.store_id AND r.local_file_id=f.id WHERE d.id=? AND d.store_id=? AND d.source_type='WASTE_RECEIPT' AND d.deleted_at IS NULL AND r.deleted_at IS NULL AND f.retention_status='RETAINED' AND f.mime_type IN ('image/jpeg','image/png','image/heic','image/heif','application/vnd.flcopilot.receipt+json') LIMIT 2",
                 sourceDocumentId,
                 this.scope.storeId,
               )
@@ -708,6 +710,15 @@ export class CopilotConversationRepository {
         const file = files.length === 1 ? files[0] : null;
         if (!source || !file)
           throw Error("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+        if (file.mime_type === RECEIPT_PHOTO_BUNDLE_MIME) {
+          const group = await readReceiptPhotoViews(
+            tx,
+            this.scope.storeId,
+            sourceDocumentId,
+          );
+          if (!group?.grouped || group.views.length < 2)
+            throw Error("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+        }
         if (!attachments.some((a) => a.sourceDocumentId === sourceDocumentId))
           attachments.push({
             sourceDocumentId,

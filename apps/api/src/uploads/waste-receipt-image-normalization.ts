@@ -1,3 +1,13 @@
+import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
+import {
+  decodeReceiptPhotoBundle,
+  receiptBytesChecksum,
+  receiptViewDerivativeObjectKey,
+  normalizedReceiptViewsSchema,
+  MAX_NORMALIZED_RECEIPT_VIEW_BYTES,
+  MAX_NORMALIZED_RECEIPT_BYTES,
+  type NormalizedReceiptView,
+} from "./receipt-photo-bundle.js";
 import { get, put } from "@vercel/blob";
 import convertHeic from "heic-convert";
 import sharp from "sharp";
@@ -39,6 +49,10 @@ type RemoteSourceDocumentRecord = {
   sourceType: string;
   remoteUploadStatus: string;
   normalizationStatus?: "READY" | "FAILED";
+  mimeType?: string;
+  checksum?: string;
+  sizeBytes?: number;
+  objectKey?: string;
 };
 
 export const sharpReceiptImageAdapter: ReceiptImageAdapter = {
@@ -130,6 +144,66 @@ export function createMongoWasteReceiptImageNormalizationService(
       try {
         const original = await storage.read(input.sourceObjectKey);
         if (!original) throw new Error("WASTE_RECEIPT_SOURCE_BLOB_NOT_FOUND");
+        if (document.mimeType === RECEIPT_PHOTO_BUNDLE_MIME) {
+          if (
+            !document.checksum ||
+            !document.sizeBytes ||
+            document.objectKey !== input.sourceObjectKey
+          )
+            throw new Error("WASTE_RECEIPT_BUNDLE_SOURCE_MISMATCH");
+          const originals = decodeReceiptPhotoBundle(original, {
+            checksum: document.checksum,
+            sizeBytes: document.sizeBytes,
+          });
+          const normalizedViews: NormalizedReceiptView[] = [];
+          // Preserve each frame's resolution. Never stitch the long ticket into one reduced image.
+          let normalizedByteCount = 0;
+          for (const [imageIndex, view] of originals.entries()) {
+            const image = await adapter.normalize(view.bytes);
+            normalizedByteCount += image.bytes.byteLength;
+            if (
+              image.bytes.byteLength > MAX_NORMALIZED_RECEIPT_VIEW_BYTES ||
+              normalizedByteCount > MAX_NORMALIZED_RECEIPT_BYTES
+            )
+              throw new Error("WASTE_RECEIPT_NORMALIZED_BYTE_BUDGET_EXCEEDED");
+            const derivative = await storage.write(
+              receiptViewDerivativeObjectKey(
+                input.storeId,
+                input.sourceDocumentId,
+                imageIndex,
+              ),
+              image.bytes,
+            );
+            normalizedViews.push({
+              imageIndex,
+              objectKey: derivative.pathname,
+              checksum: receiptBytesChecksum(image.bytes),
+              sizeBytes: image.bytes.byteLength,
+            });
+          }
+          normalizedReceiptViewsSchema.parse(normalizedViews);
+          await documents.updateOne(
+            {
+              _id: input.sourceDocumentId,
+              storeId: input.storeId,
+              checksum: document.checksum,
+            },
+            {
+              $set: {
+                normalizationStatus: "READY",
+                normalizerVersion: "sharp.receipt.multiview.v1",
+                normalizedObjectKey: normalizedViews[0]!.objectKey,
+                normalizedViews,
+                normalizedGroupChecksum: document.checksum,
+                normalizationFailureCode: null,
+                normalizedAt: timestamp,
+                remoteProcessingStatus: "UPLOADED",
+                updatedAt: timestamp,
+              },
+            },
+          );
+          return;
+        }
         const normalized = await adapter.normalize(original);
         const derivativePathname = receiptDerivativeObjectKey(
           input.storeId,

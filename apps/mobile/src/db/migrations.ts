@@ -808,6 +808,11 @@ CREATE INDEX source_original_restorations_scope ON source_original_restorations(
     name: "commercial-processing-cache",
     sql: `CREATE TABLE commercial_processing_cache(store_id TEXT NOT NULL,source_document_id TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,source_document_id));`,
   },
+  {
+    version: 45,
+    name: "retain-ordered-receipt-photo-groups",
+    sql: `CREATE TABLE waste_receipt_photo_groups(source_document_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,checksum TEXT NOT NULL,payload_json TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { sourceTypeSchema } from "@fl-copilot/domain";
+import {
+  sourceTypeSchema,
+  RECEIPT_PHOTO_BUNDLE_MIME,
+  MAX_RECEIPT_BUNDLE_BYTES,
+} from "@fl-copilot/domain";
 
 const uploadSourceTypeSchema = sourceTypeSchema.extract([
   "MERCALYS_SALES",
@@ -15,24 +19,39 @@ export const sourceUploadMimeTypeSchema = z.enum([
   "image/heif",
   "image/jpeg",
   "image/png",
+  RECEIPT_PHOTO_BUNDLE_MIME,
 ]);
 
 export const sourceUploadChecksumSchema = z
   .string()
   .regex(/^sha256:[a-f0-9]{64}$/);
 
-export const initSourceUploadRequestSchema = z.object({
-  sourceDocumentId: z.string().uuid(),
-  sourceType: uploadSourceTypeSchema,
-  filename: z.string().trim().min(1).max(255),
-  mimeType: sourceUploadMimeTypeSchema,
-  sizeBytes: z
-    .number()
-    .int()
-    .positive()
-    .max(100 * 1024 * 1024),
-  checksum: sourceUploadChecksumSchema,
-});
+export const initSourceUploadRequestSchema = z
+  .object({
+    sourceDocumentId: z.string().uuid(),
+    sourceType: uploadSourceTypeSchema,
+    filename: z.string().trim().min(1).max(255),
+    mimeType: sourceUploadMimeTypeSchema,
+    sizeBytes: z
+      .number()
+      .int()
+      .positive()
+      .max(100 * 1024 * 1024),
+    checksum: sourceUploadChecksumSchema,
+  })
+  .superRefine((input, context) => {
+    if (
+      input.mimeType === RECEIPT_PHOTO_BUNDLE_MIME &&
+      (input.sourceType !== "WASTE_RECEIPT" ||
+        input.sizeBytes > MAX_RECEIPT_BUNDLE_BYTES)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["mimeType"],
+        message: "Invalid receipt photo bundle upload",
+      });
+    }
+  });
 
 export const initSourceUploadResponseSchema = z.object({
   uploadId: z.string().uuid(),
