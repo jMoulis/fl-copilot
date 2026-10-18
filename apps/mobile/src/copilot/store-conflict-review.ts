@@ -1,9 +1,15 @@
 import {
+  isCommercialDecisionConflictKind,
+  commercialVersionDecisionSchema,
+  commercialExecutionTaskSchema,
   isCommercialConflictKind,
   commercialOfferChoiceSchema,
   commercialWeekPreparationSchema,
   commercialWeekPlanSchema,
 } from "@fl-copilot/domain";
+import { CommercialVersionDecisionRepository } from "../commercial/version-decision-repository";
+import { CommercialExecutionRepository } from "../commercial/execution-repository";
+import { readCommercialDecisionConflictPolicy } from "./commercial-decision-conflict-policy";
 import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
 import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
 import { CommercialPlanRepository } from "../commercial/week-plan-repository";
@@ -42,6 +48,17 @@ export async function readStoreConflictCurrent(
   const joined = joinedProductToolDatabase(db),
     { basis, input } = content;
   switch (input.kind) {
+    case "COMMERCIAL_REFERENCE":
+      return new CommercialVersionDecisionRepository(joined, digest).get(
+        basis.storeId,
+        basis.reference!.before.documentId,
+        basis.reference!.after.documentId,
+      );
+    case "COMMERCIAL_EXECUTION":
+      return new CommercialExecutionRepository(joined, digest).get(
+        basis.storeId,
+        basis.entityId,
+      );
     case "COMMERCIAL_CHOICE":
       return new CommercialChoiceRepository(joined, digest).get(
         basis.storeId,
@@ -89,6 +106,8 @@ export async function readStoreConflictReview(
     content.basis,
   );
   const entityType = {
+    COMMERCIAL_REFERENCE: "commercial_version_decision",
+    COMMERCIAL_EXECUTION: "commercial_execution_task",
     COMMERCIAL_CHOICE: "commercial_offer_choice",
     COMMERCIAL_PREPARATION: "commercial_week_preparation",
     COMMERCIAL_PLAN: "commercial_week_plan",
@@ -121,21 +140,25 @@ export async function readStoreConflictReview(
     reason = message;
   };
   const remoteSchema =
-    input.kind === "COMMERCIAL_CHOICE"
-      ? commercialOfferChoiceSchema
-      : input.kind === "COMMERCIAL_PREPARATION"
-        ? commercialWeekPreparationSchema
-        : input.kind === "COMMERCIAL_PLAN"
-          ? commercialWeekPlanSchema
-          : input.kind === "FIELD_EVENT"
-            ? storeProductEventSchema
-            : input.kind === "SETTINGS"
-              ? storeContextSettingsSchema
-              : input.kind === "NEED"
-                ? needUnitSchema
-                : input.kind === "MEMBERSHIP"
-                  ? needMembershipSchema
-                  : productSubstitutionSchema;
+    input.kind === "COMMERCIAL_REFERENCE"
+      ? commercialVersionDecisionSchema
+      : input.kind === "COMMERCIAL_EXECUTION"
+        ? commercialExecutionTaskSchema
+        : input.kind === "COMMERCIAL_CHOICE"
+          ? commercialOfferChoiceSchema
+          : input.kind === "COMMERCIAL_PREPARATION"
+            ? commercialWeekPreparationSchema
+            : input.kind === "COMMERCIAL_PLAN"
+              ? commercialWeekPlanSchema
+              : input.kind === "FIELD_EVENT"
+                ? storeProductEventSchema
+                : input.kind === "SETTINGS"
+                  ? storeContextSettingsSchema
+                  : input.kind === "NEED"
+                    ? needUnitSchema
+                    : input.kind === "MEMBERSHIP"
+                      ? needMembershipSchema
+                      : productSubstitutionSchema;
   const parsed = remoteSchema.safeParse(conflict?.remotePayload);
   const remote = parsed.success ? parsed.data : null;
   const commands = await db.getAllAsync<{
@@ -209,8 +232,8 @@ export async function readStoreConflictReview(
     block(
       "L’identité du besoin ou de la relation a changé. Examinez les versions dans Synchronisation ; aucune association n’est réaffectée.",
     );
-  const commercialPolicy = isCommercialConflictKind(input.kind)
-    ? await readCommercialConflictPolicy(
+  const commercialDecisionPolicy = isCommercialDecisionConflictKind(input.kind)
+    ? await readCommercialDecisionConflictPolicy(
         db,
         input.kind,
         current.entity,
@@ -218,23 +241,37 @@ export async function readStoreConflictReview(
         digest,
       )
     : null;
-  if (commercialPolicy && !commercialPolicy.identityValid && remote)
+  const commercialPolicy =
+    isCommercialConflictKind(input.kind) &&
+    !isCommercialDecisionConflictKind(input.kind)
+      ? await readCommercialConflictPolicy(
+          db,
+          input.kind,
+          current.entity,
+          remote,
+          digest,
+        )
+      : null;
+  const commercialIdentity = commercialDecisionPolicy ?? commercialPolicy;
+  if (commercialIdentity && !commercialIdentity.identityValid && remote)
     block(
       "L’identité commerciale a changé. Examinez ce conflit dans Synchronisation.",
     );
   const canKeepLocal =
     !!remote &&
-    (commercialPolicy
-      ? commercialPolicy.canKeep
-      : needPolicy
-        ? needPolicy.canKeep
-        : input.kind === "SETTINGS" ||
-          (!!localEvent &&
-            !!remoteEvent &&
-            localEvent.source === "USER" &&
-            remoteEvent.source === "USER" &&
-            localEvent.status === "CLOSED" &&
-            sameStoreEventCapture(localEvent, remoteEvent)));
+    (commercialDecisionPolicy
+      ? commercialDecisionPolicy.canKeep
+      : commercialPolicy
+        ? commercialPolicy.canKeep
+        : needPolicy
+          ? needPolicy.canKeep
+          : input.kind === "SETTINGS" ||
+            (!!localEvent &&
+              !!remoteEvent &&
+              localEvent.source === "USER" &&
+              remoteEvent.source === "USER" &&
+              localEvent.status === "CLOSED" &&
+              sameStoreEventCapture(localEvent, remoteEvent)));
   const basisHash = await digest(
     JSON.stringify({
       content,
@@ -243,6 +280,9 @@ export async function readStoreConflictReview(
       commands,
       ...(needPolicy ? { parents: needPolicy.parentSnapshots } : {}),
       ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
+      ...(commercialDecisionPolicy
+        ? { commercialDecision: commercialDecisionPolicy.snapshots }
+        : {}),
     }),
   );
   return {
@@ -252,12 +292,15 @@ export async function readStoreConflictReview(
     remote,
     conflict,
     canKeepLocal,
-    canAdoptRemote: commercialPolicy
-      ? commercialPolicy.canAdopt
-      : needPolicy
-        ? needPolicy.canAdopt
-        : !!remote,
+    canAdoptRemote: commercialDecisionPolicy
+      ? commercialDecisionPolicy.canAdopt
+      : commercialPolicy
+        ? commercialPolicy.canAdopt
+        : needPolicy
+          ? needPolicy.canAdopt
+          : !!remote,
     commercialPolicy,
+    commercialDecisionPolicy,
     needPolicy,
     basisHash,
   };

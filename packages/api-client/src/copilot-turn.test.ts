@@ -400,6 +400,18 @@ it("opts into optional proposal and source tools only when the client supports t
     "x-copilot-store-conflicts",
     "3",
   );
+  await new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { onProgress: vi.fn(), storeConflicts: 4 },
+  );
+  expect(transport.mock.calls.at(-1)![1]!.headers).toHaveProperty(
+    "x-copilot-store-conflicts",
+    "4",
+  );
 });
 
 it("advertises deletion-aware private history to avoid legacy projections on the updated app", async () => {
