@@ -1,3 +1,6 @@
+import { CopilotReceiptCameraIntake } from "@/copilot/receipt-camera-intake";
+import { ReceiptCameraSession } from "@/copilot/receipt-camera-session";
+import type { ReceiptPhotoSelection } from "@/copilot/receipt-photo-intake";
 import { CopilotReceiptViewsIntake } from "@/copilot/receipt-views-intake";
 import { ReceiptViewsReview } from "@/copilot/receipt-views-review";
 import {
@@ -34,7 +37,7 @@ import { PlanValidationCard } from "@/copilot/plan-validation-card";
 import { CopilotPlanValidationController } from "@/copilot/plan-validation-controller";
 import { readCopilotPlanValidationProposal } from "@fl-copilot/domain";
 import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import { Pressable, Alert } from "react-native";
+import { Pressable, Alert, Platform } from "react-native";
 import { OfferValidationCard } from "@/copilot/offer-validation-card";
 import { CopilotOfferValidationController } from "@/copilot/offer-validation-controller";
 import { readCopilotOfferValidationProposal } from "@fl-copilot/domain";
@@ -189,12 +192,23 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     finish(assets: CopilotReceiptViewsSelection["assets"] | null): void;
   } | null>(null);
   const cancelReceiptViewsReview = useRef<(() => void) | undefined>(undefined);
+  const [receiptCamera, setReceiptCamera] = useState<{
+    session: ReceiptCameraSession;
+    Sheet: typeof import("@/copilot/receipt-camera-sheet").default;
+    finish(result?: ReceiptPhotoSelection): void;
+  } | null>(null);
+  const cancelReceiptCamera = useRef<(() => void) | undefined>(undefined);
+
   useEffect(() => {
     receiptCaptureAllowed.current = canManageProducts;
-    if (!canManageProducts) cancelReceiptViewsReview.current?.();
+    if (!canManageProducts) {
+      cancelReceiptViewsReview.current?.();
+      cancelReceiptCamera.current?.();
+    }
     return () => {
       receiptCaptureAllowed.current = false;
       cancelReceiptViewsReview.current?.();
+      cancelReceiptCamera.current?.();
     };
   }, [canManageProducts]);
   const canDeclareCommercialExecution = canManageProducts; // Current MANAGER role policy.
@@ -904,6 +918,55 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       capacity,
     );
   };
+  const photographReceipt = async (
+    conversationId: string,
+    signal: AbortSignal,
+    capacity: number,
+  ) => {
+    if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
+    if (!receiptCaptureAllowed.current)
+      throw Error("COPILOT_RECEIPT_CAPTURE_FORBIDDEN");
+    if (capacity < 1) throw Error("COPILOT_ATTACHMENT_LIMIT");
+    if (Platform.OS === "web" || !requireOptionalNativeModule("ExpoCamera"))
+      throw Error("COPILOT_RECEIPT_CAMERA_UNAVAILABLE");
+    let Sheet: typeof import("@/copilot/receipt-camera-sheet").default;
+    try {
+      Sheet = (await import("@/copilot/receipt-camera-sheet")).default;
+    } catch {
+      throw Error("COPILOT_RECEIPT_CAMERA_UNAVAILABLE");
+    }
+    if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
+    if (!receiptCaptureAllowed.current)
+      throw Error("COPILOT_RECEIPT_CAPTURE_FORBIDDEN");
+    return new Promise<ReceiptPhotoSelection | undefined>((resolve) => {
+      let done = false;
+      const authority = {
+        canCapture: () => receiptCaptureAllowed.current,
+        signal,
+      };
+      const intake = new CopilotReceiptCameraIntake(
+        sqlite,
+        { storeId, ownerId },
+        randomUUID,
+      );
+      const cameraSession = new ReceiptCameraSession(authority, (selection) =>
+        intake.capture(conversationId, selection, authority, capacity),
+      );
+      const finish = (result?: ReceiptPhotoSelection) => {
+        if (done) return;
+        done = true;
+        cameraSession.close();
+        signal.removeEventListener("abort", cancel);
+        cancelReceiptCamera.current = undefined;
+        setReceiptCamera(null);
+        resolve(result);
+      };
+      const cancel = () => finish();
+      cancelReceiptCamera.current = cancel;
+      signal.addEventListener("abort", cancel, { once: true });
+      setReceiptCamera({ session: cameraSession, Sheet, finish });
+    });
+  };
   const attachReceipts = async (
     conversationId: string,
     signal: AbortSignal,
@@ -1312,6 +1375,11 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         }
         onAttachPdf={attachPdf}
         onAttachReceipts={canManageProducts ? attachReceipts : undefined}
+        onPhotographReceipt={
+          canManageProducts && Platform.OS !== "web"
+            ? photographReceipt
+            : undefined
+        }
         onAttachReceiptViews={
           canManageProducts
             ? (conversationId, signal, capacity) =>
@@ -1383,6 +1451,13 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           />
         ) : null}
       </Modal>
+      {receiptCamera ? (
+        <receiptCamera.Sheet
+          session={receiptCamera.session}
+          onSaved={receiptCamera.finish}
+          onCancel={() => receiptCamera.finish()}
+        />
+      ) : null}
       {receiptViewsReview ? (
         <ReceiptViewsReview
           assets={receiptViewsReview.assets}

@@ -41,6 +41,11 @@ type PanelProps = {
   onOpenMercalys?(): void;
   externalDraftRevision?: number;
   externalMessageRevision?: number;
+  onPhotographReceipt?(
+    conversationId: string,
+    signal: AbortSignal,
+    capacity: number,
+  ): Promise<ReceiptPhotoSelection | undefined>;
   onAttachReceipts?(
     conversationId: string,
     signal: AbortSignal,
@@ -73,6 +78,7 @@ function LocalChatPanel({
   delivery,
   onAttachPdf,
   onAttachReceipts,
+  onPhotographReceipt,
   onAttachReceiptViews,
   renderToolMessage,
   onOpenMercalys,
@@ -101,7 +107,7 @@ function LocalChatPanel({
   );
   const [fileMenu, setFileMenu] = useState(false);
   const queuedFileAction = useRef<
-    "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS" | undefined
+    "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA" | undefined
   >(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [loadedController, setLoadedController] =
@@ -340,16 +346,20 @@ function LocalChatPanel({
     }
   }
   function performFileAction(
-    kind: "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS",
+    kind: "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA",
   ) {
     if (!isCurrent()) return;
     if (kind === "PDF") void attach();
-    else if (kind === "RECEIPTS" || kind === "RECEIPT_VIEWS")
-      void attachReceipts(kind === "RECEIPT_VIEWS");
+    else if (
+      kind === "RECEIPTS" ||
+      kind === "RECEIPT_VIEWS" ||
+      kind === "CAMERA"
+    )
+      void attachReceipts(kind);
     else onOpenMercalys?.();
   }
   function selectFileAction(
-    kind: "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS",
+    kind: "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA",
   ) {
     setFileMenu(false);
     // UIKit must finish dismissing this sheet before another modal/picker opens.
@@ -400,8 +410,13 @@ function LocalChatPanel({
       if (isCurrent()) setAttaching(false);
     }
   }
-  async function attachReceipts(grouped = false) {
-    const attachPhotos = grouped ? onAttachReceiptViews : onAttachReceipts;
+  async function attachReceipts(kind: "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA") {
+    const attachPhotos =
+      kind === "CAMERA"
+        ? onPhotographReceipt
+        : kind === "RECEIPT_VIEWS"
+          ? onAttachReceiptViews
+          : onAttachReceipts;
     if (!attachPhotos || attachmentAbort.current || locked.current) return;
     const attempt = new AbortController();
     attachmentAbort.current = attempt;
@@ -487,9 +502,15 @@ function LocalChatPanel({
           onAttachPdf ||
           onOpenMercalys ||
           onAttachReceipts ||
-          onAttachReceiptViews
+          onAttachReceiptViews ||
+          onPhotographReceipt
             ? () => {
-                if (onOpenMercalys || onAttachReceipts || onAttachReceiptViews)
+                if (
+                  onOpenMercalys ||
+                  onAttachReceipts ||
+                  onAttachReceiptViews ||
+                  onPhotographReceipt
+                )
                   setFileMenu(true);
                 else void attach();
               }
@@ -598,6 +619,14 @@ function LocalChatPanel({
           if (kind) performFileAction(kind);
         }}
       >
+        {onPhotographReceipt ? (
+          <MenuRow
+            title="Photographier un ticket"
+            description="Une photo ou plusieurs vues du même ticket."
+            icon="camera-outline"
+            onPress={() => selectFileAction("CAMERA")}
+          />
+        ) : null}
         {onAttachReceipts ? (
           <MenuRow
             title="Tickets de casse"
@@ -680,6 +709,8 @@ function attachmentError(error: unknown) {
   const code = error instanceof Error ? error.message : "";
   if (code === "WASTE_RECEIPT_IMAGE_UNSUPPORTED")
     return "Choisissez des photos JPEG, PNG ou HEIC de tickets de casse.";
+  if (code === "COPILOT_RECEIPT_CAMERA_UNAVAILABLE")
+    return "L’appareil photo est indisponible dans cette version de l’application. Vous pouvez importer une photo depuis la photothèque.";
   if (code === "COPILOT_RECEIPT_PICKER_UNAVAILABLE")
     return "La photothèque est indisponible dans cette version de l’application.";
   if (code === "COPILOT_RECEIPT_CAPTURE_FORBIDDEN")

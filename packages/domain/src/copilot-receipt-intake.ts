@@ -34,3 +34,15 @@ export const copilotReceiptViewsSelectionSchema = z.strictObject({
 export type CopilotReceiptViewsSelection = z.infer<
   typeof copilotReceiptViewsSelectionSchema
 >;
+
+/** One camera session is one receipt, regardless of the number of confirmed views. */
+export const copilotReceiptCameraSelectionSchema = z.strictObject({
+  mode: z.literal("ONE_RECEIPT_CAMERA"),
+  assets: z
+    .array(copilotReceiptPhotoBatchSchema.shape.assets.element)
+    .min(1)
+    .max(MAX_RECEIPT_VIEWS),
+});
+export type CopilotReceiptCameraSelection = z.infer<
+  typeof copilotReceiptCameraSelectionSchema
+>;

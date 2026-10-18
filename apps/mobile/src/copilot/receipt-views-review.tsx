@@ -1,5 +1,6 @@
+import { ReceiptPhotoOrder } from "./receipt-photo-order";
 import { useState } from "react";
-import { Modal, ScrollView, Image, Text, View } from "react-native";
+import { Modal, ScrollView, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { CopilotReceiptViewsSelection } from "@fl-copilot/domain";
 import { PrimaryButton, SecondaryButton } from "../components/ui";
@@ -32,40 +33,13 @@ export function ReceiptViewsReview({
             Placez les photos du haut vers le bas, avec un léger recouvrement.
             Incluez le bas du ticket pour la date et le numéro de caissier.
           </Text>
-          {ordered.map((asset, index) => (
-            <View
-              key={asset.uri}
-              className="gap-2 rounded-2xl border border-line p-3"
-            >
-              <Text className="font-semibold text-ink">
-                Vue {index + 1} · {asset.filename}
-              </Text>
-              <Image
-                source={{ uri: asset.uri }}
-                resizeMode="contain"
-                style={{ height: 240, width: "100%" }}
-                accessibilityLabel={`Vue ${index + 1} du même ticket`}
-              />
-              <SecondaryButton
-                label={`Monter la vue ${index + 1}`}
-                disabled={index === 0}
-                onPress={() => move(index, -1)}
-              />
-              <SecondaryButton
-                label={`Descendre la vue ${index + 1}`}
-                disabled={index === ordered.length - 1}
-                onPress={() => move(index, 1)}
-              />
-              <SecondaryButton
-                label={`Retirer la vue ${index + 1}`}
-                onPress={() =>
-                  setOrdered((previous) =>
-                    previous.filter((_, i) => i !== index),
-                  )
-                }
-              />
-            </View>
-          ))}
+          <ReceiptPhotoOrder
+            assets={ordered}
+            onMove={move}
+            onRemove={(index) =>
+              setOrdered((previous) => previous.filter((_, i) => i !== index))
+            }
+          />
           {ordered.length < 2 ? (
             <Text className="text-base text-muted">
               Conservez au moins deux vues, ou annulez et choisissez « Tickets
