@@ -1,4 +1,5 @@
 import {
+  storeConflictLegacyInputSchema,
   storeConflictInputSchema,
   storeConflictPreviewSchema,
   validateStoreConflictBasis,
@@ -412,6 +413,7 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
+    storeConflictVersion?: 1 | 2;
     storeConflict?(
       input: z.infer<typeof storeConflictInputSchema>,
     ): Promise<z.infer<typeof storeConflictPreviewSchema>>;
@@ -1047,8 +1049,11 @@ export function createCopilotAiProvider(
                   ? {
                       store_conflict_review: tool({
                         description:
-                          "Prepare an explicitly requested local conflict comparison for FIELD_EVENT (known event entityId) or SETTINGS (entityId null). Discover the target first. This reads the synchronized target, not local conflicts. A compatible device compares both versions and offers only canonical choices; the user must choose and confirm. Never select a winner automatically. At most three targets; no business write here.",
-                        inputSchema: storeConflictInputSchema,
+                          "Prepare an explicitly requested conflict comparison for an allowed kind and known entityId (SETTINGS uses null). Discover the target first. Only synchronized data is read here; the device checks its actual conflict. The user chooses and confirms. Refused associations need separate reactivation consent; synchronized learned scores stay protected. No winner or business write is chosen by the model. At most three targets.",
+                        inputSchema:
+                          reads.storeConflictVersion === 2
+                            ? storeConflictInputSchema
+                            : storeConflictLegacyInputSchema,
                         execute: (input) =>
                           executeRead(
                             JSON.stringify(["store-conflict", input]),

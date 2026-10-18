@@ -4238,3 +4238,12 @@ On an explicitly requested conflict comparison, the compatible native chat displ
 Loading, missing conflict/no-op, stale or multiple conflicts, active synchronization, changed record, unavailable remote, excessive command history, revoked permission, saving, failed/cancelled commit and completed states are explicit French states. Failed confirmation resets selection/review and rereads the comparison. Moving away cancels an unfinished local operation. Choice controls expose radio state, buttons expose disabled/busy state, outcomes use polite accessibility announcements and touch targets are at least 44 points. Success distinguishes a local resolution waiting to synchronize from adopting a version that needs no new send.
 
 This covers only field-event/settings conflicts with one local open conflict and an existing synchronized target. Other conflict families retain their dedicated screens. It awaits grouped API/native delivery and iPhone validation; automated checks do not count as device acceptance.
+
+
+## M7 chat: compare need and association conflicts (18 October 2026)
+
+The same comparison card shows a need's identity/description/status, a product-to-need association with current owned labels, or the ordered source → substitute relation and its declared/learned values. Local versus synchronized versions remain visible together. No outcome is preselected. Explain that retaining local substitution declarations preserves synchronized learned scores; choosing a version does not reverse the relation or regenerate learning.
+
+When a selected outcome would reactivate a rejected association, show a separate initially unchecked consent switch identifying the reactivation. Changing the selected outcome clears both comparison and reactivation confirmation. Confirmation stays disabled until all required consent is present. Incompatible/missing/inactive/conflicted parents disable retaining the local association, with an explanatory state; a valid remote adoption remains available. Changed need code, retargeted relations and illegal learning transitions are not offered as local retention. Role and current-state changes, cancellation and failed commit preserve the original versions/history.
+
+New need-family cards require the next compatible client (capability 2); old field/settings cards keep their previous format and behavior. Automated coverage does not count as iPhone acceptance. Delivery remains grouped; no paid build is triggered by this specification update.

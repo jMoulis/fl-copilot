@@ -1,3 +1,4 @@
+import { storeConflictLegacyInputSchema } from "@fl-copilot/domain";
 import { previewStoreConflict } from "./copilot/store-conflict-tool.js";
 import { previewReceiptRecovery } from "./copilot/receipt-recovery-tool.js";
 import {
@@ -653,9 +654,17 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(request.headers["x-copilot-store-conflicts"] === "1"
+              ...(["1", "2"].includes(
+                String(request.headers["x-copilot-store-conflicts"]),
+              )
                 ? {
+                    storeConflictVersion:
+                      request.headers["x-copilot-store-conflicts"] === "2"
+                        ? (2 as const)
+                        : (1 as const),
                     storeConflict: async (input) => {
+                      if (request.headers["x-copilot-store-conflicts"] !== "2")
+                        storeConflictLegacyInputSchema.parse(input);
                       await authorize();
                       const result = await previewStoreConflict(
                         db,

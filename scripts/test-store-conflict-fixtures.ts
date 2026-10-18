@@ -1,5 +1,6 @@
 import { randomUUID, createHash } from "node:crypto";
 import {
+  storeContextSettingsSchema,
   storeConflictPreviewSchema,
   copilotVisibleStoreSettingsSchema,
   storeEventCapturePayload,
@@ -24,21 +25,21 @@ import { OutboxRepository } from "../apps/mobile/src/sync/outbox-repository";
 import { buildStoreConflictMessages } from "../apps/api/src/copilot/store-conflict-messages";
 import { applyCopilotRecord } from "../apps/mobile/src/copilot/conversation-repository";
 import { CopilotStoreConflictController } from "../apps/mobile/src/copilot/store-conflict-controller";
-export function storeConflictPreview(
-  kind: "FIELD_EVENT" | "SETTINGS",
-  remote:
-    | ReturnType<typeof storeContextFixture>
-    | ReturnType<typeof prepareStoreProductEvent>,
+export function storeConflictPreview<
+  T extends { id: string; storeId: string; version: number },
+>(
+  kind: "FIELD_EVENT" | "SETTINGS" | "NEED" | "MEMBERSHIP" | "SUBSTITUTION",
+  remote: T,
 ) {
   const visible =
     kind === "SETTINGS"
       ? (({ position, ...rest }) => {
           void position;
           return copilotVisibleStoreSettingsSchema.parse(rest);
-        })(remote as ReturnType<typeof storeContextFixture>)
+        })(storeContextSettingsSchema.parse(remote))
       : null;
   return storeConflictPreviewSchema.parse({
-    input: { kind, entityId: kind === "FIELD_EVENT" ? remote.id : null },
+    input: { kind, entityId: kind === "SETTINGS" ? null : remote.id },
     basis: {
       storeId: remote.storeId,
       entityId: remote.id,
@@ -48,6 +49,9 @@ export function storeConflictPreview(
         .digest("hex"),
       event: kind === "FIELD_EVENT" ? remote : null,
       settings: visible,
+      ...(kind === "NEED" ? { need: remote } : {}),
+      ...(kind === "MEMBERSHIP" ? { membership: remote } : {}),
+      ...(kind === "SUBSTITUTION" ? { substitution: remote } : {}),
     },
     evidence: [
       {

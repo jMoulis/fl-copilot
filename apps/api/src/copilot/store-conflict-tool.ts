@@ -1,3 +1,12 @@
+import { serializeNeedUnit, type NeedUnitDocument } from "../need-unit-sync.js";
+import {
+  serializeNeedMembership,
+  type NeedMembershipDocument,
+} from "../need-membership-sync.js";
+import {
+  serializeProductSubstitution,
+  type ProductSubstitutionDocument,
+} from "../product-substitution-sync.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db } from "mongodb";
@@ -35,9 +44,32 @@ export async function previewStoreConflict(
           .collection<StoreContextDocument>("storeContextSettings")
           .findOne({ _id: storeId, storeId }, { maxTimeMS: 2000 })
       : null;
+  const needRow =
+    input.kind === "NEED"
+      ? await db
+          .collection<NeedUnitDocument>("needUnits")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const membershipRow =
+    input.kind === "MEMBERSHIP"
+      ? await db
+          .collection<NeedMembershipDocument>("needMemberships")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const substitutionRow =
+    input.kind === "SUBSTITUTION"
+      ? await db
+          .collection<ProductSubstitutionDocument>("productSubstitutions")
+          .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const need = needRow ? serializeNeedUnit(needRow) : null,
+    membership = membershipRow ? serializeNeedMembership(membershipRow) : null,
+    substitution = substitutionRow
+      ? serializeProductSubstitution(substitutionRow)
+      : null;
   const event = eventRow ? serializeStoreProductEvent(eventRow) : null,
     settings = settingsRow ? serializeStoreContext(settingsRow) : null,
-    entity = event ?? settings;
+    entity = event ?? settings ?? need ?? membership ?? substitution;
   if (!entity) throw Error("STORE_CONFLICT_TARGET_UNAVAILABLE");
   const visible = settings
     ? (({ position, ...rest }) => {
@@ -54,6 +86,9 @@ export async function previewStoreConflict(
       .digest("hex"),
     event,
     settings: visible,
+    ...(need ? { need } : {}),
+    ...(membership ? { membership } : {}),
+    ...(substitution ? { substitution } : {}),
   });
   return storeConflictPreviewSchema.parse({
     input,
@@ -67,7 +102,9 @@ export async function previewStoreConflict(
         label:
           input.kind === "SETTINGS"
             ? "Comparer les réglages du magasin"
-            : "Comparer un signalement magasin",
+            : input.kind === "FIELD_EVENT"
+              ? "Comparer un signalement magasin"
+              : "Comparer le besoin ou l’association",
         factKind: "QUALITY",
         value:
           "Comparaison proposée uniquement. L’appareil vérifiera le conflit local, les deux versions et les choix métier autorisés. Aucune version n’est choisie ni modifiée ici. La présence d’un conflit sur l’appareil reste à vérifier.",

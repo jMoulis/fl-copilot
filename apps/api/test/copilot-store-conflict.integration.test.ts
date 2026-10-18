@@ -1,3 +1,10 @@
+import { nativeNeedConflictFixture } from "../../../scripts/test-need-conflict-fixtures";
+import { applyNeedUnit } from "../../mobile/src/needs/repository";
+import { applyNeedMembership } from "../../mobile/src/needs/membership-repository";
+import { applyProductSubstitution } from "../../mobile/src/needs/substitution-repository";
+import { applyNeedUnitCommand } from "../src/need-unit-sync";
+import { applyNeedMembershipCommand } from "../src/need-membership-sync";
+import { applyProductSubstitutionCommand } from "../src/product-substitution-sync";
 import { DatabaseSync } from "node:sqlite";
 import { ReceiptTestDatabase } from "../../../scripts/test-receipt-publication-sqlite";
 import { runLocalMigrations } from "../../mobile/src/db/migrations";
@@ -88,23 +95,53 @@ describe.skipIf(!uri)(
       ["SETTINGS", "KEEP_LOCAL", "AI"],
       ["SETTINGS", "ADOPT_REMOTE", "FALLBACK"],
       ["SETTINGS", "KEEP_LOCAL", "FOREIGN"],
+      ["NEED", "KEEP_LOCAL", "AI"],
+      ["NEED", "ADOPT_REMOTE", "AI"],
+      ["MEMBERSHIP", "KEEP_LOCAL", "AI"],
+      ["MEMBERSHIP", "ADOPT_REMOTE", "AI"],
+      ["SUBSTITUTION", "KEEP_LOCAL", "AI"],
+      ["SUBSTITUTION", "ADOPT_REMOTE", "FALLBACK"],
+      ["MEMBERSHIP", "KEEP_LOCAL", "FOREIGN"],
+      ["MEMBERSHIP", "KEEP_LOCAL", "REACTIVATION"],
+      ["SUBSTITUTION", "KEEP_LOCAL", "REACTIVATION"],
     ] as const)(
       "commits the private comparison then resolves and syncs canonically (%s/%s/%s)",
       async (kind, decision, mode) => {
-        const s = await nativeStoreConflictFixture(kind),
+        const s =
+            kind === "NEED" || kind === "MEMBERSHIP" || kind === "SUBSTITUTION"
+              ? await nativeNeedConflictFixture(
+                  kind,
+                  ":memory:",
+                  mode === "REACTIVATION" ? "REMOTE" : undefined,
+                )
+              : await nativeStoreConflictFixture(kind),
           r = s.review,
           chat = s.f.chat,
           session = client.startSession();
         try {
-          const name =
-            kind === "FIELD_EVENT"
-              ? "storeProductEvents"
-              : "storeContextSettings";
+          const name = {
+            FIELD_EVENT: "storeProductEvents",
+            SETTINGS: "storeContextSettings",
+            NEED: "needUnits",
+            MEMBERSHIP: "needMemberships",
+            SUBSTITUTION: "productSubstitutions",
+          }[kind];
           await collection(name).insertOne({ _id: r.remote.id, ...r.remote });
           await collection("products").insertOne({
             _id: s.product.id,
-            ...s.product,
+            ...("product" in r ? r.product : s.product),
           });
+          if ("need" in r) {
+            await collection("products").insertOne({
+              _id: r.substitute.id,
+              ...r.substitute,
+            });
+            if (kind !== "NEED")
+              await collection("needUnits").insertOne({
+                _id: r.need.id,
+                ...r.need,
+              });
+          }
           await collection("copilotConversations").insertOne({
             _id: chat.conversation.id,
             ...chat.conversation,
@@ -201,6 +238,17 @@ describe.skipIf(!uri)(
           });
           const state = await r.controller.open(card);
           expect(state.status).toBe("READY");
+          if (mode === "REACTIVATION") {
+            await expect(
+              r.controller.confirm(
+                card,
+                state.review!.basisHash,
+                decision,
+                true,
+              ),
+            ).rejects.toThrow();
+            expect(s.count("copilot_tool_results")).toBe(0);
+          }
           expect(
             (
               await r.controller.confirm(
@@ -208,6 +256,8 @@ describe.skipIf(!uri)(
                 state.review!.basisHash,
                 decision,
                 true,
+                undefined,
+                mode === "REACTIVATION",
               )
             ).status,
           ).toBe("COMPLETED");
@@ -218,6 +268,8 @@ describe.skipIf(!uri)(
                 state.review!.basisHash,
                 decision,
                 true,
+                undefined,
+                mode === "REACTIVATION",
               )
             ).status,
           ).toBe("COMPLETED");
@@ -237,10 +289,13 @@ describe.skipIf(!uri)(
               createdAt: command.createdAt,
             });
             await session.withTransaction(async () => {
-              const apply =
-                kind === "FIELD_EVENT"
-                  ? applyStoreProductEventCommand
-                  : applyStoreContextCommand;
+              const apply = {
+                FIELD_EVENT: applyStoreProductEventCommand,
+                SETTINGS: applyStoreContextCommand,
+                NEED: applyNeedUnitCommand,
+                MEMBERSHIP: applyNeedMembershipCommand,
+                SUBSTITUTION: applyProductSubstitutionCommand,
+              }[kind];
               const result = await apply(
                 { database: db, session },
                 chat.storeId,
@@ -261,33 +316,36 @@ describe.skipIf(!uri)(
             const saved = await collection(name).findOne({ _id: r.remote.id });
             const { _id, ...payload } = saved!;
             void _id;
-            if (kind === "FIELD_EVENT") {
-              await applyStoreProductEvent(adapter, chat.storeId, payload);
-              expect(
-                restored
-                  .prepare(
-                    "SELECT id,store_id,sync_state FROM store_product_events",
-                  )
-                  .get(),
-              ).toMatchObject({
-                id: r.remote.id,
-                store_id: chat.storeId,
-                sync_state: "SYNCED",
+            const apply = {
+              FIELD_EVENT: applyStoreProductEvent,
+              SETTINGS: applyStoreContext,
+              NEED: applyNeedUnit,
+              MEMBERSHIP: applyNeedMembership,
+              SUBSTITUTION: applyProductSubstitution,
+            }[kind];
+            await apply(adapter, chat.storeId, payload);
+            const table = {
+              FIELD_EVENT: "store_product_events",
+              SETTINGS: "store_context_settings",
+              NEED: "need_units",
+              MEMBERSHIP: "need_memberships",
+              SUBSTITUTION: "product_substitutions",
+            }[kind];
+            expect(
+              restored
+                .prepare(`SELECT id,store_id,sync_state FROM ${table}`)
+                .get(),
+            ).toMatchObject({
+              id: r.remote.id,
+              store_id: chat.storeId,
+              sync_state: "SYNCED",
+            });
+            if (kind === "SUBSTITUTION")
+              expect(payload).toMatchObject({
+                evidenceCount: 4,
+                relationshipScore: 0.7,
+                confidence: 0.8,
               });
-            } else {
-              await applyStoreContext(adapter, chat.storeId, payload);
-              expect(
-                restored
-                  .prepare(
-                    "SELECT id,store_id,sync_state FROM store_context_settings",
-                  )
-                  .get(),
-              ).toMatchObject({
-                id: r.remote.id,
-                store_id: chat.storeId,
-                sync_state: "SYNCED",
-              });
-            }
             expect(
               restored.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n,
             ).toBe(0);

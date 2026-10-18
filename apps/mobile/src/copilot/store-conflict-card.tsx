@@ -1,7 +1,13 @@
+import { needUnitSummary } from "../needs/presentation";
+import { membershipSummary } from "../needs/membership-presentation";
+import { substitutionSummary } from "../needs/substitution-presentation";
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Pressable, Switch, Text, View } from "react-native";
 import {
+  needUnitSchema,
+  needMembershipSchema,
+  productSubstitutionSchema,
   storeContextSettingsSchema,
   storeProductEventSchema,
   type CopilotMessage,
@@ -23,6 +29,7 @@ export function StoreConflictCard({
       null,
     ),
     [reviewed, setReviewed] = useState(false),
+    [reactivateRejected, setReactivateRejected] = useState(false),
     [saving, setSaving] = useState(false),
     [error, setError] = useState<string>();
   const revision = useRef(0),
@@ -34,6 +41,7 @@ export function StoreConflictCard({
       setState(undefined);
       setDecision(null);
       setReviewed(false);
+      setReactivateRejected(false);
       setSaving(false);
       setError(undefined);
       void controller
@@ -54,7 +62,13 @@ export function StoreConflictCard({
     }, [controller, message]),
   );
   const confirm = async () => {
-    if (locked.current || state?.status !== "READY" || !decision || !reviewed)
+    if (
+      locked.current ||
+      state?.status !== "READY" ||
+      !decision ||
+      !reviewed ||
+      (reactivationRequired && !reactivateRejected)
+    )
       return;
     const v = revision.current,
       cancel = new AbortController();
@@ -69,11 +83,13 @@ export function StoreConflictCard({
         decision,
         true,
         cancel.signal,
+        reactivateRejected,
       );
       if (revision.current === v) setState(next);
     } catch {
       if (revision.current === v) {
         setReviewed(false);
+        setReactivateRejected(false);
         setDecision(null);
         setError(
           "L’état a changé ou la résolution n’a pas été enregistrée. Relisez la comparaison avant de confirmer.",
@@ -88,10 +104,34 @@ export function StoreConflictCard({
     }
   };
   const review = state?.review;
-  const summary = (raw: unknown) =>
-    state?.content.input.kind === "FIELD_EVENT"
-      ? storeEventSummary(storeProductEventSchema.parse(raw))
-      : storeContextSummary(storeContextSettingsSchema.parse(raw));
+  const reactivationRequired =
+    decision === "KEEP_LOCAL"
+      ? review?.needPolicy?.reactivateLocal
+      : decision === "ADOPT_REMOTE"
+        ? review?.needPolicy?.reactivateRemote
+        : false;
+  const summary = (raw: unknown) => {
+    switch (state?.content.input.kind) {
+      case "FIELD_EVENT":
+        return storeEventSummary(storeProductEventSchema.parse(raw));
+      case "SETTINGS":
+        return storeContextSummary(storeContextSettingsSchema.parse(raw));
+      case "NEED":
+        return needUnitSummary(needUnitSchema.parse(raw));
+      case "MEMBERSHIP": {
+        const e = needMembershipSchema.parse(raw),
+          names = review?.needPolicy?.names;
+        return `${names?.products[e.productId] ?? "Produit conservé"} → ${names?.needs[e.needUnitId] ?? "Besoin conservé"} · ${membershipSummary(e)}`;
+      }
+      case "SUBSTITUTION":
+        return substitutionSummary(
+          productSubstitutionSchema.parse(raw),
+          review?.needPolicy?.names,
+        );
+      default:
+        return "Version indisponible.";
+    }
+  };
   const choice = (
     value: "KEEP_LOCAL" | "ADOPT_REMOTE",
     label: string,
@@ -107,6 +147,7 @@ export function StoreConflictCard({
       onPress={() => {
         setDecision(value);
         setReviewed(false);
+        setReactivateRejected(false);
       }}
       style={{
         minHeight: 44,
@@ -132,9 +173,15 @@ export function StoreConflictCard({
       }}
     >
       <Text style={{ fontWeight: "700", color: colors.forest }}>
-        {state?.content.input.kind === "SETTINGS"
-          ? "Comparer les réglages magasin"
-          : "Comparer le signalement magasin"}
+        {state
+          ? {
+              FIELD_EVENT: "Comparer le signalement magasin",
+              SETTINGS: "Comparer les réglages magasin",
+              NEED: "Comparer le besoin client",
+              MEMBERSHIP: "Comparer l’association au besoin",
+              SUBSTITUTION: "Comparer la substitution",
+            }[state.content.input.kind]
+          : "Comparer les versions"}
       </Text>
       {!state && !error ? (
         <ActivityIndicator accessibilityLabel="Lecture des deux versions" />
@@ -165,17 +212,25 @@ export function StoreConflictCard({
               La capture initiale reste immuable. Seule votre heure de fin peut
               être conservée si les captures correspondent.
             </Text>
-          ) : (
+          ) : state.content.input.kind === "SETTINGS" ? (
             <Text>
               Ce choix retient un réglage déjà enregistré. Il ne demande pas de
               nouvelle position au téléphone.
+            </Text>
+          ) : (
+            <Text>
+              {state.content.input.kind === "SUBSTITUTION"
+                ? "La relation garde son sens. Conserver votre version retient vos déclarations ; les scores appris synchronisés sont préservés."
+                : "Les identités et l’historique restent conservés. Réactiver une association rejetée nécessite une confirmation distincte."}
             </Text>
           )}
           {choice(
             "KEEP_LOCAL",
             state.content.input.kind === "FIELD_EVENT"
               ? "Conserver mon heure de fin"
-              : "Conserver mes réglages locaux",
+              : state.content.input.kind === "SETTINGS"
+                ? "Conserver mes réglages locaux"
+                : "Conserver ma version locale",
             review.canKeepLocal,
           )}
           {choice(
@@ -183,6 +238,28 @@ export function StoreConflictCard({
             "Adopter la version synchronisée",
             review.canAdoptRemote,
           )}
+          {review.needPolicy && !review.canKeepLocal ? (
+            <Text>
+              La version locale ne peut pas être renvoyée : vérifiez les
+              identités et l’état des produits ou du besoin.
+            </Text>
+          ) : null}
+          {reactivationRequired ? (
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <Switch
+                accessibilityLabel="Je confirme explicitement la réactivation de cette association rejetée"
+                disabled={saving}
+                value={reactivateRejected}
+                onValueChange={setReactivateRejected}
+              />
+              <Text style={{ flex: 1 }}>
+                Cette association a été rejetée. Je confirme explicitement sa
+                réactivation.
+              </Text>
+            </View>
+          ) : null}
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
             <Switch
               accessibilityLabel="J’ai comparé les deux versions et je confirme mon choix"
@@ -197,17 +274,32 @@ export function StoreConflictCard({
           <Pressable
             accessibilityRole="button"
             accessibilityState={{
-              disabled: saving || !reviewed || !decision,
+              disabled:
+                saving ||
+                !reviewed ||
+                !decision ||
+                (!!reactivationRequired && !reactivateRejected),
               busy: saving,
             }}
-            disabled={saving || !reviewed || !decision}
+            disabled={
+              saving ||
+              !reviewed ||
+              !decision ||
+              (!!reactivationRequired && !reactivateRejected)
+            }
             onPress={() => void confirm()}
             style={{
               minHeight: 44,
               padding: 14,
               borderRadius: 12,
               backgroundColor: colors.forest,
-              opacity: saving || !reviewed || !decision ? 0.45 : 1,
+              opacity:
+                saving ||
+                !reviewed ||
+                !decision ||
+                (!!reactivationRequired && !reactivateRejected)
+                  ? 0.45
+                  : 1,
             }}
           >
             <Text
