@@ -1,3 +1,13 @@
+import {
+  commercialExecutionActualsNotFuture,
+  commercialExecutionActualsSummary,
+} from "@fl-copilot/domain";
+import {
+  ExecutionActualsEditor,
+  executionActualsDraft,
+  parseExecutionActualsDraft,
+  type ExecutionActualsDraft,
+} from "./execution-actuals-editor";
 import { useCallback, useMemo, useState } from "react";
 import { Text, TextInput, View, Modal, Alert } from "react-native";
 import { useFocusEffect, router } from "expo-router";
@@ -44,6 +54,7 @@ type Editor = {
   record: LocalCommercialExecution | null;
   status: CommercialExecutionTask["status"];
   note: string;
+  actuals: ExecutionActualsDraft;
   plan: CommercialWeekPlan;
 };
 export function CommercialExecutionView({
@@ -104,6 +115,7 @@ export function CommercialExecutionView({
       record: r,
       status: r?.entity.status ?? "TODO",
       note: r?.entity.note ?? "",
+      actuals: executionActualsDraft(r?.entity.actuals),
       plan: sourcePlan,
     });
   }
@@ -134,8 +146,22 @@ export function CommercialExecutionView({
     setNoteError(undefined);
     const now = new Date().toISOString(),
       old = editor.record?.entity;
+    let actuals;
+    try {
+      actuals = parseExecutionActualsDraft(editor.actuals);
+    } catch {
+      setNoteError(
+        "Vérifiez les dates réelles, le prix (jusqu’à deux décimales) et son unité.",
+      );
+      return;
+    }
+    if (!commercialExecutionActualsNotFuture(actuals, now)) {
+      setNoteError("Une date réelle ne peut pas être future.");
+      return;
+    }
     const parsed = commercialExecutionTaskSchema.safeParse({
       ...editor.proposal,
+      ...(actuals === null && old?.actuals === undefined ? {} : { actuals }),
       status: editor.status,
       note: editor.note,
       completedAt:
@@ -182,7 +208,9 @@ export function CommercialExecutionView({
     const changed =
       editor &&
       (editor.status !== (editor.record?.entity.status ?? "TODO") ||
-        editor.note !== (editor.record?.entity.note ?? ""));
+        editor.note !== (editor.record?.entity.note ?? "") ||
+        JSON.stringify(editor.actuals) !==
+          JSON.stringify(executionActualsDraft(editor.record?.entity.actuals)));
     if (changed)
       Alert.alert(
         "Fermer sans enregistrer ?",
@@ -248,6 +276,14 @@ export function CommercialExecutionView({
                   .filter((o) => tg.offerIds.includes(o.choiceId))
                   .map((o) => o.rawProductLabel)
                   .join(" · ")}
+              </Text>
+            ) : null}
+            {r?.entity.actuals ? (
+              <Text selectable className="text-sm text-ink">
+                {commercialExecutionActualsSummary(r.entity.actuals)}
+                {r.entity.status !== "DONE"
+                  ? " Ces détails conservés ne confirment pas le statut actuel de la tâche."
+                  : ""}
               </Text>
             ) : null}
             {r?.entity.note ? (
@@ -365,13 +401,20 @@ export function CommercialExecutionView({
                 }
                 className={`rounded-xl border p-3 text-ink ${noteError ? "border-danger" : "border-line"}`}
               />
+              <ExecutionActualsEditor
+                value={editor.actuals}
+                disabled={busy}
+                onChange={(actuals) =>
+                  setEditor((e) => (e ? { ...e, actuals } : null))
+                }
+              />
               {noteError ? (
                 <Text accessibilityRole="alert" className="text-danger">
                   {noteError}
                 </Text>
               ) : null}
               <PrimaryButton
-                label={busy ? "Enregistrement…" : "Enregistrer le statut"}
+                label={busy ? "Enregistrement…" : "Enregistrer la déclaration"}
                 disabled={busy}
                 onPress={() => void save()}
               />

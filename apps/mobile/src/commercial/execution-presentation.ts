@@ -1,3 +1,4 @@
+import { commercialExecutionActualsSummary } from "@fl-copilot/domain";
 import type { CommercialExecutionTask } from "@fl-copilot/sync-contracts";
 export const executionStatusLabels = {
   TODO: "À faire",
@@ -6,12 +7,14 @@ export const executionStatusLabels = {
   NOT_APPLICABLE: "Non applicable",
 };
 export function commercialExecutionSummary(t: CommercialExecutionTask) {
-  return `${t.label} · plan version ${t.planVersion}\n${executionStatusLabels[t.status]}${t.completedAt ? ` · déclaré le ${new Date(t.completedAt).toLocaleString("fr-FR")}` : ""}${t.note ? `\n${t.note}` : ""}`;
+  return `${t.label} · plan version ${t.planVersion}\n${executionStatusLabels[t.status]}${t.completedAt ? ` · déclaré le ${new Date(t.completedAt).toLocaleString("fr-FR")}` : ""}${t.note ? `\n${t.note}` : ""}\n${commercialExecutionActualsSummary(t.actuals)}`;
 }
 export function commercialExecutionError(code: string | undefined) {
   return (
     (
       {
+        COMMERCIAL_EXECUTION_ACTUALS_INVALID:
+          "Vérifiez les dates réelles (sans date future), le prix et son unité.",
         COMMERCIAL_EXECUTION_PLAN_CHANGED:
           "La déclaration ne correspond pas à la copie confirmée du plan. Elle reste conservée sur cet appareil ; revoyez le plan et ses tâches avant de la rattacher à une autre version.",
         COMMERCIAL_EXECUTION_RESOLVE_REQUIRED:

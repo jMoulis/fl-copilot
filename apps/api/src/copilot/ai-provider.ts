@@ -2,6 +2,7 @@ import {
   executionLinkInputSchema,
   executionLinkPreviewSchema,
   executionLinksReadInputSchema,
+  legacyCopilotExecutionPreviewInputSchema,
   executionLinksReadResultSchema,
 } from "@fl-copilot/domain";
 import {
@@ -464,6 +465,7 @@ export function createCopilotAiProvider(
     executionLinks?(
       input: z.infer<typeof executionLinksReadInputSchema>,
     ): Promise<z.infer<typeof executionLinksReadResultSchema>>;
+    executionActuals?: boolean;
     executionPreview?(
       input: z.infer<typeof copilotExecutionPreviewInputSchema>,
     ): Promise<z.infer<typeof copilotExecutionPreviewResultSchema>>;
@@ -1442,8 +1444,10 @@ export function createCopilotAiProvider(
                   ? {
                       commercial_execution_preview: tool({
                         description:
-                          "Prepare, without saving, an explicit user declaration about one current plan task: signage printed or TG installed, reset to TODO, SKIPPED or NOT_APPLICABLE with a user-provided reason. First identify the exact current task using commercial_plan; never guess a task, infer physical completion from a plan/photo, or mark everything done from an ambiguous request. Reuse the current note unless the user asks to change it. READY creates a native confirmation card; say prepared, never saved. UNCHANGED is already recorded. The app rechecks plan/task revisions before local atomic save/sync. This does not print, install, modify the plan or prove sales effects.",
-                        inputSchema: copilotExecutionPreviewInputSchema,
+                          "Prepare, without saving, an explicit user declaration about one current plan task: signage printed or TG installed, reset to TODO, SKIPPED or NOT_APPLICABLE with a user-provided reason. First identify the exact current task using commercial_plan; never guess a task, infer physical completion from a plan/photo, or mark everything done from an ambiguous request. Reuse the current note unless the user asks to change it. READY creates a native confirmation card; say prepared, never saved. UNCHANGED is already recorded. The app rechecks plan/task revisions before local atomic save/sync. Optional actuals are only explicit user-reported dates, EUR price with unit, and location; never copy a planned value or completion timestamp into actuals. Supply actuals as a patch containing only the fields the user explicitly asks to change; omitted subfields preserve recorded details. Use null only when explicitly asked to clear a field (price and its unit together), or actuals:null to clear all. Changing these details does not infer completion, a cash-register price or causality. This does not print, install, modify the plan or prove sales effects.",
+                        inputSchema: reads.executionActuals
+                          ? copilotExecutionPreviewInputSchema
+                          : legacyCopilotExecutionPreviewInputSchema,
                         execute: (input) =>
                           executeRead(
                             JSON.stringify(["execution-preview", input]),

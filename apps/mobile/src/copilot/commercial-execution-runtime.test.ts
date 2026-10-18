@@ -354,6 +354,7 @@ async function savedExecutionProposal(
   s: Awaited<ReturnType<typeof setup>>,
   status: "DONE" | "TODO" | "SKIPPED" | "NOT_APPLICABLE" = "DONE",
   before = null as import("@fl-copilot/domain").CommercialExecutionTask | null,
+  actuals?: import("@fl-copilot/domain").CommercialExecutionActuals | null,
 ) {
   const { copilotMessageSchema } = await import("@fl-copilot/domain");
   const { applyCopilotRecord } = await import("./conversation-repository");
@@ -376,6 +377,7 @@ async function savedExecutionProposal(
       input: {
         weekStart: s.fixture.plan.weekStart,
         taskId: s.fixture.proposals[0]!.id,
+        ...(actuals === undefined ? {} : { actuals }),
         status,
         note:
           status === "SKIPPED" || status === "NOT_APPLICABLE"
@@ -574,3 +576,182 @@ it("records an explicit reason and can reset a reviewed declaration without clai
     s.db.close();
   }
 });
+
+it("records actual details offline, preserves them on omitted update, and explicitly clears them without rewriting the plan", async () => {
+  const s = await setup();
+  const actuals = {
+    start: "2026-10-08",
+    end: "2026-10-09",
+    price: "2.50",
+    priceUnit: "PIECE" as const,
+    location: "TG entrée",
+  };
+  try {
+    const r = { ...s.request, input: { ...s.request.input, actuals } };
+    const saved = await s.runtime.execute(r, s.authority(r));
+    expect(saved.after.actuals).toEqual(actuals);
+    expect(saved.after.completedAt).toBe("2026-10-11T12:02:00Z");
+    expect(saved.after.actuals?.start).not.toBe(
+      saved.after.completedAt!.slice(0, 10),
+    );
+    const update = {
+      ...s.request,
+      operationId: randomUUID(),
+      input: {
+        ...s.request.input,
+        expectedVersion: 1,
+        note: "Emplacement vérifié",
+      },
+    };
+    const updated = await s.runtime.execute(update, s.authority(update));
+    expect(updated.after.actuals).toEqual(actuals);
+    const clear = {
+      ...s.request,
+      operationId: randomUUID(),
+      input: { ...s.request.input, expectedVersion: 2, actuals: null },
+    };
+    const cleared = await s.runtime.execute(clear, s.authority(clear));
+    expect(cleared.after.actuals).toBeNull();
+    expect(
+      JSON.stringify(
+        s.db
+          .prepare(
+            "SELECT payload_json FROM commercial_execution_history ORDER BY created_at",
+          )
+          .all(),
+      ),
+    ).toContain("TG entrée");
+    expect(
+      JSON.stringify(
+        s.db.prepare("SELECT payload_json FROM commercial_week_plans").get(),
+      ),
+    ).not.toContain("actuals");
+    expect(
+      (await s.runtime.execute(clear, s.authority(clear))).after.version,
+    ).toBe(3);
+  } finally {
+    s.db.close();
+  }
+});
+it("rejects future dates and rolls details/status/outbox back together on transaction failure", async () => {
+  const s = await setup();
+  try {
+    const request = {
+      ...s.request,
+      input: {
+        ...s.request.input,
+        actuals: {
+          start: "2026-10-12",
+          end: null,
+          price: null,
+          priceUnit: null,
+          location: null,
+        },
+      },
+    };
+    await expect(
+      s.runtime.execute(request, s.authority(request)),
+    ).rejects.toThrow();
+    expect(
+      s.db.prepare("SELECT * FROM commercial_execution_tasks").all(),
+    ).toHaveLength(0);
+    request.input.actuals.start = "2026-10-10";
+    s.a.fail = true;
+    await expect(
+      s.runtime.execute(request, s.authority(request)),
+    ).rejects.toThrow();
+    expect(
+      s.db.prepare("SELECT * FROM commercial_execution_tasks").all(),
+    ).toHaveLength(0);
+    expect(
+      s.db
+        .prepare(
+          "SELECT * FROM sync_outbox WHERE entity_type='commercial_execution_task'",
+        )
+        .all(),
+    ).toHaveLength(0);
+  } finally {
+    s.db.close();
+  }
+});
+
+it("restores actual details and their unsent command after a real SQLite restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "actual-exec-")),
+    path = join(dir, "local.db");
+  const s = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const actuals = {
+      start: "2026-10-09",
+      end: null,
+      price: null,
+      priceUnit: null,
+      location: "TG entrée",
+    };
+    const request = { ...s.request, input: { ...s.request.input, actuals } };
+    await s.runtime.execute(request, s.authority(request));
+    s.db.close();
+    reopened = new DatabaseSync(path);
+    const { CommercialExecutionRepository } =
+      await import("../commercial/execution-repository");
+    const row = await new CommercialExecutionRepository(
+      new Adapter(reopened),
+      testChoiceDigest,
+    ).get(s.f.storeId, s.request.input.taskId);
+    expect(row?.entity.actuals).toEqual(actuals);
+    expect(row?.syncState).toBe("PENDING");
+    expect(
+      JSON.stringify(
+        reopened
+          .prepare(
+            "SELECT payload_json FROM sync_outbox WHERE entity_type='commercial_execution_task'",
+          )
+          .all(),
+      ),
+    ).toContain("TG entrée");
+  } finally {
+    if (!reopened) s.db.close();
+    reopened?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it.each(["DONE", "TODO"] as const)(
+  "confirms actual details through a trusted chat card without inferring completion (%s)",
+  async (status) => {
+    const s = await setup();
+    try {
+      const actuals = {
+        start: "2026-10-08",
+        end: "2026-10-09",
+        price: "1.89",
+        priceUnit: "KG" as const,
+        location: "TG entrée",
+      };
+      const card = await savedExecutionProposal(s, status, null, actuals),
+        controller = await proposalController(s);
+      expect((await controller.open(card)).status).toBe("READY");
+      expect(
+        s.db.prepare("SELECT * FROM commercial_execution_tasks").all(),
+      ).toHaveLength(0);
+      expect((await controller.confirm(card)).status).toBe("COMPLETED");
+      expect((await controller.confirm(card)).status).toBe("COMPLETED");
+      const row = s.db
+        .prepare("SELECT payload_json FROM commercial_execution_tasks")
+        .get() as { payload_json: string };
+      expect(JSON.parse(row.payload_json)).toMatchObject({ actuals, status });
+      expect(JSON.parse(row.payload_json).completedAt === null).toBe(
+        status === "TODO",
+      );
+      expect(
+        s.db
+          .prepare(
+            "SELECT * FROM sync_outbox WHERE entity_type='commercial_execution_task'",
+          )
+          .all(),
+      ).toHaveLength(1);
+    } finally {
+      s.db.close();
+    }
+  },
+);

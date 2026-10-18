@@ -1,5 +1,9 @@
 import {
   copilotExecutionPreviewInputSchema,
+  legacyCommercialExecution,
+  commercialExecutionActualsSummary,
+  executionActualsUpdate,
+  commercialExecutionActualsNotFuture,
   copilotExecutionPreviewResultSchema,
 } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
@@ -176,7 +180,7 @@ export async function readCommercialPlan(
     });
   for (const t of tasks) {
     const r = t.record;
-    const value = `${r ? states[r.status] : "À faire, aucune déclaration correspondante"}.${r?.completedAt ? " Déclarée faite le " + date(r.completedAt) + " (Europe/Paris)." : ""}${r?.note ? " Note utilisateur : " + r.note : ""} ${t.offer ? `Offre prévue : ${t.offer.rawProductLabel} ; ${mechanism(t.offer.customerMechanism)} ; du ${t.offer.saleStart} au ${t.offer.saleEnd} ; ${t.operation!.name} (${t.operation!.kind}).` : `TG prévue : ${t.placement!.label} ; thème ${t.placement!.theme || "non précisé"} ; ${t.placement!.offerIds.length} offres associées dans le plan : ${t.placementOffers.map((o) => o.rawProductLabel + " — " + mechanism(o.customerMechanism)).join(" ; ") || "aucune"}.`} Une déclaration est un enregistrement utilisateur, pas une preuve automatique d'impression ou d'installation en rayon.`;
+    const value = `${commercialExecutionActualsSummary(r?.actuals)} ${r ? states[r.status] : "À faire, aucune déclaration correspondante"}.${r?.completedAt ? " Déclarée faite le " + date(r.completedAt) + " (Europe/Paris)." : ""}${r?.note ? " Note utilisateur : " + r.note : ""} ${t.offer ? `Offre prévue : ${t.offer.rawProductLabel} ; ${mechanism(t.offer.customerMechanism)} ; du ${t.offer.saleStart} au ${t.offer.saleEnd} ; ${t.operation!.name} (${t.operation!.kind}).` : `TG prévue : ${t.placement!.label} ; thème ${t.placement!.theme || "non précisé"} ; ${t.placement!.offerIds.length} offres associées dans le plan : ${t.placementOffers.map((o) => o.rawProductLabel + " — " + mechanism(o.customerMechanism)).join(" ; ") || "aucune"}.`} Une déclaration est un enregistrement utilisateur, pas une preuve automatique d'impression ou d'installation en rayon.`;
     evidence.push(
       fact(
         t.proposal.id,
@@ -227,9 +231,19 @@ export async function readCommercialExecutionPreview(
   db: Db,
   storeId: string,
   raw: unknown,
+  actualsEnabled = false,
 ) {
   z.uuid().parse(storeId);
   const input = copilotExecutionPreviewInputSchema.parse(raw);
+  if (input.actuals !== undefined && !actualsEnabled)
+    throw Error("COPILOT_EXECUTION_ACTUALS_UNSUPPORTED");
+  if (
+    !commercialExecutionActualsNotFuture(
+      input.actuals,
+      new Date().toISOString(),
+    )
+  )
+    throw Error("COPILOT_EXECUTION_ACTUALS_INVALID");
   const { p, proposals, records, matched, exceeded } =
     await readExecutionContext(db, storeId, input.weekStart);
   const proposal = exceeded
@@ -238,6 +252,7 @@ export async function readCommercialExecutionPreview(
   const before = proposal
     ? (matched.find((r) => commercialExecutionSameTarget(r, proposal)) ?? null)
     : null;
+  const actualUpdate = executionActualsUpdate(before, input);
   // An existing same ID with drifted target must never be treated as a missing declaration.
   const drifted =
     proposal &&
@@ -251,12 +266,21 @@ export async function readCommercialExecutionPreview(
       ? "LIMIT_EXCEEDED"
       : !proposal || drifted
         ? "TASK_UNAVAILABLE"
-        : before?.status === input.status && before.note === input.note
+        : before?.status === input.status &&
+            before.note === input.note &&
+            JSON.stringify(before.actuals ?? null) ===
+              JSON.stringify(actualUpdate.actuals ?? null)
           ? "UNCHANGED"
           : "READY";
   const preview =
     proposal && ["READY", "UNCHANGED"].includes(status)
-      ? { proposal, before }
+      ? {
+          proposal,
+          before:
+            before && !actualsEnabled
+              ? legacyCommercialExecution(before)
+              : before,
+        }
       : null;
   const revision = createHash("sha256")
     .update(JSON.stringify([storeId, input, preview, status]))

@@ -225,6 +225,13 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.commercialExecutionActuals === true)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `commercial-execution-actuals:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     for (const prep of bootstrap.entities.commercialExecutionTasks ?? [])
       await applyCommercialExecution(transaction, storeId, prep);
     if (bootstrap.entities.commercialExecutionTasks)
@@ -345,6 +352,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialOfferChoices",
     "commercialWeekPreparations",
     "commercialExecutionTasks",
+    "commercialExecutionActuals",
     "storeContextSettings",
     "copilotExecutionLinks",
     "copilotExecutionLinkOwnerId",

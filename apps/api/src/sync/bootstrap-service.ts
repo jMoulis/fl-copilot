@@ -1,3 +1,4 @@
+import { legacyCommercialExecution } from "@fl-copilot/domain";
 import {
   serializeExecutionLink,
   type ExecutionLinkDocument,
@@ -533,8 +534,14 @@ export function createMongoSyncBootstrapService(
                   : {}),
                 ...(query.commercialExecution === "true"
                   ? {
-                      commercialExecutionTasks: executionTasks.map(
-                        serializeCommercialExecution,
+                      commercialExecutionActuals:
+                        query.commercialExecutionActuals === "true",
+                      commercialExecutionTasks: executionTasks.map((row) =>
+                        query.commercialExecutionActuals === "true"
+                          ? serializeCommercialExecution(row)
+                          : legacyCommercialExecution(
+                              serializeCommercialExecution(row),
+                            ),
                       ),
                     }
                   : {}),

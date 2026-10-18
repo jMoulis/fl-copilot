@@ -63,6 +63,7 @@ export interface MobileSyncServiceOptions {
   commercialChoices?: boolean;
   commercialPreparation?: boolean;
   commercialExecution?: boolean;
+  commercialExecutionActuals?: boolean;
   storeContext?: boolean;
   needUnits?: boolean;
   needMemberships?: boolean;
@@ -262,6 +263,12 @@ export class MobileSyncService {
           `substitution-evidence:${storeId}`,
         )
       : true;
+    const actualsAdopted = this.options.commercialExecutionActuals
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `commercial-execution-actuals:${storeId}`,
+        )
+      : true;
     const executionAdopted = this.options.commercialExecution
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -309,6 +316,7 @@ export class MobileSyncService {
       !mercalysAdopted ||
       !mercalysUpdatesAdopted ||
       !executionAdopted ||
+      !actualsAdopted ||
       !prepAdopted
     ) {
       await this.bootstrapUnlocked(storeId);
@@ -891,6 +899,9 @@ export class MobileSyncService {
   ): SyncPushRequest {
     return {
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
+      ...(this.options.commercialExecutionActuals
+        ? { commercialExecutionActuals: true }
+        : {}),
       appVersion: this.options.appVersion,
       deviceId: this.options.deviceId,
       storeId,

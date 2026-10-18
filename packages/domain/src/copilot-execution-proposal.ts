@@ -7,9 +7,11 @@ import {
 } from "./copilot-commercial-execution";
 import {
   commercialExecutionTaskSchema,
+  commercialExecutionActualsPatchSchema,
+  executionActualsUpdate,
   commercialExecutionTargetMatches,
 } from "./commercial-execution-task";
-export const copilotExecutionPreviewInputSchema = z
+export const legacyCopilotExecutionPreviewInputSchema = z
   .strictObject({
     weekStart: executionSaveInputSchema.shape.weekStart,
     taskId: executionSaveInputSchema.shape.taskId,
@@ -18,6 +20,10 @@ export const copilotExecutionPreviewInputSchema = z
   })
   .refine((v) => new Date(v.weekStart + "T00:00:00Z").getUTCDay() === 1)
   .refine((v) => !["SKIPPED", "NOT_APPLICABLE"].includes(v.status) || !!v.note);
+export const copilotExecutionPreviewInputSchema =
+  legacyCopilotExecutionPreviewInputSchema.safeExtend({
+    actuals: commercialExecutionActualsPatchSchema.nullable().optional(),
+  });
 const preview = z.strictObject({
   proposal: executionProposalSchema,
   before: commercialExecutionTaskSchema.nullable(),
@@ -26,6 +32,11 @@ function coherent(
   input: z.infer<typeof copilotExecutionPreviewInputSchema>,
   p: z.infer<typeof preview>,
 ) {
+  try {
+    executionActualsUpdate(p.before, input);
+  } catch {
+    return false;
+  }
   return (
     p.proposal.id === input.taskId &&
     (!p.before || commercialExecutionTargetMatches(p.before, p.proposal))
@@ -52,7 +63,11 @@ export const copilotExecutionPreviewResultSchema = z
       (v.status === "UNCHANGED" &&
         (!p?.before ||
           p.before.status !== v.input.status ||
-          p.before.note !== v.input.note))
+          p.before.note !== v.input.note ||
+          JSON.stringify(p.before.actuals ?? null) !==
+            JSON.stringify(
+              executionActualsUpdate(p.before, v.input).actuals ?? null,
+            )))
     )
       c.addIssue({ code: "custom", message: "Invalid execution preview" });
   });

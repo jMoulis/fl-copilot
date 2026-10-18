@@ -5572,3 +5572,22 @@ it.each(["READY", "DISABLED", "FOREIGN_STORE", "RETARGETED"])(
     }
   },
 );
+
+it.each([false, true])(
+  "offers actual execution fields only to a capable confirmation client (%s)",
+  async (enabled) => {
+    const f = fixture();
+    const transport: typeof fetch = async (_url, init) => {
+      const t = JSON.parse(String(init?.body)).tools.find(
+        (t: { name: string }) => t.name === "commercial_execution_preview",
+      );
+      expect(Boolean(t.parameters.properties.actuals)).toBe(enabled);
+      return response();
+    };
+    await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      executionActuals: enabled,
+      executionPreview: vi.fn(),
+    }).generate(f.request, schema);
+  },
+);

@@ -1,4 +1,8 @@
 import {
+  legacyCommercialExecution,
+  executionActualsUpdate,
+} from "@fl-copilot/domain";
+import {
   readCopilotExecutionProposal,
   executionProposalSchema,
   executionSaveIntent,
@@ -54,7 +58,13 @@ export class CopilotExecutionProposalController {
         result.userMessageId !== message.replyToMessageId ||
         !commercialExecutionSameTarget(result.after, content.proposal) ||
         result.after.status !== content.input.status ||
-        result.after.note !== content.input.note
+        result.after.note !== content.input.note ||
+        (content.input.actuals !== undefined &&
+          JSON.stringify(result.after.actuals ?? null) !==
+            JSON.stringify(
+              executionActualsUpdate(content.before, content.input).actuals ??
+                null,
+            ))
       )
         throw Error("COPILOT_EXECUTION_PROPOSAL_SCOPE_INVALID");
       return { message, content, status: "COMPLETED" as const };
@@ -84,7 +94,13 @@ export class CopilotExecutionProposalController {
       JSON.stringify(executionProposalSchema.parse(target)) !==
         JSON.stringify(content.proposal) ||
       (record && ["ERROR", "CONFLICT"].includes(record.syncState)) ||
-      JSON.stringify(record?.entity ?? null) !== JSON.stringify(content.before);
+      JSON.stringify(
+        record?.entity
+          ? content.before?.actuals === undefined
+            ? legacyCommercialExecution(record.entity)
+            : record.entity
+          : null,
+      ) !== JSON.stringify(content.before);
     return {
       message,
       content,
