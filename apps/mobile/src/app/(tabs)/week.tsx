@@ -5,7 +5,7 @@ import { CommercialVersionDecisionList } from "@/commercial/version-decision-lis
 import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
 import { CommercialReviewRepository } from "@/commercial/review-repository";
 import type { CommercialReviewPage } from "@fl-copilot/sync-contracts";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { router, type Href, useFocusEffect } from "expo-router";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -49,6 +49,17 @@ export default function WeekScreen() {
   const { syncNow, status: syncStatus } = useSync();
   const { sqlite } = useLocalDatabase();
   const storeId = session?.stores[0]?.storeId;
+  const canRetryUpload = useRef({
+      allowed: false,
+      storeId,
+      ownerId: session?.user.id,
+    }),
+    focusedForUpload = useRef(false);
+  canRetryUpload.current = {
+    allowed: session?.stores[0]?.role === "MANAGER",
+    storeId,
+    ownerId: session?.user.id,
+  };
   const repository = useMemo(
     () => new SourceDocumentRepository(sqlite),
     [sqlite],
@@ -94,6 +105,7 @@ export default function WeekScreen() {
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      focusedForUpload.current = true;
       const refresh = () => {
         void readDocuments()
           .then((result) => {
@@ -115,6 +127,7 @@ export default function WeekScreen() {
       const interval = setInterval(refresh, 2000);
       return () => {
         active = false;
+        focusedForUpload.current = false;
         clearInterval(interval);
       };
     }, [readDocuments]),
@@ -265,13 +278,25 @@ export default function WeekScreen() {
                         ? "Réessayer l’envoi"
                         : "Envoyer le PDF"
                   }
-                  disabled={!!sendingId || syncStatus === "syncing"}
+                  disabled={
+                    !!sendingId ||
+                    syncStatus === "syncing" ||
+                    !canRetryUpload.current.allowed
+                  }
                   onPress={() => {
                     if (!storeId) return;
                     setSendingId(document.id);
                     setError(undefined);
                     void repository
-                      .retryCommercialPdfUpload(document.id, storeId)
+                      .retryCommercialPdfUpload(
+                        document.id,
+                        storeId,
+                        () =>
+                          canRetryUpload.current.allowed &&
+                          canRetryUpload.current.storeId === storeId &&
+                          canRetryUpload.current.ownerId === session?.user.id &&
+                          focusedForUpload.current,
+                      )
                       .then(() => syncNow(storeId))
                       .then(readDocuments)
                       .then((result) => {

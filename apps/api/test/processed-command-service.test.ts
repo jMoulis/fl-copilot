@@ -114,6 +114,23 @@ describe("ProcessedCommandService", () => {
     });
   });
 
+  it("replays a durable rejection without rerunning a later now-valid mutation", async () => {
+    const store = new InMemoryProcessedCommandStore(),
+      service = new ProcessedCommandService(store);
+    const first = await service.execute(command, async () => ({
+      resultStatus: "REJECTED",
+      responseJson: { error: { code: "SYNC_COMMAND_INVALID" } },
+    }));
+    const retried = await service.execute(command, async (context) => {
+      context.incrementDomainMutation();
+      return { resultStatus: "APPLIED", resultingVersion: 1 };
+    });
+    expect(first.alreadyApplied).toBe(false);
+    expect(retried.alreadyApplied).toBe(true);
+    expect(retried.command).toEqual(first.command);
+    expect(store.domainMutationCount).toBe(0);
+  });
+
   it("rolls back both the domain mutation and command record on failure", async () => {
     const store = new InMemoryProcessedCommandStore();
     const service = new ProcessedCommandService(store);

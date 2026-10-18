@@ -65,6 +65,89 @@ afterEach(() => {
 });
 
 describe("OutboxRepository", () => {
+  it("lists only active failures owned by this store/account, omitting payloads and unsafe error text", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    const r = new OutboxRepository(adapter),
+      storeId = command("unused").storeId,
+      ownerId = "owner-a";
+    const failed = async (
+      id: string,
+      overrides: Partial<EnqueueOutboxCommand> = {},
+      code = "SYNC_COMMAND_INVALID",
+    ) => {
+      await r.enqueue(command(id, overrides));
+      await r.markSyncing(id);
+      await r.markFailed(id, code);
+    };
+    for (let i = 0; i < 25; i++)
+      await failed(`foreign-${i}`, {
+        entityType: "copilot_message",
+        payload: { ownerId: "owner-b", storeId, content: "secret" },
+      });
+    await failed("own-private", {
+      entityType: "copilot_message",
+      payload: { ownerId, storeId, content: "private" },
+    });
+    await failed("own-product", {}, "private URL https://internal.example");
+    await failed("superseded", {}, "PRODUCT_MASTER_CONFLICT_SUPERSEDED");
+    await failed("foreign-store", { storeId: "different" });
+    await failed("wrong-payload-store", {
+      entityType: "copilot_knowledge",
+      payload: { ownerId, storeId: "different" },
+    });
+    await failed("malformed", { entityType: "copilot_message" });
+    await adapter.runAsync(
+      "UPDATE sync_outbox SET payload_json='broken' WHERE command_id='malformed'",
+    );
+    const first = await r.listFailures(storeId, ownerId);
+    expect(first.items.map((c) => c.commandId)).toEqual([
+      "own-private",
+      "own-product",
+    ]);
+    expect(first.hasMore).toBe(false);
+    expect(first.items[1]?.code).toBeNull();
+    expect(JSON.stringify(first)).not.toContain("content");
+    expect(JSON.stringify(first)).not.toContain("payload");
+    expect(JSON.stringify(first)).not.toContain("private URL");
+    expect(
+      (await r.listFailures(storeId)).items.map((c) => c.commandId),
+    ).toEqual(["own-product"]);
+    expect((await r.getById("own-private"))?.status).toBe("FAILED");
+    database.close();
+  });
+  it("paginates failures oldest-first without resurrecting or changing commands", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    const r = new OutboxRepository(adapter),
+      storeId = command("unused").storeId;
+    for (let i = 0; i < 27; i++) {
+      const id = `failed-${i}`;
+      await r.enqueue(command(id));
+      await r.markSyncing(id);
+      await r.markFailed(id, "SYNC_COMMAND_INVALID");
+    }
+    const a = await r.listFailures(storeId),
+      b = await r.listFailures(
+        storeId,
+        undefined,
+        a.items.at(-1)!.localSequence,
+      );
+    expect(a.items).toHaveLength(20);
+    expect(a.hasMore).toBe(true);
+    expect(b.items).toHaveLength(7);
+    expect(b.hasMore).toBe(false);
+    expect(new Set([...a.items, ...b.items].map((c) => c.commandId)).size).toBe(
+      27,
+    );
+    expect(await r.listPending(storeId)).toEqual([]);
+    expect(await r.countActive(storeId)).toEqual({
+      pending_count: 0,
+      failed_count: 27,
+    });
+    database.close();
+  });
+
   it("notifies subscribers when the pending command count changes", async () => {
     const { adapter, database } = temporaryDatabase();
     await runLocalMigrations(adapter);

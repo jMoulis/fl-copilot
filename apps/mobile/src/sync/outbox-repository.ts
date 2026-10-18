@@ -108,6 +108,9 @@ function assertChanged(result: SQLiteRunResult, transition: string) {
   }
 }
 
+export const ACTIVE_FAILED_OUTBOX_SQL =
+  "status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED')";
+
 export class OutboxRepository {
   constructor(
     private readonly database: OutboxDatabase,
@@ -119,7 +122,7 @@ export class OutboxRepository {
       pending_count: number | null;
       failed_count: number | null;
     }>(
-      `SELECT SUM(CASE WHEN status IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending_count,SUM(CASE WHEN status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED') THEN 1 ELSE 0 END) AS failed_count FROM sync_outbox WHERE store_id=?`,
+      `SELECT SUM(CASE WHEN status IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending_count,SUM(CASE WHEN ${ACTIVE_FAILED_OUTBOX_SQL} THEN 1 ELSE 0 END) AS failed_count FROM sync_outbox WHERE store_id=?`,
       storeId,
     );
     return {
@@ -213,6 +216,43 @@ export class OutboxRepository {
       limit,
     );
     return rows.map(mapRow);
+  }
+
+  /** Read-only diagnostics. Never expose a private command from another account. */
+  async listFailures(storeId: string, ownerId?: string, afterSequence = 0) {
+    const rows = await this.database.getAllAsync<{
+      command_id: string;
+      entity_type: string;
+      entity_id: string;
+      local_sequence: number;
+      last_error_code: string | null;
+    }>(
+      `SELECT command_id,entity_type,entity_id,local_sequence,last_error_code FROM sync_outbox
+       WHERE store_id=? AND ${ACTIVE_FAILED_OUTBOX_SQL} AND local_sequence>?
+       AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge') OR
+         (? IS NOT NULL AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.ownerId')=?
+          AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.storeId')=?))
+       ORDER BY local_sequence LIMIT 21`,
+      storeId,
+      afterSequence,
+      ownerId ?? null,
+      ownerId ?? null,
+      storeId,
+    );
+    return {
+      items: rows.slice(0, 20).map((row) => ({
+        commandId: row.command_id,
+        entityType: row.entity_type,
+        entityId: row.entity_id,
+        localSequence: row.local_sequence,
+        code:
+          row.last_error_code &&
+          /^[A-Z][A-Z0-9_]{2,90}$/.test(row.last_error_code)
+            ? row.last_error_code
+            : null,
+      })),
+      hasMore: rows.length > 20,
+    };
   }
 
   async markSyncing(commandId: string) {

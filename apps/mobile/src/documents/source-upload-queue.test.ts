@@ -979,7 +979,11 @@ describe("commercial PDF upload queue", () => {
     expect(await queue.process(storeId)).toMatchObject({ confirmed: 0 });
     expect(await queue.process(storeId)).toMatchObject({ attempted: 0 });
     expect(
-      await repository.retryCommercialPdfUpload(sourceDocumentId, storeId),
+      await repository.retryCommercialPdfUpload(
+        sourceDocumentId,
+        storeId,
+        () => true,
+      ),
     ).toBe(true);
     expect(await queue.process(storeId)).toMatchObject({ confirmed: 1 });
     expect(sourceIds).toEqual([sourceDocumentId, sourceDocumentId]);
@@ -1019,9 +1023,13 @@ describe("commercial PDF upload queue", () => {
       },
     );
     expect(await queue.process(storeId)).toMatchObject({ confirmed: 0 });
-    expect(
-      await repository.retryCommercialPdfUpload(sourceDocumentId, storeId),
-    ).toBe(false);
+    await expect(
+      repository.retryCommercialPdfUpload(
+        sourceDocumentId,
+        storeId,
+        () => true,
+      ),
+    ).rejects.toThrow("SOURCE_RECOVERY_BLOCKED");
     expect(
       commercialPdfUploadPresentation(
         (await repository.getDocument(sourceDocumentId))!,
