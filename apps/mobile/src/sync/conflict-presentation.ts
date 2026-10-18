@@ -20,6 +20,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     product_substitution: "Relation de substitution",
     store_product_event: "Signalement magasin",
     need_unit: "Unité de besoin",
+    copilot_decision: "Décision du copilote",
     copilot_knowledge: "Pratique mémorisée",
     store_context_settings: "Réglages du magasin",
     commercial_week_plan: "Plan commercial validé",

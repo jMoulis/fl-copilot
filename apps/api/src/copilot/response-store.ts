@@ -1,3 +1,5 @@
+import { recommendationSourceDigest } from "./recommendation-tracking-tool.js";
+import { readRecommendationTrackingCard } from "@fl-copilot/domain";
 import { readStoreConflictProposal } from "@fl-copilot/domain";
 import { readCopilotReferenceProposal } from "@fl-copilot/domain";
 import { readCopilotPlanValidationProposal } from "@fl-copilot/domain";
@@ -125,56 +127,106 @@ export async function appendCopilotToolRecord(
   const decoded = copilotMessageSchema.parse(raw);
   const kind = JSON.parse(decoded.text).kind;
   const artifact =
-    kind === "STORE_CONFLICT_PROPOSAL"
-      ? readStoreConflictProposal(decoded)
-      : kind === "WASTE_RECOVERY_PROPOSAL"
-        ? readReceiptRecoveryProposal(decoded)
-        : kind === "WASTE_CORRECTION_PROPOSAL"
-          ? readReceiptCorrectionProposal(decoded)
-          : kind === "WASTE_PUBLICATION_PROPOSAL"
-            ? readReceiptPublicationProposal(decoded)
-            : kind === "PRODUCT_IDENTITY_REVIEW"
-              ? readIdentityReviewProposal(decoded)
-              : kind === "COMMERCIAL_REFERENCE_PROPOSAL"
-                ? readCopilotReferenceProposal(decoded)
-                : kind === "PLAN_VALIDATION_PROPOSAL"
-                  ? readCopilotPlanValidationProposal(decoded)
-                  : kind === "COMMERCIAL_CHOICE_UPDATE_PROPOSAL"
-                    ? readCopilotChoiceUpdateProposal(decoded)
-                    : kind === "OFFER_VALIDATION_PROPOSAL"
-                      ? readCopilotOfferValidationProposal(decoded)
-                      : kind === "COMMERCIAL_CHOICE_CREATE_PROPOSAL"
-                        ? readCopilotChoiceCreateProposal(decoded)
-                        : kind === "COMMERCIAL_CHOICE_RETENTION_PROPOSAL"
-                          ? readCopilotChoiceRetentionProposal(decoded)
-                          : kind === "COMMERCIAL_CHOICE_REASSOCIATION_PROPOSAL"
-                            ? readCopilotChoiceReassociationProposal(decoded)
-                            : kind === "COMMERCIAL_CHOICE_WITHDRAWAL_PROPOSAL"
-                              ? readCopilotChoiceWithdrawalProposal(decoded)
-                              : kind === "MISSING_INFORMATION_REQUEST"
-                                ? readCopilotInformationRequest(decoded)
-                                : kind === "CONTEXT_CHECKPOINT"
-                                  ? readContextCheckpoint(decoded)
-                                  : kind === "COMMERCIAL_PREPARATION_PROPOSAL"
-                                    ? readCopilotPreparationProposal(decoded)
-                                    : kind === "STORE_OPERATIONS_PROPOSAL"
-                                      ? readCopilotOperationsProposal(decoded)
-                                      : kind === "NEED_MUTATION_PROPOSAL"
-                                        ? readCopilotNeedProposal(decoded)
-                                        : kind === "PRODUCT_CATALOGUE_PROPOSAL"
-                                          ? readCopilotCatalogueProposal(
-                                              decoded,
-                                            )
+    kind === "RECOMMENDATION_TRACKING"
+      ? readRecommendationTrackingCard(decoded)
+      : kind === "STORE_CONFLICT_PROPOSAL"
+        ? readStoreConflictProposal(decoded)
+        : kind === "WASTE_RECOVERY_PROPOSAL"
+          ? readReceiptRecoveryProposal(decoded)
+          : kind === "WASTE_CORRECTION_PROPOSAL"
+            ? readReceiptCorrectionProposal(decoded)
+            : kind === "WASTE_PUBLICATION_PROPOSAL"
+              ? readReceiptPublicationProposal(decoded)
+              : kind === "PRODUCT_IDENTITY_REVIEW"
+                ? readIdentityReviewProposal(decoded)
+                : kind === "COMMERCIAL_REFERENCE_PROPOSAL"
+                  ? readCopilotReferenceProposal(decoded)
+                  : kind === "PLAN_VALIDATION_PROPOSAL"
+                    ? readCopilotPlanValidationProposal(decoded)
+                    : kind === "COMMERCIAL_CHOICE_UPDATE_PROPOSAL"
+                      ? readCopilotChoiceUpdateProposal(decoded)
+                      : kind === "OFFER_VALIDATION_PROPOSAL"
+                        ? readCopilotOfferValidationProposal(decoded)
+                        : kind === "COMMERCIAL_CHOICE_CREATE_PROPOSAL"
+                          ? readCopilotChoiceCreateProposal(decoded)
+                          : kind === "COMMERCIAL_CHOICE_RETENTION_PROPOSAL"
+                            ? readCopilotChoiceRetentionProposal(decoded)
+                            : kind ===
+                                "COMMERCIAL_CHOICE_REASSOCIATION_PROPOSAL"
+                              ? readCopilotChoiceReassociationProposal(decoded)
+                              : kind === "COMMERCIAL_CHOICE_WITHDRAWAL_PROPOSAL"
+                                ? readCopilotChoiceWithdrawalProposal(decoded)
+                                : kind === "MISSING_INFORMATION_REQUEST"
+                                  ? readCopilotInformationRequest(decoded)
+                                  : kind === "CONTEXT_CHECKPOINT"
+                                    ? readContextCheckpoint(decoded)
+                                    : kind === "COMMERCIAL_PREPARATION_PROPOSAL"
+                                      ? readCopilotPreparationProposal(decoded)
+                                      : kind === "STORE_OPERATIONS_PROPOSAL"
+                                        ? readCopilotOperationsProposal(decoded)
+                                        : kind === "NEED_MUTATION_PROPOSAL"
+                                          ? readCopilotNeedProposal(decoded)
                                           : kind ===
-                                              "COMMERCIAL_EXECUTION_PROPOSAL"
-                                            ? readCopilotExecutionProposal(
+                                              "PRODUCT_CATALOGUE_PROPOSAL"
+                                            ? readCopilotCatalogueProposal(
                                                 decoded,
                                               )
-                                            : kind === "KNOWLEDGE_SUGGESTION"
-                                              ? readKnowledgeSuggestion(decoded)
-                                              : readCopilotProductProposal(
+                                            : kind ===
+                                                "COMMERCIAL_EXECUTION_PROPOSAL"
+                                              ? readCopilotExecutionProposal(
                                                   decoded,
-                                                );
+                                                )
+                                              : kind === "KNOWLEDGE_SUGGESTION"
+                                                ? readKnowledgeSuggestion(
+                                                    decoded,
+                                                  )
+                                                : readCopilotProductProposal(
+                                                    decoded,
+                                                  );
+  if (kind === "RECOMMENDATION_TRACKING") {
+    const card = readRecommendationTrackingCard(decoded);
+    const source = await ctx.database
+      .collection<{ _id: string; [key: string]: unknown }>("copilotMessages")
+      .findOne(
+        {
+          _id: card.content.basis.sourceMessageId,
+          storeId: decoded.storeId,
+          ownerId: decoded.ownerId,
+          conversationId: decoded.conversationId,
+        },
+        { session: ctx.session },
+      );
+    if (!source) throw Error("RECOMMENDATION_SOURCE_INVALID");
+    const { _id, ...payload } = source;
+    void _id;
+    const original = copilotMessageSchema.parse(payload);
+    const topicRow = await ctx.database
+      .collection<CopilotConversation & { _id: string }>("copilotConversations")
+      .findOne(
+        {
+          _id: decoded.conversationId,
+          storeId: decoded.storeId,
+          ownerId: decoded.ownerId,
+        },
+        { session: ctx.session },
+      );
+    if (!topicRow) throw Error("RECOMMENDATION_SOURCE_INVALID");
+    const { _id: topicId, ...topicPayload } = topicRow;
+    void topicId;
+    const topic = copilotConversationSchema.parse(topicPayload);
+    if (
+      original.role !== "ASSISTANT" ||
+      original.id !== card.content.basis.sourceMessageId ||
+      original.createdAt !== card.content.basis.sourceCreatedAt ||
+      original.createdAt > decoded.createdAt ||
+      !original.text.includes(card.content.basis.quote) ||
+      recommendationSourceDigest(original) !==
+        card.content.basis.sourceDigest ||
+      topic.status !== "ACTIVE" ||
+      copilotMessageIsDeleted(original, topic)
+    )
+      throw Error("RECOMMENDATION_SOURCE_INVALID");
+  }
   const message = artifact.message;
   const assistantMessageId =
     "content" in artifact

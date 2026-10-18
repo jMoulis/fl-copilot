@@ -1,4 +1,8 @@
 import {
+  serializeDecision,
+  type DecisionDocument,
+} from "../copilot/decision-store";
+import {
   serializeKnowledge,
   type KnowledgeDocument,
 } from "../copilot/knowledge-store";
@@ -125,6 +129,20 @@ export function createMongoSyncBootstrapService(
                 { _id: store.storeId },
                 { session, promoteLongs: false },
               );
+            const decisions =
+              query.copilotDecisions === "true" &&
+              query.copilotHistory === "true"
+                ? await mongoDatabase
+                    .collection<DecisionDocument>("copilotDecisions")
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .limit(501)
+                    .toArray()
+                : null;
+            if (decisions && decisions.length > 500)
+              throw Error("COPILOT_DECISION_LIMIT");
             const knowledge =
               query.copilotKnowledge === "true"
                 ? await mongoDatabase
@@ -353,6 +371,12 @@ export function createMongoSyncBootstrapService(
               },
               entities: {
                 ...copilotHistory,
+                ...(decisions
+                  ? {
+                      copilotDecisions: decisions.map(serializeDecision),
+                      copilotDecisionOwnerId: store.userId,
+                    }
+                  : {}),
                 ...(knowledge
                   ? {
                       copilotKnowledgeOwnerId: store.userId,

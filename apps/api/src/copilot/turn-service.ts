@@ -1,3 +1,4 @@
+import { buildRecommendationTrackingMessages } from "./recommendation-tracking-messages.js";
 import { buildStoreConflictMessages } from "./store-conflict-messages.js";
 import { buildReceiptRecoveryMessages } from "./receipt-recovery-messages.js";
 import { buildPriceScenarioFormMessages } from "./price-scenario-messages.js";
@@ -412,6 +413,10 @@ export async function runCopilotTurn(
             ...buildCatalogueProposalMessages(
               message,
               generation.cataloguePreviews ?? [],
+            ),
+            ...buildRecommendationTrackingMessages(
+              message,
+              generation.recommendationTrackingPreviews ?? [],
             ),
             ...buildExecutionProposalMessages(
               message,

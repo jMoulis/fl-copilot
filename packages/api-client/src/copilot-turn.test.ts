@@ -282,6 +282,7 @@ it("opts into optional proposal and source tools only when the client supports t
         memorySuggestions: enabled,
         webResearch: enabled,
         retailExpertise: enabled,
+        recommendationTracking: enabled,
         choiceUpdate: enabled,
         choiceRetention: enabled,
         choiceCreate: enabled,
@@ -307,6 +308,10 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-recommendation-tracking", "1");
+    else
+      expect(headers).not.toHaveProperty("x-copilot-recommendation-tracking");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-retail-expertise", "1");
     else expect(headers).not.toHaveProperty("x-copilot-retail-expertise");

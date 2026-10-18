@@ -1,3 +1,5 @@
+import { readRecommendationDecisions } from "./copilot/decision-read-tool.js";
+import { readRecommendationTracking } from "./copilot/recommendation-tracking-tool.js";
 import { readActionReview } from "./copilot/action-review-tool.js";
 import {
   createCommercialProcessingRecovery,
@@ -876,6 +878,34 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 return result;
               },
+              ...(request.headers["x-copilot-recommendation-tracking"] === "1"
+                ? {
+                    recommendationDecisions: async (input) => {
+                      const p = await authorize();
+                      const result = await readRecommendationDecisions(
+                        db,
+                        { storeId, ownerId: p.ownerId },
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                    recommendationTracking: async (input) => {
+                      const principal = await authorize();
+                      const result = await readRecommendationTracking(
+                        db,
+                        {
+                          storeId,
+                          ownerId: principal.ownerId,
+                          conversationId: request.body.conversationId,
+                        },
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
               actionReview: async (input) => {
                 await authorize();
                 const result = await readActionReview(db, storeId, input);
