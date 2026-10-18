@@ -126,3 +126,5 @@ export * from "./copilot-import-assistance";
 export * from "./mercalys-product-target";
 
 export * from "./copilot-receipt-recovery";
+
+export * from "./copilot-store-conflict";

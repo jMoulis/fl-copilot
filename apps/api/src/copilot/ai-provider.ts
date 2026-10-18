@@ -1,4 +1,9 @@
 import {
+  storeConflictInputSchema,
+  storeConflictPreviewSchema,
+  validateStoreConflictBasis,
+} from "@fl-copilot/domain";
+import {
   copilotPriceScenarioInputSchema,
   copilotPriceScenarioResultSchema,
   priceScenarioFormStateSchema,
@@ -314,6 +319,7 @@ export interface CopilotAiProvider {
     >;
     operationsPreviews?: Array<z.infer<typeof copilotOperationsPreviewSchema>>;
     needPreviews?: Array<z.infer<typeof copilotNeedPreviewSchema>>;
+    storeConflictPreviews?: Array<z.infer<typeof storeConflictPreviewSchema>>;
     receiptRecoveryPreviews?: Array<
       z.infer<typeof receiptRecoveryPreviewSchema>
     >;
@@ -406,6 +412,9 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
+    storeConflict?(
+      input: z.infer<typeof storeConflictInputSchema>,
+    ): Promise<z.infer<typeof storeConflictPreviewSchema>>;
     receiptRecovery?(
       input: z.infer<typeof receiptRecoveryInputSchema>,
     ): Promise<z.infer<typeof receiptRecoveryPreviewSchema>>;
@@ -633,6 +642,9 @@ export function createCopilotAiProvider(
         > = [];
         const needPreviews: Array<z.infer<typeof copilotNeedPreviewSchema>> =
           [];
+        const storeConflictPreviews: Array<
+          z.infer<typeof storeConflictPreviewSchema>
+        > = [];
         const receiptRecoveryPreviews: Array<
           z.infer<typeof receiptRecoveryPreviewSchema>
         > = [];
@@ -803,6 +815,7 @@ export function createCopilotAiProvider(
                   reads.preparationPreview ||
                   reads.operationsPreview ||
                   reads.needPreview ||
+                  reads.storeConflict ||
                   reads.receiptRecovery ||
                   reads.receiptCorrection ||
                   reads.receiptPublication ||
@@ -841,6 +854,7 @@ export function createCopilotAiProvider(
                 reads.preparationPreview ||
                 reads.operationsPreview ||
                 reads.needPreview ||
+                reads.storeConflict ||
                 reads.receiptRecovery ||
                 reads.receiptCorrection ||
                 reads.receiptPublication ||
@@ -1023,6 +1037,47 @@ export function createCopilotAiProvider(
                               )
                                 throw Error("NEED_PROPOSAL_LIMIT");
                               needPreviews.push(result);
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.storeConflict
+                  ? {
+                      store_conflict_review: tool({
+                        description:
+                          "Prepare an explicitly requested local conflict comparison for FIELD_EVENT (known event entityId) or SETTINGS (entityId null). Discover the target first. This reads the synchronized target, not local conflicts. A compatible device compares both versions and offers only canonical choices; the user must choose and confirm. Never select a winner automatically. At most three targets; no business write here.",
+                        inputSchema: storeConflictInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["store-conflict", input]),
+                            async () => {
+                              const result = storeConflictPreviewSchema.parse(
+                                await reads.storeConflict!(input),
+                              );
+                              validateStoreConflictBasis(
+                                request.storeId,
+                                result.input,
+                                result.basis,
+                              );
+                              if (
+                                JSON.stringify(result.input) !==
+                                JSON.stringify(
+                                  storeConflictInputSchema.parse(input),
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              const old = storeConflictPreviews.findIndex(
+                                (p) =>
+                                  p.input.kind === input.kind &&
+                                  p.basis.entityId === result.basis.entityId,
+                              );
+                              if (old >= 0)
+                                storeConflictPreviews.splice(old, 1);
+                              if (storeConflictPreviews.length >= 3)
+                                throw Error("STORE_CONFLICT_PROPOSAL_LIMIT");
+                              storeConflictPreviews.push(result);
                               return result;
                             },
                           ),
@@ -2561,6 +2616,9 @@ export function createCopilotAiProvider(
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 needPreviews: needPreviews.filter((p) =>
+                  p.evidence.every((e) => evidence.has(e.id)),
+                ),
+                storeConflictPreviews: storeConflictPreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 receiptRecoveryPreviews: receiptRecoveryPreviews.filter((p) =>

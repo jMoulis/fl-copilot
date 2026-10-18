@@ -4623,3 +4623,78 @@ it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
     expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
   },
 );
+
+it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
+  "prepares bounded store conflict comparisons only for a compatible client and unchanged requested target (%s)",
+  async (mode) => {
+    const { storeConflictPreview } =
+      await import("../../../../scripts/test-store-conflict-fixtures");
+    const { storeContextFixture } =
+      await import("../../../../scripts/test-store-context-fixtures");
+    const f = fixture(),
+      data = storeConflictPreview("SETTINGS", {
+        ...storeContextFixture(),
+        id: f.request.storeId,
+        storeId: f.request.storeId,
+      }),
+      value = structuredClone(data);
+    if (mode === "FOREIGN") value.basis.storeId = randomUUID();
+    if (mode === "INPUT_CHANGED")
+      value.input = { kind: "FIELD_EVENT", entityId: randomUUID() };
+    const storeConflict = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "store_conflict_review",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|basisHash|comparisonReviewed|version/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_correct",
+            call_id: "call_correct",
+            name: "store_conflict_review",
+            arguments: JSON.stringify(data.input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "OWNED"
+          ? { basis: { storeId: f.request.storeId } }
+          : { unavailable: true },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { storeConflict }),
+    }).generate(f.request, schema);
+    expect(storeConflict).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(result.storeConflictPreviews ?? []).toEqual(
+      mode === "OWNED" ? [value] : [],
+    );
+    expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
+  },
+);

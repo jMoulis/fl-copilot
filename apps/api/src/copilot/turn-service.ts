@@ -1,3 +1,4 @@
+import { buildStoreConflictMessages } from "./store-conflict-messages.js";
 import { buildReceiptRecoveryMessages } from "./receipt-recovery-messages.js";
 import { buildPriceScenarioFormMessages } from "./price-scenario-messages.js";
 import { buildReferenceProposalMessages } from "./reference-messages.js";
@@ -321,6 +322,17 @@ export async function runCopilotTurn(
             );
         }
         if (generation.mode === "FALLBACK")
+          for (const card of buildStoreConflictMessages(
+            message,
+            generation.storeConflictPreviews ?? [],
+          ))
+            await appendCopilotToolRecord(
+              { database: dependencies.db, session },
+              renewed,
+              card,
+              changes,
+            );
+        if (generation.mode === "FALLBACK")
           for (const card of buildReceiptRecoveryMessages(
             message,
             generation.receiptRecoveryPreviews ?? [],
@@ -376,6 +388,10 @@ export async function runCopilotTurn(
             ...buildNeedProposalMessages(
               message,
               generation.needPreviews ?? [],
+            ),
+            ...buildStoreConflictMessages(
+              message,
+              generation.storeConflictPreviews ?? [],
             ),
             ...buildReceiptRecoveryMessages(
               message,

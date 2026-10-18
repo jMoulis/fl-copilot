@@ -1,3 +1,6 @@
+import { readStoreConflictProposal } from "@fl-copilot/domain";
+import { CopilotStoreConflictController } from "@/copilot/store-conflict-controller";
+import { StoreConflictCard } from "@/copilot/store-conflict-card";
 import { readReceiptRecoveryProposal } from "@fl-copilot/domain";
 import { CopilotReceiptRecoveryController } from "@/copilot/receipt-recovery-controller";
 import { ReceiptRecoveryCard } from "@/copilot/receipt-recovery-card";
@@ -226,6 +229,29 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const storeConflicts = useMemo(
+    () =>
+      new CopilotStoreConflictController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canCaptureStoreEvents,
+          canManageStoreSettings,
+        },
+        executionDigest,
+        randomUUID,
+      ),
+    [
+      sqlite,
+      storeId,
+      ownerId,
+      deviceId,
+      canCaptureStoreEvents,
+      canManageStoreSettings,
+    ],
   );
   const receiptRecoveries = useMemo(
     () =>
@@ -638,6 +664,18 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readStoreConflictProposal(message);
+      return (
+        <StoreConflictCard
+          key={message.id}
+          message={message}
+          controller={storeConflicts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readReceiptRecoveryProposal(message);
       return (
         <ReceiptRecoveryCard
@@ -771,6 +809,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationRefresh: canPrepareCommercialWeek,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
+              storeConflicts: canCaptureStoreEvents || canManageStoreSettings,
               receiptRecovery: canManageProducts,
               receiptCorrection: canManageProducts,
               receiptPublication: canManageProducts,

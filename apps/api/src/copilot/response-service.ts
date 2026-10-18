@@ -247,6 +247,9 @@ export async function generateCopilotResponse(
   needPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["needPreviews"];
+  storeConflictPreviews?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["storeConflictPreviews"];
   receiptRecoveryPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["receiptRecoveryPreviews"];
@@ -346,6 +349,7 @@ export async function generateCopilotResponse(
       preparationPreviews: generated.preparationPreviews,
       operationsPreviews: generated.operationsPreviews,
       needPreviews: generated.needPreviews,
+      storeConflictPreviews: generated.storeConflictPreviews,
       receiptRecoveryPreviews: generated.receiptRecoveryPreviews,
       receiptCorrectionPreviews: generated.receiptCorrectionPreviews,
       receiptPublicationPreviews: generated.receiptPublicationPreviews,
@@ -385,6 +389,10 @@ export async function generateCopilotResponse(
         : {}),
       ...(error instanceof CopilotGroundingError && completed?.identityReviews
         ? { identityReviews: completed.identityReviews }
+        : {}),
+      ...(error instanceof CopilotGroundingError &&
+      completed?.storeConflictPreviews
+        ? { storeConflictPreviews: completed.storeConflictPreviews }
         : {}),
       ...(error instanceof CopilotGroundingError &&
       completed?.receiptRecoveryPreviews
