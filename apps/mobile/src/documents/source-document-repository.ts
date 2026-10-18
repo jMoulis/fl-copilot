@@ -1,3 +1,4 @@
+import { SourceUploadRecoveryRepository } from "./source-upload-recovery";
 import {
   localFileMetadataSchema,
   localSourceDocumentSchema,
@@ -110,19 +111,23 @@ export class SourceDocumentRepository {
     );
   }
 
-  async retryCommercialPdfUpload(sourceDocumentId: string, storeId: string) {
-    const result = await this.database.runAsync(
-      `UPDATE local_jobs SET status = 'RETRY', next_attempt_at = NULL, updated_at = ?
-       WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND json_extract(payload_json, '$.sourceDocumentId') = ? AND json_extract(payload_json, '$.storeId') = ?
-         AND status IN ('PENDING', 'RETRY') AND COALESCE(last_error, '') NOT IN ('SOURCE_UPLOAD_LOCAL_FILE_MISSING', 'SOURCE_UPLOAD_INVALID')
-         AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id = ? AND d.store_id = ? AND d.source_type = 'WEEKLY_COMMERCIAL_PDF' AND d.remote_upload_status != 'CONFIRMED')`,
-      new Date().toISOString(),
-      sourceDocumentId,
-      storeId,
-      sourceDocumentId,
-      storeId,
+  async retryCommercialPdfUpload(
+    sourceDocumentId: string,
+    storeId: string,
+    canRetry: () => boolean,
+  ) {
+    // Internal exact snapshot token, never serialized to a model or remote caller.
+    const recovery = new SourceUploadRecoveryRepository(
+      this.database,
+      async (text) => text,
     );
-    return Number(result.changes) > 0;
+    const review = await recovery.review(storeId, sourceDocumentId);
+    if (review.sourceType !== "WEEKLY_COMMERCIAL_PDF")
+      throw Error("COMMERCIAL_PDF_REQUIRED");
+    await recovery.retry(storeId, sourceDocumentId, review.basisHash, {
+      canRetry,
+    });
+    return true;
   }
 
   async listDocuments(storeId: string, sourceType: SourceType) {

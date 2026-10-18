@@ -124,6 +124,10 @@ export class SourceUploadQueue {
           AND j.status IN ('PENDING', 'RETRY')
           AND (j.next_attempt_at IS NULL OR j.next_attempt_at <= ?)
           AND json_extract(j.payload_json, '$.storeId') = ?
+          AND d.store_id = json_extract(j.payload_json, '$.storeId')
+          AND d.deleted_at IS NULL AND f.store_id = d.store_id
+          AND f.source_document_id = d.id AND f.checksum = d.checksum
+          AND f.retention_status = 'RETAINED'
         ORDER BY j.created_at, j.id
       `,
       this.now().toISOString(),

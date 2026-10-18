@@ -1,3 +1,4 @@
+import { SyncRecoveryPanel } from "@/sync/recovery-panel";
 import { Text, View } from "react-native";
 import { router, type Href } from "expo-router";
 import {
@@ -105,9 +106,11 @@ export default function SynchronizationScreen() {
       {status === "error" ? (
         <InlineAlert
           title="Synchronisation incomplète"
-          message="Certaines modifications n’ont pas pu être traitées. Réessayez maintenant."
+          message="Certaines modifications n’ont pas pu être traitées. Consultez les envois et les refus ci-dessous pour savoir quoi reprendre ou examiner."
         />
       ) : null}
+
+      <SyncRecoveryPanel />
 
       {importVerificationConflicts.length > 0 ? (
         <SectionCard title="Vérifications d’import à examiner">

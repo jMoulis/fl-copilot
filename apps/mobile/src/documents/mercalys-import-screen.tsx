@@ -1,3 +1,4 @@
+import { SourceUploadRecoveryPanel } from "./source-upload-recovery-panel";
 import { MercalysBatchPanel } from "@/documents/mercalys-batch-panel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Platform, Text, View } from "react-native";
@@ -93,6 +94,7 @@ export function MercalysImportScreen({
   onBusyChange?(busy: boolean): void;
 } = {}) {
   const [batchBusy, setBatchBusy] = useState(false);
+  const [uploadRevision, setUploadRevision] = useState(0);
   const [reviewAsset, setReviewAsset] = useState<
     NativeDocumentPickerAsset & { expectedChecksum: string }
   >();
@@ -557,6 +559,27 @@ export function MercalysImportScreen({
           onPress={onClose}
         />
       ) : null}
+      {!retainedAsset && storeId && actorUserId ? (
+        <SourceUploadRecoveryPanel
+          key={`${storeId}/${actorUserId}/${conversationId ?? "manual"}`}
+          db={sqlite}
+          storeId={storeId}
+          scope={
+            conversationId
+              ? { ownerId: actorUserId, conversationId }
+              : undefined
+          }
+          canRetry={
+            session?.stores.some(
+              (s) => s.storeId === storeId && s.role === "MANAGER",
+            ) ?? false
+          }
+          sync={() => syncNow(storeId)}
+          disabled={busy}
+          refreshKey={`${stage}/${uploadRevision}`}
+          onBusyChange={setBatchBusy}
+        />
+      ) : null}
       {!retainedAsset && storeId && actorUserId && hasNativeFilePicker ? (
         <MercalysBatchPanel
           key={`${storeId}/${actorUserId}`}
@@ -567,6 +590,7 @@ export function MercalysImportScreen({
           onDiscuss={onDiscuss}
           onBusyChange={setBatchBusy}
           onPublished={async () => {
+            setUploadRevision((r) => r + 1);
             if (storeId) {
               try {
                 await analyticsScheduler.process(storeId);

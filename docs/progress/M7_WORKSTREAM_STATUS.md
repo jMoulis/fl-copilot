@@ -24,3 +24,15 @@ Mis à jour le 18 octobre 2026. Ce suivi reprend les sept chantiers convenus ave
 ## Ordre de poursuite
 
 Terminer les manques du chantier 1 par lots métier complets et tenir cet inventaire à jour ; préparer ensuite la livraison/acceptation groupée adaptée. Ne pas multiplier les PR de simples couches internes présentées comme des fonctionnalités utilisables. Les sept critères de sortie restent la référence commune jusqu’à clôture M7 ; M8 conserve ses exigences de mise en production.
+
+## Lot courant — reprises d’envoi et refus compréhensibles (18 octobre 2026)
+
+- **1. Actions métier et conflits : en cours.** Les refus de commandes sont consultables et orientent vers l’espace métier à examiner. Une commande durablement refusée n’est pas renvoyée aveuglément. La correction générique des commandes refusées, les cibles distantes absentes/supprimées et les autres reprises restent ouvertes.
+- **2. Simulations de contre-promo : code prêt**, livraison/acceptation groupées inchangées.
+- **3. Arrivée des documents : en cours.** Reprise des tâches d’envoi Mercalys/PDF existantes, depuis Synchronisation et la feuille de fichiers du chat ; le bouton PDF manuel partage les contrôles. Pas de nouvelle publication ni de relance d’analyse déjà reçue. Restauration des originaux, reprises distantes et autres canaux restent à traiter.
+- **4. Expertise métier structurée : à démarrer.**
+- **5. Suivi des recommandations : en cours.**
+- **6. Implantation : à démarrer.**
+- **7. Finition UX et validation globale : en cours.** Explications et actions distinctes pour envois interrompus/refus métier, pagination, actualisation, erreurs sûres et protection des données privées. Validation du futur binaire toujours à faire.
+
+Ce lot reste du code prêt, non livré. Aucun déploiement API ni build EAS payant n’est lancé ; le plan de livraison groupée et son ordre API/native restent inchangés.
