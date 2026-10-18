@@ -780,6 +780,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 38,
+    name: "commercial-document-recovery-requests",
+    async up(database) {
+      await database
+        .collection("commercialDocumentRecoveryRequests")
+        .createIndex({ storeId: 1, sourceDocumentId: 1, requestedAt: -1 });
+      await database
+        .collection("commercialDocumentRecoveryRequests")
+        .createIndex({ status: 1, nextDispatchAt: 1, requestedAt: 1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

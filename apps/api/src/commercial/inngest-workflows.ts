@@ -1,3 +1,4 @@
+import { createCommercialProcessingRecovery } from "./processing-recovery.js";
 import { createSubstitutionEvidenceProcessor } from "../substitution/processor.js";
 import { createCommercialVisualProcessor } from "./visual-processing.js";
 import type { CommercialVisualProvider } from "./visual-provider.js";
@@ -24,6 +25,20 @@ export function createCommercialInngestWorkflows(
     signingKey,
     isDev: false,
   });
+  const recovery = createCommercialProcessingRecovery(
+    database,
+    {
+      enabled: !!aiProvider && !!visualProvider,
+      model: aiProvider?.model ?? "unavailable",
+    },
+    async (input) => {
+      await client.send({
+        id: `commercial-pdf.resume.v1:${input.operationId}`,
+        name: "commercial/pdf.resume",
+        data: input,
+      });
+    },
+  );
   const processor = createCommercialPdfPageProcessor(database);
   const aiProcessor = aiProvider
     ? createCommercialAiDraftProcessor(database, aiProvider)
@@ -125,6 +140,82 @@ export function createCommercialInngestWorkflows(
         },
       )
     : undefined;
+  const resume = client.createFunction(
+    {
+      id: "commercial-pdf-resume-v1",
+      concurrency: 2,
+      retries: 3,
+      triggers: [{ event: "commercial/pdf.resume" }],
+    },
+    async ({ event, step }) => {
+      const identity = sourceIdentity
+        .extend({ operationId: z.uuid() })
+        .parse(event.data);
+      const work = await step.run("review-resume-request", () =>
+        recovery.work(
+          identity.storeId,
+          identity.sourceDocumentId,
+          identity.operationId,
+        ),
+      );
+      if (work.includes("TEXT"))
+        await step.invoke("resume-pdf-pages", {
+          function: extract,
+          data: {
+            storeId: identity.storeId,
+            sourceDocumentId: identity.sourceDocumentId,
+          },
+        });
+      if (work.includes("AI") && aiProcessor && aiPage) {
+        const manifest = await step.run("resume-ai-manifest", () =>
+          aiProcessor.manifest(
+            identity.storeId,
+            identity.sourceDocumentId,
+            false,
+          ),
+        );
+        if (manifest.status === "READY") {
+          await Promise.all(
+            manifest.pages.map((pageNumber) =>
+              step.invoke(`resume-ai-${pageNumber}`, {
+                function: aiPage,
+                data: {
+                  storeId: identity.storeId,
+                  sourceDocumentId: identity.sourceDocumentId,
+                  pageNumber,
+                },
+              }),
+            ),
+          );
+          await step.run("resume-finalize-draft", () =>
+            aiProcessor.finalize(identity.storeId, identity.sourceDocumentId),
+          );
+        }
+      }
+      if (work.includes("VISUAL") && visualProcessor && visualPage) {
+        const pending = await step.run("resume-visual-manifest", () =>
+          visualProcessor.pending({
+            storeId: identity.storeId,
+            sourceDocumentId: identity.sourceDocumentId,
+          }),
+        );
+        for (const source of pending)
+          await Promise.all(
+            source.pages.map((pageNumber) =>
+              step.invoke(`resume-visual-${pageNumber}`, {
+                function: visualPage,
+                data: {
+                  storeId: identity.storeId,
+                  sourceDocumentId: identity.sourceDocumentId,
+                  pageNumber,
+                },
+              }),
+            ),
+          );
+      }
+      return { scheduledStages: work };
+    },
+  );
   const recover = client.createFunction(
     {
       id: "commercial-pdf-recover-pending-v1",
@@ -133,6 +224,9 @@ export function createCommercialInngestWorkflows(
       triggers: [{ cron: "*/5 * * * *" }],
     },
     async ({ step }) => {
+      await step.run("dispatch-document-recovery-requests", () =>
+        recovery.pendingDispatches(),
+      );
       const pending = await step.run("pending-sources", () =>
         processor.pending(),
       );
@@ -203,7 +297,9 @@ export function createCommercialInngestWorkflows(
   );
   return {
     client,
+    recovery,
     functions: [
+      resume,
       extract,
       recover,
       evidence,

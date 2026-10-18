@@ -8,6 +8,7 @@ export interface PendingWorkGroup {
 export async function readPendingWork(
   db: OutboxDatabase,
   storeId: string,
+  ownerId?: string,
 ): Promise<PendingWorkGroup[]> {
   const jobs = await db.getAllAsync<{
     type: string;
@@ -17,8 +18,10 @@ export async function readPendingWork(
   }>(
     `SELECT type,status,COUNT(*) AS count,MAX(last_error) AS last_error FROM local_jobs
  WHERE json_extract(payload_json,'$.storeId')=? AND status IN ('PENDING','RETRY','RUNNING','FAILED')
+ AND (type <> 'COMMERCIAL_ANALYSIS_RESUME' OR json_extract(payload_json,'$.ownerId')=?)
  GROUP BY type,status ORDER BY type,status LIMIT 20`,
     storeId,
+    ownerId ?? null,
   );
   const commands = await db.getFirstAsync<{ count: number }>(
     `SELECT COUNT(*) AS count FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING')`,
@@ -41,7 +44,9 @@ export async function readPendingWork(
           ? "Calcul des indicateurs locaux"
           : j.type === "SOURCE_UPLOAD_AND_REGISTER"
             ? "Envoi et vérification des fichiers"
-            : "Traitement local",
+            : j.type === "COMMERCIAL_ANALYSIS_RESUME"
+              ? "Demandes de reprise d’analyse commerciale"
+              : "Traitement local",
       count: Number(j.count),
       state:
         j.status === "RUNNING"

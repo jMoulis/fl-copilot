@@ -1,4 +1,13 @@
 import {
+  createCommercialProcessingRecovery,
+  type CommercialProcessingRecoveryService,
+} from "./commercial/processing-recovery.js";
+import {
+  commercialProcessingReviewSchema,
+  commercialProcessingResumeSchema,
+  commercialProcessingRequestedSchema,
+} from "@fl-copilot/sync-contracts";
+import {
   storeConflictLegacyInputSchema,
   storeConflictV2InputSchema,
   storeConflictV3InputSchema,
@@ -182,6 +191,7 @@ type AppDependencies = {
   syncPull?: SyncPullService;
   syncPush?: SyncPushService;
   sourceUploads?: SourceUploadService;
+  commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
 };
 
@@ -220,6 +230,13 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           }),
         )
       : undefined;
+  const commercialRecovery =
+    dependencies.commercialRecovery ??
+    commercialWorkflows?.recovery ??
+    createCommercialProcessingRecovery(dependencies.database, {
+      enabled: false,
+      model: config.COMMERCIAL_PDF_AI_MODEL,
+    });
   const sourceUploads =
     dependencies.sourceUploads ??
     createMongoSourceUploadService(
@@ -1287,6 +1304,77 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         dependencies.weekContext ??
         createWeekContextService(dependencies.database)
       ).read(storeId, request.query.weekStart);
+    },
+  );
+  app.get(
+    "/api/v1/commercial/:id/processing",
+    {
+      schema: {
+        params: z.strictObject({ id: z.uuid() }),
+        response: { 200: commercialProcessingReviewSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization,
+        storeId = request.headers["x-store-id"];
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      if (typeof storeId !== "string" || !z.uuid().safeParse(storeId).success)
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      await auth.authorizeStore(token.slice(7), storeId);
+      const result = await commercialRecovery.review(
+        storeId,
+        request.params.id,
+      );
+      await auth.authorizeStore(token.slice(7), storeId);
+      return result;
+    },
+  );
+  app.post(
+    "/api/v1/commercial/:id/resume",
+    {
+      schema: {
+        params: z.strictObject({ id: z.uuid() }),
+        body: commercialProcessingResumeSchema,
+        response: { 200: commercialProcessingRequestedSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization,
+        storeId = request.headers["x-store-id"];
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      if (typeof storeId !== "string" || !z.uuid().safeParse(storeId).success)
+        throw new AuthError(
+          400,
+          "STORE_CONTEXT_REQUIRED",
+          "Le magasin doit être indiqué.",
+        );
+      const context = await auth.authorizeStore(token.slice(7), storeId);
+      const authorize = async () => {
+        const current = await auth.authorizeStore(
+          token.slice(7),
+          storeId,
+          context.deviceId,
+        );
+        if (current.role !== "MANAGER" || current.userId !== context.userId)
+          throw new AuthError(
+            403,
+            "COMMERCIAL_ANALYSIS_FORBIDDEN",
+            "Votre rôle ne permet pas de reprendre cette analyse.",
+          );
+      };
+      return commercialRecovery.request(
+        storeId,
+        request.params.id,
+        request.body,
+        { userId: context.userId, deviceId: context.deviceId },
+        authorize,
+      );
     },
   );
   app.get(

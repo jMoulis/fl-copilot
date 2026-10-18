@@ -803,6 +803,11 @@ CREATE INDEX product_master_conflict_history_scope ON product_master_conflict_hi
     sql: `CREATE TABLE source_original_restorations(operation_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,source_document_id TEXT NOT NULL,local_file_id TEXT NOT NULL,job_id TEXT NOT NULL,request_json TEXT NOT NULL,previous_uri TEXT NOT NULL,restored_uri TEXT NOT NULL,restored_at TEXT NOT NULL);
 CREATE INDEX source_original_restorations_scope ON source_original_restorations(store_id,source_document_id,restored_at);`,
   },
+  {
+    version: 44,
+    name: "commercial-processing-cache",
+    sql: `CREATE TABLE commercial_processing_cache(store_id TEXT NOT NULL,source_document_id TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,source_document_id));`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

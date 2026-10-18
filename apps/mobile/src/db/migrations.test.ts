@@ -93,6 +93,7 @@ describe("local SQLite migrations", () => {
       "commercial_plan_history",
       "commercial_plan_revisions",
       "commercial_preparation_history",
+      "commercial_processing_cache",
       "commercial_review_decisions",
       "commercial_review_pages",
       "commercial_validated_offers",
@@ -529,7 +530,7 @@ INSERT INTO sync_outbox(command_id,store_id,device_id,local_sequence,command_typ
         .prepare("SELECT COUNT(*) n FROM source_original_restorations")
         .get()!.n,
     ).toBe(0);
-    expect(await getLocalSchemaVersion(adapter)).toBe(43);
+    expect(await getLocalSchemaVersion(adapter)).toBe(localMigrations.length);
   } finally {
     database.close();
   }
