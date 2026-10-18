@@ -13,6 +13,14 @@ export const copilotActionReviewInputSchema = z
   .strictObject({
     weekStart: contextWeekQuerySchema.shape.weekStart,
     taskId: z.string().uuid(),
+    /** A selected private choice is context, never a confirmed task association. */
+    decision: z
+      .strictObject({
+        recommendationId: z.uuid(),
+        expectedVersion: z.number().int().min(1).max(50),
+      })
+      .nullable()
+      .optional(),
     productId: z.string().uuid(),
     before: window,
     during: window,

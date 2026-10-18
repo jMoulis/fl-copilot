@@ -11,6 +11,7 @@ import {
   selectStoreEventTime,
   storeEventTimeParts,
   commercialExecutionTargetMatches,
+  recommendationDecisionReadResultSchema,
 } from "@fl-copilot/domain";
 import { readExecutionContext } from "./commercial-plan-tool.js";
 import {
@@ -18,7 +19,26 @@ import {
   periodAnalysisResultSchema,
 } from "./period-analysis-tool.js";
 import { readFieldEvents } from "./field-events-tool.js";
+import { readRecommendationDecisions } from "./decision-read-tool.js";
 const inputSchema = copilotActionReviewInputSchema;
+function decisionReadInput(recommendationId: string) {
+  return { conversationId: null, recommendationId, afterId: null, limit: 1 };
+}
+type DecisionContext = z.infer<typeof recommendationDecisionReadResultSchema>;
+function decisionIssue(
+  input: z.infer<typeof inputSchema>,
+  context?: DecisionContext | null,
+) {
+  if (!input.decision) return null;
+  const entry = context?.entries[0];
+  return !entry
+    ? ("DECISION_UNAVAILABLE" as const)
+    : entry.version !== input.decision.expectedVersion
+      ? ("DECISION_CHANGED" as const)
+      : entry.sourceState === "UNAVAILABLE" || !entry.basis
+        ? ("DECISION_SOURCE_UNAVAILABLE" as const)
+        : null;
+}
 export const actionReviewResultSchema = z
   .strictObject({
     input: inputSchema,
@@ -30,7 +50,13 @@ export const actionReviewResultSchema = z
       "TASK_UNAVAILABLE",
       "PRODUCT_NOT_IN_TASK",
       "PERIOD_OUTSIDE_OFFER",
+      "DECISION_UNAVAILABLE",
+      "DECISION_CHANGED",
+      "DECISION_SOURCE_UNAVAILABLE",
     ]),
+    decisionContext: recommendationDecisionReadResultSchema
+      .nullable()
+      .optional(),
     task: z
       .strictObject({
         proposal: executionProposalSchema,
@@ -40,7 +66,7 @@ export const actionReviewResultSchema = z
     duringComparison: periodAnalysisResultSchema.nullable(),
     afterComparison: periodAnalysisResultSchema.nullable(),
     fieldEvents: copilotEventsReadResultSchema.nullable(),
-    evidence: z.array(copilotEvidenceSchema).min(1).max(100),
+    evidence: z.array(copilotEvidenceSchema).min(1).max(103),
   })
   .superRefine((r, c) => {
     const fail = () =>
@@ -56,12 +82,38 @@ export const actionReviewResultSchema = z
       fail();
       return;
     }
+    const context = r.decisionContext;
+    const issue = decisionIssue(i, context);
+    if (
+      !!i.decision !== !!context ||
+      (context &&
+        (!i.decision ||
+          JSON.stringify(context.input) !==
+            JSON.stringify(decisionReadInput(i.decision!.recommendationId)) ||
+          context.status !== "READY" ||
+          context.hasMore ||
+          context.nextAfterId !== null ||
+          context.entries.length > 1 ||
+          context.evidence.length !== context.entries.length + 1 ||
+          context.entries.some(
+            (e) => e.id !== i.decision!.recommendationId,
+          ))) ||
+      (issue ? r.status !== issue : r.status.startsWith("DECISION_"))
+    )
+      fail();
     if (
       (r.status === "READY") !== !!(r.duringComparison && r.fieldEvents) ||
       (r.status !== "READY" &&
         (r.duringComparison || r.afterComparison || r.fieldEvents)) ||
       (r.status === "READY" && !!i.after !== !!r.afterComparison) ||
-      (["NO_PLAN", "LIMIT_EXCEEDED", "TASK_UNAVAILABLE"].includes(r.status)
+      ([
+        "NO_PLAN",
+        "LIMIT_EXCEEDED",
+        "TASK_UNAVAILABLE",
+        "DECISION_UNAVAILABLE",
+        "DECISION_CHANGED",
+        "DECISION_SOURCE_UNAVAILABLE",
+      ].includes(r.status)
         ? r.task !== null
         : r.task === null) ||
       (r.task &&
@@ -105,6 +157,7 @@ export const actionReviewResultSchema = z
         fail();
     }
     const nested = [
+      ...(context?.evidence ?? []),
       ...(r.duringComparison?.evidence ?? []),
       ...(r.afterComparison?.evidence ?? []),
       ...(r.fieldEvents?.evidence ?? []),
@@ -125,6 +178,7 @@ export async function readActionReview(
   storeId: string,
   raw: unknown,
   now = new Date().toISOString(),
+  ownerId?: string,
 ): Promise<ActionReviewResult> {
   z.uuid().parse(storeId);
   const input = inputSchema.parse(raw);
@@ -132,18 +186,32 @@ export async function readActionReview(
   const today = storeEventTimeParts(now).date;
   if ((input.after?.end ?? input.during.end) > today)
     throw Error("COPILOT_ACTION_REVIEW_FUTURE");
-  const context = await readExecutionContext(db, storeId, input.weekStart);
+  if (input.decision && !z.uuid().safeParse(ownerId).success)
+    throw Error("COPILOT_ACTION_REVIEW_FORBIDDEN");
+  const decisionContext = input.decision
+    ? await readRecommendationDecisions(
+        db,
+        { storeId, ownerId: ownerId! },
+        decisionReadInput(input.decision.recommendationId),
+      )
+    : null;
+  const issue = decisionIssue(input, decisionContext);
+  const context = issue
+    ? { p: null, proposals: [], records: [], matched: [], exceeded: false }
+    : await readExecutionContext(db, storeId, input.weekStart);
   const { p, proposals, records, matched, exceeded } = context;
   const proposal = proposals.find((t) => t.id === input.taskId);
   const declaration = matched.find((t) => t.id === input.taskId) ?? null;
-  let status: ActionReviewResult["status"] = !p
-    ? "NO_PLAN"
-    : exceeded
-      ? "LIMIT_EXCEEDED"
-      : !proposal ||
-          records.some((t) => t.id === input.taskId && !matched.includes(t))
-        ? "TASK_UNAVAILABLE"
-        : "READY";
+  let status: ActionReviewResult["status"] =
+    issue ??
+    (!p
+      ? "NO_PLAN"
+      : exceeded
+        ? "LIMIT_EXCEEDED"
+        : !proposal ||
+            records.some((t) => t.id === input.taskId && !matched.includes(t))
+          ? "TASK_UNAVAILABLE"
+          : "READY");
   const task = status === "READY" ? { proposal: proposal!, declaration } : null;
   const offers = !task
     ? []
@@ -229,6 +297,20 @@ export async function readActionReview(
     )
       throw Error("COPILOT_ACTION_REVIEW_CHANGED");
   }
+  // Refuse changes to the choice, its source visibility or basis during the read.
+  // No relationship is written from the model's selection of these two records.
+  if (
+    input.decision &&
+    JSON.stringify(decisionContext) !==
+      JSON.stringify(
+        await readRecommendationDecisions(
+          db,
+          { storeId, ownerId: ownerId! },
+          decisionReadInput(input.decision.recommendationId),
+        ),
+      )
+  )
+    throw Error("COPILOT_ACTION_REVIEW_CHANGED");
   const revision = createHash("sha256")
     .update(
       JSON.stringify([
@@ -238,6 +320,7 @@ export async function readActionReview(
         p,
         records,
         offers,
+        decisionContext,
         duringComparison,
         afterComparison,
         fieldEvents,
@@ -257,10 +340,19 @@ export async function readActionReview(
       "Le produit n’est pas associé à cette tâche dans le plan enregistré. Précisez le produit ou la tâche.",
     PERIOD_OUTSIDE_OFFER:
       "La période pendant dépasse les dates des offres enregistrées de ce produit pour cette tâche. Précisez la période ; aucune date d’exécution n’est déduite.",
+    DECISION_UNAVAILABLE:
+      "Ce choix n’est pas disponible pour ce compte et ce magasin. Il peut être resté sur un appareil ; aucun bilan n’est calculé en son nom.",
+    DECISION_CHANGED:
+      "Votre choix a changé depuis sa consultation. Relisez la dernière décision avant de demander ce bilan.",
+    DECISION_SOURCE_UNAVAILABLE:
+      "Le conseil d’origine n’est plus vérifiable. Le choix conservé reste consultable, mais ce bilan doit être repris depuis une source utilisable.",
   };
   const qualification = [
     messages[status],
     `Consulté au ${now} ; les périodes métier sont en Europe/Paris.`,
+    input.decision
+      ? "Le choix privé et la tâche sont sélectionnés pour ce bilan uniquement : aucun lien durable ni correspondance métier n’est validé ou enregistré. Un choix accepté, modifié, reporté ou refusé ne prouve pas l’exécution de cette tâche ; le contexte du conseil n’est pas revalidé. Un choix enregistré après les périodes observées n’est pas un plan préalable à l’action."
+      : "",
     task
       ? `Tâche : ${task.proposal.label} ; plan version ${task.proposal.planVersion}, révision ${task.proposal.planRevisionId}. ${declaration ? `Déclaration utilisateur : ${declaration.status}, version ${declaration.version}, date déclarée ${declaration.completedAt ?? "non renseignée"}, note : ${declaration.note || "aucune"}.` : "Aucune déclaration correspondante : À faire, réalisation inconnue."}`
       : "",
@@ -281,6 +373,7 @@ export async function readActionReview(
       value: qualification,
       factKind: "QUALITY",
     }),
+    ...(decisionContext?.evidence ?? []),
     ...(duringComparison?.evidence ?? []),
     ...(afterComparison?.evidence ?? []),
     ...(fieldEvents?.evidence ?? []),
@@ -290,6 +383,7 @@ export async function readActionReview(
     observedAt: now,
     status,
     task,
+    decisionContext,
     duringComparison,
     afterComparison,
     fieldEvents,

@@ -14,3 +14,15 @@
 | Historique privé                  | Relire après redémarrage/hors connexion, autre compte                                 | Source du bilan conservée comme snapshot daté ; pas de recalcul silencieux ni accès entre comptes/magasins.                                                   |
 
 Les décisions initiales et leur rattachement durable aux recommandations restent un chantier distinct à fermer avant de déclarer le suivi complet terminé.
+
+## Retained choice context — grouped delivery acceptance still pending
+
+Automated coverage is not a real model or iPhone acceptance. Once the compatible API and decision-card binary are delivered together:
+
+1. Retain then modify a suggestion, synchronize, and ask in another owned conversation: « Fais le bilan de mon idée de TG, en tenant compte du choix modifié. » Use a known current saved task/product and explicit dates. Check original/modified advice/date, declaration and observed figures are distinct, with separate source links and a concise table. No shared task is edited and no durable relationship is claimed.
+2. Repeat with postponed/refused choices and a task already declared DONE. The answer must preserve both facts, without changing the task or claiming the advice was accepted/executed. A decision after the compared dates must not become a plan made beforehand.
+3. Change the saved choice after its version was read: refresh/reconsult it rather than silently using the earlier version. Concurrent source/choice changes must not yield a mixed snapshot.
+4. Archive its source conversation: the retained choice may be historical context, explicitly labelled, but not a current validated instruction. An unavailable/unverifiable original yields an explanation and no contextual figures. A different account/store must see no private advice even with the exact UUID.
+5. Close/reopen and go offline: the existing dated answer and its decision/KPI sources remain available, without recomputation. Pending local-only choices must never be declared remotely synchronized merely because an older reply exists.
+
+Durable user-confirmed execution linkage, measured actual price/location/dates, current-fact invalidation and the full pilot loop are separate remaining acceptance work.
