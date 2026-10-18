@@ -1,3 +1,7 @@
+import {
+  copilotImportHistoryText,
+  readCopilotImportStatus,
+} from "@fl-copilot/domain";
 import { readSupersededHistoryIds } from "./history-supersession.js";
 import { copilotMessageSchema, type CopilotMessage } from "@fl-copilot/domain";
 import type { Db } from "mongodb";
@@ -35,6 +39,7 @@ export async function readConversationGenerationHistory(
     parent.attachments.map((ref) => ref.sourceDocumentId),
   );
   let remaining = 24000;
+  const intakePages = new Set<string>();
   for (const row of rows.slice(0, 20)) {
     const { _id, ...payload } = row;
     const message = copilotMessageSchema.parse(payload);
@@ -52,9 +57,18 @@ export async function readConversationGenerationHistory(
       (message.replyToMessageId && superseded.has(message.replyToMessageId))
     )
       continue;
+    try {
+      const { status } = readCopilotImportStatus(message),
+        key = `${status.originMessageId}/${status.part}`;
+      if (intakePages.has(key)) continue;
+      intakePages.add(key);
+    } catch {
+      /* Ordinary conversation message. */
+    }
     // Preserve whole messages; never silently cut a constraint or decimal value.
-    if (message.text.length > remaining) break;
-    remaining -= message.text.length;
+    const text = copilotImportHistoryText(message);
+    if (text.length > remaining) break;
+    remaining -= text.length;
     for (const reference of message.attachments) {
       if (!currentIds.has(reference.sourceDocumentId))
         references.set(reference.sourceDocumentId, reference);
@@ -62,7 +76,7 @@ export async function readConversationGenerationHistory(
     messages.push({
       id: message.id,
       role: message.role,
-      text: message.text,
+      text,
       createdAt: message.createdAt,
     });
   }

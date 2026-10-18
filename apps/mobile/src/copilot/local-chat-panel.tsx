@@ -1,3 +1,4 @@
+import { readCopilotImportStatus } from "@fl-copilot/domain";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { BottomSheet, MenuRow } from "../components/ui";
@@ -35,6 +36,7 @@ type PanelProps = {
   intakeSummary?: ReactNode;
   onOpenMercalys?(): void;
   externalDraftRevision?: number;
+  externalMessageRevision?: number;
   onAttachPdf?(
     signal: AbortSignal,
     capacity: number,
@@ -60,6 +62,7 @@ function LocalChatPanel({
   onOpenMercalys,
   intakeSummary,
   externalDraftRevision = 0,
+  externalMessageRevision = 0,
 }: PanelProps) {
   const [activities, setActivities] = useState<CopilotActivity[]>([]);
   useEffect(
@@ -102,6 +105,7 @@ function LocalChatPanel({
   useEffect(() => {
     current.current = { controller, conversationId };
     let alive = true;
+    const openingRevision = draftRevision.current;
     void controller
       .open(conversationId)
       .then(async (value) => {
@@ -112,7 +116,8 @@ function LocalChatPanel({
               ? { ...value, ...mergeCopilotHistory(previous, value) }
               : value,
           );
-          setDraft(value.draft?.text ?? "");
+          if (openingRevision === draftRevision.current)
+            setDraft(value.draft?.text ?? "");
           setError(undefined);
           if (delivery && value.pendingTurns.length) {
             setSending(true);
@@ -159,7 +164,7 @@ function LocalChatPanel({
       attachmentAbort.current?.abort();
       current.current = { controller: undefined, conversationId: "" };
     };
-  }, [controller, conversationId, delivery]);
+  }, [controller, conversationId, delivery, externalMessageRevision]);
   useEffect(() => {
     if (!externalDraftRevision) return;
     let alive = true;
@@ -397,6 +402,14 @@ function LocalChatPanel({
         title={snapshot.conversation.title}
         messages={snapshot.messages
           .map((message) => message.entity)
+          .filter((message) => {
+            try {
+              readCopilotImportStatus(message);
+              return false;
+            } catch {
+              return true;
+            }
+          })
           .filter(
             (message) =>
               !copilotMessageIsDeleted(message, snapshot.conversation),
@@ -528,8 +541,15 @@ function LocalChatPanel({
           />
         ) : null}
         {onOpenMercalys ? (
+          <Text style={{ padding: 12 }}>
+            Les références uniques sont créées et les fichiers sans ambiguïté
+            sont publiés automatiquement. Les doutes et les remplacements vous
+            seront demandés ici.
+          </Text>
+        ) : null}
+        {onOpenMercalys ? (
           <MenuRow
-            title="Exports Mercalys"
+            title="Importer et traiter : XLSX / ZIP"
             description="Plusieurs fichiers XLSX ou une archive ZIP"
             icon="documents-outline"
             onPress={() => {

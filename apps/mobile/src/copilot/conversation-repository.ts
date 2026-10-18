@@ -506,7 +506,7 @@ export class CopilotConversationRepository {
     if (!Number.isInteger(limit) || limit < 1 || limit > 100)
       throw Error("COPILOT_PAGE_LIMIT_INVALID");
     const rows = await this.db.getAllAsync<Row>(
-      `SELECT * FROM copilot_messages WHERE store_id=? AND owner_id=? AND conversation_id=? ${before ? "AND (created_at<? OR(created_at=? AND id<?))" : ""} ORDER BY created_at DESC,id DESC LIMIT ?`,
+      `SELECT * FROM copilot_messages WHERE store_id=? AND owner_id=? AND conversation_id=? AND NOT (json_extract(payload_json,'$.role')='USER' AND COALESCE(CASE WHEN json_valid(json_extract(payload_json,'$.text')) THEN json_extract(json_extract(payload_json,'$.text'),'$.kind')='MERCALYS_CHAT_IMPORT_STATUS' ELSE 0 END,0)) ${before ? "AND (created_at<? OR(created_at=? AND id<?))" : ""} ORDER BY created_at DESC,id DESC LIMIT ?`,
       this.scope.storeId,
       this.scope.ownerId,
       conversationId,

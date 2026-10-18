@@ -1,3 +1,7 @@
+import {
+  copilotImportReferenceSchema,
+  type CopilotMessage,
+} from "@fl-copilot/domain";
 import { mergeCopilotHistory } from "./history-window";
 import type { CopilotDraft } from "@fl-copilot/domain";
 import { CopilotConversationRepository } from "./conversation-repository";
@@ -176,6 +180,32 @@ export class CopilotLocalChatController {
       };
       await this.repo.saveDraft(conversationId, updated);
       return updated;
+    });
+  }
+  sendImportReference(conversationId: string, raw: unknown) {
+    return this.serial(async () => {
+      await this.active(conversationId);
+      const reference = copilotImportReferenceSchema.parse(raw);
+      return this.repo.append(
+        {
+          id: this.id(),
+          storeId: this.scope.storeId,
+          ownerId: this.scope.ownerId,
+          conversationId,
+          role: "USER",
+          text: JSON.stringify(reference),
+          attachments: [],
+          replyToMessageId: null,
+          supersedesMessageId: null,
+          version: 1,
+          createdAt: this.now(),
+        } as CopilotMessage,
+        {
+          commandId: this.id(),
+          deviceId: this.scope.deviceId,
+          preserveDraft: true,
+        },
+      );
     });
   }
   send(conversationId: string) {
