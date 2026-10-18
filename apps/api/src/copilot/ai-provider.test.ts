@@ -4343,3 +4343,72 @@ it.each(["FORM", "CALCULATED", "FOREIGN", "DISABLED"])(
     );
   },
 );
+it.each(["OWNED", "FOREIGN", "RETARGETED", "DISABLED"])(
+  "connects existing identity decisions only to capable clients (%s)",
+  async (mode) => {
+    const { identityFixture } =
+      await import("../../../../scripts/test-identity-review-fixtures");
+    const f = fixture(),
+      data = identityFixture();
+    const before = {
+      product: { ...data.product, storeId: f.request.storeId },
+      entry: { ...data.entry, storeId: f.request.storeId },
+    };
+    if (mode === "FOREIGN") before.entry.storeId = randomUUID();
+    if (mode === "RETARGETED") before.entry.productId = randomUUID();
+    const value = { ...data.preview, before },
+      identityReview = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "product_identity_review",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|reactivate|expectedVersion|confidence/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_identity",
+            call_id: "call_identity",
+            name: "product_identity_review",
+            arguments: JSON.stringify(data.input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "OWNED" ? { status: "READY" } : { unavailable: true },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { identityReview }),
+    }).generate(f.request, schema);
+    expect(identityReview).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(result.identityReviews ?? []).toEqual(
+      mode === "OWNED" ? [value] : [],
+    );
+    expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
+  },
+);
