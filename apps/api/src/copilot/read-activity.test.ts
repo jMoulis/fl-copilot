@@ -45,3 +45,10 @@ it("shows scenario calculation progress without exposing hypotheses", () =>
   expect(
     readActivityStage(JSON.stringify(["price-scenario", { private: true }])),
   ).toBe("ANALYTICS"));
+
+it("shows a declared action review as comparison without private arguments", () =>
+  expect(
+    readActivityStage(
+      JSON.stringify(["declared-action-review", { private: true }]),
+    ),
+  ).toBe("COMPARISON"));

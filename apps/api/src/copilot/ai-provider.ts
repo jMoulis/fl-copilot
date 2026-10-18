@@ -1,3 +1,5 @@
+import { declaredActionReviewInputSchema } from "@fl-copilot/domain";
+import { declaredActionReviewResultSchema } from "./declared-action-review-tool";
 import {
   actionExecutionInputSchema,
   actionExecutionPreviewSchema,
@@ -471,6 +473,9 @@ export function createCopilotAiProvider(
     actionExecutionPreview?(
       input: z.infer<typeof actionExecutionInputSchema>,
     ): Promise<z.infer<typeof actionExecutionPreviewSchema>>;
+    declaredActionReview?(
+      input: z.infer<typeof declaredActionReviewInputSchema>,
+    ): Promise<z.infer<typeof declaredActionReviewResultSchema>>;
     actionExecutions?(
       input: z.infer<typeof actionExecutionsReadInputSchema>,
     ): Promise<z.infer<typeof actionExecutionsReadResultSchema>>;
@@ -898,6 +903,7 @@ export function createCopilotAiProvider(
                       reads.commercialPreparation ||
                       reads.actionExecutionPreview ||
                       reads.actionExecutions ||
+                      reads.declaredActionReview ||
                       reads.executionLinkPreview ||
                       reads.executionLinks ||
                       reads.executionPreview ||
@@ -945,6 +951,7 @@ export function createCopilotAiProvider(
                       reads.commercialPreparation ||
                       reads.actionExecutionPreview ||
                       reads.actionExecutions ||
+                      reads.declaredActionReview ||
                       reads.executionLinkPreview ||
                       reads.executionLinks ||
                       reads.executionPreview ||
@@ -1459,11 +1466,42 @@ export function createCopilotAiProvider(
                       }),
                     }
                   : {}),
+                ...(reads.declaredActionReview
+                  ? {
+                      recommendation_action_review: tool({
+                        description:
+                          "Review one synchronized private realization from recommendation_action_executions without requiring a saved choice or commercial task. Pass its exact id/version, ONE product selected for this review and explicit before/during/optional-after windows (31 days each, 93-day span, no future). Ask only for missing product or dates; never infer them from a confirmation timestamp. Product selection is context only, not a validated or saved association. Withdrawn/changed/unavailable declarations block the review. Use a concise comparison table and source links, qualify coverage, differing durations, event pagination and uncontrolled factors; no causal uplift or ROI. Read-only.",
+                        inputSchema: declaredActionReviewInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["declared-action-review", input]),
+                            async () => {
+                              const value =
+                                declaredActionReviewResultSchema.parse(
+                                  await reads.declaredActionReview!(input),
+                                );
+                              if (
+                                JSON.stringify(value.input) !==
+                                  JSON.stringify(
+                                    declaredActionReviewInputSchema.parse(
+                                      input,
+                                    ),
+                                  ) ||
+                                (value.declaration &&
+                                  value.declaration.storeId !== request.storeId)
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              return value;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
                 ...(reads.actionExecutions
                   ? {
                       recommendation_action_executions: tool({
                         description:
-                          "Read this account's synchronized private declarations of actions realized from chat advice, including withdrawals. Filter a known recommendationId or null; UUID cursor and up to five records. Records may still be offline or on later pages. Withdrawn statements are historical; multiple statements may describe the same physical action. These are user reports, separate from decisions, commercial-plan tasks, official figures and causal effects. Withdrawals use the original native card. No writes; cite the returned sources concisely.",
+                          "Read this account's synchronized private declarations of actions realized from chat advice, including withdrawals. Filter a known recommendationId or null; UUID cursor and up to five records. Records may still be offline or on later pages. Withdrawn statements are historical; multiple statements may describe the same physical action. These are user reports, separate from decisions, commercial-plan tasks, official figures and causal effects. Use recommendation_action_review for a descriptive product/period review without requiring a commercial-plan task. Withdrawals use the original native card. No writes; cite the returned sources concisely.",
                         inputSchema: actionExecutionsReadInputSchema,
                         execute: (input) =>
                           executeRead(
