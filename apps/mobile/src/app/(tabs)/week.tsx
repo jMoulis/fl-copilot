@@ -1,3 +1,4 @@
+import { CommercialAnalysisRecoveryPanel } from "@/commercial/analysis-recovery-panel";
 import { WeeklySubstitutesView } from "@/commercial/substitute-view";
 import { currentCommercialWeek } from "@fl-copilot/commercial-core";
 import { WeeklyContextView } from "@/store/weekly-context-view";
@@ -267,6 +268,11 @@ export default function WeekScreen() {
                   onPress={() =>
                     router.push(`/commercial-review/${document.id}` as Href)
                   }
+                />
+              ) : null}
+              {document.remoteUploadStatus === "CONFIRMED" ? (
+                <CommercialAnalysisRecoveryPanel
+                  sourceDocumentId={document.id}
                 />
               ) : null}
               {state.canRetry ? (

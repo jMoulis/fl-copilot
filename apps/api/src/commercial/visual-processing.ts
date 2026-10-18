@@ -45,13 +45,16 @@ export function createCommercialVisualProcessor(
   now = () => new Date(),
 ) {
   return {
-    async pending() {
+    async pending(scope?: { storeId: string; sourceDocumentId: string }) {
       const db = await database.getDb();
       const sources = await db
         .collection<VisualJob>("commercialDocumentJobs")
         .aggregate<VisualJob>([
           {
             $match: {
+              ...(scope
+                ? { storeId: scope.storeId, _id: scope.sourceDocumentId }
+                : {}),
               parserVersion: { $exists: true },
               pageCount: { $gte: 1 },
               status: {
@@ -95,6 +98,9 @@ export function createCommercialVisualProcessor(
       const jobs = await db
         .collection<VisualJob>("commercialVisualJobs")
         .find({
+          ...(scope
+            ? { storeId: scope.storeId, _id: scope.sourceDocumentId }
+            : {}),
           model: provider.model,
           schemaVersion: COMMERCIAL_VISUAL_SCHEMA_VERSION,
           status: { $ne: "COMPLETE" },

@@ -97,13 +97,18 @@ export function createCommercialAiDraftProcessor(
         })
         .toArray();
     },
-    async manifest(storeId: string, sourceDocumentId: string) {
+    async manifest(
+      storeId: string,
+      sourceDocumentId: string,
+      recoverLegacy = true,
+    ) {
       const db = await database.getDb();
       const jobs = db.collection<Job>("commercialDocumentJobs");
-      await recoverLegacyBudgetFailures(db, provider.model, now(), {
-        storeId,
-        sourceDocumentId,
-      });
+      if (recoverLegacy)
+        await recoverLegacyBudgetFailures(db, provider.model, now(), {
+          storeId,
+          sourceDocumentId,
+        });
       await jobs.updateOne(
         {
           _id: sourceDocumentId,

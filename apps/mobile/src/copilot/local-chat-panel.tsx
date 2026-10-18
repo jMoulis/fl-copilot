@@ -5,6 +5,7 @@ import { BottomSheet, MenuRow } from "../components/ui";
 import type { CopilotPdfSelection } from "./pdf-selection";
 import type { ReactNode } from "react";
 import { mergeCopilotHistory } from "./history-window";
+import { CommercialAnalysisRecoveryPanel } from "../commercial/analysis-recovery-panel";
 import { CommercialOriginalButton } from "../commercial/original-button";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import { ApiClientError } from "@fl-copilot/api-client";
@@ -574,7 +575,14 @@ function renderCommercialOriginal(
 ) {
   return message.role !== "TOOL" &&
     attachment.mediaType === "application/pdf" ? (
-    <CommercialOriginalButton sourceDocumentId={attachment.sourceDocumentId} />
+    <View className="gap-2">
+      <CommercialOriginalButton
+        sourceDocumentId={attachment.sourceDocumentId}
+      />
+      <CommercialAnalysisRecoveryPanel
+        sourceDocumentId={attachment.sourceDocumentId}
+      />
+    </View>
   ) : null;
 }
 

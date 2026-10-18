@@ -1,4 +1,11 @@
 import {
+  commercialProcessingReviewSchema,
+  commercialProcessingRequestedSchema,
+  type CommercialProcessingReview,
+  type CommercialProcessingResume,
+  type CommercialProcessingRequested,
+} from "@fl-copilot/sync-contracts";
+import {
   importClassificationRequestSchema,
   importClassificationResultSchema,
 } from "@fl-copilot/sync-contracts";
@@ -454,6 +461,33 @@ export class ApiClient {
       { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
       copilotHistoryPageSchema,
     ) as Promise<CopilotHistoryPage>;
+  }
+  commercialProcessing(
+    accessToken: string,
+    storeId: string,
+    sourceDocumentId: string,
+  ): Promise<CommercialProcessingReview> {
+    return this.request(
+      `/api/v1/commercial/${encodeURIComponent(sourceDocumentId)}/processing`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      commercialProcessingReviewSchema,
+    ) as Promise<CommercialProcessingReview>;
+  }
+  resumeCommercialProcessing(
+    accessToken: string,
+    storeId: string,
+    sourceDocumentId: string,
+    input: CommercialProcessingResume,
+  ): Promise<CommercialProcessingRequested> {
+    return this.request(
+      `/api/v1/commercial/${encodeURIComponent(sourceDocumentId)}/resume`,
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      commercialProcessingRequestedSchema,
+    ) as Promise<CommercialProcessingRequested>;
   }
   commercialOriginalLink(
     accessToken: string,

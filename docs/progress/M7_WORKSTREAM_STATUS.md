@@ -48,3 +48,15 @@ Ce lot reste du code prêt, non livré. Aucun déploiement API ni build EAS paya
 7. **UX et validation globale : en cours.** Action « Retrouver l’original » et messages explicites ; tests automatisés passés, validation sur le futur binaire encore à faire.
 
 Code prêt ne signifie ni livré ni validé sur iPhone. Aucun build EAS payant ni déploiement Vercel n’est lancé ; la livraison groupée conserve son ordre API/native existant.
+
+## Lot courant — suivre et reprendre une analyse PDF (18 octobre 2026)
+
+1. **Actions métier et conflits : en cours.** Une demande explicite de reprise est persistée et rejouable ; les résultats reçus, refus définitifs et budgets ne sont pas remis à zéro. Les autres corrections/conflits hors périmètre restent ouverts.
+2. **Contre-promo : code prêt**, livraison et acceptation groupées à faire.
+3. **Documents : en cours.** Suivi des étapes et reprise des analyses PDF commerciales confirmées depuis le chat et Ma semaine, avec cache hors connexion et envoi durable. Originaux photos, originaux uniquement distants, manifestes perdus et réception/lots des autres canaux restent à couvrir.
+4. **Expertise métier structurée : à démarrer.**
+5. **Suivi des recommandations : en cours.**
+6. **Implantation : à démarrer.**
+7. **UX et validation globale : en cours.** Distinguer demande enregistrée, demande transmise, résultats partiels et analyse reçue ; actualisation à la demande pour limiter les appels. Validation du futur binaire encore à faire.
+
+Ce lot est du code prêt pour livraison groupée, pas une fonctionnalité déjà livrée sur iPhone. Il requiert l’API compatible avant le binaire natif. Aucun déploiement automatique, appel IA payant ou build EAS n’est lancé.

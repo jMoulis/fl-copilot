@@ -110,3 +110,5 @@ export {
   importClassificationRequestSchema,
   importClassificationResultSchema,
 } from "@fl-copilot/domain";
+
+export * from "./commercial-processing";

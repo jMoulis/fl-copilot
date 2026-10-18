@@ -1,3 +1,4 @@
+import { CommercialAnalysisRecoveryQueue } from "../documents/commercial-analysis-recovery";
 import { readPendingWork, type PendingWorkGroup } from "./pending-work";
 import { randomUUID } from "expo-crypto";
 import { repairMercalysPublications } from "../documents/mercalys-publication-sync";
@@ -165,6 +166,16 @@ export function SyncProvider({ children }: PropsWithChildren) {
         ),
     });
   }, [database.sqlite, hasLocalSession, withAccessToken]);
+  const analysisRecovery = useMemo(() => {
+    if (!hasLocalSession) return undefined;
+    const api = new ApiClient(getApiBaseUrl());
+    return new CommercialAnalysisRecoveryQueue(database.sqlite, {
+      resume: (storeId, id, input) =>
+        withAccessToken((token) =>
+          api.resumeCommercialProcessing(token, storeId, id, input),
+        ),
+    });
+  }, [database.sqlite, hasLocalSession, withAccessToken]);
   const defaultStoreId = session?.stores[0]?.storeId;
 
   const refreshLocalState = useCallback(async () => {
@@ -172,6 +183,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
     const snapshot = await readLocalSyncSnapshot(
       database.sqlite,
       defaultStoreId,
+      session?.user.id,
     );
     setState((current) => ({
       ...snapshot,
@@ -181,7 +193,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
           : deriveStatus(snapshot),
     }));
     return snapshot;
-  }, [database.sqlite, defaultStoreId]);
+  }, [database.sqlite, defaultStoreId, session?.user.id]);
 
   const syncNow = useCallback(
     async (storeId = defaultStoreId) => {
@@ -193,17 +205,27 @@ export function SyncProvider({ children }: PropsWithChildren) {
       try {
         await repairMercalysPublications(database.sqlite, storeId, randomUUID);
         await uploadQueue?.process(storeId);
+        if (session?.user.id)
+          await analysisRecovery?.process(storeId, session.user.id);
         const summary = await service.sync(storeId);
         await repairMercalysPublications(database.sqlite, storeId, randomUUID);
         await new LocalAnalyticsRecomputationScheduler(
           database.sqlite,
           new SQLiteProductDateRecomputer(database.sqlite),
         ).process(storeId);
-        const snapshot = await readLocalSyncSnapshot(database.sqlite, storeId);
+        const snapshot = await readLocalSyncSnapshot(
+          database.sqlite,
+          storeId,
+          session?.user.id,
+        );
         setState({ ...snapshot, status: deriveStatus(snapshot) });
         return summary;
       } catch (error) {
-        const snapshot = await readLocalSyncSnapshot(database.sqlite, storeId);
+        const snapshot = await readLocalSyncSnapshot(
+          database.sqlite,
+          storeId,
+          session?.user.id,
+        );
         setState({
           ...snapshot,
           status:
@@ -214,7 +236,14 @@ export function SyncProvider({ children }: PropsWithChildren) {
         return undefined;
       }
     },
-    [database.sqlite, defaultStoreId, service, uploadQueue],
+    [
+      database.sqlite,
+      defaultStoreId,
+      service,
+      uploadQueue,
+      analysisRecovery,
+      session?.user.id,
+    ],
   );
 
   useEffect(() => {
@@ -276,6 +305,7 @@ function deriveStatus(snapshot: LocalSyncSnapshot): SyncRuntimeStatus {
 async function readLocalSyncSnapshot(
   database: ReturnType<typeof useLocalDatabase>["sqlite"],
   storeId: string,
+  ownerId?: string,
 ): Promise<LocalSyncSnapshot> {
   const outboxCounts = await new OutboxRepository(database).countActive(
     storeId,
@@ -319,8 +349,10 @@ async function readLocalSyncSnapshot(
           AS failed_count
       FROM local_jobs
       WHERE json_extract(payload_json, '$.storeId') = ?
+        AND (type <> 'COMMERCIAL_ANALYSIS_RESUME' OR json_extract(payload_json,'$.ownerId')=?)
     `,
     storeId,
+    ownerId ?? null,
   );
   const inbox = await database.getFirstAsync<{
     last_successful_sync_at: string | null;
@@ -333,7 +365,7 @@ async function readLocalSyncSnapshot(
     storeId,
   );
   return {
-    pendingDetails: await readPendingWork(database, storeId),
+    pendingDetails: await readPendingWork(database, storeId, ownerId),
     pendingCount:
       Number(outboxCounts?.pending_count ?? 0) +
       Number(jobCounts?.pending_count ?? 0),
