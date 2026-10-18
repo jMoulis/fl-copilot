@@ -822,6 +822,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, ownerId: 1 }, { unique: true });
     },
   },
+  {
+    version: 41,
+    name: "private-action-executions",
+    async up(database) {
+      await database
+        .collection("actionExecutions")
+        .createIndex({ storeId: 1, ownerId: 1, recommendationId: 1, _id: 1 });
+      await database
+        .collection("actionExecutionCounters")
+        .createIndex({ storeId: 1, ownerId: 1 }, { unique: true });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

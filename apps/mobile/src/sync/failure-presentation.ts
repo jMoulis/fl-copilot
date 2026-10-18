@@ -8,6 +8,7 @@ const labels: Record<string, string> = {
   copilot_message: "Message privé",
   copilot_decision: "Décision du copilote",
   copilot_execution_link: "Association de mise en place",
+  copilot_action_execution: "Réalisation déclarée",
   copilot_knowledge: "Pratique mémorisée",
   need_unit: "Unité de besoin",
   need_membership: "Association produit/besoin",
@@ -47,6 +48,13 @@ export function syncFailurePresentation(
   )
     message =
       "Ce code semble déjà associé à un produit. Examinez le référentiel avant de corriger l’association.";
+  if (
+    entityType === "copilot_action_execution" &&
+    code?.startsWith("COPILOT_ACTION_EXECUTION_")
+  )
+    message = code.endsWith("LIMIT")
+      ? "La limite de déclarations est atteinte. Votre saisie reste sur cet appareil ; aucun historique n’est supprimé."
+      : "La réalisation reste conservée. Vérifiez son conseil d’origine, ses dates et la déclaration avant de reprendre cet envoi.";
   if (
     entityType === "copilot_execution_link" &&
     code?.startsWith("COPILOT_EXECUTION_LINK_")

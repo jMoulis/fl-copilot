@@ -154,6 +154,8 @@ export function createMongoSyncPullService(
               .map((change) => change.entityId);
             if (
               !ids.length ||
+              (type === "copilot_action_execution" &&
+                query.copilotActionExecutions !== "true") ||
               (type === "copilot_execution_link" &&
                 query.copilotExecutionLinks !== "true") ||
               (type === "copilot_decision" &&
@@ -195,6 +197,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "mercalys_publication") &&
               (!legacyMercalysFrozen ||
                 change.entityType !== "mercalys_publication") &&
+              (change.entityType !== "copilot_action_execution" ||
+                query.copilotActionExecutions === "true") &&
               (change.entityType !== "copilot_execution_link" ||
                 query.copilotExecutionLinks === "true") &&
               (change.entityType !== "copilot_decision" ||

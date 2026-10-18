@@ -5591,3 +5591,154 @@ it.each([false, true])(
     }).generate(f.request, schema);
   },
 );
+
+it.each(["PREVIEW", "DISABLED", "MISMATCH"])(
+  "bounds the action-execution preview SDK tool and waits for native confirmation (%s)",
+  async (mode) => {
+    const { actionExecutionFixture } =
+        await import("../../../../scripts/test-action-execution-fixtures"),
+      n = await actionExecutionFixture(),
+      f = fixture();
+    try {
+      f.request.storeId = n.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: n.storeId,
+          evaluatedAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const value =
+        mode === "MISMATCH"
+          ? {
+              ...n.preview,
+              input: { ...n.input, action: "Autre action" },
+              snapshot: { ...n.preview.snapshot!, action: "Autre action" },
+            }
+          : n.preview;
+      const actionExecutionPreview = vi.fn(async () => value);
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        if (calls++ === 0) {
+          expect(
+            body.tools.some(
+              (t: { name: string }) =>
+                t.name === "recommendation_action_execution_preview",
+            ),
+          ).toBe(mode !== "DISABLED");
+          if (mode !== "DISABLED") {
+            const envelope = z
+              .record(z.string(), z.unknown())
+              .parse(await response().json());
+            envelope.output = [
+              {
+                type: "function_call",
+                id: "fc_realized",
+                call_id: "call_realized",
+                name: "recommendation_action_execution_preview",
+                arguments: JSON.stringify(n.input),
+                status: "completed",
+              },
+            ];
+            return new Response(JSON.stringify(envelope), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+        }
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        ...(mode === "DISABLED" ? {} : { actionExecutionPreview }),
+      }).generate(f.request, schema);
+      expect(actionExecutionPreview).toHaveBeenCalledTimes(
+        mode === "DISABLED" ? 0 : 1,
+      );
+      expect(result.actionExecutionPreviews ?? []).toHaveLength(
+        mode === "PREVIEW" ? 1 : 0,
+      );
+      expect(
+        await n.db.getAllAsync("SELECT * FROM action_executions"),
+      ).toHaveLength(0);
+    } finally {
+      n.db.db.close();
+    }
+  },
+);
+it.each([false, true])(
+  "checks stored action execution read scope at the SDK boundary (%s)",
+  async (foreign) => {
+    const { actionExecutionFixture } =
+        await import("../../../../scripts/test-action-execution-fixtures"),
+      n = await actionExecutionFixture(),
+      f = fixture();
+    try {
+      f.request.storeId = n.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: n.storeId,
+          evaluatedAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const review = await n.repository.open(n.actionCard),
+        entity = (await n.repository.save(n.actionCard, review.review)).link!;
+      const input = { recommendationId: null, afterId: null, limit: 1 },
+        value = {
+          input,
+          entries: [
+            {
+              ...entity,
+              ...(foreign
+                ? { storeId: "00000000-0000-4000-8000-000000000099" }
+                : {}),
+            },
+          ],
+          hasMore: false,
+          nextAfterId: null,
+          evidence: n.preview.evidence,
+        };
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        if (calls++ === 0) {
+          const envelope = z
+            .record(z.string(), z.unknown())
+            .parse(await response().json());
+          envelope.output = [
+            {
+              type: "function_call",
+              id: "fc_realized_read",
+              call_id: "call_realized_read",
+              name: "recommendation_action_executions",
+              arguments: JSON.stringify(input),
+              status: "completed",
+            },
+          ];
+          return new Response(JSON.stringify(envelope), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (foreign) {
+          const body = JSON.parse(String(init?.body));
+          const output = JSON.parse(
+            body.input.find(
+              (x: { type: string }) => x.type === "function_call_output",
+            ).output,
+          );
+          expect(output).toMatchObject({ unavailable: true });
+        }
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        actionExecutions: vi.fn(async () => value),
+      }).generate(f.request, schema);
+      expect(result.toolEvidence ?? []).toHaveLength(foreign ? 0 : 1);
+    } finally {
+      n.db.db.close();
+    }
+  },
+);

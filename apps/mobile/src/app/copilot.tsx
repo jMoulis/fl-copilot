@@ -1,3 +1,6 @@
+import { readActionExecutionProposal } from "@fl-copilot/domain";
+import { CopilotActionExecutionRepository } from "../copilot/action-execution-repository";
+import { ActionExecutionCard } from "../copilot/action-execution-card";
 import { CopilotDecisionRepository } from "@/copilot/decision-repository";
 import { RecommendationDecisionCard } from "@/copilot/recommendation-decision-card";
 import { readRecommendationTrackingCard } from "@fl-copilot/domain";
@@ -372,6 +375,16 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canDeclareCommercialExecution],
+  );
+  const actionExecutions = useMemo(
+    () =>
+      new CopilotActionExecutionRepository(
+        sqlite,
+        { storeId, ownerId, deviceId, canRecord: true },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId],
   );
   const executionLinks = useMemo(
     () =>
@@ -822,6 +835,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readActionExecutionProposal(message);
+      return (
+        <ActionExecutionCard
+          key={message.id}
+          message={message}
+          repository={actionExecutions}
+          canConfirm={true}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readExecutionLinkProposal(message);
       return (
         <ExecutionLinkCard
@@ -890,6 +916,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               webResearch: true,
               recommendationTracking: true,
               executionLinks: true,
+              actionExecutions: true,
               executionActuals: true,
               retailExpertise: true,
               choiceUpdate: canManageProducts,

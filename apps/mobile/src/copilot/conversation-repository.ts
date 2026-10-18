@@ -1,3 +1,4 @@
+import { applyActionExecutionRecord } from "./action-execution-repository";
 import { applyExecutionLinkRecord } from "./execution-link-repository";
 import { applyDecisionRecord } from "./decision-repository";
 import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
@@ -53,10 +54,13 @@ export async function applyCopilotRecord(
     | keyof typeof schemas
     | "copilot_knowledge"
     | "copilot_decision"
-    | "copilot_execution_link",
+    | "copilot_execution_link"
+    | "copilot_action_execution",
   payload: unknown,
   ackVersion?: number,
 ) {
+  if (type === "copilot_action_execution")
+    return applyActionExecutionRecord(db, scope, payload, ackVersion);
   if (type === "copilot_execution_link")
     return applyExecutionLinkRecord(db, scope, payload, ackVersion);
   if (type === "copilot_decision")

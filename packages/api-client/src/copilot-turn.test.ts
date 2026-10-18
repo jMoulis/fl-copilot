@@ -284,6 +284,7 @@ it("opts into optional proposal and source tools only when the client supports t
         retailExpertise: enabled,
         recommendationTracking: enabled,
         executionLinks: enabled,
+        actionExecutions: enabled,
         choiceUpdate: enabled,
         choiceRetention: enabled,
         choiceCreate: enabled,
@@ -309,6 +310,9 @@ it("opts into optional proposal and source tools only when the client supports t
       },
     );
     const headers = transport.mock.calls.at(-1)![1]!.headers;
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-action-executions", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-action-executions");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-execution-links", "1");
     else expect(headers).not.toHaveProperty("x-copilot-execution-links");

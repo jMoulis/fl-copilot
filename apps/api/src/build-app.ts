@@ -1,4 +1,8 @@
 import {
+  readActionExecutionPreview,
+  readActionExecutions,
+} from "./copilot/action-execution-tool";
+import {
   readExecutionLinkPreview,
   readExecutionLinks,
 } from "./copilot/execution-link-tool";
@@ -817,6 +821,34 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                       );
                       await authorize();
                       return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-action-executions"] === "1"
+                ? {
+                    actionExecutionPreview: async (input) => {
+                      const p = await authorize();
+                      const v = await readActionExecutionPreview(
+                        db,
+                        {
+                          storeId,
+                          ownerId: p.ownerId,
+                          conversationId: request.body.conversationId,
+                        },
+                        input,
+                      );
+                      await authorize();
+                      return v;
+                    },
+                    actionExecutions: async (input) => {
+                      const p = await authorize();
+                      const v = await readActionExecutions(
+                        db,
+                        { storeId, ownerId: p.ownerId },
+                        input,
+                      );
+                      await authorize();
+                      return v;
                     },
                   }
                 : {}),

@@ -23,7 +23,14 @@ import type {
   CommandMutationResult,
 } from "../sync/processed-command-service";
 import type { createMongoSyncChangeService } from "../sync/sync-change-service";
+import {
+  canAccessActionExecution,
+  applyActionExecution,
+  serializeActionExecution,
+  type ActionExecutionDocument,
+} from "./action-execution-store";
 export const chatCollections = {
+  copilot_action_execution: "actionExecutions",
   copilot_conversation: "copilotConversations",
   copilot_message: "copilotMessages",
   copilot_knowledge: "copilotKnowledge",
@@ -38,10 +45,13 @@ export type ChatRecordDocument = (
   | KnowledgeDocument
   | DecisionDocument
   | ExecutionLinkDocument
+  | ActionExecutionDocument
 ) & {
   _id: string;
 };
 export function serializeChat(type: string, row: ChatRecordDocument) {
+  if (type === "copilot_action_execution")
+    return serializeActionExecution(row as ActionExecutionDocument);
   if (type === "copilot_execution_link")
     return serializeExecutionLink(row as ExecutionLinkDocument);
   if (type === "copilot_decision")
@@ -79,6 +89,8 @@ export async function canAccessChatCommand(
   ownerId: string | undefined,
   c: SyncCommand,
 ) {
+  if (c.entityType === "copilot_action_execution")
+    return canAccessActionExecution(db, storeId, ownerId, c);
   if (c.entityType === "copilot_execution_link")
     return canAccessExecutionLink(db, storeId, ownerId, c);
   if (c.entityType === "copilot_decision")
@@ -131,6 +143,8 @@ export async function applyChatCommand(
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
 ): Promise<CommandMutationResult> {
+  if (c.entityType === "copilot_action_execution")
+    return applyActionExecution(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_execution_link")
     return applyExecutionLink(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_decision")

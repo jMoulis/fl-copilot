@@ -13,6 +13,7 @@ export function canDisplayConflict(
       "copilot_knowledge",
       "copilot_decision",
       "copilot_execution_link",
+      "copilot_action_execution",
     ].includes(c.entityType)
   )
     return true;
