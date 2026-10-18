@@ -5,12 +5,231 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ReceiptTestDatabase } from "../../../../scripts/test-receipt-publication-sqlite";
-import { chatImportFixture } from "../../../../scripts/test-chat-import-fixtures";
+import {
+  chatImportFixture,
+  chatImportCatalogueChoice,
+} from "../../../../scripts/test-chat-import-fixtures";
 import { CopilotMercalysImportController } from "./mercalys-import-controller";
 const count = (
   s: Awaited<ReturnType<typeof chatImportFixture>>,
   table: string,
 ) => Number(s.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()!.n);
+it.each([false, true])(
+  "publishes after a native non-suggested target selection, preserving source values and replaying once (no code: %s)",
+  async (withoutCode) => {
+    const s = await chatImportFixture();
+    try {
+      const { file, review, resolution, targetId, choice } =
+        await chatImportCatalogueChoice(s, "MERCALYS_SALES", withoutCode);
+      const original = s.db
+        .prepare("SELECT * FROM products WHERE id=?")
+        .get(targetId);
+      expect(resolution.candidateProductIds).not.toContain(targetId);
+      expect(count(s, "sales_observations")).toBe(0);
+      await expect(
+        s.controller.resolve(file.message, review, {
+          resolutionKey: resolution.key,
+          productId: targetId,
+        }),
+      ).rejects.toThrow();
+      const result = await s.controller.resolve(file.message, review, choice);
+      expect(result.mapping).toMatchObject({
+        productId: targetId,
+        sourceLabel: resolution.label,
+        selection: "CATALOGUE",
+        sourceIndexes: resolution.sourceIndexes,
+      });
+      const commands = count(s, "sync_outbox");
+      await s.controller.resolve(file.message, review, choice);
+      expect(count(s, "sync_outbox")).toBe(commands);
+      expect(
+        s.db.prepare("SELECT * FROM products WHERE id=?").get(targetId),
+      ).toEqual(original);
+      expect((await s.controller.run(file.message)).items[0]?.status).toBe(
+        "PUBLISHED",
+      );
+      expect(count(s, "products")).toBe(2);
+      expect(count(s, "sales_observations")).toBe(2);
+      expect(
+        s.db
+          .prepare(
+            "SELECT quantity,sales_value FROM sales_observations WHERE product_id=?",
+          )
+          .get(targetId),
+      ).toMatchObject({ quantity: "1", sales_value: "5" });
+      const table = withoutCode ? "product_aliases" : "product_identifiers";
+      expect(
+        Number(
+          s.db
+            .prepare(
+              `SELECT COUNT(*) n FROM ${table} WHERE product_id=? AND status='VALIDATED'`,
+            )
+            .get(targetId)!.n,
+        ),
+      ).toBe(1);
+      await s.controller.run(file.message);
+      expect(count(s, "sales_observations")).toBe(2);
+    } finally {
+      s.db.close();
+    }
+  },
+);
+it.each([
+  "PERMISSION",
+  "DELETED",
+  "SOURCE",
+  "OWNER",
+  "STALE_PRODUCT",
+  "STALE_IDENTITY",
+  "CONFLICT",
+  "INACTIVE",
+  "FOREIGN",
+  "COMMIT",
+  "CANCEL",
+])(
+  "protects an explicit catalogue choice against authority/version/commit failure (%s)",
+  async (mode) => {
+    const s = await chatImportFixture();
+    try {
+      const {
+        file,
+        review,
+        targetId,
+        choice: initialChoice,
+      } = await chatImportCatalogueChoice(s);
+      let choice = initialChoice;
+      const abort = new AbortController();
+      if (mode === "PERMISSION") s.scope.canImport = false;
+      if (mode === "DELETED")
+        await s.chat.removeMessage(s.conversation.id, file.message.id);
+      if (mode === "SOURCE")
+        s.bytes.set(file.batch.files[0]!.localUri, new Uint8Array([0]));
+      if (mode === "OWNER") s.scope.ownerId = randomUUID();
+      if (mode === "STALE_PRODUCT")
+        await s.a.runAsync(
+          "UPDATE products SET label='Autre produit' WHERE id=?",
+          targetId,
+        );
+      if (mode === "STALE_IDENTITY")
+        await s.a.runAsync(
+          "UPDATE product_identifiers SET value='00000002' WHERE product_id=?",
+          s.productId,
+        );
+      if (mode === "CONFLICT")
+        await s.a.runAsync(
+          "UPDATE products SET sync_state='CONFLICT' WHERE id=?",
+          targetId,
+        );
+      if (mode === "INACTIVE")
+        await s.a.runAsync(
+          "UPDATE products SET status='INACTIVE' WHERE id=?",
+          targetId,
+        );
+      if (mode === "FOREIGN") choice = { ...choice, productId: randomUUID() };
+      if (mode === "COMMIT") s.a.fail = true;
+      if (mode === "CANCEL")
+        s.a.afterRun = (sql) => {
+          if (sql.includes("INSERT INTO product_identifiers")) abort.abort();
+        };
+      const commands = count(s, "sync_outbox"),
+        journals = count(s, "copilot_tool_results"),
+        identifiers = count(s, "product_identifiers");
+      await expect(
+        s.controller.resolve(file.message, review, choice, abort.signal),
+      ).rejects.toThrow();
+      expect(count(s, "sync_outbox")).toBe(commands);
+      expect(count(s, "copilot_tool_results")).toBe(journals);
+      expect(count(s, "product_identifiers")).toBe(identifiers);
+      expect(count(s, "sales_observations")).toBe(0);
+    } finally {
+      s.db.close();
+    }
+  },
+);
+it("does not bypass an existing owner's code with a fresh explicit catalogue selection", async () => {
+  const s = await chatImportFixture();
+  try {
+    const { file, targetId, choice } = await chatImportCatalogueChoice(s);
+    await s.a.runAsync(
+      "INSERT INTO product_identifiers(id,store_id,product_id,type,value,source,status,version,created_at,updated_at,sync_state,remote_version,dirty) VALUES(?,?,?,'ITM8','00000002','USER','TO_REVIEW',1,?,?,'SYNCED',1,0)",
+      randomUUID(),
+      s.scope.storeId,
+      s.productId,
+      new Date().toISOString(),
+      new Date().toISOString(),
+    );
+    const fresh = (await s.controller.run(file.message)).items[0]!;
+    if (fresh.status !== "REVIEW") throw Error("Expected conflict review");
+    await expect(
+      s.controller.resolve(file.message, fresh, choice),
+    ).rejects.toThrow();
+    expect(count(s, "sales_observations")).toBe(0);
+    expect(
+      Number(
+        s.db
+          .prepare(
+            "SELECT COUNT(*) n FROM product_identifiers WHERE product_id=?",
+          )
+          .get(targetId)!.n,
+      ),
+    ).toBe(0);
+  } finally {
+    s.db.close();
+  }
+});
+it("recovers a confirmed catalogue selection after database reopen without repeating writes or bypassing revoked permission", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-catalogue-choice-")),
+    path = join(dir, "native.db");
+  const s = await chatImportFixture(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const { file, review, choice } = await chatImportCatalogueChoice(s);
+    await s.a.runAsync(
+      "UPDATE products SET sync_state='SYNCED',dirty=0,remote_version=1 WHERE id=?",
+      choice.productId,
+    );
+    const saved = await s.controller.resolve(file.message, review, choice);
+    const commands = count(s, "sync_outbox"),
+      journals = count(s, "copilot_tool_results");
+    s.db.close();
+    reopened = new DatabaseSync(path);
+    const adapter = new ReceiptTestDatabase(reopened),
+      controller = new CopilotMercalysImportController(
+        adapter,
+        s.scope,
+        s.deps,
+      );
+    expect(await controller.resolve(file.message, review, choice)).toEqual(
+      saved,
+    );
+    expect(
+      Number(reopened.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n),
+    ).toBe(commands);
+    expect(
+      Number(
+        reopened.prepare("SELECT COUNT(*) n FROM copilot_tool_results").get()!
+          .n,
+      ),
+    ).toBe(journals);
+    s.scope.canImport = false;
+    await expect(
+      controller.resolve(file.message, review, choice),
+    ).rejects.toThrow();
+    s.scope.canImport = true;
+    expect((await controller.run(file.message)).items[0]?.status).toBe(
+      "PUBLISHED",
+    );
+    expect(
+      Number(
+        reopened.prepare("SELECT COUNT(*) n FROM sales_observations").get()!.n,
+      ),
+    ).toBe(2);
+  } finally {
+    reopened?.close();
+    if (!reopened) s.db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 it("keeps draft/attachments, creates unique references with cached semantic category, publishes offline and restarts without duplicates", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fl-chat-import-")),
     path = join(dir, "native.db"),

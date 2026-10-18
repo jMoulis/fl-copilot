@@ -9,6 +9,11 @@ import {
 import { MercalysBatchRepository } from "../apps/mobile/src/documents/mercalys-batch-repository";
 import { CopilotConversationRepository } from "../apps/mobile/src/copilot/conversation-repository";
 import { CopilotLocalChatController } from "../apps/mobile/src/copilot/local-chat-controller";
+import { ProductMasterRepository } from "../apps/mobile/src/products/product-master-repository";
+import {
+  emptyProductDraft,
+  saveProductEditor,
+} from "../apps/mobile/src/products/product-editor-service";
 import {
   CopilotMercalysImportController,
   importManifestHash,
@@ -93,7 +98,8 @@ export async function chatImportFixture(path = ":memory:") {
         sheet = workbook.Sheets[workbook.SheetNames[0]!]!;
       if (options.unknownLabel)
         sheet["C5"] = { t: "s", v: options.unknownLabel };
-      if (options.unknownCode) sheet["A5"] = { t: "s", v: options.unknownCode };
+      if (options.unknownCode !== undefined)
+        sheet["A5"] = { t: "s", v: options.unknownCode };
       if (options.extraUnknown)
         XLSX.utils.sheet_add_aoa(
           sheet,
@@ -162,5 +168,48 @@ export async function chatImportFixture(path = ":memory:") {
     add,
     controller: new CopilotMercalysImportController(a, scope, deps),
     calls: () => calls,
+  };
+}
+
+export async function chatImportCatalogueChoice(
+  s: Awaited<ReturnType<typeof chatImportFixture>>,
+  flow: "MERCALYS_SALES" | "MERCALYS_WASTE" = "MERCALYS_SALES",
+  withoutCode = false,
+) {
+  await s.a.runAsync(
+    "UPDATE products SET label='PRODUIT A CONFIRMER' WHERE id=?",
+    s.productId,
+  );
+  const targetId = await saveProductEditor(
+    new ProductMasterRepository(s.a),
+    {
+      ...emptyProductDraft,
+      label: "MELON CHARENTAIS PIECE",
+      category: "FRUIT",
+      nature: "BULK",
+      salesUnit: "PIECE",
+    },
+    { ...s.scope, now: () => new Date().toISOString(), generateId: randomUUID },
+  );
+  const file = await s.add({
+    flow,
+    unknownLabel: "PRODUIT A CONFIRMER VRAC",
+    ...(withoutCode ? { unknownCode: "" } : {}),
+  });
+  const review = (await s.controller.run(file.message)).items[0]!;
+  if (review.status !== "REVIEW") throw Error("Expected product review");
+  const resolution = review.resolutions[0]!;
+  if (resolution.candidateProductIds.includes(targetId))
+    throw Error("Expected non-suggested target");
+  return {
+    file,
+    review,
+    resolution,
+    targetId,
+    choice: {
+      resolutionKey: resolution.key,
+      productId: targetId,
+      catalogueSelection: true as const,
+    },
   };
 }

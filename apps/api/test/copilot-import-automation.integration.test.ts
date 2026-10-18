@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db, type Document } from "mongodb";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
-import { chatImportFixture } from "../../../scripts/test-chat-import-fixtures";
+import {
+  chatImportFixture,
+  chatImportCatalogueChoice,
+} from "../../../scripts/test-chat-import-fixtures";
 import { runMongoMigrations } from "../src/database/migrations";
 import { createMongoSyncPushService } from "../src/sync/push-service";
 import { createMongoImportVerificationService } from "../src/imports/import-verification-service";
@@ -29,13 +32,29 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await client?.close();
       }
     });
-    it.each(["MERCALYS_SALES", "MERCALYS_WASTE"] as const)(
-      "synchronizes auto-created identities and all source-verified rows once (%s)",
-      async (flow) => {
+    it.each([
+      { flow: "MERCALYS_SALES", catalogue: false, withoutCode: false },
+      { flow: "MERCALYS_WASTE", catalogue: false, withoutCode: false },
+      { flow: "MERCALYS_SALES", catalogue: true, withoutCode: false },
+      { flow: "MERCALYS_WASTE", catalogue: true, withoutCode: false },
+      { flow: "MERCALYS_SALES", catalogue: true, withoutCode: true },
+      { flow: "MERCALYS_WASTE", catalogue: true, withoutCode: true },
+    ] as const)(
+      "synchronizes auto-created or explicitly chosen identities and all source-verified rows once ($flow, catalogue: $catalogue, no code: $withoutCode)",
+      async ({ flow, catalogue, withoutCode }) => {
         const s = await chatImportFixture();
         try {
-          const file = await s.add({ flow }),
-            report = await s.controller.run(file.message),
+          const selection = catalogue
+            ? await chatImportCatalogueChoice(s, flow, withoutCode)
+            : null;
+          const file = selection?.file ?? (await s.add({ flow }));
+          if (selection)
+            await s.controller.resolve(
+              file.message,
+              selection.review,
+              selection.choice,
+            );
+          const report = await s.controller.run(file.message),
             result = report.items[0]!;
           if (result.status !== "PUBLISHED")
             throw Error("Expected automatic publication");
@@ -80,7 +99,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               businessPeriodStart: p!.source.businessPeriodStart!,
               businessPeriodEnd: p!.source.businessPeriodEnd!,
               localNormalizedFingerprint: fingerprintMercalysRecords(
-                file.f.input.summary.lines.map((l) => l.record),
+                (
+                  selection?.review.summary.lines ?? file.f.input.summary.lines
+                ).map((l) => l.record),
               ),
               localRecordCount: p!.records.length,
             },

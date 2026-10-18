@@ -4,6 +4,16 @@ import {
   type CopilotMessage,
 } from "./copilot-conversation";
 import { normalizeProductLabel } from "./products";
+export const copilotImportResolutionChoiceSchema = z.union([
+  z
+    .strictObject({
+      resolutionKey: z.string().min(1),
+      productId: z.uuid().nullable(),
+      catalogueSelection: z.literal(true).optional(),
+    })
+    .refine((v) => !v.catalogueSelection || v.productId !== null),
+  z.strictObject({ overlap: z.enum(["KEEP_EXISTING", "APPLY_NEW"]) }),
+]);
 export const importClassificationRequestSchema = z
   .strictObject({
     labels: z.array(z.string().trim().min(1).max(240)).min(1).max(50),
@@ -106,6 +116,21 @@ export const importAutomationResultSchema = z.strictObject({
   remainingCount: z.number().int().nonnegative(),
   replacedCount: z.number().int().nonnegative(),
   classification: importClassificationResultSchema.nullable(),
+  mapping: z
+    .strictObject({
+      sourceLabel: z.string().min(1),
+      sourceIndexes: z.array(z.number().int().nonnegative()),
+      identifiers: z.array(
+        z.strictObject({
+          type: z.enum(["ITM8", "EAN", "PLU"]),
+          value: z.string().min(1),
+        }),
+      ),
+      productId: z.uuid(),
+      productLabel: z.string().min(1),
+      selection: z.enum(["SUGGESTION", "CATALOGUE"]),
+    })
+    .optional(),
   changes: z
     .array(
       z.strictObject({
