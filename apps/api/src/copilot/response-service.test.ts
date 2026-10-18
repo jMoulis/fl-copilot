@@ -427,3 +427,21 @@ it("preserves the separate native receipt review when only the generated narrati
   expect(generated.mode).toBe("FALLBACK");
   expect(generated.receiptPublicationPreviews).toEqual([preview]);
 });
+it("retains a verified correction review card when only the generated narrative fails grounding", async () => {
+  const { receiptCorrectionFixture } =
+    await import("../../../../scripts/test-receipt-correction-fixtures");
+  const f = receiptCorrectionFixture(),
+    r = request(),
+    preview = { ...f.preview, source: { ...f.source, storeId: r.storeId } };
+  const provider = {
+    model: "test",
+    generate: vi.fn().mockResolvedValue({
+      output: { ...answer, summary: "999 euros" },
+      receiptCorrectionPreviews: [preview],
+      metadata: null,
+    }),
+  } as CopilotAiProvider;
+  const generated = await generateCopilotResponse(provider, r);
+  expect(generated.mode).toBe("FALLBACK");
+  expect(generated.receiptCorrectionPreviews).toEqual([preview]);
+});

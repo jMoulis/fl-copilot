@@ -247,6 +247,9 @@ export async function generateCopilotResponse(
   needPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["needPreviews"];
+  receiptCorrectionPreviews?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["receiptCorrectionPreviews"];
   receiptPublicationPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["receiptPublicationPreviews"];
@@ -340,6 +343,7 @@ export async function generateCopilotResponse(
       preparationPreviews: generated.preparationPreviews,
       operationsPreviews: generated.operationsPreviews,
       needPreviews: generated.needPreviews,
+      receiptCorrectionPreviews: generated.receiptCorrectionPreviews,
       receiptPublicationPreviews: generated.receiptPublicationPreviews,
       identityReviews: generated.identityReviews,
       cataloguePreviews: generated.cataloguePreviews,
@@ -377,6 +381,10 @@ export async function generateCopilotResponse(
         : {}),
       ...(error instanceof CopilotGroundingError && completed?.identityReviews
         ? { identityReviews: completed.identityReviews }
+        : {}),
+      ...(error instanceof CopilotGroundingError &&
+      completed?.receiptCorrectionPreviews
+        ? { receiptCorrectionPreviews: completed.receiptCorrectionPreviews }
         : {}),
       // A verified read-only hypothesis form remains usable when only the prose failed.
       ...(error instanceof CopilotGroundingError &&

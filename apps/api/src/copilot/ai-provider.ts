@@ -83,6 +83,8 @@ import {
   copilotNeedPreviewSchema,
 } from "@fl-copilot/domain";
 import {
+  receiptCorrectionInputSchema,
+  receiptCorrectionPreviewSchema,
   receiptPublicationInputSchema,
   receiptPublicationPreviewSchema,
   identityReviewInputSchema,
@@ -310,6 +312,9 @@ export interface CopilotAiProvider {
     >;
     operationsPreviews?: Array<z.infer<typeof copilotOperationsPreviewSchema>>;
     needPreviews?: Array<z.infer<typeof copilotNeedPreviewSchema>>;
+    receiptCorrectionPreviews?: Array<
+      z.infer<typeof receiptCorrectionPreviewSchema>
+    >;
     receiptPublicationPreviews?: Array<
       z.infer<typeof receiptPublicationPreviewSchema>
     >;
@@ -396,6 +401,9 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
+    receiptCorrection?(
+      input: z.infer<typeof receiptCorrectionInputSchema>,
+    ): Promise<z.infer<typeof receiptCorrectionPreviewSchema>>;
     receiptPublication?(
       input: z.infer<typeof receiptPublicationInputSchema>,
     ): Promise<z.infer<typeof receiptPublicationPreviewSchema>>;
@@ -617,6 +625,9 @@ export function createCopilotAiProvider(
         > = [];
         const needPreviews: Array<z.infer<typeof copilotNeedPreviewSchema>> =
           [];
+        const receiptCorrectionPreviews: Array<
+          z.infer<typeof receiptCorrectionPreviewSchema>
+        > = [];
         const receiptPublicationPreviews: Array<
           z.infer<typeof receiptPublicationPreviewSchema>
         > = [];
@@ -781,6 +792,7 @@ export function createCopilotAiProvider(
                   reads.preparationPreview ||
                   reads.operationsPreview ||
                   reads.needPreview ||
+                  reads.receiptCorrection ||
                   reads.receiptPublication ||
                   reads.identityReview ||
                   reads.cataloguePreview
@@ -817,6 +829,7 @@ export function createCopilotAiProvider(
                 reads.preparationPreview ||
                 reads.operationsPreview ||
                 reads.needPreview ||
+                reads.receiptCorrection ||
                 reads.receiptPublication ||
                 reads.identityReview ||
                 reads.cataloguePreview
@@ -997,6 +1010,51 @@ export function createCopilotAiProvider(
                               )
                                 throw Error("NEED_PROPOSAL_LIMIT");
                               needPreviews.push(result);
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.receiptCorrection
+                  ? {
+                      waste_receipt_correct_preview: tool({
+                        description:
+                          "Prepare explicitly requested draft receipt corrections: wasteDate (ISO date), cashierNumber (string preserving zeroes; null explicitly clears it), or up to ten exact line IDs with partial values, excluded flag or exact proposed/current productId. Read waste_receipt first for line IDs and product candidates. Use only requested fields; omitted values and other lines are preserved. Decimal values are nonnegative strings, null explicitly clears a value. Never infer date from capture, invent an amount, silently balance arithmetic, pick an ambiguous product or create aliases. Ask a targeted question/form when needed. REVIEW_LOCAL creates a before/after native review, not a write or publication. The app checks current draft, candidate membership and product conflicts; published receipts are READ_ONLY. Local corrections stay on-device until explicit publication. At most three source cards; combine requested changes for the same source in one patch.",
+                        inputSchema: receiptCorrectionInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["receipt-correction", input]),
+                            async () => {
+                              const result =
+                                receiptCorrectionPreviewSchema.parse(
+                                  await reads.receiptCorrection!(input),
+                                );
+                              if (
+                                JSON.stringify(result.input) !==
+                                  JSON.stringify(
+                                    receiptCorrectionInputSchema.parse(input),
+                                  ) ||
+                                result.source.storeId !== request.storeId ||
+                                result.source.sourceDocumentId !==
+                                  input.sourceDocumentId
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              const old = receiptCorrectionPreviews.findIndex(
+                                (p) =>
+                                  p.input.sourceDocumentId ===
+                                  input.sourceDocumentId,
+                              );
+                              if (old >= 0)
+                                receiptCorrectionPreviews.splice(old, 1);
+                              if (
+                                result.status === "REVIEW_LOCAL" &&
+                                receiptCorrectionPreviews.filter(
+                                  (p) => p.status === "REVIEW_LOCAL",
+                                ).length >= 3
+                              )
+                                throw Error("RECEIPT_CORRECTION_LIMIT");
+                              receiptCorrectionPreviews.push(result);
                               return result;
                             },
                           ),
@@ -2447,6 +2505,9 @@ export function createCopilotAiProvider(
                 ),
                 needPreviews: needPreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
+                ),
+                receiptCorrectionPreviews: receiptCorrectionPreviews.filter(
+                  (p) => p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 receiptPublicationPreviews: receiptPublicationPreviews.filter(
                   (p) => p.evidence.every((e) => evidence.has(e.id)),
