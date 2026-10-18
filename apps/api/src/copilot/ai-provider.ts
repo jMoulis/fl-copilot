@@ -83,6 +83,8 @@ import {
   copilotNeedPreviewSchema,
 } from "@fl-copilot/domain";
 import {
+  receiptRecoveryInputSchema,
+  receiptRecoveryPreviewSchema,
   receiptCorrectionInputSchema,
   receiptCorrectionPreviewSchema,
   receiptPublicationInputSchema,
@@ -312,6 +314,9 @@ export interface CopilotAiProvider {
     >;
     operationsPreviews?: Array<z.infer<typeof copilotOperationsPreviewSchema>>;
     needPreviews?: Array<z.infer<typeof copilotNeedPreviewSchema>>;
+    receiptRecoveryPreviews?: Array<
+      z.infer<typeof receiptRecoveryPreviewSchema>
+    >;
     receiptCorrectionPreviews?: Array<
       z.infer<typeof receiptCorrectionPreviewSchema>
     >;
@@ -401,6 +406,9 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
+    receiptRecovery?(
+      input: z.infer<typeof receiptRecoveryInputSchema>,
+    ): Promise<z.infer<typeof receiptRecoveryPreviewSchema>>;
     receiptCorrection?(
       input: z.infer<typeof receiptCorrectionInputSchema>,
     ): Promise<z.infer<typeof receiptCorrectionPreviewSchema>>;
@@ -625,6 +633,9 @@ export function createCopilotAiProvider(
         > = [];
         const needPreviews: Array<z.infer<typeof copilotNeedPreviewSchema>> =
           [];
+        const receiptRecoveryPreviews: Array<
+          z.infer<typeof receiptRecoveryPreviewSchema>
+        > = [];
         const receiptCorrectionPreviews: Array<
           z.infer<typeof receiptCorrectionPreviewSchema>
         > = [];
@@ -792,6 +803,7 @@ export function createCopilotAiProvider(
                   reads.preparationPreview ||
                   reads.operationsPreview ||
                   reads.needPreview ||
+                  reads.receiptRecovery ||
                   reads.receiptCorrection ||
                   reads.receiptPublication ||
                   reads.identityReview ||
@@ -829,6 +841,7 @@ export function createCopilotAiProvider(
                 reads.preparationPreview ||
                 reads.operationsPreview ||
                 reads.needPreview ||
+                reads.receiptRecovery ||
                 reads.receiptCorrection ||
                 reads.receiptPublication ||
                 reads.identityReview ||
@@ -1010,6 +1023,50 @@ export function createCopilotAiProvider(
                               )
                                 throw Error("NEED_PROPOSAL_LIMIT");
                               needPreviews.push(result);
+                              return result;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.receiptRecovery
+                  ? {
+                      waste_receipt_recover_preview: tool({
+                        description:
+                          "Prepare an explicitly requested RETRY_PROCESSING, KEEP_BOTH or CONFIRM_DUPLICATE review for one known uploaded waste receipt. Discover the source first. No write or paid extraction occurs here. A compatible device checks the current task/draft and retained originals before manager confirmation. Retry covers interrupted empty drafts only and may incur AI cost; duplicate decisions preserve originals. READ_ONLY means published. Maximum three sources; no automatic retry loop.",
+                        inputSchema: receiptRecoveryInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["receipt-recovery", input]),
+                            async () => {
+                              const result = receiptRecoveryPreviewSchema.parse(
+                                await reads.receiptRecovery!(input),
+                              );
+                              if (
+                                JSON.stringify(result.input) !==
+                                  JSON.stringify(
+                                    receiptRecoveryInputSchema.parse(input),
+                                  ) ||
+                                result.source.storeId !== request.storeId ||
+                                result.source.sourceDocumentId !==
+                                  input.sourceDocumentId
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              const old = receiptRecoveryPreviews.findIndex(
+                                (p) =>
+                                  p.input.sourceDocumentId ===
+                                  input.sourceDocumentId,
+                              );
+                              if (old >= 0)
+                                receiptRecoveryPreviews.splice(old, 1);
+                              if (
+                                result.status === "REVIEW_LOCAL" &&
+                                receiptRecoveryPreviews.filter(
+                                  (p) => p.status === "REVIEW_LOCAL",
+                                ).length >= 3
+                              )
+                                throw Error("RECEIPT_RECOVERY_LIMIT");
+                              receiptRecoveryPreviews.push(result);
                               return result;
                             },
                           ),
@@ -2504,6 +2561,9 @@ export function createCopilotAiProvider(
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 needPreviews: needPreviews.filter((p) =>
+                  p.evidence.every((e) => evidence.has(e.id)),
+                ),
+                receiptRecoveryPreviews: receiptRecoveryPreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 receiptCorrectionPreviews: receiptCorrectionPreviews.filter(

@@ -4553,3 +4553,73 @@ it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
     expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
   },
 );
+
+it.each(["OWNED", "FOREIGN", "INPUT_CHANGED", "DISABLED"])(
+  "prepares bounded receipt recoveries only for a compatible client and unchanged requested action (%s)",
+  async (mode) => {
+    const { receiptRecoveryFixture } =
+      await import("../../../../scripts/test-receipt-recovery-fixtures");
+    const f = fixture(),
+      data = receiptRecoveryFixture(),
+      value = {
+        ...data.preview,
+        source: { ...data.source, storeId: f.request.storeId },
+      };
+    if (mode === "FOREIGN") value.source.storeId = randomUUID();
+    if (mode === "INPUT_CHANGED")
+      value.input = { ...value.input, action: "KEEP_BOTH" };
+    const receiptRecovery = vi.fn(async () => value);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "waste_receipt_recover_preview",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|basisHash|recoveryReviewed|version/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_correct",
+            call_id: "call_correct",
+            name: "waste_receipt_recover_preview",
+            arguments: JSON.stringify(data.input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(
+        JSON.parse(
+          body.input.find(
+            (x: { type: string }) => x.type === "function_call_output",
+          ).output,
+        ),
+      ).toMatchObject(
+        mode === "OWNED" ? { status: "REVIEW_LOCAL" } : { unavailable: true },
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { receiptRecovery }),
+    }).generate(f.request, schema);
+    expect(receiptRecovery).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(result.receiptRecoveryPreviews ?? []).toEqual(
+      mode === "OWNED" ? [value] : [],
+    );
+    expect(result.toolEvidence).toEqual(mode === "OWNED" ? value.evidence : []);
+  },
+);

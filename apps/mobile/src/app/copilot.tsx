@@ -1,3 +1,6 @@
+import { readReceiptRecoveryProposal } from "@fl-copilot/domain";
+import { CopilotReceiptRecoveryController } from "@/copilot/receipt-recovery-controller";
+import { ReceiptRecoveryCard } from "@/copilot/receipt-recovery-card";
 import { readCopilotImportReference } from "@fl-copilot/domain";
 import {
   CopilotMercalysImportController,
@@ -219,6 +222,16 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       new CopilotNeedProposalController(
         sqlite,
         { storeId, ownerId, deviceId, canManageProducts },
+        executionDigest,
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const receiptRecoveries = useMemo(
+    () =>
+      new CopilotReceiptRecoveryController(
+        sqlite,
+        { storeId, ownerId, deviceId, canRecoverWaste: canManageProducts },
         executionDigest,
         randomUUID,
       ),
@@ -625,6 +638,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readReceiptRecoveryProposal(message);
+      return (
+        <ReceiptRecoveryCard
+          key={message.id}
+          message={message}
+          controller={receiptRecoveries}
+          canConfirm={canManageProducts}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readReceiptCorrectionProposal(message);
       return (
         <ReceiptCorrectionCard
@@ -745,6 +771,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationRefresh: canPrepareCommercialWeek,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
+              receiptRecovery: canManageProducts,
               receiptCorrection: canManageProducts,
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
