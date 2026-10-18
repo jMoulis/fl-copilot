@@ -603,12 +603,41 @@ export class CopilotConversationRepository {
       signal,
     );
   }
-  /** Bind a retained owned PDF to a local draft; removing it later never removes the source. */
-  async attachPdfs(
+  /** Bind retained sources to a local draft; removal never deletes the original. */
+  attachPdfs(
     conversationId: string,
     sourceDocumentIds: string[],
     updatedAt: string,
     signal?: AbortSignal,
+  ) {
+    return this.attachSources(
+      conversationId,
+      sourceDocumentIds,
+      updatedAt,
+      signal,
+      "WEEKLY_COMMERCIAL_PDF",
+    );
+  }
+  attachReceiptPhotos(
+    conversationId: string,
+    sourceDocumentIds: string[],
+    updatedAt: string,
+    signal?: AbortSignal,
+  ) {
+    return this.attachSources(
+      conversationId,
+      sourceDocumentIds,
+      updatedAt,
+      signal,
+      "WASTE_RECEIPT",
+    );
+  }
+  private async attachSources(
+    conversationId: string,
+    sourceDocumentIds: string[],
+    updatedAt: string,
+    signal: AbortSignal | undefined,
+    kind: "WEEKLY_COMMERCIAL_PDF" | "WASTE_RECEIPT",
   ) {
     const ids = [...new Set(sourceDocumentIds)];
     if (!ids.length || ids.length > 10) throw Error("COPILOT_ATTACHMENT_LIMIT");
@@ -659,22 +688,31 @@ export class CopilotConversationRepository {
         throw Error("COPILOT_ATTACHMENT_LIMIT");
       for (const sourceDocumentId of ids) {
         const source = await tx.getFirstAsync<{ original_filename: string }>(
-          "SELECT original_filename FROM source_documents WHERE id=? AND store_id=? AND source_type='WEEKLY_COMMERCIAL_PDF' AND deleted_at IS NULL",
+          "SELECT original_filename FROM source_documents WHERE id=? AND store_id=? AND source_type=? AND deleted_at IS NULL",
           sourceDocumentId,
           this.scope.storeId,
+          kind,
         );
-        const file = await tx.getFirstAsync<{ id: string }>(
-          "SELECT id FROM local_files WHERE source_document_id=? AND store_id=? AND mime_type='application/pdf' AND retention_status='RETAINED' LIMIT 1",
-          sourceDocumentId,
-          this.scope.storeId,
-        );
+        const files =
+          kind === "WASTE_RECEIPT"
+            ? await tx.getAllAsync<{ id: string; mime_type: string }>(
+                "SELECT f.id,f.mime_type FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum JOIN waste_receipts r ON r.source_document_id=d.id AND r.store_id=d.store_id AND r.local_file_id=f.id WHERE d.id=? AND d.store_id=? AND d.source_type='WASTE_RECEIPT' AND d.deleted_at IS NULL AND r.deleted_at IS NULL AND f.retention_status='RETAINED' AND f.mime_type IN ('image/jpeg','image/png','image/heic','image/heif') LIMIT 2",
+                sourceDocumentId,
+                this.scope.storeId,
+              )
+            : await tx.getAllAsync<{ id: string; mime_type: string }>(
+                "SELECT id,mime_type FROM local_files WHERE source_document_id=? AND store_id=? AND mime_type='application/pdf' AND retention_status='RETAINED' LIMIT 2",
+                sourceDocumentId,
+                this.scope.storeId,
+              );
+        const file = files.length === 1 ? files[0] : null;
         if (!source || !file)
           throw Error("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
         if (!attachments.some((a) => a.sourceDocumentId === sourceDocumentId))
           attachments.push({
             sourceDocumentId,
             filename: source.original_filename,
-            mediaType: "application/pdf",
+            mediaType: file.mime_type,
           });
       }
       result = copilotDraftSchema.parse({ ...draft, updatedAt, attachments });
