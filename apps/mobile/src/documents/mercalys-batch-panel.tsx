@@ -530,7 +530,7 @@ export function MercalysBatchPanel({
                 void run(async () => {
                   await onReview({
                     name: item.filename,
-                    uri: item.localUri,
+                    uri: await repo.retainedLocation(item.batchId, item.id),
                     expectedChecksum: item.checksum,
                   });
                   setPublicationPlan(undefined);

@@ -130,3 +130,5 @@ export * from "./copilot-receipt-recovery";
 export * from "./copilot-store-conflict";
 
 export * from "./product-master-conflict";
+
+export * from "./source-original-restoration";

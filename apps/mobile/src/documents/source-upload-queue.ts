@@ -1,3 +1,4 @@
+import { sourceFileDirectory } from "./source-file-directory";
 import { ApiClientError } from "@fl-copilot/api-client";
 import type {
   CompleteSourceUploadRequest,
@@ -621,11 +622,14 @@ const nativeBinaryUploader: SourceBinaryUploader = {
       const filename = Paths.parse(input.localUri).base;
       file = new File(
         Paths.document,
-        input.sourceType === "WASTE_RECEIPT"
-          ? "waste-receipts"
-          : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
-            ? "commercial-pdfs"
-            : "mercalys-imports",
+        sourceFileDirectory(
+          input.localUri,
+          input.sourceType === "WASTE_RECEIPT"
+            ? "waste-receipts"
+            : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
+              ? "commercial-pdfs"
+              : "mercalys-imports",
+        ),
         filename,
       );
     }

@@ -1,3 +1,4 @@
+import { sourceFileDirectory } from "../documents/source-file-directory";
 import { useState } from "react";
 import { Linking, Platform, Share } from "react-native";
 import { File, Paths } from "expo-file-system";
@@ -24,7 +25,7 @@ export function CommercialOriginalButton({
     setError(undefined);
     try {
       const row = await sqlite.getFirstAsync<{ local_uri: string }>(
-        "SELECT f.local_uri FROM local_files f JOIN source_documents s ON s.id=f.source_document_id WHERE s.store_id = ? AND s.id = ? AND s.source_type = 'WEEKLY_COMMERCIAL_PDF' ORDER BY f.created_at LIMIT 1",
+        "SELECT f.local_uri FROM local_files f JOIN source_documents s ON s.id=f.source_document_id WHERE s.store_id = ? AND s.id = ? AND s.source_type = 'WEEKLY_COMMERCIAL_PDF' AND s.deleted_at IS NULL AND f.store_id=s.store_id AND f.checksum=s.checksum AND f.retention_status='RETAINED' ORDER BY f.created_at LIMIT 1",
         storeId,
         sourceDocumentId,
       );
@@ -32,7 +33,7 @@ export function CommercialOriginalButton({
         const direct = new File(row.local_uri);
         const recovered = new File(
           Paths.document,
-          "commercial-pdfs",
+          sourceFileDirectory(row.local_uri, "commercial-pdfs"),
           direct.name,
         );
         const local = direct.exists

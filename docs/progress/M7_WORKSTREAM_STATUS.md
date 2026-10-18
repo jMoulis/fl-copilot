@@ -36,3 +36,15 @@ Terminer les manques du chantier 1 par lots métier complets et tenir cet invent
 - **7. Finition UX et validation globale : en cours.** Explications et actions distinctes pour envois interrompus/refus métier, pagination, actualisation, erreurs sûres et protection des données privées. Validation du futur binaire toujours à faire.
 
 Ce lot reste du code prêt, non livré. Aucun déploiement API ni build EAS payant n’est lancé ; le plan de livraison groupée et son ordre API/native restent inchangés.
+
+## Lot courant — retrouver un original manquant (18 octobre 2026)
+
+1. **Actions métier et conflits : en cours.** La restauration refuse les publications en conflit/échec et conserve les commandes existantes ; la correction générique des refus reste ouverte.
+2. **Contre-promo : code prêt**, livraison et acceptation groupées à faire.
+3. **Documents : en cours.** Resélection d’un original Mercalys/PDF manquant, vérifié par empreinte et taille, sans refaire l’import. Les références du chat/ZIP et les lignes publiées sont conservées. Manifestes perdus, photos de casse, originaux uniquement distants et reprises d’analyse restent à traiter.
+4. **Expertise métier structurée : à démarrer.**
+5. **Suivi des recommandations : en cours.**
+6. **Implantation : à démarrer.**
+7. **UX et validation globale : en cours.** Action « Retrouver l’original » et messages explicites ; tests automatisés passés, validation sur le futur binaire encore à faire.
+
+Code prêt ne signifie ni livré ni validé sur iPhone. Aucun build EAS payant ni déploiement Vercel n’est lancé ; la livraison groupée conserve son ordre API/native existant.

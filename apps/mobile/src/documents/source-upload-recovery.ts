@@ -1,3 +1,8 @@
+import {
+  MAX_MERCALYS_BATCH_FILE_BYTES,
+  sourceOriginalRestorationSchema,
+  type SourceOriginalRestoration,
+} from "@fl-copilot/domain";
 import { z } from "zod";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
@@ -43,6 +48,8 @@ interface FileRow {
   local_uri: string;
   retention_status: string;
   upload_status: string;
+  mime_type: string;
+  size_bytes: number;
 }
 export class SourceUploadRecoveryRepository {
   constructor(
@@ -81,7 +88,7 @@ export class SourceUploadRecoveryRepository {
       id,
     );
     const files = await db.getAllAsync<FileRow>(
-      "SELECT id,store_id,source_document_id,checksum,local_uri,retention_status,upload_status FROM local_files WHERE source_document_id=? AND store_id=? ORDER BY id LIMIT 2",
+      "SELECT id,store_id,source_document_id,checksum,local_uri,retention_status,upload_status,mime_type,size_bytes FROM local_files WHERE source_document_id=? AND store_id=? ORDER BY id LIMIT 2",
       id,
       storeId,
     );
@@ -89,6 +96,49 @@ export class SourceUploadRecoveryRepository {
     const file = files.length === 1 ? files[0] : undefined;
     const payload = payloadSchema.safeParse(
       job ? JSON.parse(job.payload_json) : null,
+    );
+    const blockedCommand = await db.getFirstAsync(
+      "SELECT command_id FROM sync_outbox WHERE store_id=? AND entity_id=? AND entity_type='mercalys_publication' AND status IN ('FAILED','CONFLICT') LIMIT 1",
+      storeId,
+      id,
+    );
+    const openConflict = await db.getFirstAsync(
+      "SELECT id FROM sync_conflicts WHERE store_id=? AND entity_id=? AND entity_type IN ('mercalys_publication','source_document') AND status='OPEN' LIMIT 1",
+      storeId,
+      id,
+    );
+    const consistentOriginal = !!(
+      job &&
+      file &&
+      payload.success &&
+      payload.data.storeId === storeId &&
+      payload.data.sourceDocumentId === id &&
+      payload.data.localFileId === file.id &&
+      file.checksum === document.checksum &&
+      file.local_uri === document.local_file_uri &&
+      file.retention_status === "RETAINED" &&
+      file.local_uri
+    );
+    const canRestore = !!(
+      !blockedCommand &&
+      !openConflict &&
+      consistentOriginal &&
+      document.remote_upload_status === "FAILED" &&
+      document.sync_state === "ERROR" &&
+      job?.status === "FAILED" &&
+      job.last_error === "SOURCE_UPLOAD_LOCAL_FILE_MISSING" &&
+      file?.upload_status === "FAILED" &&
+      /^sha256:[a-f0-9]{64}$/.test(file.checksum) &&
+      Number.isSafeInteger(file.size_bytes) &&
+      file.size_bytes > 0 &&
+      file.size_bytes <=
+        (document.source_type === "WEEKLY_COMMERCIAL_PDF"
+          ? 100 * 1024 * 1024
+          : MAX_MERCALYS_BATCH_FILE_BYTES) &&
+      file.mime_type ===
+        (document.source_type === "WEEKLY_COMMERCIAL_PDF"
+          ? "application/pdf"
+          : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     );
     let reason: string | null = null;
     if (document.remote_upload_status === "CONFIRMED")
@@ -103,7 +153,7 @@ export class SourceUploadRecoveryRepository {
       reason = "L’envoi est déjà en cours.";
     else if (job?.last_error === "SOURCE_UPLOAD_LOCAL_FILE_MISSING")
       reason =
-        "L’original n’a pas été retrouvé sur cet appareil. Cet envoi ne peut pas reprendre ici ; retrouvez d’abord le fichier d’origine.";
+        "L’original n’a pas été retrouvé sur cet appareil. Retrouvez ce même fichier pour reprendre son envoi sans refaire l’import.";
     else if (
       document.remote_upload_status === "INVALID" ||
       job?.last_error === "SOURCE_UPLOAD_INVALID"
@@ -144,6 +194,16 @@ export class SourceUploadRecoveryRepository {
     return {
       sourceDocumentId: id,
       sourceType: document.source_type,
+      canRestore,
+      original: file
+        ? {
+            fileId: file.id,
+            localUri: file.local_uri,
+            checksum: file.checksum,
+            sizeBytes: file.size_bytes,
+            mimeType: file.mime_type,
+          }
+        : null,
       filename: document.original_filename ?? "Document",
       status: job?.status ?? "MISSING",
       nextAttemptAt: job?.next_attempt_at ?? null,
@@ -154,7 +214,16 @@ export class SourceUploadRecoveryRepository {
       canRetry: reason === null,
       reason,
       basisHash: await this.digest(
-        JSON.stringify({ storeId, id, scope, document, jobs, files }),
+        JSON.stringify({
+          storeId,
+          id,
+          scope,
+          document,
+          jobs,
+          files,
+          blockedCommand,
+          openConflict,
+        }),
       ),
       jobId: job?.id ?? null,
     };
@@ -195,6 +264,99 @@ export class SourceUploadRecoveryRepository {
       hasMore: rows.length > 20,
       cursor: last ? { createdAt: last.created_at, id: last.id } : undefined,
     };
+  }
+  async isCopyReferenced(localUri: string) {
+    return !!(await this.db.getFirstAsync(
+      `SELECT local_uri FROM local_files WHERE local_uri=? UNION ALL SELECT local_file_uri FROM source_documents WHERE local_file_uri=? UNION ALL SELECT restored_uri FROM source_original_restorations WHERE restored_uri=? LIMIT 1`,
+      localUri,
+      localUri,
+      localUri,
+    ));
+  }
+  async restoreOriginal(
+    storeId: string,
+    id: string,
+    raw: SourceOriginalRestoration,
+    authority: { canRetry(): boolean; signal?: AbortSignal },
+    scope?: UploadIntakeScope,
+  ) {
+    const request = sourceOriginalRestorationSchema.parse(raw);
+    const requestJson = JSON.stringify({ storeId, id, scope, request });
+    const check = () => {
+      authority.signal?.throwIfAborted();
+      if (!authority.canRetry()) throw Error("SOURCE_RECOVERY_FORBIDDEN");
+    };
+    check();
+    let replayed = false;
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      check();
+      const current = await this.read(tx, storeId, id, scope);
+      const prior = await tx.getFirstAsync<{
+        request_json: string;
+        restored_uri: string;
+      }>(
+        "SELECT request_json,restored_uri FROM source_original_restorations WHERE operation_id=?",
+        request.operationId,
+      );
+      check();
+      if (prior) {
+        if (
+          prior.request_json !== requestJson ||
+          prior.restored_uri !== current.original?.localUri ||
+          current.original.checksum !== request.copy.checksum
+        )
+          throw Error("SOURCE_RESTORATION_IDENTITY_CHANGED");
+        replayed = true;
+        return;
+      }
+      if (current.basisHash !== request.basisHash)
+        throw Error("SOURCE_RECOVERY_CHANGED");
+      const original = current.original;
+      if (!current.canRestore || !original || !current.jobId)
+        throw Error("SOURCE_RESTORATION_BLOCKED");
+      if (
+        request.copy.checksum !== original.checksum ||
+        request.copy.sizeBytes !== original.sizeBytes ||
+        request.copy.mimeType !== original.mimeType ||
+        request.copy.localUri === original.localUri
+      )
+        throw Error("SOURCE_RESTORATION_DIFFERENT_FILE");
+      const timestamp = this.now();
+      await tx.runAsync(
+        "UPDATE source_documents SET local_file_uri=?,remote_upload_status='PENDING',sync_state='PENDING',updated_at=? WHERE id=? AND store_id=?",
+        request.copy.localUri,
+        timestamp,
+        id,
+        storeId,
+      );
+      await tx.runAsync(
+        "UPDATE local_files SET local_uri=?,upload_status='PENDING',updated_at=? WHERE id=? AND store_id=? AND source_document_id=?",
+        request.copy.localUri,
+        timestamp,
+        original.fileId,
+        storeId,
+        id,
+      );
+      await tx.runAsync(
+        "UPDATE local_jobs SET status='RETRY',next_attempt_at=NULL,last_error=NULL,updated_at=? WHERE id=?",
+        timestamp,
+        current.jobId,
+      );
+      await tx.runAsync(
+        "INSERT INTO source_original_restorations(operation_id,store_id,source_document_id,local_file_id,job_id,request_json,previous_uri,restored_uri,restored_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        request.operationId,
+        storeId,
+        id,
+        original.fileId,
+        current.jobId,
+        requestJson,
+        original.localUri,
+        request.copy.localUri,
+        timestamp,
+      );
+      check();
+    });
+    return { replayed, sourceDocumentId: id, localUri: request.copy.localUri };
   }
   async retry(
     storeId: string,

@@ -137,6 +137,7 @@ describe("local SQLite migrations", () => {
       "products",
       "sales_observations",
       "source_documents",
+      "source_original_restorations",
       "source_records",
       "store_context_history",
       "store_context_settings",
@@ -499,6 +500,36 @@ INSERT INTO sync_conflicts(id,store_id,command_id,entity_type,entity_id,local_pa
         .prepare("SELECT COUNT(*) n FROM product_master_remote_snapshots")
         .get()!.n,
     ).toBe(0);
+  } finally {
+    database.close();
+  }
+});
+
+it("upgrades v42 without changing missing originals, pending commands or upload attempts", async () => {
+  const { adapter, database } = openTemporaryDatabase();
+  try {
+    await runLocalMigrations(adapter, localMigrations.slice(0, 42));
+    database.exec(`INSERT INTO source_documents(id,store_id,source_type,original_filename,local_file_uri,checksum,local_processing_status,remote_upload_status,version,created_at,updated_at,sync_state,dirty) VALUES('source','store','MERCALYS_SALES','ventes.xlsx','file:///missing.xlsx','sha256:known','PUBLISHED','FAILED',1,'2026-10-18T12:00:00Z','2026-10-18T12:00:00Z','ERROR',1);
+INSERT INTO local_files(id,store_id,source_document_id,local_uri,mime_type,size_bytes,checksum,retention_status,upload_status,created_at,updated_at) VALUES('file','store','source','file:///missing.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',100,'sha256:known','RETAINED','FAILED','2026-10-18T12:00:00Z','2026-10-18T12:00:00Z');
+INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,last_error,created_at,updated_at) VALUES('upload','SOURCE_UPLOAD_AND_REGISTER','{}','FAILED',4,'SOURCE_UPLOAD_LOCAL_FILE_MISSING','2026-10-18T12:00:00Z','2026-10-18T12:00:00Z');
+INSERT INTO sync_outbox(command_id,store_id,device_id,local_sequence,command_type,entity_type,entity_id,payload_json,created_at,status,attempt_count) VALUES('command','store','device',1,'MERCALYS_PUBLISH','mercalys_publication','source','{}','2026-10-18T12:00:00Z','PENDING',0);`);
+    const tables = [
+        "source_documents",
+        "local_files",
+        "local_jobs",
+        "sync_outbox",
+      ],
+      before = tables.map((t) => database.prepare(`SELECT * FROM ${t}`).all());
+    await runLocalMigrations(adapter);
+    expect(
+      tables.map((t) => database.prepare(`SELECT * FROM ${t}`).all()),
+    ).toEqual(before);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM source_original_restorations")
+        .get()!.n,
+    ).toBe(0);
+    expect(await getLocalSchemaVersion(adapter)).toBe(43);
   } finally {
     database.close();
   }

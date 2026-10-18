@@ -30,7 +30,9 @@ export class MercalysBatchPreparation {
     };
     cancel();
     const item = await this.batches.get(batchId, itemId);
-    const bytes = await this.dependencies.read(item.localUri);
+    const location = await this.batches.retainedLocation(batchId, itemId);
+    cancel();
+    const bytes = await this.dependencies.read(location);
     cancel();
     if (
       !bytes.byteLength ||
