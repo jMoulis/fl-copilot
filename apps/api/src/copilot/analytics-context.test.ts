@@ -59,6 +59,7 @@ it("keeps navigation out of model input/tool budgets and freshness digests, with
   const assistant = {
     role: "ASSISTANT",
     text: "Bilan. [Source](copilot-source:encoded)",
+    analyticsDestinations: { private: "navigation" },
   };
   const input = {
     evidence: [evidence],
@@ -68,6 +69,7 @@ it("keeps navigation out of model input/tool budgets and freshness digests, with
   const projected = projectCopilotModelValue(input);
   expect(projected.evidence[0].analyticsContext).toBeUndefined();
   expect(projected.nested.evidence[0].analyticsContext).toBeUndefined();
+  expect(projected.messages[0]).not.toHaveProperty("analyticsDestinations");
   expect(projected.messages[0].text).toBe("Bilan. [Source]");
   expect(projected.messages[1].text).toBe(assistant.text);
   expect(input.evidence[0].analyticsContext).toEqual(context);

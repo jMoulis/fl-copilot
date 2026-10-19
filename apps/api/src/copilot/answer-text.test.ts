@@ -100,3 +100,41 @@ it("renders a comparative table with more than twenty-four verified values while
     renderAnswerText(narrative + "Total : 999 €", facts, evidence),
   ).toThrow("INVALID_ANSWER_TEMPLATE");
 });
+
+it("keeps every destination of a long comparative answer without increasing readable-message allowance", async () => {
+  const { renderAnswerContent } = await import("./answer-text");
+  const { largeAnalyticalContext } =
+    await import("../../../../scripts/test-analytics-destination-fixtures");
+  const { readAnswerSource } =
+    await import("../../../mobile/src/copilot/answer-source");
+  const context = largeAnalyticalContext();
+  const evidence = ["sales", "margin", "waste", "wasteCost"].map(
+    (metric, i) => ({
+      ...e[0]!,
+      id: `long/${i}`,
+      analyticsContext: {
+        ...context,
+        metric: metric as "sales" | "margin" | "waste" | "wasteCost",
+      },
+    }),
+  );
+  const facts = evidence.map((v) => ({ evidenceId: v.id }));
+  const narrative = facts
+    .map((_, i) => `{{value:${i}}} € {{source:${i}}}`)
+    .join("\n");
+  const legacy = renderAnswerText(narrative, facts, evidence);
+  expect(legacy).not.toContain("analyticsContext"); // reproduces the former over-16k fallback
+  const rich = renderAnswerContent(narrative, facts, evidence);
+  expect(rich.text.length).toBeLessThan(16000);
+  expect(rich.analyticsDestinations!.productSets).toHaveLength(1);
+  const links = [...rich.text.matchAll(/copilot-source:([^)]*)/g)];
+  expect(links).toHaveLength(4);
+  for (let i = 0; i < links.length; i++)
+    expect(
+      readAnswerSource(links[i]![1]!, rich.analyticsDestinations)
+        .analyticsContext,
+    ).toEqual(evidence[i]!.analyticsContext);
+  expect(() => renderAnswerContent("x".repeat(16001), [], [])).toThrow(
+    "ANSWER_TEXT_TOO_LARGE",
+  );
+});

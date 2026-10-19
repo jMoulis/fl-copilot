@@ -57,3 +57,36 @@ it("presents precise publication dates in French without inventing a day for a m
     "date de publication non précisée",
   );
 });
+
+it("keeps source facts readable before enrichment and resolves compact targets locally, without accepting mixed or missing indices", async () => {
+  const { largeAnalyticalContext } =
+    await import("../../../../scripts/test-analytics-destination-fixtures");
+  const { packAnalyticsDestinations } = await import("@fl-copilot/domain");
+  const source = {
+    label: "CA",
+    value: "12.30",
+    sourceId: "canonical",
+    sourceType: "KPI",
+    analyticsIndex: 0,
+  };
+  const encoded = encodeURIComponent(JSON.stringify(source));
+  expect(readAnswerSource(encoded)).toEqual(source);
+  const table = packAnalyticsDestinations([largeAnalyticalContext()]);
+  expect(readAnswerSource(encoded, table).analyticsContext).toEqual(
+    largeAnalyticalContext(),
+  );
+  for (const altered of [
+    { analyticsIndex: 1 },
+    { analyticsIndex: -1 },
+    { analyticsIndex: 0.5 },
+    { analyticsContext: largeAnalyticalContext() },
+    { sourceType: "SOURCE_DOCUMENT" },
+    { externalResearch: {} },
+  ])
+    expect(() =>
+      readAnswerSource(
+        encodeURIComponent(JSON.stringify({ ...source, ...altered })),
+        table,
+      ),
+    ).toThrow();
+});

@@ -67,7 +67,7 @@ export async function applyCopilotRecord(
     return applyDecisionRecord(db, scope, payload, ackVersion);
   if (type === "copilot_knowledge")
     return applyKnowledgeRecord(db, scope, payload, ackVersion);
-  const e = schemas[type].parse(payload);
+  let e = schemas[type].parse(payload);
   scoped(e, scope);
   const table = tables[type],
     old = await db.getFirstAsync<Row>(
@@ -78,10 +78,22 @@ export async function applyCopilotRecord(
   const previous = old
     ? schemas[type].parse(JSON.parse(old.payload_json))
     : null;
+  let sameMessage = false;
+  if (type === "copilot_message" && previous) {
+    const { analyticsDestinations: before, ...previousBody } =
+      previous as CopilotMessage;
+    const { analyticsDestinations: after, ...nextBody } = e as CopilotMessage;
+    sameMessage =
+      JSON.stringify(previousBody) === JSON.stringify(nextBody) &&
+      (!before || !after || JSON.stringify(before) === JSON.stringify(after));
+    // An older projected response cannot erase an already-restored destination.
+    if (sameMessage && before && !after)
+      e = { ...e, analyticsDestinations: before } as CopilotMessage;
+  }
   if (
     previous &&
     (type === "copilot_message"
-      ? JSON.stringify(previous) !== JSON.stringify(e)
+      ? !sameMessage
       : !identity(previous as CopilotConversation, e as CopilotConversation))
   )
     throw Error("COPILOT_HISTORY_IDENTITY_INVALID");
@@ -108,7 +120,7 @@ export async function applyCopilotRecord(
     if (parent)
       scoped({ storeId: parent.store_id, ownerId: parent.owner_id }, scope);
     await db.runAsync(
-      `INSERT INTO copilot_messages(id,store_id,owner_id,conversation_id,created_at,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES(?,?,?,?,?,?,?,?,'SYNCED',0) ON CONFLICT(id) DO UPDATE SET remote_payload_json=excluded.remote_payload_json,remote_version=excluded.remote_version,sync_state='SYNCED',dirty=0`,
+      `INSERT INTO copilot_messages(id,store_id,owner_id,conversation_id,created_at,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES(?,?,?,?,?,?,?,?,'SYNCED',0) ON CONFLICT(id) DO UPDATE SET payload_json=excluded.payload_json,remote_payload_json=excluded.remote_payload_json,remote_version=excluded.remote_version,sync_state='SYNCED',dirty=0`,
       m.id,
       m.storeId,
       m.ownerId,

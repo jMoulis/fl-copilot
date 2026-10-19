@@ -2,6 +2,10 @@ import {
   sameCopilotEvidence,
   preferEvidenceNavigation,
 } from "./evidence-identity";
+import {
+  packAnalyticsDestinations,
+  type AnalyticsExplorerContext,
+} from "@fl-copilot/domain";
 import type { CopilotResponse } from "@fl-copilot/domain";
 import type { CopilotGenerationRequest } from "./ai-provider.js";
 type Evidence = NonNullable<CopilotGenerationRequest["evidence"]>[number];
@@ -12,12 +16,13 @@ export function answerProse(text: string) {
 const escape = (value: string) =>
   value.replace(/[\\`*_[\]|<>]/g, "\\$&").replace(/\r?\n/g, " ");
 /** Values and citation destinations come from server evidence, never model URLs. */
-export function renderAnswerText(
+function render(
   narrative: string,
   facts: CopilotResponse["facts"],
   evidence: readonly Evidence[],
   partial = false,
   includeAnalytics = true,
+  destinations?: AnalyticsExplorerContext[],
 ) {
   let text = partial ? narrative.replace(/\{(?:\{[^}]*\}?)?$/, "") : narrative;
   if (
@@ -52,6 +57,17 @@ export function renderAnswerText(
       return escape(formatted);
     }
     if (kind === "label") return escape(item.label);
+    let analyticsIndex: number | undefined;
+    if (destinations && item.analyticsContext) {
+      const identity = JSON.stringify(item.analyticsContext);
+      analyticsIndex = destinations.findIndex(
+        (c) => JSON.stringify(c) === identity,
+      );
+      if (analyticsIndex < 0) {
+        analyticsIndex = destinations.length;
+        destinations.push(item.analyticsContext);
+      }
+    }
     const source = encodeURIComponent(
       JSON.stringify({
         label: item.label,
@@ -66,9 +82,11 @@ export function renderAnswerText(
         ...(item.retailExpertise
           ? { retailExpertise: item.retailExpertise }
           : {}),
-        ...(includeAnalytics && item.analyticsContext
-          ? { analyticsContext: item.analyticsContext }
-          : {}),
+        ...(analyticsIndex !== undefined
+          ? { analyticsIndex }
+          : includeAnalytics && item.analyticsContext
+            ? { analyticsContext: item.analyticsContext }
+            : {}),
         sourceType: item.sourceType,
         sourceId: item.sourceId,
       }),
@@ -77,7 +95,31 @@ export function renderAnswerText(
   });
   if (!partial && /\{\{|\}\}/.test(text))
     throw Error("INVALID_ANSWER_TEMPLATE");
-  if (includeAnalytics && text.length > 16000)
-    return renderAnswerText(narrative, facts, evidence, partial, false);
+  if (!destinations && includeAnalytics && text.length > 16000)
+    return render(narrative, facts, evidence, partial, false);
   return text;
+}
+
+/** Legacy rendering remains readable on installed clients without the negotiated table. */
+export function renderAnswerText(
+  narrative: string,
+  facts: CopilotResponse["facts"],
+  evidence: readonly Evidence[],
+  partial = false,
+  includeAnalytics = true,
+) {
+  return render(narrative, facts, evidence, partial, includeAnalytics);
+}
+/** Deduplicate analytical targets outside readable text; never drop a target on overflow. */
+export function renderAnswerContent(
+  narrative: string,
+  facts: CopilotResponse["facts"],
+  evidence: readonly Evidence[],
+  partial = false,
+) {
+  const targets: AnalyticsExplorerContext[] = [];
+  const text = render(narrative, facts, evidence, partial, false, targets);
+  if (text.length > 16000) throw Error("ANSWER_TEXT_TOO_LARGE");
+  const analyticsDestinations = packAnalyticsDestinations(targets);
+  return { text, ...(analyticsDestinations ? { analyticsDestinations } : {}) };
 }

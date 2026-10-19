@@ -61,6 +61,108 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ],
       };
     }
+    it("restores compact analytical destinations through bootstrap, incremental pull and paged history only for negotiated clients", async () => {
+      const { largeAnalyticalContext } =
+        await import("../../../scripts/test-analytics-destination-fixtures");
+      const { copilotMessageSchema, packAnalyticsDestinations } =
+        await import("@fl-copilot/domain");
+      const { appendCopilotResponse } =
+        await import("../src/copilot/response-store");
+      const { createMongoSyncChangeService } =
+        await import("../src/sync/sync-change-service");
+      const f = chatFixture(randomUUID),
+        push = createMongoSyncPushService(database);
+      await push.push(
+        request(f.conversation),
+        "compact-conversation",
+        f.ownerId,
+      );
+      await push.push(
+        request({ ...f.message, attachments: [] }),
+        "compact-user",
+        f.ownerId,
+      );
+      const db = await database.getDb(),
+        session = db.client.startSession();
+      const message = copilotMessageSchema.parse({
+        ...f.message,
+        id: randomUUID(),
+        role: "ASSISTANT",
+        replyToMessageId: f.message.id,
+        attachments: [],
+        text: "Bilan",
+        analyticsDestinations: packAnalyticsDestinations([
+          largeAnalyticalContext(),
+        ]),
+      });
+      try {
+        await session.withTransaction(async () => {
+          await appendCopilotResponse(
+            { database: db, session },
+            { storeId: f.storeId, ownerId: f.ownerId, canRespond: true },
+            message,
+            createMongoSyncChangeService(),
+          );
+        });
+      } finally {
+        await session.endSession();
+      }
+      const scope = {
+        storeId: f.storeId,
+        userId: f.ownerId,
+        storeName: "Test",
+        role: "MANAGER",
+        sessionId: randomUUID(),
+        deviceId: f.deviceId,
+      };
+      for (const compatible of [false, true]) {
+        const expected = compatible ? message.analyticsDestinations : undefined;
+        const boot = await createMongoSyncBootstrapService(database).bootstrap(
+          scope,
+          { rawObservationDays: 90, copilotHistory: "true" },
+          true,
+          compatible,
+        );
+        expect(
+          boot.entities.copilotMessages?.find((m) => m.id === message.id)
+            ?.analyticsDestinations,
+        ).toEqual(expected);
+        const pull = await createMongoSyncPullService(database).pull(
+          f.storeId,
+          { limit: 500, copilotHistory: "true" },
+          f.ownerId,
+          true,
+          compatible,
+        );
+        expect(
+          pull.changes.find((c) => c.entityId === message.id)?.entity,
+        ).toMatchObject({ text: message.text });
+        const pulled = pull.changes.find((c) => c.entityId === message.id)!
+          .entity as CopilotMessage;
+        expect(pulled.analyticsDestinations).toEqual(expected);
+        const history = await readCopilotHistory(
+          db,
+          f.storeId,
+          f.ownerId,
+          { conversationId: f.conversation.id, limit: 50 },
+          true,
+          compatible,
+        );
+        expect(
+          history.messages.find((m) => m.id === message.id)
+            ?.analyticsDestinations,
+        ).toEqual(expected);
+      }
+      const foreign = await readCopilotHistory(
+        db,
+        f.storeId,
+        randomUUID(),
+        { limit: 50 },
+        true,
+        true,
+      );
+      expect(foreign.messages).toEqual([]);
+    });
     it("synchronizes deletion metadata, refuses foreign targets and restoration, and keeps old clients parse-compatible", async () => {
       const f = chatFixture(randomUUID),
         push = createMongoSyncPushService(database);

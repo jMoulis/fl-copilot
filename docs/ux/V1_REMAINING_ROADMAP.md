@@ -110,3 +110,9 @@ Le même incrément corrige la continuité du KPI Casse au PA vers l’Explorer 
 ## Avancement — listes et accès aux sources
 
 L5 avance sur Casse (liste virtualisée, recherche date/caissier/note, statuts et filtres), Mercalys (fichiers du lot filtrables selon publication enregistrée, historique repliable, feuille d’examen conservée) et Documents (original accessible depuis la liste, contexte/préparation progressifs et montés). Chargement/erreur/vide et propositions/confirmations sont distincts. Aucun changement des moteurs d’ingestion/publication. Les preuves et limites sont dans `../qa/M7_UX_SOURCE_LISTS.md` ; la recette native et les autres portes V1 restent ouvertes.
+
+## Avancement — transport compact des sources analytiques longues
+
+L4 ferme le défaut de perte des destinations dans les longues réponses pour les clients compatibles : table de présentation privée, ensembles partagés factorisés, mêmes périodes/moyennes/filtres, réception et restauration via l’historique et la synchronisation. Les bornes restent explicites ; un dépassement est refusé au lieu de supprimer un périmètre. Le streaming existant garde ses fragments provisoires ; le message final porte les destinations durables. Aucun prompt ni fournisseur supplémentaire. Preuves et limites : `../qa/M7_COMPACT_ANALYTICAL_SOURCES.md`.
+
+La PR 279 est fusionnée après succès des CI push `39329596397` et PR `39329602292` sur `7470f1e`, merge `28c593b82cdbafa1f7aadd1705d3483e6ec410fc` ; branche distante supprimée. Aucun lot L1–L11 n’est déclaré intégralement livré ou accepté sur appareil. Restent notamment les formulaires/écrans détaillés et le chat L5, médias L6, autres portes métier/documentaires/implantation et M8.

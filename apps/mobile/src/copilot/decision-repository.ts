@@ -1,3 +1,4 @@
+import { copilotMessageContent } from "@fl-copilot/domain";
 import {
   recommendationDecisionSchema,
   recommendationChoiceSchema,
@@ -174,8 +175,9 @@ export class CopilotDecisionRepository {
           sourceMessage.id === content.basis.sourceMessageId &&
           sourceMessage.createdAt === content.basis.sourceCreatedAt &&
           sourceMessage.text.includes(content.basis.quote) &&
-          (await this.digest(JSON.stringify(sourceMessage))) ===
-            content.basis.sourceDigest));
+          (await this.digest(
+            JSON.stringify(copilotMessageContent(sourceMessage)),
+          )) === content.basis.sourceDigest));
     const row = await this.db.getFirstAsync<Row>(
       "SELECT * FROM copilot_decisions WHERE id=?",
       content.recommendationId,

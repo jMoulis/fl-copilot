@@ -91,6 +91,7 @@ export async function runCopilotTurn(
     onActivity?: (activity: CopilotActivity) => void;
     onGenerationFailure?: (failure: CopilotGenerationFailure) => void;
     allowMemorySuggestions?: boolean;
+    supportsAnalyticsDestinations?: boolean;
   },
   raw: CopilotTurnRequest,
   signal?: AbortSignal,
@@ -275,7 +276,11 @@ export async function runCopilotTurn(
       parent: latest.parent,
       request,
       generation,
+      supportsAnalyticsDestinations: dependencies.supportsAnalyticsDestinations,
     });
+    // TOOL builders inherit identity/time only, never assistant presentation metadata.
+    const { analyticsDestinations: _destinations, ...toolParent } = message;
+    void _destinations;
     const session = dependencies.db.client.startSession();
     try {
       const result = await session.withTransaction(async () => {
@@ -314,7 +319,7 @@ export async function runCopilotTurn(
         ) {
           const checkpoint = await buildContextCheckpoint(
             dependencies.db,
-            message,
+            toolParent,
             latest.parent,
             generation.contextCheckpoint,
             request.conversationCheckpoint?.status === "AVAILABLE"
@@ -334,7 +339,7 @@ export async function runCopilotTurn(
           generation.productPreviews?.length
         ) {
           for (const card of buildProductProposalMessages(
-            message,
+            toolParent,
             generation.productPreviews,
           ))
             await appendCopilotToolRecord(
@@ -346,7 +351,7 @@ export async function runCopilotTurn(
         }
         if (generation.mode === "FALLBACK")
           for (const card of buildStoreConflictMessages(
-            message,
+            toolParent,
             generation.storeConflictPreviews ?? [],
           ))
             await appendCopilotToolRecord(
@@ -357,7 +362,7 @@ export async function runCopilotTurn(
             );
         if (generation.mode === "FALLBACK")
           for (const card of buildReceiptRecoveryMessages(
-            message,
+            toolParent,
             generation.receiptRecoveryPreviews ?? [],
           ))
             await appendCopilotToolRecord(
@@ -369,112 +374,112 @@ export async function runCopilotTurn(
         if (generation.mode === "AI")
           for (const proposal of [
             ...buildChoiceUpdateProposalMessages(
-              message,
+              toolParent,
               generation.choiceUpdates ?? [],
             ),
             ...buildChoiceRetentionProposalMessages(
-              message,
+              toolParent,
               generation.choiceRetentions ?? [],
             ),
             ...buildChoiceCreateProposalMessages(
-              message,
+              toolParent,
               generation.choiceCreates ?? [],
             ),
             ...buildReferenceProposalMessages(
-              message,
+              toolParent,
               generation.referencePreviews ?? [],
             ),
             ...buildPlanValidationProposalMessages(
-              message,
+              toolParent,
               generation.planValidations ?? [],
             ),
             ...buildOfferValidationProposalMessages(
-              message,
+              toolParent,
               generation.offerValidations ?? [],
             ),
             ...buildChoiceReassociationProposalMessages(
-              message,
+              toolParent,
               generation.choiceReassociations ?? [],
             ),
             ...buildChoiceWithdrawalProposalMessages(
-              message,
+              toolParent,
               generation.choiceWithdrawals ?? [],
             ),
             ...buildPreparationProposalMessages(
-              message,
+              toolParent,
               generation.preparationPreviews ?? [],
             ),
             ...buildStoreLayoutScenarioMessages(
-              message,
+              toolParent,
               generation.layoutScenarios ?? [],
             ),
             ...buildStoreLayoutEditMessages(
-              message,
+              toolParent,
               generation.layoutEditPreviews ?? [],
             ),
             ...buildOperationsProposalMessages(
-              message,
+              toolParent,
               generation.operationsPreviews ?? [],
             ),
             ...buildNeedProposalMessages(
-              message,
+              toolParent,
               generation.needPreviews ?? [],
             ),
             ...buildStoreConflictMessages(
-              message,
+              toolParent,
               generation.storeConflictPreviews ?? [],
             ),
             ...buildReceiptRecoveryMessages(
-              message,
+              toolParent,
               generation.receiptRecoveryPreviews ?? [],
             ),
             ...buildReceiptCorrectionMessages(
-              message,
+              toolParent,
               generation.receiptCorrectionPreviews ?? [],
             ),
             ...buildReceiptPublicationMessages(
-              message,
+              toolParent,
               generation.receiptPublicationPreviews ?? [],
             ),
             ...buildIdentityReviewMessages(
-              message,
+              toolParent,
               generation.identityReviews ?? [],
             ),
             ...buildCatalogueProposalMessages(
-              message,
+              toolParent,
               generation.cataloguePreviews ?? [],
             ),
             ...buildRecommendationTrackingMessages(
-              message,
+              toolParent,
               generation.recommendationTrackingPreviews ?? [],
             ),
             ...buildActionExecutionMessages(
-              message,
+              toolParent,
               generation.actionExecutionPreviews ?? [],
             ),
             ...buildExecutionLinkMessages(
-              message,
+              toolParent,
               generation.executionLinkPreviews ?? [],
             ),
             ...buildExecutionProposalMessages(
-              message,
+              toolParent,
               generation.executionPreviews ?? [],
             ),
             ...buildKnowledgeSuggestionMessages(
-              message,
+              toolParent,
               generation.knowledgeSuggestions ?? [],
               request,
             ),
             ...buildProductProposalMessages(
-              message,
+              toolParent,
               generation.productPreviews ?? [],
             ),
             ...buildPriceScenarioFormMessages(
-              message,
+              toolParent,
               generation.priceScenarioForms ?? [],
             ),
             ...buildInformationRequestMessages(
-              message,
+              toolParent,
               generation.priceScenarioForms?.length
                 ? []
                 : (generation.informationRequests ?? []),
