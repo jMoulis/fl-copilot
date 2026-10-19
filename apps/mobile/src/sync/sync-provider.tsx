@@ -1,3 +1,9 @@
+import { VisualFileJobs } from "../products/visual-file-jobs";
+import {
+  VisualFileTransfer,
+  type VisualFileSession,
+} from "../products/visual-file-transfer";
+import { nativeVisualFileStorage } from "../products/visual-file-storage";
 import { CommercialAnalysisRecoveryQueue } from "../documents/commercial-analysis-recovery";
 import { readPendingWork, type PendingWorkGroup } from "./pending-work";
 import { randomUUID } from "expo-crypto";
@@ -9,6 +15,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
@@ -39,6 +46,10 @@ interface LocalSyncSnapshot {
 
 export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
+  visuals?: {
+    requestPreview(assetId: string): Promise<void>;
+    retry(assetId: string): Promise<void>;
+  };
   syncNow(storeId?: string): Promise<SyncSummary | undefined>;
 }
 
@@ -198,14 +209,65 @@ export function SyncProvider({ children }: PropsWithChildren) {
     });
   }, [database.sqlite, hasLocalSession, withAccessToken]);
   const defaultStoreId = session?.stores[0]?.storeId;
+  const visualSession = useRef<VisualFileSession | null>(null);
+  visualSession.current =
+    defaultStoreId && session
+      ? {
+          storeId: defaultStoreId,
+          userId: session.user.id,
+          canWrite: session.stores[0]?.role === "MANAGER",
+        }
+      : null;
+  const visualJobs = useMemo(() => {
+    if (!hasLocalSession) return undefined;
+    const api = new ApiClient(getApiBaseUrl());
+    const transfer = new VisualFileTransfer(
+      database.sqlite,
+      {
+        init: (store, id) =>
+          withAccessToken((token) => api.initVisualFile(token, store, id)),
+        complete: (store, id, upload) =>
+          withAccessToken((token) =>
+            api.completeVisualFile(token, store, id, upload),
+          ),
+        manifest: (store, id) =>
+          withAccessToken((token) => api.visualFileManifest(token, store, id)),
+        download: (store, manifest, variant) =>
+          withAccessToken((token) =>
+            api.downloadVisualFile(token, store, manifest, variant),
+          ),
+      },
+      nativeVisualFileStorage,
+      () => visualSession.current,
+    );
+    return new VisualFileJobs(
+      database.sqlite,
+      transfer,
+      () => visualSession.current,
+      randomUUID,
+    );
+  }, [database.sqlite, hasLocalSession, withAccessToken]);
 
   const refreshLocalState = useCallback(async () => {
     if (!defaultStoreId) return undefined;
+    const scope = visualSession.current;
+    if (
+      !scope ||
+      scope.userId !== session?.user.id ||
+      scope.storeId !== defaultStoreId
+    )
+      return undefined;
     const snapshot = await readLocalSyncSnapshot(
       database.sqlite,
       defaultStoreId,
       session?.user.id,
     );
+    if (
+      !scope ||
+      scope.storeId !== visualSession.current?.storeId ||
+      scope.userId !== visualSession.current?.userId
+    )
+      return undefined;
     setState((current) => ({
       ...snapshot,
       status:
@@ -222,6 +284,17 @@ export function SyncProvider({ children }: PropsWithChildren) {
         setState((current) => ({ ...current, status: "offline" }));
         return undefined;
       }
+      const scope = visualSession.current;
+      const currentScope = () =>
+        !!scope &&
+        scope.storeId === visualSession.current?.storeId &&
+        scope.userId === visualSession.current?.userId;
+      if (
+        !currentScope() ||
+        scope?.userId !== session?.user.id ||
+        scope?.storeId !== defaultStoreId
+      )
+        return undefined;
       setState((current) => ({ ...current, status: "syncing" }));
       try {
         await repairMercalysPublications(database.sqlite, storeId, randomUUID);
@@ -229,6 +302,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
         if (session?.user.id)
           await analysisRecovery?.process(storeId, session.user.id);
         const summary = await service.sync(storeId);
+        if (session?.user.id)
+          await visualJobs?.process(storeId, session.user.id);
         await repairMercalysPublications(database.sqlite, storeId, randomUUID);
         await new LocalAnalyticsRecomputationScheduler(
           database.sqlite,
@@ -239,14 +314,17 @@ export function SyncProvider({ children }: PropsWithChildren) {
           storeId,
           session?.user.id,
         );
+        if (!currentScope()) return undefined;
         setState({ ...snapshot, status: deriveStatus(snapshot) });
         return summary;
       } catch (error) {
+        if (!currentScope()) return undefined;
         const snapshot = await readLocalSyncSnapshot(
           database.sqlite,
           storeId,
           session?.user.id,
         );
+        if (!currentScope()) return undefined;
         setState({
           ...snapshot,
           status:
@@ -263,6 +341,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       service,
       uploadQueue,
       analysisRecovery,
+      visualJobs,
       session?.user.id,
     ],
   );
@@ -303,8 +382,32 @@ export function SyncProvider({ children }: PropsWithChildren) {
     return () => clearTimeout(retry);
   }, [defaultStoreId, service, state.pendingCount, state.status, syncNow]);
 
+  const requestVisualPreview = useCallback(
+    async (assetId: string) => {
+      if (!defaultStoreId || !session?.user.id || !visualJobs)
+        throw Error("VISUAL_ACCESS_INVALID");
+      await visualJobs.requestPreview(defaultStoreId, session.user.id, assetId);
+      void syncNow(defaultStoreId);
+    },
+    [defaultStoreId, session?.user.id, visualJobs, syncNow],
+  );
+  const retryVisual = useCallback(
+    async (assetId: string) => {
+      if (!defaultStoreId || !session?.user.id || !visualJobs)
+        throw Error("VISUAL_ACCESS_INVALID");
+      await visualJobs.retry(defaultStoreId, session.user.id, assetId);
+      void syncNow(defaultStoreId);
+    },
+    [defaultStoreId, session?.user.id, visualJobs, syncNow],
+  );
   return (
-    <SyncContext.Provider value={{ ...state, syncNow }}>
+    <SyncContext.Provider
+      value={{
+        ...state,
+        syncNow,
+        visuals: { requestPreview: requestVisualPreview, retry: retryVisual },
+      }}
+    >
       {children}
     </SyncContext.Provider>
   );
@@ -370,7 +473,7 @@ async function readLocalSyncSnapshot(
           AS failed_count
       FROM local_jobs
       WHERE json_extract(payload_json, '$.storeId') = ?
-        AND (type <> 'COMMERCIAL_ANALYSIS_RESUME' OR json_extract(payload_json,'$.ownerId')=?)
+        AND (type NOT IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER') OR json_extract(payload_json,'$.ownerId')=?)
     `,
     storeId,
     ownerId ?? null,

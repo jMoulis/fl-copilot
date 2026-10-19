@@ -10,7 +10,7 @@ export function subscribeOutboxChanges(listener: () => void) {
   };
 }
 
-function notifyOutboxChanged() {
+export function notifyOutboxChanged() {
   setTimeout(() => {
     for (const listener of outboxChangeListeners) listener();
   }, 0);

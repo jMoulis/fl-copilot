@@ -1,4 +1,3 @@
-import type { ApiClient } from "@fl-copilot/api-client";
 import {
   readVisualFileManifest,
   type VisualFileManifest,
@@ -9,17 +8,26 @@ import type { OutboxDatabase } from "../sync/outbox-repository";
 import { VisualFileCache } from "./visual-file-cache";
 import { VisualLibraryRepository } from "./visual-library-repository";
 import type { VisualFileStorage } from "./visual-file-storage";
-type Transport = Pick<
-  ApiClient,
-  | "initVisualFile"
-  | "completeVisualFile"
-  | "visualFileManifest"
-  | "downloadVisualFile"
->;
+export interface VisualFileTransport {
+  init(
+    storeId: string,
+    assetId: string,
+  ): Promise<import("@fl-copilot/sync-contracts").InitVisualFileResponse>;
+  complete(
+    storeId: string,
+    assetId: string,
+    uploadId: string,
+  ): Promise<VisualFileManifest>;
+  manifest(storeId: string, assetId: string): Promise<VisualFileManifest>;
+  download(
+    storeId: string,
+    manifest: VisualFileManifest,
+    variant: "source" | "preview",
+  ): Promise<Uint8Array>;
+}
 export interface VisualFileSession {
   storeId: string;
   userId: string;
-  accessToken: string;
   canWrite: boolean;
 }
 /** Binary transfer resumes from durable metadata/file proofs; it never creates a receipt job. */
@@ -29,7 +37,7 @@ export class VisualFileTransfer {
   private inFlight = new Map<string, Promise<VisualFileManifest>>();
   constructor(
     db: OutboxDatabase & AtomicMutationDatabase,
-    private api: Transport,
+    private api: VisualFileTransport,
     private files: VisualFileStorage,
     private session: () => VisualFileSession | null,
   ) {
@@ -102,11 +110,7 @@ export class VisualFileTransfer {
         if (!source) throw Error("VISUAL_SOURCE_FILE_MISSING");
         await this.files.read(context.storeId, "SOURCE", asset);
         await this.approved(context, assetId, true);
-        const init = await this.api.initVisualFile(
-          context.accessToken,
-          context.storeId,
-          assetId,
-        );
+        const init = await this.api.init(context.storeId, assetId);
         await this.approved(context, assetId, true);
         let manifest: VisualFileManifest;
         if (init.state === "READY")
@@ -122,12 +126,7 @@ export class VisualFileTransfer {
           );
           await this.approved(context, assetId, true);
           manifest = readVisualFileManifest(
-            await this.api.completeVisualFile(
-              context.accessToken,
-              context.storeId,
-              assetId,
-              init.uploadId,
-            ),
+            await this.api.complete(context.storeId, assetId, init.uploadId),
             asset,
           );
         }
@@ -144,22 +143,27 @@ export class VisualFileTransfer {
       async () => {
         const { entity: asset } = await this.approved(context, assetId);
         const manifest = readVisualFileManifest(
-          await this.api.visualFileManifest(
-            context.accessToken,
-            context.storeId,
-            assetId,
-          ),
+          await this.api.manifest(context.storeId, assetId),
           asset,
         );
         await this.approved(context, assetId);
-        const cached = await this.cache.get(context.storeId, asset, "PREVIEW");
-        if (
-          cached &&
-          (await this.files.uri(context.storeId, "PREVIEW", manifest.preview))
-        )
-          return manifest;
-        const bytes = await this.api.downloadVisualFile(
-          context.accessToken,
+        try {
+          const cached = await this.cache.get(
+            context.storeId,
+            asset,
+            "PREVIEW",
+          );
+          if (
+            cached &&
+            (await this.files.uri(context.storeId, "PREVIEW", manifest.preview))
+          )
+            return manifest;
+        } catch {
+          this.check(
+            context,
+          ); /* A disposable preview can be rebuilt from the freshly bound server proof. */
+        }
+        const bytes = await this.api.download(
           context.storeId,
           manifest,
           "preview",

@@ -351,8 +351,10 @@ export class VisualLibraryRepository {
       this.list("visual_identity", product.storeId),
       this.list("product_visual_link", product.storeId),
     ]);
-    const safe = <T>(row: LocalVisualRecord<T>) =>
-      !["CONFLICT", "ERROR"].includes(row.syncState);
+    const safe = <T extends { deletedAt: string | null }>(
+      row: LocalVisualRecord<T>,
+    ) =>
+      !row.remote?.deletedAt && !["CONFLICT", "ERROR"].includes(row.syncState);
     return resolveProductVisual({
       product,
       assets: assets

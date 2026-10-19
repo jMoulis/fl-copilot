@@ -178,3 +178,23 @@ it("uploads only verified app-owned bytes and the scoped headers, retaining them
   ).rejects.toThrow();
   expect(state.createdDirectories).toHaveLength(directories);
 });
+
+it("repairs only a recoverable preview after staging verified bytes, preserving every source file", async () => {
+  const original = await storage.write(storeId, "SOURCE", descriptor, source);
+  const preview = await storage.write(storeId, "PREVIEW", descriptor, source);
+  const previewUri = `file:///owned/${preview.relativePath}`;
+  state.bytes.set(previewUri, new Uint8Array([255, 216, 255, 216]));
+  state.failWrite = true;
+  await expect(
+    storage.write(storeId, "PREVIEW", descriptor, source),
+  ).rejects.toThrow("TEST_DISK_FULL");
+  expect(state.bytes.get(previewUri)).toEqual(
+    new Uint8Array([255, 216, 255, 216]),
+  );
+  state.failWrite = false;
+  await storage.write(storeId, "PREVIEW", descriptor, source);
+  expect(state.bytes.get(previewUri)).toEqual(source);
+  expect(state.bytes.get(`file:///owned/${original.relativePath}`)).toEqual(
+    source,
+  );
+});

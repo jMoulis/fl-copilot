@@ -1,7 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
-import type { ApiClient } from "@fl-copilot/api-client";
 import { visualFileManifestSchema } from "@fl-copilot/sync-contracts";
 import { visualLibraryFixture } from "../../../../scripts/test-visual-library-fixtures";
 import { VisualTestDatabase } from "../../../../scripts/test-visual-sqlite";
@@ -15,6 +14,7 @@ import {
 import {
   VisualFileTransfer,
   type VisualFileSession,
+  type VisualFileTransport,
 } from "./visual-file-transfer";
 import type { VisualFileStorage } from "./visual-file-storage";
 const hash = (bytes: Uint8Array) =>
@@ -89,17 +89,10 @@ async function setup() {
   let session: VisualFileSession | null = {
     storeId: f.storeId,
     userId: f.actorId,
-    accessToken: "session-only-to-api",
     canWrite: true,
   };
-  const api: Pick<
-    ApiClient,
-    | "initVisualFile"
-    | "completeVisualFile"
-    | "visualFileManifest"
-    | "downloadVisualFile"
-  > = {
-    initVisualFile: vi.fn(async () => ({
+  const api: VisualFileTransport = {
+    init: vi.fn(async () => ({
       state: "UPLOAD_REQUIRED" as const,
       uploadId: f.deviceId,
       uploadUrl: "https://private.example.test/scoped",
@@ -107,9 +100,9 @@ async function setup() {
       headers: { "content-type": "image/jpeg" },
       manifest: null,
     })),
-    completeVisualFile: vi.fn(async () => manifest),
-    visualFileManifest: vi.fn(async () => manifest),
-    downloadVisualFile: vi.fn(async () => preview),
+    complete: vi.fn(async () => manifest),
+    manifest: vi.fn(async () => manifest),
+    download: vi.fn(async () => preview),
   };
   const transfer = new VisualFileTransfer(db, api, files, () => session);
   const proof: VerifiedVisualFile = {
@@ -148,8 +141,8 @@ it("sends after metadata acknowledgement and coalesces repeated taps without for
       s.transfer.send(s.f.asset.id),
     ]);
     expect(a).toEqual(b);
-    expect(s.api.initVisualFile).toHaveBeenCalledTimes(1);
-    expect(s.api.completeVisualFile).toHaveBeenCalledTimes(1);
+    expect(s.api.init).toHaveBeenCalledTimes(1);
+    expect(s.api.complete).toHaveBeenCalledTimes(1);
     expect(s.files.upload).toHaveBeenCalledWith(
       s.f.storeId,
       s.f.asset,
@@ -174,14 +167,12 @@ it("keeps an offline original pending until metadata is acknowledged and retains
     await expect(s.transfer.send(s.f.asset.id)).rejects.toThrow(
       "VISUAL_METADATA_PENDING",
     );
-    expect(s.api.initVisualFile).not.toHaveBeenCalled();
+    expect(s.api.init).not.toHaveBeenCalled();
     await s.db.runAsync(
       "UPDATE visual_assets SET dirty=0 WHERE id=?",
       s.f.asset.id,
     );
-    vi.mocked(s.api.completeVisualFile).mockRejectedValueOnce(
-      Error("NETWORK_LOST"),
-    );
+    vi.mocked(s.api.complete).mockRejectedValueOnce(Error("NETWORK_LOST"));
     await expect(s.transfer.send(s.f.asset.id)).rejects.toThrow("NETWORK_LOST");
     expect(await s.cache.get(s.f.storeId, s.f.asset, "SOURCE")).toMatchObject({
       uploaded: false,
@@ -195,7 +186,7 @@ it("keeps an offline original pending until metadata is acknowledged and retains
 it("adopts the verified server result after a lost response and never reuploads a completed binary", async () => {
   const s = await setup();
   try {
-    vi.mocked(s.api.initVisualFile).mockResolvedValueOnce({
+    vi.mocked(s.api.init).mockResolvedValueOnce({
       state: "READY",
       uploadId: null,
       uploadUrl: null,
@@ -205,7 +196,7 @@ it("adopts the verified server result after a lost response and never reuploads 
     });
     await s.transfer.send(s.f.asset.id);
     expect(s.files.upload).not.toHaveBeenCalled();
-    expect(s.api.completeVisualFile).not.toHaveBeenCalled();
+    expect(s.api.complete).not.toHaveBeenCalled();
     expect(await s.cache.get(s.f.storeId, s.f.asset, "SOURCE")).toMatchObject({
       uploaded: true,
     });
@@ -223,11 +214,11 @@ it("persists a verified preview, reuses it and resolves cached content with no n
       pinned: false,
     });
     expect(await s.transfer.localUri(s.f.asset)).toContain("/preview-");
-    const calls = vi.mocked(s.api.visualFileManifest).mock.calls.length;
+    const calls = vi.mocked(s.api.manifest).mock.calls.length;
     await s.transfer.localUri(s.f.asset);
-    expect(vi.mocked(s.api.visualFileManifest).mock.calls).toHaveLength(calls);
+    expect(vi.mocked(s.api.manifest).mock.calls).toHaveLength(calls);
     await s.transfer.fetchPreview(s.f.asset.id);
-    expect(s.api.downloadVisualFile).toHaveBeenCalledTimes(1);
+    expect(s.api.download).toHaveBeenCalledTimes(1);
   } finally {
     s.db.raw.close();
   }
@@ -235,21 +226,19 @@ it("persists a verified preview, reuses it and resolves cached content with no n
 it("refuses a corrupted or partial download and a foreign proof without marking a cached preview", async () => {
   const s = await setup();
   try {
-    vi.mocked(s.api.downloadVisualFile).mockResolvedValueOnce(
-      new Uint8Array([1, 2]),
-    );
+    vi.mocked(s.api.download).mockResolvedValueOnce(new Uint8Array([1, 2]));
     await expect(s.transfer.fetchPreview(s.f.asset.id)).rejects.toThrow(
       "VISUAL_FILE_INVALID",
     );
     expect(await s.cache.get(s.f.storeId, s.f.asset, "PREVIEW")).toBeNull();
-    vi.mocked(s.api.visualFileManifest).mockResolvedValueOnce({
+    vi.mocked(s.api.manifest).mockResolvedValueOnce({
       ...s.manifest,
       source: { ...s.manifest.source, width: 501 },
     });
     await expect(s.transfer.fetchPreview(s.f.asset.id)).rejects.toThrow(
       "VISUAL_FILE_BINDING_INVALID",
     );
-    expect(s.api.downloadVisualFile).toHaveBeenCalledTimes(1);
+    expect(s.api.download).toHaveBeenCalledTimes(1);
   } finally {
     s.db.raw.close();
   }
@@ -257,7 +246,7 @@ it("refuses a corrupted or partial download and a foreign proof without marking 
 it("stops after account/store changes or a known revocation instead of recording work under another account", async () => {
   const s = await setup();
   try {
-    vi.mocked(s.api.initVisualFile).mockImplementationOnce(async () => {
+    vi.mocked(s.api.init).mockImplementationOnce(async () => {
       s.setSession(null);
       return {
         state: "READY",
@@ -277,7 +266,6 @@ it("stops after account/store changes or a known revocation instead of recording
     s.setSession({
       storeId: s.f.storeId,
       userId: s.f.actorId,
-      accessToken: "same",
       canWrite: true,
     });
     const revoked = {
@@ -289,7 +277,7 @@ it("stops after account/store changes or a known revocation instead of recording
     await expect(s.transfer.localUri(s.f.asset)).rejects.toThrow(
       "VISUAL_ASSET_UNAVAILABLE",
     );
-    expect(s.api.downloadVisualFile).not.toHaveBeenCalled();
+    expect(s.api.download).not.toHaveBeenCalled();
   } finally {
     s.db.raw.close();
   }

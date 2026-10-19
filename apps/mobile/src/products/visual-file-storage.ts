@@ -47,6 +47,19 @@ export interface VisualFileStorage {
     headers: Record<string, string>,
   ): Promise<void>;
 }
+let activeReads = 0;
+const waitingReaders: Array<() => void> = [];
+async function boundedRead<T>(read: () => Promise<T>): Promise<T> {
+  if (activeReads < 2) activeReads++;
+  else await new Promise<void>((resolve) => waitingReaders.push(resolve));
+  try {
+    return await read();
+  } finally {
+    const next = waitingReaders.shift();
+    if (next) next();
+    else activeReads--;
+  }
+}
 async function checksum(bytes: Uint8Array) {
   const { digest, CryptoDigestAlgorithm } = await import("expo-crypto");
   const result = await digest(
@@ -122,16 +135,18 @@ export const nativeVisualFileStorage: VisualFileStorage = {
     return { ...result, mimeType, width, height };
   },
   async read(storeId, variant, descriptor) {
-    const file = await destination(storeId, variant, descriptor);
-    if (!file.exists) throw Error("VISUAL_SOURCE_FILE_MISSING");
-    if (
-      file.size !== descriptor.sizeBytes ||
-      file.size > VISUAL_LIBRARY_POLICY.maximumBytes
-    )
-      throw Error("VISUAL_FILE_INVALID");
-    const bytes = await file.bytes();
-    await verify(bytes, descriptor);
-    return bytes;
+    return boundedRead(async () => {
+      const file = await destination(storeId, variant, descriptor);
+      if (!file.exists) throw Error("VISUAL_SOURCE_FILE_MISSING");
+      if (
+        file.size !== descriptor.sizeBytes ||
+        file.size > VISUAL_LIBRARY_POLICY.maximumBytes
+      )
+        throw Error("VISUAL_FILE_INVALID");
+      const bytes = await file.bytes();
+      await verify(bytes, descriptor);
+      return bytes;
+    });
   },
   async write(storeId, variant, descriptor, bytes) {
     z.uuid().parse(storeId);
@@ -143,19 +158,33 @@ export const nativeVisualFileStorage: VisualFileStorage = {
     const directory = new Directory(Paths.document, "visual-library", storeId);
     directory.create({ intermediates: true, idempotent: true });
     const file = await destination(storeId, variant, descriptor);
-    if (file.exists)
-      await nativeVisualFileStorage.read(storeId, variant, descriptor);
-    else {
-      const temporary = new File(directory, `${randomUUID()}.part`);
-      const temporaryUri = temporary.uri;
+    const validExisting = async () => {
+      if (!file.exists) return false;
+      try {
+        await nativeVisualFileStorage.read(storeId, variant, descriptor);
+        return true;
+      } catch (error) {
+        if (variant === "SOURCE") throw error;
+        return false;
+      }
+    };
+    if (!(await validExisting())) {
+      const temporary = new File(directory, `${randomUUID()}.part`),
+        temporaryUri = temporary.uri;
       try {
         temporary.create();
         temporary.write(bytes);
         await verify(await temporary.bytes(), descriptor);
-        // A concurrent capture may have installed the identical hash while we verified.
-        if (file.exists)
-          await nativeVisualFileStorage.read(storeId, variant, descriptor);
-        else await temporary.move(file);
+        if (!(await validExisting())) {
+          // A thumbnail is replaceable only after a verified replacement is staged.
+          // An unconfirmed original never enters this deletion path.
+          if (file.exists && variant === "PREVIEW") file.delete();
+          try {
+            await temporary.move(file);
+          } catch (error) {
+            if (!(await validExisting())) throw error;
+          }
+        }
       } finally {
         if (temporary.uri === temporaryUri && temporary.exists)
           temporary.delete();

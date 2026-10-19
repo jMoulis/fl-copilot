@@ -1,3 +1,6 @@
+import { useAuth } from "../auth/auth-provider";
+import { useVisualLibrary } from "./use-visual-library";
+import { ProductVisualPanel } from "./product-visual-panel";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { router, type Href } from "expo-router";
@@ -19,9 +22,19 @@ import { useProductEditor } from "./use-product-editor";
 import { categoryLabels, natureLabels, unitLabels } from "./catalogue-view";
 
 export function ProductDetailScreen({ id }: { id: string }) {
+  const { session } = useAuth();
+  return (
+    <ScopedProductDetailScreen
+      key={`${session?.stores[0]?.storeId}:${session?.user.id}:${id}`}
+      id={id}
+    />
+  );
+}
+function ScopedProductDetailScreen({ id }: { id: string }) {
   const { snapshot, conflictId, loading, storeMissing, missing, error } =
     useProductEditor(id);
   const [relations, setRelations] = useState(false);
+  const gallery = useVisualLibrary();
   const p = snapshot?.product.entity;
   return (
     <AppScreen>
@@ -79,6 +92,11 @@ export function ProductDetailScreen({ id }: { id: string }) {
             label="Modifier la fiche"
             disabled={Boolean(conflictId)}
             onPress={() => router.push(`/(tabs)/products/edit/${id}` as Href)}
+          />
+          <ProductVisualPanel
+            key={`${p.storeId}:${p.id}:${gallery.context?.actorId}`}
+            product={p}
+            controller={gallery}
           />
           <SectionCard title="Identité">
             <Detail label="Catégorie" value={categoryLabels[p.category]} />

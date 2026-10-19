@@ -20,7 +20,7 @@ import type {
 export function useProductList(): ProductListState {
   const { sqlite } = useLocalDatabase();
   const { session } = useAuth();
-  const { pendingCount, conflictCount } = useSync();
+  const { pendingCount, conflictCount, lastSyncedAt } = useSync();
   const storeId = session?.stores[0]?.storeId;
   const repository = useMemo(
     () => new ProductMasterRepository(sqlite),
@@ -97,7 +97,7 @@ export function useProductList(): ProductListState {
       return () => {
         request.current++;
       };
-    }, [refresh, pendingCount, conflictCount]),
+    }, [refresh, pendingCount, conflictCount, lastSyncedAt]),
   );
   return { loading, storeMissing: !storeId, products, error, refresh };
 }
@@ -105,7 +105,7 @@ export function useProductList(): ProductListState {
 export function useProductEditor(productId?: string): ProductEditorState {
   const database = useLocalDatabase();
   const { session } = useAuth();
-  const { pendingCount, conflictCount } = useSync();
+  const { pendingCount, conflictCount, lastSyncedAt } = useSync();
   const storeId = session?.stores[0]?.storeId;
   const repository = useMemo(
     () => new ProductMasterRepository(database.sqlite),
@@ -172,7 +172,7 @@ export function useProductEditor(productId?: string): ProductEditorState {
       return () => {
         generation.current++;
       };
-    }, [refresh, pendingCount, conflictCount]),
+    }, [refresh, pendingCount, conflictCount, lastSyncedAt]),
   );
 
   const save = useCallback(

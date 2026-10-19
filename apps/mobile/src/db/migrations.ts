@@ -846,7 +846,8 @@ CREATE INDEX visual_identity_scope ON visual_identities(store_id,id);
 CREATE TABLE product_visual_links(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,product_id TEXT NOT NULL,deleted_at TEXT,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
 CREATE UNIQUE INDEX product_visual_active ON product_visual_links(store_id,product_id) WHERE deleted_at IS NULL;
 CREATE TABLE visual_asset_files(asset_id TEXT NOT NULL,store_id TEXT NOT NULL,variant TEXT NOT NULL CHECK(variant IN ('SOURCE','PREVIEW')),relative_path TEXT NOT NULL,verified_hash TEXT NOT NULL,size_bytes INTEGER NOT NULL,last_accessed_at TEXT NOT NULL,pinned INTEGER NOT NULL DEFAULT 1,uploaded INTEGER NOT NULL DEFAULT 0,manifest_json TEXT,PRIMARY KEY(asset_id,variant));
-CREATE INDEX visual_cache_scope ON visual_asset_files(store_id,last_accessed_at);`,
+CREATE INDEX visual_cache_scope ON visual_asset_files(store_id,last_accessed_at);
+CREATE UNIQUE INDEX visual_file_job_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.assetId'),json_extract(payload_json,'$.variant')) WHERE type='VISUAL_FILE_TRANSFER';`,
   },
 ];
 
