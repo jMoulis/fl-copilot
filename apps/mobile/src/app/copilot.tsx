@@ -1,3 +1,6 @@
+import { readCopilotLayoutEditProposal } from "@fl-copilot/domain";
+import { CopilotStoreLayoutEditController } from "@/copilot/store-layout-edit-controller";
+import { StoreLayoutEditCard } from "@/copilot/store-layout-edit-card";
 import { readActionExecutionProposal } from "@fl-copilot/domain";
 import { CopilotActionExecutionRepository } from "../copilot/action-execution-repository";
 import { ActionExecutionCard } from "../copilot/action-execution-card";
@@ -240,6 +243,20 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canPrepareCommercialWeek],
+  );
+  const layoutEdits = useMemo(
+    () =>
+      new CopilotStoreLayoutEditController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canManageStoreLayout: canManageStoreSettings,
+        },
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageStoreSettings],
   );
   const operationsProposals = useMemo(
     () =>
@@ -715,6 +732,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readCopilotLayoutEditProposal(message);
+      return (
+        <StoreLayoutEditCard
+          key={message.id}
+          message={message}
+          controller={layoutEdits}
+          canConfirm={canManageStoreSettings}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       const proposal = readCopilotOperationsProposal(message);
       return (
         <OperationsProposalCard
@@ -932,6 +962,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationCreate: canPrepareCommercialWeek,
               preparationSelection: canPrepareCommercialWeek,
               preparationRefresh: canPrepareCommercialWeek,
+              layoutEdits: canManageStoreSettings,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
               storeConflicts:

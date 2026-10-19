@@ -1,3 +1,5 @@
+import type { CopilotActivity } from "@fl-copilot/sync-contracts";
+import { completeLayoutGeometry } from "../../../../scripts/test-store-layout-fixtures";
 import { compareProductClassification } from "@fl-copilot/domain";
 import { membershipFixture } from "../../../../scripts/test-membership-fixtures";
 import { storeContextFixture } from "../../../../scripts/test-store-context-fixtures";
@@ -6517,5 +6519,126 @@ it.each([
         : [],
     );
     if (mode !== "DISABLED") expect(output.factTrace?.complete).toBe(false);
+  },
+);
+
+it.each([
+  "EDIT",
+  "ADD_MOBILE",
+  "FOREIGN",
+  "STALE",
+  "BYTE_BUDGET",
+  "DISABLED",
+] as const)(
+  "prepares a native physical draft through the installed SDK: %s",
+  async (mode) => {
+    const f = fixture(),
+      head = layoutFixture(
+        mode === "FOREIGN" ? randomUUID() : f.request.storeId,
+      ),
+      snapshot = { head, reference: null };
+    if (mode === "BYTE_BUDGET") {
+      head.content = completeLayoutGeometry();
+      for (const f of head.content.furniture)
+        f.label = "Un élément du rayon avec un nom long ".repeat(3);
+    }
+    const input =
+      mode === "BYTE_BUDGET"
+        ? {
+            action: "EDIT",
+            expectedRevisionId: head.revisionId,
+            targetId: head.content.assemblies[0]!.id,
+            patch: { xCm: 220 },
+          }
+        : mode === "ADD_MOBILE"
+          ? {
+              action: "ADD_MOBILE",
+              expectedRevisionId: head.revisionId,
+              label: "Mobile pommes",
+              hostId: head.content.furniture[0]!.id,
+            }
+          : {
+              action: "EDIT",
+              expectedRevisionId:
+                mode === "STALE" ? randomUUID() : head.revisionId,
+              targetId: null,
+              patch: { widthCm: 1140.5 },
+            };
+    if (mode === "FOREIGN")
+      head.content.furniture[0]!.label = "PRIVATE_FOREIGN_PLAN";
+    if (mode === "BYTE_BUDGET") f.config.COPILOT_AI_MAX_INPUT_BYTES = 4096;
+    const storeLayout = vi.fn(async () => snapshot);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "store_layout_edit_preview",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.additionalProperties).toBe(false);
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|actorId|created|measured|canWrite|query/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_physical_edit",
+            call_id: "call_physical_edit",
+            name: "store_layout_edit_preview",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const value = JSON.parse(
+        body.input.find(
+          (v: { type: string }) => v.type === "function_call_output",
+        ).output,
+      );
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_FOREIGN_PLAN");
+      expect(JSON.stringify(value)).not.toContain(head.updatedBy);
+      expect(JSON.stringify(value)).not.toContain("updatedBy");
+      expect(value).not.toHaveProperty("after");
+      expect(value).not.toHaveProperty("before");
+      if (mode === "FOREIGN" || mode === "BYTE_BUDGET")
+        expect(value).toMatchObject({ unavailable: true });
+      else
+        expect(value).toMatchObject({
+          input,
+          status: mode === "STALE" ? "STALE" : "READY",
+        });
+      return response();
+    };
+    const activities: CopilotActivity[] = [];
+    const output = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      storeLayout,
+      layoutEdits: mode !== "DISABLED",
+    }).generate(f.request, schema, undefined, undefined, (e) =>
+      activities.push(e),
+    );
+    const ready = mode === "EDIT" || mode === "ADD_MOBILE";
+    expect(output.layoutEditPreviews).toHaveLength(
+      ready || mode === "STALE" ? 1 : 0,
+    );
+    if (ready) {
+      expect(output.layoutEditPreviews?.[0]?.status).toBe("READY");
+      expect(output.toolEvidence).toHaveLength(1);
+      expect(activities).toContainEqual(
+        expect.objectContaining({ stage: "PROPOSAL", status: "DONE" }),
+      );
+    }
+    expect(storeLayout).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
   },
 );
