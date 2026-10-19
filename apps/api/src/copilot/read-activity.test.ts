@@ -52,3 +52,10 @@ it("shows a declared action review as comparison without private arguments", () 
       JSON.stringify(["declared-action-review", { private: true }]),
     ),
   ).toBe("COMPARISON"));
+
+it("shows context revalidation without exposing private source arguments", () =>
+  expect(
+    readActivityStage(
+      JSON.stringify(["recommendation-context", { private: true }]),
+    ),
+  ).toBe("CONTEXT"));

@@ -1,3 +1,9 @@
+import { factReadFromTool } from "./fact-context";
+import {
+  copilotFactTraceSchema,
+  recommendationContextInputSchema,
+  recommendationContextResultSchema,
+} from "@fl-copilot/domain";
 import { declaredActionReviewInputSchema } from "@fl-copilot/domain";
 import { declaredActionReviewResultSchema } from "./declared-action-review-tool";
 import {
@@ -325,6 +331,7 @@ export interface CopilotAiProvider {
     output: T;
     metadata: CopilotGenerationMetadata;
     toolEvidence?: CopilotGenerationRequest["evidence"];
+    factTrace?: z.infer<typeof copilotFactTraceSchema>;
     executionLinkPreviews?: Array<z.infer<typeof executionLinkPreviewSchema>>;
     actionExecutionPreviews?: Array<
       z.infer<typeof actionExecutionPreviewSchema>
@@ -470,6 +477,9 @@ export function createCopilotAiProvider(
     cataloguePreview?(
       input: z.infer<typeof copilotCatalogueInputSchema>,
     ): Promise<z.infer<typeof copilotCataloguePreviewSchema>>;
+    recommendationContext?(
+      input: z.infer<typeof recommendationContextInputSchema>,
+    ): Promise<z.infer<typeof recommendationContextResultSchema>>;
     actionExecutionPreview?(
       input: z.infer<typeof actionExecutionInputSchema>,
     ): Promise<z.infer<typeof actionExecutionPreviewSchema>>;
@@ -776,6 +786,11 @@ export function createCopilotAiProvider(
           }
         }
         const knowledgeSuggestions: KnowledgeSuggestionInput[] = [];
+        const factReads = new Map<
+          string,
+          z.infer<typeof copilotFactTraceSchema>["reads"][number]
+        >();
+        let completeFactTrace = true;
         let readCalls = 0;
         let usedBytes = Buffer.byteLength(prompt, "utf8");
         const executeRead = async (
@@ -790,7 +805,10 @@ export function createCopilotAiProvider(
             message:
               "Les données demandées ne peuvent pas être consultées maintenant. Ne les inventez pas.",
           };
-          if (++readCalls > 5 || abortSignal.aborted) return unavailable;
+          if (++readCalls > 5 || abortSignal.aborted) {
+            completeFactTrace = false;
+            return unavailable;
+          }
           let work = pending.get(key);
           if (!work) {
             if (
@@ -805,8 +823,10 @@ export function createCopilotAiProvider(
                         knowledgeKeys.size -
                         contextKeys.size >=
                       (reads?.needPreview ? 4 : 3)
-            )
+            ) {
+              completeFactTrace = false;
               return unavailable;
+            }
             if (kind === "INFORMATION") informationKeys.add(key);
             if (kind === "MEMORY") knowledgeKeys.add(key);
             if (kind === "CHECKPOINT") contextKeys.add(key);
@@ -832,24 +852,40 @@ export function createCopilotAiProvider(
               } catch {
                 if (!abortSignal.aborted)
                   onActivity?.({ ...activity, status: "UNAVAILABLE" });
+                completeFactTrace = false;
                 return unavailable;
               }
             });
             pending.set(key, work);
           }
           const value = await work;
-          if (!("evidence" in value) || abortSignal.aborted) return unavailable;
-          const size = Buffer.byteLength(JSON.stringify(value), "utf8");
-          if (usedBytes + size > config.COPILOT_AI_MAX_INPUT_BYTES)
+          if (!("evidence" in value) || abortSignal.aborted) {
+            completeFactTrace = false;
             return unavailable;
+          }
+          const size = Buffer.byteLength(JSON.stringify(value), "utf8");
+          if (usedBytes + size > config.COPILOT_AI_MAX_INPUT_BYTES) {
+            completeFactTrace = false;
+            return unavailable;
+          }
           for (const e of value.evidence) {
             const old = evidence.get(e.id);
-            if (old && JSON.stringify(old) !== JSON.stringify(e))
+            if (old && JSON.stringify(old) !== JSON.stringify(e)) {
+              completeFactTrace = false;
               return unavailable;
+            }
           }
           // Count every returned payload, including cached duplicates, against the input budget.
           usedBytes += size;
           for (const e of value.evidence) evidence.set(e.id, e);
+          try {
+            const snapshot = factReadFromTool(key, value);
+            if (snapshot && factReads.size < 4) factReads.set(key, snapshot);
+            else if (!snapshot || !factReads.has(key))
+              completeFactTrace = false;
+          } catch {
+            completeFactTrace = false;
+          }
           return value;
         };
         // Keep stored/legacy responses compatible while requiring the new body in fresh strict OpenAI output.
@@ -912,6 +948,7 @@ export function createCopilotAiProvider(
                       reads.retailExpertise ||
                       reads.actionReview ||
                       reads.recommendationTracking ||
+                      reads.recommendationContext ||
                       reads.recommendationDecisions ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
@@ -960,6 +997,7 @@ export function createCopilotAiProvider(
                       reads.retailExpertise ||
                       reads.actionReview ||
                       reads.recommendationTracking ||
+                      reads.recommendationContext ||
                       reads.recommendationDecisions ||
                       reads.prepareContextCheckpoint ||
                       reads.conversationHistory ||
@@ -1434,6 +1472,33 @@ export function createCopilotAiProvider(
                                 throw Error("READ_SCOPE_INVALID");
                               executionLinkPreviews.push(value);
                               return value;
+                            },
+                          ),
+                      }),
+                    }
+                  : {}),
+                ...(reads.recommendationContext
+                  ? {
+                      recommendation_context: tool({
+                        description:
+                          "Recheck the recorded business reads behind an exact earlier assistant suggestion in this active chat before reusing it as current advice. Exact sourceMessageId and quote; no new assumptions. Returned read parameters identify the exact bounded lookups to refresh. STALE means recorded sources changed: explain briefly À recalculer and use current data to propose a fresh suggestion, preserving earlier decisions/actions. UNCHANGED covers only recorded reads, not current applicability or operational eligibility; UNVERIFIABLE/old replies never default to valid. Cite the source; no writes, automatic decisions or execution.",
+                        inputSchema: recommendationContextInputSchema,
+                        execute: (input) =>
+                          executeRead(
+                            JSON.stringify(["recommendation-context", input]),
+                            async () => {
+                              const result =
+                                recommendationContextResultSchema.parse(
+                                  await reads.recommendationContext!(input),
+                                );
+                              if (
+                                JSON.stringify(result.input) !==
+                                JSON.stringify(
+                                  recommendationContextInputSchema.parse(input),
+                                )
+                              )
+                                throw Error("READ_SCOPE_INVALID");
+                              return result;
                             },
                           ),
                       }),
@@ -2092,7 +2157,7 @@ export function createCopilotAiProvider(
                   ? {
                       recommendation_tracking_preview: tool({
                         description:
-                          "Prepare a decision card to follow one specific suggestion from an EARLIER assistant message in this private conversation, when the user wants to retain, modify, postpone or decline it. Pass its known message ID and exact contiguous quote (max1200 characters), never a paraphrase or an invented ID. This is conversational advice with context not revalidated, not a formally eligible operational recommendation. A native card records the user's explicit choice offline; READY means prepared only, not accepted or executed. No business action, factual validation, publication or physical execution occurs. If source is missing/hidden, ask for the specific original suggestion.",
+                          "Prepare a decision card to follow one specific suggestion from an EARLIER assistant message in this private conversation, when the user wants to retain, modify, postpone or decline it. Pass its known message ID and exact contiguous quote (max1200 characters), never a paraphrase or an invented ID. This is conversational advice with context not revalidated, not a formally eligible operational recommendation. A native card records the user's explicit choice offline; READY means prepared only, not accepted or executed. No business action, factual validation, publication or physical execution occurs. If source is missing/hidden, ask for the specific original suggestion. STALE means recorded facts changed: no tracking card is prepared; explain À recalculer and refresh the advice without erasing earlier choices. UNVERIFIABLE context is never current eligibility.",
                         inputSchema: recommendationTrackingInputSchema,
                         execute: (input) =>
                           executeRead(
@@ -2960,6 +3025,10 @@ export function createCopilotAiProvider(
           ...(reads
             ? {
                 toolEvidence: [...evidence.values()],
+                factTrace: copilotFactTraceSchema.parse({
+                  reads: [...factReads.values()],
+                  complete: completeFactTrace,
+                }),
                 actionExecutionPreviews: actionExecutionPreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),

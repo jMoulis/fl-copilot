@@ -5835,3 +5835,89 @@ it.each(["READY", "DISABLED", "INPUT_MISMATCH", "FOREIGN"])(
     }
   },
 );
+
+it.each(["PERIOD", "CONTEXT", "DISABLED", "MISMATCH"])(
+  "captures only server-read provenance and bounds context rechecks (%s)",
+  async (mode) => {
+    const { factContextFixture } =
+      await import("../../../../scripts/test-fact-context-fixtures");
+    const { readRecommendationContext } = await import("./fact-context");
+    const n = await factContextFixture(),
+      f = fixture();
+    try {
+      f.request.storeId = n.scope.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: n.scope.storeId,
+          evaluatedAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const context = await readRecommendationContext(
+        n.db,
+        n.scope,
+        n.contextInput,
+        "2026-10-19T08:00:00.000Z",
+      );
+      if (mode === "MISMATCH") context.input.quote = "Autre conseil";
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        if (calls++ === 0) {
+          expect(
+            body.tools.some(
+              (t: { name: string }) => t.name === "recommendation_context",
+            ),
+          ).toBe(mode !== "DISABLED");
+          if (mode !== "DISABLED") {
+            const envelope = z
+              .record(z.string(), z.unknown())
+              .parse(await response().json());
+            envelope.output = [
+              {
+                type: "function_call",
+                id: "fc_facts",
+                call_id: "call_facts",
+                name:
+                  mode === "PERIOD"
+                    ? "analytics_period"
+                    : "recommendation_context",
+                arguments: JSON.stringify(
+                  mode === "PERIOD" ? n.periodInput : n.contextInput,
+                ),
+                status: "completed",
+              },
+            ];
+            return new Response(JSON.stringify(envelope), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+        } else {
+          const output = JSON.parse(
+            body.input.find(
+              (x: { type: string }) => x.type === "function_call_output",
+            ).output,
+          );
+          if (mode === "MISMATCH")
+            expect(output).toMatchObject({ unavailable: true });
+        }
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        period: vi.fn(async () => n.result),
+        ...(mode === "DISABLED"
+          ? {}
+          : { recommendationContext: vi.fn(async () => context) }),
+      }).generate(f.request, schema);
+      expect(result.factTrace).toEqual(
+        mode === "PERIOD"
+          ? n.trace
+          : { reads: [], complete: mode === "DISABLED" },
+      );
+    } finally {
+      n.n.db.db.close();
+    }
+  },
+);

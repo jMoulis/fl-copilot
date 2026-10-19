@@ -1,3 +1,7 @@
+import {
+  readRecommendationContext,
+  readTrackingWithFactContext,
+} from "./copilot/fact-context";
 import { readDeclaredActionReview } from "./copilot/declared-action-review-tool";
 import {
   readActionExecutionPreview,
@@ -8,7 +12,6 @@ import {
   readExecutionLinks,
 } from "./copilot/execution-link-tool";
 import { readRecommendationDecisions } from "./copilot/decision-read-tool.js";
-import { readRecommendationTracking } from "./copilot/recommendation-tracking-tool.js";
 import { readActionReview } from "./copilot/action-review-tool.js";
 import {
   createCommercialProcessingRecovery,
@@ -964,9 +967,23 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                       await authorize();
                       return result;
                     },
+                    recommendationContext: async (input) => {
+                      const p = await authorize();
+                      const r = await readRecommendationContext(
+                        db,
+                        {
+                          storeId,
+                          ownerId: p.ownerId,
+                          conversationId: request.body.conversationId,
+                        },
+                        input,
+                      );
+                      await authorize();
+                      return r;
+                    },
                     recommendationTracking: async (input) => {
                       const principal = await authorize();
-                      const result = await readRecommendationTracking(
+                      const result = await readTrackingWithFactContext(
                         db,
                         {
                           storeId,
