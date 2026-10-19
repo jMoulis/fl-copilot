@@ -1,3 +1,9 @@
+import {
+  serializeStoreLayout,
+  serializeStoreLayoutRevision,
+  type StoreLayoutDocument,
+  type StoreLayoutRevisionDocument,
+} from "../store-layout-sync";
 import { legacyCommercialExecution } from "@fl-copilot/domain";
 import { synchronizedMercalysPublicationSchema } from "@fl-copilot/sync-contracts";
 import type { MercalysPublicationDocument } from "../imports/mercalys-publication-sync.js";
@@ -220,6 +226,10 @@ export function createMongoSyncPullService(
                 change.entityType !== "commercial_week_preparation") &&
               (query.commercialExecution === "true" ||
                 change.entityType !== "commercial_execution_task") &&
+              (query.storeLayouts === "true" ||
+                !["store_layout", "store_layout_revision"].includes(
+                  change.entityType,
+                )) &&
               (query.storeContext === "true" ||
                 change.entityType !== "store_context_settings") &&
               (query.needUnits === "true" ||
@@ -332,6 +342,36 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: row.version,
                 entity: serializeCommercialVersionDecision(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (
+              change.entityType === "store_layout" ||
+              change.entityType === "store_layout_revision"
+            ) {
+              const revision = change.entityType === "store_layout_revision";
+              const row = revision
+                ? await mongoDatabase
+                    .collection<StoreLayoutRevisionDocument>(
+                      "storeLayoutRevisions",
+                    )
+                    .findOne({ _id: change.entityId, storeId })
+                : await mongoDatabase
+                    .collection<StoreLayoutDocument>("storeLayouts")
+                    .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("STORE_LAYOUT_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: revision
+                  ? serializeStoreLayoutRevision(
+                      row as StoreLayoutRevisionDocument,
+                    )
+                  : serializeStoreLayout(row as StoreLayoutDocument),
                 changedAt: change.changedAt.toISOString(),
               };
             }

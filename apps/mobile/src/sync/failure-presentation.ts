@@ -14,6 +14,7 @@ const labels: Record<string, string> = {
   need_membership: "Association produit/besoin",
   product_substitution: "Substitution",
   store_product_event: "Signalement magasin",
+  store_layout: "Plan physique du magasin",
   store_context_settings: "Réglages du magasin",
   commercial_offer_choice: "Choix d’offre",
   commercial_week_preparation: "Préparation commerciale",

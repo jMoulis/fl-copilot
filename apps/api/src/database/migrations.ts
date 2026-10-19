@@ -843,6 +843,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, ownerId: 1, conversationId: 1, _id: 1 });
     },
   },
+  {
+    version: 43,
+    name: "store-physical-layout",
+    async up(db) {
+      await db
+        .collection("storeLayouts")
+        .createIndex({ storeId: 1 }, { unique: true });
+      await db
+        .collection("storeLayoutRevisions")
+        .createIndex({ storeId: 1, "plan.version": 1 }, { unique: true });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

@@ -112,3 +112,4 @@ export {
 } from "@fl-copilot/domain";
 
 export * from "./commercial-processing";
+export * from "./store-layout";

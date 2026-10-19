@@ -1,4 +1,10 @@
 import {
+  serializeStoreLayout,
+  serializeStoreLayoutRevision,
+  type StoreLayoutDocument,
+  type StoreLayoutRevisionDocument,
+} from "../store-layout-sync";
+import {
   serializeActionExecution,
   type ActionExecutionDocument,
 } from "../copilot/action-execution-store";
@@ -306,6 +312,23 @@ export function createMongoSyncBootstrapService(
                     .find({ storeId: store.storeId }, { session })
                     .toArray()
                 : [];
+            const layouts =
+              query.storeLayouts === "true"
+                ? await mongoDatabase
+                    .collection<StoreLayoutDocument>("storeLayouts")
+                    .find({ storeId: store.storeId }, { session })
+                    .toArray()
+                : [];
+            const layoutRevisions =
+              query.storeLayouts === "true"
+                ? await mongoDatabase
+                    .collection<StoreLayoutRevisionDocument>(
+                      "storeLayoutRevisions",
+                    )
+                    .find({ storeId: store.storeId }, { session })
+                    .sort({ "plan.version": 1 })
+                    .toArray()
+                : [];
             const contextSettings =
               query.storeContext === "true"
                 ? await mongoDatabase
@@ -505,6 +528,14 @@ export function createMongoSyncBootstrapService(
                   ? {
                       commercialVersionDecisions: versionDecisions.map(
                         serializeCommercialVersionDecision,
+                      ),
+                    }
+                  : {}),
+                ...(query.storeLayouts === "true"
+                  ? {
+                      storeLayouts: layouts.map(serializeStoreLayout),
+                      storeLayoutRevisions: layoutRevisions.map(
+                        serializeStoreLayoutRevision,
                       ),
                     }
                   : {}),

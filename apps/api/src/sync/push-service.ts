@@ -1,3 +1,4 @@
+import { applyStoreLayoutCommand } from "../store-layout-sync";
 import {
   commercialExecutionTaskSchema,
   legacyCommercialExecution,
@@ -124,7 +125,10 @@ export function createMongoSyncPushService(
               commandType: command.type,
               entityType: command.entityType,
               entityId: command.entityId,
-              ...(isChatType(command.entityType) ? { ownerId } : {}),
+              ...(isChatType(command.entityType) ||
+              command.entityType === "store_layout"
+                ? { ownerId }
+                : {}),
             },
             (context) =>
               applyCommand(
@@ -263,6 +267,15 @@ async function applyCommand(
       command,
       requestId,
       syncChanges,
+    );
+  if (command.type === "STORE_LAYOUT_UPSERT")
+    return applyStoreLayoutCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+      ownerId,
     );
   if (command.type === "STORE_CONTEXT_SETTINGS_UPSERT")
     return applyStoreContextCommand(

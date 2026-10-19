@@ -147,3 +147,4 @@ export * from "./copilot-action-execution";
 
 export * from "./copilot-fact-context";
 export * from "./implantation-scenario";
+export * from "./store-layout";
