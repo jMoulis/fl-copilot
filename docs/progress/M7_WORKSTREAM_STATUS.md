@@ -332,3 +332,15 @@ Code prêt après contrôles, non livré sur iPhone. Pas de déploiement automat
 7. **UX et validation globale : en cours.** Comparaison et confirmation dans la feuille du chat, consultation du lien depuis la préparation/plan, refus explicites et bonne semaine historique. Recette iPhone groupée encore à faire.
 
 Code prêt après contrôles, non livré. **2 153 tests locaux et quatre cas Mongo réels réussis**, build API et exports iOS/Android passés ; pas de build EAS payant ni de déploiement. Voir `docs/qa/M7_STORE_LAYOUT_COMMERCIAL_LINK.md`.
+
+## Lot courant — Explorer analytique natif et première navigation UX (PR 274)
+
+1. **Actions métier et conflits : en cours.** Les tâches commerciales existantes sont accessibles depuis Actions ; aucune nouvelle mutation métier ni clôture des exceptions CRUD.
+2. **Contre-promo : code prêt**, livraison et dialogue réels encore à valider.
+3. **Documents : en cours.** Semaine, tickets et imports restent accessibles dans la nouvelle navigation ; réception/restauration des sources encore ouvertes.
+4. **Expertise métier structurée : en cours.** Aucune nouvelle connaissance métier ni conclusion causale déduite par l’interface.
+5. **Suivi des recommandations : en cours.** Le suivi réel des tâches du plan est réutilisé ; acceptation d’un conseil et exécution restent distinctes.
+6. **Implantation : en cours.** Socle PR 273 conservé ; illustrations et contraintes/gestes/pilote encore ouverts.
+7. **UX et validation globale : en cours.** Premier Explorer Jour/Semaine/Mois/Année sur les montants canoniques SQLite, sélection contextuelle, comparaison ISO N−1 ou civile qualifiée, graphique et drill/retour. État privé période/métrique/historique/scroll conservé après redémarrage ; thème sombre commun et cinq domaines natifs avec le chat à l’ouverture. Restent filtres/contributions/liens profonds, cohérence des autres écrans, médias et recette native groupée.
+
+14 nouveaux cas réussis (moteur + SQLite sur disque). Les vérifications complètes et les deux CI exactes sont consignées dans la PR. Aperçu local des composants avec données de test, distinct de la recette téléphone. **Code non livré**, aucun build EAS payant ni déploiement API. Voir `docs/qa/M7_UX_ANALYTICS_EXPLORER.md`, l’audit et la décomposition UX ; les sept chantiers et le périmètre V1 complet sont conservés.

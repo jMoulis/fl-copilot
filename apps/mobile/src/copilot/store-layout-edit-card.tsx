@@ -102,7 +102,7 @@ export function StoreLayoutEditCard({
     [details],
   );
   return (
-    <View className="gap-3 rounded-2xl border border-line bg-white p-4">
+    <View className="gap-3 rounded-2xl border border-line bg-surface p-4">
       <Text className="font-semibold text-ink">
         Modification du plan du magasin
       </Text>

@@ -25,7 +25,7 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
+        name="today"
         options={{
           title: "Aujourd’hui",
           tabBarAccessibilityLabel: "Aujourd’hui",
@@ -39,22 +39,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="week"
-        options={{
-          title: "Ma semaine",
-          tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons
-              name={focused ? "calendar" : "calendar-outline"}
-              color={color}
-              size={size}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="analytics"
         options={{
           title: "Analyses",
+          tabBarAccessibilityLabel: "Analyses",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? "bar-chart" : "bar-chart-outline"}
@@ -65,12 +53,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="waste"
+        name="products"
         options={{
-          title: "Casse",
+          title: "Produits",
+          tabBarAccessibilityLabel: "Produits",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? "camera" : "camera-outline"}
+              name={focused ? "nutrition" : "nutrition-outline"}
               color={color}
               size={size}
             />
@@ -78,24 +67,41 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="more"
+        name="copilot"
         options={{
-          title: "Plus",
+          title: "Copilote",
+          tabBarAccessibilityLabel: "Copilote",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? "menu" : "menu-outline"}
+              name={focused ? "chatbubble" : "chatbubble-outline"}
               color={color}
               size={size}
             />
           ),
         }}
       />
+      <Tabs.Screen
+        name="actions"
+        options={{
+          title: "Actions",
+          tabBarAccessibilityLabel: "Actions",
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons
+              name={focused ? "checkbox" : "checkbox-outline"}
+              color={color}
+              size={size}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen name="index" options={{ href: null }} />
+      <Tabs.Screen name="week" options={{ href: null }} />
+      <Tabs.Screen name="waste" options={{ href: null }} />
+      <Tabs.Screen name="more" options={{ href: null }} />
       <Tabs.Screen name="commercial-review/[id]" options={{ href: null }} />
       <Tabs.Screen name="sync" options={{ href: null }} />
       <Tabs.Screen name="imports" options={{ href: null }} />
       <Tabs.Screen name="xlsx-diagnostic" options={{ href: null }} />
-      <Tabs.Screen name="products/index" options={{ href: null }} />
-      <Tabs.Screen name="products/[id]" options={{ href: null }} />
       <Tabs.Screen name="priority/[id]" options={{ href: null }} />
       <Tabs.Screen name="sync-conflict/[id]" options={{ href: null }} />
       <Tabs.Screen name="import-verification/[id]" options={{ href: null }} />

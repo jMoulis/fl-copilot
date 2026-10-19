@@ -179,7 +179,7 @@ export default function WasteCaptureScreen() {
           title="Ticket enregistré"
           subtitle="La photo est conservée sur cet appareil."
         />
-        <View className="gap-4 rounded-3xl border border-line bg-white p-5">
+        <View className="gap-4 rounded-3xl border border-line bg-surface p-5">
           <StatusBadge status={possibleDuplicate ? "incomplete" : "pending"} />
           <Text className="text-base leading-6 text-ink">
             {possibleDuplicate

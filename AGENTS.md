@@ -340,10 +340,10 @@ Primary navigation:
 
 ```text
 Aujourd’hui
-Ma semaine
 Analyses
-Casse
-Plus
+Produits
+Copilote
+Actions
 ```
 
 The user must understand relevant states such as:
@@ -356,6 +356,8 @@ Conflit
 Analyse IA en attente
 Données incomplètes
 ```
+
+The approved 19 October UX arbitration keeps the conversational Copilot central. Each primary domain owns its Stack and preserves its context. Existing week, waste, import, settings and synchronization routes remain reachable; the new tab layout must not discard these workflows. `docs/ux/AUDIT.md` records decisions that adapt the external UX pack to the complete product. Written product invariants govern the illustrative mockups; never fabricate hourly data, stock or supplier orders.
 
 Normal background synchronization must not replace existing local content with empty loading states.
 
@@ -519,16 +521,8 @@ Do not use superseded technical documents from outside this repository.
 
 ## 17. Current implementation scope
 
-The completed milestone is:
+M7 is active. Read `docs/progress/M7_WORKSTREAM_STATUS.md` and the latest code before relying on older milestone introductions. Keep the seven agreed workstreams and the complete V1 objective, including approved UX, rather than narrowing to a presentation demo. `docs/ux/V1_REMAINING_ROADMAP.md` decomposes the remaining work; it does not replace the seven workstreams.
 
-```text
-M2-T01 through M2-T15 — Product master and local Mercalys
-```
+Reuse the canonical architecture and validated functions. Distinguish code ready, merged, deployed and device accepted. Follow `docs/RELEASE_PROCESS.md`: both exact-head push and PR checks must pass before merge; delete the merged branch. Group releases and reserve paid EAS builds for substantial native acceptance. No automatic Vercel deployment per PR, system-toolchain modification, new provider spending or fabricated production demo data.
 
-The active increment is:
-
-```text
-M3-T01 onward — Shared analytics and Aujourd’hui
-```
-
-Read `docs/progress/M0_FOUNDATION.md`, `docs/progress/M1_SYNC_FOUNDATION.md`, and `docs/progress/M2_PRODUCT_MASTER.md` for completed evidence, and `docs/progress/M3_ANALYTICS_TODAY.md` for the active analytics increment. Continue according to `docs/specs/IMPLEMENTATION_PLAN.md`.
+The current first UX increment adds local analytical exploration, qualified ISO/civil comparison and the new primary navigation. Product/category filters, deeper links, further screen design and the other remaining M7/M8 gates remain tracked; no claim of full V1 completion follows from this increment.

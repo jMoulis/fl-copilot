@@ -12,6 +12,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { colors } from "../design/tokens";
 import { initializeLocalDatabase, type LocalDatabase } from "../db/client";
 
 const DatabaseContext = createContext<LocalDatabase | null>(null);
@@ -59,7 +60,7 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
   if (!database) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#166534" />
+        <ActivityIndicator size="large" color={colors.forest} />
         <Text style={styles.message}>Préparation des données locales…</Text>
       </View>
     );
@@ -87,32 +88,32 @@ export function useDeviceIdentity() {
 const styles = StyleSheet.create({
   centered: {
     alignItems: "center",
-    backgroundColor: "#f7fee7",
+    backgroundColor: colors.canvas,
     flex: 1,
     gap: 16,
     justifyContent: "center",
     padding: 24,
   },
   title: {
-    color: "#3f6212",
+    color: colors.ink,
     fontSize: 22,
     fontWeight: "700",
     textAlign: "center",
   },
   message: {
-    color: "#4d7c0f",
+    color: colors.muted,
     fontSize: 15,
     lineHeight: 22,
     textAlign: "center",
   },
   button: {
-    backgroundColor: "#166534",
+    backgroundColor: colors.forest,
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 12,
   },
   buttonLabel: {
-    color: "#ffffff",
+    color: colors.onAccent,
     fontSize: 15,
     fontWeight: "700",
   },

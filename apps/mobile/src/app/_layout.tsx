@@ -2,6 +2,7 @@ import "../../global.css";
 import { useEffect } from "react";
 import { Stack, type ErrorBoundaryProps } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { colors } from "@/design/tokens";
 import { AppProviders } from "@/providers/app-providers";
 import {
   AppHeader,
@@ -43,8 +44,13 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
 function RootLayout() {
   return (
     <AppProviders>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }}>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.canvas },
+        }}
+      >
         <Stack.Screen name="index" />
         <Stack.Screen name="login" />
         <Stack.Screen name="verify" />

@@ -91,7 +91,7 @@ export default function VerifyScreen() {
               returnKeyType="done"
               onSubmitEditing={() => void submit()}
               accessibilityLabel="Code de vérification à six chiffres"
-              className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-center text-2xl tracking-widest text-ink"
+              className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-center text-2xl tracking-widest text-ink"
             />
           )}
         />

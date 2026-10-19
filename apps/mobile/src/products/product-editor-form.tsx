@@ -162,7 +162,7 @@ export function ProductEditorForm({
               onChangeText={onChange}
               accessibilityLabel="Libellé du produit"
               placeholder="Ex. Tomate ronde en grappe"
-              className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-base text-ink"
+              className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink"
             />
           )}
         />
@@ -200,7 +200,7 @@ export function ProductEditorForm({
               accessibilityLabel="Quantité du conditionnement"
               keyboardType="decimal-pad"
               placeholder="Ex. 1,5"
-              className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-base text-ink"
+              className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink"
             />
           )}
         />
@@ -222,7 +222,7 @@ export function ProductEditorForm({
               onChangeText={onChange}
               accessibilityLabel="Libellé source du conditionnement"
               placeholder="Ex. sachet 1,5 kg"
-              className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-base text-ink"
+              className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink"
             />
           )}
         />
@@ -254,7 +254,7 @@ export function ProductEditorForm({
                   onChangeText={input.onChange}
                   accessibilityLabel={`Valeur de l’identifiant ${index + 1}`}
                   autoCapitalize="characters"
-                  className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-base text-ink"
+                  className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink"
                 />
               )}
             />
@@ -287,7 +287,7 @@ export function ProductEditorForm({
                   onBlur={input.onBlur}
                   onChangeText={input.onChange}
                   accessibilityLabel={`Alias ${index + 1}`}
-                  className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-base text-ink"
+                  className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink"
                 />
               )}
             />
@@ -364,10 +364,10 @@ function ChoiceController({
                   accessibilityState={{ selected }}
                   accessibilityLabel={`${label} : ${choiceLabel}`}
                   onPress={() => onChange(choice)}
-                  className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${selected ? "border-forest bg-forest" : "border-line bg-white"}`}
+                  className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${selected ? "border-forest bg-forest" : "border-line bg-surface"}`}
                 >
                   <Text
-                    className={`text-sm font-semibold ${selected ? "text-white" : "text-ink"}`}
+                    className={`text-sm font-semibold ${selected ? "text-on-accent" : "text-ink"}`}
                   >
                     {choiceLabel}
                   </Text>
