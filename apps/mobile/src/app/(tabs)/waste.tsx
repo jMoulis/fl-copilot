@@ -1,165 +1,98 @@
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect, router } from "expo-router";
 import { useAuth } from "@/auth/auth-provider";
-import {
-  AppHeader,
-  AppScreen,
-  EmptyState,
-  InlineAlert,
-  PrimaryButton,
-  SecondaryButton,
-  SectionCard,
-  StatusBadge,
-} from "@/components/ui";
+import { AppHeader, AppScreen, InlineAlert } from "@/components/ui";
 import {
   WasteReceiptRepository,
   type LocalWasteReceiptSummary,
 } from "@/documents/waste-receipt-repository";
+import { ReceiptList } from "@/documents/receipt-list";
 import { useLocalDatabase } from "@/providers/database-provider";
-import { receiptProcessingPresentation } from "@/documents/waste-receipt-processing";
 import { useSync } from "@/sync/sync-provider";
-
-const receiptDateFormatter = new Intl.DateTimeFormat("fr-FR", {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
-export default function Screen() {
-  const router = useRouter();
-  const { status: syncStatus } = useSync();
-  const { session } = useAuth();
-  const database = useLocalDatabase();
-  const repository = useMemo(
-    () => new WasteReceiptRepository(database.sqlite),
-    [database.sqlite],
-  );
-  const storeId = session?.stores[0]?.storeId;
-  const [receipts, setReceipts] = useState<LocalWasteReceiptSummary[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const loadReceipts = useCallback(async () => {
-    if (!storeId) {
-      setReceipts([]);
-      return;
-    }
-    setError(undefined);
-    try {
-      setReceipts(await repository.listReceipts(storeId));
-    } catch {
-      setError("Les tickets enregistrés n’ont pas pu être relus.");
-    }
-  }, [repository, storeId]);
-
-  const needsRefresh = receipts.some(
-    (item) =>
-      item.uploadJob &&
-      ["PENDING", "RETRY", "RUNNING"].includes(item.uploadJob.status),
-  );
-  useFocusEffect(
-    useCallback(() => {
-      void loadReceipts();
-      if (!needsRefresh) return;
-      const timer = setInterval(() => {
-        void loadReceipts();
-      }, 2000);
-      return () => clearInterval(timer);
-    }, [loadReceipts, needsRefresh]),
-  );
-
-  const refresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await loadReceipts();
-    } finally {
-      setRefreshing(false);
-    }
-  }, [loadReceipts]);
-
-  return (
-    <AppScreen refreshing={refreshing} onRefresh={() => void refresh()}>
-      <AppHeader
-        title="Casse"
-        subtitle="Suivre les pertes, garder une trace."
+export default function WasteScreen() {
+  const { session } = useAuth(),
+    storeId = session?.stores[0]?.storeId,
+    ownerId = session?.user.id;
+  return storeId && ownerId ? (
+    <StoreWaste key={`${storeId}:${ownerId}`} storeId={storeId} />
+  ) : (
+    <AppScreen>
+      <AppHeader title="Casse" />
+      <InlineAlert
+        title="Aucun magasin actif"
+        message="Reconnectez-vous pour retrouver les tickets de votre magasin."
       />
-      {error ? (
-        <InlineAlert title="Lecture impossible" message={error} />
-      ) : null}
-      {receipts.length === 0 ? (
-        <EmptyState
-          title="Aucun ticket enregistré"
-          message="Photographiez un ticket de casse. La photo et le brouillon restent sur cet appareil, même sans connexion."
-          icon="camera-outline"
-        >
-          <PrimaryButton
-            label="Prendre un ticket en photo"
-            onPress={() => router.push("/waste-capture")}
-          />
-          <SecondaryButton
-            label="Importer une photo"
-            onPress={() => router.push("/waste-import")}
-          />
-        </EmptyState>
-      ) : (
-        <>
-          <SectionCard
-            title="Nouveau ticket"
-            description="La saisie reste disponible hors connexion."
-          >
-            <PrimaryButton
-              label="Prendre un ticket en photo"
-              onPress={() => router.push("/waste-capture")}
-            />
-            <SecondaryButton
-              label="Importer une photo"
-              onPress={() => router.push("/waste-import")}
-            />
-          </SectionCard>
-          <SectionCard
-            title="Tickets enregistrés"
-            description={`${receipts.length} brouillon${receipts.length > 1 ? "s" : ""} conservé${receipts.length > 1 ? "s" : ""} sur cet appareil.`}
-          >
-            {receipts.map(({ receipt, lineCount, uploadJob }) => {
-              const presentation = receiptProcessingPresentation(
-                receipt,
-                uploadJob,
-                lineCount,
-                syncStatus === "offline",
-              );
-              return (
-                <Pressable
-                  key={receipt.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Ouvrir le ticket du ${formatReceiptDate(receipt.captureDate)}`}
-                  onPress={() => router.push(`/waste-receipt/${receipt.id}`)}
-                  className="gap-3 rounded-2xl border border-line bg-canvas p-4"
-                >
-                  <View className="flex-row items-start justify-between gap-3">
-                    <View className="flex-1 gap-1">
-                      <Text className="text-base font-semibold text-ink">
-                        Ticket du {formatReceiptDate(receipt.captureDate)}
-                      </Text>
-                      <Text className="text-sm leading-5 text-muted">
-                        {presentation.title}
-                      </Text>
-                    </View>
-                    <StatusBadge status={presentation.status} />
-                  </View>
-                </Pressable>
-              );
-            })}
-          </SectionCard>
-        </>
-      )}
     </AppScreen>
   );
 }
-
-function formatReceiptDate(value: string | null | undefined) {
-  if (!value) return "date inconnue";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "date inconnue"
-    : receiptDateFormatter.format(date);
+function StoreWaste({ storeId }: { storeId: string }) {
+  const { sqlite } = useLocalDatabase(),
+    sync = useSync();
+  const repository = useMemo(
+    () => new WasteReceiptRepository(sqlite),
+    [sqlite],
+  );
+  const [receipts, setReceipts] = useState<LocalWasteReceiptSummary[]>([]);
+  const [loading, setLoading] = useState(true),
+    [refreshing, setRefreshing] = useState(false),
+    [error, setError] = useState<string>();
+  const generation = useRef(0);
+  const load = useCallback(async () => {
+    const ticket = ++generation.current;
+    try {
+      const rows = await repository.listReceipts(storeId);
+      if (ticket === generation.current) {
+        setReceipts(rows);
+        setError(undefined);
+      }
+    } catch {
+      if (ticket === generation.current)
+        setError(
+          "Les tickets n’ont pas pu être relus. Les données déjà affichées restent conservées.",
+        );
+    } finally {
+      if (ticket === generation.current) setLoading(false);
+    }
+  }, [repository, storeId]);
+  const needsRefresh = receipts.some(
+    (r) =>
+      r.uploadJob &&
+      ["PENDING", "RETRY", "RUNNING"].includes(r.uploadJob.status),
+  );
+  useFocusEffect(
+    useCallback(() => {
+      if (sync.status === "syncing") return;
+      void load();
+      const timer = needsRefresh
+        ? setInterval(() => void load(), 2000)
+        : undefined;
+      return () => {
+        generation.current++;
+        if (timer) clearInterval(timer);
+      };
+    }, [load, needsRefresh, sync.status]),
+  );
+  const refresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await load();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  return (
+    <ReceiptList
+      receipts={receipts}
+      loading={loading}
+      refreshing={refreshing}
+      error={error}
+      offline={sync.status === "offline"}
+      onRefresh={() => void refresh()}
+      onCapture={() => router.push("/waste-capture")}
+      onImport={() => router.push("/waste-import")}
+      onOpen={(id) => router.push(`/waste-receipt/${id}`)}
+      onSync={() => router.push("/sync-center")}
+    />
+  );
 }

@@ -373,6 +373,7 @@ function ChoiceController({
                 <Pressable
                   key={choice}
                   accessibilityRole="radio"
+                  aria-checked={selected}
                   accessibilityState={{ checked: selected }}
                   accessibilityLabel={`${label} : ${choiceLabel}`}
                   onPress={() => onChange(choice)}

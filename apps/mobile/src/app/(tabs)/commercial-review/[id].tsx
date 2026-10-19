@@ -317,7 +317,7 @@ export default function CommercialReviewScreen() {
         subtitle={pages[0]?.originalFilename ?? "Communication commerciale"}
       />
       <SecondaryButton
-        label="Retour à Ma semaine"
+        label="Retour aux documents"
         onPress={() => discardEdits(() => router.replace("/week" as Href))}
       />
       <CommercialOriginalButton sourceDocumentId={id} />

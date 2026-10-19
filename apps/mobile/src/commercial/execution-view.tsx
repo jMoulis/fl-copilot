@@ -297,6 +297,7 @@ export function CommercialExecutionView({
             <Pressable
               key={value}
               accessibilityRole="radio"
+              aria-checked={filter === value}
               accessibilityState={{ checked: filter === value }}
               accessibilityLabel={`Tâches : ${value === "ALL" ? "Toutes" : executionStatusLabels[value]}`}
               onPress={() => setFilter(value)}

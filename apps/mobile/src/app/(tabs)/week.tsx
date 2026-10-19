@@ -1,3 +1,4 @@
+import { CommercialOriginalButton } from "@/commercial/original-button";
 import { CommercialAnalysisRecoveryPanel } from "@/commercial/analysis-recovery-panel";
 import { WeeklySubstitutesView } from "@/commercial/substitute-view";
 import { currentCommercialWeek } from "@fl-copilot/commercial-core";
@@ -46,6 +47,22 @@ const picker =
   requireOptionalNativeModule<NativePdfPicker>("ExpoDocumentPicker");
 
 export default function WeekScreen() {
+  const { session } = useAuth(),
+    storeId = session?.stores[0]?.storeId,
+    ownerId = session?.user.id;
+  return storeId && ownerId ? (
+    <StoreWeekScreen key={`${storeId}:${ownerId}`} />
+  ) : (
+    <AppScreen>
+      <AppHeader title="Documents commerciaux" />
+      <InlineAlert
+        title="Aucun magasin actif"
+        message="Reconnectez-vous pour retrouver les documents de votre magasin."
+      />
+    </AppScreen>
+  );
+}
+function StoreWeekScreen() {
   const { session } = useAuth();
   const { syncNow, status: syncStatus } = useSync();
   const { sqlite } = useLocalDatabase();
@@ -69,6 +86,9 @@ export default function WeekScreen() {
     () => new CommercialReviewRepository(sqlite),
     [sqlite],
   );
+  const [preparation, setPreparation] = useState(false);
+  const [readComplete, setReadComplete] = useState(false);
+  const [readError, setReadError] = useState<string>();
   const [reviewPages, setReviewPages] = useState<CommercialReviewPage[]>([]);
   const [reviewDecisions, setReviewDecisions] = useState<
     Awaited<ReturnType<CommercialReviewRepository["decisions"]>>
@@ -112,16 +132,20 @@ export default function WeekScreen() {
           .then((result) => {
             if (active) {
               setDocuments(result.items);
+              setReadComplete(true);
+              setReadError(undefined);
               setJobs(result.jobs);
               setReviewPages(result.pages ?? []);
               setReviewDecisions(result.decisions ?? []);
             }
           })
           .catch(() => {
-            if (active)
-              setError(
-                "Les documents enregistrés ne peuvent pas être lus. Réouvrez cet écran pour réessayer.",
+            if (active) {
+              setReadComplete(true);
+              setReadError(
+                "Les documents enregistrés ne peuvent pas être relus. Les données déjà affichées restent conservées.",
               );
+            }
           });
       };
       refresh();
@@ -187,31 +211,11 @@ export default function WeekScreen() {
   return (
     <AppScreen>
       <AppHeader
-        title="Ma semaine"
-        subtitle="Préparer les temps forts du rayon."
-      />
-      <SecondaryButton
-        label="Préparer mon plan de semaine et mes TG"
-        onPress={() => router.push("/week-preparation")}
-      />
-      <SecondaryButton
-        label="Voir mon plan de semaine validé"
-        onPress={() => router.push("/commercial-plan")}
-      />
-      <SecondaryButton
-        label="Comparer un PDF corrigé"
-        onPress={() => router.push("/commercial-comparison")}
-      />
-      {storeId ? <CommercialVersionDecisionList storeId={storeId} /> : null}
-      {storeId ? <WeeklyContextView storeId={storeId} /> : null}
-      {storeId ? (
-        <WeeklySubstitutesView
-          storeId={storeId}
-          weekStart={currentCommercialWeek().start}
-        />
-      ) : null}
-      <SectionCard
         title="Documents commerciaux"
+        subtitle="Vos PDF et leurs analyses, disponibles après réception."
+      />
+      <SectionCard
+        title="Importer un document"
         description="Conservez les PDF du rayon sur cet appareil, même hors connexion."
       >
         <PrimaryButton
@@ -235,6 +239,12 @@ export default function WeekScreen() {
         <InlineAlert title="Document enregistré" message={message} />
       ) : null}
       {error ? <InlineAlert title="Import impossible" message={error} /> : null}
+      {readError ? (
+        <InlineAlert title="Lecture interrompue" message={readError} />
+      ) : null}
+      {!readComplete ? (
+        <Text className="text-muted">Lecture des documents enregistrés…</Text>
+      ) : null}
       {documents.map((document) => {
         const state = commercialPdfUploadPresentation(
           document,
@@ -262,6 +272,7 @@ export default function WeekScreen() {
                   ? `${summary.offerCount} offres à consulter · ${summary.questions.length} points regroupés à clarifier`
                   : state.message}
               </Text>
+              <CommercialOriginalButton sourceDocumentId={document.id} />
               {pages.length ? (
                 <PrimaryButton
                   label="Voir la synthèse commerciale"
@@ -346,6 +357,7 @@ export default function WeekScreen() {
                 Les offres et consignes sont regroupées pour préparer la
                 semaine. Aucune offre n’est publiée automatiquement.
               </Text>
+              <CommercialOriginalButton sourceDocumentId={sourceId} />
               <PrimaryButton
                 label="Voir la synthèse commerciale"
                 onPress={() =>
@@ -355,11 +367,52 @@ export default function WeekScreen() {
             </SectionCard>
           );
         })}
-      <EmptyState
-        title="Aucune opération publiée"
-        message="Les extraits examinés restent séparés des opérations à préparer. Aucune offre n’est publiée automatiquement."
-        icon="calendar-outline"
+      {readComplete &&
+      !readError &&
+      !documents.length &&
+      !reviewPages.length ? (
+        <EmptyState
+          title="Aucun document commercial"
+          message="Importez le PDF pour conserver l’original et retrouver son analyse dès qu’elle est reçue."
+          icon="document-text-outline"
+        />
+      ) : null}
+      <SecondaryButton
+        expanded={preparation}
+        label={
+          preparation
+            ? "Masquer le contexte et la préparation"
+            : "Contexte et préparation de la semaine"
+        }
+        onPress={() => setPreparation(!preparation)}
       />
+      <View
+        style={{ display: preparation ? "flex" : "none" }}
+        accessibilityElementsHidden={!preparation}
+        importantForAccessibility={preparation ? "auto" : "no-hide-descendants"}
+        className="gap-6"
+      >
+        <SecondaryButton
+          label="Préparer mon plan de semaine et mes TG"
+          onPress={() => router.push("/week-preparation")}
+        />
+        <SecondaryButton
+          label="Voir mon plan de semaine validé"
+          onPress={() => router.push("/commercial-plan")}
+        />
+        <SecondaryButton
+          label="Comparer un PDF corrigé"
+          onPress={() => router.push("/commercial-comparison")}
+        />
+        {storeId ? <CommercialVersionDecisionList storeId={storeId} /> : null}
+        {storeId ? <WeeklyContextView storeId={storeId} /> : null}
+        {storeId ? (
+          <WeeklySubstitutesView
+            storeId={storeId}
+            weekStart={currentCommercialWeek().start}
+          />
+        ) : null}
+      </View>
     </AppScreen>
   );
 }
