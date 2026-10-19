@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pressable, Switch, Text, TextInput, View } from "react-native";
 import type { StoreLayoutContent } from "@fl-copilot/domain";
+import { removeStoreLayoutMobile } from "@fl-copilot/commercial-core";
 import {
   BottomSheet,
   PrimaryButton,
@@ -8,6 +9,7 @@ import {
   InlineAlert,
 } from "../components/ui";
 import { colors } from "../design/tokens";
+import { LayoutPhysicalFields } from "./layout-physical-fields";
 import {
   layoutMeasurementLabel,
   layoutNumber,
@@ -19,11 +21,13 @@ export function LayoutMeasurements({
   dimensions,
   onApply,
   busy,
+  axes = ["width", "depth", "height"],
 }: {
   label: string;
   dimensions: Dimensions;
   onApply: (v: Dimensions) => void;
   busy: boolean;
+  axes?: (keyof Dimensions)[];
 }) {
   const [values, setValues] = useState({
       width: layoutNumber(dimensions.width),
@@ -35,7 +39,7 @@ export function LayoutMeasurements({
   function apply() {
     const next = { ...dimensions },
       issues: Record<string, string> = {};
-    for (const key of ["width", "depth", "height"] as const)
+    for (const key of axes)
       try {
         next[key] = parseLayoutMeasure(values[key], dimensions[key], measured);
       } catch (e) {
@@ -47,7 +51,7 @@ export function LayoutMeasurements({
   return (
     <View style={{ gap: 14 }}>
       <Text className="font-semibold text-ink">Mesures de {label}</Text>
-      {(["width", "depth", "height"] as const).map((key) => (
+      {axes.map((key) => (
         <View key={key} style={{ gap: 6 }}>
           <Text className="text-ink">
             {{ width: "Largeur", depth: "Profondeur", height: "Hauteur" }[key]}{" "}
@@ -120,12 +124,77 @@ export function StoreLayoutElementSheet({
   blockedReason?: string;
 }) {
   const [surfaceId, setSurfaceId] = useState<string | null>(null),
-    [applied, setApplied] = useState(false);
+    [applied, setApplied] = useState(false),
+    [remove, setRemove] = useState<string | null>(null);
   const f = content.furniture.find((x) => x.id === id),
+    assembly = content.assemblies.find((a) => a.id === id),
     surface = content.surfaces.find(
       (s) => s.id === surfaceId && s.furnitureId === id,
     );
-  if (!f) return null;
+  if (!f) {
+    if (!assembly && id !== "room") return null;
+    const label = assembly?.label ?? "Rayon",
+      dimensions = assembly?.dimensions ?? {
+        ...content.room,
+        height: { mm: null, quality: "UNKNOWN" as const },
+      };
+    return (
+      <BottomSheet visible title={label} onClose={onClose} swipeToClose>
+        <Text className="text-muted">
+          {assembly
+            ? "Enveloppe de l’îlot, distincte des dimensions de ses éléments et surfaces de vente."
+            : "Dimensions du rayon. Le repère des positions commence en haut à gauche."}
+        </Text>
+        <Text className="text-muted">
+          Largeur : {layoutMeasurementLabel(dimensions.width)}
+          {"\n"}Profondeur : {layoutMeasurementLabel(dimensions.depth)}
+        </Text>
+        {blockedReason ? (
+          <InlineAlert title="Modification en pause" message={blockedReason} />
+        ) : null}
+        {editing ? (
+          <>
+            <LayoutMeasurements
+              key={`measure:${id}`}
+              label={label}
+              dimensions={dimensions}
+              axes={assembly ? undefined : ["width", "depth"]}
+              busy={busy}
+              onApply={(next) =>
+                onApply(
+                  assembly
+                    ? {
+                        ...content,
+                        assemblies: content.assemblies.map((a) =>
+                          a.id === id ? { ...a, dimensions: next } : a,
+                        ),
+                      }
+                    : {
+                        ...content,
+                        room: { width: next.width, depth: next.depth },
+                      },
+                )
+              }
+            />
+            {assembly ? (
+              <LayoutPhysicalFields
+                key={`position:${id}`}
+                content={content}
+                id={assembly.id}
+                kind="ASSEMBLY"
+                busy={busy}
+                onApply={onApply}
+              />
+            ) : null}
+          </>
+        ) : (
+          <Text className="text-sm text-muted">
+            Choisissez « Modifier le plan » pour compléter ces informations.
+          </Text>
+        )}
+      </BottomSheet>
+    );
+  }
   const surfaces = content.surfaces.filter((s) => s.furnitureId === f.id),
     mobiles = content.furniture.filter((m) => m.hostId === f.id);
   const target = surface ?? f;
@@ -234,6 +303,17 @@ export function StoreLayoutElementSheet({
             {layoutMeasurementLabel(target.dimensions[k])}
           </Text>
         ))}
+        {!surface ? (
+          <Text className="text-muted">
+            Position depuis la gauche : {layoutMeasurementLabel(f.x)}
+            {"\n"}Depuis le haut : {layoutMeasurementLabel(f.y)}
+            {"\n"}Orientation :{" "}
+            {f.rotation === null ? "À préciser" : `${f.rotation}°`}
+            {f.kind !== "MOBILE"
+              ? `\nHauteur libre : ${layoutMeasurementLabel(f.clearanceBelow)}`
+              : ""}
+          </Text>
+        ) : null}
       </View>
       {f.kind === "MOBILE" && f.hostId ? (
         <Text className="text-muted">
@@ -274,7 +354,7 @@ export function StoreLayoutElementSheet({
       ) : (
         <Text className="text-sm text-muted">
           Pour compléter une mesure, fermez cette fiche et choisissez « Modifier
-          les mesures ».
+          le plan ».
         </Text>
       )}
       {applied ? (
@@ -282,6 +362,47 @@ export function StoreLayoutElementSheet({
           title="Brouillon modifié"
           message="La mesure est appliquée au brouillon. Enregistrez-le depuis le plan pour le conserver hors connexion."
         />
+      ) : null}
+      {editing && !surface ? (
+        <LayoutPhysicalFields
+          key={`position:${f.id}`}
+          content={content}
+          id={f.id}
+          kind="FURNITURE"
+          busy={busy}
+          onApply={onApply}
+        />
+      ) : null}
+      {editing && f.kind === "MOBILE" ? (
+        <View style={{ gap: 12 }}>
+          <SecondaryButton
+            label="Retirer ce mobile du brouillon"
+            disabled={busy}
+            onPress={() => setRemove(f.id)}
+          />
+          {remove === f.id ? (
+            <>
+              <Text className="text-muted">
+                Le mobile et sa surface seront retirés de cette version du plan.
+                Les anciennes versions les conserveront. Vous pouvez annuler
+                cette modification depuis le plan.
+              </Text>
+              <PrimaryButton
+                label="Confirmer le retrait de ce mobile"
+                disabled={busy}
+                onPress={() => {
+                  onApply(removeStoreLayoutMobile(content, f.id));
+                  setRemove(null);
+                  onClose();
+                }}
+              />
+              <SecondaryButton
+                label="Conserver ce mobile"
+                onPress={() => setRemove(null)}
+              />
+            </>
+          ) : null}
+        </View>
       ) : null}
     </BottomSheet>
   );

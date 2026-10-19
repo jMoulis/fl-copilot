@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, it, expect } from "vitest";
 import {
+  addStoreLayoutMobile,
+  placeStoreLayoutObject,
+  removeStoreLayoutMobile,
+} from "@fl-copilot/commercial-core";
+import {
   layoutFixture,
   nextLayout,
 } from "../../../../scripts/test-store-layout-fixtures";
@@ -484,4 +489,81 @@ it("resumes an abandoned first draft through immutable history with the same fur
   expect(restored.content).toEqual(first.content);
   expect(restored.revisionId).not.toBe(first.revisionId);
   expect(await x.repo.history(first.storeId)).toHaveLength(3);
+});
+
+it("persists physical edits and optional mobiles offline, then restores their exact identities after removal and restart", async () => {
+  const x = await setup(),
+    first = await x.repo.save(input(x), x.ctx);
+  let content = addStoreLayoutMobile(
+    first.content,
+    randomUUID,
+    "Mobile A1",
+    first.content.furniture[0]!.id,
+  );
+  const mobile = content.furniture.at(-1)!,
+    surface = content.surfaces.at(-1)!;
+  content = placeStoreLayoutObject(
+    content,
+    "ASSEMBLY",
+    content.assemblies[0]!.id,
+    {
+      x: { mm: 2500, quality: "DECLARED" },
+      y: content.assemblies[0]!.y,
+      rotation: 90,
+    },
+  );
+  const edited = await x.repo.save(
+    {
+      storeId: first.storeId,
+      expectedRevisionId: first.revisionId,
+      action: "SAVE_DRAFT",
+      content,
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  const adopted = await x.repo.save(
+    {
+      storeId: first.storeId,
+      expectedRevisionId: edited.revisionId,
+      action: "ADOPT_REFERENCE",
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  const removed = await x.repo.save(
+    {
+      storeId: first.storeId,
+      expectedRevisionId: adopted.revisionId,
+      action: "SAVE_DRAFT",
+      content: removeStoreLayoutMobile(adopted.content, mobile.id),
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  x.db.close();
+  const reopened = new DatabaseSync(x.path);
+  dbs.push(reopened);
+  const tx = new Adapter(reopened),
+    repo = new StoreLayoutRepository(tx, randomUUID, () => first.updatedAt);
+  expect((await repo.get(first.storeId))?.entity).toEqual(removed);
+  expect(
+    (await repo.reference(first.storeId))?.content.surfaces,
+  ).toContainEqual(surface);
+  expect(
+    (await repo.getRevision(first.storeId, edited.revisionId))?.content
+      .furniture,
+  ).toContainEqual(mobile);
+  const restored = await repo.save(
+    {
+      storeId: first.storeId,
+      expectedRevisionId: removed.revisionId,
+      action: "RESTORE_AS_DRAFT",
+      restoredFromRevisionId: adopted.revisionId,
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  expect(restored.content).toEqual(adopted.content);
+  expect(restored.content.surfaces.at(-1)?.id).toBe(surface.id);
+  expect(
+    (await new OutboxRepository(tx).countActive(first.storeId)).pending_count,
+  ).toBe(5);
+  expect(await repo.history(first.storeId)).toHaveLength(5);
 });

@@ -1,6 +1,8 @@
 import { Stack, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { BackHandler, Text, View } from "react-native";
+import { randomUUID } from "expo-crypto";
+import { addStoreLayoutMobile } from "@fl-copilot/commercial-core";
 import {
   storeLayoutSchema,
   type StoreLayoutContent,
@@ -277,7 +279,7 @@ export function StoreLayoutPanel({
             />
             <Text className="text-muted">
               {edit
-                ? "Mesures en cours de modification"
+                ? "Plan en cours de modification"
                 : head && isLayoutDraft(head)
                   ? "Brouillon enregistré"
                   : "Plan de référence"}
@@ -328,8 +330,8 @@ export function StoreLayoutPanel({
           {stale ? (
             <SectionCard title="Une nouvelle version est disponible">
               <Text className="text-muted">
-                Vos mesures restent affichées. Comparez les versions avant de
-                les conserver.
+                Vos modifications restent affichées. Comparez les versions avant
+                de les conserver.
               </Text>
               <SecondaryButton
                 label="Comparer avec mes modifications"
@@ -362,13 +364,47 @@ export function StoreLayoutPanel({
               A et B repèrent les faces de chaque îlot. Leur orientation et les
               dimensions de référence restent à confirmer au magasin.
             </Text>
+            <SecondaryButton
+              label="Dimensions du rayon"
+              onPress={() => select("room")}
+            />
+            {content.assemblies.map((a) => (
+              <SecondaryButton
+                key={a.id}
+                label={`Ouvrir ${a.label}`}
+                onPress={() => select(a.id)}
+              />
+            ))}
           </SectionCard>
           {edit ? (
-            <SectionCard title="Modifier les mesures">
+            <SectionCard title="Modifier le plan">
               <Text className="text-muted">
-                Touchez un meuble puis sa surface pour compléter uniquement les
-                mesures utiles. Aucun déplacement de mobilier n’est effectué.
+                Ouvrez un îlot, un meuble ou une surface pour préciser ses
+                mesures et son emplacement. Les positions sont saisies en
+                centimètres ; les gestes sur le plan servent à explorer. Les
+                changements restent dans ce brouillon jusqu’à son
+                enregistrement.
               </Text>
+              <SecondaryButton
+                label="Ajouter un mobile de vente"
+                disabled={!canEdit}
+                onPress={() => {
+                  try {
+                    const next = addStoreLayoutMobile(
+                      edit.content,
+                      randomUUID,
+                      `Mobile ${edit.content.furniture.filter((f) => f.kind === "MOBILE").length + 1}`,
+                      null,
+                    );
+                    setEdit(patchLayoutEdit(edit, next));
+                    select(next.furniture.at(-1)!.id);
+                  } catch {
+                    setPanelError(
+                      "Le mobile n’a pas pu être ajouté. Vérifiez la capacité du plan ; vos modifications sont conservées.",
+                    );
+                  }
+                }}
+              />
               <PrimaryButton
                 label="Enregistrer le brouillon"
                 loading={busy}
@@ -403,7 +439,7 @@ export function StoreLayoutPanel({
             <>
               {allowed ? (
                 <SecondaryButton
-                  label="Modifier les mesures"
+                  label="Modifier le plan"
                   disabled={!canEdit || !head}
                   onPress={() => {
                     if (head)

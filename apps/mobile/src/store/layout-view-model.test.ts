@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { it, expect } from "vitest";
-import { createPilotStoreLayout } from "@fl-copilot/commercial-core";
+import {
+  addStoreLayoutMobile,
+  createPilotStoreLayout,
+} from "@fl-copilot/commercial-core";
 import {
   layoutFixture,
   nextLayout,
@@ -16,6 +19,29 @@ import {
   undoLayoutEdit,
   visibleLayout,
 } from "./layout-view-model";
+it("accepts the room origin and zero clearance without accepting zero-sized furniture or promoting unchanged reference coordinates", () => {
+  const previous = { mm: 0, quality: "REFERENCE" as const };
+  expect(parseLayoutMeasure("0", previous, false, true)).toEqual(previous);
+  expect(
+    parseLayoutMeasure("0", { mm: null, quality: "UNKNOWN" }, false, true),
+  ).toEqual({ mm: 0, quality: "DECLARED" });
+  expect(() => parseLayoutMeasure("0", previous, false)).toThrow();
+  expect(() => parseLayoutMeasure("-1", previous, false, true)).toThrow();
+});
+it("includes a newly added mobile's host and exact qualified placement in the adoption comparison", () => {
+  const c = createPilotStoreLayout(randomUUID),
+    host = c.furniture[0]!;
+  const next = addStoreLayoutMobile(c, randomUUID, "Mobile pommes", host.id),
+    mobile = next.furniture.at(-1)!;
+  mobile.x = { mm: 1200, quality: "DECLARED" };
+  mobile.rotation = 90;
+  const change = layoutChanges(c, next).find((v) => v.key === mobile.id)!;
+  expect(change.after).toContain(host.label);
+  expect(change.after).toContain("120 cm · déclaré");
+  expect(change.after).toContain("orientation 90°");
+  expect(change.after).toContain("mesures à préciser");
+  expect(change.after).not.toContain(host.id);
+});
 it("renders all 19 principal elements without inventing surveyed module measurements", () => {
   const c = createPilotStoreLayout(randomUUID),
     snapshot = JSON.stringify(c),
