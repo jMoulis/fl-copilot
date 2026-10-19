@@ -5,8 +5,8 @@ import {
   type StoreLayout,
 } from "../packages/domain/src/store-layout";
 export function layoutFixture(
-  storeId = randomUUID(),
-  updatedBy = randomUUID(),
+  storeId: string = randomUUID(),
+  updatedBy: string = randomUUID(),
 ): StoreLayout {
   return storeLayoutSchema.parse({
     id: storeId,

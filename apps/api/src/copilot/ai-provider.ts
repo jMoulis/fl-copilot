@@ -1,6 +1,11 @@
 import { factReadFromTool } from "./fact-context";
 import { implantationScenarioInputSchema } from "@fl-copilot/domain";
 import { readImplantationScenario } from "./implantation-tool";
+import { copilotStoreLayoutInputSchema } from "@fl-copilot/domain";
+import {
+  presentCopilotStoreLayout,
+  type storeLayoutReadSnapshotSchema,
+} from "./store-layout-tool";
 import {
   copilotFactTraceSchema,
   recommendationContextInputSchema,
@@ -572,6 +577,9 @@ export function createCopilotAiProvider(
     implantationScenario?(
       input: z.infer<typeof implantationScenarioInputSchema>,
     ): Promise<ReturnType<typeof readImplantationScenario>>;
+    storeLayout?(
+      input: z.infer<typeof copilotStoreLayoutInputSchema>,
+    ): Promise<z.infer<typeof storeLayoutReadSnapshotSchema>>;
     priceScenario?(
       input: z.infer<typeof copilotPriceScenarioInputSchema>,
     ): Promise<z.infer<typeof copilotPriceScenarioResultSchema>>;
@@ -1742,6 +1750,25 @@ export function createCopilotAiProvider(
                           );
                         return value;
                       },
+                    }),
+                  }
+                : {}),
+              ...(reads.storeLayout
+                ? {
+                    store_layout: tool({
+                      description:
+                        "Read the synchronized store-owned physical plan (plan magasin, mobilier, îlots, TG, bacs, étagères, mobiles), qualified measurements and provisional geometry. REFERENCE reads the adopted revision; DRAFT explicitly inspects an active unadopted draft. Start with null targetId/cursor/expectedRevisionId; use returned assembly/furniture/surface IDs for detail and pin selected.revisionId for subsequent pages. limit ≤20. Furniture detail lists its own surfaces and associated mobiles. Missing local unsynchronized data is unknown. Reuse recorded geometry; routine commercial proposals allocate products without moving furniture. This read neither adopts/edits a plan nor generates images or infers capacity/fit from a host association. The hypothetical implantation_scenario is separate.",
+                      inputSchema: copilotStoreLayoutInputSchema,
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["store-layout", input]),
+                          async () =>
+                            presentCopilotStoreLayout(
+                              request.storeId,
+                              input,
+                              await reads.storeLayout!(input),
+                            ),
+                        ),
                     }),
                   }
                 : {}),

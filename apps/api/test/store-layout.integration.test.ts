@@ -19,6 +19,11 @@ import type { DatabaseService } from "../src/database/types";
 import { createMongoSyncPushService } from "../src/sync/push-service";
 import { createMongoSyncPullService } from "../src/sync/pull-service";
 import { createMongoSyncBootstrapService } from "../src/sync/bootstrap-service";
+import {
+  presentCopilotStoreLayout,
+  readCopilotStoreLayoutSnapshot,
+} from "../src/copilot/store-layout-tool";
+import { addStoreLayoutMobile } from "@fl-copilot/commercial-core";
 class Adapter implements OutboxDatabase {
   fail = false;
   constructor(readonly db: DatabaseSync) {}
@@ -190,6 +195,103 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(
         pulled.changes.some((c) => c.entityId === adopted.revisionId),
       ).toBe(false);
+    }, 60000);
+    it("reads the immutable adopted reference across conversations while a newer synchronized mobile draft stays explicitly separate", async () => {
+      const p = layoutFixture(),
+        push = createMongoSyncPushService(database);
+      await push.push(request(p), "initial", p.updatedBy);
+      const revisionId = randomUUID(),
+        reference = nextLayout(p, {
+          action: "ADOPT_REFERENCE",
+          revisionId,
+          referenceRevisionId: revisionId,
+        });
+      await push.push(request(reference), "adopt", p.updatedBy);
+      const draft = nextLayout(reference, {
+        content: addStoreLayoutMobile(
+          reference.content,
+          randomUUID,
+          "Mobile seulement en brouillon",
+          reference.content.furniture[0]!.id,
+        ),
+      });
+      await push.push(request(draft), "draft", p.updatedBy);
+      const db = await database.getDb(),
+        input = {
+          view: "REFERENCE",
+          expectedRevisionId: null,
+          targetId: null,
+          cursor: null,
+          limit: 20,
+        };
+      const snapshot = await readCopilotStoreLayoutSnapshot(db, p.storeId);
+      expect(snapshot.head?.revisionId).toBe(draft.revisionId);
+      expect(snapshot.reference?.revisionId).toBe(reference.revisionId);
+      const ref = presentCopilotStoreLayout(p.storeId, input, snapshot),
+        pending = presentCopilotStoreLayout(
+          p.storeId,
+          { ...input, view: "DRAFT" },
+          snapshot,
+        );
+      expect(ref.geometry?.counts.furniture).toBe(19);
+      expect(pending.geometry?.counts.furniture).toBe(20);
+      expect(JSON.stringify(ref)).not.toContain(
+        "Mobile seulement en brouillon",
+      );
+      expect(
+        presentCopilotStoreLayout(
+          p.storeId,
+          input,
+          await readCopilotStoreLayoutSnapshot(db, p.storeId),
+        ),
+      ).toEqual(ref);
+      expect(
+        await db
+          .collection("storeLayoutRevisions")
+          .countDocuments({ storeId: p.storeId }),
+      ).toBe(3);
+      expect(
+        (await db.collection("storeLayouts").findOne({ storeId: p.storeId }))
+          ?.revisionId,
+      ).toBe(draft.revisionId);
+    }, 60000);
+    it("does not leak another store's target or seed furniture when a requested synchronized layout is absent", async () => {
+      const p = layoutFixture(),
+        other = layoutFixture(),
+        push = createMongoSyncPushService(database);
+      await push.push(request(p), "store", p.updatedBy);
+      await push.push(request(other), "other", other.updatedBy);
+      const db = await database.getDb(),
+        input = {
+          view: "DRAFT",
+          expectedRevisionId: null,
+          targetId: other.content.furniture[0]!.id,
+          cursor: null,
+          limit: 20,
+        };
+      const scoped = presentCopilotStoreLayout(
+        p.storeId,
+        input,
+        await readCopilotStoreLayoutSnapshot(db, p.storeId),
+      );
+      expect(scoped.status).toBe("TARGET_NOT_FOUND");
+      expect(scoped.items).toEqual([]);
+      expect(scoped.target).toBeNull();
+      const absentId = randomUUID();
+      expect(await readCopilotStoreLayoutSnapshot(db, absentId)).toEqual({
+        head: null,
+        reference: null,
+      });
+      expect(
+        await db
+          .collection("storeLayouts")
+          .countDocuments({ storeId: absentId }),
+      ).toBe(0);
+      expect(
+        await db
+          .collection("storeLayoutRevisions")
+          .countDocuments({ storeId: absentId }),
+      ).toBe(0);
     }, 60000);
     it("compares two device writes instead of overwriting, then accepts a deliberate rebased draft with both histories intact", async () => {
       const p = layoutFixture(),
