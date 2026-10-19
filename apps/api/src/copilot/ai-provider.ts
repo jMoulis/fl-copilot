@@ -1,4 +1,10 @@
 import {
+  layoutScenarioInputSchema,
+  layoutScenarioPreviewSchema,
+  layoutScenarioSourcesSchema,
+} from "@fl-copilot/domain";
+import { presentStoreLayoutScenario } from "./store-layout-scenario-tool";
+import {
   copilotLayoutEditInputSchema,
   copilotLayoutEditPreviewSchema,
 } from "@fl-copilot/domain";
@@ -375,6 +381,7 @@ export interface CopilotAiProvider {
     preparationPreviews?: Array<
       z.infer<typeof copilotPreparationPreviewSchema>
     >;
+    layoutScenarios?: Array<z.infer<typeof layoutScenarioPreviewSchema>>;
     layoutEditPreviews?: Array<z.infer<typeof copilotLayoutEditPreviewSchema>>;
     operationsPreviews?: Array<z.infer<typeof copilotOperationsPreviewSchema>>;
     needPreviews?: Array<z.infer<typeof copilotNeedPreviewSchema>>;
@@ -583,6 +590,9 @@ export function createCopilotAiProvider(
     implantationScenario?(
       input: z.infer<typeof implantationScenarioInputSchema>,
     ): Promise<ReturnType<typeof readImplantationScenario>>;
+    layoutScenario?(
+      input: z.infer<typeof layoutScenarioInputSchema>,
+    ): Promise<z.infer<typeof layoutScenarioSourcesSchema>>;
     layoutEdits?: boolean;
     storeLayout?(
       input: z.infer<typeof copilotStoreLayoutInputSchema>,
@@ -736,6 +746,10 @@ export function createCopilotAiProvider(
         const preparationPreviews: Array<
           z.infer<typeof copilotPreparationPreviewSchema>
         > = [];
+        const layoutScenarios: Array<
+          z.infer<typeof layoutScenarioPreviewSchema>
+        > = [];
+        let layoutScenarioStarted = false;
         const layoutEditPreviews: Array<
           z.infer<typeof copilotLayoutEditPreviewSchema>
         > = [];
@@ -846,7 +860,7 @@ export function createCopilotAiProvider(
                         informationKeys.size -
                         knowledgeKeys.size -
                         contextKeys.size >=
-                      (reads?.needPreview ? 4 : 3)
+                      (reads?.needPreview || reads?.layoutScenario ? 4 : 3)
             ) {
               completeFactTrace = false;
               return unavailable;
@@ -1760,6 +1774,31 @@ export function createCopilotAiProvider(
                           );
                         return value;
                       },
+                    }),
+                  }
+                : {}),
+              ...(reads.layoutScenario
+                ? {
+                    store_layout_allocation: tool({
+                      description:
+                        "Propose product/offer allocations and a native schematic on the adopted store plan (implantation, répartir sur bacs/étagères/TG/mobiles). Read store_layout REFERENCE for exact revision/target IDs and product_search/commercial_offers for active products or retained offers. Monday week, up to 8 targets/16 distinct references, one proposal per turn. Furniture stays fixed. surfaceId must belong to furnitureId; null explicitly means whole furniture, surfaces not distributed. Do not mix whole and specific surfaces on the same furniture. Known mobiles retain their separate IDs. Missing identities/measurements require clarification, never invented TGs, surfaces, coordinates, stock, display capacity, quantities, prices or uplift. reason/assumptions are recommendations. Offers must intersect this week; original sale dates and document lineage are preserved. READY produces an immutable private proposal card with its historical plan and source versions, not an approved commercial plan or recorded execution. STALE reread, BLOCKED explain the issue, LIMIT_EXCEEDED reduce coherently without silent omissions. No image is generated.",
+                      inputSchema: layoutScenarioInputSchema,
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["store-layout-scenario", input]),
+                          async () => {
+                            if (layoutScenarioStarted)
+                              throw Error("LAYOUT_SCENARIO_LIMIT");
+                            layoutScenarioStarted = true;
+                            const result = presentStoreLayoutScenario(
+                              request.storeId,
+                              input,
+                              await reads.layoutScenario!(input),
+                            );
+                            layoutScenarios.push(result);
+                            return result;
+                          },
+                        ),
                     }),
                   }
                 : {}),
@@ -2962,6 +3001,7 @@ export function createCopilotAiProvider(
           ? 6
           : reads
             ? reads.referencePreview ||
+              reads.layoutScenario ||
               reads.planValidation ||
               reads.choiceReassociation ||
               reads.offerValidation ||
@@ -3136,6 +3176,9 @@ export function createCopilotAiProvider(
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 preparationPreviews: preparationPreviews.filter((p) =>
+                  p.evidence.every((e) => evidence.has(e.id)),
+                ),
+                layoutScenarios: layoutScenarios.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 layoutEditPreviews: layoutEditPreviews.filter((p) =>

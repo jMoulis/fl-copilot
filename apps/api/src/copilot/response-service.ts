@@ -264,6 +264,9 @@ export async function generateCopilotResponse(
   preparationPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["preparationPreviews"];
+  layoutScenarios?: Awaited<
+    ReturnType<CopilotAiProvider["generate"]>
+  >["layoutScenarios"];
   layoutEditPreviews?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
   >["layoutEditPreviews"];
@@ -384,6 +387,7 @@ export async function generateCopilotResponse(
       choiceReassociations: generated.choiceReassociations,
       choiceWithdrawals: generated.choiceWithdrawals,
       preparationPreviews: generated.preparationPreviews,
+      layoutScenarios: generated.layoutScenarios,
       layoutEditPreviews: generated.layoutEditPreviews,
       operationsPreviews: generated.operationsPreviews,
       needPreviews: generated.needPreviews,

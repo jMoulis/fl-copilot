@@ -1,3 +1,4 @@
+import { readStoreLayoutScenarioSources } from "./copilot/store-layout-scenario-tool";
 import {
   readRecommendationContext,
   readTrackingWithFactContext,
@@ -1097,6 +1098,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 await authorize();
                 return result;
               },
+              ...(request.headers["x-copilot-layout-scenarios"] === "1"
+                ? {
+                    layoutScenario: async (input) => {
+                      const principal = await authorize();
+                      const result = await readStoreLayoutScenarioSources(
+                        db,
+                        principal.storeId,
+                        input,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
               layoutEdits: request.headers["x-copilot-layout-edits"] === "1",
               storeLayout: async () => {
                 const principal = await authorize();

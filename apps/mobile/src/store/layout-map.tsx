@@ -14,8 +14,10 @@ export function StoreLayoutMap({
   viewport,
   onViewport,
   onSelect,
+  annotations,
 }: {
   content: StoreLayoutContent;
+  annotations?: Readonly<Record<string, string>>;
   selectedId: string | null;
   viewport: LayoutViewport;
   onViewport: (v: LayoutViewport) => void;
@@ -150,11 +152,12 @@ export function StoreLayoutMap({
                   <Pressable
                     key={f.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`Ouvrir ${f.label}${f.schematic ? ", repère schématique" : ""}`}
+                    accessibilityLabel={`${annotations ? "Repérer" : "Ouvrir"} ${f.label}${f.schematic ? ", repère schématique" : ""}${annotations?.[f.id] ? `, affectation ${annotations[f.id]}` : ""}`}
                     accessibilityState={{ selected }}
                     onPress={() => onSelect(f.id)}
                     style={{
                       position: "absolute",
+                      zIndex: annotations?.[f.id] ? 2 : 0,
                       left: ox + f.x * factor + 2,
                       top: oy + f.y * factor + 2,
                       width: Math.max(8, f.width * factor - 4),
@@ -182,6 +185,28 @@ export function StoreLayoutMap({
                     >
                       {short}
                     </Text>
+                    {annotations?.[f.id] ? (
+                      <Text
+                        style={{
+                          position: "absolute",
+                          top: -9,
+                          right: -9,
+                          minWidth: 18,
+                          height: 18,
+                          paddingHorizontal: 3,
+                          borderRadius: 9,
+                          overflow: "hidden",
+                          textAlign: "center",
+                          lineHeight: 18,
+                          backgroundColor: colors.forest,
+                          fontSize: 10,
+                          fontWeight: "700",
+                          color: colors.surface,
+                        }}
+                      >
+                        {annotations[f.id]}
+                      </Text>
+                    ) : null}
                     {mobiles.length ? (
                       <Text
                         style={{

@@ -1,6 +1,10 @@
+import { layoutScenarioFixture } from "../../../../scripts/test-layout-scenario-fixtures";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { completeLayoutGeometry } from "../../../../scripts/test-store-layout-fixtures";
-import { compareProductClassification } from "@fl-copilot/domain";
+import {
+  compareProductClassification,
+  layoutScenarioSourcesSchema,
+} from "@fl-copilot/domain";
 import { membershipFixture } from "../../../../scripts/test-membership-fixtures";
 import { storeContextFixture } from "../../../../scripts/test-store-context-fixtures";
 import { needUnitFixture } from "../../../../scripts/test-need-unit-fixtures";
@@ -6642,3 +6646,210 @@ it.each([
     expect(storeLayout).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
   },
 );
+
+it.each([
+  "READY",
+  "NO_REFERENCE",
+  "STALE",
+  "FOREIGN",
+  "TAMPERED",
+  "BYTE_BUDGET",
+  "CONCURRENT",
+  "DISABLED",
+] as const)(
+  "prepares a source-bound allocation through the installed SDK: %s",
+  async (mode) => {
+    const f = fixture(),
+      s = await layoutScenarioFixture(f.request.storeId),
+      input = structuredClone(s.input),
+      sources = layoutScenarioSourcesSchema.parse(s.sources);
+    if (mode === "NO_REFERENCE")
+      sources.layout = { head: s.first, reference: null };
+    if (mode === "STALE") input.expectedRevisionId = randomUUID();
+    if (mode === "FOREIGN") {
+      sources.products[0]!.storeId = randomUUID();
+      sources.products[0]!.label = "PRIVATE_FOREIGN_PRODUCT";
+    }
+    if (mode === "TAMPERED") {
+      sources.layout.reference = structuredClone(sources.layout.reference!);
+      sources.layout.reference.content.furniture[0]!.label =
+        "PRIVATE_TAMPERED_PLAN";
+    }
+    if (mode === "BYTE_BUDGET") {
+      f.config.COPILOT_AI_MAX_INPUT_BYTES = 4096;
+      input.assignments = Array.from({ length: 8 }, (_, i) => ({
+        ...input.assignments[0]!,
+        furnitureId: s.reference.content.furniture[i]!.id,
+        surfaceId: null,
+        reason:
+          "Une recommandation à adapter aux observations du rayon. ".repeat(4),
+      }));
+      input.assumptions = Array.from({ length: 4 }, () =>
+        "Hypothèse à confirmer avec le responsable, sans quantité ou capacité connue. ".repeat(
+          3,
+        ),
+      );
+    }
+    const layoutScenario = vi.fn(async () => sources);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "store_layout_allocation",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.additionalProperties).toBe(false);
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|actorId|capacity|quantity|canWrite|query/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_layout_scenario",
+            call_id: "call_layout_scenario",
+            name: "store_layout_allocation",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+          ...(mode === "CONCURRENT"
+            ? [
+                {
+                  type: "function_call",
+                  id: "fc_layout_other",
+                  call_id: "call_layout_other",
+                  name: "store_layout_allocation",
+                  arguments: JSON.stringify({
+                    ...input,
+                    title: "Autre proposition",
+                  }),
+                  status: "completed",
+                },
+              ]
+            : []),
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const value = JSON.parse(
+        body.input.find(
+          (v: { type: string }) => v.type === "function_call_output",
+        ).output,
+      );
+      expect(JSON.stringify(body)).not.toMatch(
+        /PRIVATE_FOREIGN_PRODUCT|PRIVATE_TAMPERED_PLAN/,
+      );
+      expect(JSON.stringify(value)).not.toContain(s.reference.updatedBy);
+      expect(value).not.toHaveProperty("layout");
+      if (["FOREIGN", "TAMPERED", "BYTE_BUDGET"].includes(mode))
+        expect(value).toMatchObject({ unavailable: true });
+      else
+        expect(value).toMatchObject({
+          input,
+          status: mode === "CONCURRENT" ? "READY" : mode,
+        });
+      if (mode === "CONCURRENT")
+        expect(
+          JSON.parse(
+            body.input.find(
+              (v: { type: string; call_id: string }) =>
+                v.type === "function_call_output" &&
+                v.call_id === "call_layout_other",
+            ).output,
+          ),
+        ).toMatchObject({ unavailable: true });
+      return response();
+    };
+    const activities: CopilotActivity[] = [];
+    const output = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { layoutScenario }),
+    }).generate(f.request, schema, undefined, undefined, (e) =>
+      activities.push(e),
+    );
+    expect(layoutScenario).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(output.layoutScenarios).toHaveLength(
+      ["READY", "NO_REFERENCE", "STALE", "CONCURRENT"].includes(mode) ? 1 : 0,
+    );
+    if (mode === "READY" || mode === "CONCURRENT") {
+      expect(output.layoutScenarios?.[0]?.scenario?.physicalRevisionId).toBe(
+        s.reference.revisionId,
+      );
+      expect(output.toolEvidence).toHaveLength(1);
+      expect(activities).toContainEqual(
+        expect.objectContaining({ stage: "PROPOSAL", status: "DONE" }),
+      );
+    }
+    if (mode !== "DISABLED") expect(output.factTrace?.complete).toBe(false);
+  },
+);
+
+it("allows exact reference, furniture and surface reads followed by one allocation within the native four-read ceiling", async () => {
+  const f = fixture(),
+    s = await layoutScenarioFixture(f.request.storeId),
+    storeLayout = vi.fn(async () => s.sources.layout),
+    layoutScenario = vi.fn(async () => s.sources);
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls < 2) {
+      const step = calls++,
+        envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+      envelope.output =
+        step === 0
+          ? [null, s.fixed.id, s.surface.id].map((targetId, i) => ({
+              type: "function_call",
+              id: `fc_plan_${i}`,
+              call_id: `call_plan_${i}`,
+              name: "store_layout",
+              arguments: JSON.stringify({
+                view: "REFERENCE",
+                expectedRevisionId: s.reference.revisionId,
+                targetId,
+                cursor: null,
+                limit: 1,
+              }),
+              status: "completed",
+            }))
+          : [
+              {
+                type: "function_call",
+                id: "fc_alloc",
+                call_id: "call_alloc",
+                name: "store_layout_allocation",
+                arguments: JSON.stringify(s.input),
+                status: "completed",
+              },
+            ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    const value = JSON.parse(
+      body.input.find(
+        (v: { type: string; call_id: string }) =>
+          v.type === "function_call_output" && v.call_id === "call_alloc",
+      ).output,
+    );
+    expect(value.status).toBe("READY");
+    return response();
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    storeLayout,
+    layoutScenario,
+  }).generate(f.request, schema);
+  expect(storeLayout).toHaveBeenCalledTimes(3);
+  expect(layoutScenario).toHaveBeenCalledOnce();
+  expect(result.layoutScenarios).toHaveLength(1);
+});

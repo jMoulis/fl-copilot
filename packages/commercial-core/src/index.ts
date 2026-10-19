@@ -31,3 +31,5 @@ export * from "./store-layout-geometry";
 
 export * from "./store-layout-review";
 export * from "./store-layout-proposal";
+
+export * from "./store-layout-scenario";

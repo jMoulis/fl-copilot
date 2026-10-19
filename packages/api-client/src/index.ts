@@ -97,6 +97,7 @@ export class ApiClient {
       preparationCreate?: boolean;
       preparationSelection?: boolean;
       preparationRefresh?: boolean;
+      layoutScenarios?: boolean;
       layoutEdits?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
@@ -169,6 +170,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.preparationProposals
                   ? { "x-copilot-preparation-proposals": "1" }
+                  : {}),
+                ...(streaming.layoutScenarios
+                  ? { "x-copilot-layout-scenarios": "1" }
                   : {}),
                 ...(streaming.layoutEdits
                   ? { "x-copilot-layout-edits": "1" }

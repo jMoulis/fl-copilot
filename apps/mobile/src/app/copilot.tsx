@@ -1,3 +1,6 @@
+import { readStoreLayoutScenarioCard } from "@fl-copilot/domain";
+import { CopilotStoreLayoutScenarioReader } from "@/copilot/store-layout-scenario-reader";
+import { StoreLayoutScenarioCard } from "@/copilot/store-layout-scenario-card";
 import { readCopilotLayoutEditProposal } from "@fl-copilot/domain";
 import { CopilotStoreLayoutEditController } from "@/copilot/store-layout-edit-controller";
 import { StoreLayoutEditCard } from "@/copilot/store-layout-edit-card";
@@ -243,6 +246,10 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canPrepareCommercialWeek],
+  );
+  const layoutScenarios = useMemo(
+    () => new CopilotStoreLayoutScenarioReader(sqlite, { storeId, ownerId }),
+    [sqlite, storeId, ownerId],
   );
   const layoutEdits = useMemo(
     () =>
@@ -732,6 +739,18 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readStoreLayoutScenarioCard(message);
+      return (
+        <StoreLayoutScenarioCard
+          key={message.id}
+          message={message}
+          reader={layoutScenarios}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readCopilotLayoutEditProposal(message);
       return (
         <StoreLayoutEditCard
@@ -962,6 +981,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               preparationCreate: canPrepareCommercialWeek,
               preparationSelection: canPrepareCommercialWeek,
               preparationRefresh: canPrepareCommercialWeek,
+              layoutScenarios: true,
               layoutEdits: canManageStoreSettings,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,

@@ -298,6 +298,7 @@ it("opts into optional proposal and source tools only when the client supports t
         preparationCreate: enabled,
         preparationSelection: enabled,
         preparationRefresh: enabled,
+        layoutScenarios: enabled,
         layoutEdits: enabled,
         storeOperations: enabled,
         needProposals: enabled,
@@ -381,6 +382,9 @@ it("opts into optional proposal and source tools only when the client supports t
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-preparation-proposals", "1");
     else expect(headers).not.toHaveProperty("x-copilot-preparation-proposals");
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-layout-scenarios", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-layout-scenarios");
     if (enabled) expect(headers).toHaveProperty("x-copilot-layout-edits", "1");
     else expect(headers).not.toHaveProperty("x-copilot-layout-edits");
     if (enabled)
