@@ -545,3 +545,79 @@ it("follows a server period source through its citation and native selection int
     db.close();
   }
 });
+
+it("keeps purchase-cost and selling-value waste distinct for both department and product exploration", async () => {
+  const db = new DatabaseSync(":memory:"),
+    a = new Adapter(db),
+    store = randomUUID(),
+    product = randomUUID();
+  try {
+    await runLocalMigrations(a);
+    insertProduct(db, store, product, "Poire");
+    for (const date of ["2026-10-15", "2025-10-16"]) {
+      insert(db, store, date, "100");
+      insertProductDay(db, store, product, date, "99");
+      for (const table of [
+        "department_daily_performance",
+        "product_daily_performance",
+      ]) {
+        const row = db
+          .prepare(
+            `SELECT id,payload_json FROM ${table} WHERE store_id=? AND business_date=?`,
+          )
+          .get(store, date) as { id: string; payload_json: string };
+        const payload = JSON.parse(row.payload_json);
+        payload.waste = {
+          salesValue: "99",
+          purchaseValueKnown: date === "2026-10-15" ? "3.25" : "11",
+          purchaseValueEstimated: date === "2026-10-15" ? "2.25" : null,
+        };
+        payload.availability.wasteSalesValue = { status: "AVAILABLE" };
+        payload.availability.wastePurchaseValueKnown = { status: "AVAILABLE" };
+        payload.availability.wastePurchaseValueEstimated = {
+          status: "AVAILABLE",
+        };
+        db.prepare(`UPDATE ${table} SET payload_json=? WHERE id=?`).run(
+          JSON.stringify(payload),
+          row.id,
+        );
+      }
+    }
+    const repo = new ExplorerRepository(a),
+      period = { kind: "day" as const, date: "2026-10-15" };
+    for (const filters of [
+      { category: null, nature: null, productId: null },
+      { category: null, nature: null, productId: product },
+    ]) {
+      const cost = await repo.load(
+        store,
+        period,
+        "wasteCost",
+        "2026-10-19",
+        filters,
+      );
+      expect(cost.total).toBe("5.50");
+      expect(cost.comparison?.percentageDifference).toBe("-50.00");
+      expect(
+        (await repo.load(store, period, "waste", "2026-10-19", filters)).total,
+      ).toBe("99.00");
+      expect(cost.details?.contributors[0]?.analysis.total).toBe("5.50");
+    }
+    insert(db, store, "2026-10-16", "100");
+    expect(
+      (
+        await repo.load(
+          store,
+          { kind: "day", date: "2026-10-16" },
+          "wasteCost",
+          "2026-10-19",
+        )
+      ).total,
+    ).toBeNull();
+    expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual({
+      n: 0,
+    });
+  } finally {
+    db.close();
+  }
+});

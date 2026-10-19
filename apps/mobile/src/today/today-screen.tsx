@@ -1,3 +1,4 @@
+import { StoreEventsView } from "@/needs/store-events-view";
 import { randomUUID } from "expo-crypto";
 import { explorerHref } from "@/analytics/explorer-link";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -118,7 +119,7 @@ function TodayContent({ summary }: { summary: TodaySummary }) {
                 explorerHref({
                   requestId: randomUUID(),
                   period: { kind: "day", date: summary.businessDate },
-                  metric: kpi.id,
+                  metric: kpi.id === "waste" ? "wasteCost" : kpi.id,
                 }),
               )
             }
@@ -144,7 +145,7 @@ function TodayContent({ summary }: { summary: TodaySummary }) {
 
       <SectionCard
         title="Priorités"
-        description="Trois signaux déterministes maximum, classés par impact."
+        description="Les points à examiner dans vos chiffres, classés par impact."
       >
         {summary.priorities.length === 0 ? (
           <Text className="text-base leading-6 text-muted">
@@ -177,19 +178,7 @@ function TodayContent({ summary }: { summary: TodaySummary }) {
         )}
       </SectionCard>
 
-      <SectionCard title="Tensions magasin">
-        <View className="flex-row items-start gap-3">
-          <Ionicons
-            name="checkmark-circle-outline"
-            size={22}
-            color={colors.positive}
-            accessible={false}
-          />
-          <Text className="flex-1 text-base leading-6 text-muted">
-            Aucune tension magasin n’est enregistrée pour cette journée.
-          </Text>
-        </View>
-      </SectionCard>
+      <StoreEventsView compact />
 
       {summary.dataQuality.alertMessage ? (
         <View className="gap-3">
@@ -232,7 +221,7 @@ function PriorityCard({ priority }: { priority: TodayPriority }) {
         </View>
         <View className="flex-1 gap-1">
           <Text className="text-xs font-bold uppercase tracking-wider text-forest">
-            Signal déterministe
+            À examiner
           </Text>
           <Text className="text-lg font-semibold text-ink">
             {presentation.title}

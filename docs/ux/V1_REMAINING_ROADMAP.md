@@ -100,3 +100,9 @@ La navigation n’est pas déclarée intégralement terminée : les enrichisseme
 L5 avance avec recherche locale par libellé/alias/code validé, filtres catégorie/nature/état, liste virtualisée, contexte privé restaurable et fiche consultable séparée de son éditeur. Les fonctions besoins/substitutions/observations restent accessibles. Les lectures de synchronisation ne réinitialisent plus la saisie ; retrait d’écran protégé et comparaison canonique atomique avant écriture. Voir `../qa/M7_UX_PRODUCTS.md` pour les preuves et limites.
 
 Ce lot ne clôt ni L5 ni le chantier UX : autres écrans, familles, médias, gestes et recette native, transport compact des longues sources et autres portes V1 restent ouverts. Aucun build payant ou déploiement n’est déclenché.
+
+## Avancement — Actions et signalements d’Aujourd’hui
+
+L5 avance avec les tâches présentées avant les raccourcis, la semaine ISO sélectionnable et transmise aux plans/préparations, les filtres de tâches et la conservation de la déclaration en cours lors d’un changement de révision du plan. Les compteurs et mutations métier restent existants. Aujourd’hui consulte les signalements locaux réels plutôt que d’annoncer une absence non vérifiée. Voir `../qa/M7_UX_ACTIONS.md` pour le parcours et la recette native encore ouverte. Ce lot ne clôt ni L5 ni M7/M8 et ne déclenche pas de build payant.
+
+Le même incrément corrige la continuité du KPI Casse au PA vers l’Explorer : métrique de coût distincte du prix de vente, calcul et disponibilité partagés avec Aujourd’hui, filtres/contributions cohérents. Les anciennes données sans coût ne deviennent pas zéro. La lecture native de ce nouveau choix reste à accepter avec le lot groupé ; aucun nouveau producteur de citation serveur n’est annoncé compatible avec les anciens clients.

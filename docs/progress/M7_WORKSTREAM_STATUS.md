@@ -380,3 +380,17 @@ PR 275 fusionnée sur `d20bac7` après succès des CI push/PR exactes, branche s
 7. **UX/validation : en cours.** L5 avance avec catalogue recherchable/filtrable, détail lisible, contexte restaurable et protection des saisies. Tests locaux et contrôle visuel décrits dans `../qa/M7_UX_PRODUCTS.md`. Gestes natifs, autres écrans, bibliothèque visuelle et livraison/recette M8 restent ouverts.
 
 La PR 276 précédente est fusionnée après succès des deux contrôles exacts (`39325701435`, `39325707792`), merge `1aa550736e4b49c9359447fc24158b43274eb7f8`. Ses liens vers les sources analytiques restent non livrés sur téléphone. Ce lot Produits ne déclenche aucun déploiement ni build EAS payant.
+
+## Lot courant — Actions et signalements réels (19 octobre 2026)
+
+1. **Actions/conflits : en cours.** Les tâches sont visibles en premier, filtrables et liées à la semaine choisie. Conflits/refus restent signalés ; les règles de résolution ne changent pas.
+2. **Contre-promo : code prêt**, livraison/acceptation groupées à faire.
+3. **Documents : en cours**, réception et restauration restantes inchangées.
+4. **Expertise : en cours**, évaluation et cas réels restants.
+5. **Recommandations : en cours.** La réalisation reste une déclaration explicite ; éditeur préservé pendant l’évolution du plan. Recette jusqu’au bilan réel toujours ouverte.
+6. **Implantation : en cours**, illustration/contraintes/validation terrain restantes.
+7. **UX/validation : en cours.** Semaine des actions et signalements réels d’Aujourd’hui améliorés. Autres écrans, médias et recette native/M8 restent ouverts.
+
+Preuves/limites : `../qa/M7_UX_ACTIONS.md`. Aucun déploiement API ou build EAS payant. Une fusion ne vaut pas validation sur téléphone.
+
+Le lot Actions/Aujourd’hui inclut aussi le lien exact de la casse au prix d’achat vers Analyses, séparé du prix de vente. Calcul connu/estimé et qualification réutilisés du moteur partagé, sans ajout d’instructions IA. Tests locaux rayon/produit et non-régression Aujourd’hui passés ; recette native encore ouverte. Le chantier 7 reste en cours. La PR 277 Produits précédente est fusionnée après ses deux CI exactes réussies (`39327121525`, `39327128020`), merge `2245ff3d1a49a9ea7d789d09c81319b681a1df41`, branche distante supprimée, toujours en attente de livraison groupée.

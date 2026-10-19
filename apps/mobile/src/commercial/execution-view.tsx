@@ -9,7 +9,7 @@ import {
   type ExecutionActualsDraft,
 } from "./execution-actuals-editor";
 import { useCallback, useMemo, useState } from "react";
-import { Text, TextInput, View, Modal, Alert } from "react-native";
+import { Text, TextInput, View, Modal, Alert, Pressable } from "react-native";
 import { useFocusEffect, router } from "expo-router";
 import {
   digestStringAsync,
@@ -59,8 +59,10 @@ type Editor = {
 };
 export function CommercialExecutionView({
   plan,
+  compact = false,
 }: {
   plan: CommercialWeekPlan;
+  compact?: boolean;
 }) {
   const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow, status: syncStatus } = useSync(),
@@ -68,6 +70,10 @@ export function CommercialExecutionView({
       () => new CommercialExecutionRepository(sqlite, digest),
       [sqlite],
     );
+  const [loadedRevision, setLoadedRevision] = useState<string>();
+  const [filter, setFilter] = useState<
+    "ALL" | CommercialExecutionTask["status"]
+  >("TODO");
   const [proposals, setProposals] = useState<CommercialExecutionProposal[]>([]),
     [records, setRecords] = useState<LocalCommercialExecution[]>([]),
     [editor, setEditor] = useState<Editor | null>(null),
@@ -90,6 +96,7 @@ export function CommercialExecutionView({
           if (active) {
             setProposals(d.p);
             setRecords(d.r);
+            setLoadedRevision(plan.revisionId);
           }
         })
         .catch(() => {
@@ -101,7 +108,7 @@ export function CommercialExecutionView({
       return () => {
         active = false;
       };
-    }, [refresh, syncStatus]),
+    }, [refresh, syncStatus, plan.revisionId]),
   );
   async function edit(
     p: CommercialExecutionProposal,
@@ -194,6 +201,7 @@ export function CommercialExecutionView({
       const d = await refresh();
       setProposals(d.p);
       setRecords(d.r);
+      setLoadedRevision(plan.revisionId);
       void syncNow(plan.storeId).catch(() => undefined);
     } catch (e) {
       setError(
@@ -226,38 +234,97 @@ export function CommercialExecutionView({
       );
     else setEditor(null);
   }
+  const loaded = loadedRevision === plan.revisionId;
+  const visibleProposals = loaded ? proposals : [];
+  const visibleRecords = loaded ? records : [];
   const progress = commercialExecutionProgress(
-      proposals,
-      records.map((r) => r.entity),
+      visibleProposals,
+      visibleRecords.map((r) => r.entity),
     ),
-    others = records.filter(
-      (r) => !proposals.some((p) => commercialExecutionSameTarget(r.entity, p)),
+    others = visibleRecords.filter(
+      (r) =>
+        !visibleProposals.some((p) =>
+          commercialExecutionSameTarget(r.entity, p),
+        ),
     );
   return (
     <SectionCard
-      title={`Suivi d’exécution · version ${plan.version}`}
-      description="Notez séparément les affiches imprimées et les TG installées. Marquer Fait ne confirme ni toute la promotion, ni un prix appliqué en caisse, ni un résultat de vente."
+      title={
+        compact ? "Vos tâches" : `Suivi d’exécution · version ${plan.version}`
+      }
+      description={
+        compact
+          ? "Affiches et TG du plan validé. Leur réalisation reste à déclarer."
+          : "Notez séparément les affiches imprimées et les TG installées. Marquer Fait ne confirme ni toute la promotion, ni un prix appliqué en caisse, ni un résultat de vente."
+      }
     >
-      <Text className="text-base text-ink">
-        {progress.DONE}/{progress.total} tâches faites · {progress.TODO} à faire
-        · {progress.SKIPPED} ignorées · {progress.NOT_APPLICABLE} non
-        applicables
-      </Text>
+      {!loaded ? (
+        <Text className="text-muted">Lecture des tâches enregistrées…</Text>
+      ) : (
+        <Text className="text-base text-ink">
+          {progress.DONE}/{progress.total} tâches faites · {progress.TODO} à
+          faire · {progress.SKIPPED} ignorées · {progress.NOT_APPLICABLE} non
+          applicables
+        </Text>
+      )}
       <Text className="text-sm text-muted">
-        Chaque version du plan possède son propre suivi. Les propositions À
-        faire ne créent aucun événement tant que vous n’enregistrez pas une
-        déclaration.
+        {compact
+          ? "Une tâche à faire reste une proposition jusqu’à votre déclaration. Chaque version du plan possède son propre suivi."
+          : "Chaque version du plan possède son propre suivi. Les propositions À faire ne créent aucun événement tant que vous n’enregistrez pas une déclaration."}
       </Text>
       {notice ? <InlineAlert title="Enregistré" message={notice} /> : null}
       {error ? (
         <InlineAlert title="Déclaration à vérifier" message={error} />
       ) : null}
-      {proposals.map((p) => {
-        const r = records.find((r) =>
+      {compact &&
+      visibleRecords.some(
+        (r) => r.syncState === "CONFLICT" || r.syncState === "ERROR",
+      ) ? (
+        <>
+          <InlineAlert
+            title="Des déclarations sont à vérifier"
+            message="Consultez toutes les tâches et leurs autres déclarations pour examiner les conflits ou les envois refusés."
+          />
+          <SecondaryButton
+            label="Voir toutes les déclarations"
+            onPress={() => setFilter("ALL")}
+          />
+        </>
+      ) : null}
+      {compact && loaded ? (
+        <View className="flex-row flex-wrap gap-2">
+          {(["TODO", "DONE", "ALL"] as const).map((value) => (
+            <Pressable
+              key={value}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: filter === value }}
+              accessibilityLabel={`Tâches : ${value === "ALL" ? "Toutes" : executionStatusLabels[value]}`}
+              onPress={() => setFilter(value)}
+              className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${filter === value ? "border-forest bg-forest" : "border-line bg-surface"}`}
+            >
+              <Text
+                className={
+                  filter === value ? "font-semibold text-on-accent" : "text-ink"
+                }
+              >
+                {value === "ALL" ? "Toutes" : executionStatusLabels[value]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {visibleProposals.map((p) => {
+        const r = visibleRecords.find((r) =>
             commercialExecutionSameTarget(r.entity, p),
           ),
           offer = plan.offers.find((o) => o.id === p.targetId),
           tg = plan.preparation.placements.find((t) => t.id === p.targetId);
+        if (
+          compact &&
+          filter !== "ALL" &&
+          (r?.entity.status ?? "TODO") !== filter
+        )
+          return null;
         return (
           <SectionCard key={p.id} title={p.label}>
             <Text className="font-semibold text-ink">
@@ -331,6 +398,21 @@ export function CommercialExecutionView({
           </SectionCard>
         );
       })}
+      {compact &&
+      loaded &&
+      !visibleProposals.some(
+        (p) =>
+          filter === "ALL" ||
+          (visibleRecords.find((r) =>
+            commercialExecutionSameTarget(r.entity, p),
+          )?.entity.status ?? "TODO") === filter,
+      ) ? (
+        <Text className="text-base text-muted">
+          {filter === "TODO"
+            ? "Aucune tâche à faire dans cette version. Consultez Toutes pour revoir les déclarations conservées."
+            : "Aucune tâche dans ce filtre."}
+        </Text>
+      ) : null}
       {others.length ? (
         <SectionCard title="Autres déclarations conservées pour cette version">
           <Text className="text-sm text-muted">

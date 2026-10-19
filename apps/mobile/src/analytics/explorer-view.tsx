@@ -42,6 +42,7 @@ const metrics = {
   sales: "Chiffre d’affaires net",
   margin: "Marge en euros",
   waste: "Casse au prix de vente",
+  wasteCost: "Casse au prix d’achat",
 } as const;
 function Choice({
   label,
@@ -125,7 +126,7 @@ export function ExplorerContent({
     color =
       sign === 0
         ? colors.muted
-        : (view.metric === "waste" ? sign < 0 : sign > 0)
+        : (["waste", "wasteCost"].includes(view.metric) ? sign < 0 : sign > 0)
           ? colors.positive
           : colors.critical;
   const bins = data ? explorerChartBuckets(period, data.points) : [],
@@ -136,6 +137,12 @@ export function ExplorerContent({
     }, parseDecimal("0").value);
   return (
     <>
+      {view.metric === "wasteCost" ? (
+        <Text className="text-sm leading-5 text-muted">
+          Coût d’achat connu et estimé selon les données disponibles, distinct
+          de la valeur au prix de vente.
+        </Text>
+      ) : null}
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
         {Object.entries(kinds).map(([k, label]) => (
           <Choice

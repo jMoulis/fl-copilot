@@ -1,5 +1,5 @@
 import {
-  addDecimals,
+  wastePurchaseCost,
   buildDataQualityResult,
   compareJMinus7,
   createExplicitQualityComponent,
@@ -492,63 +492,20 @@ function point(
 }
 
 function departmentWasteCost(performance: DepartmentDailyPerformance) {
-  return sumPresent([
-    performance.waste.purchaseValueKnown,
-    performance.waste.purchaseValueEstimated,
-  ]);
+  return wastePurchaseCost(performance).value;
 }
-
 function productWasteCost(performance: ProductDailyPerformance) {
-  return sumPresent([
-    performance.waste.purchaseValueKnown,
-    performance.waste.purchaseValueEstimated,
-  ]);
+  return wastePurchaseCost(performance).value;
 }
-
 function departmentWasteStatus(
   performance: DepartmentDailyPerformance,
 ): FormulaStatus {
-  return combinedWasteStatus(
-    performance.waste.purchaseValueKnown,
-    performance.availability.wastePurchaseValueKnown.status,
-    performance.waste.purchaseValueEstimated,
-    performance.availability.wastePurchaseValueEstimated.status,
-  );
+  return wastePurchaseCost(performance).status;
 }
-
 function productWasteStatus(
   performance: ProductDailyPerformance,
 ): FormulaStatus {
-  return combinedWasteStatus(
-    performance.waste.purchaseValueKnown,
-    performance.availability.wastePurchaseValueKnown.status,
-    performance.waste.purchaseValueEstimated,
-    performance.availability.wastePurchaseValueEstimated.status,
-  );
-}
-
-function sumPresent(values: readonly (string | null)[]) {
-  const present = values.filter((value): value is string => value !== null);
-  return present.length === 0 ? null : addDecimals(present);
-}
-
-function combinedWasteStatus(
-  knownValue: string | null,
-  knownStatus: FormulaStatus,
-  estimatedValue: string | null,
-  estimatedStatus: FormulaStatus,
-): FormulaStatus {
-  if (knownValue === null && estimatedValue === null) return "UNAVAILABLE";
-  if (
-    knownValue !== null &&
-    knownStatus === "AVAILABLE" &&
-    estimatedValue === null
-  ) {
-    return "AVAILABLE";
-  }
-  return knownStatus === "AVAILABLE" && estimatedStatus === "AVAILABLE"
-    ? "AVAILABLE"
-    : "PARTIAL";
+  return wastePurchaseCost(performance).status;
 }
 
 function productQualityScore(performance: ProductDailyPerformance) {

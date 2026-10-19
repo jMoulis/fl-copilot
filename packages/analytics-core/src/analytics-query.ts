@@ -25,6 +25,7 @@ export const analyticsQueryPointSchema = z.strictObject({
   sales: metricSchema,
   margin: metricSchema,
   waste: metricSchema,
+  wasteCost: metricSchema.optional(),
 });
 export const analyticsQueryProductSchema = z.strictObject({
   id: z.uuid(),
@@ -287,15 +288,16 @@ export function executeAnalyticsQuery(input: {
 /** Shared coverage rule for observed product-days. Callers validate scope/uniqueness first. */
 export function aggregateAnalyticsDailyPoints(
   points: readonly AnalyticsQueryPoint[],
-  metric: "sales" | "margin" | "waste",
+  metric: "sales" | "margin" | "waste" | "wasteCost",
   expectedProducts: number,
 ): DatedKpiValue[] {
   const daily = new Map<string, { values: string[]; complete: number }>();
   for (const p of points) {
     const d = daily.get(p.businessDate) ?? { values: [], complete: 0 };
-    if (p[metric].value !== null && p[metric].status !== "UNAVAILABLE") {
-      d.values.push(p[metric].value);
-      if (p[metric].status === "AVAILABLE") d.complete++;
+    const point = p[metric];
+    if (point && point.value !== null && point.status !== "UNAVAILABLE") {
+      d.values.push(point.value);
+      if (point.status === "AVAILABLE") d.complete++;
     }
     daily.set(p.businessDate, d);
   }

@@ -18,6 +18,7 @@ import {
   explorerRange,
   explorerReference,
   parseDecimal,
+  wastePurchaseCost,
   type ExplorerPeriod,
   type DatedKpiValue,
 } from "@fl-copilot/analytics-core";
@@ -41,11 +42,17 @@ const daily = z.object({
   storeId: z.uuid(),
   date: copilotBusinessDateSchema,
   sales: z.object({ salesValue: money, marginValue: money }),
-  waste: z.object({ salesValue: money }),
+  waste: z.object({
+    salesValue: money,
+    purchaseValueKnown: money.optional(),
+    purchaseValueEstimated: money.optional(),
+  }),
   availability: z.object({
     salesValue: availability,
     salesMarginValue: availability,
     wasteSalesValue: availability,
+    wastePurchaseValueKnown: availability.optional(),
+    wastePurchaseValueEstimated: availability.optional(),
   }),
   formulaVersion: z.literal("department-daily-v1"),
   computedAt: z.iso.datetime(),
@@ -117,18 +124,23 @@ export class ExplorerRepository {
         const p = daily.parse(JSON.parse(row.payload_json));
         if (p.storeId !== storeId || p.date !== row.business_date)
           throw Error("EXPLORER_SOURCE_SCOPE");
+        const cost = wastePurchaseCost(p);
         const value =
             metric === "sales"
               ? p.sales.salesValue
               : metric === "margin"
                 ? p.sales.marginValue
-                : p.waste.salesValue,
+                : metric === "wasteCost"
+                  ? cost.value
+                  : p.waste.salesValue,
           status =
             metric === "sales"
               ? p.availability.salesValue.status
               : metric === "margin"
                 ? p.availability.salesMarginValue.status
-                : p.availability.wasteSalesValue.status;
+                : metric === "wasteCost"
+                  ? cost.status
+                  : p.availability.wasteSalesValue.status;
         return {
           businessDate: p.date,
           value: status === "UNAVAILABLE" ? null : value,
@@ -230,6 +242,7 @@ export class ExplorerRepository {
                 value: p.waste.salesValue,
                 status: p.availability.wasteSalesValue.status,
               },
+              wasteCost: wastePurchaseCost(p),
             });
           }
           if (page.length < 5000) break;
