@@ -15,8 +15,32 @@ import {
 } from "./product-editor-service";
 import { useProductEditor } from "./use-product-editor";
 import { useUnsavedForm } from "../components/use-unsaved-form";
+import { useAuth } from "../auth/auth-provider";
+import type { ProductEditorDraft } from "./product-editor-service";
 import type { ProductEditorState } from "./product-editor-hooks.types";
-export function ProductEditScreen({ id }: { id: string }) {
+interface ProductEditScreenProps {
+  id: string;
+  newDraft?: ProductEditorDraft;
+  onSaved?(id: string): void;
+  onBack?(): void;
+  backLabel?: string;
+}
+export function ProductEditScreen(props: ProductEditScreenProps) {
+  const { session } = useAuth();
+  return (
+    <OwnedProductEditScreen
+      key={`${session?.user.id}:${session?.stores[0]?.storeId}:${props.id}`}
+      {...props}
+    />
+  );
+}
+function OwnedProductEditScreen({
+  id,
+  newDraft,
+  onSaved,
+  onBack,
+  backLabel,
+}: ProductEditScreenProps) {
   const state = useProductEditor(id === "new" ? undefined : id);
   const [opened, setOpened] = useState(false);
   useEffect(() => {
@@ -50,14 +74,32 @@ export function ProductEditScreen({ id }: { id: string }) {
         )}
       </AppScreen>
     );
-  return <LoadedProductEditor key={id} id={id} state={state} />;
+  return (
+    <LoadedProductEditor
+      key={id}
+      id={id}
+      state={state}
+      newDraft={newDraft}
+      onSaved={onSaved}
+      onBack={onBack}
+      backLabel={backLabel}
+    />
+  );
 }
 function LoadedProductEditor({
   id,
   state,
+  newDraft,
+  onSaved,
+  onBack,
+  backLabel,
 }: {
   id: string;
   state: ProductEditorState;
+  newDraft?: ProductEditorDraft;
+  onSaved?(id: string): void;
+  onBack?(): void;
+  backLabel?: string;
 }) {
   const [base, setBase] = useState<ProductEditorSnapshot | undefined>(
     () => state.snapshot,
@@ -69,8 +111,9 @@ function LoadedProductEditor({
     catalogueSnapshotIdentity(base ?? null) !==
     catalogueSnapshotIdentity(state.snapshot ?? null);
   const initial = useMemo(
-    () => (base ? productSnapshotToDraft(base) : undefined),
-    [base],
+    () =>
+      base ? productSnapshotToDraft(base) : id === "new" ? newDraft : undefined,
+    [base, id, newDraft],
   );
   const formState = useCallback(
     (dirty: boolean, saving: boolean) =>
@@ -81,9 +124,11 @@ function LoadedProductEditor({
   );
   useUnsavedForm(form.dirty, form.saving);
   useEffect(() => {
-    if (savedId && !form.dirty && !form.saving)
-      router.replace(`/(tabs)/products/${savedId}` as Href);
-  }, [savedId, form.dirty, form.saving]);
+    if (savedId && !form.dirty && !form.saving) {
+      if (onSaved) onSaved(savedId);
+      else router.replace(`/(tabs)/products/${savedId}` as Href);
+    }
+  }, [savedId, form.dirty, form.saving, onSaved]);
   function reload() {
     const apply = () => {
       setBase(state.snapshot);
@@ -111,15 +156,20 @@ function LoadedProductEditor({
         }
       />
       <SecondaryButton
-        label={id === "new" ? "Retour aux produits" : "Retour à la fiche"}
+        label={
+          backLabel ??
+          (id === "new" ? "Retour aux produits" : "Retour à la fiche")
+        }
         onPress={() =>
-          router.canGoBack()
-            ? router.back()
-            : router.replace(
-                id === "new"
-                  ? "/(tabs)/products"
-                  : (`/(tabs)/products/${id}` as Href),
-              )
+          onBack
+            ? onBack()
+            : router.canGoBack()
+              ? router.back()
+              : router.replace(
+                  id === "new"
+                    ? "/(tabs)/products"
+                    : (`/(tabs)/products/${id}` as Href),
+                )
         }
       />
       {state.error ? (

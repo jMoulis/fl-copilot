@@ -16,6 +16,18 @@ import { OutboxRepository } from "../sync/outbox-repository";
 import { ProductMasterRepository } from "../products/product-master-repository";
 import { matchProduct, normalizeProductLabel } from "@fl-copilot/domain";
 import { WasteReceiptRepository } from "./waste-receipt-repository";
+import { catalogueSnapshotIdentity } from "@fl-copilot/domain";
+import {
+  emptyProductDraft,
+  loadProductEditorSnapshot,
+  saveProductEditorLocally,
+} from "../products/product-editor-service";
+import {
+  loadReceiptProductTarget,
+  receiptProductOriginSchema,
+  canSelectReceiptProduct,
+} from "./receipt-product-selection";
+import { randomUUID } from "node:crypto";
 
 type SQLiteValue = string | number | null;
 
@@ -980,6 +992,265 @@ describe("protected manual draft editing", () => {
       ).toBe(line().rawLabel);
     } finally {
       database.close();
+    }
+  });
+});
+
+describe("explicit receipt catalogue selection", () => {
+  async function fixture(path = ":memory:") {
+    const db = new DatabaseSync(path),
+      adapter = new NodeDatabase(db);
+    await runLocalMigrations(adapter);
+    const repo = new WasteReceiptRepository(adapter);
+    await repo.createDraft({
+      receipt: receipt(),
+      file: file(),
+      lines: [line()],
+    });
+    const productId = await saveProductEditorLocally(
+      adapter,
+      {
+        ...emptyProductDraft,
+        label: "Tomate nouvelle fiche",
+        identifiers: [{ type: "ITM8", value: "00001234" }],
+        aliases: [{ alias: "Tomate spéciale" }],
+      },
+      {
+        storeId,
+        deviceId: "99999999-9999-4999-8999-999999999999",
+        now: () => timestamp,
+        generateId: randomUUID,
+      },
+    );
+    const snapshot = (await loadProductEditorSnapshot(
+      new ProductMasterRepository(adapter),
+      productId,
+    ))!;
+    const reviewed = { storeId, identity: catalogueSnapshotIdentity(snapshot) };
+    return { db, adapter, repo, productId, snapshot, reviewed };
+  }
+
+  it("creates through the real product editor, associates an incomplete noncandidate locally without publishing/learning, and restores the choice after restart", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "receipt-catalogue-"));
+    directories.push(dir);
+    const path = join(dir, "local.db");
+    const { db, adapter, repo, productId, snapshot, reviewed } =
+      await fixture(path);
+    try {
+      expect(snapshot.product.entity).toMatchObject({
+        category: "UNKNOWN",
+        nature: "UNKNOWN",
+        salesUnit: "UNKNOWN",
+      });
+      expect(snapshot.identifiers[0]!.entity.value).toBe("00001234");
+      expect(canSelectReceiptProduct({ record: snapshot.product })).toBe(true);
+      const counts = () =>
+        db
+          .prepare(
+            "SELECT (SELECT COUNT(*) FROM sync_outbox) commands,(SELECT COUNT(*) FROM product_aliases) aliases",
+          )
+          .get();
+      const before = counts();
+      const target = await loadReceiptProductTarget(repo, storeId, {
+        receiptId,
+        lineId,
+      });
+      await repo.selectCatalogueProduct(
+        receiptId,
+        lineId,
+        productId,
+        target.draft.line.version,
+        reviewed,
+      );
+      const saved = (await repo.getReceiptDetail(receiptId))!;
+      expect(saved.receipt.processingStatus).toBe("CAPTURED");
+      expect(saved.lines[0]!.line).toMatchObject({
+        matchedProductId: productId,
+        matchStatus: "MATCHED",
+        productNature: "UNKNOWN",
+        matchConfidence: null,
+        rawLabel: "TOMATE VRAC",
+        weight: "1.25",
+        totalPrice: "4.38",
+        version: 2,
+        syncState: "LOCAL_ONLY",
+      });
+      expect(saved.lines[0]!.candidates).toEqual([]);
+      expect(counts()).toEqual(before);
+      expect(
+        await adapter.getFirstAsync(
+          "SELECT checksum FROM local_files WHERE id=?",
+          fileId,
+        ),
+      ).toEqual({ checksum: "sha256:receipt" });
+    } finally {
+      db.close();
+    }
+    const reopened = new DatabaseSync(path);
+    try {
+      const restored = (await new WasteReceiptRepository(
+        new NodeDatabase(reopened),
+      ).getReceiptDetail(receiptId, storeId))!;
+      expect(restored.lines[0]!.line.matchedProductId).toBe(productId);
+      expect(restored.lines[0]!.line.version).toBe(2);
+      expect(restored.receipt.processingStatus).toBe("CAPTURED");
+    } finally {
+      reopened.close();
+    }
+  });
+
+  it.each([
+    [
+      "line revision",
+      "UPDATE waste_lines SET version=version+1",
+      "WASTE_RECEIPT_LINE_CHANGED",
+    ],
+    [
+      "product label",
+      "UPDATE products SET label='Changed',version=version+1",
+      "WASTE_RECEIPT_PRODUCT_CHANGED",
+    ],
+    [
+      "code without parent revision",
+      "UPDATE product_identifiers SET value='00005678',version=version+1",
+      "WASTE_RECEIPT_PRODUCT_CHANGED",
+    ],
+    [
+      "alias without parent revision",
+      "UPDATE product_aliases SET alias='Autre',normalized_alias='AUTRE',version=version+1",
+      "WASTE_RECEIPT_PRODUCT_CHANGED",
+    ],
+    [
+      "inactive product",
+      "UPDATE products SET status='INACTIVE'",
+      "WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID",
+    ],
+    [
+      "deleted product",
+      "UPDATE products SET deleted_at='2026-10-20T00:00:00.000Z'",
+      "WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID",
+    ],
+    [
+      "product sync failure",
+      "UPDATE products SET sync_state='ERROR'",
+      "WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID",
+    ],
+    [
+      "other store",
+      "UPDATE products SET store_id='99999999-9999-4999-8999-999999999999'",
+      "WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID",
+    ],
+    [
+      "published receipt",
+      "UPDATE waste_receipts SET processing_status='PUBLISHED'",
+      "WASTE_RECEIPT_READ_ONLY",
+    ],
+    [
+      "deleted line",
+      "UPDATE waste_lines SET deleted_at='2026-10-20T00:00:00.000Z'",
+      "WASTE_RECEIPT_LINE_NOT_FOUND",
+    ],
+  ])("refuses %s atomically after a frozen review", async (_, sql, code) => {
+    const { db, repo, productId, reviewed } = await fixture();
+    try {
+      db.exec(sql);
+      const before = db.prepare("SELECT * FROM waste_lines").all();
+      await expect(
+        repo.selectCatalogueProduct(receiptId, lineId, productId, 1, reviewed),
+      ).rejects.toThrow(code);
+      expect(db.prepare("SELECT * FROM waste_lines").all()).toEqual(before);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rechecks related identity conflicts inside the write transaction and permits an ACK-only change", async () => {
+    const { db, adapter, repo, productId, snapshot, reviewed } =
+      await fixture();
+    try {
+      const conflicts = new ConflictRepository(adapter);
+      const command = (
+        await new OutboxRepository(adapter).listPending(storeId)
+      ).find((c) => c.entityType === "product_identifier")!;
+      await conflicts.recordPushConflict(command, {
+        commandId: command.commandId,
+        entityType: command.entityType,
+        entityId: command.entityId,
+        status: "CONFLICT",
+        remoteVersion: 2,
+        remoteEntity: snapshot.identifiers[0]!.entity,
+      });
+      await expect(
+        repo.selectCatalogueProduct(receiptId, lineId, productId, 1, reviewed),
+      ).rejects.toThrow("WASTE_RECEIPT_PRODUCT_CHANGED");
+      db.exec(
+        "DELETE FROM sync_conflicts; UPDATE products SET sync_state='SYNCED',remote_version=1,dirty=0; UPDATE product_identifiers SET sync_state='SYNCED',remote_version=1,dirty=0; UPDATE product_aliases SET sync_state='SYNCED',remote_version=1,dirty=0",
+      );
+      await repo.selectCatalogueProduct(
+        receiptId,
+        lineId,
+        productId,
+        1,
+        reviewed,
+      );
+      expect((await repo.listLines(receiptId))[0]!.matchedProductId).toBe(
+        productId,
+      );
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects a foreign receipt/line and hostile navigation origin without changing any record", async () => {
+    const { db, repo, reviewed, productId } = await fixture();
+    try {
+      expect(
+        receiptProductOriginSchema.safeParse({
+          receiptId,
+          lineId,
+          returnUrl: "https://evil.invalid",
+        }).success,
+      ).toBe(false);
+      expect(
+        receiptProductOriginSchema.safeParse({ receiptId: [receiptId], lineId })
+          .success,
+      ).toBe(false);
+      await expect(
+        loadReceiptProductTarget(repo, "99999999-9999-4999-8999-999999999999", {
+          receiptId,
+          lineId,
+        }),
+      ).rejects.toThrow("WASTE_RECEIPT_LINE_NOT_FOUND");
+      await expect(
+        loadReceiptProductTarget(repo, storeId, { receiptId, lineId: fileId }),
+      ).rejects.toThrow("WASTE_RECEIPT_LINE_NOT_FOUND");
+      await expect(
+        repo.selectCatalogueProduct(receiptId, lineId, productId, 1, {
+          ...reviewed,
+          storeId: fileId,
+        }),
+      ).rejects.toThrow("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+      expect((await repo.listLines(receiptId))[0]!.matchedProductId).toBeNull();
+    } finally {
+      db.close();
+    }
+  });
+  it("rechecks the reviewed identity after acquiring the write transaction", async () => {
+    const { db, adapter, repo, productId, reviewed } = await fixture();
+    try {
+      const acquire = adapter.withExclusiveTransactionAsync.bind(adapter);
+      adapter.withExclusiveTransactionAsync = async (task) => {
+        db.exec(
+          "UPDATE product_identifiers SET value='00005678',version=version+1",
+        );
+        await acquire(task);
+      };
+      await expect(
+        repo.selectCatalogueProduct(receiptId, lineId, productId, 1, reviewed),
+      ).rejects.toThrow("WASTE_RECEIPT_PRODUCT_CHANGED");
+      expect((await repo.listLines(receiptId))[0]!.matchedProductId).toBeNull();
+    } finally {
+      db.close();
     }
   });
 });

@@ -1361,6 +1361,22 @@ function LineEditor({
             </Text>
           </Pressable>
         ))}
+        <SecondaryButton
+          label="Chercher dans tout le catalogue"
+          disabled={disabled || !!edit}
+          onPress={() =>
+            router.push({
+              pathname: "/waste-receipt-product",
+              params: { receiptId, lineId: draft.line.id },
+            })
+          }
+        />
+        {edit ? (
+          <Text className="text-sm text-muted">
+            Enregistrez ou abandonnez la saisie de cette ligne avant de changer
+            de produit.
+          </Text>
+        ) : null}
       </View>
 
       {draft.line.matchStatus === "MATCHED" &&

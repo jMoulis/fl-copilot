@@ -442,3 +442,7 @@ PR 280 fusionnée après succès des CI exactes push `39331362090` et PR `393313
 7. **UX/validation : en cours.** Casse avec aperçu, garde de saisie et raccourcis vers les champs bloquants ; tests SQLite et contrôle visuel locaux passés. Catalogue hors candidats, autres écrans, chat, médias et recette native/M8 restent ouverts.
 
 PR 281 fusionnée après succès des CI exactes push `39332367255` et PR `39332407247`, tête `e4cc1285`, merge `f0942e173a194a61fe49d191e75f6d57d2221db3`, branche distante supprimée. Preuves/limites du lot courant : `../qa/M7_UX_RECEIPT_REVIEW.md`. Code non livré sur téléphone ; aucun appel payant, déploiement ou build EAS.
+
+### 20 octobre — choix manuel du catalogue dans la casse
+
+Chantiers 1 et 7 : recherche et confirmation d’un produit hors propositions, création par le formulaire existant puis retour à la sélection/ticket, contrôles atomiques des snapshots de ligne et d’identité, aucune publication ni mémoire implicite. Voir `../qa/M7_UX_RECEIPT_CATALOGUE.md`. Les sept états restent : **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**. La PR 282 est fusionnée (deux CI finales réussies, branches supprimées) ; la recette native groupée et les autres engagements V1/M8 restent ouverts. Pas de déploiement, appel IA ou EAS payant.
