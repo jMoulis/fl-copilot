@@ -46,3 +46,15 @@ export async function runAtomicLocalMutation<T>(
 
   return { value: value as T, command };
 }
+
+/** Join an existing transaction without opening a nested SQLite transaction. */
+export function joinedMutationDatabase(tx: OutboxDatabase) {
+  return {
+    getFirstAsync: tx.getFirstAsync.bind(tx),
+    getAllAsync: tx.getAllAsync.bind(tx),
+    runAsync: tx.runAsync.bind(tx),
+    withExclusiveTransactionAsync: (
+      task: (transaction: OutboxDatabase) => Promise<void>,
+    ) => task(tx),
+  };
+}

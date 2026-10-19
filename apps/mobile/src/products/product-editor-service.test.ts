@@ -12,6 +12,8 @@ import type { OutboxDatabase } from "../sync/outbox-repository";
 import { ProductMasterRepository } from "./product-master-repository";
 import {
   emptyProductDraft,
+  saveProductEditorLocally,
+  productSnapshotToDraft,
   loadProductEditorSnapshot,
   saveProductEditor,
 } from "./product-editor-service";
@@ -148,3 +150,207 @@ function idSequence() {
     return `00000000-0000-4000-8000-${suffix}`;
   };
 }
+
+describe("guarded manual product editing", () => {
+  const storeId = "11111111-1111-4111-8111-111111111111";
+  const deviceId = "22222222-2222-4222-8222-222222222222";
+  function options() {
+    return {
+      storeId,
+      deviceId,
+      now: () => "2026-10-19T12:00:00.000Z",
+      generateId: idSequence(),
+    };
+  }
+  it("allows an acknowledgement-only refresh but refuses a changed canonical fiche without overwriting it", async () => {
+    const { adapter, database } = await temporaryDatabase();
+    try {
+      const opt = options(),
+        repo = new ProductMasterRepository(adapter);
+      const id = await saveProductEditorLocally(
+        adapter,
+        {
+          ...emptyProductDraft,
+          label: "Butternut",
+          identifiers: [{ type: "EAN", value: "00001234" }],
+        },
+        opt,
+      );
+      const base = (await loadProductEditorSnapshot(repo, id))!;
+      database
+        .prepare(
+          "UPDATE products SET dirty=0, sync_state='SYNCED', remote_version=1 WHERE id=?",
+        )
+        .run(id);
+      database
+        .prepare(
+          "INSERT INTO product_daily_performance(id,store_id,product_id,business_date,payload_json,origin,formula_version,input_revision,computed_at) VALUES('test-daily',?,?,'2026-10-18','{}','LOCAL','test','test',?)",
+        )
+        .run(storeId, id, opt.now());
+      const draft = {
+        ...productSnapshotToDraft(base),
+        category: "VEGETABLE" as const,
+      };
+      await saveProductEditorLocally(
+        adapter,
+        draft,
+        { ...opt, productId: id },
+        base,
+      );
+      const job = database
+        .prepare(
+          "SELECT type,payload_json FROM local_jobs WHERE type='ANALYTICS_RECOMPUTE_PRODUCT_DATES'",
+        )
+        .get() as { type: string; payload_json: string };
+      expect(JSON.parse(job.payload_json)).toMatchObject({
+        storeId,
+        scopes: [{ productId: id, businessDate: "2026-10-18" }],
+      });
+      const changed = (await loadProductEditorSnapshot(repo, id))!;
+      const count = database
+        .prepare("SELECT COUNT(*) n FROM sync_outbox")
+        .get();
+      await expect(
+        saveProductEditorLocally(
+          adapter,
+          { ...draft, label: "Écrasé" },
+          { ...opt, productId: id },
+          base,
+        ),
+      ).rejects.toThrow("PRODUCT_EDITOR_CHANGED");
+      expect(
+        (await loadProductEditorSnapshot(repo, id))!.product.entity.label,
+      ).toBe("Butternut");
+      expect(
+        database.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+      ).toEqual(count);
+      expect(changed.product.entity.category).toBe("VEGETABLE");
+    } finally {
+      database.close();
+    }
+  });
+  it("rolls back the complete product, its earlier code and Outbox if a later SQLite write fails", async () => {
+    const { adapter, database } = await temporaryDatabase();
+    try {
+      const opt = options();
+      database.exec(
+        "CREATE TRIGGER reject_test_code BEFORE INSERT ON product_identifiers WHEN NEW.value='99999' BEGIN SELECT RAISE(ABORT, 'test_late_write_failure'); END",
+      );
+      await expect(
+        saveProductEditorLocally(
+          adapter,
+          {
+            ...emptyProductDraft,
+            label: "Poire",
+            identifiers: [
+              { type: "EAN", value: "00123" },
+              { type: "EAN", value: "99999" },
+            ],
+          },
+          opt,
+        ),
+      ).rejects.toThrow();
+      for (const table of ["products", "product_identifiers", "sync_outbox"])
+        expect(
+          database.prepare(`SELECT COUNT(*) n FROM ${table}`).get(),
+        ).toEqual({ n: 0 });
+    } finally {
+      database.close();
+    }
+  });
+  it("refuses foreign, deleted and concurrently conflicted targets without creating commands", async () => {
+    const { adapter, database } = await temporaryDatabase();
+    try {
+      const opt = options(),
+        repo = new ProductMasterRepository(adapter);
+      const id = await saveProductEditorLocally(
+        adapter,
+        { ...emptyProductDraft, label: "Poire" },
+        opt,
+      );
+      const base = (await loadProductEditorSnapshot(repo, id))!,
+        draft = productSnapshotToDraft(base);
+      const count = database
+        .prepare("SELECT COUNT(*) n FROM sync_outbox")
+        .get();
+      await expect(
+        saveProductEditorLocally(
+          adapter,
+          draft,
+          { ...opt, productId: id, storeId: deviceId },
+          base,
+        ),
+      ).rejects.toThrow("PRODUCT_EDITOR_UNAVAILABLE");
+      await expect(
+        saveProductEditorLocally(adapter, draft, { ...opt, productId: id }),
+      ).rejects.toThrow("PRODUCT_EDITOR_CHANGED");
+      database
+        .prepare(
+          `INSERT INTO sync_conflicts(id,store_id,entity_type,entity_id,local_payload_json,remote_payload_json,local_expected_version,remote_version,conflict_type,status,created_at) VALUES('test',?,'product',?,'{}','{}',1,2,'SYNC_VERSION_CONFLICT','OPEN',?)`,
+        )
+        .run(storeId, id, opt.now());
+      await expect(
+        saveProductEditorLocally(
+          adapter,
+          draft,
+          { ...opt, productId: id },
+          base,
+        ),
+      ).rejects.toThrow("PRODUCT_EDITOR_CONFLICT");
+      database.prepare("DELETE FROM sync_conflicts WHERE id='test'").run();
+      database
+        .prepare("UPDATE products SET deleted_at=? WHERE id=?")
+        .run(opt.now(), id);
+      await expect(
+        saveProductEditorLocally(
+          adapter,
+          draft,
+          { ...opt, productId: id },
+          base,
+        ),
+      ).rejects.toThrow("PRODUCT_EDITOR_UNAVAILABLE");
+      expect(
+        database.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+      ).toEqual(count);
+    } finally {
+      database.close();
+    }
+  });
+  it("does not move an existing EAN to a newly created product", async () => {
+    const { adapter, database } = await temporaryDatabase();
+    try {
+      const opt = options();
+      await saveProductEditorLocally(
+        adapter,
+        {
+          ...emptyProductDraft,
+          label: "Poire",
+          identifiers: [{ type: "EAN", value: "00123" }],
+        },
+        opt,
+      );
+      const before = database
+        .prepare("SELECT COUNT(*) n FROM sync_outbox")
+        .get();
+      await expect(
+        saveProductEditorLocally(
+          adapter,
+          {
+            ...emptyProductDraft,
+            label: "Pomme",
+            identifiers: [{ type: "EAN", value: "00123" }],
+          },
+          opt,
+        ),
+      ).rejects.toThrow("PRODUCT_EDITOR_IDENTIFIER_CONFLICT");
+      expect(database.prepare("SELECT label FROM products").all()).toEqual([
+        { label: "Poire" },
+      ]);
+      expect(
+        database.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+      ).toEqual(before);
+    } finally {
+      database.close();
+    }
+  });
+});

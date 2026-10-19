@@ -1,4 +1,13 @@
-import { catalogueSnapshotDraft } from "@fl-copilot/domain";
+import {
+  joinedMutationDatabase,
+  type AtomicMutationDatabase,
+} from "../sync/atomic-local-mutation";
+import type { OutboxDatabase } from "../sync/outbox-repository";
+import { queueProductRecomputation } from "./recomputation";
+import {
+  catalogueSnapshotDraft,
+  catalogueSnapshotIdentity,
+} from "@fl-copilot/domain";
 import {
   normalizeProductLabel,
   type Product,
@@ -219,4 +228,78 @@ export function productMutationExpectedRemoteVersion<
 
 function normalizeDecimal(value: string) {
   return value.trim().replace(",", ".");
+}
+
+/** Manual editor: reread, compare, save the aggregate and queue recomputation atomically. */
+export async function saveProductEditorLocally(
+  db: OutboxDatabase & AtomicMutationDatabase,
+  draft: ProductEditorDraft,
+  options: Omit<SaveProductEditorOptions, "existing">,
+  expected?: ProductEditorSnapshot,
+) {
+  let savedId: string | undefined;
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const repo = new ProductMasterRepository(joinedMutationDatabase(tx));
+    const current = options.productId
+      ? await loadProductEditorSnapshot(repo, options.productId)
+      : null;
+    if (
+      options.productId &&
+      (!current || current.product.entity.storeId !== options.storeId)
+    )
+      throw Error("PRODUCT_EDITOR_UNAVAILABLE");
+    if (options.productId && !expected) throw Error("PRODUCT_EDITOR_CHANGED");
+    if (
+      expected &&
+      catalogueSnapshotIdentity(current) !== catalogueSnapshotIdentity(expected)
+    )
+      throw Error("PRODUCT_EDITOR_CHANGED");
+    if (current) {
+      const conflict = await tx.getFirstAsync<{ id: string }>(
+        `SELECT c.id FROM sync_conflicts c
+        LEFT JOIN product_identifiers pi ON c.entity_type='product_identifier' AND pi.id=c.entity_id
+        LEFT JOIN product_aliases pa ON c.entity_type='product_alias' AND pa.id=c.entity_id
+        WHERE c.store_id=? AND c.status='OPEN' AND ((c.entity_type='product' AND c.entity_id=?) OR (c.entity_type='product_identifier' AND pi.product_id=?) OR (c.entity_type='product_alias' AND pa.product_id=?)) LIMIT 1`,
+        options.storeId,
+        current.product.entity.id,
+        current.product.entity.id,
+        current.product.entity.id,
+      );
+      if (conflict) throw Error("PRODUCT_EDITOR_CONFLICT");
+      for (const key of ["identifiers", "aliases"] as const) {
+        if (
+          draft[key].some(
+            (entry) =>
+              entry.id && !current[key].some((r) => r.entity.id === entry.id),
+          )
+        )
+          throw Error("PRODUCT_EDITOR_CHANGED");
+      }
+    }
+    const codes = await repo.listIdentifiersByStore(options.storeId);
+    if (
+      draft.identifiers.some((input) =>
+        codes.some(
+          ({ entity: e }) =>
+            e.productId !== options.productId &&
+            e.type === input.type &&
+            e.value === input.value.trim(),
+        ),
+      )
+    )
+      throw Error("PRODUCT_EDITOR_IDENTIFIER_CONFLICT");
+    savedId = await saveProductEditor(repo, draft, {
+      ...options,
+      existing: current ?? undefined,
+    });
+    await queueProductRecomputation(
+      tx,
+      options.storeId,
+      savedId,
+      options.generateId(),
+      options.now(),
+    );
+  });
+  if (!savedId) throw Error("PRODUCT_EDITOR_UNAVAILABLE");
+  return savedId;
 }

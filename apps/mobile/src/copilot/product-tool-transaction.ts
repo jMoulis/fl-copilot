@@ -10,16 +10,8 @@ import {
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import { ProductMasterRepository } from "../products/product-master-repository";
-export function joinedProductToolDatabase(tx: OutboxDatabase) {
-  return {
-    getFirstAsync: tx.getFirstAsync.bind(tx),
-    getAllAsync: tx.getAllAsync.bind(tx),
-    runAsync: tx.runAsync.bind(tx),
-    withExclusiveTransactionAsync: (
-      task: (transaction: OutboxDatabase) => Promise<void>,
-    ) => task(tx),
-  };
-}
+import { joinedMutationDatabase as joinedProductToolDatabase } from "../sync/atomic-local-mutation";
+export { joinedProductToolDatabase };
 export function productToolRepository(tx: OutboxDatabase) {
   return new ProductMasterRepository(joinedProductToolDatabase(tx));
 }
