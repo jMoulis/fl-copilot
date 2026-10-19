@@ -6,6 +6,7 @@ import {
   copilotStoreLayoutInputSchema,
   isLayoutDraft,
   storeLayoutSchema,
+  validateStoreLayoutReadSnapshot,
   storeLayoutContentSchema,
   storeLayoutGeometryIssueSchema,
   type StoreLayoutContent,
@@ -18,10 +19,7 @@ import {
   type StoreLayoutRevisionDocument,
 } from "../store-layout-sync";
 
-export const storeLayoutReadSnapshotSchema = z.strictObject({
-  head: storeLayoutSchema.nullable(),
-  reference: storeLayoutSchema.nullable(),
-});
+export { storeLayoutReadSnapshotSchema } from "@fl-copilot/domain";
 const shape = storeLayoutContentSchema.shape;
 const recordSchema = z.discriminatedUnion("type", [
   z.strictObject({
@@ -142,29 +140,7 @@ export function presentCopilotStoreLayout(
 ) {
   z.uuid().parse(storeId);
   const input = copilotStoreLayoutInputSchema.parse(rawInput),
-    { head, reference } = storeLayoutReadSnapshotSchema.parse(rawSnapshot);
-  if (
-    (head && (head.storeId !== storeId || head.id !== storeId)) ||
-    (reference &&
-      (!head ||
-        reference.storeId !== storeId ||
-        reference.id !== storeId ||
-        reference.revisionId !== head.referenceRevisionId ||
-        reference.action !== "ADOPT_REFERENCE" ||
-        reference.version > head.version ||
-        reference.createdAt !== head.createdAt)) ||
-    (head?.referenceRevisionId && !reference)
-  )
-    throw Error("STORE_LAYOUT_SCOPE_INVALID");
-  if (
-    head &&
-    reference &&
-    ((reference.version >= head.version &&
-      reference.revisionId !== head.revisionId) ||
-      (reference.revisionId === head.revisionId &&
-        JSON.stringify(reference) !== JSON.stringify(head)))
-  )
-    throw Error("STORE_LAYOUT_REFERENCE_INVALID");
+    { head, reference } = validateStoreLayoutReadSnapshot(storeId, rawSnapshot);
   const selected =
     input.view === "REFERENCE"
       ? reference

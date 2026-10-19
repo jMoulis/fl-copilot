@@ -28,3 +28,6 @@ export * from "./implantation-scenario";
 export * from "./store-layout-pilot";
 export * from "./store-layout-editing";
 export * from "./store-layout-geometry";
+
+export * from "./store-layout-review";
+export * from "./store-layout-proposal";

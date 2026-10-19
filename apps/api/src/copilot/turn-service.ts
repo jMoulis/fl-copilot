@@ -1,3 +1,4 @@
+import { buildStoreLayoutEditMessages } from "./store-layout-edit-messages";
 import { appendFactContext } from "./fact-context";
 import { buildActionExecutionMessages } from "./action-execution-messages";
 import { buildExecutionLinkMessages } from "./execution-link-messages";
@@ -401,6 +402,10 @@ export async function runCopilotTurn(
             ...buildPreparationProposalMessages(
               message,
               generation.preparationPreviews ?? [],
+            ),
+            ...buildStoreLayoutEditMessages(
+              message,
+              generation.layoutEditPreviews ?? [],
             ),
             ...buildOperationsProposalMessages(
               message,

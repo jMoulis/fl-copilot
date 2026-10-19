@@ -1,3 +1,8 @@
+import {
+  copilotLayoutEditInputSchema,
+  copilotLayoutEditPreviewSchema,
+} from "@fl-copilot/domain";
+import { presentStoreLayoutEdit } from "./store-layout-edit-tool";
 import { factReadFromTool } from "./fact-context";
 import { implantationScenarioInputSchema } from "@fl-copilot/domain";
 import { readImplantationScenario } from "./implantation-tool";
@@ -370,6 +375,7 @@ export interface CopilotAiProvider {
     preparationPreviews?: Array<
       z.infer<typeof copilotPreparationPreviewSchema>
     >;
+    layoutEditPreviews?: Array<z.infer<typeof copilotLayoutEditPreviewSchema>>;
     operationsPreviews?: Array<z.infer<typeof copilotOperationsPreviewSchema>>;
     needPreviews?: Array<z.infer<typeof copilotNeedPreviewSchema>>;
     storeConflictPreviews?: Array<z.infer<typeof storeConflictPreviewSchema>>;
@@ -577,6 +583,7 @@ export function createCopilotAiProvider(
     implantationScenario?(
       input: z.infer<typeof implantationScenarioInputSchema>,
     ): Promise<ReturnType<typeof readImplantationScenario>>;
+    layoutEdits?: boolean;
     storeLayout?(
       input: z.infer<typeof copilotStoreLayoutInputSchema>,
     ): Promise<z.infer<typeof storeLayoutReadSnapshotSchema>>;
@@ -728,6 +735,9 @@ export function createCopilotAiProvider(
         > = [];
         const preparationPreviews: Array<
           z.infer<typeof copilotPreparationPreviewSchema>
+        > = [];
+        const layoutEditPreviews: Array<
+          z.infer<typeof copilotLayoutEditPreviewSchema>
         > = [];
         const operationsPreviews: Array<
           z.infer<typeof copilotOperationsPreviewSchema>
@@ -1750,6 +1760,39 @@ export function createCopilotAiProvider(
                           );
                         return value;
                       },
+                    }),
+                  }
+                : {}),
+              ...(reads.storeLayout && reads.layoutEdits
+                ? {
+                    store_layout_edit_preview: tool({
+                      description:
+                        "Prepare one explicitly requested physical store-plan change (modifier le plan magasin, dimensions du mobilier, déplacer un îlot/TG, ajouter/associer/retirer un mobile), never save directly. First use store_layout to identify exact targets and current head.revisionId, including a newer draft. EDIT targetId null edits room width/depth; an exact island/furniture/surface ID edits only its supported fields. Centimetres, one decimal; omitted fields preserved, explicit null clears to unknown. Enter only user-provided dimensions; repeated unconfirmed reference values become DECLARED, never surveyed. x/y are absolute top-left from department origin; rotations are clockwise 0/90/180/270. Parent moves also transform recorded descendants; ambiguous geometry is refused atomically. ADD_MOBILE needs explicit inventory intent and label/optional exact fixed or TG host; its optional patch records only user-provided initial dimensions/placement. Host association does not imply coordinates, fit or capacity. REMOVE_MOBILE removes its selling surface from the draft, preserving history. No other furniture deletion/creation supported. Preview only the requested change, not routine weekly product allocation; missing identity/measurements needs a targeted question. READY creates one before/after card requiring native confirmation to SAVE A DRAFT, never adopt the reference. Known geometry incompatibilities remain visible and block later adoption; draft save is allowed. STALE reread, BLOCKED explain the stated issue, UNCHANGED no-op. No actor, rights, identities of new records, measured flags or Mongo queries may be supplied. At most one physical proposal per turn.",
+                      inputSchema: objectUnionToolSchema(
+                        copilotLayoutEditInputSchema,
+                      ),
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["store-layout-edit", input]),
+                          async () => {
+                            if (layoutEditPreviews.length)
+                              throw Error("LAYOUT_PROPOSAL_LIMIT");
+                            const snapshot = await reads.storeLayout!({
+                              view: "REFERENCE",
+                              expectedRevisionId: null,
+                              targetId: null,
+                              cursor: null,
+                              limit: 1,
+                            });
+                            const result = presentStoreLayoutEdit(
+                              request.storeId,
+                              input,
+                              snapshot,
+                            );
+                            layoutEditPreviews.push(result);
+                            return result;
+                          },
+                        ),
                     }),
                   }
                 : {}),
@@ -3093,6 +3136,9 @@ export function createCopilotAiProvider(
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 preparationPreviews: preparationPreviews.filter((p) =>
+                  p.evidence.every((e) => evidence.has(e.id)),
+                ),
+                layoutEditPreviews: layoutEditPreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
                 operationsPreviews: operationsPreviews.filter((p) =>

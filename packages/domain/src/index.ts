@@ -150,3 +150,5 @@ export * from "./implantation-scenario";
 export * from "./store-layout";
 export * from "./store-layout-geometry";
 export * from "./copilot-store-layout";
+
+export * from "./copilot-store-layout-proposal";
