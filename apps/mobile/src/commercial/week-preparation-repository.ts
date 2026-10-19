@@ -14,6 +14,7 @@ import {
 } from "../sync/outbox-repository";
 import { ConflictRepository } from "../sync/conflict-repository";
 import { readCommercialChoices } from "./offer-choice-repository";
+import { assertLocalPhysicalAllocation } from "./physical-allocation-sources";
 type Row = {
   id: string;
   store_id: string;
@@ -127,6 +128,21 @@ export class CommercialPreparationRepository {
         previous = row ? mapped(row) : null;
       if (row?.sync_state === "CONFLICT")
         throw Error("COMMERCIAL_PREPARATION_RESOLVE_REQUIRED");
+      if (
+        previous?.entity.physicalAllocation &&
+        choice.physicalAllocation === undefined
+      )
+        throw Error("PHYSICAL_ALLOCATION_EXPLICIT_REMOVAL_REQUIRED");
+      if (
+        choice.physicalAllocation &&
+        JSON.stringify(choice.physicalAllocation) !==
+          JSON.stringify(previous?.entity.physicalAllocation)
+      )
+        await assertLocalPhysicalAllocation(
+          tx,
+          choice.storeId,
+          choice.physicalAllocation,
+        );
       const expected =
         row?.sync_state === "ERROR"
           ? row.remote_version

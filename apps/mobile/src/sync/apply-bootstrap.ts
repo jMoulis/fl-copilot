@@ -259,6 +259,13 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.physicalAllocations === true)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `physical-allocations:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     if (bootstrap.entities.commercialExecutionActuals === true)
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
@@ -388,6 +395,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialExecutionTasks",
     "commercialExecutionActuals",
     "storeContextSettings",
+    "physicalAllocations",
     "storeLayouts",
     "storeLayoutRevisions",
     "copilotExecutionLinks",

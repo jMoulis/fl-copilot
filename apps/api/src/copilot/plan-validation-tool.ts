@@ -17,6 +17,7 @@ export async function previewCommercialPlanValidation(
   storeId: string,
   raw: unknown,
   now: () => string = () => new Date().toISOString(),
+  physicalAllocationClient = false,
 ) {
   const input = copilotPlanReadinessInputSchema.parse(raw),
     { result, context, preparation } = await loadCommercialPlanReadiness(
@@ -24,6 +25,11 @@ export async function previewCommercialPlanValidation(
       storeId,
       input,
     );
+  if (
+    !physicalAllocationClient &&
+    preparation?.physicalAllocation !== undefined
+  )
+    throw Error("PHYSICAL_ALLOCATION_CLIENT_REQUIRED");
   let status: ReturnType<
     typeof copilotPlanValidationPreviewSchema.parse
   >["status"] = result.status;

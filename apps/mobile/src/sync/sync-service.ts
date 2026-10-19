@@ -68,6 +68,7 @@ export interface MobileSyncServiceOptions {
   commercialExecutionActuals?: boolean;
   storeContext?: boolean;
   storeLayouts?: boolean;
+  physicalAllocations?: boolean;
   needUnits?: boolean;
   needMemberships?: boolean;
   productSubstitutions?: boolean;
@@ -178,6 +179,12 @@ export class MobileSyncService {
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
           `commercial-versions:${storeId}`,
+        )
+      : true;
+    const physicalAllocationsAdopted = this.options.physicalAllocations
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `physical-allocations:${storeId}`,
         )
       : true;
     const layoutsAdopted = this.options.storeLayouts
@@ -319,6 +326,7 @@ export class MobileSyncService {
       !versionsAdopted ||
       !storeContextAdopted ||
       !layoutsAdopted ||
+      !physicalAllocationsAdopted ||
       !needUnitsAdopted ||
       !needMembershipsAdopted ||
       !productSubstitutionsAdopted ||
@@ -949,6 +957,9 @@ export class MobileSyncService {
   ): SyncPushRequest {
     return {
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
+      ...(this.options.physicalAllocations
+        ? { physicalAllocations: true }
+        : {}),
       ...(this.options.commercialExecutionActuals
         ? { commercialExecutionActuals: true }
         : {}),

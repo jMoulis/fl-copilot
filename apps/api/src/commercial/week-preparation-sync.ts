@@ -1,3 +1,4 @@
+import { assertRemotePhysicalAllocation } from "./physical-allocation-sources";
 import { createHash } from "node:crypto";
 import {
   commercialWeekPreparationSchema,
@@ -93,6 +94,35 @@ export async function applyCommercialPreparationCommand(
       "COMMERCIAL_PREPARATION_REVISION_INVALID",
       "Rouvrez la préparation avant de modifier sa révision.",
     );
+  if (previous?.physicalAllocation && plan.physicalAllocation === undefined)
+    return reject(
+      "PHYSICAL_ALLOCATION_CLIENT_REQUIRED",
+      "Cette préparation contient une implantation. Mettez l’application à jour pour la modifier sans perdre son lien au plan.",
+    );
+  if (
+    plan.physicalAllocation &&
+    JSON.stringify(plan.physicalAllocation) !==
+      JSON.stringify(previous?.physicalAllocation)
+  ) {
+    try {
+      await assertRemotePhysicalAllocation(
+        ctx.database,
+        storeId,
+        plan.physicalAllocation,
+        ctx.session,
+      );
+    } catch (e) {
+      if (
+        e instanceof Error &&
+        e.message === "PHYSICAL_ALLOCATION_DEPENDENCIES_PENDING"
+      )
+        throw e;
+      return reject(
+        "PHYSICAL_ALLOCATION_SOURCES_CHANGED",
+        "Le plan du magasin ou une référence de l’implantation a changé. Relisez la proposition avant de l’enregistrer.",
+      );
+    }
+  }
   const choices = await ctx.database
     .collection<OfferChoiceDocument>("commercialOfferChoices")
     .find(

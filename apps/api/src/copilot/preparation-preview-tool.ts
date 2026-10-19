@@ -18,6 +18,7 @@ export async function readPreparationPreview(
   db: Db,
   storeId: string,
   raw: unknown,
+  physicalAllocationClient = false,
 ) {
   const input = copilotPreparationPatchSchema.parse(raw);
   // At most 100 references, no unbounded source/product scan. All issue checks cover all references.
@@ -32,6 +33,11 @@ export async function readPreparationPreview(
     input.create?.choiceIds,
     input.patch.offerSelection?.addChoiceIds,
   );
+  if (
+    !physicalAllocationClient &&
+    r.preparation?.physicalAllocation !== undefined
+  )
+    throw Error("PHYSICAL_ALLOCATION_CLIENT_REQUIRED");
   const all = r.all;
   let status:
     | "READY"

@@ -33,3 +33,4 @@ export * from "./store-layout-review";
 export * from "./store-layout-proposal";
 
 export * from "./store-layout-scenario";
+export * from "./layout-preparation";

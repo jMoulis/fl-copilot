@@ -1,3 +1,4 @@
+import { legacyPhysicalEntity } from "@fl-copilot/domain";
 import {
   commercialWeekPlanSchema,
   type CommercialWeekPlan,
@@ -343,13 +344,28 @@ export async function applyCommercialPlanRevision(
     "SELECT payload_json FROM commercial_plan_revisions WHERE id=?",
     revision.id,
   );
-  if (
-    previous &&
-    JSON.stringify(
-      commercialPlanRevisionSchema.parse(JSON.parse(previous.payload_json)),
-    ) !== JSON.stringify(revision)
-  )
-    throw Error("COMMERCIAL_PLAN_REVISION_IMMUTABLE");
+  if (previous) {
+    const before = commercialPlanRevisionSchema.parse(
+      JSON.parse(previous.payload_json),
+    );
+    if (JSON.stringify(before) !== JSON.stringify(revision)) {
+      const hydrate =
+        before.plan.preparation.physicalAllocation === undefined &&
+        revision.plan.preparation.physicalAllocation !== undefined &&
+        JSON.stringify(before) ===
+          JSON.stringify(
+            legacyPhysicalEntity("commercial_week_plan_revision", revision),
+          );
+      if (!hydrate) throw Error("COMMERCIAL_PLAN_REVISION_IMMUTABLE");
+      await db.runAsync(
+        "UPDATE commercial_plan_revisions SET payload_json=? WHERE id=? AND store_id=?",
+        JSON.stringify(revision),
+        revision.id,
+        storeId,
+      );
+      return;
+    }
+  }
   await db.runAsync(
     "INSERT OR IGNORE INTO commercial_plan_revisions(id,store_id,plan_id,plan_version,payload_json) VALUES(?,?,?,?,?)",
     revision.id,

@@ -1,3 +1,5 @@
+import { readStoreLayoutScenarioSources } from "./physical-allocation-sources";
+import { layoutScenarioInput } from "@fl-copilot/domain";
 import {
   commercialWeekPreparationSchema,
   commercialVersionDecisionSchema,
@@ -112,7 +114,16 @@ export async function loadWeekPlanContext(
     .collection<VisualReadingDocument>("commercialVisualReadings")
     .find({ storeId, _id: { $in: readingIds } }, options)
     .toArray();
+  const allocationSources = plan.preparation.physicalAllocation
+    ? await readStoreLayoutScenarioSources(
+        ctx.database,
+        storeId,
+        layoutScenarioInput(plan.preparation.physicalAllocation),
+        options,
+      )
+    : undefined;
   return {
+    allocationSources,
     preparation: commercialWeekPreparationSchema.parse(
       (({ _id, ...data }) => {
         void _id;

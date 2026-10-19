@@ -1,3 +1,4 @@
+import { readPhysicalAllocationSources } from "./physical-allocation-sources";
 import type { Product } from "@fl-copilot/domain";
 import { commercialChoiceProductUnitMatches } from "@fl-copilot/commercial-core";
 import {
@@ -45,7 +46,19 @@ export async function readWeekPlanContext(
       prep.offerRefs.some((r) => r.choiceId === c.entity.id),
     ),
     docs = new Set(selected.map((c) => c.entity.source.sourceDocumentId));
+  let allocationSources: unknown;
+  if (prep.physicalAllocation)
+    try {
+      allocationSources = await readPhysicalAllocationSources(
+        db,
+        prep.storeId,
+        prep.physicalAllocation,
+      );
+    } catch {
+      /* Qualification remains unverifiable; final validation is blocked. */
+    }
   return {
+    allocationSources,
     preparation: row
       ? commercialWeekPreparationSchema.parse(JSON.parse(row.payload_json))
       : null,

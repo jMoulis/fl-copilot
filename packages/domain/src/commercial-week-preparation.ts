@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { storeLayoutScenarioSchema } from "./store-layout-scenario";
 const date = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -47,12 +48,32 @@ export const commercialWeekPreparationSchema = z
       )
       .max(30),
     note: z.string().trim().max(1200),
+    physicalAllocation: storeLayoutScenarioSchema.nullable().optional(),
     version: z.number().int().positive(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
   .strict()
   .superRefine((plan, ctx) => {
+    const allocation = plan.physicalAllocation;
+    if (
+      allocation &&
+      (allocation.storeId !== plan.storeId ||
+        allocation.weekStart !== plan.weekStart ||
+        allocation.items.some(
+          (i) =>
+            i.kind === "OFFER" &&
+            !plan.offerRefs.some(
+              (r) => r.choiceId === i.id && r.choiceVersion === i.version,
+            ),
+        ))
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["physicalAllocation"],
+        message:
+          "L’implantation doit appartenir à cette semaine et ses offres aux versions sélectionnées. Retirez ou actualisez l’implantation avant de changer ces références.",
+      });
     const start = new Date(`${plan.weekStart}T00:00:00Z`);
     if (
       !Number.isFinite(start.getTime()) ||

@@ -57,6 +57,7 @@ export async function previewStoreConflict(
   db: Db,
   storeId: string,
   raw: unknown,
+  physicalAllocationClient = false,
 ) {
   z.uuid().parse(storeId);
   const input = storeConflictInputSchema.parse(raw);
@@ -176,6 +177,12 @@ export async function previewStoreConflict(
       identifier ??
       alias;
   if (!entity) throw Error("STORE_CONFLICT_TARGET_UNAVAILABLE");
+  if (
+    !physicalAllocationClient &&
+    (preparation?.physicalAllocation !== undefined ||
+      plan?.preparation.physicalAllocation !== undefined)
+  )
+    throw Error("PHYSICAL_ALLOCATION_CLIENT_REQUIRED");
   if (JSON.stringify(entity).length > 96000)
     throw Error("STORE_CONFLICT_REVIEW_LIMIT");
   const visible = settings

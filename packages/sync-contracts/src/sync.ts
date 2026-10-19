@@ -37,6 +37,7 @@ export const syncPushRequestSchema = z.object({
   storeId: idSchema,
   commands: z.array(syncCommandSchema).max(MAX_SYNC_PUSH_COMMANDS),
   commercialExecutionActuals: z.boolean().optional(),
+  physicalAllocations: z.boolean().optional(),
 });
 export type SyncPushRequest = z.infer<typeof syncPushRequestSchema>;
 
@@ -88,6 +89,7 @@ export const syncPullQuerySchema = z.object({
   commercialExecutionActuals: z.enum(["true", "false"]).optional(),
   storeContext: z.enum(["true", "false"]).optional(),
   storeLayouts: z.enum(["true", "false"]).optional(),
+  physicalAllocations: z.enum(["true", "false"]).optional(),
   needUnits: z.enum(["true", "false"]).optional(),
   needMemberships: z.enum(["true", "false"]).optional(),
   productSubstitutions: z.enum(["true", "false"]).optional(),
@@ -131,6 +133,7 @@ export const bootstrapQuerySchema = z.object({
   commercialExecutionActuals: z.enum(["true", "false"]).optional(),
   storeContext: z.enum(["true", "false"]).optional(),
   storeLayouts: z.enum(["true", "false"]).optional(),
+  physicalAllocations: z.enum(["true", "false"]).optional(),
   needUnits: z.enum(["true", "false"]).optional(),
   needMemberships: z.enum(["true", "false"]).optional(),
   productSubstitutions: z.enum(["true", "false"]).optional(),
@@ -185,6 +188,7 @@ export const bootstrapEntitiesSchema = z.object({
   commercialWeekPreparations: z.array(jsonObjectSchema).optional(),
   commercialExecutionTasks: z.array(jsonObjectSchema).optional(),
   commercialExecutionActuals: z.boolean().optional(),
+  physicalAllocations: z.boolean().optional(),
   storeContextSettings: z.array(jsonObjectSchema).optional(),
   storeLayouts: z.array(jsonObjectSchema).optional(),
   storeLayoutRevisions: z.array(jsonObjectSchema).optional(),

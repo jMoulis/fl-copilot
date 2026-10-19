@@ -1,4 +1,9 @@
 import {
+  legacyPhysicalPreparation,
+  legacyPhysicalPlan,
+  legacyPhysicalEntity,
+} from "@fl-copilot/domain";
+import {
   serializeStoreLayout,
   serializeStoreLayoutRevision,
   type StoreLayoutDocument,
@@ -505,15 +510,22 @@ export function createMongoSyncBootstrapService(
                   : {}),
                 ...(query.commercialPlans === "true"
                   ? {
-                      commercialWeekPlans: weekPlans.map(
-                        serializeCommercialPlan,
+                      commercialWeekPlans: weekPlans.map((r) =>
+                        query.physicalAllocations === "true"
+                          ? serializeCommercialPlan(r)
+                          : legacyPhysicalPlan(serializeCommercialPlan(r)),
                       ),
                     }
                   : {}),
                 ...(query.commercialPlans === "true"
                   ? {
-                      commercialPlanRevisions: planRevisions.map(
-                        serializeCommercialPlanRevision,
+                      commercialPlanRevisions: planRevisions.map((r) =>
+                        query.physicalAllocations === "true"
+                          ? serializeCommercialPlanRevision(r)
+                          : legacyPhysicalEntity(
+                              "commercial_week_plan_revision",
+                              serializeCommercialPlanRevision(r),
+                            ),
                       ),
                     }
                   : {}),
@@ -530,6 +542,9 @@ export function createMongoSyncBootstrapService(
                         serializeCommercialVersionDecision,
                       ),
                     }
+                  : {}),
+                ...(query.physicalAllocations === "true"
+                  ? { physicalAllocations: true }
                   : {}),
                 ...(query.storeLayouts === "true"
                   ? {
@@ -604,8 +619,12 @@ export function createMongoSyncBootstrapService(
                   : {}),
                 ...(query.commercialPreparation === "true"
                   ? {
-                      commercialWeekPreparations: preparations.map(
-                        serializeCommercialPreparation,
+                      commercialWeekPreparations: preparations.map((r) =>
+                        query.physicalAllocations === "true"
+                          ? serializeCommercialPreparation(r)
+                          : legacyPhysicalPreparation(
+                              serializeCommercialPreparation(r),
+                            ),
                       ),
                     }
                   : {}),

@@ -1,8 +1,10 @@
+import { PhysicalAllocationCard } from "@/commercial/physical-allocation-card";
+import { contextWeekQuerySchema } from "@fl-copilot/domain";
 import { CommercialPlanValidationView } from "@/commercial/plan-validation-view";
 import { CommercialOfferValidationView } from "@/commercial/offer-validation-view";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Alert } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import {
   digestStringAsync,
   CryptoDigestAlgorithm,
@@ -55,7 +57,17 @@ export default function WeekPreparationScreen() {
     storeId = session?.stores[0]?.storeId;
   const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow } = useSync();
-  const [week] = useState(() => currentCommercialWeek());
+  const params = useLocalSearchParams<{ weekStart?: string }>();
+  const [explicitWeek] = useState(() =>
+    contextWeekQuerySchema.safeParse({ weekStart: params.weekStart }),
+  );
+  const [week] = useState(() =>
+    currentCommercialWeek(
+      explicitWeek.success
+        ? new Date(explicitWeek.data.weekStart + "T12:00:00Z")
+        : undefined,
+    ),
+  );
   const repo = useMemo(
     () => new CommercialPreparationRepository(sqlite, digest),
     [sqlite],
@@ -67,6 +79,8 @@ export default function WeekPreparationScreen() {
     [refs, setRefs] = useState<CommercialWeekPreparation["offerRefs"]>([]),
     [placements, setPlacements] = useState<Placement[]>([]),
     [note, setNote] = useState(""),
+    [physicalAllocation, setPhysicalAllocation] =
+      useState<CommercialWeekPreparation["physicalAllocation"]>(undefined),
     [loaded, setLoaded] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
@@ -130,6 +144,7 @@ export default function WeekPreparationScreen() {
           setRefs(record?.entity.offerRefs ?? []);
           setPlacements(record?.entity.placements ?? []);
           setNote(record?.entity.note ?? "");
+          setPhysicalAllocation(record?.entity.physicalAllocation);
           initialized.current = true;
         }
         setLoaded(true);
@@ -204,7 +219,7 @@ export default function WeekPreparationScreen() {
   }
   async function save() {
     if (!storeId || saving.current) return;
-    if (currentCommercialWeek().start !== week.start) {
+    if (!explicitWeek.success && currentCommercialWeek().start !== week.start) {
       setError(
         "La semaine a changé. Revenez à Ma semaine pour ouvrir la préparation courante.",
       );
@@ -236,6 +251,7 @@ export default function WeekPreparationScreen() {
         offerRefs: refs,
         placements,
         note,
+        physicalAllocation,
         version,
         createdAt: saved?.entity.createdAt ?? now,
         updatedAt: now,
@@ -290,12 +306,14 @@ export default function WeekPreparationScreen() {
       offerRefs: refs,
       placements,
       note: note.trim(),
+      physicalAllocation,
     }) !==
       JSON.stringify({
         tgCapacity: saved.entity.tgCapacity,
         offerRefs: saved.entity.offerRefs,
         placements: saved.entity.placements,
         note: saved.entity.note,
+        physicalAllocation: saved.entity.physicalAllocation,
       });
   return (
     <AppScreen>
@@ -343,6 +361,37 @@ export default function WeekPreparationScreen() {
             />
           ) : null}
         </SectionCard>
+      ) : null}
+      {physicalAllocation ? (
+        <SectionCard title="Implantation du brouillon">
+          <PhysicalAllocationCard scenario={physicalAllocation} />
+          {session?.stores[0]?.role === "MANAGER" ? (
+            <SecondaryButton
+              label="Retirer l’implantation du brouillon"
+              disabled={busy}
+              onPress={() =>
+                Alert.alert(
+                  "Retirer cette implantation ?",
+                  "Le plan du magasin et la proposition d’origine restent conservés. Le retrait prendra effet après l’enregistrement du brouillon.",
+                  [
+                    { text: "Annuler", style: "cancel" },
+                    {
+                      text: "Retirer du brouillon",
+                      style: "destructive",
+                      onPress: () => setPhysicalAllocation(null),
+                    },
+                  ],
+                )
+              }
+            />
+          ) : null}
+        </SectionCard>
+      ) : null}
+      {issues.physicalAllocation ? (
+        <InlineAlert
+          title="Implantation à revoir"
+          message={issues.physicalAllocation}
+        />
       ) : null}
       {stale ? (
         <InlineAlert

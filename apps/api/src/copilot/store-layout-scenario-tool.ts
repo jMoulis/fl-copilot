@@ -1,96 +1,10 @@
 import { createHash } from "node:crypto";
-import type { Db } from "mongodb";
 import {
-  layoutScenarioInputSchema,
-  layoutScenarioSourcesSchema,
   layoutScenarioPreviewSchema,
   layoutScenarioCardSchema,
 } from "@fl-copilot/domain";
 import { prepareStoreLayoutScenario } from "@fl-copilot/commercial-core";
-import { readCopilotStoreLayoutSnapshot } from "./store-layout-tool";
-import {
-  serializeProductDocument,
-  type ProductDocument,
-} from "../products/product-master";
-import {
-  serializeCommercialChoice,
-  type OfferChoiceDocument,
-} from "../commercial/offer-choice-sync";
-/** Exact authorized IDs only, bounded canonical reads with a final stability check. No business write. */
-export async function readStoreLayoutScenarioSources(
-  db: Db,
-  storeId: string,
-  raw: unknown,
-) {
-  const input = layoutScenarioInputSchema.parse(raw),
-    layout = await readCopilotStoreLayoutSnapshot(db, storeId),
-    refs = input.assignments.flatMap((a) => a.items);
-  const offerIds = [
-    ...new Set(refs.filter((r) => r.kind === "OFFER").map((r) => r.id)),
-  ].sort();
-  const offers = async () =>
-    offerIds.length
-      ? (
-          await db
-            .collection<OfferChoiceDocument>("commercialOfferChoices")
-            .find({ storeId, _id: { $in: offerIds } })
-            .sort({ _id: 1 })
-            .maxTimeMS(2000)
-            .limit(17)
-            .toArray()
-        ).map((r) => {
-          const c = serializeCommercialChoice(r);
-          if (c.id !== r._id) throw Error("LAYOUT_SCENARIO_SCOPE_INVALID");
-          return c;
-        })
-      : [];
-  const choices = await offers();
-  const productIds = [
-    ...new Set([
-      ...refs.filter((r) => r.kind === "PRODUCT").map((r) => r.id),
-      ...choices.map((c) => c.productId),
-    ]),
-  ].sort();
-  const products = async () =>
-    productIds.length
-      ? (
-          await db
-            .collection<ProductDocument>("products")
-            .find({ storeId, _id: { $in: productIds } })
-            .sort({ _id: 1 })
-            .maxTimeMS(2000)
-            .limit(17)
-            .toArray()
-        ).map(serializeProductDocument)
-      : [];
-  const first = await products();
-  const [freshHead, freshProducts, freshChoices] = await Promise.all([
-    db
-      .collection<{
-        _id: string;
-        storeId: string;
-        referenceRevisionId: string | null;
-      }>("storeLayouts")
-      .findOne(
-        { _id: storeId, storeId },
-        { projection: { referenceRevisionId: 1 }, maxTimeMS: 2000 },
-      ),
-    products(),
-    offers(),
-  ]);
-  if (
-    (freshHead?.referenceRevisionId ?? null) !==
-      (layout.head?.referenceRevisionId ?? null) ||
-    JSON.stringify(freshProducts) !== JSON.stringify(first) ||
-    JSON.stringify(freshChoices) !== JSON.stringify(choices)
-  )
-    throw Error("LAYOUT_SCENARIO_SOURCE_CHANGED");
-  return layoutScenarioSourcesSchema.parse({
-    layout,
-    products: first,
-    choices,
-  });
-}
+export { readStoreLayoutScenarioSources } from "../commercial/physical-allocation-sources";
 export function presentStoreLayoutScenario(
   storeId: string,
   raw: unknown,
