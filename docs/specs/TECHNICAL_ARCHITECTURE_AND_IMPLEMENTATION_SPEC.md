@@ -2943,3 +2943,12 @@ local/remote freshness
 native camera flows
 local notifications
 ```
+
+
+## M7 — one agent with SDK-native progressive tool discovery (PR 260)
+
+Keep the existing single `ToolLoopAgent`, provider/model configuration, authorization/capability closures, business tools and local-first mutation authority. When more than eight tools are registered for a request, use the installed SDK's `toolSearch()` plus `deferLoading`; only tool discovery, `request_information` and available `conversation_history` are initially visible. Search returns up to five name/description matches and definitions/execution become available on the next model step. Discovered tools remain available only for that generation; a new response starts from its own authorized registry. Small catalogues retain direct tool exposure to avoid a discovery round.
+
+The model chooses relevant tools through search using existing names/descriptions; no keyword-to-business-workflow router, extra LLM, multi-agent orchestrator, custom discovery service or new storage layer is introduced. SDK filtering applies to execution as well as advertisement, including streamed calls. Existing permission/capability checks and explicit native write confirmations stay authoritative. Discovery metadata is not financial evidence or an additional business-read privilege.
+
+Large catalogues have at most six model steps with the final step reserved for an answer. Existing distinct-read/call/input-result limits and timeout remain in force; repeated searches cannot make the loop unbounded. Search itself is bounded SDK metadata, separate from canonical read budgets and fact provenance. Show generic CONTEXT progress without arguments. Prompt definitions can change as discovery proceeds, and an additional model round can be needed; reduced initial tool definitions do not themselves prove latency, token cost or reasoning improvement. Paid model evaluations remain separate from mocked protocol tests.
