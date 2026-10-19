@@ -564,10 +564,12 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
       ) : null}
 
       {detail.receipt.duplicateStatus === "CONFIRMED_DUPLICATE" ? (
-        <InlineAlert
-          title="Doublon confirmé"
-          message="La nouvelle source reste conservée sur cet appareil et ne sera pas publiée."
-        />
+        <View onLayout={anchor("duplicate")}>
+          <InlineAlert
+            title="Doublon confirmé"
+            message="La nouvelle source reste conservée sur cet appareil et ne sera pas publiée."
+          />
+        </View>
       ) : null}
 
       {detail.receipt.processingStatus === "PUBLISHED" ? (

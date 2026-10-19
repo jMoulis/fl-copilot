@@ -76,11 +76,11 @@ export function useReceiptIssueNavigation() {
           : undefined
         : issue.field === "lines"
           ? linesTop.current
-          : sectionTop.current[
+          : (sectionTop.current[
               ["date", "cashierNumber", "duplicate"].includes(issue.field)
                 ? issue.field
                 : "processing"
-            ];
+            ] ?? sectionTop.current.processing);
       if (y === undefined) return;
       scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
       pendingIssue.current = undefined;
