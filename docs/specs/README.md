@@ -13,3 +13,5 @@ Start with:
 Then read the feature-specific functional specification for the current ticket.
 
 Do not substitute older technical architecture documents.
+
+For M7 physical implantation, read [Store plan and furniture specification](STORE_LAYOUT_SPEC.md) before implementing scenarios, revisions or visuals. It records the confirmed pilot vocabulary, store ownership and native plan interaction direction.

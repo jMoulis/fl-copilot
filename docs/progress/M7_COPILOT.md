@@ -1277,3 +1277,11 @@ Chantier actif : **6**, désormais **en cours**. Contrats Zod et moteur partagé
 Validation locale : **39 nouveaux cas**, `pnpm check` réussi (**1 984 tests passés, 477 cas d’environnement ignorés localement**), types stricts, lint et format. Cas numériques/limites, plan dense, contradictions et inconnus ; transport SDK simulé et refus des résultats altérés/étrangers ; rendu des dimensions/sources avec qualifications. Pas d’appel modèle, image payante ou modification de base métier.
 
 Écart couvert : le chat dispose du calcul géométrique qui lui manquait. Reste avant clôture : mesures/provenance confirmées, scénario durable éditable et versions, schéma canonique, illustration liée et cas pilote accepté. Ce lot est prêt dans le code après contrôles, sans API déployée ni binaire livré. Aucun build EAS. Les sept chantiers : **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**. L’incident de fiabilité du chat reste soumis à sa recette après livraison.
+
+## PR 265 — spécifier le plan magasin avant les scénarios
+
+Chantier actif : **6**. Cadrage confirmé avec Julien : plan physique durable dans la fiche magasin ; deux îlots de huit éléments chacun (quatre par face), bac aluminium et étagère supérieure distincts par élément d’îlot, trois éléments TG, mobiles de vente optionnels sous certains éléments et généralement stables. Le plan fleg est la base à vérifier, pas un relevé de mesures nouvellement confirmé. Une fiche en vue de face complète la consultation du plan 2D.
+
+La spec dédiée distingue référence physique, affectation commerciale, image et réalisation. Elle fixe l’ordre contrats/migrations → stockage local/sync et versions → éditeur natif → outils → schéma/illustration/pilote. Le précontrôle PR 264 ne couvre pas encore le modèle complet (limite plate huit objets, dix-neuf éléments principaux et superpositions verticales à adapter). Les détails terrain restent progressifs, pas une campagne de formulaires.
+
+Lot documentaire : liens/cohérence/format vérifiés, aucune fonctionnalité, migration, API, build payant ou analyse réelle déclenchée. Écart fermé : ambiguïté de propriété et de structure du plan. Reste : implémentation et acceptation du chantier 6. États des sept chantiers : **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**.
