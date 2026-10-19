@@ -18,9 +18,9 @@ L’API compatible, ses migrations et les diagnostics de la PR 261 doivent être
 
 ### 1. Conversation vide et historique
 
-- [ ] Ouvrir une nouvelle conversation : aucun texte d’accueil ni faux message n’apparaît. Le champ « Écrivez au copilote… », l’ajout de fichiers et l’envoi restent utilisables.
+- [ ] Ouvrir une nouvelle conversation : l’accueil « De quoi avez-vous besoin ? » et sa suggestion sont visibles, sans créer de message artificiel dans l’historique. Le champ « Écrivez au copilote… », l’ajout de fichiers et l’envoi restent utilisables.
 - [ ] Écrire un brouillon, changer de conversation puis revenir : le texte est conservé.
-- [ ] Fermer et rouvrir l’application : brouillon et anciennes discussions restent accessibles. Le retrait du texte d’accueil n’efface aucun message existant.
+- [ ] Fermer et rouvrir l’application : brouillon et anciennes discussions restent accessibles. Les anciens messages restent accessibles.
 
 ### 2. Rejouer le problème d’analyse
 
@@ -30,9 +30,9 @@ Dans la discussion concernée, demander :
 
 - [ ] La réponse porte sur les deux périodes demandées, avec chiffres sourcés, tableau si utile et limite de couverture compréhensible.
 - [ ] Les données du 1er au 20 de chaque mois, constatées lors du diagnostic du 19 octobre, permettent une comparaison partielle ; leur disponibilité réelle doit être relue au moment du test. Le copilote ne présente pas un mois complet si les autres jours manquent et ne redemande pas systématiquement les fichiers déjà publiés.
-- [ ] Il ne remplace pas la demande par le bilan quotidien d’octobre.
+- [ ] Une nouvelle réponse ne remplace pas la demande par le bloc « L’analyse du copilote est momentanément indisponible », « Faits disponibles » et le bilan quotidien d’octobre avec AVAILABLE/UNAVAILABLE. En cas de panne, le secours est bref, sans chiffres hors sujet.
 - [ ] Le texte arrive progressivement et les étapes d’outils apparaissent. Une relance courte (« Et quels produits contribuent le plus à cet écart ? ») conserve le contexte et distingue les faits des hypothèses.
-- [ ] Si une panne survient, conserver l’heure et la question. Le diagnostic serveur doit donner une cause exploitable avant de déclarer l’incident résolu. Voir [la recette de fiabilité](M7_CHAT_RELIABILITY_SCENARIOS.md).
+- [ ] Les anciens blocs déjà enregistrés appartiennent à l’historique : vérifier une nouvelle réponse après livraison, sans les confondre avec un nouvel incident. Si une panne survient, conserver l’heure et la question. Le diagnostic serveur doit donner une cause exploitable avant de déclarer l’incident résolu. Voir [la recette de fiabilité](M7_CHAT_RELIABILITY_SCENARIOS.md).
 
 ### 3. Un lot Mercalys depuis le chat
 
