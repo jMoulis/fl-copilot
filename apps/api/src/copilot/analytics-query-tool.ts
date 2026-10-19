@@ -5,6 +5,7 @@ import {
   copilotAnalyticsQuerySchema,
   copilotEvidenceSchema,
   type CopilotAnalyticsQuery,
+  type AnalyticsExplorerContext,
 } from "@fl-copilot/domain";
 import {
   analyticsQueryProductSchema,
@@ -233,6 +234,7 @@ export async function readAnalyticsQuery(
     value: string | null,
     detail: string,
     sourceType: "KPI" | "COMPARISON" | "DATA_QUALITY" = "KPI",
+    analyticsContext?: AnalyticsExplorerContext,
   ) => {
     evidence.push(
       copilotEvidenceSchema.parse({
@@ -243,6 +245,7 @@ export async function readAnalyticsQuery(
         label,
         value,
         detail,
+        ...(analyticsContext ? { analyticsContext } : {}),
         factKind: sourceType === "DATA_QUALITY" ? "QUALITY" : "DERIVED",
       }),
     );
@@ -260,16 +263,63 @@ export async function readAnalyticsQuery(
       const c = m.currentCoverage,
         ref = m.referenceCoverage;
       const detail = `${metricLabels[m.metric]} · ${r.label} · ${period}. ${query.aggregation === "SUM" ? "Somme" : "Moyenne des jours renseignés"}. ${c.availableDays} jours complets, ${c.partialDays} partiels, ${c.missingDays} absents ou indisponibles sur ${c.expectedDays}. Univers des produits/journées observés, pas estimation des absents. Classification actuelle du catalogue. ${query.referencePeriod ? `Référence ${query.referencePeriod.start} au ${query.referencePeriod.end} ; ${ref?.missingDays ?? 0} jours absents/indisponibles. ${m.warnings.join(", ")}.` : ""} Une variation ne prouve pas une cause.`;
+      const destinationFilters = {
+        ...query.filters,
+        productId: query.groupBy === "PRODUCT" ? r.key : null,
+        category:
+          query.groupBy === "CATEGORY"
+            ? (r.key as AnalyticsExplorerContext["filters"]["category"])
+            : query.filters.category,
+        nature:
+          query.groupBy === "NATURE"
+            ? (r.key as AnalyticsExplorerContext["filters"]["nature"])
+            : query.filters.nature,
+      };
+      const destination: AnalyticsExplorerContext = {
+        schemaVersion: 1,
+        period: {
+          kind: "range",
+          current:
+            query.groupBy === "DAY"
+              ? { start: r.key, end: r.key }
+              : query.currentPeriod,
+          reference: query.referencePeriod,
+          ...(query.groupBy === "DAY" ? { universe: query.currentPeriod } : {}),
+          aggregation: query.aggregation,
+          basis: "OBSERVED_PRODUCTS",
+        },
+        metric: m.metric,
+        filters: destinationFilters,
+      };
       return {
         ...m,
         evidenceIds: {
-          current: add(`${base}/current`, r.label, m.current, detail),
+          current: add(
+            `${base}/current`,
+            r.label,
+            m.current,
+            detail,
+            "KPI",
+            destination,
+          ),
           reference: query.referencePeriod
             ? add(
                 `${base}/reference`,
                 `${r.label} — référence — ${metricLabels[m.metric]}`,
                 m.reference,
                 detail,
+                "KPI",
+                {
+                  ...destination,
+                  period: {
+                    ...(destination.period as Extract<
+                      AnalyticsExplorerContext["period"],
+                      { kind: "range" }
+                    >),
+                    current: query.referencePeriod,
+                    reference: null,
+                  },
+                },
               )
             : null,
           change: query.referencePeriod
@@ -279,6 +329,7 @@ export async function readAnalyticsQuery(
                 m.change,
                 detail,
                 "COMPARISON",
+                destination,
               )
             : null,
           changePercent: query.referencePeriod
@@ -288,6 +339,7 @@ export async function readAnalyticsQuery(
                 m.changePercent,
                 detail,
                 "COMPARISON",
+                destination,
               )
             : null,
         },

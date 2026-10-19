@@ -105,6 +105,18 @@ export async function readPeriodWasteDrivers(
       label,
       value: p.amount,
       factKind: "DERIVED",
+      analyticsContext: {
+        schemaVersion: 1,
+        period: {
+          kind: "range",
+          current: period,
+          reference: null,
+          aggregation: "SUM",
+          basis: "OBSERVED_PRODUCTS",
+        },
+        metric: "waste",
+        filters: { category: null, nature: null, productId: p.productId },
+      },
       detail: `Casse renseignée valorisée au prix de vente, du ${period.start} au ${period.end}. ${p.knownDays} journées avec un montant connu ; ${p.incompleteDays} journées de qualité incomplète parmi les lignes consultées. Somme des montants disponibles, pas une estimation des jours absents ni un coût d’achat perdu. Le classement porte sur les produits renseignés et ne prouve pas la cause de la casse.`,
     });
   });

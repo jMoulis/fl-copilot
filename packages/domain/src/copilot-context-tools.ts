@@ -3,13 +3,14 @@ import { copilotEvidenceSchema } from "./copilot-candidate";
 import { wasteReceiptSchema, wasteLineSchema } from "./waste-receipts";
 import { commercialOfferChoiceSchema } from "./commercial-offer-choice";
 import { commercialValidatedOfferSchema } from "./commercial-validated-offer";
-export const copilotBusinessDateSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .refine((v) => {
-    const d = new Date(`${v}T00:00:00Z`);
-    return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === v;
-  });
+import {
+  copilotBusinessDateSchema,
+  copilotAnalysisPeriodSchema,
+} from "./business-dates";
+export {
+  copilotBusinessDateSchema,
+  copilotAnalysisPeriodSchema,
+} from "./business-dates";
 export const dailyReadInputSchema = z.strictObject({
   businessDate: copilotBusinessDateSchema,
 });
@@ -175,17 +176,6 @@ export const productChangesReadInputSchema = dailyReadInputSchema.extend({
   direction: z.enum(["INCREASE", "DECREASE"]),
 });
 
-export const copilotAnalysisPeriodSchema = z
-  .strictObject({
-    start: copilotBusinessDateSchema,
-    end: copilotBusinessDateSchema,
-  })
-  .refine(
-    (p) =>
-      p.start <= p.end &&
-      (Date.parse(p.end) - Date.parse(p.start)) / 86400000 < 3660,
-    "Période invalide ou trop longue.",
-  );
 export const periodAnalysisInputSchema = z
   .strictObject({
     productId: z.string().uuid().nullable(),

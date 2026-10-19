@@ -260,6 +260,27 @@ export async function readPeriodAnalysis(
           value,
           factKind: quality ? "QUALITY" : "DERIVED",
           ...(detail ? { detail } : {}),
+          analyticsContext: {
+            schemaVersion: 1,
+            period: {
+              kind: "range",
+              current:
+                key.startsWith("reference") && input.referencePeriod
+                  ? input.referencePeriod
+                  : input.currentPeriod,
+              reference: key.startsWith("reference")
+                ? null
+                : input.referencePeriod,
+              aggregation: input.aggregation,
+              basis: input.productId ? "OBSERVED_PRODUCTS" : "DEPARTMENT",
+            },
+            metric,
+            filters: {
+              category: null,
+              nature: null,
+              productId: input.productId,
+            },
+          },
         }),
       );
     const amountLabel = (
@@ -396,6 +417,23 @@ export async function readPeriodAnalysis(
             label: `Taux de casse comptabilisée${rate.status === "PARTIAL" ? " sur montants connus" : ""} (%) — ${periodLabel} — ${target.label}`,
             value: rate.percentage,
             factKind: "DERIVED",
+            analyticsContext: {
+              schemaVersion: 1,
+              relation: "RELATED_AMOUNTS",
+              period: {
+                kind: "range",
+                current: period,
+                reference: null,
+                aggregation: "SUM",
+                basis: input.productId ? "OBSERVED_PRODUCTS" : "DEPARTMENT",
+              },
+              metric: "waste",
+              filters: {
+                category: null,
+                nature: null,
+                productId: input.productId,
+              },
+            },
             detail: `Casse comptabilisée valorisée au prix de vente / CA net de la même période × 100. Casse connue : ${rate.wasteTotal ?? "indisponible"} € ; CA connu : ${rate.salesTotal ?? "indisponible"} €. Ratio des cumuls, pas moyenne des taux journaliers. Les dates de vente et de saisie de casse ne doivent pas nécessairement coïncider. Les journées sans observation restent inconnues, sans être remplacées par zéro ; elles ne prouvent pas non plus une absence de saisie ou une casse réellement quotidienne. Les regroupements et reports de saisie peuvent décaler le ratio entre périodes. ${rate.reason === "NON_POSITIVE_SALES" ? "CA nul ou négatif : taux indisponible." : rate.reason === "MISSING_INPUT" ? "Un cumul manque : taux indisponible." : rate.status === "PARTIAL" ? "Ratio descriptif sur les montants connus ; exhaustivité non établie." : "Tous les montants journaliers de la période sont disponibles."}`,
           }),
         );

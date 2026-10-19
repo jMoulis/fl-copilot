@@ -1,3 +1,6 @@
+import { router } from "expo-router";
+import { randomUUID } from "expo-crypto";
+import { explorerHref } from "../analytics/explorer-link";
 import { useMemo, useState, type ReactNode } from "react";
 import {
   ScrollView,
@@ -16,7 +19,7 @@ import {
   formatSourcePublication,
   type AnswerSource,
 } from "./answer-source";
-import { BottomSheet } from "../components/ui";
+import { BottomSheet, SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
 import { markdownBlocks } from "./markdown-blocks";
 /** Small native Markdown surface: no HTML, arbitrary URL navigation or webview. */
@@ -131,6 +134,44 @@ export function AssistantAnswer({
                 ? "Valeur non disponible"
                 : String(source.value)}
             </Text>
+            {source.analyticsContext ? (
+              <View style={styles.answer}>
+                <Text style={styles.text}>
+                  Consultez les données locales actuelles de cette sélection. La
+                  valeur citée ci-dessus reste celle de cette discussion.
+                  {source.analyticsContext.relation === "RELATED_AMOUNTS"
+                    ? " Le détail affiche les montants en euros qui servent au taux, pas le taux lui-même."
+                    : ""}
+                </Text>
+                <SecondaryButton
+                  label={
+                    source.analyticsContext.relation === "RELATED_AMOUNTS"
+                      ? "Voir les montants de cette période"
+                      : "Explorer ces chiffres"
+                  }
+                  onPress={() => {
+                    try {
+                      const href = explorerHref({
+                        requestId: randomUUID(),
+                        period: source.analyticsContext!.period,
+                        metric: source.analyticsContext!.metric,
+                        filters: source.analyticsContext!.filters,
+                      });
+                      router.navigate(href);
+                      setSource(undefined);
+                    } catch {
+                      setLinkError(true);
+                    }
+                  }}
+                />
+                {linkError ? (
+                  <Text accessibilityRole="alert" style={styles.text}>
+                    Cette sélection ne peut pas être ouverte. La source reste
+                    consultable ici.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
             {source.externalResearch || source.retailExpertise ? (
               <View style={styles.answer}>
                 <Text style={styles.text}>

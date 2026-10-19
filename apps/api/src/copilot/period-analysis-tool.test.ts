@@ -116,3 +116,52 @@ it("does not manufacture zero or a rate when a period has no waste and rejects c
     ),
   ).rejects.toThrow("COPILOT_PERIOD_SCOPE_INVALID");
 });
+it("produces exact source destinations for current/reference averages and a related-money destination for a waste ratio", async () => {
+  const input = {
+    productId,
+    currentPeriod: { start: "2026-10-12", end: "2026-10-15" },
+    referencePeriod: { start: "2026-10-05", end: "2026-10-11" },
+    aggregation: "AVERAGE" as const,
+    metrics: ["waste" as const],
+  };
+  const result = await readPeriodAnalysis(
+    database([row("2026-10-05", "100", "10"), row("2026-10-12", "100", "20")]),
+    storeId,
+    input,
+  );
+  const current = result.evidence.find(
+    (e) =>
+      e.analyticsContext?.period.kind === "range" &&
+      e.analyticsContext.period.current.start === input.currentPeriod.start &&
+      e.analyticsContext.period.aggregation === "AVERAGE",
+  );
+  expect(current?.analyticsContext).toMatchObject({
+    metric: "waste",
+    filters: { productId },
+    period: {
+      kind: "range",
+      current: input.currentPeriod,
+      reference: input.referencePeriod,
+      aggregation: "AVERAGE",
+      basis: "OBSERVED_PRODUCTS",
+    },
+  });
+  expect(
+    result.evidence.some(
+      (e) =>
+        e.analyticsContext?.period.kind === "range" &&
+        e.analyticsContext.period.current.start ===
+          input.referencePeriod.start &&
+        e.analyticsContext.period.reference === null,
+    ),
+  ).toBe(true);
+  expect(
+    result.evidence.find(
+      (e) => e.analyticsContext?.relation === "RELATED_AMOUNTS",
+    )?.analyticsContext,
+  ).toMatchObject({
+    relation: "RELATED_AMOUNTS",
+    period: { aggregation: "SUM" },
+    metric: "waste",
+  });
+});

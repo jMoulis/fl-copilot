@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   copilotExternalResearchSourceSchema,
+  analyticsExplorerContextSchema,
   retailExpertiseCitationSchema,
 } from "@fl-copilot/domain";
 const answerSourceSchema = z
@@ -11,10 +12,17 @@ const answerSourceSchema = z
     sourceType: z.string().max(80).optional(),
     externalResearch: copilotExternalResearchSourceSchema.optional(),
     retailExpertise: retailExpertiseCitationSchema.optional(),
+    analyticsContext: analyticsExplorerContextSchema.optional(),
   })
   .refine(
     (v) =>
       !(v.externalResearch && v.retailExpertise) &&
+      (!v.analyticsContext ||
+        (!v.externalResearch &&
+          !v.retailExpertise &&
+          ["KPI", "COMPARISON", "DATA_QUALITY"].includes(
+            v.sourceType ?? "",
+          ))) &&
       (!v.retailExpertise ||
         (v.sourceId === v.retailExpertise.referenceId &&
           v.sourceType === "SOURCE_DOCUMENT")),

@@ -12,6 +12,7 @@ import {
   analyzeExplorerProducts,
   explorerHasFilters,
   analyticsQueryProductSchema,
+  analyticsProductMatches,
   EXPLORER_PRODUCT_LIMITS,
   type AnalyticsQueryPoint,
   explorerRange,
@@ -104,14 +105,14 @@ export class ExplorerRepository {
         business_date: string;
         payload_json: string;
       }>(
-        "SELECT business_date,payload_json FROM department_daily_performance WHERE store_id=? AND ((business_date BETWEEN ? AND ?) OR (business_date BETWEEN ? AND ?)) ORDER BY business_date LIMIT 733",
+        "SELECT business_date,payload_json FROM department_daily_performance WHERE store_id=? AND ((business_date BETWEEN ? AND ?) OR (business_date BETWEEN ? AND ?)) ORDER BY business_date LIMIT 7321",
         storeId,
         range.start,
         range.end,
         rr.start,
         rr.end,
       );
-      if (rows.length > 732) throw Error("EXPLORER_READ_LIMIT");
+      if (rows.length > 7320) throw Error("EXPLORER_READ_LIMIT");
       const points: DatedKpiValue[] = rows.map((row) => {
         const p = daily.parse(JSON.parse(row.payload_json));
         if (p.storeId !== storeId || p.date !== row.business_date)
@@ -157,6 +158,24 @@ export class ExplorerRepository {
         const products = catalogue.map((p) =>
           analyticsQueryProductSchema.parse(p),
         );
+        const allowedIds = explorerHasFilters(filters)
+          ? JSON.stringify(
+              products
+                .filter(
+                  (p) =>
+                    analyticsProductMatches(p, {
+                      productIds: filters.productId
+                        ? [filters.productId]
+                        : (filters.productIds ?? null),
+                      labelContains: filters.labelContains ?? null,
+                      category: filters.category,
+                      nature: filters.nature,
+                    }) &&
+                    (!filters.productIds || filters.productIds.includes(p.id)),
+                )
+                .map((p) => p.id),
+            )
+          : null;
         const productPoints: AnalyticsQueryPoint[] = [];
         let afterDate = "",
           afterProduct = "";
@@ -167,10 +186,9 @@ export class ExplorerRepository {
             payload_json: string;
           }>(
             `SELECT d.business_date,d.product_id,d.payload_json FROM product_daily_performance d
-            LEFT JOIN products p ON p.id=d.product_id AND p.store_id=d.store_id
             WHERE d.store_id=? AND ((d.business_date BETWEEN ? AND ?) OR (d.business_date BETWEEN ? AND ?))
             AND (d.business_date > ? OR (d.business_date=? AND d.product_id>?))
-            AND (? IS NULL OR p.category=?) AND (? IS NULL OR p.nature=?) AND (? IS NULL OR p.id=?)
+            AND (? IS NULL OR d.product_id IN (SELECT value FROM json_each(?)))
             ORDER BY d.business_date,d.product_id LIMIT 5000`,
             storeId,
             range.start,
@@ -180,12 +198,8 @@ export class ExplorerRepository {
             afterDate,
             afterDate,
             afterProduct,
-            filters.category,
-            filters.category,
-            filters.nature,
-            filters.nature,
-            filters.productId,
-            filters.productId,
+            allowedIds,
+            allowedIds,
           );
           if (
             productPoints.length + page.length >
@@ -222,7 +236,28 @@ export class ExplorerRepository {
           afterDate = page.at(-1)!.business_date;
           afterProduct = page.at(-1)!.product_id;
         }
+        let expectedProductIds: string[] | undefined;
+        if (period.kind === "range" && period.universe) {
+          if (
+            period.current.start < period.universe.start ||
+            period.current.end > period.universe.end
+          )
+            throw Error("EXPLORER_PRODUCT_SCOPE");
+          const observed = await tx.getAllAsync<{ product_id: string }>(
+            "SELECT DISTINCT product_id FROM product_daily_performance WHERE store_id=? AND business_date BETWEEN ? AND ? AND (? IS NULL OR product_id IN (SELECT value FROM json_each(?))) LIMIT 10001",
+            storeId,
+            period.universe.start,
+            period.universe.end,
+            allowedIds,
+            allowedIds,
+          );
+          if (observed.length > 10000) throw Error("EXPLORER_DETAILS_LIMIT");
+          expectedProductIds = observed.map((p) =>
+            z.uuid().parse(p.product_id),
+          );
+        }
         details = analyzeExplorerProducts({
+          expectedProductIds,
           storeId,
           period,
           metric,
@@ -236,13 +271,17 @@ export class ExplorerRepository {
         if (
           !(e instanceof Error) ||
           e.message !== "EXPLORER_DETAILS_LIMIT" ||
-          explorerHasFilters(filters)
+          explorerHasFilters(filters) ||
+          (period.kind === "range" && period.basis === "OBSERVED_PRODUCTS")
         )
           throw e;
         detailsUnavailable = true;
       }
       result = {
-        ...(explorerHasFilters(filters) ? details!.analysis : department),
+        ...(explorerHasFilters(filters) ||
+        (period.kind === "range" && period.basis === "OBSERVED_PRODUCTS")
+          ? details!.analysis
+          : department),
         filters,
         details,
         detailsUnavailable,

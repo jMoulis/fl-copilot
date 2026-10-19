@@ -345,3 +345,203 @@ it("reads more than one bounded SQL page with exact product/date cursors and com
     db.close();
   }
 });
+it("reopens an exact conversational average and keeps the original DAY-query coverage universe, rather than upgrading a partial day", async () => {
+  const db = new DatabaseSync(":memory:"),
+    a = new Adapter(db),
+    store = randomUUID(),
+    first = randomUUID(),
+    second = randomUUID();
+  try {
+    await runLocalMigrations(a);
+    insertProduct(db, store, first, "Poire");
+    insertProduct(db, store, second, "Tomate", "VEGETABLE", "PACKAGED");
+    insertProductDay(db, store, first, "2026-10-01", "10");
+    insertProductDay(db, store, second, "2026-10-01", "20");
+    insertProductDay(db, store, second, "2026-10-02", "30");
+    const period = {
+      kind: "range" as const,
+      current: { start: "2026-10-02", end: "2026-10-02" },
+      reference: null,
+      aggregation: "AVERAGE" as const,
+      basis: "OBSERVED_PRODUCTS" as const,
+      universe: { start: "2026-10-01", end: "2026-10-02" },
+    };
+    const r = await new ExplorerRepository(a).load(
+      store,
+      period,
+      "sales",
+      "2026-10-19",
+    );
+    expect(r.total).toBe("30");
+    expect(r.mode).toBe("EXPLICIT");
+    expect(r.sourceBasis).toBe("OBSERVED_PRODUCTS");
+    expect(r.coverage).toEqual({
+      complete: 0,
+      partial: 1,
+      missing: 0,
+      expected: 1,
+    });
+    const filtered = await new ExplorerRepository(a).load(
+      store,
+      { ...period, universe: undefined },
+      "sales",
+      "2026-10-19",
+      {
+        category: null,
+        nature: null,
+        productId: null,
+        productIds: [first, second],
+        labelContains: "tomàte",
+      },
+    );
+    expect(filtered.total).toBe("30");
+    expect(filtered.details?.contributors.map((p) => p.productId)).toEqual([
+      second,
+    ]);
+    expect(
+      (
+        await a.getFirstAsync<{ n: number }>(
+          "SELECT COUNT(*) AS n FROM sync_outbox",
+        )
+      )?.n,
+    ).toBe(0);
+  } finally {
+    db.close();
+  }
+});
+it("follows a server period source through its citation and native selection into SQLite without changing the original quoted mean", async () => {
+  const { readPeriodAnalysis } =
+    await import("../../../api/src/copilot/period-analysis-tool");
+  const { renderAnswerText } =
+    await import("../../../api/src/copilot/answer-text");
+  const { readAnswerSource } = await import("../copilot/answer-source");
+  const { explorerHref, applyExplorerLink } = await import("./explorer-link");
+  const db = new DatabaseSync(":memory:"),
+    a = new Adapter(db),
+    storeId = randomUUID(),
+    ownerId = randomUUID(),
+    productId = randomUUID();
+  try {
+    await runLocalMigrations(a);
+    insertProduct(db, storeId, productId, "Poire");
+    for (const [date, value] of [
+      ["2026-10-01", "10"],
+      ["2026-10-02", "20"],
+      ["2026-10-03", "30"],
+      ["2025-09-02", "5"],
+      ["2025-09-03", "10"],
+      ["2025-09-04", "15"],
+    ])
+      insertProductDay(db, storeId, productId, date, value);
+    const rows = db
+      .prepare(
+        "SELECT id,store_id,product_id,business_date,payload_json FROM product_daily_performance",
+      )
+      .all()
+      .map((raw) => {
+        const r = raw as {
+            id: string;
+            store_id: string;
+            product_id: string;
+            business_date: string;
+            payload_json: string;
+          },
+          p = JSON.parse(r.payload_json);
+        for (const key of ["salesValue", "salesMarginValue", "wasteSalesValue"])
+          p.availability[key] = {
+            ...p.availability[key],
+            inputCount: 1,
+            availableInputCount: 1,
+            missingInputCount: 0,
+          };
+        return {
+          _id: r.id,
+          storeId: r.store_id,
+          productId: r.product_id,
+          date: r.business_date,
+          performance: { ...p, inputRevision: "test" },
+        };
+      });
+    const cursor = {
+      maxTimeMS() {
+        return this;
+      },
+      limit() {
+        return this;
+      },
+      async toArray() {
+        return rows;
+      },
+    };
+    const remote = {
+      collection: (name: string) =>
+        name === "products"
+          ? {
+              findOne: async () => ({
+                _id: productId,
+                storeId,
+                label: "Poire",
+              }),
+            }
+          : { find: () => cursor },
+    } as unknown as import("mongodb").Db;
+    const result = await readPeriodAnalysis(remote, storeId, {
+      productId,
+      currentPeriod: { start: "2026-10-01", end: "2026-10-03" },
+      referencePeriod: { start: "2025-09-02", end: "2025-09-04" },
+      aggregation: "AVERAGE",
+      metrics: ["sales"],
+    });
+    const quoted = result.evidence.find(
+      (e) =>
+        e.sourceType === "KPI" &&
+        e.label.startsWith("Moyenne journalière") &&
+        e.analyticsContext?.period.kind === "range" &&
+        e.analyticsContext.period.current.start === "2026-10-01",
+    )!;
+    const text = renderAnswerText(
+      "La moyenne est {{value:0}} €. {{source:0}}",
+      [{ evidenceId: quoted.id }],
+      result.evidence,
+    );
+    const source = readAnswerSource(/copilot-source:([^)]*)/.exec(text)![1]);
+    const href = explorerHref({
+      requestId: randomUUID(),
+      ...source.analyticsContext!,
+    });
+    const selected = applyExplorerLink(
+      initialExplorerView("2026-10-15"),
+      href.params.selection,
+    );
+    await new ExplorerViewRepository(a, { storeId, ownerId }).save(selected);
+    const restored = (await new ExplorerViewRepository(a, {
+      storeId,
+      ownerId,
+    }).read())!;
+    const r = await new ExplorerRepository(a).load(
+      storeId,
+      restored.frame.period,
+      restored.metric,
+      "2026-10-19",
+      restored.frame.filters,
+    );
+    expect(r.total).toBe("20");
+    expect(r.comparison?.referenceValue).toBe("10");
+    expect(r.total).toBe(quoted.value);
+    db.prepare(
+      "UPDATE product_daily_performance SET payload_json=json_set(payload_json,'$.sales.salesValue','100') WHERE store_id=? AND business_date='2026-10-02'",
+    ).run(storeId);
+    const refreshed = await new ExplorerRepository(a).load(
+      storeId,
+      restored.frame.period,
+      restored.metric,
+      "2026-10-19",
+      restored.frame.filters,
+    );
+    expect(refreshed.total).not.toBe(source.value);
+    expect(source.value).toBe("20");
+    expect(text).toContain("20 €");
+  } finally {
+    db.close();
+  }
+});

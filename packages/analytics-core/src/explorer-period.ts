@@ -2,9 +2,11 @@ import {
   analyticsExplorerPeriodSchema,
   copilotBusinessDateSchema,
   type AnalyticsExplorerPeriod,
+  type AnalyticsExplorerGranularity,
 } from "@fl-copilot/domain";
 import type { DatePeriod, DatedKpiValue } from "./comparison";
 import { compareCustomReference } from "./comparison";
+import { calculateCalendarPeriodComparison } from "./calendar-period-comparison";
 import { sumAvailableCurrency } from "./formulas";
 export type ExplorerPeriod = AnalyticsExplorerPeriod;
 export const explorerDate = (d: Date) => d.toISOString().slice(0, 10);
@@ -38,7 +40,7 @@ function weekMonday(year: number, week: number) {
   return s;
 }
 export function explorerPeriodFromDate(
-  kind: ExplorerPeriod["kind"],
+  kind: AnalyticsExplorerGranularity,
   date: string,
 ): ExplorerPeriod {
   copilotBusinessDateSchema.parse(date);
@@ -55,6 +57,7 @@ export function explorerPeriodFromDate(
 }
 export function explorerRange(raw: ExplorerPeriod): DatePeriod {
   const p = analyticsExplorerPeriodSchema.parse(raw);
+  if (p.kind === "range") return p.current;
   if (p.kind === "day") return { start: p.date, end: p.date };
   if (p.kind === "week") {
     const start = weekMonday(p.year, p.week);
@@ -70,6 +73,7 @@ export function shiftExplorerPeriod(
   p: ExplorerPeriod,
   n: number,
 ): ExplorerPeriod {
+  if (p.kind === "range") throw Error("EXPLORER_FIXED_SOURCE_RANGE");
   if (!Number.isSafeInteger(n)) throw Error("EXPLORER_SHIFT_INVALID");
   const d = new Date(explorerRange(p).start + "T12:00:00Z");
   if (p.kind === "day" || p.kind === "week")
@@ -80,6 +84,10 @@ export function shiftExplorerPeriod(
 }
 export function explorerReference(p: ExplorerPeriod): ExplorerPeriod | null {
   try {
+    if (p.kind === "range")
+      return p.reference
+        ? { ...p, current: p.reference, reference: null }
+        : null;
     if (p.kind === "day") {
       const w = isoWeekOf(p.date);
       return {
@@ -100,7 +108,7 @@ export function explorerReference(p: ExplorerPeriod): ExplorerPeriod | null {
 export function explorerDays(r: DatePeriod) {
   const a: string[] = [];
   for (let s = r.start; s <= r.end; s = addExplorerDays(s, 1)) {
-    if (a.length >= 366) throw Error("EXPLORER_PERIOD_TOO_LONG");
+    if (a.length >= 3660) throw Error("EXPLORER_PERIOD_TOO_LONG");
     a.push(s);
   }
   return a;
@@ -108,6 +116,7 @@ export function explorerDays(r: DatePeriod) {
 export function explorerLabel(p: ExplorerPeriod) {
   const r = explorerRange(p),
     date = new Date(r.start + "T12:00:00Z");
+  if (p.kind === "range") return "Période de la discussion";
   if (p.kind === "week") return `Semaine ${p.week} · ${p.year}`;
   if (p.kind === "year") return String(p.year);
   return new Intl.DateTimeFormat("fr-FR", {
@@ -125,6 +134,12 @@ export function compareExplorerPeriod(input: {
   points: readonly DatedKpiValue[];
 }) {
   copilotBusinessDateSchema.parse(input.today);
+  if (input.period.kind === "range")
+    return compareExplicitExplorerPeriod(
+      input as typeof input & {
+        period: Extract<ExplorerPeriod, { kind: "range" }>;
+      },
+    );
   const range = explorerRange(input.period),
     reference = explorerReference(input.period),
     refRange = reference ? explorerRange(reference) : null,
@@ -208,6 +223,9 @@ export function compareExplorerPeriod(input: {
       })
     : null;
   return {
+    mode: "DEFAULT" as const,
+    sourceBasis: null,
+    warnings: [] as string[],
     range,
     reference,
     referenceRange: refRange,
@@ -232,50 +250,120 @@ export function compareExplorerPeriod(input: {
             : ("comparable" as const),
   };
 }
-/** Chart bins contain only sums of canonical daily amounts. They are never hourly or quantity estimates. */
+/** Daily amounts, or monthly aggregates for broad ranges, from the same canonical points. */
 export function explorerChartBuckets(
   period: ExplorerPeriod,
   points: readonly DatedKpiValue[],
 ) {
-  const range = explorerRange(period);
-  return (
-    period.kind === "year"
-      ? Array.from(
-          { length: 12 },
-          (_, i) =>
-            `${range.start.slice(0, 4)}-${String(i + 1).padStart(2, "0")}-01`,
-        )
-      : explorerDays(range)
-  ).map((date) => {
-    const values =
-        period.kind === "year"
-          ? points.filter(
-              (p) => p.businessDate.slice(0, 7) === date.slice(0, 7),
-            )
-          : points.filter((p) => p.businessDate === date),
-      r =
-        period.kind === "year"
-          ? explorerRange({
-              kind: "month",
-              year: period.year,
-              month: Number(date.slice(5, 7)),
-            })
-          : { start: date, end: date },
-      expected = explorerDays(r).length,
-      total = sumAvailableCurrency(
-        values.map((p) => (p.status === "UNAVAILABLE" ? null : p.value)),
+  const range = explorerRange(period),
+    monthly =
+      period.kind === "year" ||
+      (period.kind === "range" && explorerDays(range).length > 62);
+  const dates: string[] = [];
+  if (monthly) {
+    for (let date = range.start; date <= range.end;) {
+      dates.push(date);
+      const d = new Date(date + "T12:00:00Z");
+      d.setUTCMonth(d.getUTCMonth() + 1, 1);
+      date = explorerDate(d);
+    }
+  } else dates.push(...explorerDays(range));
+  return dates.map((date) => {
+    const d = new Date(date + "T12:00:00Z");
+    d.setUTCMonth(d.getUTCMonth() + 1, 1);
+    const end = monthly
+      ? [addExplorerDays(explorerDate(d), -1), range.end].sort()[0]
+      : date;
+    const r = { start: date, end },
+      values = points.filter(
+        (p) => p.businessDate >= date && p.businessDate <= end,
       );
+    const expected = explorerDays(r).length;
+    const sum = sumAvailableCurrency(
+      values.map((p) => (p.status === "UNAVAILABLE" ? null : p.value)),
+    );
+    const value =
+      period.kind === "range" && period.aggregation === "AVERAGE"
+        ? calculateCalendarPeriodComparison({
+            kpiId: "chart",
+            currentPeriod: r,
+            referencePeriod: null,
+            aggregation: "AVERAGE",
+            points: values,
+          }).comparison.currentValue
+        : sum.value;
     return {
       date,
-      value: total.value,
+      end,
+      value,
       complete:
         values.length === expected &&
         values.every((p) => p.status === "AVAILABLE" && p.value !== null),
       expected,
+      monthly,
     };
   });
 }
-
+function compareExplicitExplorerPeriod(input: {
+  period: Extract<ExplorerPeriod, { kind: "range" }>;
+  today: string;
+  kpiId: string;
+  points: readonly DatedKpiValue[];
+}) {
+  const p = input.period,
+    result = calculateCalendarPeriodComparison({
+      kpiId: input.kpiId,
+      currentPeriod: p.current,
+      referencePeriod: p.reference,
+      aggregation: p.aggregation,
+      points: input.points,
+    });
+  const dates = explorerDays(p.current),
+    map = new Map(input.points.map((p) => [p.businessDate, p]));
+  const closed =
+    p.current.end < input.today &&
+    (!p.reference || p.reference.end < input.today);
+  const equalLength =
+    !!p.reference && dates.length === explorerDays(p.reference).length;
+  const comparable =
+    result.complete && closed && (equalLength || p.aggregation === "AVERAGE");
+  return {
+    mode: "EXPLICIT" as const,
+    sourceBasis: p.basis,
+    warnings: [
+      ...result.warnings,
+      ...(!closed ? ["OPEN_OR_FUTURE_PERIOD"] : []),
+    ],
+    range: p.current,
+    reference: explorerReference(p),
+    referenceRange: p.reference,
+    total: result.comparison.currentValue,
+    coverage: {
+      complete: result.currentCoverage.availableDays,
+      partial: result.currentCoverage.partialDays,
+      missing: result.currentCoverage.missingDays,
+      expected: result.currentCoverage.expectedDays,
+    },
+    points: dates.map(
+      (businessDate) =>
+        map.get(businessDate) ?? {
+          businessDate,
+          value: null,
+          status: "UNAVAILABLE" as const,
+        },
+    ),
+    comparison: comparable ? result.comparison : null,
+    comparedDays: comparable ? dates.length : 0,
+    comparisonDates: [] as { current: string; reference: string }[],
+    comparisonStatus: comparable
+      ? ("comparable" as const)
+      : !p.reference
+        ? ("missing_baseline" as const)
+        : !equalLength && p.aggregation === "SUM"
+          ? ("not_comparable" as const)
+          : ("partial" as const),
+  };
+}
 export function explorerMonthWeeks(period: ExplorerPeriod) {
   if (period.kind !== "month") return [];
   const range = explorerRange(period),

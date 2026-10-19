@@ -348,7 +348,7 @@ function aggregateSample(
   };
 }
 
-function averageDecimals(values: readonly string[]): DecimalString {
+export function averageDecimals(values: readonly string[]): DecimalString {
   const parsed = values.map(parseDecimal);
   const scale = parsed.reduce(
     (maximum, item) => Math.max(maximum, item.scale),

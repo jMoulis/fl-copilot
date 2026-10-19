@@ -352,9 +352,15 @@ function StoreExplorer({
               syncStatus={sync.status}
               loadingError={!!error}
               onMetric={(metric) => change({ ...current.current!, metric })}
-              onGranularity={(kind) =>
-                change(changeExplorerGranularity(current.current!, kind))
-              }
+              onGranularity={(kind) => {
+                try {
+                  change(changeExplorerGranularity(current.current!, kind));
+                } catch {
+                  setNotice(
+                    "Cette date ne peut pas être ouverte dans cette vue. La période de la discussion reste conservée.",
+                  );
+                }
+              }}
               onShift={(n) => {
                 try {
                   change(shiftExplorerView(current.current!, n));

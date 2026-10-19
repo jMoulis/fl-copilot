@@ -1,4 +1,8 @@
 import {
+  sameCopilotEvidence,
+  preferEvidenceNavigation,
+} from "./evidence-identity";
+import {
   layoutScenarioInputSchema,
   layoutScenarioPreviewSchema,
   layoutScenarioSourcesSchema,
@@ -679,24 +683,26 @@ export function createCopilotAiProvider(
         request.context.intents.some((i) => i.storeId !== request.storeId)
       )
         throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
-      const prompt = JSON.stringify({
-        REQUEST_ID: request.requestId,
-        REFERENCE_INSTANT: batch.evaluatedAt,
-        USER_QUESTION: request.userQuestion,
-        MEMORY_SUGGESTION: request.memorySuggestion ?? null,
-        CONVERSATION_CHECKPOINT: request.conversationCheckpoint ?? null,
-        STORE_KNOWLEDGE: request.storeKnowledge ?? null,
-        ANSWERED_INFORMATION: request.answeredInformation ?? null,
-        ATTACHED_SOURCES: request.attachedSources ?? [],
-        RECENT_SOURCES: request.recentSources ?? [],
-        RECENT_SOURCES_OMITTED: request.recentSourcesOmitted ?? false,
-        CONTEXT: request.context,
-        EVIDENCE: request.evidence ?? [],
-        HISTORY: request.history ?? {
-          messages: [],
-          earlierMessagesOmitted: false,
-        },
-      });
+      const prompt = JSON.stringify(
+        projectCopilotModelValue({
+          REQUEST_ID: request.requestId,
+          REFERENCE_INSTANT: batch.evaluatedAt,
+          USER_QUESTION: request.userQuestion,
+          MEMORY_SUGGESTION: request.memorySuggestion ?? null,
+          CONVERSATION_CHECKPOINT: request.conversationCheckpoint ?? null,
+          STORE_KNOWLEDGE: request.storeKnowledge ?? null,
+          ANSWERED_INFORMATION: request.answeredInformation ?? null,
+          ATTACHED_SOURCES: request.attachedSources ?? [],
+          RECENT_SOURCES: request.recentSources ?? [],
+          RECENT_SOURCES_OMITTED: request.recentSourcesOmitted ?? false,
+          CONTEXT: request.context,
+          EVIDENCE: request.evidence ?? [],
+          HISTORY: request.history ?? {
+            messages: [],
+            earlierMessagesOmitted: false,
+          },
+        }),
+      );
       if (Buffer.byteLength(prompt, "utf8") > config.COPILOT_AI_MAX_INPUT_BYTES)
         throw new CopilotAiError("COPILOT_AI_INPUT_TOO_LARGE", false);
       if (signal?.aborted)
@@ -901,21 +907,23 @@ export function createCopilotAiProvider(
             completeFactTrace = false;
             return unavailable;
           }
-          const size = Buffer.byteLength(JSON.stringify(value), "utf8");
+          const modelValue = projectCopilotModelValue(value);
+          const size = Buffer.byteLength(JSON.stringify(modelValue), "utf8");
           if (usedBytes + size > config.COPILOT_AI_MAX_INPUT_BYTES) {
             completeFactTrace = false;
             return unavailable;
           }
           for (const e of value.evidence) {
             const old = evidence.get(e.id);
-            if (old && JSON.stringify(old) !== JSON.stringify(e)) {
+            if (old && !sameCopilotEvidence(old, e)) {
               completeFactTrace = false;
               return unavailable;
             }
           }
           // Count every returned payload, including cached duplicates, against the input budget.
           usedBytes += size;
-          for (const e of value.evidence) evidence.set(e.id, e);
+          for (const e of value.evidence)
+            evidence.set(e.id, preferEvidenceNavigation(evidence.get(e.id), e));
           try {
             const snapshot = factReadFromTool(key, value);
             if (snapshot && factReads.size < 4) factReads.set(key, snapshot);
@@ -924,7 +932,7 @@ export function createCopilotAiProvider(
           } catch {
             completeFactTrace = false;
           }
-          return value;
+          return modelValue;
         };
         // Keep stored/legacy responses compatible while requiring the new body in fresh strict OpenAI output.
         const generationSchema: z.ZodType = Object.is(
@@ -3229,4 +3237,30 @@ export function createCopilotAiProvider(
       }
     },
   };
+}
+
+/** Navigation metadata belongs to the native renderer, not model instructions, context or token budgets. */
+export function projectCopilotModelValue<T>(value: T): T {
+  if (value === undefined) return value;
+  return JSON.parse(
+    JSON.stringify(value, (key, v: unknown) => {
+      if (key === "analyticsContext") return undefined;
+      if (
+        v &&
+        typeof v === "object" &&
+        "role" in v &&
+        v.role === "ASSISTANT" &&
+        "text" in v &&
+        typeof v.text === "string"
+      )
+        return {
+          ...v,
+          text: v.text.replace(
+            /\[[^\]]+\]\(copilot-source:[^)]+\)/g,
+            "[Source]",
+          ),
+        };
+      return v;
+    }),
+  ) as T;
 }
