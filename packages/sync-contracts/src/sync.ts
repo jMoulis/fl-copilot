@@ -81,6 +81,7 @@ export const syncChangeEnvelopeSchema = z.object({
 export type SyncChangeEnvelope = z.infer<typeof syncChangeEnvelopeSchema>;
 
 export const syncPullQuerySchema = z.object({
+  visualLibrary: z.enum(["true", "false"]).optional(),
   commercialReview: z.enum(["true", "false"]).optional(),
   commercialVisual: z.enum(["true", "false"]).optional(),
   commercialChoices: z.enum(["true", "false"]).optional(),
@@ -125,6 +126,7 @@ export const syncPullResponseSchema = z.object({
 export type SyncPullResponse = z.infer<typeof syncPullResponseSchema>;
 
 export const bootstrapQuerySchema = z.object({
+  visualLibrary: z.enum(["true", "false"]).optional(),
   commercialReview: z.enum(["true", "false"]).optional(),
   commercialVisual: z.enum(["true", "false"]).optional(),
   commercialChoices: z.enum(["true", "false"]).optional(),
@@ -160,6 +162,10 @@ export const bootstrapQuerySchema = z.object({
 export type BootstrapQuery = z.infer<typeof bootstrapQuerySchema>;
 
 export const bootstrapEntitiesSchema = z.object({
+  visualLibrary: z.boolean().optional(),
+  visualAssets: z.array(jsonObjectSchema).optional(),
+  visualIdentities: z.array(jsonObjectSchema).optional(),
+  productVisualLinks: z.array(jsonObjectSchema).optional(),
   copilotDecisions: z.array(jsonObjectSchema).optional(),
   copilotExecutionLinks: z.array(jsonObjectSchema).optional(),
   copilotActionExecutions: z.array(jsonObjectSchema).optional(),

@@ -836,6 +836,18 @@ CREATE TABLE store_layout_revisions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT N
 CREATE INDEX store_layout_revision_scope ON store_layout_revisions(store_id,plan_version);
 CREATE TABLE store_layout_operations(command_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,intent_json TEXT NOT NULL,payload_json TEXT NOT NULL);`,
   },
+  {
+    version: 50,
+    name: "product-visual-library",
+    sql: `CREATE TABLE visual_assets(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,content_hash TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX visual_asset_hash ON visual_assets(store_id,content_hash);
+CREATE TABLE visual_identities(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX visual_identity_scope ON visual_identities(store_id,id);
+CREATE TABLE product_visual_links(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,product_id TEXT NOT NULL,deleted_at TEXT,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX product_visual_active ON product_visual_links(store_id,product_id) WHERE deleted_at IS NULL;
+CREATE TABLE visual_asset_files(asset_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,local_uri TEXT NOT NULL,verified_hash TEXT NOT NULL,size_bytes INTEGER NOT NULL,last_accessed_at TEXT NOT NULL,pinned INTEGER NOT NULL DEFAULT 1,uploaded INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX visual_cache_scope ON visual_asset_files(store_id,last_accessed_at);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

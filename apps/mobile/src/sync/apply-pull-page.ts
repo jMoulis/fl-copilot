@@ -1,3 +1,5 @@
+import { isVisualEntityType, visualEntitySchemas } from "@fl-copilot/domain";
+import { applyVisualEntity } from "../products/visual-library-repository";
 import {
   applyStoreLayout,
   applyStoreLayoutRevision,
@@ -127,6 +129,19 @@ export async function applyPullPage(
           storeId,
           change.entity,
         );
+        continue;
+      }
+      if (isVisualEntityType(change.entityType)) {
+        const value = visualEntitySchemas[change.entityType].parse(
+          change.entity,
+        );
+        if (
+          change.operation !== "UPSERT" ||
+          value.id !== change.entityId ||
+          value.version !== change.entityVersion
+        )
+          throw Error("VISUAL_ENVELOPE_INVALID");
+        await applyVisualEntity(transaction, storeId, change.entityType, value);
         continue;
       }
       if (

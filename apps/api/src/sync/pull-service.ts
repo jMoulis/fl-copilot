@@ -1,3 +1,8 @@
+import { isVisualEntityType } from "@fl-copilot/domain";
+import {
+  visualCollections,
+  serializeVisualEntity,
+} from "../products/visual-library-sync";
 import { legacyPhysicalEntity } from "@fl-copilot/domain";
 import {
   serializeStoreLayout,
@@ -207,6 +212,8 @@ export function createMongoSyncPullService(
         selected
           .filter(
             (change) =>
+              (query.visualLibrary === "true" ||
+                !isVisualEntityType(change.entityType)) &&
               (query.mercalysPublications === "true" ||
                 change.entityType !== "mercalys_publication") &&
               (!legacyMercalysFrozen ||
@@ -266,6 +273,25 @@ export function createMongoSyncPullService(
                 ].includes(change.entityType)),
           )
           .map(async (change) => {
+            if (isVisualEntityType(change.entityType)) {
+              const row = await mongoDatabase
+                .collection<{ _id: string }>(
+                  visualCollections[change.entityType],
+                )
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("VISUAL_SYNC_INVALID");
+              const entity = serializeVisualEntity(change.entityType, row);
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                entityVersion: entity.version,
+                operation: change.operation,
+                entity,
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
             if (isChatType(change.entityType)) {
               const row = privateEntities.get(
                 `${change.entityType}:${change.entityId}`,

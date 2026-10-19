@@ -446,3 +446,7 @@ PR 281 fusionnée après succès des CI exactes push `39332367255` et PR `393324
 ### 20 octobre — choix manuel du catalogue dans la casse
 
 Chantiers 1 et 7 : recherche et confirmation d’un produit hors propositions, création par le formulaire existant puis retour à la sélection/ticket, contrôles atomiques des snapshots de ligne et d’identité, aucune publication ni mémoire implicite. Voir `../qa/M7_UX_RECEIPT_CATALOGUE.md`. Les sept états restent : **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**. La PR 282 est fusionnée (deux CI finales réussies, branches supprimées) ; la recette native groupée et les autres engagements V1/M8 restent ouverts. Pas de déploiement, appel IA ou EAS payant.
+
+### 20 octobre — bibliothèque visuelle en construction
+
+L6/M7 7 : contrats, métadonnées locales/Outbox, négociation et premiers contrôles de synchronisation sont en cours sur une branche dédiée. Aucune génération ou recherche d’image à l’import, aucun produit commercial fusionné avec une identité visuelle. Le module reste ouvert pour fichiers privés/cache/gestion native, conflits et preuve complète sur un autre appareil ; voir `../qa/M7_VISUAL_LIBRARY.md`. Les sept états ne changent pas. La PR 283 est fusionnée après ses CI finales push `39336067334` et PR `39336074077` réussies, merge `ab5e2bfde03b4558ab2ac295be9b0ae660493ce5`, branches supprimées. Code fusionné ne signifie pas livré sur téléphone.

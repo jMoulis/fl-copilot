@@ -855,6 +855,30 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, "plan.version": 1 }, { unique: true });
     },
   },
+  {
+    version: 44,
+    name: "product-visual-library",
+    async up(db) {
+      await db
+        .collection("visualAssets")
+        .createIndex({ storeId: 1, contentHash: 1 }, { unique: true });
+      await db
+        .collection("visualIdentities")
+        .createIndex({ storeId: 1, _id: 1 });
+      await db
+        .collection("productVisualLinks")
+        .createIndex(
+          { storeId: 1, productId: 1 },
+          { unique: true, partialFilterExpression: { deletedAt: null } },
+        );
+      await db
+        .collection("visualLibraryHistory")
+        .createIndex(
+          { storeId: 1, entityType: 1, entityId: 1, version: 1 },
+          { unique: true },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

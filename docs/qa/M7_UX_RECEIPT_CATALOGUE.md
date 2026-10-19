@@ -20,7 +20,7 @@ La correction de brouillon reste locale et durable jusqu’à la publication can
 
 ## Preuves et limites
 
-Suite complète locale : **2 246 tests réussis / 498 dépendants d’environnement ignorés**, types stricts/lint passés. Build et import API passés. Exports Hermes et deux contrôles GitHub sur la tête finale requis avant fusion.
+Suite complète locale : **2 246 tests réussis / 498 dépendants d’environnement ignorés**, types stricts/lint passés. Build et import API passés. Exports Hermes locaux passés. PR 283 fusionnée après CI push `39336067334` et PR `39336074077` réussies sur `fc1e2dea003f92cdaf71b807ddf943178df68307`, merge `ab5e2bfde03b4558ab2ac295be9b0ae660493ce5` ; branches supprimées.
 
 - SQLite réel : création par le service canonique avec ITM8 `00001234`, association hors candidats d’une fiche incomplète, absence de publication/alias/commande supplémentaire, fichier source conservé et choix restauré après fermeture/réouverture.
 - Refus sans mutation pour révision de ligne, libellé/code/alias modifié, produit inactif/supprimé/en erreur/étranger, ligne supprimée ou publication arrivée avant confirmation. Conflit d’identité enfant relu dans la transaction, puis ACK seul accepté. Origine non valide/étrangère refusée.
