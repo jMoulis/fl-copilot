@@ -165,6 +165,9 @@ export class StoreLayoutRepository {
     if (!head?.entity.referenceRevisionId) return null;
     return this.revision(this.db, storeId, head.entity.referenceRevisionId);
   }
+  async getRevision(storeId: string, id: string) {
+    return this.revision(this.db, storeId, id);
+  }
   private async revision(db: OutboxDatabase, storeId: string, id: string) {
     const r = await db.getFirstAsync<{ payload_json: string }>(
       "SELECT payload_json FROM store_layout_revisions WHERE id=? AND store_id=?",

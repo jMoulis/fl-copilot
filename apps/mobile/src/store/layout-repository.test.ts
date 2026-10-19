@@ -450,3 +450,38 @@ it("keeps the pending command when a successful-looking response acknowledges a 
   ).toBe(1);
   expect((await x.repo.history(p.storeId))[0]?.synced).toBe(false);
 });
+
+it("loads an exact historical snapshot only in its original store", async () => {
+  const x = await setup(),
+    p = await x.repo.save(input(x), x.ctx);
+  expect(await x.repo.getRevision(p.storeId, p.revisionId)).toEqual(p);
+  expect(await x.repo.getRevision(randomUUID(), p.revisionId)).toBeNull();
+});
+
+it("resumes an abandoned first draft through immutable history with the same furniture and surface IDs", async () => {
+  const x = await setup(),
+    first = await x.repo.save(input(x), x.ctx);
+  const discarded = await x.repo.save(
+    {
+      storeId: first.storeId,
+      expectedRevisionId: first.revisionId,
+      action: "DISCARD_DRAFT",
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  expect(await x.repo.reference(first.storeId)).toBeNull();
+  const source = await x.repo.getRevision(first.storeId, first.revisionId);
+  expect(source).toEqual(first);
+  const restored = await x.repo.save(
+    {
+      storeId: first.storeId,
+      expectedRevisionId: discarded.revisionId,
+      action: "RESTORE_AS_DRAFT",
+      restoredFromRevisionId: source!.revisionId,
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  expect(restored.content).toEqual(first.content);
+  expect(restored.revisionId).not.toBe(first.revisionId);
+  expect(await x.repo.history(first.storeId)).toHaveLength(3);
+});
