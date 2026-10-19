@@ -6,6 +6,8 @@ import {
   productVisualLinkSchema,
   resolveProductVisual,
   visualAssetObjectKey,
+  validateVisualMutation,
+  detectVisualImageMime,
   type VisualAsset,
   type VisualIdentity,
   type ProductVisualLink,
@@ -249,4 +251,62 @@ describe("visual image metadata and rights", () => {
         .success,
     ).toBe(false);
   });
+});
+
+it("attributes a new or changed rights confirmation without rewriting another uploader’s unchanged decision", () => {
+  const ctx = { storeId, actorId: actor, canWrite: true };
+  expect(validateVisualMutation("visual_asset", null, asset, ctx)).toEqual(
+    asset,
+  );
+  expect(() =>
+    validateVisualMutation(
+      "visual_asset",
+      null,
+      {
+        ...asset,
+        provenance: { ...asset.provenance, confirmedBy: product.id },
+      },
+      ctx,
+    ),
+  ).toThrow("VISUAL_RIGHTS_CONFIRMATION_INVALID");
+  const updatedAt = "2026-10-20T12:00:00.000Z",
+    next = {
+      ...asset,
+      version: 2,
+      updatedAt,
+      updatedBy: product.id,
+      review: { ...asset.review, actorId: product.id, at: updatedAt },
+    };
+  expect(
+    validateVisualMutation("visual_asset", asset, next, {
+      ...ctx,
+      actorId: product.id,
+    }),
+  ).toEqual(next);
+  expect(() =>
+    validateVisualMutation(
+      "visual_asset",
+      asset,
+      { ...next, provenance: { ...asset.provenance, confirmedAt: updatedAt } },
+      { ...ctx, actorId: product.id },
+    ),
+  ).toThrow("VISUAL_RIGHTS_CONFIRMATION_INVALID");
+});
+it("recognizes only the supported binary signatures, keeping AVIF out of the HEIF path", () => {
+  const ascii = (v: string) =>
+    new Uint8Array(Array.from(v, (c) => c.charCodeAt(0)));
+  expect(detectVisualImageMime(new Uint8Array([255, 216, 255]))).toBe(
+    "image/jpeg",
+  );
+  expect(
+    detectVisualImageMime(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])),
+  ).toBe("image/png");
+  expect(detectVisualImageMime(ascii("RIFF0000WEBP"))).toBe("image/webp");
+  expect(detectVisualImageMime(ascii("0000ftypheic0000mif1"))).toBe(
+    "image/heic",
+  );
+  expect(detectVisualImageMime(ascii("0000ftypmif10000"))).toBe("image/heif");
+  expect(detectVisualImageMime(ascii("0000ftypavif0000mif1"))).toBeNull();
+  expect(detectVisualImageMime(ascii("<svg>"))).toBeNull();
+  expect(detectVisualImageMime(new Uint8Array())).toBeNull();
 });

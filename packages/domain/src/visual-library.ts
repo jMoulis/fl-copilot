@@ -7,6 +7,29 @@ export const VISUAL_LIBRARY_POLICY = Object.freeze({
   maximumBytes: 12 * 1024 * 1024,
   maximumPixels: 36_000_000,
 });
+/** Small binary signature check shared by native capture and server validation. */
+export function detectVisualImageMime(
+  bytes: Uint8Array,
+): VisualAsset["mimeType"] | null {
+  if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255)
+    return "image/jpeg";
+  if (
+    [137, 80, 78, 71, 13, 10, 26, 10].every(
+      (value, index) => bytes[index] === value,
+    )
+  )
+    return "image/png";
+  const ascii = (start: number, end: number) =>
+    String.fromCharCode(...bytes.subarray(start, end));
+  if (ascii(0, 4) === "RIFF" && ascii(8, 12) === "WEBP") return "image/webp";
+  if (ascii(4, 8) !== "ftyp") return null;
+  const brands = ascii(8, 40);
+  if (brands.includes("avif") || brands.includes("avis")) return null;
+  if (["heic", "heix", "hevc", "hevx"].some((v) => brands.includes(v)))
+    return "image/heic";
+  if (["mif1", "msf1"].some((v) => brands.includes(v))) return "image/heif";
+  return null;
+}
 const id = z.uuid();
 const text = z.string().trim().min(1).max(500);
 const instant = z.iso.datetime({ offset: true });
@@ -188,6 +211,15 @@ export function validateVisualMutation<K extends VisualEntityType>(
         previous.provenance.type !== asset.provenance.type)
     )
       throw Error("VISUAL_BINARY_IMMUTABLE");
+    if (
+      asset.provenance.type === "USER_UPLOAD" &&
+      (!previous ||
+        JSON.stringify(previous.provenance) !==
+          JSON.stringify(asset.provenance)) &&
+      (asset.provenance.confirmedBy !== context.actorId ||
+        asset.provenance.confirmedAt !== asset.updatedAt)
+    )
+      throw Error("VISUAL_RIGHTS_CONFIRMATION_INVALID");
     if (
       asset.review.status !== "PENDING" &&
       (asset.review.actorId !== context.actorId ||

@@ -81,7 +81,7 @@ export const sharpReceiptImageAdapter: ReceiptImageAdapter = {
   },
 };
 
-async function sharpCompatibleInput(bytes: Uint8Array) {
+export async function sharpCompatibleInput(bytes: Uint8Array) {
   const source = sharp(bytes, { failOn: "error" });
   const metadata = await source.metadata();
   if (metadata.format !== "heif") return bytes;

@@ -871,6 +871,16 @@ export const mongoMigrations: readonly MongoMigration[] = [
           { storeId: 1, productId: 1 },
           { unique: true, partialFilterExpression: { deletedAt: null } },
         );
+      await db.collection("visualAssetUploads").createIndex({
+        storeId: 1,
+        userId: 1,
+        assetId: 1,
+        status: 1,
+        expiresAt: 1,
+      });
+      await db
+        .collection("visualAssetFiles")
+        .createIndex({ storeId: 1, sourceHash: 1 });
       await db
         .collection("visualLibraryHistory")
         .createIndex(

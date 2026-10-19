@@ -1,4 +1,9 @@
 import { isVisualEntityType } from "@fl-copilot/domain";
+import {
+  createVisualFileService,
+  type VisualFileService,
+} from "./products/visual-file-service";
+import { registerVisualFileRoutes } from "./products/visual-file-routes";
 import { serializeChatForClient } from "./copilot/conversation-store";
 import { readStoreLayoutScenarioSources } from "./copilot/store-layout-scenario-tool";
 import {
@@ -212,6 +217,7 @@ type AppDependencies = {
   syncPull?: SyncPullService;
   syncPush?: SyncPushService;
   sourceUploads?: SourceUploadService;
+  visualFiles?: VisualFileService;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
 };
@@ -1772,6 +1778,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         ? syncBootstrap.bootstrap(store, request.query, true)
         : syncBootstrap.bootstrap(store, request.query);
     },
+  );
+  registerVisualFileRoutes(
+    app,
+    auth,
+    dependencies.visualFiles ?? createVisualFileService(dependencies.database),
   );
   app.post(
     "/api/v1/uploads/init",
