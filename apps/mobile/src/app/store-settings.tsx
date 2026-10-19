@@ -18,6 +18,7 @@ import {
   SecondaryButton,
   PrimaryButton,
   InlineAlert,
+  MenuRow,
 } from "@/components/ui";
 import {
   StoreContextRepository,
@@ -175,6 +176,12 @@ export default function StoreSettingsScreen() {
         subtitle="Localisation et contexte de préparation de la semaine."
       />
       <SecondaryButton label="Retour à Plus" onPress={() => router.back()} />
+      <MenuRow
+        title="Plan et mobilier"
+        description="Consulter les îlots, les TG et leurs surfaces de vente."
+        icon="map-outline"
+        onPress={() => router.push("/store-layout")}
+      />
       {error ? (
         <InlineAlert title="Réglages à vérifier" message={error} />
       ) : null}

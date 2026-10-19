@@ -89,6 +89,17 @@ export default function SyncConflictDetailScreen() {
                 onPress={() => router.push("/copilot-memory")}
               />
             </SectionCard>
+          ) : conflict.entityType === "store_layout" ? (
+            <SectionCard title="Plan et mobilier">
+              <Text className="text-muted">
+                Comparez les mesures et la composition dans le plan du magasin.
+                Les deux versions restent conservées.
+              </Text>
+              <SecondaryButton
+                label="Comparer les plans du magasin"
+                onPress={() => router.push("/store-layout")}
+              />
+            </SectionCard>
           ) : conflict.entityType === "store_context_settings" ? (
             <StoreContextConflict conflict={conflict} />
           ) : conflict.entityType === "commercial_execution_task" ? (

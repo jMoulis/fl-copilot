@@ -450,3 +450,10 @@ it("keeps the pending command when a successful-looking response acknowledges a 
   ).toBe(1);
   expect((await x.repo.history(p.storeId))[0]?.synced).toBe(false);
 });
+
+it("loads an exact historical snapshot only in its original store", async () => {
+  const x = await setup(),
+    p = await x.repo.save(input(x), x.ctx);
+  expect(await x.repo.getRevision(p.storeId, p.revisionId)).toEqual(p);
+  expect(await x.repo.getRevision(randomUUID(), p.revisionId)).toBeNull();
+});

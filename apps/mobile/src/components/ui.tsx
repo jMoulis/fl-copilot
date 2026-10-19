@@ -1,9 +1,10 @@
-import { useEffect, useRef, type PropsWithChildren } from "react";
+import { useEffect, useMemo, useRef, type PropsWithChildren } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
   Modal,
   Platform,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -362,14 +363,29 @@ export function BottomSheet({
   title,
   onClose,
   onDismiss,
+  swipeToClose = false,
   children,
 }: PropsWithChildren<{
   visible: boolean;
   title: string;
   onClose: () => void;
   onDismiss?: () => void;
+  swipeToClose?: boolean;
 }>) {
   const heading = useRef<Text>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const swipe = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, g) =>
+          g.dy > 8 && g.dy > Math.abs(g.dx),
+        onPanResponderRelease: (_, g) => {
+          if (g.dy > 55 && g.dy > Math.abs(g.dx)) closeRef.current();
+        },
+      }),
+    [],
+  );
   useEffect(() => {
     if (!visible || Platform.OS === "web") return;
     const timer = setTimeout(() => {
@@ -396,10 +412,34 @@ export function BottomSheet({
         <SafeAreaView
           edges={["bottom", "left", "right"]}
           accessibilityViewIsModal
+          onAccessibilityEscape={onClose}
           className="rounded-t-3xl bg-white"
           style={{ maxHeight: "90%" }}
         >
-          <ScrollView contentContainerStyle={{ padding: 24, gap: 20 }}>
+          {swipeToClose ? (
+            <View
+              {...swipe.panHandlers}
+              accessibilityLabel="Glisser vers le bas pour fermer"
+              style={{
+                height: 32,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 4,
+                  borderRadius: 2,
+                  backgroundColor: colors.line,
+                }}
+              />
+            </View>
+          ) : null}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ padding: 24, gap: 20 }}
+          >
             <Text
               ref={heading}
               accessible
