@@ -1,4 +1,5 @@
 import {
+  catalogueSnapshotIdentity,
   receiptMultiViewBlockingCodes,
   localFileMetadataSchema,
   localSourceDocumentSchema,
@@ -14,8 +15,13 @@ import type {
   WasteReceiptDraft,
   WasteReceiptDraftCandidate,
 } from "@fl-copilot/sync-contracts";
-import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
+import {
+  joinedMutationDatabase,
+  type AtomicMutationDatabase,
+} from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
+import { ProductMasterRepository } from "../products/product-master-repository";
+import { loadProductEditorSnapshot } from "../products/product-editor-service";
 
 export interface LocalWasteReceiptAggregate {
   receipt: WasteReceipt;
@@ -757,6 +763,7 @@ export class WasteReceiptRepository {
     lineId: string,
     productId: string,
     expectedVersion?: number,
+    reviewedProduct?: { storeId: string; identity: string },
   ) {
     return this.selectProduct(
       receiptId,
@@ -764,6 +771,7 @@ export class WasteReceiptRepository {
       productId,
       true,
       expectedVersion,
+      reviewedProduct,
     );
   }
 
@@ -773,6 +781,7 @@ export class WasteReceiptRepository {
     productId: string,
     fromCatalogue: boolean,
     expectedVersion?: number,
+    reviewedProduct?: { storeId: string; identity: string },
   ) {
     await this.editReceipt(receiptId, async (tx) => {
       const row = await tx.getFirstAsync<WasteLineRow>(
@@ -798,6 +807,30 @@ export class WasteReceiptRepository {
         row.store_id,
       );
       if (!product) throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+      if (reviewedProduct) {
+        if (reviewedProduct.storeId !== row.store_id)
+          throw Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+        const snapshot = await loadProductEditorSnapshot(
+          new ProductMasterRepository(joinedMutationDatabase(tx)),
+          productId,
+        );
+        const conflict = await tx.getFirstAsync<{ id: string }>(
+          `SELECT c.id FROM sync_conflicts c WHERE c.store_id=? AND c.status='OPEN' AND (
+            (c.entity_type='product' AND c.entity_id=?) OR
+            (c.entity_type='product_identifier' AND c.entity_id IN (SELECT id FROM product_identifiers WHERE product_id=?)) OR
+            (c.entity_type='product_alias' AND c.entity_id IN (SELECT id FROM product_aliases WHERE product_id=?))) LIMIT 1`,
+          row.store_id,
+          productId,
+          productId,
+          productId,
+        );
+        if (
+          !snapshot ||
+          conflict ||
+          catalogueSnapshotIdentity(snapshot) !== reviewedProduct.identity
+        )
+          throw Error("WASTE_RECEIPT_PRODUCT_CHANGED");
+      }
       await tx.runAsync(
         `UPDATE waste_lines
        SET matched_product_id = ?, matched_product_label = ?,

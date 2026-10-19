@@ -29,7 +29,7 @@ Une correction de brouillon ne crée pas une nouvelle Outbox avant la publicatio
 - Tests d’état de formulaire : version initiale conservée après changement du libellé/regroupement, modification indépendante d’une autre ligne, zéro et effacement distincts, abandon ciblé, retour à la valeur initiale, snapshot changé et caissier vide/confirmé.
 - Composants réels `AppScreen`, `ReceiptIssueSummary`, `ReceiptLinePreview` et même hook de navigation contrôlés en web 390 × 844 avec données synthétiques. Clic de correction de ligne : cible dans le viewport (haut 100, bas 259 px) ; clic caissier : haut 76,5, bas 109,5 px. Aucune erreur console. Captures dans l’espace de travail `artifacts/receipt-review-ux/`.
 - Le harnais visuel ne manipule pas une base pilote ni un vrai ticket : il vérifie la présentation/navigation, les transactions sont vérifiées séparément par les tests SQLite. Harnais et serveur retirés, onglet fermé et viewport réinitialisé.
-- Exports Hermes et deux CI exactes requis avant fusion ; pas d’appel IA, déploiement ou build EAS payant.
+- PR 282 fusionnée sur `f3f136f30f97e38a0fa9bea3feb80257755fa528` après succès push `39334550303` et PR `39334556235`, incluant Mongo transactionnel et exports Hermes iOS/Android. Merge `dec03803d24e11b75bdbd444adef7f682feec3be` ; branches locale/distante supprimées. Aucun déploiement, appel IA ou build EAS payant.
 
 ## Portes ouvertes
 

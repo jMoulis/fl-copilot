@@ -58,6 +58,11 @@ function RootLayout() {
         <Stack.Screen name="waste-capture" />
         <Stack.Screen name="waste-import" />
         <Stack.Screen name="waste-receipt/[id]" />
+        <Stack.Screen
+          name="waste-receipt-product"
+          options={{ presentation: "modal" }}
+        />
+        <Stack.Screen name="waste-receipt-product-create" />
         <Stack.Screen name="commercial-offer/[id]" />
         <Stack.Screen name="week-preparation" />
         <Stack.Screen name="commercial-plan" />
