@@ -6322,3 +6322,90 @@ it("crosses analysis and catalogue domains while retaining native confirmation f
   expect(r.productPreviews?.[0]?.result.preview?.proposed.nature).toBe("BULK");
   expect(before.nature).toBe(data.product.nature);
 });
+
+it.each(["CHECKED", "BLOCKED", "FOREIGN", "TAMPERED", "DISABLED"])(
+  "uses the deterministic layout tool without granting measurement/write authority (%s)",
+  async (mode) => {
+    const { implantationFixture } =
+      await import("../../../../scripts/test-implantation-fixtures");
+    const { readImplantationScenario } = await import("./implantation-tool");
+    const f = fixture(),
+      input = implantationFixture();
+    if (mode === "BLOCKED") input.fixtures[0]!.yMm = 2500;
+    const canonical = readImplantationScenario(f.request.storeId, input);
+    const result =
+      mode === "FOREIGN"
+        ? readImplantationScenario(randomUUID(), input)
+        : canonical;
+    if (mode === "TAMPERED") result.scenario.counts.TG = 8;
+    const implantationScenario = vi.fn(async () => result);
+    const activities: unknown[] = [];
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const definition = body.tools.find(
+        (t: { name: string }) => t.name === "implantation_scenario",
+      );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.additionalProperties).toBe(false);
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|confirmed|write/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_layout",
+            call_id: "call_layout",
+            name: "implantation_scenario",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const value = JSON.parse(
+        body.input.find(
+          (v: { type: string }) => v.type === "function_call_output",
+        ).output,
+      );
+      if (mode === "FOREIGN" || mode === "TAMPERED")
+        expect(value).toMatchObject({ unavailable: true });
+      else
+        expect(value.scenario).toMatchObject({
+          status: mode,
+          authority: "PROVISIONAL",
+        });
+      return response();
+    };
+    const output = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { implantationScenario }),
+    }).generate(f.request, schema, undefined, undefined, (event) =>
+      activities.push(event),
+    );
+    expect(implantationScenario).toHaveBeenCalledTimes(
+      mode === "DISABLED" ? 0 : 1,
+    );
+    expect(output.toolEvidence).toEqual(
+      ["CHECKED", "BLOCKED"].includes(mode) ? canonical.evidence : [],
+    );
+    if (mode !== "DISABLED")
+      expect(activities).toContainEqual(
+        expect.objectContaining({
+          stage: "ANALYTICS",
+          status:
+            mode === "FOREIGN" || mode === "TAMPERED" ? "UNAVAILABLE" : "DONE",
+        }),
+      );
+  },
+);
