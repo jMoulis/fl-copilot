@@ -1269,3 +1269,11 @@ Le contrôle GitHub de ce lot a révélé une assertion de confidentialité inst
 ## PR 263 — rétablir l’accueil et préciser le secours à supprimer
 
 Chantier actif : **7**. La demande a été précisée par Julien : conserver l’accueil et retirer le bloc de panne avec le bilan quotidien hors sujet. Le composant d’accueil et ses styles sont rétablis seuls ; la correction du test de confidentialité de la PR 262 est conservée. La recette groupée est ajustée pour tester une nouvelle réponse après livraison de l’API incluant la PR 261, qui remplace déjà ce bloc par un échec conversationnel bref sans chiffres par défaut. Aucun message enregistré n’est réécrit et la cause de l’incident n’est pas déclarée résolue. Aucun build EAS, appel IA payant ou déploiement lancé.
+
+## PR 264 — précontrôle des scénarios d’implantation
+
+Chantier actif : **6**, désormais **en cours**. Contrats Zod et moteur partagé de rectangles : nombres attendus de TG/îlots, emprises orientées, limites, collisions, accès réservés, hauteur et charge. Les contraintes connues sont vérifiées même sur un plan incomplet. Inconnus et inventaires absents restent distincts de zéro et d’une liste explicitement vide. Le chat découvre l’outil existant du SDK ; les sources et étapes canoniques restituent le résultat sans nouveau circuit d’écriture. Les mesures restent provisoires : aucun plan magasin, fait confirmé ou réalisation n’est déduit d’un calcul.
+
+Validation locale : **39 nouveaux cas**, `pnpm check` réussi (**1 984 tests passés, 477 cas d’environnement ignorés localement**), types stricts, lint et format. Cas numériques/limites, plan dense, contradictions et inconnus ; transport SDK simulé et refus des résultats altérés/étrangers ; rendu des dimensions/sources avec qualifications. Pas d’appel modèle, image payante ou modification de base métier.
+
+Écart couvert : le chat dispose du calcul géométrique qui lui manquait. Reste avant clôture : mesures/provenance confirmées, scénario durable éditable et versions, schéma canonique, illustration liée et cas pilote accepté. Ce lot est prêt dans le code après contrôles, sans API déployée ni binaire livré. Aucun build EAS. Les sept chantiers : **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**. L’incident de fiabilité du chat reste soumis à sa recette après livraison.

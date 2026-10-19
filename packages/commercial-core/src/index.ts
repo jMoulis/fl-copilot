@@ -24,3 +24,4 @@ export * from "./execution-checklist";
 export * from "./market-tensions";
 
 export { commercialMechanismDescription } from "./mechanism-description";
+export * from "./implantation-scenario";

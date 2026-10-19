@@ -37,6 +37,7 @@ import {
 } from "@fl-copilot/domain";
 import { createImportClassifier } from "./copilot/import-classification-provider.js";
 import { readPriceScenario } from "./copilot/price-scenario-tool.js";
+import { readImplantationScenario } from "./copilot/implantation-tool.js";
 import { inspectCommercialReference } from "./copilot/reference-inspection-tool.js";
 import { previewCommercialReference } from "./copilot/reference-preview-tool.js";
 import { readCommercialDocumentComparison } from "./copilot/document-comparison-tool.js";
@@ -1071,6 +1072,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 const result = await readCommercialDocuments(
                   db,
                   storeId,
+                  input,
+                );
+                await authorize();
+                return result;
+              },
+              implantationScenario: async (input) => {
+                const principal = await authorize();
+                const result = readImplantationScenario(
+                  principal.storeId,
                   input,
                 );
                 await authorize();

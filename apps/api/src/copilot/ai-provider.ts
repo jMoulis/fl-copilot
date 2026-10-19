@@ -1,4 +1,6 @@
 import { factReadFromTool } from "./fact-context";
+import { implantationScenarioInputSchema } from "@fl-copilot/domain";
+import { readImplantationScenario } from "./implantation-tool";
 import {
   copilotFactTraceSchema,
   recommendationContextInputSchema,
@@ -567,6 +569,9 @@ export function createCopilotAiProvider(
     sourceOffers?(
       input: z.infer<typeof copilotSourceOffersInputSchema>,
     ): Promise<ReturnType<typeof validateSourceOffersResult>>;
+    implantationScenario?(
+      input: z.infer<typeof implantationScenarioInputSchema>,
+    ): Promise<ReturnType<typeof readImplantationScenario>>;
     priceScenario?(
       input: z.infer<typeof copilotPriceScenarioInputSchema>,
     ): Promise<z.infer<typeof copilotPriceScenarioResultSchema>>;
@@ -1737,6 +1742,33 @@ export function createCopilotAiProvider(
                           );
                         return value;
                       },
+                    }),
+                  }
+                : {}),
+              ...(reads.implantationScenario
+                ? {
+                    implantation_scenario: tool({
+                      description:
+                        "Check a hypothetical rectangular TG/island layout with the shared deterministic engine. Millimetres, top-left coordinates; rotations only 0/90 degrees. Unknown measurements/loads/counts and unknown obstacle/access inventories are null, never guessed as store facts (empty lists explicitly assume none for this scenario). Reuse user information; ask genuinely missing dimensions through request_information (CM fields) and convert to mm. Explicit what-if assumptions may be tested but every result remains PROVISIONAL, not measured/confirmed store geometry or an installed plan. Returns footprint counts, bounds, collisions, reserved entrance/passage obstructions, declared widths/heights/load checks. CHECKED only covers supplied rectangles: no legal compliance, connected escape routes, physical stability, stock/capacity inference or real feasibility guarantee. Explain blocking items first with concise sourced dimensions; no image is generated and no business data is saved.",
+                      inputSchema: implantationScenarioInputSchema,
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["implantation-scenario", input]),
+                          async () => {
+                            const result =
+                              await reads.implantationScenario!(input);
+                            const expected = readImplantationScenario(
+                              request.storeId,
+                              input,
+                            );
+                            if (
+                              JSON.stringify(result) !==
+                              JSON.stringify(expected)
+                            )
+                              throw Error("IMPLANTATION_SCOPE_INVALID");
+                            return expected;
+                          },
+                        ),
                     }),
                   }
                 : {}),
