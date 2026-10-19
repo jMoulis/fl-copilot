@@ -836,3 +836,150 @@ describe("explicit waste label memory", () => {
     database.close();
   });
 });
+
+describe("protected manual draft editing", () => {
+  it("refuses stale line/header snapshots without changing values, then preserves an explicitly cleared cashier after restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "waste-review-"));
+    directories.push(directory);
+    const path = join(directory, "device.db");
+    let database = new DatabaseSync(path);
+    try {
+      let adapter = new NodeDatabase(database);
+      await runLocalMigrations(adapter);
+      let repository = new WasteReceiptRepository(adapter);
+      await repository.createDraft({
+        receipt: receipt(),
+        file: file(),
+        lines: [line()],
+      });
+      const initial = (await repository.getReceiptDetail(receiptId, storeId))!;
+      expect(
+        await repository.getReceiptDetail(
+          receiptId,
+          "99999999-9999-4999-8999-999999999999",
+        ),
+      ).toBeNull();
+      await repository.updateLineValues(
+        receiptId,
+        lineId,
+        { rawLabel: "Corrigé", weight: "1.5", unitPrice: "2", totalPrice: "3" },
+        initial.lines[0]!.line.version,
+      );
+      await expect(
+        repository.updateLineValues(
+          receiptId,
+          lineId,
+          {
+            rawLabel: "Ancienne saisie",
+            weight: "5",
+            unitPrice: "2",
+            totalPrice: "10",
+          },
+          initial.lines[0]!.line.version,
+        ),
+      ).rejects.toThrow("WASTE_RECEIPT_LINE_CHANGED");
+      expect(
+        (await repository.getReceiptDetail(receiptId))!.lines[0]!.line.rawLabel,
+      ).toBe("Corrigé");
+      await expect(
+        repository.setLineExcluded(
+          receiptId,
+          lineId,
+          true,
+          initial.lines[0]!.line.version,
+        ),
+      ).rejects.toThrow("WASTE_RECEIPT_LINE_CHANGED");
+      await expect(
+        repository.selectProductCandidate(
+          receiptId,
+          lineId,
+          "99999999-9999-4999-8999-999999999999",
+          initial.lines[0]!.line.version,
+        ),
+      ).rejects.toThrow("WASTE_RECEIPT_LINE_CHANGED");
+
+      await repository.confirmCashierNumber(
+        receiptId,
+        "000123",
+        timestamp,
+        initial.receipt.version,
+      );
+      await expect(
+        repository.confirmWasteDate(
+          receiptId,
+          "2026-10-01",
+          initial.receipt.version,
+        ),
+      ).rejects.toThrow("WASTE_RECEIPT_CHANGED");
+      const latest = (await repository.getReceiptDetail(receiptId))!;
+      await repository.confirmCashierNumber(
+        receiptId,
+        "",
+        timestamp,
+        latest.receipt.version,
+      );
+      database.close();
+      database = new DatabaseSync(path);
+      adapter = new NodeDatabase(database);
+      repository = new WasteReceiptRepository(adapter);
+      const restored = (await repository.getReceiptDetail(receiptId, storeId))!;
+      expect(restored.receipt.confirmedCashierNumber).toBeNull();
+      expect(restored.receipt.cashierNumberConfirmedAt).toBe(timestamp);
+      expect(restored.lines[0]!.line.totalPrice).toBe("3");
+      expect(
+        await adapter.getFirstAsync("SELECT COUNT(*) AS n FROM sync_outbox"),
+      ).toMatchObject({ n: 0 });
+    } finally {
+      database.close();
+    }
+  });
+  it("checks editability on the transaction connection and refuses every correction once publication won the race", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      const adapter = new NodeDatabase(database);
+      await runLocalMigrations(adapter);
+      const repository = new WasteReceiptRepository(adapter);
+      await repository.createDraft({
+        receipt: receipt(),
+        file: file(),
+        lines: [line()],
+      });
+      // The UI has read the draft, but publication commits before its queued editor acquires the transaction.
+      const original = adapter.withExclusiveTransactionAsync.bind(adapter);
+      let intervened = false;
+      adapter.withExclusiveTransactionAsync = async (task) => {
+        if (!intervened) {
+          intervened = true;
+          database
+            .prepare(
+              "UPDATE waste_receipts SET processing_status='PUBLISHED',version=version+1 WHERE id=?",
+            )
+            .run(receiptId);
+        }
+        return original(task);
+      };
+      await expect(
+        repository.updateLineValues(receiptId, lineId, {
+          rawLabel: "Too late",
+          weight: "1",
+          unitPrice: "2",
+          totalPrice: "2",
+        }),
+      ).rejects.toThrow("WASTE_RECEIPT_READ_ONLY");
+      await expect(
+        repository.confirmWasteDate(receiptId, "2026-10-01"),
+      ).rejects.toThrow("WASTE_RECEIPT_READ_ONLY");
+      await expect(
+        repository.confirmCashierNumber(receiptId, "000999"),
+      ).rejects.toThrow("WASTE_RECEIPT_READ_ONLY");
+      await expect(
+        repository.setLineExcluded(receiptId, lineId, true),
+      ).rejects.toThrow("WASTE_RECEIPT_READ_ONLY");
+      expect(
+        (await repository.getReceiptDetail(receiptId))!.lines[0]!.line.rawLabel,
+      ).toBe(line().rawLabel);
+    } finally {
+      database.close();
+    }
+  });
+});

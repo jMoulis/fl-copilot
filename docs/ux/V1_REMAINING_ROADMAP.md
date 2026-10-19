@@ -122,3 +122,9 @@ La PR 279 est fusionnée après succès des CI push `39329596397` et PR `3932960
 L5 reprend Mon magasin : saisie protégée au retour, lecture initiale et refus explicites, relecture avec abandon confirmé, isolation magasin/utilisateur, libellés français et sélection accessible de la zone. Le dépôt vérifie le snapshot dans la transaction existante pour ne pas écraser des réglages changés depuis l’ouverture. Le garde des produits est réutilisé ; aucun nouveau modèle métier.
 
 Le même lot répare le thème de développement web NativeWind et les classes d’erreur historiques restées sans couleur depuis le passage au sombre. La preuve compile les classes réelles et contrôle le démarrage du composant de sources ; elle ne vaut pas recette du formulaire natif. QA : `../qa/M7_UX_STORE_SETTINGS.md`. Les autres formulaires, chat, médias, L7–L11 et la recette iPhone/Android restent ouverts.
+
+## Avancement — validation des tickets de casse (20 octobre)
+
+L5 reprend le formulaire réel : photos repliables, aperçus par occurrence, saisies conservées par UUID malgré les regroupements, caissier volontairement vidé et liens du résumé vers les sections bloquantes. La transaction de correction recontrôle l’éditabilité ; les snapshots manuels périmés sont refusés. Une saisie reste consultable lorsque le ticket devient non modifiable. Les états publié/synchronisé/conflit/refus restent distincts. QA : `../qa/M7_UX_RECEIPT_REVIEW.md`.
+
+Le contrôle utilise les mêmes validateurs et confirme que les lacunes du référentiel ne sont pas imposées dans la casse. L’accès manuel au catalogue hors candidats reste à exposer dans ce parcours en réutilisant le service existant ; aucune identité n’est validée par défaut. La recette native, L6 et les autres portes V1 ne sont pas déclarées closes. PR 281 fusionnée après ses deux CI exactes réussies, merge `f0942e173a194a61fe49d191e75f6d57d2221db3`, branche distante supprimée.
