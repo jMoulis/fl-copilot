@@ -40,7 +40,7 @@ export function applyExplorerLink(
   view: ExplorerView,
   raw: unknown,
 ): ExplorerView {
-  if (typeof raw !== "string" || raw.length > 4096)
+  if (typeof raw !== "string" || raw.length > 16384)
     throw Error("EXPLORER_LINK_INVALID");
   const selection = selectionSchema.parse(JSON.parse(raw));
   const period = selection.period ?? view.frame.period,

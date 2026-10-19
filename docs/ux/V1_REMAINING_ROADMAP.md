@@ -88,3 +88,9 @@ Aucun lot L1–L11 n’est annoncé intégralement validé sur cette seule tranc
 L3/L4 avancent avec les filtres catégorie/nature/produit, les catégories et montants produits paginés, les semaines ISO intersectant un mois et les accès contextualisés depuis Aujourd’hui/une fiche. Filtres, pagination et deux défilements font partie du contexte restaurable. Les mêmes sommes/couvertures de produits-jours sont réutilisées avec le moteur du chat, sans remplacer le total officiel du rayon par un détail incomplet. Mesure synthétique et portes restantes : `../qa/M7_UX_ANALYTICS_FILTERS.md`.
 
 Les liens des citations du chat ne sont pas encore branchés : des destinations structurées sont nécessaires, aucun décodage approximatif de prose. Recette native, gestes et conservation des formulaires, L5/L6 et les autres engagements métier/documentaires/implantation/M8 restent ouverts. Aucun lot complet n’est déclaré validé ou livré par cette PR.
+
+## Avancement — sources du chat vers Analytics (PR 276)
+
+L4 avance avec les destinations monétaires structurées : période libre exacte, référence explicite/J−7, somme ou moyenne et périmètre de produits. La citation d’origine reste conservée et la lecture native montre les données locales actuelles. Les producteurs courants sont reliés sans interprétation des libellés ni ajout d’instructions au modèle. Voir `../qa/M7_UX_ANALYTICS_SOURCE_LINKS.md`.
+
+La navigation n’est pas déclarée intégralement terminée : les enrichissements qui feraient dépasser la limite existante du message conservent la source historique sans destination Analytics ; un transport compact compatible reste à terminer avant de clôturer cette porte V1. Recette native, gestes/formulaires, L5/L6, autres chantiers métier/documentaires/implantation et M8 restent ouverts.

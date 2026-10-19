@@ -9,7 +9,10 @@ import {
   parseDecimal,
   type ExplorerPeriod,
 } from "@fl-copilot/analytics-core";
-import type { AnalyticsExplorerMetric } from "@fl-copilot/domain";
+import type {
+  AnalyticsExplorerMetric,
+  AnalyticsExplorerGranularity,
+} from "@fl-copilot/domain";
 import {
   BottomSheet,
   InlineAlert,
@@ -97,7 +100,7 @@ export function ExplorerContent({
   syncStatus: SyncStatus;
   loadingError?: boolean;
   onMetric: (m: AnalyticsExplorerMetric) => void;
-  onGranularity: (k: ExplorerPeriod["kind"]) => void;
+  onGranularity: (k: AnalyticsExplorerGranularity) => void;
   onShift: (n: number) => void;
   onPick: () => void;
   onDrill: (date: string) => void;
@@ -139,7 +142,7 @@ export function ExplorerContent({
             key={k}
             label={label}
             selected={period.kind === k}
-            onPress={() => onGranularity(k as ExplorerPeriod["kind"])}
+            onPress={() => onGranularity(k as AnalyticsExplorerGranularity)}
           />
         ))}
       </View>
@@ -153,6 +156,8 @@ export function ExplorerContent({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Période précédente"
+          disabled={period.kind === "range"}
+          accessibilityState={{ disabled: period.kind === "range" }}
           onPress={() => onShift(-1)}
           style={{
             minWidth: 48,
@@ -166,6 +171,7 @@ export function ExplorerContent({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Choisir la période : ${explorerLabel(period)}`}
+          disabled={period.kind === "range"}
           onPress={onPick}
           style={{
             flex: 1,
@@ -192,12 +198,16 @@ export function ExplorerContent({
             </Text>
           ) : null}
           <Text style={{ color: colors.forest, fontSize: 12 }}>
-            Choisir une période
+            {period.kind === "range"
+              ? "Dates et calcul repris de la discussion"
+              : "Choisir une période"}
           </Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Période suivante"
+          disabled={period.kind === "range"}
+          accessibilityState={{ disabled: period.kind === "range" }}
           onPress={() => onShift(1)}
           style={{
             minWidth: 48,
@@ -254,8 +264,11 @@ export function ExplorerContent({
                 : formatCurrency(data.total)}
             </Text>
             <Text style={{ color: colors.muted }}>
-              Cumul renseigné · {data.coverage.complete}/
-              {data.coverage.expected} journées complètes
+              {period.kind === "range" && period.aggregation === "AVERAGE"
+                ? "Moyenne des jours renseignés"
+                : "Cumul renseigné"}{" "}
+              · {data.coverage.complete}/{data.coverage.expected} journées
+              complètes
               {data.coverage.partial
                 ? ` · ${data.coverage.partial} partielles`
                 : ""}
@@ -273,9 +286,15 @@ export function ExplorerContent({
                 }}
               >
                 <Text style={{ color: colors.ink, fontWeight: "600" }}>
-                  Comparaison de {data.comparedDays} jour
-                  {data.comparedDays > 1 ? "s" : ""} clos comparable
+                  {data.mode === "EXPLICIT"
+                    ? "Comparaison explicite · "
+                    : "Comparaison de "}
+                  {data.comparedDays} jour
                   {data.comparedDays > 1 ? "s" : ""}
+                  {data.mode === "EXPLICIT"
+                    ? " sur la période citée"
+                    : " clos comparable"}
+                  {data.mode !== "EXPLICIT" && data.comparedDays > 1 ? "s" : ""}
                 </Text>
                 <Text style={{ color: colors.ink }}>
                   {formatCurrency(c.currentValue)} contre{" "}
@@ -293,16 +312,37 @@ export function ExplorerContent({
             ) : (
               <Text style={{ color: colors.warning }}>
                 {data.reference === null
-                  ? "Aucune période équivalente disponible en N−1."
-                  : "La couverture ne permet pas encore une comparaison fiable des jours clos."}
+                  ? data.mode === "EXPLICIT"
+                    ? "Aucune période de référence demandée pour cette source."
+                    : "Aucune période équivalente disponible en N−1."
+                  : data.mode === "EXPLICIT"
+                    ? "La couverture, la durée ou les dates ne permettent pas d’afficher un écart comparable."
+                    : "La couverture ne permet pas encore une comparaison fiable des jours clos."}
               </Text>
             )}
             {data.reference ? (
               <Text style={{ color: colors.muted }}>
-                Référence : {explorerLabel(data.reference)}
-                {period.kind === "month" || period.kind === "year"
-                  ? " · calendrier civil, sans alignement des jours de semaine"
-                  : " · mêmes jours de semaine"}
+                Référence :{" "}
+                {data.mode === "EXPLICIT"
+                  ? "période explicitement demandée"
+                  : explorerLabel(data.reference)}
+                {period.kind === "range"
+                  ? " · aucun alignement ISO supposé"
+                  : period.kind === "month" || period.kind === "year"
+                    ? " · calendrier civil, sans alignement des jours de semaine"
+                    : " · mêmes jours de semaine"}
+              </Text>
+            ) : null}
+            {data.mode === "EXPLICIT" ? (
+              <Text style={{ color: colors.muted }}>
+                Données locales actuelles ; la valeur citée reste conservée dans
+                la discussion.{" "}
+                {period.kind === "range" && period.aggregation === "AVERAGE"
+                  ? "Moyenne journalière, pas un cumul."
+                  : "Somme des montants renseignés."}{" "}
+                {data.warnings.includes("DIFFERENT_PERIOD_LENGTHS")
+                  ? "Les périodes n’ont pas la même durée."
+                  : ""}
               </Text>
             ) : null}
             {data.referenceRange ? (
@@ -317,7 +357,10 @@ export function ExplorerContent({
       {data && period.kind !== "day" ? (
         <View style={{ gap: 12 }}>
           <Text style={{ color: colors.ink, fontSize: 18, fontWeight: "700" }}>
-            {period.kind === "year" ? "Mois de l’année" : "Détail par jour"}
+            {period.kind === "year" ||
+            (period.kind === "range" && bins[0]?.monthly)
+              ? "Détail par mois"
+              : "Détail par jour"}
           </Text>
           <Text style={{ color: colors.muted }}>
             Touchez une colonne pour ouvrir le détail. Les montants partiels
@@ -354,13 +397,15 @@ export function ExplorerContent({
                               .toNumber() * 100,
                           ),
                         ),
-                label =
-                  period.kind === "year"
-                    ? new Intl.DateTimeFormat("fr-FR", {
-                        month: "short",
-                        timeZone: "UTC",
-                      }).format(new Date(b.date + "T12:00:00Z"))
-                    : b.date.slice(8);
+                label = b.monthly
+                  ? new Intl.DateTimeFormat("fr-FR", {
+                      month: "short",
+                      ...(period.kind === "range"
+                        ? { year: "numeric" as const }
+                        : {}),
+                      timeZone: "UTC",
+                    }).format(new Date(b.date + "T12:00:00Z"))
+                  : b.date.slice(8);
               return (
                 <Pressable
                   key={b.date}
@@ -505,7 +550,12 @@ export function ExplorerPeriodPicker({
       swipeToClose
       onClose={onClose}
     >
-      {period.kind === "day" ? (
+      {period.kind === "range" ? (
+        <Text style={{ color: colors.ink }}>
+          Cette période reprend les dates et le calcul de la source. Utilisez
+          Jour, Semaine, Mois ou Année pour revenir à l’exploration habituelle.
+        </Text>
+      ) : period.kind === "day" ? (
         <DateSelector
           label="Journée analysée"
           description="Choisissez la journée à consulter."

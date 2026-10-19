@@ -1,3 +1,7 @@
+import {
+  sameCopilotEvidence,
+  preferEvidenceNavigation,
+} from "./evidence-identity";
 import type { CopilotResponse } from "@fl-copilot/domain";
 import type { CopilotGenerationRequest } from "./ai-provider.js";
 type Evidence = NonNullable<CopilotGenerationRequest["evidence"]>[number];
@@ -13,6 +17,7 @@ export function renderAnswerText(
   facts: CopilotResponse["facts"],
   evidence: readonly Evidence[],
   partial = false,
+  includeAnalytics = true,
 ) {
   let text = partial ? narrative.replace(/\{(?:\{[^}]*\}?)?$/, "") : narrative;
   if (
@@ -23,9 +28,9 @@ export function renderAnswerText(
   const byId = new Map<string, Evidence>();
   for (const item of evidence) {
     const old = byId.get(item.id);
-    if (old && JSON.stringify(old) !== JSON.stringify(item))
+    if (old && !sameCopilotEvidence(old, item))
       throw Error("AMBIGUOUS_ANSWER_EVIDENCE");
-    byId.set(item.id, item);
+    byId.set(item.id, preferEvidenceNavigation(old, item));
   }
   text = text.replace(token, (_whole, kind: string, index: string) => {
     const item = byId.get(facts[Number(index)]?.evidenceId ?? "");
@@ -61,6 +66,9 @@ export function renderAnswerText(
         ...(item.retailExpertise
           ? { retailExpertise: item.retailExpertise }
           : {}),
+        ...(includeAnalytics && item.analyticsContext
+          ? { analyticsContext: item.analyticsContext }
+          : {}),
         sourceType: item.sourceType,
         sourceId: item.sourceId,
       }),
@@ -69,5 +77,7 @@ export function renderAnswerText(
   });
   if (!partial && /\{\{|\}\}/.test(text))
     throw Error("INVALID_ANSWER_TEMPLATE");
+  if (includeAnalytics && text.length > 16000)
+    return renderAnswerText(narrative, facts, evidence, partial, false);
   return text;
 }

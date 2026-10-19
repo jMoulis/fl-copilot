@@ -18,6 +18,7 @@ import {
 } from "./explorer-period";
 import { sumAvailableCurrency } from "./formulas";
 import { parseDecimal } from "./decimal";
+import { averageDecimals } from "./comparison";
 export const EXPLORER_PRODUCT_LIMITS = {
   products: 10000,
   points: 500000,
@@ -30,7 +31,13 @@ const categoryLabels = {
   UNKNOWN: "Catégorie à préciser",
 } as const;
 export function explorerHasFilters(f: AnalyticsExplorerFilters) {
-  return f.category !== null || f.nature !== null || f.productId !== null;
+  return (
+    f.category !== null ||
+    f.nature !== null ||
+    f.productId !== null ||
+    !!f.productIds ||
+    !!f.labelContains
+  );
 }
 /** Same observed-product coverage as analytics.query, followed by the qualified Explorer calendar policy. */
 export function analyzeExplorerProducts(input: {
@@ -42,6 +49,7 @@ export function analyzeExplorerProducts(input: {
   products: readonly AnalyticsQueryProduct[];
   points: readonly AnalyticsQueryPoint[];
   offset?: number;
+  expectedProductIds?: readonly string[];
 }) {
   const filters = analyticsExplorerFiltersSchema.parse(input.filters);
   if (
@@ -68,10 +76,12 @@ export function analyzeExplorerProducts(input: {
   const selected: AnalyticsQueryPoint[] = [],
     seen = new Set<string>();
   const queryFilters = {
-    productIds: filters.productId ? [filters.productId] : null,
+    productIds: filters.productId
+      ? [filters.productId]
+      : (filters.productIds ?? null),
     category: filters.category,
     nature: filters.nature,
-    labelContains: null,
+    labelContains: filters.labelContains ?? null,
   };
   for (const p of input.points) {
     const key = `${p.productId}/${p.businessDate}`;
@@ -86,6 +96,8 @@ export function analyzeExplorerProducts(input: {
       throw Error("EXPLORER_PRODUCT_SCOPE");
     seen.add(key);
     const product = products.get(p.productId);
+    if (filters.productIds && !filters.productIds.includes(p.productId))
+      continue;
     if (
       explorerHasFilters(filters) &&
       (!product || !analyticsProductMatches(product, queryFilters))
@@ -107,6 +119,20 @@ export function analyzeExplorerProducts(input: {
     cg.push(p);
     categories.set(category, cg);
   }
+  const expected = input.expectedProductIds
+    ? new Set(input.expectedProductIds)
+    : new Set(grouped.keys());
+  if (
+    expected.size !== (input.expectedProductIds?.length ?? expected.size) ||
+    expected.size > EXPLORER_PRODUCT_LIMITS.products
+  )
+    throw Error("EXPLORER_PRODUCT_SCOPE");
+  for (const id of grouped.keys())
+    if (!expected.has(id)) throw Error("EXPLORER_PRODUCT_SCOPE");
+  for (const id of expected) {
+    const category = products.get(id)?.category ?? "UNKNOWN";
+    if (!categories.has(category)) categories.set(category, []);
+  }
   const analyze = (points: readonly AnalyticsQueryPoint[], count: number) =>
     compareExplorerPeriod({
       period: input.period,
@@ -118,12 +144,17 @@ export function analyzeExplorerProducts(input: {
     const current = points.filter(
       (p) => p.businessDate >= range.start && p.businessDate <= range.end,
     );
-    const sum = sumAvailableCurrency(
-      current.map((p) =>
-        p[input.metric].status === "UNAVAILABLE" ? null : p[input.metric].value,
-      ),
-    );
-    return sum.value === null ? [] : [{ productId, points, amount: sum.value }];
+    const values = current.flatMap((p) => {
+      const { status, value } = p[input.metric];
+      return status === "UNAVAILABLE" || value === null ? [] : [value];
+    });
+    const amount =
+      input.period.kind === "range" && input.period.aggregation === "AVERAGE"
+        ? values.length
+          ? averageDecimals(values)
+          : null
+        : sumAvailableCurrency(values).value;
+    return amount === null ? [] : [{ productId, points, amount }];
   });
   ranked.sort(
     (a, b) =>
@@ -138,16 +169,21 @@ export function analyzeExplorerProducts(input: {
       )
     : 0;
   return {
-    analysis: analyze(selected, grouped.size),
+    analysis: analyze(selected, expected.size),
     selectedProduct: filters.productId
       ? (products.get(filters.productId) ?? null)
       : null,
-    observedProductCount: grouped.size,
+    observedProductCount: expected.size,
     categories: [...categories]
       .map(([category, points]) => ({
         category,
         label: categoryLabels[category],
-        analysis: analyze(points, new Set(points.map((p) => p.productId)).size),
+        analysis: analyze(
+          points,
+          [...expected].filter(
+            (id) => (products.get(id)?.category ?? "UNKNOWN") === category,
+          ).length,
+        ),
       }))
       .sort((a, b) => a.label.localeCompare(b.label, "fr")),
     contributors: ranked

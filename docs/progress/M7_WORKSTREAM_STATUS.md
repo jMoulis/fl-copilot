@@ -356,3 +356,15 @@ Code prêt après contrôles, non livré. **2 153 tests locaux et quatre cas Mon
 7. **UX et validation globale : en cours.** Filtres catégorie/nature/produit, catégories et montants par produit paginés, navigation Mois → semaine ISO complète → Jour → retour, contexte filtre/page/deux défilements restauré. Accès depuis Aujourd’hui et une fiche produit ; les citations du chat, gestes natifs, autres écrans/médias et recette globale restent ouverts.
 
 PR 274 fusionnée sur `2b40dc0` après succès push/PR exacts, branche supprimée. Pour ce lot : **2 178 tests locaux réussis**, build/import API et exports natifs réussis ; contrôle visuel de composants avec données de test et mesure locale synthétique de 107 310 lignes. **Code non livré sur téléphone**, aucun build EAS payant ni déploiement. Voir `docs/qa/M7_UX_ANALYTICS_FILTERS.md`. Les sept critères de sortie restent inchangés.
+
+## Lot courant — sources chiffrées du chat vers Analytics (PR 276)
+
+1. **Actions métier et conflits : en cours.** Navigation de consultation uniquement ; aucune mutation ou clôture des exceptions CRUD.
+2. **Contre-promo : code prêt**, livraison/recette inchangées.
+3. **Documents : en cours.** Les valeurs et sources citées restent immuables ; autres canaux et restauration encore ouverts.
+4. **Expertise métier structurée : en cours.** Sommes/moyennes, bases de calcul, J−7 et références explicites restent distincts, sans causation inventée. Aucun supplément d’instructions ou de métadonnées de navigation envoyé au modèle.
+5. **Suivi des recommandations : en cours.** Les bilans qui réutilisent les résultats de période héritent des destinations ; la navigation ne déclare aucune réalisation et ne change pas les empreintes de faits.
+6. **Implantation : en cours.** Illustration et autres portes restantes inchangées.
+7. **UX et validation globale : en cours.** Sources monétaires structurées vers dates/métrique/périmètre exacts, y compris période libre et moyenne ; base rayon/produits, univers de couverture et J−7 conservés. Restent transport compact des très longues citations, recette native des liens/gestes/formulaires, cohérence des autres écrans/médias et portes M7/M8.
+
+PR 275 fusionnée sur `d20bac7` après succès des CI push/PR exactes, branche supprimée. Pour ce lot : **2 192 tests locaux réussis**, preuve de chaîne serveur/citation/cache/SQLite et contrôle visuel séparé. Code non livré ; build/API/export et CI consignés dans la PR. Aucun déploiement, appel modèle/image ou build EAS payant. Voir `docs/qa/M7_UX_ANALYTICS_SOURCE_LINKS.md`.

@@ -27,12 +27,17 @@ export function explorerScopeLabel(data: Data) {
             UNKNOWN: "Nature à préciser",
           }[f.nature]
         : null,
+      f.productIds ? `${f.productIds.length} produits de la sélection` : null,
+      f.labelContains ? `Libellé contenant « ${f.labelContains} »` : null,
       f.productId
         ? (data.details?.selectedProduct?.label ?? "Produit indisponible")
         : null,
     ]
       .filter(Boolean)
-      .join(" · ") || "Ensemble du rayon"
+      .join(" · ") ||
+    (data.sourceBasis === "OBSERVED_PRODUCTS"
+      ? "Produits renseignés du rayon"
+      : "Ensemble du rayon")
   );
 }
 export function ExplorerBreakdown({
@@ -134,7 +139,10 @@ export function ExplorerBreakdown({
                   {formatSignedCurrency(
                     p.analysis.comparison.absoluteDifference!,
                   )}{" "}
-                  sur {p.analysis.comparedDays} jours clos comparables en N−1
+                  sur {p.analysis.comparedDays} jours{" "}
+                  {data.mode === "EXPLICIT"
+                    ? "de la période citée"
+                    : "clos comparables en N−1"}
                 </Text>
               ) : null}
               {!data.filters.productId ? (

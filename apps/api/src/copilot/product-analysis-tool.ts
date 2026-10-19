@@ -175,6 +175,24 @@ export async function readProductAnalysis(
         value,
         factKind: key === "warnings" ? "QUALITY" : "DERIVED",
         sourceType: key === "warnings" ? "DATA_QUALITY" : "COMPARISON",
+        analyticsContext: {
+          schemaVersion: 1,
+          period: {
+            kind: "range",
+            current: {
+              start: key === "reference" ? referenceDate : input.businessDate,
+              end: key === "reference" ? referenceDate : input.businessDate,
+            },
+            reference:
+              key === "reference"
+                ? null
+                : { start: referenceDate, end: referenceDate },
+            aggregation: "SUM",
+            basis: "OBSERVED_PRODUCTS",
+          },
+          metric: input.metric,
+          filters: { category: null, nature: null, productId: c.productId },
+        },
       }),
     );
   });

@@ -200,3 +200,32 @@ it("enumerates intersecting ISO weeks with complete cross-month/year ranges", ()
   });
   expect(weeks).toHaveLength(5);
 });
+it("ranks daily means by means rather than sums and keeps a declared observed universe incomplete", () => {
+  const period = {
+    kind: "range" as const,
+    current: { start: "2026-10-01", end: "2026-10-03" },
+    reference: null,
+    aggregation: "AVERAGE" as const,
+    basis: "OBSERVED_PRODUCTS" as const,
+  };
+  const r = analyzeExplorerProducts({
+    ...base,
+    period,
+    points: [
+      point(ids[0], "2026-10-01", "10"),
+      point(ids[0], "2026-10-02", "10"),
+      point(ids[0], "2026-10-03", "10"),
+      point(ids[1], "2026-10-01", "20"),
+    ],
+  });
+  expect(r.contributors.map((p) => p.productId)).toEqual([ids[1], ids[0]]);
+  expect(r.contributors[0].analysis.total).toBe("20");
+  const day = analyzeExplorerProducts({
+    ...base,
+    period: { ...period, current: { start: "2026-10-01", end: "2026-10-01" } },
+    expectedProductIds: ids,
+    points: [point(ids[0], "2026-10-01", "10")],
+  });
+  expect(day.analysis.coverage.partial).toBe(1);
+  expect(day.analysis.total).toBe("10");
+});

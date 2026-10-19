@@ -94,7 +94,7 @@ export function departmentSnapshotEvidence(
       value: p.waste.salesValue,
       status: p.availability.wasteSalesValue,
     },
-  ];
+  ] as const;
   return metrics.flatMap((m) => [
     copilotEvidenceSchema.parse({
       id: JSON.stringify([
@@ -109,6 +109,18 @@ export function departmentSnapshotEvidence(
       label: `${m.label} (€) — ${p.date}`,
       value: m.status.status === "UNAVAILABLE" ? null : m.value,
       factKind: "DERIVED",
+      analyticsContext: {
+        schemaVersion: 1,
+        period: {
+          kind: "range",
+          current: { start: p.date, end: p.date },
+          reference: null,
+          aggregation: "SUM",
+          basis: "DEPARTMENT",
+        },
+        metric: m.key,
+        filters: { category: null, nature: null, productId: null },
+      },
     }),
     copilotEvidenceSchema.parse({
       id: JSON.stringify([

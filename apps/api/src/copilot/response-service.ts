@@ -1,3 +1,7 @@
+import {
+  sameCopilotEvidence,
+  preferEvidenceNavigation,
+} from "./evidence-identity";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { answerProse, renderAnswerText } from "./answer-text.js";
 import {
@@ -51,13 +55,15 @@ export function validateCopilotResponse(
   if (!parsed.success) throw new CopilotGroundingError("INVALID_RESPONSE");
   const result = parsed.data;
   const candidates = request.context.batch.candidates;
-  const byEvidence = new Map<string, string>();
+  const byEvidence = new Map<
+    string,
+    ReturnType<typeof copilotRequestEvidence>[number]
+  >();
   for (const item of copilotRequestEvidence(request)) {
-    const serialized = JSON.stringify(item);
     const previous = byEvidence.get(item.id);
-    if (previous !== undefined && previous !== serialized)
+    if (previous !== undefined && !sameCopilotEvidence(previous, item))
       throw new CopilotGroundingError("AMBIGUOUS_EVIDENCE");
-    byEvidence.set(item.id, serialized);
+    byEvidence.set(item.id, preferEvidenceNavigation(previous, item));
   }
   const evidence = new Set(byEvidence.keys());
   if (result.facts.some((f) => !evidence.has(f.evidenceId)))

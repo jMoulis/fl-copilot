@@ -121,6 +121,18 @@ export async function readDailyAnalysis(
           label: `${title} — ${label} — ${businessDate} vs ${referenceDate}`,
           value,
           factKind: quality ? "QUALITY" : "DERIVED",
+          analyticsContext: {
+            schemaVersion: 1,
+            period: {
+              kind: "range",
+              current: { start: businessDate, end: businessDate },
+              reference: { start: referenceDate, end: referenceDate },
+              aggregation: "SUM",
+              basis: "DEPARTMENT",
+            },
+            metric: key,
+            filters: { category: null, nature: null, productId: null },
+          },
         }),
       );
     }

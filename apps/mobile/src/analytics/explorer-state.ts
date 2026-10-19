@@ -6,6 +6,7 @@ import {
   analyticsExplorerPeriodSchema,
   copilotBusinessDateSchema,
   type AnalyticsExplorerPeriod,
+  type AnalyticsExplorerGranularity,
 } from "@fl-copilot/domain";
 import {
   explorerRange,
@@ -56,7 +57,7 @@ export function initialExplorerView(date: string): ExplorerView {
 }
 export function changeExplorerGranularity(
   s: ExplorerView,
-  kind: AnalyticsExplorerPeriod["kind"],
+  kind: AnalyticsExplorerGranularity,
 ): ExplorerView {
   return {
     ...s,
@@ -72,6 +73,8 @@ export function changeExplorerGranularity(
   };
 }
 export function shiftExplorerView(s: ExplorerView, n: number): ExplorerView {
+  if (s.frame.period.kind === "range")
+    throw Error("EXPLORER_FIXED_SOURCE_RANGE");
   const period = shiftExplorerPeriod(s.frame.period, n),
     range = explorerRange(period);
   let anchor = range.start;
@@ -85,12 +88,12 @@ export function shiftExplorerView(s: ExplorerView, n: number): ExplorerView {
       String(
         Math.min(Number(s.frame.anchor.slice(8)), Number(range.end.slice(8))),
       ).padStart(2, "0");
-  else {
+  else if (period.kind === "year") {
     const candidate = `${period.year}-${s.frame.anchor.slice(5)}`;
     anchor = copilotBusinessDateSchema.safeParse(candidate).success
       ? candidate
       : `${period.year}-02-28`;
-  }
+  } else throw Error("EXPLORER_FIXED_SOURCE_RANGE");
   return {
     ...s,
     frame: {
@@ -109,13 +112,32 @@ export function drillExplorerView(s: ExplorerView, date: string): ExplorerView {
   if (date < parent.start || date > parent.end)
     throw Error("EXPLORER_DRILL_OUTSIDE_PERIOD");
   const kind = s.frame.period.kind === "year" ? "month" : "day";
+  let period: AnalyticsExplorerPeriod = explorerPeriodFromDate(kind, date);
+  if (s.frame.period.kind === "range") {
+    const monthly = explorerDays(parent).length > 62;
+    const monthEnd = explorerRange(explorerPeriodFromDate("month", date)).end;
+    period = {
+      ...s.frame.period,
+      current: {
+        start: date,
+        end:
+          monthly && monthEnd < parent.end
+            ? monthEnd
+            : monthly
+              ? parent.end
+              : date,
+      },
+      reference: null,
+      aggregation: monthly ? s.frame.period.aggregation : "SUM",
+    };
+  }
   return explorerViewSchema.parse({
     ...s,
     frame: {
       chartScroll: 0,
       detailsOffset: 0,
       filters: s.frame.filters,
-      period: explorerPeriodFromDate(kind, date),
+      period,
       anchor: date,
       scroll: 0,
     },

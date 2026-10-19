@@ -44,8 +44,8 @@ export function ExplorerFilters({
       analyticsProductMatches(p, {
         category: draft.category,
         nature: draft.nature,
-        productIds: null,
-        labelContains: null,
+        productIds: draft.productIds ?? null,
+        labelContains: draft.labelContains ?? null,
       }) &&
       (!term || analyticsLabelContains(p.label, term)),
   );
@@ -122,6 +122,16 @@ export function ExplorerFilters({
           ),
         )}
       </View>
+      {draft.productIds || draft.labelContains ? (
+        <Text style={{ color: colors.muted }}>
+          Sélection reprise du chat : {draft.productIds?.length ?? "plusieurs"}{" "}
+          produits
+          {draft.labelContains
+            ? `, libellé contenant « ${draft.labelContains} »`
+            : ""}
+          . Effacer les filtres rétablit tout le rayon.
+        </Text>
+      ) : null}
       {draft.productId ? (
         <Text style={{ color: colors.ink }}>
           Produit sélectionné :{" "}

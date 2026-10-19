@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { analyticsExplorerContextSchema } from "./analytics-explorer";
 import { retailExpertiseCitationSchema } from "./retail-expertise";
 import { copilotExternalResearchSourceSchema } from "./copilot-web-research";
 const score = z.number().finite().min(0).max(1);
@@ -45,6 +46,7 @@ export const copilotEvidenceSchema = z
     detail: z.string().max(10000).optional(),
     externalResearch: copilotExternalResearchSourceSchema.optional(),
     retailExpertise: retailExpertiseCitationSchema.optional(),
+    analyticsContext: analyticsExplorerContextSchema.optional(),
     factKind: z.enum([
       "OBSERVED",
       "SOURCE_INSTRUCTION",
@@ -54,6 +56,16 @@ export const copilotEvidenceSchema = z
     ]),
   })
   .strict()
+  .refine(
+    (e) =>
+      !e.analyticsContext ||
+      (!e.externalResearch &&
+        !e.retailExpertise &&
+        (e.sourceType === "KPI" ||
+          e.sourceType === "COMPARISON" ||
+          e.sourceType === "DATA_QUALITY") &&
+        (e.factKind === "DERIVED" || e.factKind === "QUALITY")),
+  )
   .refine(
     (e) =>
       !e.externalResearch ||
