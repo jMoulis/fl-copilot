@@ -163,3 +163,29 @@ it("resolves different-device configurations explicitly and preserves superseded
     x.db.prepare("SELECT COUNT(*) n FROM store_context_history").get()?.n,
   ).toBe(2);
 });
+
+it("refuses an editor's stale baseline atomically, retaining the current settings and its Outbox", async () => {
+  const x = await setup();
+  await x.repo.save(x.settings, x.ctx, null);
+  const base = (await x.repo.get(x.settings.storeId))!.entity;
+  const first = { ...base, city: "Paris", postalCode: "75001", version: 2 };
+  await x.repo.save(first, { ...x.ctx, commandId: randomUUID() }, base);
+  const count = await x.tx.getFirstAsync<{ n: number }>(
+    "SELECT count(*) AS n FROM sync_outbox",
+  );
+  await expect(
+    x.repo.save(
+      { ...first, city: "Lyon", postalCode: "69001", version: 3 },
+      { ...x.ctx, commandId: randomUUID() },
+      base,
+    ),
+  ).rejects.toThrow("STORE_CONTEXT_CHANGED");
+  expect((await x.repo.get(x.settings.storeId))!.entity).toEqual(first);
+  expect(
+    await x.tx.getFirstAsync("SELECT count(*) AS n FROM sync_outbox"),
+  ).toEqual(count);
+  // The user may explicitly reload the current baseline, then save exactly one revision.
+  const corrected = { ...first, city: "Lyon", postalCode: "69001", version: 3 };
+  await x.repo.save(corrected, { ...x.ctx, commandId: randomUUID() }, first);
+  expect((await x.repo.get(x.settings.storeId))!.entity).toEqual(corrected);
+});

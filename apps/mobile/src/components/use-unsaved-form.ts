@@ -4,24 +4,24 @@ import { useNavigation } from "expo-router";
 import { usePreventRemove } from "expo-router/react-navigation";
 
 /** Tabs keep the editor mounted; only destructive removals require confirmation. */
-export function useUnsavedProduct(dirty: boolean, saving: boolean) {
+export function useUnsavedForm(dirty: boolean, saving: boolean) {
   const navigation = useNavigation();
   usePreventRemove(dirty || saving, ({ data }) => {
     if (saving) {
       if (Platform.OS === "web") {
-        window.alert("Patientez jusqu’à la fin de l’enregistrement local.");
+        window.alert("Patientez jusqu’à la fin de l’opération en cours.");
         return;
       }
       Alert.alert(
-        "Enregistrement en cours",
-        "Patientez jusqu’à la fin de l’enregistrement local.",
+        "Opération en cours",
+        "Patientez jusqu’à la fin de l’opération en cours.",
       );
       return;
     }
     if (Platform.OS === "web") {
       if (
         window.confirm(
-          "Quitter sans enregistrer ? Vos modifications de cette fiche seront perdues.",
+          "Quitter sans enregistrer ? Vos modifications non enregistrées seront perdues.",
         )
       )
         navigation.dispatch(data.action);
@@ -29,7 +29,7 @@ export function useUnsavedProduct(dirty: boolean, saving: boolean) {
     }
     Alert.alert(
       "Quitter sans enregistrer ?",
-      "Vos modifications de cette fiche seront perdues.",
+      "Vos modifications non enregistrées seront perdues.",
       [
         { text: "Continuer la saisie", style: "cancel" },
         {

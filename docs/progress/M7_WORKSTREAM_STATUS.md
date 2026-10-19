@@ -418,3 +418,15 @@ La PR 278 précédente est fusionnée après ses deux CI exactes réussies (`393
 7. **UX/validation : en cours.** Transport compact des liens exacts Analytics, compatibilité, historique et redémarrage vérifiés localement ; Mongo transactionnel et exports finaux en CI. Recette native et autres portes V1 restent ouvertes.
 
 Preuves/limites : `../qa/M7_COMPACT_ANALYTICAL_SOURCES.md`. PR 279 fusionnée sur deux CI exactes réussies, merge `28c593b82cdbafa1f7aadd1705d3483e6ec410fc`, branche distante supprimée. Le correctif reste à livrer avec API compatible puis binaire groupé ; aucun build EAS ou appel IA payant.
+
+## Lot courant — réglages protégés et thème des formulaires (20 octobre 2026)
+
+1. **Actions/conflits : en cours.** Mon magasin refuse atomiquement une saisie fondée sur une ancienne configuration ; les autres corrections/conflits et tests deux appareils restent ouverts.
+2. **Contre-promo : code prêt**, livraison et acceptation groupées à faire.
+3. **Documents : en cours**, réception Resend/restauration et acceptation restantes inchangées.
+4. **Expertise : en cours**, évaluation métier restante.
+5. **Recommandations : en cours**, décision/réalisation/bilan réel et fraîcheur restent à accepter.
+6. **Implantation : en cours.** Retour du plan vers les réglages sans effacer la saisie ; illustration, contraintes et validation terrain restent ouvertes.
+7. **UX/validation : en cours.** Protection des réglages, erreurs françaises, zone accessible, thème web et classes d’erreur corrigés. Autres écrans, médias et recette native/M8 restent ouverts.
+
+PR 280 fusionnée après succès des CI exactes push `39331362090` et PR `39331396389`, tête `3517647f`, merge `6689432990c54ff618b3f72db63a8c26fbf101eb`, branche distante supprimée. Sources analytiques encore non livrées sur téléphone. Preuves du lot courant : `../qa/M7_UX_STORE_SETTINGS.md` ; aucune livraison automatique, aucun appel IA ou build EAS payant.

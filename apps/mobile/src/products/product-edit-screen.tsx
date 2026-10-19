@@ -14,7 +14,7 @@ import {
   type ProductEditorSnapshot,
 } from "./product-editor-service";
 import { useProductEditor } from "./use-product-editor";
-import { useUnsavedProduct } from "./use-unsaved-product";
+import { useUnsavedForm } from "../components/use-unsaved-form";
 import type { ProductEditorState } from "./product-editor-hooks.types";
 export function ProductEditScreen({ id }: { id: string }) {
   const state = useProductEditor(id === "new" ? undefined : id);
@@ -79,7 +79,7 @@ function LoadedProductEditor({
       ),
     [],
   );
-  useUnsavedProduct(form.dirty, form.saving);
+  useUnsavedForm(form.dirty, form.saving);
   useEffect(() => {
     if (savedId && !form.dirty && !form.saving)
       router.replace(`/(tabs)/products/${savedId}` as Href);
