@@ -17,6 +17,7 @@ import {
 import {
   generateCopilotResponse,
   validateCopilotResponse,
+  type CopilotGenerationFailure,
 } from "./response-service";
 function request(): CopilotGenerationRequest {
   const candidate = priorityFixture("candidate", {
@@ -444,4 +445,188 @@ it("retains a verified correction review card when only the generated narrative 
   const generated = await generateCopilotResponse(provider, r);
   expect(generated.mode).toBe("FALLBACK");
   expect(generated.receiptCorrectionPreviews).toEqual([preview]);
+});
+
+it.each([
+  "COPILOT_AI_TIMEOUT",
+  "COPILOT_AI_RATE_LIMITED",
+  "COPILOT_AI_CONFIGURATION_REQUIRED",
+  "COPILOT_AI_OUTPUT_INVALID",
+  "COPILOT_AI_OUTPUT_LIMIT",
+] as const)(
+  "reports %s once without leaking provider text or replacing the requested periods",
+  async (code) => {
+    const error = new CopilotAiError(
+      code,
+      code.endsWith("TIMEOUT") || code.endsWith("RATE_LIMITED"),
+    );
+    error.message = "private provider response, credentials and document text";
+    const provider = {
+      model: "test",
+      generate: vi.fn().mockRejectedValue(error),
+    } as CopilotAiProvider;
+    const r = {
+      ...request(),
+      userQuestion: "Analyse les ventes de novembre 2024 et 2025.",
+    };
+    const onFailure = vi.fn();
+    const result = await generateCopilotResponse(
+      provider,
+      r,
+      undefined,
+      undefined,
+      undefined,
+      onFailure,
+    );
+    expect(result.mode).toBe("FALLBACK");
+    expect(result.response.facts).toEqual([]);
+    expect(result.response.recommendations).toEqual([]);
+    expect(result.response.summary).toContain("réessayer");
+    expect(onFailure).toHaveBeenCalledTimes(1);
+    expect(onFailure).toHaveBeenCalledWith({
+      requestId: r.requestId,
+      kind: "GENERATION",
+      code,
+      retryable: error.retryable,
+      durationMs: expect.any(Number),
+    });
+    expect(onFailure.mock.calls[0]![0].durationMs).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify([result, onFailure.mock.calls])).not.toContain(
+      error.message,
+    );
+    expect(JSON.stringify(result)).not.toContain(code);
+    expect(provider.generate).toHaveBeenCalledTimes(1);
+  },
+);
+it("distinguishes failed grounding after partial progress from provider unavailability", async () => {
+  const provider = {
+    model: "test",
+    generate: vi.fn(
+      async (...args: Parameters<CopilotAiProvider["generate"]>) => {
+        const progress = args[3];
+        progress?.(
+          { narrative: "La comparaison est en cours.", facts: [] },
+          [],
+        );
+        return {
+          output: { ...answer, narrative: "Le total est 999 euros." },
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: "mock",
+            inputTokens: null,
+            outputTokens: null,
+          },
+        };
+      },
+    ),
+  } as CopilotAiProvider;
+  const onFailure = vi.fn(),
+    progress = vi.fn();
+  const result = await generateCopilotResponse(
+    provider,
+    { ...request(), userQuestion: "Compare novembre 2024 et 2025" },
+    undefined,
+    progress,
+    undefined,
+    onFailure,
+  );
+  expect(progress).toHaveBeenCalled();
+  expect(onFailure).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "GROUNDING",
+      code: "UNSUPPORTED_NUMBER",
+      retryable: false,
+    }),
+  );
+  expect(result.response.facts).toEqual([]);
+  expect(JSON.stringify(result)).not.toContain("999");
+});
+it("does not turn successful generation, cancellation or unexpected bugs into reported fallbacks", async () => {
+  const onFailure = vi.fn();
+  const provider = {
+    model: "test",
+    generate: vi.fn().mockResolvedValue({ output: answer, metadata: null }),
+  } as CopilotAiProvider;
+  expect(
+    (
+      await generateCopilotResponse(
+        provider,
+        request(),
+        undefined,
+        undefined,
+        undefined,
+        onFailure,
+      )
+    ).mode,
+  ).toBe("AI");
+  for (const error of [
+    new CopilotAiError("COPILOT_AI_CANCELLED", false),
+    new Error("unexpected"),
+  ]) {
+    vi.mocked(provider.generate).mockRejectedValueOnce(error);
+    await expect(
+      generateCopilotResponse(
+        provider,
+        request(),
+        undefined,
+        undefined,
+        undefined,
+        onFailure,
+      ),
+    ).rejects.toThrow();
+  }
+  expect(onFailure).not.toHaveBeenCalled();
+});
+it("saves a safe answer even when the diagnostics sink fails", async () => {
+  const provider = {
+    model: "test",
+    generate: vi
+      .fn()
+      .mockRejectedValue(new CopilotAiError("COPILOT_AI_TIMEOUT", true)),
+  } as CopilotAiProvider;
+  const result = await generateCopilotResponse(
+    provider,
+    { ...request(), userQuestion: "Compare les ventes" },
+    undefined,
+    undefined,
+    undefined,
+    () => {
+      throw new Error("sink unavailable");
+    },
+  );
+  expect(result.mode).toBe("FALLBACK");
+  expect(result.response.facts).toEqual([]);
+});
+it("does not present the latest daily snapshot for an attachment-only request", async () => {
+  const provider = {
+    model: "test",
+    generate: vi
+      .fn()
+      .mockRejectedValue(new CopilotAiError("COPILOT_AI_UNAVAILABLE", true)),
+  } as CopilotAiProvider;
+  const r = {
+    ...request(),
+    attachedSources: [
+      {
+        sourceDocumentId: randomUUID(),
+        filename: "novembre.pdf",
+        mediaType: "application/pdf",
+        sourceType: "WEEKLY_COMMERCIAL_PDF" as const,
+        status: "PENDING_UPLOAD" as const,
+        registeredAt: priorityEvaluatedAt,
+      },
+    ],
+  };
+  const failures: CopilotGenerationFailure[] = [];
+  const result = await generateCopilotResponse(
+    provider,
+    r,
+    undefined,
+    undefined,
+    undefined,
+    (f) => failures.push(f),
+  );
+  expect(result.response.facts).toEqual([]);
+  expect(failures).toHaveLength(1);
 });

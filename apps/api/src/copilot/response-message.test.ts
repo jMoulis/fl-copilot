@@ -66,7 +66,7 @@ function fixture() {
     },
   };
 }
-it("binds assistant identity and parent while rendering canonical numbers", () => {
+it("binds assistant identity and parent without substituting daily figures for a failed chat answer", () => {
   const f = fixture();
   const result = buildCopilotResponseMessage(f);
   expect(result).toMatchObject({
@@ -75,7 +75,8 @@ it("binds assistant identity and parent while rendering canonical numbers", () =
     replyToMessageId: f.parent.id,
     role: "ASSISTANT",
   });
-  expect(result.text).toContain("Ventes : 25");
+  expect(result.text).toContain("Je n’ai pas pu terminer cette analyse");
+  expect(result.text).not.toContain("Ventes : 25");
   expect(
     buildCopilotResponseMessage({
       ...f,
@@ -126,6 +127,7 @@ it("renders canonical numbers retrieved during generation even when absent from 
     ...f,
     generation: {
       ...f.generation,
+      mode: "AI",
       evidence: [evidence],
       response: {
         language: "fr-FR",
@@ -255,4 +257,13 @@ it("keeps both cited comparison originals available without embedding private do
     "corrige.pdf",
   ]);
   expect(JSON.stringify(message)).not.toContain("https://");
+});
+
+it("preserves the deterministic no-question brief outside the chat", () => {
+  const f = fixture();
+  const message = buildCopilotResponseMessage({
+    ...f,
+    request: { ...f.request, userQuestion: null },
+  });
+  expect(message.text).toContain("Ventes : 25");
 });

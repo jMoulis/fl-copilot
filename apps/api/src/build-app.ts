@@ -1283,6 +1283,23 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             authorize,
             allowMemorySuggestions:
               request.headers["x-copilot-memory-suggestions"] === "1",
+            onGenerationFailure: (failure) => {
+              app.log.error(
+                {
+                  ...failure,
+                  httpRequestId: request.id,
+                  model: config.COPILOT_AI_MODEL ?? "unconfigured",
+                  deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown",
+                },
+                "Copilot generation fallback",
+              );
+              // Only the allowlisted failure code, never the provider error/body.
+              captureApiError(new Error(`Copilot fallback: ${failure.code}`), {
+                code: failure.code,
+                method: request.method,
+                requestId: request.id,
+              });
+            },
             onActivity:
               streaming && request.headers["x-copilot-activity"] === "1"
                 ? (activity) =>
@@ -1324,6 +1341,26 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         return result;
       } catch (error) {
         if (stream) {
+          if (
+            !abort.signal.aborted &&
+            !(error instanceof AuthError) &&
+            !(error instanceof CopilotTurnError) &&
+            !(error instanceof CopilotTurnLeaseError)
+          ) {
+            app.log.error(
+              {
+                code: "COPILOT_STREAM_FAILED",
+                httpRequestId: request.id,
+                deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown",
+              },
+              "Copilot stream failed",
+            );
+            captureApiError(new Error("Copilot stream failed"), {
+              code: "COPILOT_STREAM_FAILED",
+              method: request.method,
+              requestId: request.id,
+            });
+          }
           if (!abort.signal.aborted) emit({ type: "error" });
           stream.end();
           return reply;

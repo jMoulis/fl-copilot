@@ -10,6 +10,7 @@ import {
   type CopilotAiProvider,
   type CopilotGenerationRequest,
   type CopilotGenerationMetadata,
+  type CopilotAiErrorCode,
 } from "./ai-provider.js";
 
 export class CopilotGroundingError extends Error {
@@ -27,6 +28,14 @@ export class CopilotGroundingError extends Error {
     this.name = "CopilotGroundingError";
   }
 }
+/** Server-only, content-free diagnostics. Never persisted in conversational text. */
+export type CopilotGenerationFailure = {
+  requestId: string;
+  kind: "GENERATION" | "GROUNDING";
+  code: CopilotAiErrorCode | CopilotGroundingError["code"];
+  retryable: boolean;
+  durationMs: number;
+};
 export function copilotRequestEvidence(request: CopilotGenerationRequest) {
   return [
     ...(request.evidence ?? []),
@@ -112,6 +121,18 @@ export function validateCopilotResponse(
 export function copilotResponseFallback(
   request: CopilotGenerationRequest,
 ): CopilotResponse {
+  // The default daily snapshot is not an answer to an arbitrary chat question.
+  // Keep that deterministic overview only for the dedicated no-question brief.
+  if (request.userQuestion?.trim() || request.attachedSources?.length)
+    return copilotResponseSchema.parse({
+      language: "fr-FR",
+      summary:
+        "Je n’ai pas pu terminer cette analyse. Tu peux me demander de réessayer ; ta demande et tes fichiers sont conservés.",
+      facts: [],
+      interpretation: [],
+      recommendations: [],
+      questions: [],
+    });
   const evidenceValues = new Map<string, Set<string>>();
   for (const item of copilotRequestEvidence(request)) {
     const values = evidenceValues.get(item.id) ?? new Set<string>();
@@ -197,6 +218,7 @@ export async function generateCopilotResponse(
   signal?: AbortSignal,
   onProgress?: (text: string) => void,
   onActivity?: (activity: CopilotActivity) => void,
+  onFailure?: (failure: CopilotGenerationFailure) => void,
 ): Promise<{
   mode: "AI" | "FALLBACK";
   factTrace?: Awaited<ReturnType<CopilotAiProvider["generate"]>>["factTrace"];
@@ -294,6 +316,7 @@ export async function generateCopilotResponse(
   )
     throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
   if (signal?.aborted) throw new CopilotAiError("COPILOT_AI_CANCELLED", false);
+  const startedAt = performance.now();
   let completed: Awaited<ReturnType<CopilotAiProvider["generate"]>> | undefined;
   try {
     const generated = await provider.generate(
@@ -387,6 +410,18 @@ export async function generateCopilotResponse(
       !(error instanceof CopilotGroundingError)
     )
       throw error;
+    try {
+      onFailure?.({
+        requestId: request.requestId,
+        kind:
+          error instanceof CopilotGroundingError ? "GROUNDING" : "GENERATION",
+        code: error.code,
+        retryable: error instanceof CopilotAiError && error.retryable,
+        durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+      });
+    } catch {
+      // Observability must never prevent the safe response from being saved.
+    }
     return {
       mode: "FALLBACK",
       response: copilotResponseFallback(request),

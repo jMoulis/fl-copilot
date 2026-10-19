@@ -51,7 +51,10 @@ import type {
   CopilotAiProvider,
   CopilotGenerationRequest,
 } from "./ai-provider.js";
-import { generateCopilotResponse } from "./response-service.js";
+import {
+  generateCopilotResponse,
+  type CopilotGenerationFailure,
+} from "./response-service.js";
 import { buildCopilotResponseMessage } from "./response-message.js";
 import {
   appendCopilotResponse,
@@ -84,6 +87,7 @@ export async function runCopilotTurn(
     now?: () => Date;
     onProgress?: (text: string) => void;
     onActivity?: (activity: CopilotActivity) => void;
+    onGenerationFailure?: (failure: CopilotGenerationFailure) => void;
     allowMemorySuggestions?: boolean;
   },
   raw: CopilotTurnRequest,
@@ -250,6 +254,7 @@ export async function runCopilotTurn(
       signal,
       dependencies.onProgress,
       dependencies.onActivity,
+      dependencies.onGenerationFailure,
     );
     cancelled();
     const renewed = await dependencies.authorize();

@@ -18,7 +18,10 @@ import {
   readTrackingWithFactContext,
   factReadFromTool,
 } from "../src/copilot/fact-context";
-import type { CopilotAiProvider } from "../src/copilot/ai-provider";
+import {
+  CopilotAiError,
+  type CopilotAiProvider,
+} from "../src/copilot/ai-provider";
 import {
   scoreCopilotPriorities,
   detectCopilotConflicts,
@@ -403,5 +406,49 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       },
       60000,
     );
+    it("persists an outage reply once, reports its safe cause, and preserves the request without unrelated daily facts", async () => {
+      const f = await fixture();
+      f.generate.mockRejectedValueOnce(
+        new CopilotAiError("COPILOT_AI_TIMEOUT", true),
+      );
+      const onGenerationFailure = vi.fn();
+      const deps = { ...f.deps, onGenerationFailure };
+      const first = await runCopilotTurn(deps, f.turn);
+      const replay = await runCopilotTurn(deps, f.turn);
+      expect(first.alreadyApplied).toBe(false);
+      expect(replay).toEqual({ message: first.message, alreadyApplied: true });
+      expect(f.generate).toHaveBeenCalledTimes(1);
+      expect(onGenerationFailure).toHaveBeenCalledTimes(1);
+      expect(onGenerationFailure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "GENERATION",
+          code: "COPILOT_AI_TIMEOUT",
+          retryable: true,
+        }),
+      );
+      expect(first.message.text).toContain("réessayer");
+      expect(first.message.text).not.toContain("100");
+      expect(first.message.text).not.toContain("COPILOT_AI_TIMEOUT");
+      expect(
+        await db
+          .collection("copilotMessages")
+          .countDocuments({ _id: f.message.id as never }),
+      ).toBe(1);
+      expect(
+        await db
+          .collection("copilotMessages")
+          .countDocuments({ _id: f.turn.replyId as never }),
+      ).toBe(1);
+      expect(
+        await db
+          .collection("copilotFactContexts")
+          .countDocuments({ _id: f.turn.replyId as never }),
+      ).toBe(0);
+      expect(
+        await db
+          .collection("productDailyPerformance")
+          .findOne({ _id: f.performance._id as never }),
+      ).toEqual(f.performance);
+    }, 60000);
   },
 );
