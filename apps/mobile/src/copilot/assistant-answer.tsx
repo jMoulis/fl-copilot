@@ -123,7 +123,7 @@ export function AssistantAnswer({
       >
         {source ? (
           <View style={styles.answer}>
-            <Text selectable={selectable} style={styles.bold}>
+            <Text selectable={selectable} style={[styles.text, styles.bold]}>
               {source.label}
             </Text>
             <Text selectable={selectable} style={styles.text}>
