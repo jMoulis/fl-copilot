@@ -93,7 +93,7 @@ export default function WasteImportScreen() {
           title="Photo importée"
           subtitle="Le ticket est conservé dans l’espace privé de l’application."
         />
-        <View className="gap-4 rounded-3xl border border-line bg-white p-5">
+        <View className="gap-4 rounded-3xl border border-line bg-surface p-5">
           <StatusBadge status={possibleDuplicate ? "incomplete" : "pending"} />
           <Text className="text-base leading-6 text-ink">
             {possibleDuplicate
@@ -120,7 +120,7 @@ export default function WasteImportScreen() {
         subtitle="Choisissez une photo complète et lisible du ticket de casse."
       />
       {error ? <InlineAlert title="Import impossible" message={error} /> : null}
-      <View className="gap-3 rounded-3xl border border-line bg-white p-5">
+      <View className="gap-3 rounded-3xl border border-line bg-surface p-5">
         <Text className="text-base leading-6 text-ink">
           Formats acceptés : JPEG, PNG et HEIC.
         </Text>

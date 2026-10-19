@@ -47,7 +47,7 @@ export function CopilotInlineFormCard({
     READY: "",
   }[form.status];
   return (
-    <View className="w-full max-w-xl gap-4 rounded-2xl border border-line bg-white p-4">
+    <View className="w-full max-w-xl gap-4 rounded-2xl border border-line bg-surface p-4">
       <Text
         accessibilityRole="header"
         className="text-lg font-semibold text-ink"

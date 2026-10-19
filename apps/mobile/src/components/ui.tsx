@@ -71,7 +71,7 @@ export function SectionCard({
   children,
 }: PropsWithChildren<{ title: string; description?: string }>) {
   return (
-    <View className="gap-4 rounded-3xl border border-line bg-white p-5">
+    <View className="gap-4 rounded-3xl border border-line bg-surface p-5">
       <Text
         accessibilityRole="header"
         className="text-lg font-semibold text-ink"
@@ -97,7 +97,7 @@ export function MetricCard({
   detail?: string;
 }) {
   return (
-    <View className="gap-2 rounded-2xl border border-line bg-white p-5">
+    <View className="gap-2 rounded-2xl border border-line bg-surface p-5">
       <Text className="text-base text-muted">{label}</Text>
       <Text className="text-3xl font-bold text-ink">
         {value ?? "Indisponible"}
@@ -246,13 +246,13 @@ function Button({
         minHeight: 48,
         opacity: disabled ? 0.45 : pressed ? 0.75 : 1,
       })}
-      className={`flex-row items-center justify-center gap-2 rounded-2xl border px-5 py-3 ${secondary ? "border-forest bg-white" : "border-forest bg-forest"}`}
+      className={`flex-row items-center justify-center gap-2 rounded-2xl border px-5 py-3 ${secondary ? "border-forest bg-surface" : "border-forest bg-forest"}`}
     >
       {loading ? (
         <ActivityIndicator color={secondary ? colors.forest : colors.surface} />
       ) : null}
       <Text
-        className={`flex-shrink text-center text-base font-semibold ${secondary ? "text-forest" : "text-white"}`}
+        className={`flex-shrink text-center text-base font-semibold ${secondary ? "text-forest" : "text-on-accent"}`}
       >
         {label}
       </Text>
@@ -275,7 +275,7 @@ export function InlineAlert({
   return (
     <View
       accessibilityRole="alert"
-      className="gap-2 rounded-2xl border border-line bg-white p-4"
+      className="gap-2 rounded-2xl border border-line bg-surface p-4"
     >
       <Text className="text-base font-semibold text-ink">ⓘ {title}</Text>
       <Text className="text-base leading-6 text-muted">{message}</Text>
@@ -293,7 +293,7 @@ export function EmptyState({
   icon?: React.ComponentProps<typeof Ionicons>["name"];
 }>) {
   return (
-    <View className="items-start gap-4 rounded-3xl border border-line bg-white p-6">
+    <View className="items-start gap-4 rounded-3xl border border-line bg-surface p-6">
       <View className="rounded-2xl bg-canvas p-3">
         <Ionicons
           name={icon}
@@ -413,7 +413,7 @@ export function BottomSheet({
           edges={["bottom", "left", "right"]}
           accessibilityViewIsModal
           onAccessibilityEscape={onClose}
-          className="rounded-t-3xl bg-white"
+          className="rounded-t-3xl bg-surface"
           style={{ maxHeight: "90%" }}
         >
           {swipeToClose ? (

@@ -78,7 +78,7 @@ export default function LoginScreen() {
               returnKeyType="send"
               onSubmitEditing={() => void submit()}
               accessibilityLabel="Adresse e-mail"
-              className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-base text-ink"
+              className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink"
             />
           )}
         />

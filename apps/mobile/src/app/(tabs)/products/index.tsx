@@ -46,7 +46,7 @@ export default function ProductListScreen() {
               onPress={() =>
                 router.push(`/(tabs)/products/${record.entity.id}` as Href)
               }
-              className="gap-3 rounded-3xl border border-line bg-white p-5"
+              className="gap-3 rounded-3xl border border-line bg-surface p-5"
               style={({ pressed }) => ({ opacity: pressed ? 0.75 : 1 })}
             >
               <Text className="text-lg font-semibold text-ink">

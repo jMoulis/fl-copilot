@@ -1014,7 +1014,7 @@ function LineEditor({
             className={`min-h-12 justify-center rounded-xl border px-4 py-3 ${
               draft.line.matchedProductId === candidate.productId
                 ? "border-forest bg-positive-soft"
-                : "border-line bg-white"
+                : "border-line bg-surface"
             }`}
           >
             <Text className="font-semibold text-ink">{candidate.label}</Text>
@@ -1131,7 +1131,7 @@ function Field({
         keyboardType={decimal ? "decimal-pad" : "default"}
         accessibilityLabel={label}
         accessibilityHint={issue}
-        className={`min-h-12 rounded-xl border px-3 text-base text-ink ${issue ? "border-critical bg-critical-soft" : "border-line bg-white"}`}
+        className={`min-h-12 rounded-xl border px-3 text-base text-ink ${issue ? "border-critical bg-critical-soft" : "border-line bg-surface"}`}
       />
       {issue ? (
         <Text accessibilityRole="alert" className="text-sm text-critical">

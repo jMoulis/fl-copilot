@@ -1,0 +1,329 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { router, type Href } from "expo-router";
+import { Pressable, Text, View } from "react-native";
+import {
+  AppHeader,
+  AppScreen,
+  EmptyState,
+  InlineAlert,
+  MetricCard,
+  PrimaryButton,
+  SecondaryButton,
+  SectionCard,
+  StatusBadge,
+} from "@/components/ui";
+import { colors } from "@/design/tokens";
+import { useSync } from "@/sync/sync-provider";
+import type {
+  TodayMovement,
+  TodayPriority,
+  TodaySummary,
+} from "@/today/today-summary";
+import {
+  formatBusinessDate,
+  formatCurrency,
+  formatSignedCurrency,
+  formatSignedPercentage,
+  priorityFact,
+  priorityPresentation,
+} from "@/today/today-priority-presentation";
+import { useTodaySummary } from "@/today/use-today-summary";
+
+export default function TodayScreen() {
+  const { loading, refreshing, storeMissing, summary, error, refresh } =
+    useTodaySummary();
+  const sync = useSync();
+
+  return (
+    <AppScreen
+      refreshing={refreshing}
+      onRefresh={() => {
+        void refresh();
+      }}
+    >
+      <AppHeader
+        title="Aujourd’hui"
+        subtitle={
+          summary
+            ? `Journée analysée : ${formatBusinessDate(summary.businessDate)}`
+            : "Un regard clair sur votre rayon."
+        }
+      >
+        {summary ? (
+          <View className="flex-row flex-wrap gap-2 pt-1">
+            {summary.origin === "LOCAL" ? <StatusBadge status="local" /> : null}
+            <StatusBadge status={sync.status} />
+          </View>
+        ) : null}
+      </AppHeader>
+
+      <SecondaryButton
+        label="Signaler une observation magasin"
+        disabled={storeMissing}
+        onPress={() => router.push("/store-event" as Href)}
+      />
+      {error ? (
+        <InlineAlert title="Lecture impossible" message={error} />
+      ) : null}
+
+      {storeMissing ? (
+        <InlineAlert
+          title="Aucun magasin actif"
+          message="Reconnectez-vous après l’ajout de votre magasin."
+        />
+      ) : loading ? (
+        <Text className="text-base text-muted">Préparation de la journée…</Text>
+      ) : summary ? (
+        <TodayContent summary={summary} />
+      ) : error ? null : (
+        <EmptyToday />
+      )}
+    </AppScreen>
+  );
+}
+
+function EmptyToday() {
+  return (
+    <EmptyState
+      title="Aucune journée analysable"
+      message="Importez les ventes Mercalys pour afficher vos indicateurs et vos premières priorités."
+      icon="analytics-outline"
+    >
+      <PrimaryButton
+        label="Importer les ventes"
+        onPress={() => router.push("/(tabs)/imports" as Href)}
+      />
+      <SecondaryButton
+        label="Voir les produits"
+        onPress={() => router.push("/(tabs)/products" as Href)}
+      />
+    </EmptyState>
+  );
+}
+
+function TodayContent({ summary }: { summary: TodaySummary }) {
+  return (
+    <>
+      <View className="gap-3">
+        {summary.kpis.map((kpi) => (
+          <MetricCard
+            key={kpi.id}
+            label={kpi.label}
+            value={formatCurrency(kpi.value)}
+            detail={comparisonLabel(kpi.comparison)}
+          />
+        ))}
+        <Text className="text-xs leading-5 text-muted">
+          {summary.productCount} produit
+          {summary.productCount > 1 ? "s" : ""} calculé
+          {summary.productCount > 1 ? "s" : ""} · Mise à jour{" "}
+          {formatFreshness(summary.computedAt)}
+        </Text>
+      </View>
+
+      <SectionCard
+        title="Priorités"
+        description="Trois signaux déterministes maximum, classés par impact."
+      >
+        {summary.priorities.length === 0 ? (
+          <Text className="text-base leading-6 text-muted">
+            Aucune priorité ne dépasse les seuils actuels pour cette journée.
+          </Text>
+        ) : (
+          <View className="gap-3">
+            {summary.priorities.map((priority) => (
+              <PriorityCard key={priority.id} priority={priority} />
+            ))}
+          </View>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="Mouvements clés"
+        description="Écarts économiques les plus importants par rapport à J-7."
+      >
+        {summary.movements.length === 0 ? (
+          <Text className="text-base leading-6 text-muted">
+            Les mouvements apparaîtront lorsqu’une journée comparable J-7 sera
+            disponible.
+          </Text>
+        ) : (
+          <View className="gap-1">
+            {summary.movements.map((movement) => (
+              <MovementRow key={movement.id} movement={movement} />
+            ))}
+          </View>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Tensions magasin">
+        <View className="flex-row items-start gap-3">
+          <Ionicons
+            name="checkmark-circle-outline"
+            size={22}
+            color={colors.positive}
+            accessible={false}
+          />
+          <Text className="flex-1 text-base leading-6 text-muted">
+            Aucune tension magasin n’est enregistrée pour cette journée.
+          </Text>
+        </View>
+      </SectionCard>
+
+      {summary.dataQuality.alertMessage ? (
+        <View className="gap-3">
+          <InlineAlert
+            title="Données à vérifier"
+            message={summary.dataQuality.alertMessage}
+          />
+          {summary.dataQuality.unresolvedProductCount > 0 ? (
+            <SecondaryButton
+              label="Voir les imports"
+              onPress={() => router.push("/(tabs)/imports" as Href)}
+            />
+          ) : null}
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+function PriorityCard({ priority }: { priority: TodayPriority }) {
+  const presentation = priorityPresentation(priority);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${priority.rank}. ${presentation.title}. ${presentation.reason}`}
+      onPress={() =>
+        router.push({
+          pathname: "/(tabs)/priority/[id]",
+          params: { id: priority.id },
+        } as Href)
+      }
+      className="gap-3 rounded-2xl bg-surface-muted p-4"
+      style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
+    >
+      <View className="flex-row items-start gap-3">
+        <View className="h-9 w-9 items-center justify-center rounded-full bg-forest">
+          <Text className="text-base font-bold text-on-accent">
+            {priority.rank}
+          </Text>
+        </View>
+        <View className="flex-1 gap-1">
+          <Text className="text-xs font-bold uppercase tracking-wider text-forest">
+            Signal déterministe
+          </Text>
+          <Text className="text-lg font-semibold text-ink">
+            {presentation.title}
+          </Text>
+          <Text className="text-sm leading-5 text-muted">
+            {presentation.reason}
+          </Text>
+        </View>
+        <Ionicons
+          name="chevron-forward"
+          size={20}
+          color={colors.muted}
+          accessible={false}
+        />
+      </View>
+      <View className="rounded-xl bg-surface px-3 py-2">
+        <Text className="text-sm font-semibold text-ink">
+          {priorityFact(priority)}
+        </Text>
+      </View>
+      <View className="gap-1">
+        <Text className="text-xs font-bold uppercase tracking-wider text-muted">
+          Action proposée
+        </Text>
+        <Text className="text-sm leading-5 text-ink">
+          {presentation.action}
+        </Text>
+      </View>
+      {priority.status === "LOW_QUALITY" ? (
+        <StatusBadge status="incomplete" />
+      ) : null}
+    </Pressable>
+  );
+}
+
+function MovementRow({ movement }: { movement: TodayMovement }) {
+  const positive = isPositiveMovement(movement);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${movement.productLabel}. ${movementLabel(movement)}`}
+      onPress={() =>
+        router.push(`/(tabs)/products/${movement.productId}` as Href)
+      }
+      className="flex-row items-center gap-3 border-b border-line py-3"
+      style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
+    >
+      <View
+        className={`rounded-xl p-2 ${positive ? "bg-positive-soft" : "bg-critical-soft"}`}
+      >
+        <Ionicons
+          name={positive ? "trending-up" : "trending-down"}
+          size={20}
+          color={positive ? colors.positive : colors.critical}
+          accessible={false}
+        />
+      </View>
+      <View className="flex-1 gap-1">
+        <Text className="text-base font-semibold text-ink">
+          {movement.productLabel}
+        </Text>
+        <Text className="text-sm leading-5 text-muted">
+          {movementLabel(movement)}
+        </Text>
+      </View>
+      <Ionicons
+        name="chevron-forward"
+        size={20}
+        color={colors.muted}
+        accessible={false}
+      />
+    </Pressable>
+  );
+}
+
+function movementLabel(movement: TodayMovement) {
+  const metric =
+    movement.metric === "SALES"
+      ? "ventes"
+      : movement.metric === "MARGIN"
+        ? "marge"
+        : "casse";
+  const amount = formatSignedCurrency(movement.absoluteDifference);
+  const percentage = formatSignedPercentage(movement.percentageDifference);
+  return `${amount} de ${metric}${percentage ? ` · ${percentage}` : ""}`;
+}
+
+function comparisonLabel(
+  comparison: TodaySummary["kpis"][number]["comparison"],
+) {
+  if (
+    comparison.status === "UNAVAILABLE" ||
+    comparison.absoluteDifference === null
+  ) {
+    return "Comparaison J-7 indisponible";
+  }
+  const percentage = formatSignedPercentage(comparison.percentageDifference);
+  return percentage
+    ? `${percentage} vs J-7`
+    : `${formatSignedCurrency(comparison.absoluteDifference)} vs J-7`;
+}
+
+function isPositiveMovement(movement: TodayMovement) {
+  const positive = Number(movement.absoluteDifference) >= 0;
+  return movement.metric === "WASTE" ? !positive : positive;
+}
+
+function formatFreshness(value: string) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
