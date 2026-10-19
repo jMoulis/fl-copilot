@@ -241,9 +241,13 @@ export function StoreLayoutPanel({
       ) : !content ? (
         <EmptyState
           title="Votre plan de rayon"
-          message="Commencez avec le repère du magasin pilote : deux îlots de huit éléments et trois TG. Les mesures issues du plan de référence resteront à confirmer."
+          message={
+            head
+              ? "Aucun plan n’est actif après l’abandon du brouillon. Retrouvez une version dans l’historique pour la reprendre, avec les mêmes éléments et surfaces."
+              : "Commencez avec le repère du magasin pilote : deux îlots de huit éléments et trois TG. Les mesures issues du plan de référence resteront à confirmer."
+          }
         >
-          {allowed ? (
+          {!head && allowed ? (
             <PrimaryButton
               label="Créer un brouillon à partir du plan pilote"
               loading={busy}
@@ -251,7 +255,9 @@ export function StoreLayoutPanel({
             />
           ) : (
             <Text className="text-muted">
-              Le responsable du magasin peut initialiser le plan.
+              {head
+                ? "Les versions et leurs mesures restent conservées dans l’historique ci-dessous."
+                : "Le responsable du magasin peut initialiser le plan."}
             </Text>
           )}
         </EmptyState>

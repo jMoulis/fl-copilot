@@ -4,7 +4,9 @@ PR 267, workstream 6. Entry: **Plus → Mon magasin → Plan et mobilier**. Uses
 
 ## Automated checks
 
-Twenty new cases cover the 19-element drawing, separate group envelopes, all four assembly orientations, explicit positions and room overflows, optional hosted mobiles, viewport bounds, French centimetres, reference/declared/measured/unknown qualification, invalid input, edit/undo state anchored to a revision, comparison independent of array order, abandoned draft selection and exact historical snapshots scoped to their store. `pnpm check`: 2,027 local tests passed; 483 environment-dependent cases skipped locally. CI runs the transactional regressions and native exports.
+Twenty-one new cases cover the 19-element drawing, separate group envelopes, all four assembly orientations, explicit positions and room overflows, optional hosted mobiles, viewport bounds, French centimetres, reference/declared/measured/unknown qualification, invalid input, edit/undo state anchored to a revision, comparison independent of array order, abandoned draft selection and exact historical snapshots scoped to their store. `pnpm check`: 2,028 local tests passed; 483 environment-dependent cases skipped locally. CI runs the transactional regressions and native exports.
+
+Abandoning the first draft without a reference leaves history accessible; resuming its immutable snapshot preserves every furniture and surface ID. It does not reseed a second inventory.
 
 The drawing-only fallback subdivides an assembly into face/order cells for selection. Those rectangles are not measured module dimensions, are visibly marked as schematic and never mutate stored furniture or surfaces. The room outline is shown only when its dimensions are known, retaining their displayed qualification. Neither the diagram nor adoption of a reference certifies fit, clearance or load capacity.
 

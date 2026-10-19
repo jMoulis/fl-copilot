@@ -206,13 +206,15 @@ function StorePlan({
         notice={notice}
         onBack={() => router.back()}
         onSync={() => router.push("/sync-center")}
-        onInitialize={() =>
-          save({
+        onInitialize={() => {
+          if (snapshot.head)
+            return Promise.reject(new Error("STORE_LAYOUT_SOURCE_CHANGED"));
+          return save({
             action: "SAVE_DRAFT",
-            expectedRevisionId: snapshot.head?.entity.revisionId ?? null,
+            expectedRevisionId: null,
             content: createPilotStoreLayout(randomUUID),
-          })
-        }
+          });
+        }}
         onAction={save}
         onResolve={resolve}
         onHistory={(before) => repo.history(storeId, 20, before)}
