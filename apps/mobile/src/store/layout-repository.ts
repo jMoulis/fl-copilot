@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { assertStoreLayoutAdoptable } from "@fl-copilot/commercial-core";
 import {
   storeLayoutSchema,
   storeLayoutRevisionSchema,
@@ -241,6 +242,8 @@ export class StoreLayoutRepository {
         }),
         source,
       );
+      if (next.action === "ADOPT_REFERENCE")
+        assertStoreLayoutAdoptable(next.content);
       await this.write(tx, next, ctx, prev?.version ?? null);
       await tx.runAsync(
         "INSERT INTO store_layout_operations(command_id,store_id,intent_json,payload_json) VALUES(?,?,?,?)",

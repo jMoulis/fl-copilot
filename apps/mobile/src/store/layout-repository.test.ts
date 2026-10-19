@@ -12,6 +12,7 @@ import {
 import {
   layoutFixture,
   nextLayout,
+  completeLayoutGeometry,
 } from "../../../../scripts/test-store-layout-fixtures";
 import {
   StoreLayoutRepository,
@@ -566,4 +567,29 @@ it("persists physical edits and optional mobiles offline, then restores their ex
     (await new OutboxRepository(tx).countActive(first.storeId)).pending_count,
   ).toBe(5);
   expect(await repo.history(first.storeId)).toHaveLength(5);
+});
+
+it("saves an impossible draft but refuses reference adoption atomically before history or Outbox changes", async () => {
+  const x = await setup(),
+    content = completeLayoutGeometry(),
+    tgs = content.furniture.filter((f) => f.kind === "TG");
+  tgs[1]!.x = tgs[0]!.x;
+  tgs[1]!.y = tgs[0]!.y;
+  const draft = await x.repo.save({ ...input(x), content }, x.ctx);
+  await expect(
+    x.repo.save(
+      {
+        storeId: draft.storeId,
+        expectedRevisionId: draft.revisionId,
+        action: "ADOPT_REFERENCE",
+      },
+      { ...x.ctx, commandId: randomUUID() },
+    ),
+  ).rejects.toThrow("STORE_LAYOUT_GEOMETRY_BLOCKED");
+  expect((await x.repo.get(draft.storeId))?.entity).toEqual(draft);
+  expect(await x.repo.reference(draft.storeId)).toBeNull();
+  expect(await x.repo.history(draft.storeId)).toHaveLength(1);
+  expect(
+    (await new OutboxRepository(x.tx).countActive(draft.storeId)).pending_count,
+  ).toBe(1);
 });
