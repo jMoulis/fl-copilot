@@ -2,7 +2,10 @@ import { Stack, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { BackHandler, Text, View } from "react-native";
 import { randomUUID } from "expo-crypto";
-import { addStoreLayoutMobile } from "@fl-copilot/commercial-core";
+import {
+  addStoreLayoutMobile,
+  checkStoreLayoutGeometry,
+} from "@fl-copilot/commercial-core";
 import {
   storeLayoutSchema,
   type StoreLayoutContent,
@@ -23,6 +26,7 @@ import type { SyncConflict } from "../sync/conflict-repository";
 import type { StoreLayoutRepository } from "./layout-repository";
 import { StoreLayoutMap } from "./layout-map";
 import { StoreLayoutElementSheet } from "./layout-element-sheet";
+import { LayoutGeometryReport } from "./layout-geometry-report";
 import {
   initialLayoutViewport,
   layoutChanges,
@@ -147,6 +151,14 @@ export function StoreLayoutPanel({
       snapshot.head?.syncState === "ERROR",
     canEdit = allowed && !blocked && !busy;
   const editing = !!edit;
+  const geometry = useMemo(
+    () => (content ? checkStoreLayoutGeometry(content) : null),
+    [content],
+  );
+  const reviewGeometry = useMemo(
+    () => (review ? checkStoreLayoutGeometry(review.after) : null),
+    [review],
+  );
   const screenOptions = useMemo(
     () => ({ gestureEnabled: !editing }),
     [editing],
@@ -376,6 +388,15 @@ export function StoreLayoutPanel({
               />
             ))}
           </SectionCard>
+          {geometry ? (
+            <SectionCard title="Vérification des emprises">
+              <LayoutGeometryReport
+                content={content}
+                result={geometry}
+                onSelect={select}
+              />
+            </SectionCard>
+          ) : null}
           {edit ? (
             <SectionCard title="Modifier le plan">
               <Text className="text-muted">
@@ -557,6 +578,19 @@ export function StoreLayoutPanel({
         ) : null}
         {review ? (
           <>
+            {reviewGeometry ? (
+              <LayoutGeometryReport
+                key={review.expectedRevisionId}
+                content={review.after}
+                result={reviewGeometry}
+              />
+            ) : null}
+            {review.kind === "ADOPT" && reviewGeometry?.status === "BLOCKED" ? (
+              <SecondaryButton
+                label="Revenir au plan pour corriger"
+                onPress={() => setReview(null)}
+              />
+            ) : null}
             <LayoutComparison
               key={review.expectedRevisionId + (review.sourceId ?? review.kind)}
               before={review.before}
@@ -581,7 +615,10 @@ export function StoreLayoutPanel({
               }
               loading={busy}
               disabled={
-                !canEdit || head?.revisionId !== review.expectedRevisionId
+                !canEdit ||
+                head?.revisionId !== review.expectedRevisionId ||
+                (review.kind === "ADOPT" &&
+                  reviewGeometry?.status === "BLOCKED")
               }
               onPress={() =>
                 void run(

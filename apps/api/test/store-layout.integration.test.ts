@@ -9,6 +9,7 @@ import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import {
   layoutFixture,
   nextLayout,
+  completeLayoutGeometry,
 } from "../../../scripts/test-store-layout-fixtures";
 import type { StoreLayout } from "@fl-copilot/domain";
 import type { SyncPushRequest } from "@fl-copilot/sync-contracts";
@@ -144,6 +145,51 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         expect(
           await db.collection(c).countDocuments({ storeId: p.storeId }),
         ).toBe(0);
+    }, 60000);
+    it("retains an impossible draft but rejects a forged adoption without publishing a reference or immutable revision", async () => {
+      const p = layoutFixture(),
+        push = createMongoSyncPushService(database);
+      p.content = completeLayoutGeometry();
+      const tgs = p.content.furniture.filter((f) => f.kind === "TG");
+      tgs[1]!.x = tgs[0]!.x;
+      tgs[1]!.y = tgs[0]!.y;
+      expect(
+        (await push.push(request(p), "draft", p.updatedBy)).results[0]?.status,
+      ).toBe("APPLIED");
+      const revisionId = randomUUID(),
+        adopted = nextLayout(p, {
+          action: "ADOPT_REFERENCE",
+          revisionId,
+          referenceRevisionId: revisionId,
+        }),
+        r = request(adopted);
+      const rejected = (await push.push(r, "bad-adoption", p.updatedBy))
+        .results[0]!;
+      expect(rejected.status).toBe("REJECTED");
+      expect(rejected.error?.code).toBe("STORE_LAYOUT_GEOMETRY_BLOCKED");
+      expect(
+        (await push.push(r, "replay", p.updatedBy)).results[0]?.status,
+      ).toBe("REJECTED");
+      const db = await database.getDb();
+      expect(
+        await db
+          .collection("storeLayoutRevisions")
+          .countDocuments({ storeId: p.storeId }),
+      ).toBe(1);
+      expect(
+        (await db.collection("storeLayouts").findOne({ storeId: p.storeId }))
+          ?.revisionId,
+      ).toBe(p.revisionId);
+      const pulled = await createMongoSyncPullService(database).pull(
+        p.storeId,
+        { limit: 500, storeLayouts: "true" },
+      );
+      expect(
+        pulled.changes.filter((c) => c.entityType === "store_layout"),
+      ).toHaveLength(1);
+      expect(
+        pulled.changes.some((c) => c.entityId === adopted.revisionId),
+      ).toBe(false);
     }, 60000);
     it("compares two device writes instead of overwriting, then accepts a deliberate rebased draft with both histories intact", async () => {
       const p = layoutFixture(),

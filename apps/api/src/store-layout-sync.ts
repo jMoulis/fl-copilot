@@ -5,6 +5,7 @@ import {
   type StoreLayout,
 } from "@fl-copilot/domain";
 import type { SyncCommand } from "@fl-copilot/sync-contracts";
+import { checkStoreLayoutGeometry } from "@fl-copilot/commercial-core";
 import type {
   MongoCommandMutationContext,
   CommandMutationResult,
@@ -39,7 +40,9 @@ export async function applyStoreLayoutCommand(
       error: {
         code,
         messageFr:
-          "Le plan reste conservé sur cet appareil. Rouvrez sa version avant de le modifier.",
+          code === "STORE_LAYOUT_GEOMETRY_BLOCKED"
+            ? "Ce plan présente une incompatibilité géométrique. Conservez le brouillon et ouvrez les éléments signalés avant de choisir la référence."
+            : "Le plan reste conservé sur cet appareil. Rouvrez sa version avant de le modifier.",
         retryable: false,
         requestId,
       },
@@ -94,6 +97,11 @@ export async function applyStoreLayoutCommand(
   } catch {
     return reject("STORE_LAYOUT_REVISION_INVALID");
   }
+  if (
+    p.action === "ADOPT_REFERENCE" &&
+    checkStoreLayoutGeometry(p.content).status === "BLOCKED"
+  )
+    return reject("STORE_LAYOUT_GEOMETRY_BLOCKED");
   if (await revisions.findOne({ _id: p.revisionId }, { session: ctx.session }))
     return reject("STORE_LAYOUT_REVISION_REUSED");
   const revision = storeLayoutRevisionSchema.parse({

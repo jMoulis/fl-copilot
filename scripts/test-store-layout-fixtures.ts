@@ -37,3 +37,25 @@ export function nextLayout(
     ...patch,
   });
 }
+
+/** Synthetic declared rectangles for geometry tests, never a real pilot survey or production fallback. */
+export function completeLayoutGeometry() {
+  const c = createPilotStoreLayout(randomUUID);
+  const declared = (mm: number) => ({ mm, quality: "DECLARED" as const });
+  for (const m of Object.values(c.room)) m.quality = "DECLARED";
+  for (const a of c.assemblies) {
+    for (const m of [a.x, a.y, a.dimensions.width, a.dimensions.depth])
+      m.quality = "DECLARED";
+    for (const f of c.furniture.filter((f) => f.assemblyId === a.id)) {
+      f.x = declared(a.x.mm! + (f.face === "B" ? 885 : 0));
+      f.y = declared(a.y.mm! + (f.order! - 1) * 1025);
+      f.rotation = 0;
+      f.dimensions.width = declared(885);
+      f.dimensions.depth = declared(1025);
+    }
+  }
+  for (const f of c.furniture.filter((f) => f.kind === "TG"))
+    for (const m of [f.x, f.y, f.dimensions.width, f.dimensions.depth])
+      m.quality = "DECLARED";
+  return c;
+}

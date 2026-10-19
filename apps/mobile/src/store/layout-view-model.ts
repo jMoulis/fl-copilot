@@ -347,6 +347,8 @@ export function layoutChanges(
 }
 export function layoutError(reason: unknown) {
   const code = reason instanceof Error ? reason.message : "";
+  if (code.includes("GEOMETRY_BLOCKED"))
+    return "Ce plan présente une incompatibilité géométrique. Votre brouillon reste conservé ; ouvrez les éléments signalés avant de choisir la référence.";
   if (code.includes("SOURCE_CHANGED"))
     return "Le plan a changé depuis votre ouverture. Votre saisie est conservée ; comparez les versions avant de reprendre.";
   if (code.includes("RESOLVE") || code.includes("RESOLUTION"))
