@@ -430,3 +430,15 @@ Preuves/limites : `../qa/M7_COMPACT_ANALYTICAL_SOURCES.md`. PR 279 fusionnée su
 7. **UX/validation : en cours.** Protection des réglages, erreurs françaises, zone accessible, thème web et classes d’erreur corrigés. Autres écrans, médias et recette native/M8 restent ouverts.
 
 PR 280 fusionnée après succès des CI exactes push `39331362090` et PR `39331396389`, tête `3517647f`, merge `6689432990c54ff618b3f72db63a8c26fbf101eb`, branche distante supprimée. Sources analytiques encore non livrées sur téléphone. Preuves du lot courant : `../qa/M7_UX_STORE_SETTINGS.md` ; aucune livraison automatique, aucun appel IA ou build EAS payant.
+
+## Lot courant — correction de tickets préservée et ciblée (20 octobre 2026)
+
+1. **Actions/conflits : en cours.** Correction manuelle fondée sur une version vérifiée ; publication concurrente et cibles retirées refusées. Le copilote conserve sa transaction révisée. Les autres reprises/conflits et recette deux appareils restent ouverts.
+2. **Contre-promo : code prêt**, livraison et acceptation groupées à faire.
+3. **Documents : en cours.** Originaux repliables mais accessibles, extraction incomplète distincte de zéro ligne, statuts publié/conflit/refus et corrections conservées. Réception Resend/restauration et autres portes ouvertes.
+4. **Expertise : en cours**, évaluation métier restante ; aucune instruction ou fournisseur supplémentaire.
+5. **Recommandations : en cours**, décision/réalisation/bilan réel restent à accepter.
+6. **Implantation : en cours**, illustration, contraintes et validation terrain restantes.
+7. **UX/validation : en cours.** Casse avec aperçu, garde de saisie et raccourcis vers les champs bloquants ; tests SQLite et contrôle visuel locaux passés. Catalogue hors candidats, autres écrans, chat, médias et recette native/M8 restent ouverts.
+
+PR 281 fusionnée après succès des CI exactes push `39332367255` et PR `39332407247`, tête `e4cc1285`, merge `f0942e173a194a61fe49d191e75f6d57d2221db3`, branche distante supprimée. Preuves/limites du lot courant : `../qa/M7_UX_RECEIPT_REVIEW.md`. Code non livré sur téléphone ; aucun appel payant, déploiement ou build EAS.

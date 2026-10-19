@@ -281,27 +281,33 @@ export class WasteReceiptRepository {
     };
   }
 
-  async getReceiptDetail(id: string): Promise<LocalWasteReceiptDetail | null> {
+  async getReceiptDetail(
+    id: string,
+    storeId?: string,
+  ): Promise<LocalWasteReceiptDetail | null> {
     const row = await this.database.getFirstAsync<
       WasteReceiptRow & { local_uri: string | null }
     >(
       `SELECT r.*, f.local_uri
        FROM waste_receipts r
        LEFT JOIN local_files f ON f.id = r.local_file_id
-       WHERE r.id = ? AND r.deleted_at IS NULL`,
+       WHERE r.id = ? AND r.deleted_at IS NULL${storeId ? " AND r.store_id = ?" : ""}`,
       id,
+      ...(storeId ? [storeId] : []),
     );
     if (!row) return null;
     const lines = await this.database.getAllAsync<WasteLineRow>(
       `SELECT * FROM waste_lines
-       WHERE receipt_id = ? AND deleted_at IS NULL
+       WHERE receipt_id = ? AND store_id = ? AND deleted_at IS NULL
        ORDER BY source_line_index, id`,
       id,
+      row.store_id,
     );
     const duplicateCandidate = row.duplicate_candidate_source_document_id
       ? await findDuplicateCandidateBySourceDocument(
           this.database,
           row.duplicate_candidate_source_document_id,
+          row.store_id,
         )
       : null;
     return {
@@ -588,35 +594,50 @@ export class WasteReceiptRepository {
     receiptId: string,
     value: string,
     timestamp = new Date().toISOString(),
+    expectedVersion?: number,
   ) {
-    await this.assertEditable(receiptId);
-    const number = wasteReceiptSchema.shape.confirmedCashierNumber.parse(
-      value.trim() || null,
-    );
-    await this.database.runAsync(
-      `UPDATE waste_receipts SET confirmed_cashier_number = ?, cashier_number_confirmed_at = ?, updated_at = ?, version = version + 1, dirty = 1, sync_state = 'LOCAL_ONLY' WHERE id = ?`,
-      number ?? null,
-      timestamp,
-      timestamp,
+    await this.editReceipt(
       receiptId,
+      async (tx) => {
+        const number = wasteReceiptSchema.shape.confirmedCashierNumber.parse(
+          value.trim() || null,
+        );
+        await tx.runAsync(
+          `UPDATE waste_receipts SET confirmed_cashier_number = ?, cashier_number_confirmed_at = ?, updated_at = ?, version = version + 1, dirty = 1, sync_state = 'LOCAL_ONLY' WHERE id = ?`,
+          number ?? null,
+          timestamp,
+          timestamp,
+          receiptId,
+        );
+      },
+      expectedVersion,
     );
   }
 
-  async confirmWasteDate(receiptId: string, date: string) {
-    await this.assertEditable(receiptId);
-    const parsedDate =
-      wasteReceiptSchema.shape.confirmedWasteDate.safeParse(date);
-    if (!parsedDate.success || parsedDate.data == null) {
-      throw new Error("WASTE_RECEIPT_DATE_INVALID");
-    }
-    await this.database.runAsync(
-      `UPDATE waste_receipts
+  async confirmWasteDate(
+    receiptId: string,
+    date: string,
+    expectedVersion?: number,
+  ) {
+    await this.editReceipt(
+      receiptId,
+      async (tx) => {
+        const parsedDate =
+          wasteReceiptSchema.shape.confirmedWasteDate.safeParse(date);
+        if (!parsedDate.success || parsedDate.data == null) {
+          throw new Error("WASTE_RECEIPT_DATE_INVALID");
+        }
+        await tx.runAsync(
+          `UPDATE waste_receipts
        SET confirmed_waste_date = ?, updated_at = ?, version = version + 1,
            dirty = 1, sync_state = 'LOCAL_ONLY'
        WHERE id = ?`,
-      parsedDate.data,
-      new Date().toISOString(),
-      receiptId,
+          parsedDate.data,
+          new Date().toISOString(),
+          receiptId,
+        );
+      },
+      expectedVersion,
     );
   }
 
@@ -631,82 +652,103 @@ export class WasteReceiptRepository {
       unitPrice: string | null;
       totalPrice: string | null;
     },
+    expectedVersion?: number,
   ) {
-    await this.assertEditable(receiptId);
-    const current = await this.database.getFirstAsync<WasteLineRow>(
-      `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
-      lineId,
-      receiptId,
-    );
-    if (!current) throw new Error("WASTE_RECEIPT_LINE_NOT_FOUND");
-    const rawLabel = input.rawLabel.trim();
-    if (!rawLabel) throw new Error("WASTE_RECEIPT_LABEL_REQUIRED");
-    const arithmetic = validateWasteReceiptArithmetic([
-      {
-        sourceLineIndex: current.source_line_index,
-        weight: nullableDecimal(input.weight),
-        unitPrice: nullableDecimal(input.unitPrice),
-        totalPrice: nullableDecimal(input.totalPrice),
-      },
-    ]).lines[0]!;
-    const validationStatus =
-      current.validation_status === "EXCLUDED"
-        ? "EXCLUDED"
-        : arithmetic.status === "MISMATCH" || current.match_status !== "MATCHED"
-          ? "TO_REVIEW"
-          : "PENDING";
-    await this.database.runAsync(
-      `UPDATE waste_lines
+    await this.editReceipt(receiptId, async (tx) => {
+      const current = await tx.getFirstAsync<WasteLineRow>(
+        `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
+        lineId,
+        receiptId,
+      );
+      if (!current || current.deleted_at)
+        throw new Error("WASTE_RECEIPT_LINE_NOT_FOUND");
+      if (expectedVersion !== undefined && current.version !== expectedVersion)
+        throw Error("WASTE_RECEIPT_LINE_CHANGED");
+      const rawLabel = input.rawLabel.trim();
+      if (!rawLabel) throw new Error("WASTE_RECEIPT_LABEL_REQUIRED");
+      const arithmetic = validateWasteReceiptArithmetic([
+        {
+          sourceLineIndex: current.source_line_index,
+          weight: nullableDecimal(input.weight),
+          unitPrice: nullableDecimal(input.unitPrice),
+          totalPrice: nullableDecimal(input.totalPrice),
+        },
+      ]).lines[0]!;
+      const validationStatus =
+        current.validation_status === "EXCLUDED"
+          ? "EXCLUDED"
+          : arithmetic.status === "MISMATCH" ||
+              current.match_status !== "MATCHED"
+            ? "TO_REVIEW"
+            : "PENDING";
+      await tx.runAsync(
+        `UPDATE waste_lines
        SET raw_label = ?, quantity = ?, quantity_unit = ?, weight = ?, unit_price = ?, total_price = ?,
            arithmetic_status = ?, arithmetic_expected_total = ?,
            arithmetic_difference = ?, arithmetic_warning_code = ?,
            validation_status = ?, updated_at = ?, version = version + 1,
            dirty = 1, sync_state = 'LOCAL_ONLY'
        WHERE id = ? AND receipt_id = ?`,
-      rawLabel,
-      input.quantity === undefined
-        ? current.quantity
-        : nullableDecimal(input.quantity),
-      input.quantityUnit === undefined
-        ? current.quantity_unit
-        : (input.quantityUnit ?? null),
-      nullableDecimal(input.weight),
-      nullableDecimal(input.unitPrice),
-      nullableDecimal(input.totalPrice),
-      arithmetic.status,
-      arithmetic.expectedTotal,
-      arithmetic.absoluteDifference,
-      arithmetic.warningCode,
-      validationStatus,
-      new Date().toISOString(),
-      lineId,
-      receiptId,
-    );
+        rawLabel,
+        input.quantity === undefined
+          ? current.quantity
+          : nullableDecimal(input.quantity),
+        input.quantityUnit === undefined
+          ? current.quantity_unit
+          : (input.quantityUnit ?? null),
+        nullableDecimal(input.weight),
+        nullableDecimal(input.unitPrice),
+        nullableDecimal(input.totalPrice),
+        arithmetic.status,
+        arithmetic.expectedTotal,
+        arithmetic.absoluteDifference,
+        arithmetic.warningCode,
+        validationStatus,
+        new Date().toISOString(),
+        lineId,
+        receiptId,
+      );
+    });
   }
 
-  async setLineExcluded(receiptId: string, lineId: string, excluded: boolean) {
-    await this.assertEditable(receiptId);
-    await this.database.runAsync(
-      "UPDATE waste_lines SET validation_status = ?, dirty = 1, sync_state = 'LOCAL_ONLY', version = version + 1, updated_at = ? WHERE id = ? AND receipt_id = ?",
-      excluded ? "EXCLUDED" : "PENDING",
-      new Date().toISOString(),
-      lineId,
-      receiptId,
-    );
-  }
-
-  private async assertEditable(receiptId: string) {
-    const receipt = await this.getReceipt(receiptId);
-    if (!receipt || receipt.processingStatus === "PUBLISHED")
-      throw new Error("WASTE_RECEIPT_READ_ONLY");
+  async setLineExcluded(
+    receiptId: string,
+    lineId: string,
+    excluded: boolean,
+    expectedVersion?: number,
+  ) {
+    await this.editReceipt(receiptId, async (tx) => {
+      const line = await tx.getFirstAsync<{ version: number }>(
+        "SELECT version FROM waste_lines WHERE id=? AND receipt_id=? AND deleted_at IS NULL",
+        lineId,
+        receiptId,
+      );
+      if (!line) throw Error("WASTE_RECEIPT_LINE_NOT_FOUND");
+      if (expectedVersion !== undefined && line.version !== expectedVersion)
+        throw Error("WASTE_RECEIPT_LINE_CHANGED");
+      await tx.runAsync(
+        "UPDATE waste_lines SET validation_status = ?, dirty = 1, sync_state = 'LOCAL_ONLY', version = version + 1, updated_at = ? WHERE id = ? AND receipt_id = ?",
+        excluded ? "EXCLUDED" : "PENDING",
+        new Date().toISOString(),
+        lineId,
+        receiptId,
+      );
+    });
   }
 
   async selectProductCandidate(
     receiptId: string,
     lineId: string,
     productId: string,
+    expectedVersion?: number,
   ) {
-    return this.selectProduct(receiptId, lineId, productId, false);
+    return this.selectProduct(
+      receiptId,
+      lineId,
+      productId,
+      false,
+      expectedVersion,
+    );
   }
 
   /** Explicitly reviewed catalogue choice; no candidate or learned alias is manufactured. */
@@ -714,8 +756,15 @@ export class WasteReceiptRepository {
     receiptId: string,
     lineId: string,
     productId: string,
+    expectedVersion?: number,
   ) {
-    return this.selectProduct(receiptId, lineId, productId, true);
+    return this.selectProduct(
+      receiptId,
+      lineId,
+      productId,
+      true,
+      expectedVersion,
+    );
   }
 
   private async selectProduct(
@@ -723,51 +772,77 @@ export class WasteReceiptRepository {
     lineId: string,
     productId: string,
     fromCatalogue: boolean,
+    expectedVersion?: number,
   ) {
-    await this.assertEditable(receiptId);
-    const row = await this.database.getFirstAsync<WasteLineRow>(
-      `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
-      lineId,
-      receiptId,
-    );
-    if (!row) throw new Error("WASTE_RECEIPT_LINE_NOT_FOUND");
-    const candidate = parseCandidates(row.match_candidates_json).find(
-      (item) => item.productId === productId,
-    );
-    if (!fromCatalogue && !candidate && row.matched_product_id !== productId)
-      throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
-    const product = await this.database.getFirstAsync<{
-      label: string;
-      nature: WasteLine["productNature"];
-    }>(
-      "SELECT label, nature FROM products WHERE id = ? AND store_id = ? AND deleted_at IS NULL AND status != 'INACTIVE' AND sync_state NOT IN ('ERROR','CONFLICT')",
-      productId,
-      row.store_id,
-    );
-    if (!product) throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
-    await this.database.runAsync(
-      `UPDATE waste_lines
+    await this.editReceipt(receiptId, async (tx) => {
+      const row = await tx.getFirstAsync<WasteLineRow>(
+        `SELECT * FROM waste_lines WHERE id = ? AND receipt_id = ?`,
+        lineId,
+        receiptId,
+      );
+      if (!row || row.deleted_at)
+        throw new Error("WASTE_RECEIPT_LINE_NOT_FOUND");
+      if (expectedVersion !== undefined && row.version !== expectedVersion)
+        throw Error("WASTE_RECEIPT_LINE_CHANGED");
+      const candidate = parseCandidates(row.match_candidates_json).find(
+        (item) => item.productId === productId,
+      );
+      if (!fromCatalogue && !candidate && row.matched_product_id !== productId)
+        throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+      const product = await tx.getFirstAsync<{
+        label: string;
+        nature: WasteLine["productNature"];
+      }>(
+        "SELECT label, nature FROM products WHERE id = ? AND store_id = ? AND deleted_at IS NULL AND status != 'INACTIVE' AND sync_state NOT IN ('ERROR','CONFLICT')",
+        productId,
+        row.store_id,
+      );
+      if (!product) throw new Error("WASTE_RECEIPT_PRODUCT_CANDIDATE_INVALID");
+      await tx.runAsync(
+        `UPDATE waste_lines
        SET matched_product_id = ?, matched_product_label = ?,
            match_status = 'MATCHED', match_state = 'AUTO_MATCH',
            match_confidence = ?, product_nature = ?,
            validation_status = ?, updated_at = ?, version = version + 1,
            dirty = 1, sync_state = 'LOCAL_ONLY'
        WHERE id = ? AND receipt_id = ?`,
-      productId,
-      product.label,
-      fromCatalogue && !candidate && row.matched_product_id !== productId
-        ? null
-        : (candidate?.score ?? row.match_confidence),
-      product.nature,
-      row.validation_status === "EXCLUDED"
-        ? "EXCLUDED"
-        : row.arithmetic_status === "MISMATCH"
-          ? "TO_REVIEW"
-          : "PENDING",
-      new Date().toISOString(),
-      lineId,
-      receiptId,
-    );
+        productId,
+        product.label,
+        fromCatalogue && !candidate && row.matched_product_id !== productId
+          ? null
+          : (candidate?.score ?? row.match_confidence),
+        product.nature,
+        row.validation_status === "EXCLUDED"
+          ? "EXCLUDED"
+          : row.arithmetic_status === "MISMATCH"
+            ? "TO_REVIEW"
+            : "PENDING",
+        new Date().toISOString(),
+        lineId,
+        receiptId,
+      );
+    });
+  }
+
+  private async editReceipt(
+    receiptId: string,
+    task: (tx: OutboxDatabase) => Promise<void>,
+    expectedVersion?: number,
+  ) {
+    await this.database.withExclusiveTransactionAsync(async (tx) => {
+      const receipt = await tx.getFirstAsync<{
+        processing_status: string;
+        version: number;
+      }>(
+        "SELECT processing_status,version FROM waste_receipts WHERE id=? AND deleted_at IS NULL",
+        receiptId,
+      );
+      if (!receipt || receipt.processing_status === "PUBLISHED")
+        throw Error("WASTE_RECEIPT_READ_ONLY");
+      if (expectedVersion !== undefined && receipt.version !== expectedVersion)
+        throw Error("WASTE_RECEIPT_CHANGED");
+      await task(tx);
+    });
   }
 }
 
@@ -798,6 +873,7 @@ async function findExactReceiptDuplicate(
 async function findDuplicateCandidateBySourceDocument(
   database: OutboxDatabase,
   sourceDocumentId: string,
+  storeId: string,
 ): Promise<LocalWasteDuplicateCandidate | null> {
   const row = await database.getFirstAsync<DuplicateCandidateRow>(
     `SELECT r.id AS receipt_id, d.id AS source_document_id, r.capture_date,
@@ -805,10 +881,12 @@ async function findDuplicateCandidateBySourceDocument(
      FROM source_documents d
      JOIN waste_receipts r ON r.source_document_id = d.id
      LEFT JOIN local_files f ON f.id = r.local_file_id
-     WHERE d.id = ? AND d.deleted_at IS NULL AND r.deleted_at IS NULL
+     WHERE d.id = ? AND d.store_id = ? AND r.store_id = ? AND d.deleted_at IS NULL AND r.deleted_at IS NULL
      ORDER BY COALESCE(r.capture_date, r.created_at) DESC, r.id DESC
      LIMIT 1`,
     sourceDocumentId,
+    storeId,
+    storeId,
   );
   return row ? mapDuplicateCandidate(row) : null;
 }

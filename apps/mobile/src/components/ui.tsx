@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, type PropsWithChildren } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  type Ref,
+  type PropsWithChildren,
+} from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -11,6 +17,7 @@ import {
   Text,
   View,
   findNodeHandle,
+  type ViewProps,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -20,13 +27,16 @@ export function AppScreen({
   children,
   refreshing = false,
   onRefresh,
+  scrollRef,
 }: PropsWithChildren<{
+  scrollRef?: Ref<ScrollView>;
   refreshing?: boolean;
   onRefresh?: () => void;
 }>) {
   return (
     <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-canvas">
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ padding: 24, gap: 24, paddingBottom: 40 }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -69,9 +79,17 @@ export function SectionCard({
   title,
   description,
   children,
-}: PropsWithChildren<{ title: string; description?: string }>) {
+  onLayout,
+}: PropsWithChildren<{
+  title: string;
+  description?: string;
+  onLayout?: ViewProps["onLayout"];
+}>) {
   return (
-    <View className="gap-4 rounded-3xl border border-line bg-surface p-5">
+    <View
+      onLayout={onLayout}
+      className="gap-4 rounded-3xl border border-line bg-surface p-5"
+    >
       <Text
         accessibilityRole="header"
         className="text-lg font-semibold text-ink"
