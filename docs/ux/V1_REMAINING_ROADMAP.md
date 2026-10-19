@@ -94,3 +94,9 @@ Les liens des citations du chat ne sont pas encore branchés : des destinations 
 L4 avance avec les destinations monétaires structurées : période libre exacte, référence explicite/J−7, somme ou moyenne et périmètre de produits. La citation d’origine reste conservée et la lecture native montre les données locales actuelles. Les producteurs courants sont reliés sans interprétation des libellés ni ajout d’instructions au modèle. Voir `../qa/M7_UX_ANALYTICS_SOURCE_LINKS.md`.
 
 La navigation n’est pas déclarée intégralement terminée : les enrichissements qui feraient dépasser la limite existante du message conservent la source historique sans destination Analytics ; un transport compact compatible reste à terminer avant de clôturer cette porte V1. Recette native, gestes/formulaires, L5/L6, autres chantiers métier/documentaires/implantation et M8 restent ouverts.
+
+## Avancement — catalogue et saisies produit (lot UX suivant)
+
+L5 avance avec recherche locale par libellé/alias/code validé, filtres catégorie/nature/état, liste virtualisée, contexte privé restaurable et fiche consultable séparée de son éditeur. Les fonctions besoins/substitutions/observations restent accessibles. Les lectures de synchronisation ne réinitialisent plus la saisie ; retrait d’écran protégé et comparaison canonique atomique avant écriture. Voir `../qa/M7_UX_PRODUCTS.md` pour les preuves et limites.
+
+Ce lot ne clôt ni L5 ni le chantier UX : autres écrans, familles, médias, gestes et recette native, transport compact des longues sources et autres portes V1 restent ouverts. Aucun build payant ou déploiement n’est déclenché.

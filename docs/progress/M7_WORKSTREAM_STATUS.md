@@ -368,3 +368,15 @@ PR 274 fusionnée sur `2b40dc0` après succès push/PR exacts, branche supprimé
 7. **UX et validation globale : en cours.** Sources monétaires structurées vers dates/métrique/périmètre exacts, y compris période libre et moyenne ; base rayon/produits, univers de couverture et J−7 conservés. Restent transport compact des très longues citations, recette native des liens/gestes/formulaires, cohérence des autres écrans/médias et portes M7/M8.
 
 PR 275 fusionnée sur `d20bac7` après succès des CI push/PR exactes, branche supprimée. Pour ce lot : **2 192 tests locaux réussis**, preuve de chaîne serveur/citation/cache/SQLite et contrôle visuel séparé. Code non livré ; build/API/export et CI consignés dans la PR. Aucun déploiement, appel modèle/image ou build EAS payant. Voir `docs/qa/M7_UX_ANALYTICS_SOURCE_LINKS.md`.
+
+## Lot courant — catalogue et édition protégée (19 octobre 2026)
+
+1. **Actions métier et conflits : en cours.** L’éditeur manuel relit et compare la fiche courante avant une mutation locale atomique ; changement concurrent, conflit, cible indisponible et identifiant déjà associé restent explicites. Les autres reprises et la recette distante restent ouvertes.
+2. **Contre-promo : code prêt**, livraison et acceptation groupées à faire.
+3. **Documents : en cours.** Aucun canal ou original restauré supplémentaire dans ce lot ; réception Resend et autres portes L8 restent ouvertes.
+4. **Expertise métier : en cours.** Évaluation des cas réels et compléments L7 à poursuivre.
+5. **Recommandations : en cours.** Parcours complet jusqu’au bilan réel et fraîcheur restent à accepter.
+6. **Implantation : en cours.** Illustration, contraintes et validation physique restent ouvertes.
+7. **UX/validation : en cours.** L5 avance avec catalogue recherchable/filtrable, détail lisible, contexte restaurable et protection des saisies. Tests locaux et contrôle visuel décrits dans `../qa/M7_UX_PRODUCTS.md`. Gestes natifs, autres écrans, bibliothèque visuelle et livraison/recette M8 restent ouverts.
+
+La PR 276 précédente est fusionnée après succès des deux contrôles exacts (`39325701435`, `39325707792`), merge `1aa550736e4b49c9359447fc24158b43274eb7f8`. Ses liens vers les sources analytiques restent non livrés sur téléphone. Ce lot Produits ne déclenche aucun déploiement ni build EAS payant.

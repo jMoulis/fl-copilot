@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { useAuth } from "@/auth/auth-provider";
 import { useLocalDatabase } from "@/providers/database-provider";
@@ -6,7 +7,7 @@ import { useSync } from "@/sync/sync-provider";
 import { ProductMasterRepository } from "./product-master-repository";
 import {
   loadProductEditorSnapshot,
-  saveProductEditor,
+  saveProductEditorLocally,
   type ProductEditorDraft,
   type ProductEditorSnapshot,
 } from "./product-editor-service";
@@ -25,19 +26,25 @@ export function useProductList(): ProductListState {
     () => new ProductMasterRepository(sqlite),
     [sqlite],
   );
+  const request = useRef(0);
+  const [error, setError] = useState<string>();
   const [products, setProducts] = useState<ProductListItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
+    const ticket = ++request.current;
     if (!storeId) {
       setProducts([]);
       setLoading(false);
       return;
     }
-    const [records, conflicts] = await Promise.all([
-      repository.listProducts(storeId),
-      sqlite.getAllAsync<{ id: string; product_id: string }>(
-        `
+    try {
+      const [records, identifiers, aliases, conflicts] = await Promise.all([
+        repository.listProducts(storeId),
+        repository.listIdentifiersByStore(storeId),
+        repository.listAliasesByStore(storeId),
+        sqlite.getAllAsync<{ id: string; product_id: string }>(
+          `
           SELECT c.id,
             CASE c.entity_type
               WHEN 'product' THEN c.entity_id
@@ -52,26 +59,47 @@ export function useProductList(): ProductListState {
           WHERE c.store_id = ? AND c.status = 'OPEN'
             AND c.entity_type IN ('product', 'product_identifier', 'product_alias')
         `,
-        storeId,
-      ),
-    ]);
-    const conflictByProduct = new Map(
-      conflicts.map((conflict) => [conflict.product_id, conflict.id]),
-    );
-    setProducts(
-      records.map((record) => ({
-        record,
-        conflictId: conflictByProduct.get(record.entity.id),
-      })),
-    );
-    setLoading(false);
+          storeId,
+        ),
+      ]);
+      if (ticket !== request.current) return;
+      const terms = new Map<string, string[]>();
+      for (const { entity: e } of [...identifiers, ...aliases]) {
+        if (e.status !== "VALIDATED") continue;
+        const entry = terms.get(e.productId) ?? [];
+        entry.push("value" in e ? e.value : e.alias);
+        terms.set(e.productId, entry);
+      }
+      const conflictByProduct = new Map(
+        conflicts.map((conflict) => [conflict.product_id, conflict.id]),
+      );
+      setProducts(
+        records.map((record) => ({
+          record,
+          conflictId: conflictByProduct.get(record.entity.id),
+          searchTerms: terms.get(record.entity.id) ?? [],
+        })),
+      );
+      setError(undefined);
+    } catch {
+      if (ticket === request.current)
+        setError(
+          "Les produits ne peuvent pas être relus. Les données déjà affichées sont conservées.",
+        );
+    } finally {
+      if (ticket === request.current) setLoading(false);
+    }
   }, [repository, sqlite, storeId]);
 
-  useEffect(() => {
-    void refresh();
-  }, [conflictCount, pendingCount, refresh]);
-
-  return { loading, storeMissing: !storeId, products, refresh };
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+      return () => {
+        request.current++;
+      };
+    }, [refresh, pendingCount, conflictCount]),
+  );
+  return { loading, storeMissing: !storeId, products, error, refresh };
 }
 
 export function useProductEditor(productId?: string): ProductEditorState {
@@ -83,63 +111,87 @@ export function useProductEditor(productId?: string): ProductEditorState {
     () => new ProductMasterRepository(database.sqlite),
     [database.sqlite],
   );
+  const generation = useRef(0);
+  const [error, setError] = useState<string>();
   const [snapshot, setSnapshot] = useState<ProductEditorSnapshot>();
   const [conflictId, setConflictId] = useState<string>();
   const [loading, setLoading] = useState(Boolean(productId));
   const [missing, setMissing] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (!productId) {
+    const ticket = ++generation.current;
+    if (!productId || !storeId) {
       setLoading(false);
       setMissing(false);
       return;
     }
-    const [nextSnapshot, conflict] = await Promise.all([
-      loadProductEditorSnapshot(repository, productId),
-      database.sqlite.getFirstAsync<{ id: string }>(
-        `
+    try {
+      const [nextSnapshot, conflict] = await Promise.all([
+        loadProductEditorSnapshot(repository, productId),
+        database.sqlite.getFirstAsync<{ id: string }>(
+          `
           SELECT c.id
           FROM sync_conflicts c
           LEFT JOIN product_identifiers pi
             ON c.entity_type = 'product_identifier' AND pi.id = c.entity_id
           LEFT JOIN product_aliases pa
             ON c.entity_type = 'product_alias' AND pa.id = c.entity_id
-          WHERE c.status = 'OPEN' AND (
+          WHERE c.store_id = ? AND c.status = 'OPEN' AND (
             (c.entity_type = 'product' AND c.entity_id = ?)
             OR (c.entity_type = 'product_identifier' AND pi.product_id = ?)
             OR (c.entity_type = 'product_alias' AND pa.product_id = ?)
           )
           ORDER BY c.created_at DESC LIMIT 1
         `,
-        productId,
-        productId,
-        productId,
-      ),
-    ]);
-    setSnapshot(nextSnapshot ?? undefined);
-    setMissing(!nextSnapshot);
-    setConflictId(conflict?.id);
-    setLoading(false);
-  }, [database.sqlite, productId, repository]);
+          storeId,
+          productId,
+          productId,
+          productId,
+        ),
+      ]);
+      if (ticket !== generation.current) return;
+      const owned =
+        nextSnapshot?.product.entity.storeId === storeId ? nextSnapshot : null;
+      setSnapshot(owned ?? undefined);
+      setMissing(!owned);
+      setConflictId(conflict?.id);
+      setError(undefined);
+    } catch {
+      if (ticket === generation.current)
+        setError(
+          "La fiche ne peut pas être relue. Votre saisie reste conservée.",
+        );
+    } finally {
+      if (ticket === generation.current) setLoading(false);
+    }
+  }, [database.sqlite, productId, repository, storeId]);
 
-  useEffect(() => {
-    void refresh();
-  }, [conflictCount, pendingCount, refresh]);
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+      return () => {
+        generation.current++;
+      };
+    }, [refresh, pendingCount, conflictCount]),
+  );
 
   const save = useCallback(
-    async (draft: ProductEditorDraft) => {
+    async (draft: ProductEditorDraft, expected?: ProductEditorSnapshot) => {
       if (!storeId) throw new Error("Aucun magasin actif.");
-      const savedId = await saveProductEditor(repository, draft, {
-        storeId,
-        deviceId: database.deviceId,
-        productId,
-        existing: snapshot,
-        now: () => new Date().toISOString(),
-        generateId: randomUUID,
-      });
-      return savedId;
+      return saveProductEditorLocally(
+        database.sqlite,
+        draft,
+        {
+          storeId,
+          deviceId: database.deviceId,
+          productId,
+          now: () => new Date().toISOString(),
+          generateId: randomUUID,
+        },
+        expected,
+      );
     },
-    [database.deviceId, productId, repository, snapshot, storeId],
+    [database, productId, storeId],
   );
 
   return {
@@ -148,6 +200,7 @@ export function useProductEditor(productId?: string): ProductEditorState {
     storeMissing: !storeId,
     snapshot,
     conflictId,
+    error,
     save,
   };
 }

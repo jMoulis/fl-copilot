@@ -84,7 +84,7 @@ const natures = [
 const salesUnits = [
   ["KG", "kg"],
   ["PIECE", "Pièce"],
-  ["PACK", "Lot"],
+  ["PACK", "Unité conditionnée"],
   ["UNKNOWN", "À préciser"],
 ] as const;
 const packagingUnits = [
@@ -102,10 +102,12 @@ export function ProductEditorForm({
   initialValue,
   onSave,
   disabled = false,
+  onStateChange,
 }: {
   initialValue?: ProductEditorDraft;
   onSave(draft: ProductEditorDraft): Promise<void>;
   disabled?: boolean;
+  onStateChange?(dirty: boolean, saving: boolean): void;
 }) {
   const [saveError, setSaveError] = useState<string>();
   const [saved, setSaved] = useState(false);
@@ -113,7 +115,7 @@ export function ProductEditorForm({
     control,
     handleSubmit,
     reset,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, isDirty },
   } = useForm<ProductEditorDraft>({
     resolver: zodResolver(editorSchema),
     defaultValues: initialValue ?? emptyProductDraft,
@@ -122,18 +124,28 @@ export function ProductEditorForm({
   const aliases = useFieldArray({ control, name: "aliases" });
 
   useEffect(() => {
-    reset(initialValue ?? emptyProductDraft);
-  }, [initialValue, reset]);
+    onStateChange?.(isDirty, isSubmitting);
+  }, [isDirty, isSubmitting, onStateChange]);
 
   const submit = handleSubmit(async (draft) => {
     setSaveError(undefined);
     setSaved(false);
     try {
       await onSave(draft);
+      reset(draft);
       setSaved(true);
-    } catch {
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
       setSaveError(
-        "La modification n’a pas pu être enregistrée dans la base locale.",
+        code === "PRODUCT_EDITOR_CHANGED"
+          ? "Cette fiche a changé pendant votre saisie. Vos modifications restent visibles. Relisez la version actuelle avant de réessayer."
+          : code === "PRODUCT_EDITOR_CONFLICT"
+            ? "Un conflit doit être résolu avant de modifier cette fiche. Votre saisie est conservée."
+            : code === "PRODUCT_EDITOR_IDENTIFIER_CONFLICT"
+              ? "Ce code est déjà associé à un autre produit. Vérifiez l’identifiant sans déplacer l’association existante."
+              : code === "PRODUCT_EDITOR_UNAVAILABLE"
+                ? "Ce produit n’est plus disponible dans ce magasin. Votre saisie est conservée."
+                : "La modification n’a pas pu être enregistrée dans la base locale. Votre saisie est conservée.",
       );
     }
   });
@@ -271,7 +283,7 @@ export function ProductEditorForm({
         />
       </SectionCard>
 
-      <SectionCard title="Aliases">
+      <SectionCard title="Alias">
         <Text className="text-sm leading-5 text-muted">
           Ajoutez les libellés courts ou imprimés utilisés pour retrouver ce
           produit.
@@ -325,7 +337,7 @@ function FormLabel({ label, optional }: { label: string; optional?: boolean }) {
 
 function FieldError({ message }: { message?: string }) {
   return message ? (
-    <Text accessibilityRole="alert" className="text-sm text-red-700">
+    <Text accessibilityRole="alert" className="text-sm text-critical">
       {message}
     </Text>
   ) : null;
@@ -361,7 +373,7 @@ function ChoiceController({
                 <Pressable
                   key={choice}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected }}
+                  accessibilityState={{ checked: selected }}
                   accessibilityLabel={`${label} : ${choiceLabel}`}
                   onPress={() => onChange(choice)}
                   className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${selected ? "border-forest bg-forest" : "border-line bg-surface"}`}

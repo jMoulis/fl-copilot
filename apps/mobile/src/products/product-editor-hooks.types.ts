@@ -8,12 +8,14 @@ import type {
 export interface ProductListItem {
   record: LocalProductMasterRecord<Product>;
   conflictId?: string;
+  searchTerms?: string[];
 }
 
 export interface ProductListState {
   loading: boolean;
   storeMissing: boolean;
   products: ProductListItem[];
+  error?: string;
   refresh(): Promise<void>;
 }
 
@@ -23,5 +25,9 @@ export interface ProductEditorState {
   storeMissing: boolean;
   snapshot?: ProductEditorSnapshot;
   conflictId?: string;
-  save(draft: ProductEditorDraft): Promise<string>;
+  error?: string;
+  save(
+    draft: ProductEditorDraft,
+    expected?: ProductEditorSnapshot,
+  ): Promise<string>;
 }
