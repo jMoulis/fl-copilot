@@ -98,6 +98,7 @@ export class ApiClient {
       preparationSelection?: boolean;
       preparationRefresh?: boolean;
       layoutScenarios?: boolean;
+      layoutPreparation?: boolean;
       layoutEdits?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
@@ -170,6 +171,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.preparationProposals
                   ? { "x-copilot-preparation-proposals": "1" }
+                  : {}),
+                ...(streaming.layoutPreparation
+                  ? { "x-copilot-layout-preparation": "1" }
                   : {}),
                 ...(streaming.layoutScenarios
                   ? { "x-copilot-layout-scenarios": "1" }
@@ -393,6 +397,7 @@ export class ApiClient {
     commercialExecutionActuals = false,
     copilotActionExecutions = false,
     storeLayouts = false,
+    physicalAllocations = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -407,6 +412,7 @@ export class ApiClient {
       query.set("commercialExecutionActuals", "true");
     if (storeContext) query.set("storeContext", "true");
     if (storeLayouts) query.set("storeLayouts", "true");
+    if (physicalAllocations) query.set("physicalAllocations", "true");
     if (needUnits) query.set("needUnits", "true");
     if (needMemberships) query.set("needMemberships", "true");
     if (productSubstitutions) query.set("productSubstitutions", "true");
@@ -459,6 +465,7 @@ export class ApiClient {
     commercialExecutionActuals = false,
     copilotActionExecutions = false,
     storeLayouts = false,
+    physicalAllocations = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -475,6 +482,7 @@ export class ApiClient {
       query.set("commercialExecutionActuals", "true");
     if (storeContext) query.set("storeContext", "true");
     if (storeLayouts) query.set("storeLayouts", "true");
+    if (physicalAllocations) query.set("physicalAllocations", "true");
     if (needUnits) query.set("needUnits", "true");
     if (needMemberships) query.set("needMemberships", "true");
     if (productSubstitutions) query.set("productSubstitutions", "true");

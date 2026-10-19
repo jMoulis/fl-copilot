@@ -685,6 +685,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         db,
                         storeId,
                         input,
+                        request.headers["x-copilot-layout-preparation"] === "1",
                       );
                       await authorize();
                       return result;
@@ -750,6 +751,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         db,
                         storeId,
                         input,
+                        request.headers["x-copilot-layout-preparation"] === "1",
                       );
                       await authorize();
                       return result;
@@ -1247,6 +1249,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         db,
                         storeId,
                         input,
+                        undefined,
+                        request.headers["x-copilot-layout-preparation"] === "1",
                       );
                       await authorize();
                       return result;

@@ -1,8 +1,16 @@
 import { z } from "zod";
 import { commercialWeekPreparationSchema } from "./commercial-week-preparation";
 import { productClassificationAuthoritySchema } from "./copilot-product-mutations";
-const { weekStart, weekEnd, status, tgCapacity, offerRefs, placements, note } =
-  commercialWeekPreparationSchema.shape;
+const {
+  weekStart,
+  weekEnd,
+  status,
+  tgCapacity,
+  offerRefs,
+  placements,
+  note,
+  physicalAllocation,
+} = commercialWeekPreparationSchema.shape;
 const draft = z.strictObject({
   weekStart,
   weekEnd,
@@ -11,6 +19,7 @@ const draft = z.strictObject({
   offerRefs,
   placements,
   note,
+  physicalAllocation,
 });
 export const preparationInputSchema = z.strictObject({
   expectedVersion: z.number().int().positive().nullable(),

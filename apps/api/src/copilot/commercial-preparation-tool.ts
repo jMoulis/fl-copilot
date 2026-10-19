@@ -158,7 +158,7 @@ export async function readCommercialPreparation(
   add(
     "quality",
     "Références et couverture de la préparation",
-    `${issues.length} références à revoir sur l'ensemble des ${refs.length} offres sélectionnées.${issues.length ? " Détails : " + issues.map((i) => i.choiceId + " : " + i.code).join(" ; ") + "." : ""} ${pageRefs.length} références détaillées dans cette page${nextOffset !== null ? "; autres offres à consulter" : "; fin des références sélectionnées"}. Les offres non sélectionnées se consultent séparément. Les produits, validations et sources PDF ne sont pas revalidés. Aucun enregistrement ni validation n'a été effectué.`,
+    `${issues.length} références à revoir sur l'ensemble des ${refs.length} offres sélectionnées.${issues.length ? " Détails : " + issues.map((i) => i.choiceId + " : " + i.code).join(" ; ") + "." : ""} ${pageRefs.length} références détaillées dans cette page${nextOffset !== null ? "; autres offres à consulter" : "; fin des références sélectionnées"}. Les offres non sélectionnées se consultent séparément. Les produits, validations, sources PDF et sources de l’implantation ne sont pas revalidés par cette lecture. Consultez la préparation à la validation pour vérifier ces dépendances. Aucun enregistrement ni validation n'a été effectué.`,
     true,
   );
   return copilotPreparationReadResultSchema.parse({

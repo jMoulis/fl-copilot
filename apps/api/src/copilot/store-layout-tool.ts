@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Db } from "mongodb";
+import type { Db, ClientSession } from "mongodb";
 import { z } from "zod";
 import {
   copilotEvidenceSchema,
@@ -104,12 +104,16 @@ export const storeLayoutToolResultSchema = z.strictObject({
 });
 
 /** Server-private snapshot. Do not pass the full canonical content directly to the model. */
-export async function readCopilotStoreLayoutSnapshot(db: Db, storeId: string) {
+export async function readCopilotStoreLayoutSnapshot(
+  db: Db,
+  storeId: string,
+  options: { session?: ClientSession } = {},
+) {
   z.uuid().parse(storeId);
   const collection = db.collection<StoreLayoutDocument>("storeLayouts");
   const row = await collection.findOne(
     { _id: storeId, storeId },
-    { maxTimeMS: 2000 },
+    { ...options, maxTimeMS: 2000 },
   );
   if (!row) return { head: null, reference: null };
   const head = serializeStoreLayout(row);
@@ -120,12 +124,15 @@ export async function readCopilotStoreLayoutSnapshot(db: Db, storeId: string) {
     return { head, reference: head };
   const historical = await db
     .collection<StoreLayoutRevisionDocument>("storeLayoutRevisions")
-    .findOne({ _id: head.referenceRevisionId, storeId }, { maxTimeMS: 2000 });
+    .findOne(
+      { _id: head.referenceRevisionId, storeId },
+      { ...options, maxTimeMS: 2000 },
+    );
   if (!historical) throw Error("STORE_LAYOUT_REFERENCE_UNAVAILABLE");
   const reference = serializeStoreLayoutRevision(historical).plan;
   const fresh = await collection.findOne(
     { _id: storeId, storeId },
-    { projection: { revisionId: 1 }, maxTimeMS: 2000 },
+    { ...options, projection: { revisionId: 1 }, maxTimeMS: 2000 },
   );
   if (fresh?.revisionId !== head.revisionId)
     throw Error("STORE_LAYOUT_SOURCE_CHANGED");

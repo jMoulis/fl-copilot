@@ -1,3 +1,4 @@
+import { PhysicalAllocationCard } from "./physical-allocation-card";
 import { Text, View } from "react-native";
 import { router } from "expo-router";
 import type { CommercialWeekPlan } from "@fl-copilot/sync-contracts";
@@ -24,6 +25,11 @@ export function CommercialPlanContent({
         Ces opérations sont prévues pour le magasin. Aucune exécution n’est
         confirmée par la validation du plan.
       </Text>
+      {!operationId && plan.preparation.physicalAllocation ? (
+        <PhysicalAllocationCard
+          scenario={plan.preparation.physicalAllocation}
+        />
+      ) : null}
       {plan.operations
         .filter((op) => !operationId || op.id === operationId)
         .map((op) => (

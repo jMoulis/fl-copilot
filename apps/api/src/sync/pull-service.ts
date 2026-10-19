@@ -1,3 +1,4 @@
+import { legacyPhysicalEntity } from "@fl-copilot/domain";
 import {
   serializeStoreLayout,
   serializeStoreLayoutRevision,
@@ -291,7 +292,13 @@ export function createMongoSyncPullService(
                 entityId: change.entityId,
                 operation: change.operation,
                 entityVersion: row.version,
-                entity: serializeCommercialPlan(row),
+                entity:
+                  query.physicalAllocations === "true"
+                    ? serializeCommercialPlan(row)
+                    : legacyPhysicalEntity(
+                        "commercial_week_plan",
+                        serializeCommercialPlan(row),
+                      ),
                 changedAt: change.changedAt.toISOString(),
               };
             }
@@ -307,7 +314,13 @@ export function createMongoSyncPullService(
                 entityId: change.entityId,
                 operation: change.operation,
                 entityVersion: 1,
-                entity: serializeCommercialPlanRevision(row),
+                entity:
+                  query.physicalAllocations === "true"
+                    ? serializeCommercialPlanRevision(row)
+                    : legacyPhysicalEntity(
+                        "commercial_week_plan_revision",
+                        serializeCommercialPlanRevision(row),
+                      ),
                 changedAt: change.changedAt.toISOString(),
               };
             }
@@ -538,7 +551,13 @@ export function createMongoSyncPullService(
                 entityId: change.entityId,
                 operation: change.operation,
                 entityVersion: row.version,
-                entity: serializeCommercialPreparation(row),
+                entity:
+                  query.physicalAllocations === "true"
+                    ? serializeCommercialPreparation(row)
+                    : legacyPhysicalEntity(
+                        "commercial_week_preparation",
+                        serializeCommercialPreparation(row),
+                      ),
                 changedAt: change.changedAt.toISOString(),
               };
             }

@@ -1,3 +1,4 @@
+import { legacyPhysicalEntity } from "@fl-copilot/domain";
 import { applyStoreLayoutCommand } from "../store-layout-sync";
 import {
   commercialExecutionTaskSchema,
@@ -200,6 +201,20 @@ export function createMongoSyncPushService(
           );
         }
       }
+      if (!input.physicalAllocations)
+        for (const result of results)
+          if (
+            result.remoteEntity &&
+            [
+              "commercial_week_preparation",
+              "commercial_week_plan",
+              "commercial_week_plan_revision",
+            ].includes(result.entityType)
+          )
+            result.remoteEntity = legacyPhysicalEntity(
+              result.entityType,
+              result.remoteEntity,
+            );
       if (!input.commercialExecutionActuals)
         for (const result of results) {
           if (

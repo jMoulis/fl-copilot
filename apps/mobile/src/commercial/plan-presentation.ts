@@ -1,8 +1,9 @@
+import { physicalAllocationSummary } from "./preparation-presentation";
 import type { CommercialWeekPlan } from "@fl-copilot/sync-contracts";
 import { commercialMechanismDescription } from "./choice-presentation";
 import { formatFrenchCalendarDate } from "../dates/calendar";
 export function commercialPlanSummary(p: CommercialWeekPlan) {
-  return `Version ${p.version} · ${formatFrenchCalendarDate(p.weekStart)} au ${formatFrenchCalendarDate(p.weekEnd)}\n${p.operations.length} opérations · ${p.offers.length} offres · ${p.preparation.placements.length} TG\n${p.offers.map((o) => `${o.rawProductLabel} → ${p.productRefs.find((r) => r.id === o.productId)?.label ?? "produit indisponible"} : ${commercialMechanismDescription(o.customerMechanism)} (${formatFrenchCalendarDate(o.saleStart)}–${formatFrenchCalendarDate(o.saleEnd)})`).join("\n")}\n${p.preparation.placements.map((t) => `${t.label} : ${t.theme || "sans thème"} (${t.offerIds.map((id) => p.offers.find((o) => o.choiceId === id)?.rawProductLabel ?? "offre indisponible").join(" · ")})`).join("\n")}`;
+  return `Version ${p.version} · ${formatFrenchCalendarDate(p.weekStart)} au ${formatFrenchCalendarDate(p.weekEnd)}\n${p.operations.length} opérations · ${p.offers.length} offres · ${p.preparation.placements.length} TG\n${p.offers.map((o) => `${o.rawProductLabel} → ${p.productRefs.find((r) => r.id === o.productId)?.label ?? "produit indisponible"} : ${commercialMechanismDescription(o.customerMechanism)} (${formatFrenchCalendarDate(o.saleStart)}–${formatFrenchCalendarDate(o.saleEnd)})`).join("\n")}\n${p.preparation.placements.map((t) => `${t.label} : ${t.theme || "sans thème"} (${t.offerIds.map((id) => p.offers.find((o) => o.choiceId === id)?.rawProductLabel ?? "offre indisponible").join(" · ")})`).join("\n")}\n${physicalAllocationSummary(p.preparation)}`;
 }
 export function commercialPlanError(code: string | undefined) {
   return (

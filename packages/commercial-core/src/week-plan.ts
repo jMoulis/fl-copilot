@@ -1,3 +1,4 @@
+import { assertPhysicalAllocationCurrent } from "./layout-preparation";
 import {
   commercialWeekPlanSchema,
   type CommercialWeekPlan,
@@ -27,6 +28,7 @@ export type CommercialPlanContext = {
   products: readonly { id: string; label: string; version: number }[];
   pages: readonly CommercialComparisonPage[];
   blocked?: readonly string[];
+  allocationSources?: unknown;
 };
 const sorted = <T>(rows: readonly T[], key: (v: T) => string) =>
   [...rows].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
@@ -98,12 +100,28 @@ export function commercialPlanIssues(
   prep: CommercialWeekPreparation,
   ctx: CommercialPlanContext,
 ) {
+  const allocationIssues = [];
+  if (prep.physicalAllocation)
+    try {
+      assertPhysicalAllocationCurrent(
+        prep.storeId,
+        prep.physicalAllocation,
+        ctx.allocationSources,
+      );
+    } catch {
+      allocationIssues.push({
+        code: "PHYSICAL_ALLOCATION_REVIEW_REQUIRED",
+        messageFr:
+          "L’implantation doit être revue : le plan du magasin, ses références produits/offres ou leur état local ont changé ou ne peuvent pas être vérifiés.",
+      });
+    }
   const issues = commercialPreparationReadiness(
     prep,
     ctx.choices,
     ctx.validated,
     commercialPlanPreferences(prep, ctx),
   );
+  issues.push(...allocationIssues);
   if (
     !ctx.preparation ||
     JSON.stringify(prep) !== JSON.stringify(ctx.preparation)

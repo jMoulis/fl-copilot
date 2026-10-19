@@ -1,3 +1,5 @@
+import { readStoreLayoutScenarioSources } from "../commercial/physical-allocation-sources";
+import { layoutScenarioInput } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import {
@@ -134,7 +136,19 @@ export async function loadCommercialPlanReadiness(
       ] as const)
         if (rows.some((row, i) => row._id !== parsed[i]!.id))
           throw Error("COPILOT_PLAN_READINESS_SCOPE");
+      let allocationSources: unknown;
+      if (prep.physicalAllocation)
+        try {
+          allocationSources = await readStoreLayoutScenarioSources(
+            db,
+            storeId,
+            layoutScenarioInput(prep.physicalAllocation),
+          );
+        } catch {
+          /* A complete commercial validation needs this source. */
+        }
       context = {
+        allocationSources,
         preparation: prep,
         choices,
         products: products.map((p) => ({

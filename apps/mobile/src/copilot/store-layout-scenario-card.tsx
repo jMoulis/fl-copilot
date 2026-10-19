@@ -1,3 +1,5 @@
+import { LayoutPreparationPanel } from "./layout-preparation-panel";
+import type { LayoutPreparationController } from "./layout-preparation-controller";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { CopilotMessage } from "@fl-copilot/domain";
@@ -14,8 +16,12 @@ export function StoreLayoutScenarioView({
   refreshing,
   renderOriginal,
   error,
+  renderPreparation,
+  saved = false,
 }: {
-  state: State;
+  state: Omit<State, "message">;
+  saved?: boolean;
+  renderPreparation?: () => ReactNode;
   onRefresh: () => void;
   refreshing: boolean;
   error?: string;
@@ -44,7 +50,7 @@ export function StoreLayoutScenarioView({
     <View className="gap-3 rounded-2xl border border-line bg-white p-4">
       <Text className="font-semibold text-ink">{scenario.title}</Text>
       <Text className="text-muted">
-        Proposition · semaine du{" "}
+        {saved ? "Implantation enregistrée" : "Proposition"} · semaine du{" "}
         {new Date(scenario.weekStart + "T12:00:00Z").toLocaleDateString(
           "fr-FR",
         )}{" "}
@@ -58,7 +64,9 @@ export function StoreLayoutScenarioView({
       />
       <BottomSheet
         visible={visible}
-        title="Proposition d’implantation"
+        title={
+          saved ? "Implantation de la semaine" : "Proposition d’implantation"
+        }
         swipeToClose
         onClose={() => setVisible(false)}
       >
@@ -164,10 +172,13 @@ export function StoreLayoutScenarioView({
           </View>
         ) : null}
         <Text className="text-muted">
-          Répartition proposée, sans validation du plan ni déclaration de mise
-          en place. Quantités et capacité restent à confirmer. Ce schéma n’est
-          pas une image générée.
+          {saved
+            ? "Répartition enregistrée pour cette semaine, sans déclaration de mise en place."
+            : "Répartition proposée, sans validation du plan ni déclaration de mise en place."}{" "}
+          Quantités et capacité restent à confirmer. Ce schéma n’est pas une
+          image générée.
         </Text>
+        {visible && renderPreparation ? renderPreparation() : null}
         <Text className="text-muted">
           {freshness}. La vérification utilise les données locales ;
           synchronisez pour récupérer les dernières modifications.
@@ -191,9 +202,11 @@ export function StoreLayoutScenarioView({
 export function StoreLayoutScenarioCard({
   message,
   reader,
+  preparation,
 }: {
   message: CopilotMessage;
   reader: CopilotStoreLayoutScenarioReader;
+  preparation?: LayoutPreparationController;
 }) {
   const [state, setState] = useState<State>(),
     [error, setError] = useState<string>(),
@@ -250,6 +263,16 @@ export function StoreLayoutScenarioCard({
         <StoreLayoutScenarioView
           state={state}
           error={error}
+          renderPreparation={
+            preparation
+              ? () => (
+                  <LayoutPreparationPanel
+                    controller={preparation}
+                    message={message}
+                  />
+                )
+              : undefined
+          }
           refreshing={refreshing}
           onRefresh={() => {
             void refresh();
