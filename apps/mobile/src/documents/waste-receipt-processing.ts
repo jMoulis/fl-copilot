@@ -8,6 +8,22 @@ export function receiptProcessingPresentation(
   lineCount: number,
   offline: boolean,
 ) {
+  if (receipt.syncState === "CONFLICT")
+    return {
+      title: "Conflit de synchronisation",
+      message:
+        "Les versions sont conservées. Examinez le conflit dans Synchronisation avant toute nouvelle modification.",
+      canRetry: false,
+      status: "conflict" as const,
+    };
+  if (receipt.syncState === "ERROR")
+    return {
+      title: "Synchronisation à vérifier",
+      message:
+        "Le ticket et vos corrections restent conservés. Consultez Synchronisation pour examiner le refus.",
+      canRetry: false,
+      status: "error" as const,
+    };
   if (receipt.processingStatus === "PUBLISHED")
     return {
       title:

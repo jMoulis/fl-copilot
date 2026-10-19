@@ -227,6 +227,8 @@ type ButtonProps = {
   onPress: () => void;
   disabled?: boolean;
   loading?: boolean;
+  expanded?: boolean;
+  accessibilityLabel?: string;
 };
 function Button({
   label,
@@ -234,14 +236,23 @@ function Button({
   disabled = false,
   loading = false,
   secondary = false,
+  expanded,
+  accessibilityLabel,
 }: ButtonProps & { secondary?: boolean }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
       accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ disabled: disabled || loading, busy: loading }}
+      accessibilityLabel={accessibilityLabel ?? label}
+      aria-disabled={disabled || loading}
+      aria-busy={loading}
+      aria-expanded={expanded}
+      accessibilityState={{
+        disabled: disabled || loading,
+        busy: loading,
+        expanded,
+      }}
       style={({ pressed }) => ({
         minHeight: 48,
         opacity: disabled ? 0.45 : pressed ? 0.75 : 1,

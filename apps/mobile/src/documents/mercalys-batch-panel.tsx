@@ -1,3 +1,9 @@
+import { colors } from "../design/tokens";
+import {
+  batchPublicationLabel as publicationStatus,
+  filterBatchItems,
+  type BatchItemFilter,
+} from "./mercalys-batch-presentation";
 import { MercalysBatchPublication } from "./mercalys-batch-publication";
 import { MercalysArchiveRepository } from "./mercalys-archive-repository";
 import {
@@ -6,7 +12,7 @@ import {
   nativeMercalysZipStorage,
 } from "./mercalys-zip-capture";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Text, View } from "react-native";
+import { Pressable, Text, TextInput, View } from "react-native";
 import {
   randomUUID,
   CryptoDigestAlgorithm,
@@ -107,6 +113,9 @@ export function MercalysBatchPanel({
       ),
     [repo, service, db],
   );
+  const [history, setHistory] = useState(false);
+  const [query, setQuery] = useState("");
+  const [itemFilter, setItemFilter] = useState<BatchItemFilter>("ALL");
   const [publicationPlan, setPublicationPlan] =
     useState<MercalysBatchPublicationPlan>();
   const [publicationReport, setPublicationReport] =
@@ -180,6 +189,10 @@ export function MercalysBatchPanel({
     );
     const committed = await repo.publications(batchId);
     if (alive.current) {
+      if (activeRef.current !== batchId) {
+        setQuery("");
+        setItemFilter("ALL");
+      }
       setPublications(committed);
       setPublicationPlan(undefined);
       setPublicationReport(undefined);
@@ -263,6 +276,10 @@ export function MercalysBatchPanel({
       }
     }
   }
+  const visibleItems = useMemo(
+    () => filterBatchItems(items, publications, query, itemFilter),
+    [items, publications, query, itemFilter],
+  );
   return (
     <SectionCard title="Imports en lot">
       <Text className="text-sm text-muted">
@@ -324,53 +341,72 @@ export function MercalysBatchPanel({
           }
         />
       ) : null}
-      {archives.map((a) => (
-        <View key={a.id} className="gap-2 rounded-xl border border-line p-3">
-          <Text className="font-semibold text-ink">{a.filename}</Text>
-          <Text>
-            {a.outcome.status === "RETAINED"
-              ? "Archive conservée — lecture à reprendre"
-              : a.outcome.status === "FAILED"
-                ? archiveError(a.outcome.code)
-                : `${a.outcome.retainedCount} fichiers conservés · ${a.outcome.failures.length} erreurs · ${a.outcome.ignored.length} fichiers système ignorés`}
+      <SecondaryButton
+        expanded={history}
+        label={
+          history
+            ? "Masquer les lots et archives précédents"
+            : "Voir les lots et archives précédents"
+        }
+        disabled={busy || disabled}
+        onPress={() => setHistory(!history)}
+      />
+      <View
+        style={{ display: history ? "flex" : "none" }}
+        accessibilityElementsHidden={!history}
+        importantForAccessibility={history ? "auto" : "no-hide-descendants"}
+        className="gap-3"
+      >
+        {archives.map((a) => (
+          <View key={a.id} className="gap-2 rounded-xl border border-line p-3">
+            <Text className="font-semibold text-ink">{a.filename}</Text>
+            <Text>
+              {a.outcome.status === "RETAINED"
+                ? "Archive conservée — lecture à reprendre"
+                : a.outcome.status === "FAILED"
+                  ? archiveError(a.outcome.code)
+                  : `${a.outcome.retainedCount} fichiers conservés · ${a.outcome.failures.length} erreurs · ${a.outcome.ignored.length} fichiers système ignorés`}
+            </Text>
+            {a.outcome.status === "PROCESSED"
+              ? a.outcome.failures.map((f) => (
+                  <Text key={f.path}>
+                    {f.path} : extraction impossible, sélectionnez l’original ou
+                    un ZIP corrigé.
+                  </Text>
+                ))
+              : null}
+            {a.outcome.status !== "PROCESSED" || a.outcome.failures.length ? (
+              <SecondaryButton
+                label="Lire / reprendre cette archive"
+                disabled={busy || disabled}
+                onPress={() =>
+                  void run((signal) => processArchive(a.id, signal))
+                }
+              />
+            ) : null}
+            {a.outcome.status === "PROCESSED" && a.outcome.retainedCount ? (
+              <SecondaryButton
+                label="Ouvrir les fichiers extraits"
+                disabled={busy || disabled}
+                onPress={() => void run(async () => load(a.batchId))}
+              />
+            ) : null}
+          </View>
+        ))}
+        {moreArchives ? (
+          <SecondaryButton
+            label="Voir les archives précédentes"
+            disabled={busy || disabled}
+            onPress={() => void run(async () => loadArchives(true))}
+          />
+        ) : null}
+        {archives.length ? (
+          <Text className="text-sm text-muted">
+            L’archive originale reste sur cet appareil. Chaque fichier publié
+            est synchronisé.
           </Text>
-          {a.outcome.status === "PROCESSED"
-            ? a.outcome.failures.map((f) => (
-                <Text key={f.path}>
-                  {f.path} : extraction impossible, sélectionnez l’original ou
-                  un ZIP corrigé.
-                </Text>
-              ))
-            : null}
-          {a.outcome.status !== "PROCESSED" || a.outcome.failures.length ? (
-            <SecondaryButton
-              label="Lire / reprendre cette archive"
-              disabled={busy || disabled}
-              onPress={() => void run((signal) => processArchive(a.id, signal))}
-            />
-          ) : null}
-          {a.outcome.status === "PROCESSED" && a.outcome.retainedCount ? (
-            <SecondaryButton
-              label="Ouvrir les fichiers extraits"
-              disabled={busy || disabled}
-              onPress={() => void run(async () => load(a.batchId))}
-            />
-          ) : null}
-        </View>
-      ))}
-      {moreArchives ? (
-        <SecondaryButton
-          label="Voir les archives précédentes"
-          disabled={busy || disabled}
-          onPress={() => void run(async () => loadArchives(true))}
-        />
-      ) : null}
-      {archives.length ? (
-        <Text className="text-sm text-muted">
-          L’archive originale reste sur cet appareil. Chaque fichier publié est
-          synchronisé.
-        </Text>
-      ) : null}
+        ) : null}
+      </View>
       <Text className="text-sm text-muted">
         Les originaux sont conservés sur cet appareil. La synchronisation du
         fichier commence après sa publication.
@@ -385,21 +421,28 @@ export function MercalysBatchPanel({
         <Text accessibilityLiveRegion="polite">{progress}</Text>
       ) : null}
       {error ? <InlineAlert title="Lot à reprendre" message={error} /> : null}
-      {batches.map((batch) => (
-        <SecondaryButton
-          key={batch.id}
-          label={`${batch.files.length} fichier${batch.files.length > 1 ? "s" : ""} · ${new Date(batch.createdAt).toLocaleDateString("fr-FR")}`}
-          disabled={busy || disabled}
-          onPress={() => void run(async () => load(batch.id))}
-        />
-      ))}
-      {moreBatches ? (
-        <SecondaryButton
-          label="Voir les lots précédents"
-          disabled={busy || disabled}
-          onPress={() => void run(async () => loadRecent(true))}
-        />
-      ) : null}
+      <View
+        style={{ display: history ? "flex" : "none" }}
+        accessibilityElementsHidden={!history}
+        importantForAccessibility={history ? "auto" : "no-hide-descendants"}
+        className="gap-3"
+      >
+        {batches.map((batch) => (
+          <SecondaryButton
+            key={batch.id}
+            label={`${batch.files.length} fichier${batch.files.length > 1 ? "s" : ""} · ${new Date(batch.createdAt).toLocaleDateString("fr-FR")}`}
+            disabled={busy || disabled}
+            onPress={() => void run(async () => load(batch.id))}
+          />
+        ))}
+        {moreBatches ? (
+          <SecondaryButton
+            label="Voir les lots précédents"
+            disabled={busy || disabled}
+            onPress={() => void run(async () => loadRecent(true))}
+          />
+        ) : null}
+      </View>
       {active ? (
         <SecondaryButton
           label="Reprendre les fichiers en attente"
@@ -496,7 +539,74 @@ export function MercalysBatchPanel({
           onPress={() => void run(async () => onDiscuss(active))}
         />
       ) : null}
-      {items.map((item) => (
+      {active ? (
+        <View className="gap-3">
+          <TextInput
+            accessibilityLabel="Rechercher un fichier du lot par nom"
+            placeholder="Rechercher un fichier"
+            placeholderTextColor={colors.muted}
+            value={query}
+            maxLength={200}
+            editable={!busy && !disabled}
+            onChangeText={setQuery}
+            className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
+          />
+          <View className="flex-row flex-wrap gap-2">
+            {(
+              [
+                ["ALL", "Tous"],
+                ["REVIEW", "À examiner"],
+                ["PUBLISHED", "Avec lignes publiées"],
+                ["QUEUED", "À lire"],
+              ] as const
+            ).map(([key, label]) => (
+              <Pressable
+                key={key}
+                accessibilityRole="radio"
+                aria-checked={itemFilter === key}
+                accessibilityState={{
+                  checked: itemFilter === key,
+                  disabled: busy || disabled,
+                }}
+                accessibilityLabel={`Fichiers : ${label}`}
+                disabled={busy || disabled}
+                onPress={() => setItemFilter(key)}
+                className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${itemFilter === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+              >
+                <Text
+                  className={
+                    itemFilter === key
+                      ? "font-semibold text-on-accent"
+                      : "text-ink"
+                  }
+                >
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
+            {visibleItems.length} sur {items.length} fichiers chargés
+            {more ? " · d’autres fichiers restent à charger" : ""}
+          </Text>
+        </View>
+      ) : null}
+      {active && items.length > 0 && visibleItems.length === 0 ? (
+        <View className="gap-2">
+          <Text className="text-sm text-muted">
+            Aucun fichier chargé ne correspond à cette sélection.
+          </Text>
+          <SecondaryButton
+            label="Effacer la recherche et les filtres"
+            disabled={busy || disabled}
+            onPress={() => {
+              setQuery("");
+              setItemFilter("ALL");
+            }}
+          />
+        </View>
+      ) : null}
+      {visibleItems.map((item) => (
         <View key={item.id} className="gap-2 rounded-xl border border-line p-3">
           <Text className="font-semibold text-ink">{item.filename}</Text>
           {(publicationReport ?? publicationPlan?.items)?.find(
@@ -597,25 +707,6 @@ function archiveError(code: string) {
   if (code === "MERCALYS_ZIP_UNSUPPORTED")
     return "Ce format ZIP n’est pas pris en charge. Utilisez un ZIP non chiffré contenant uniquement des XLSX.";
   return "L’archive ne peut pas être lue. Sélectionnez un nouvel original ; les fichiers déjà conservés restent disponibles.";
-}
-
-function publicationStatus(
-  item: MercalysBatchItem,
-  publications: Awaited<ReturnType<MercalysBatchRepository["publications"]>>,
-) {
-  const result = item.result;
-  const sourceType =
-    result.status === "REVIEW" || result.status === "DUPLICATE"
-      ? result.sourceType
-      : undefined;
-  const matches = publications.filter(
-    (p) =>
-      p.checksum === item.checksum &&
-      (!sourceType || p.source_type === sourceType),
-  );
-  const publication = matches.length === 1 ? matches[0] : undefined;
-  if (!publication) return undefined;
-  return `✓ Publié · ${publication.published_count} ligne${publication.published_count > 1 ? "s" : ""}${publication.remaining_count ? ` · ${publication.remaining_count} ligne${publication.remaining_count > 1 ? "s" : ""} non publiée${publication.remaining_count > 1 ? "s" : ""}` : ""}`;
 }
 
 function publicationIssue(code?: string) {

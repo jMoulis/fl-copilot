@@ -394,3 +394,15 @@ La PR 276 précédente est fusionnée après succès des deux contrôles exacts 
 Preuves/limites : `../qa/M7_UX_ACTIONS.md`. Aucun déploiement API ou build EAS payant. Une fusion ne vaut pas validation sur téléphone.
 
 Le lot Actions/Aujourd’hui inclut aussi le lien exact de la casse au prix d’achat vers Analyses, séparé du prix de vente. Calcul connu/estimé et qualification réutilisés du moteur partagé, sans ajout d’instructions IA. Tests locaux rayon/produit et non-régression Aujourd’hui passés ; recette native encore ouverte. Le chantier 7 reste en cours. La PR 277 Produits précédente est fusionnée après ses deux CI exactes réussies (`39327121525`, `39327128020`), merge `2245ff3d1a49a9ea7d789d09c81319b681a1df41`, branche distante supprimée, toujours en attente de livraison groupée.
+
+## Lot courant — sources lisibles et retrouvables (19 octobre 2026)
+
+1. **Actions/conflits : en cours.** Conflits/refus de tickets distingués d’un envoi en attente et reliés à Synchronisation ; aucune résolution automatique ajoutée. Autres reprises et recette restent ouvertes.
+2. **Contre-promo : code prêt**, livraison et acceptation groupées à faire.
+3. **Documents : en cours.** Recherche/filtres de tickets et fichiers, publications réellement enregistrées, originaux PDF consultables depuis la liste et présentation progressive. Réception Resend/restauration/acceptation restent ouvertes.
+4. **Expertise : en cours**, évaluation des cas réels restante.
+5. **Recommandations : en cours**, aucune réalisation ou causalité inférée ; parcours jusqu’au bilan réel encore à accepter.
+6. **Implantation : en cours**, illustration, contraintes et validation terrain restantes.
+7. **UX/validation : en cours.** L5 progresse sur Casse/Imports/Documents et les états accessibles. Formulaires détaillés, autres écrans, médias et recette native/M8 restent ouverts.
+
+La PR 278 précédente est fusionnée après ses deux CI exactes réussies (`39328076827`, `39328085774`), merge `a1fba2a2dd017f40f23de123a543fda0ed6cf6f3`, branche distante supprimée. Les nouveaux parcours restent en attente de livraison groupée, sans déploiement ou build EAS payant. Preuves et limites de ce lot : `../qa/M7_UX_SOURCE_LISTS.md`.

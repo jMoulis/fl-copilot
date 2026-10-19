@@ -282,6 +282,7 @@ export function CatalogueChoices({
           <Pressable
             key={key}
             accessibilityRole="radio"
+            aria-checked={value === key}
             accessibilityState={{ checked: value === key }}
             accessibilityLabel={`${title} : ${label}`}
             onPress={() => onChange(key!)}
