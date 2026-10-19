@@ -184,15 +184,6 @@ export function CopilotChatView({
             </View>
           ) : null
         }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.welcome}>De quoi avez-vous besoin ?</Text>
-            <Text style={styles.hint}>
-              Préparer la semaine, comprendre les ventes ou faire le point sur
-              le rayon.
-            </Text>
-          </View>
-        }
         ListFooterComponent={
           streamingText || status === "GENERATING" ? (
             <View style={{ padding: 20, gap: 12 }}>
@@ -429,14 +420,6 @@ const styles = StyleSheet.create({
     color: colors.ink,
   },
   history: { flexGrow: 1, padding: 18, gap: 24 },
-  empty: { flex: 1, justifyContent: "center", paddingVertical: 60 },
-  welcome: {
-    color: colors.ink,
-    fontSize: 27,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
-  hint: { fontSize: 16, lineHeight: 24, color: colors.muted },
   userMessage: {
     alignSelf: "flex-end",
     maxWidth: "90%",

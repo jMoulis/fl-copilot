@@ -222,6 +222,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       "keeps recorded contexts private and respects source visibility (%s)",
       async (mode) => {
         const f = await fixture();
+        // Deliberately include the forbidden business amount in an opaque ID:
+        // privacy checks must inspect returned content, not random identifiers.
+        f.source.id = `100${f.source.id.slice(3)}`;
+        f.input.sourceMessageId = f.source.id;
+        f.turn.replyId = f.source.id;
         await runCopilotTurn(f.deps, f.turn);
         const scope = { ...f.scope };
         if (mode === "OWNER") scope.ownerId = randomUUID();
@@ -239,7 +244,18 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           status: "SOURCE_UNAVAILABLE",
           checkedCount: 0,
         });
-        expect(JSON.stringify(r.evidence)).not.toContain("100");
+        expect(r.evidence).toEqual([
+          expect.objectContaining({
+            sourceType: "DATA_QUALITY",
+            factKind: "QUALITY",
+            sourceId: f.source.id,
+          }),
+        ]);
+        expect(
+          JSON.stringify(
+            r.evidence.map(({ label, value }) => ({ label, value })),
+          ),
+        ).not.toContain("100");
       },
       60000,
     );
