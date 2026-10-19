@@ -3,6 +3,10 @@ import { membershipFixture } from "../../../../scripts/test-membership-fixtures"
 import { storeContextFixture } from "../../../../scripts/test-store-context-fixtures";
 import { needUnitFixture } from "../../../../scripts/test-need-unit-fixtures";
 import { randomUUID } from "node:crypto";
+import {
+  layoutFixture,
+  nextLayout,
+} from "../../../../scripts/test-store-layout-fixtures";
 import { it, expect, vi } from "vitest";
 import { z } from "zod";
 import { parseEnvironment } from "../config";
@@ -19,6 +23,7 @@ import {
   createCopilotAiProvider,
   type CopilotGenerationRequest,
 } from "./ai-provider";
+import { presentCopilotStoreLayout } from "./store-layout-tool";
 const schema = z.object({ answer: z.string() }).strict();
 function fixture() {
   const config = parseEnvironment({
@@ -6407,5 +6412,110 @@ it.each(["CHECKED", "BLOCKED", "FOREIGN", "TAMPERED", "DISABLED"])(
             mode === "FOREIGN" || mode === "TAMPERED" ? "UNAVAILABLE" : "DONE",
         }),
       );
+  },
+);
+
+it.each([
+  "READY",
+  "NO_REFERENCE",
+  "FOREIGN",
+  "TAMPERED",
+  "BYTE_BUDGET",
+  "DISABLED",
+] as const)(
+  "reads store-owned physical layout through the installed SDK with %s authority",
+  async (mode) => {
+    const f = fixture(),
+      first = layoutFixture(
+        mode === "FOREIGN" ? randomUUID() : f.request.storeId,
+      ),
+      id = randomUUID();
+    const reference = nextLayout(first, {
+      revisionId: id,
+      referenceRevisionId: id,
+      action: "ADOPT_REFERENCE",
+    });
+    const head = mode === "NO_REFERENCE" ? first : reference;
+    const snapshot = {
+      head,
+      reference: mode === "NO_REFERENCE" ? null : structuredClone(reference),
+    };
+    if (mode === "TAMPERED")
+      snapshot.reference!.content.furniture[0]!.label =
+        "PRIVATE_TAMPERED_FURNITURE";
+    if (mode === "FOREIGN")
+      head.content.furniture[0]!.label = "PRIVATE_FOREIGN_FURNITURE";
+    if (mode === "BYTE_BUDGET") f.config.COPILOT_AI_MAX_INPUT_BYTES = 4096;
+    const input = {
+        view: "REFERENCE" as const,
+        expectedRevisionId: null,
+        targetId: null,
+        cursor: null,
+        limit: 20,
+      },
+      storeLayout = vi.fn(async () => snapshot);
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "store_layout",
+        );
+      if (mode === "DISABLED") {
+        expect(definition).toBeUndefined();
+        return response();
+      }
+      expect(definition.parameters.type).toBe("object");
+      expect(definition.parameters.additionalProperties).toBe(false);
+      expect(JSON.stringify(definition.parameters)).not.toMatch(
+        /storeId|ownerId|query|write|actor/,
+      );
+      if (calls++ === 0) {
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_store_layout",
+            call_id: "call_store_layout",
+            name: "store_layout",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const value = JSON.parse(
+        body.input.find(
+          (v: { type: string }) => v.type === "function_call_output",
+        ).output,
+      );
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_FOREIGN_FURNITURE");
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_TAMPERED_FURNITURE");
+      expect(JSON.stringify(value)).not.toContain("updatedBy");
+      expect(JSON.stringify(value)).not.toContain(head.updatedBy);
+      if (["FOREIGN", "TAMPERED", "BYTE_BUDGET"].includes(mode))
+        expect(value).toMatchObject({ unavailable: true });
+      else
+        expect(value).toMatchObject({
+          status: mode,
+          storeId: f.request.storeId,
+          input,
+        });
+      return response();
+    };
+    const output = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      ...(mode === "DISABLED" ? {} : { storeLayout }),
+    }).generate(f.request, schema);
+    expect(storeLayout).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+    expect(output.toolEvidence).toEqual(
+      ["READY", "NO_REFERENCE"].includes(mode)
+        ? presentCopilotStoreLayout(f.request.storeId, input, snapshot).evidence
+        : [],
+    );
+    if (mode !== "DISABLED") expect(output.factTrace?.complete).toBe(false);
   },
 );

@@ -73,6 +73,7 @@ import {
   readProductClassificationBatchPreview,
 } from "./copilot/product-preview-tool.js";
 import { readCopilotStoreSettings } from "./copilot/store-settings-tool.js";
+import { readCopilotStoreLayoutSnapshot } from "./copilot/store-layout-tool.js";
 import {
   readNeedCatalogue,
   readNeedMemberships,
@@ -1092,6 +1093,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 const result = readImplantationScenario(
                   principal.storeId,
                   input,
+                );
+                await authorize();
+                return result;
+              },
+              storeLayout: async () => {
+                const principal = await authorize();
+                const result = await readCopilotStoreLayoutSnapshot(
+                  db,
+                  principal.storeId,
                 );
                 await authorize();
                 return result;
