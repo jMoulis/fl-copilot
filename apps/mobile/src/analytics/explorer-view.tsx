@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import {
   explorerLabel,
+  explorerMonthWeeks,
   explorerRange,
   explorerPeriodFromDate,
   explorerChartBuckets,
@@ -17,6 +18,7 @@ import {
   type SyncStatus,
 } from "../components/ui";
 import { DateSelector } from "../components/date-selector";
+import { explorerScopeLabel } from "./explorer-breakdown";
 import { colors } from "../design/tokens";
 import { formatFrenchCalendarDate } from "../dates/calendar";
 import {
@@ -87,6 +89,8 @@ export function ExplorerContent({
   onDrill,
   onBack,
   onRefresh,
+  onWeek,
+  onChartScroll,
 }: {
   view: ExplorerView;
   data?: Data;
@@ -99,7 +103,17 @@ export function ExplorerContent({
   onDrill: (date: string) => void;
   onBack: () => void;
   onRefresh: () => void;
+  onWeek: (period: ExplorerPeriod) => void;
+  onChartScroll: (offset: number) => void;
 }) {
+  const chart = useRef<ScrollView>(null);
+  const chartReady = !!data;
+  useEffect(() => {
+    if (chartReady)
+      requestAnimationFrame(() =>
+        chart.current?.scrollTo({ x: view.frame.chartScroll, animated: false }),
+      );
+  }, [view.frame.period, view.frame.chartScroll, chartReady]);
   const period = view.frame.period,
     range = explorerRange(period),
     c = data?.comparison;
@@ -218,6 +232,11 @@ export function ExplorerContent({
         }}
       >
         <Text style={{ color: colors.muted }}>{metrics[view.metric]}</Text>
+        {data ? (
+          <Text style={{ color: colors.ink, fontWeight: "600" }}>
+            {explorerScopeLabel(data)}
+          </Text>
+        ) : null}
         {!data ? (
           <Text style={{ color: colors.muted }}>
             {loadingError
@@ -305,6 +324,11 @@ export function ExplorerContent({
             restent signalés.
           </Text>
           <ScrollView
+            ref={chart}
+            onScroll={(e) =>
+              onChartScroll(Math.max(0, e.nativeEvent.contentOffset.x))
+            }
+            scrollEventThrottle={120}
             horizontal
             contentContainerStyle={{
               gap: 8,
@@ -405,6 +429,20 @@ export function ExplorerContent({
           title="Aucun montant disponible"
           message="Cette période ne contient pas encore de données locales pour cet indicateur. Changez de période ou ajoutez les sources depuis le copilote."
         />
+      ) : null}
+      {period.kind === "month" ? (
+        <View style={{ gap: 8 }}>
+          <Text style={{ color: colors.ink, fontWeight: "600" }}>
+            Semaines de ce mois
+          </Text>
+          {explorerMonthWeeks(period).map((week) => (
+            <SecondaryButton
+              key={JSON.stringify(week)}
+              label={`${explorerLabel(week)} · ${formatFrenchCalendarDate(explorerRange(week).start)} – ${formatFrenchCalendarDate(explorerRange(week).end)}`}
+              onPress={() => onWeek(week)}
+            />
+          ))}
+        </View>
       ) : null}
       <StatusBadge status={syncStatus} />
       <SecondaryButton

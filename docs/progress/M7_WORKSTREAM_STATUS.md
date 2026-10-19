@@ -344,3 +344,15 @@ Code prêt après contrôles, non livré. **2 153 tests locaux et quatre cas Mon
 7. **UX et validation globale : en cours.** Premier Explorer Jour/Semaine/Mois/Année sur les montants canoniques SQLite, sélection contextuelle, comparaison ISO N−1 ou civile qualifiée, graphique et drill/retour. État privé période/métrique/historique/scroll conservé après redémarrage ; thème sombre commun et cinq domaines natifs avec le chat à l’ouverture. Restent filtres/contributions/liens profonds, cohérence des autres écrans, médias et recette native groupée.
 
 14 nouveaux cas réussis (moteur + SQLite sur disque). Les vérifications complètes et les deux CI exactes sont consignées dans la PR. Aperçu local des composants avec données de test, distinct de la recette téléphone. **Code non livré**, aucun build EAS payant ni déploiement API. Voir `docs/qa/M7_UX_ANALYTICS_EXPLORER.md`, l’audit et la décomposition UX ; les sept chantiers et le périmètre V1 complet sont conservés.
+
+## Lot courant — filtres, contributions et liens Analytics (PR 275)
+
+1. **Actions métier et conflits : en cours.** Les liens des fiches sont de la consultation ; aucune nouvelle mutation ni clôture des exceptions CRUD.
+2. **Contre-promo : code prêt**, livraison/recette inchangées.
+3. **Documents : en cours.** Agrégats canoniques réutilisés ; aucune nouvelle ingestion ni clôture de réception/restauration.
+4. **Expertise métier structurée : en cours.** Classification actuelle explicite ; aucune nature déduite du canal source ni causalité inventée.
+5. **Suivi des recommandations : en cours.** Détail monétaire et comparaisons consultables, sans déclaration d’exécution ou conclusion d’impact implicite.
+6. **Implantation : en cours.** Illustration, contraintes/gestes et pilote encore ouverts.
+7. **UX et validation globale : en cours.** Filtres catégorie/nature/produit, catégories et montants par produit paginés, navigation Mois → semaine ISO complète → Jour → retour, contexte filtre/page/deux défilements restauré. Accès depuis Aujourd’hui et une fiche produit ; les citations du chat, gestes natifs, autres écrans/médias et recette globale restent ouverts.
+
+PR 274 fusionnée sur `2b40dc0` après succès push/PR exacts, branche supprimée. Pour ce lot : **2 178 tests locaux réussis**, build/import API et exports natifs réussis ; contrôle visuel de composants avec données de test et mesure locale synthétique de 107 310 lignes. **Code non livré sur téléphone**, aucun build EAS payant ni déploiement. Voir `docs/qa/M7_UX_ANALYTICS_FILTERS.md`. Les sept critères de sortie restent inchangés.
