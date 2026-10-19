@@ -24,6 +24,7 @@ export function conflictEntityLabel(conflict: SyncConflict) {
     copilot_execution_link: "Association de mise en place",
     copilot_action_execution: "Réalisation déclarée",
     copilot_knowledge: "Pratique mémorisée",
+    store_layout: "Plan physique du magasin",
     store_context_settings: "Réglages du magasin",
     commercial_week_plan: "Plan commercial validé",
     commercial_version_decision: "Référence PDF",

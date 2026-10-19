@@ -573,6 +573,28 @@ export const commercialReviewDecisions = sqliteTable(
     syncState: text("sync_state").notNull(),
   },
 );
+export const storeLayouts = sqliteTable("store_layouts", {
+  id: text("id").primaryKey().notNull(),
+  storeId: text("store_id").unique().notNull(),
+  payloadJson: text("payload_json").notNull(),
+  remotePayloadJson: text("remote_payload_json"),
+  remoteVersion: integer("remote_version"),
+  syncState: text("sync_state").notNull(),
+  dirty: integer("dirty").notNull().default(0),
+});
+export const storeLayoutRevisions = sqliteTable("store_layout_revisions", {
+  id: text("id").primaryKey().notNull(),
+  storeId: text("store_id").notNull(),
+  planVersion: integer("plan_version").notNull(),
+  payloadJson: text("payload_json").notNull(),
+  synced: integer("synced").notNull().default(0),
+});
+export const storeLayoutOperations = sqliteTable("store_layout_operations", {
+  commandId: text("command_id").primaryKey().notNull(),
+  storeId: text("store_id").notNull(),
+  intentJson: text("intent_json").notNull(),
+  payloadJson: text("payload_json").notNull(),
+});
 export const storeContextSettings = sqliteTable("store_context_settings", {
   id: text("id").primaryKey(),
   storeId: text("store_id").notNull(),
@@ -979,6 +1001,9 @@ export const localSchema = {
   weeklyContextCache,
   commercialVisualReadings,
   commercialOfferChoices,
+  storeLayouts,
+  storeLayoutRevisions,
+  storeLayoutOperations,
   storeContextSettings,
   storeContextHistory,
   commercialExecutionTasks,

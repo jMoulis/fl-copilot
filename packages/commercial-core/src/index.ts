@@ -25,3 +25,4 @@ export * from "./market-tensions";
 
 export { commercialMechanismDescription } from "./mechanism-description";
 export * from "./implantation-scenario";
+export * from "./store-layout-pilot";

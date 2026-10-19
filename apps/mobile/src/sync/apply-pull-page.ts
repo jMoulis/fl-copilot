@@ -1,3 +1,7 @@
+import {
+  applyStoreLayout,
+  applyStoreLayoutRevision,
+} from "../store/layout-repository";
 import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
 import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applySubstitutionScoreHistory } from "../needs/score-repository";
@@ -123,6 +127,26 @@ export async function applyPullPage(
           storeId,
           change.entity,
         );
+        continue;
+      }
+      if (
+        change.entityType === "store_layout" ||
+        change.entityType === "store_layout_revision"
+      ) {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("STORE_LAYOUT_ENVELOPE_INVALID");
+        if (change.entityType === "store_layout")
+          await applyStoreLayout(transaction, storeId, change.entity);
+        else
+          await applyStoreLayoutRevision(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "store_context_settings") {

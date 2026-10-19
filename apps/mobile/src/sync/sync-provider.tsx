@@ -89,6 +89,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         push: (request) =>
@@ -100,6 +101,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -139,6 +141,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         commercialExecution: true,
         commercialExecutionActuals: true,
         storeContext: true,
+        storeLayouts: true,
         needUnits: true,
         needMemberships: true,
         productSubstitutions: true,

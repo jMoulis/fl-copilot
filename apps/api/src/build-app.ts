@@ -495,10 +495,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.body.storeId,
         request.body.deviceId,
       );
+      const hasLayoutWrite = request.body.commands.some(
+        (c) =>
+          c.entityType === "store_layout" || c.type === "STORE_LAYOUT_UPSERT",
+      );
+      if (hasLayoutWrite && principal.role !== "MANAGER")
+        throw new AuthError(
+          403,
+          "STORE_ROLE_FORBIDDEN",
+          "Seul le responsable du magasin peut modifier le plan physique.",
+        );
       return request.body.commands.some(
         (c) =>
           c.entityType.startsWith("copilot_") || c.type.startsWith("COPILOT_"),
-      )
+      ) || hasLayoutWrite
         ? syncPush.push(request.body, request.id, principal.userId)
         : syncPush.push(request.body, request.id);
     },

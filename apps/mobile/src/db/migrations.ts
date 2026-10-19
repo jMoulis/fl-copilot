@@ -828,6 +828,14 @@ CREATE INDEX source_original_restorations_scope ON source_original_restorations(
     name: "copilot-action-executions",
     sql: `CREATE TABLE action_executions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,recommendation_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0); CREATE INDEX action_execution_scope ON action_executions(store_id,owner_id,id);`,
   },
+  {
+    version: 49,
+    name: "store-physical-layout",
+    sql: `CREATE TABLE store_layouts(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL UNIQUE,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE store_layout_revisions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,plan_version INTEGER NOT NULL,payload_json TEXT NOT NULL,synced INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX store_layout_revision_scope ON store_layout_revisions(store_id,plan_version);
+CREATE TABLE store_layout_operations(command_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,intent_json TEXT NOT NULL,payload_json TEXT NOT NULL);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

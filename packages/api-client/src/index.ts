@@ -384,6 +384,7 @@ export class ApiClient {
     copilotExecutionLinks = false,
     commercialExecutionActuals = false,
     copilotActionExecutions = false,
+    storeLayouts = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -397,6 +398,7 @@ export class ApiClient {
     if (commercialExecutionActuals)
       query.set("commercialExecutionActuals", "true");
     if (storeContext) query.set("storeContext", "true");
+    if (storeLayouts) query.set("storeLayouts", "true");
     if (needUnits) query.set("needUnits", "true");
     if (needMemberships) query.set("needMemberships", "true");
     if (productSubstitutions) query.set("productSubstitutions", "true");
@@ -448,6 +450,7 @@ export class ApiClient {
     copilotExecutionLinks = false,
     commercialExecutionActuals = false,
     copilotActionExecutions = false,
+    storeLayouts = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -463,6 +466,7 @@ export class ApiClient {
     if (commercialExecutionActuals)
       query.set("commercialExecutionActuals", "true");
     if (storeContext) query.set("storeContext", "true");
+    if (storeLayouts) query.set("storeLayouts", "true");
     if (needUnits) query.set("needUnits", "true");
     if (needMemberships) query.set("needMemberships", "true");
     if (productSubstitutions) query.set("productSubstitutions", "true");

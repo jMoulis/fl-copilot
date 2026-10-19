@@ -1,3 +1,7 @@
+import {
+  applyStoreLayout,
+  applyStoreLayoutRevision,
+} from "../store/layout-repository";
 import { applyActionExecutionRecord } from "../copilot/action-execution-repository";
 import { applyExecutionLinkRecord } from "../copilot/execution-link-repository";
 import { applyDecisionRecord } from "../copilot/decision-repository";
@@ -170,6 +174,20 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `commercial-versions:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    for (const revision of bootstrap.entities.storeLayoutRevisions ?? [])
+      await applyStoreLayoutRevision(transaction, storeId, revision);
+    for (const plan of bootstrap.entities.storeLayouts ?? [])
+      await applyStoreLayout(transaction, storeId, plan);
+    if (
+      bootstrap.entities.storeLayouts &&
+      bootstrap.entities.storeLayoutRevisions
+    )
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `store-layouts:${storeId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -370,6 +388,8 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialExecutionTasks",
     "commercialExecutionActuals",
     "storeContextSettings",
+    "storeLayouts",
+    "storeLayoutRevisions",
     "copilotExecutionLinks",
     "copilotActionExecutions",
     "copilotActionExecutionOwnerId",

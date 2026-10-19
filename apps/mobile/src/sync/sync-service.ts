@@ -1,3 +1,5 @@
+import { storeLayoutSchema } from "@fl-copilot/domain";
+import { applyStoreLayout } from "../store/layout-repository";
 import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
 import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { applyNeedMembership } from "../needs/membership-repository";
@@ -65,6 +67,7 @@ export interface MobileSyncServiceOptions {
   commercialExecution?: boolean;
   commercialExecutionActuals?: boolean;
   storeContext?: boolean;
+  storeLayouts?: boolean;
   needUnits?: boolean;
   needMemberships?: boolean;
   productSubstitutions?: boolean;
@@ -175,6 +178,12 @@ export class MobileSyncService {
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
           `commercial-versions:${storeId}`,
+        )
+      : true;
+    const layoutsAdopted = this.options.storeLayouts
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `store-layouts:${storeId}`,
         )
       : true;
     const storeContextAdopted = this.options.storeContext
@@ -309,6 +318,7 @@ export class MobileSyncService {
       !validationAdopted ||
       !versionsAdopted ||
       !storeContextAdopted ||
+      !layoutsAdopted ||
       !needUnitsAdopted ||
       !needMembershipsAdopted ||
       !productSubstitutionsAdopted ||
@@ -437,6 +447,7 @@ export class MobileSyncService {
                 "commercial_week_preparation",
                 "commercial_execution_task",
                 "store_context_settings",
+                "store_layout",
                 "need_unit",
                 "need_membership",
                 "product_substitution",
@@ -589,6 +600,21 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (command.entityType === "store_layout") {
+            const expected = storeLayoutSchema.parse(command.payload),
+              received = storeLayoutSchema.parse(result.remoteEntity);
+            if (
+              result.remoteVersion !== expected.version ||
+              JSON.stringify(received) !== JSON.stringify(expected)
+            )
+              throw Error("STORE_LAYOUT_ACK_INVALID");
+            await applyStoreLayout(
+              transaction,
+              storeId,
+              received,
+              expected.version,
+            );
+          }
           if (command.entityType === "store_context_settings")
             await applyStoreContext(
               transaction,
@@ -711,6 +737,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (command.entityType === "store_layout")
+            await transaction.runAsync(
+              "UPDATE store_layouts SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "store_context_settings")
             await transaction.runAsync(
               "UPDATE store_context_settings SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -813,6 +845,12 @@ export class MobileSyncService {
           if (command.entityType === "commercial_week_plan")
             await transaction.runAsync(
               "UPDATE commercial_week_plans SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "store_layout")
+            await transaction.runAsync(
+              "UPDATE store_layouts SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );
