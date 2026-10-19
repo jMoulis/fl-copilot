@@ -157,7 +157,17 @@ it("restores period, metric, drill history and exact scroll after file-backed re
     let a = new Adapter(db);
     await runLocalMigrations(a);
     let s = initialExplorerView("2026-10-15");
-    s = { ...s, metric: "waste", frame: { ...s.frame, scroll: 421 } };
+    s = {
+      ...s,
+      metric: "waste",
+      frame: {
+        ...s.frame,
+        scroll: 421,
+        chartScroll: 83,
+        detailsOffset: 20,
+        filters: { category: "FRUIT", nature: "BULK", productId: null },
+      },
+    };
     const drilled = drillExplorerView(s, "2026-10-14");
     await new ExplorerViewRepository(a, { storeId, ownerId }).save(drilled);
     db.close();
@@ -206,4 +216,132 @@ it("anchors direct granularity changes, clamps civil dates, clears only drill hi
   expect(changeExplorerGranularity(drilled, "year").history).toEqual([]);
   expect(backExplorerView(drilled)).toEqual(weekly);
   expect(() => drillExplorerView(weekly, "2025-01-01")).toThrow("OUTSIDE");
+});
+function insertProduct(
+  db: DatabaseSync,
+  storeId: string,
+  id: string,
+  label: string,
+  category = "FRUIT",
+  nature = "BULK",
+) {
+  db.prepare(
+    "INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at) VALUES(?,?,?,?,?,?,'ACTIVE',1,?,?)",
+  ).run(id, storeId, label, category, nature, "KG", at, at);
+}
+function insertProductDay(
+  db: DatabaseSync,
+  storeId: string,
+  productId: string,
+  date: string,
+  value: string,
+) {
+  const payload = {
+    storeId,
+    productId,
+    date,
+    sales: { salesValue: value, marginValue: value },
+    waste: { salesValue: value },
+    availability: {
+      salesValue: { status: "AVAILABLE" },
+      salesMarginValue: { status: "AVAILABLE" },
+      wasteSalesValue: { status: "AVAILABLE" },
+    },
+    formulaVersion: "product-daily-v1",
+    computedAt: at,
+  };
+  db.prepare(
+    "INSERT INTO product_daily_performance(id,store_id,product_id,business_date,payload_json,origin,formula_version,input_revision,computed_at) VALUES(?,?,?,?,?,'LOCAL','product-daily-v1','test',?)",
+  ).run(randomUUID(), storeId, productId, date, JSON.stringify(payload), at);
+}
+it("keeps official department totals distinct from filtered current-catalogue product amounts, without mixing another store", async () => {
+  const db = new DatabaseSync(":memory:"),
+    a = new Adapter(db),
+    store = randomUUID(),
+    other = randomUUID(),
+    fruit = randomUUID(),
+    veg = randomUUID(),
+    foreign = randomUUID();
+  try {
+    await runLocalMigrations(a);
+    insert(db, store, "2026-10-15", "100");
+    insertProduct(db, store, fruit, "Poire");
+    insertProduct(db, store, veg, "Tomate", "VEGETABLE", "PACKAGED");
+    insertProduct(db, other, foreign, "Autre magasin");
+    insertProductDay(db, store, fruit, "2026-10-15", "10.01");
+    insertProductDay(db, store, fruit, "2025-10-16", "5");
+    insertProductDay(db, store, veg, "2026-10-15", "2");
+    insertProductDay(db, other, foreign, "2026-10-15", "999");
+    const repo = new ExplorerRepository(a),
+      period = { kind: "day" as const, date: "2026-10-15" };
+    const all = await repo.load(store, period, "sales", "2026-10-19");
+    expect(all.total).toBe("100.00");
+    expect(all.details?.analysis.total).toBe("12.01");
+    expect(all.details?.totalContributors).toBe(2);
+    const filtered = await repo.load(store, period, "sales", "2026-10-19", {
+      category: "FRUIT",
+      nature: "BULK",
+      productId: null,
+    });
+    expect(filtered.total).toBe("10.01");
+    expect(filtered.comparison?.absoluteDifference).toBe("5.01");
+    expect((await repo.catalogue(store)).map((p) => p.label)).toEqual([
+      "Poire",
+      "Tomate",
+    ]);
+    expect(
+      (
+        await repo.load(store, period, "sales", "2026-10-19", {
+          category: null,
+          nature: null,
+          productId: foreign,
+        })
+      ).total,
+    ).toBeNull();
+    expect(
+      (
+        await a.getFirstAsync<{ n: number }>(
+          "SELECT COUNT(*) AS n FROM sync_outbox",
+        )
+      )?.n,
+    ).toBe(0);
+  } finally {
+    db.close();
+  }
+});
+it("reads more than one bounded SQL page with exact product/date cursors and complete totals", async () => {
+  const db = new DatabaseSync(":memory:"),
+    a = new Adapter(db),
+    store = randomUUID(),
+    ids = Array.from({ length: 51 }, () => randomUUID());
+  try {
+    await runLocalMigrations(a);
+    db.exec("BEGIN");
+    for (const [i, id] of ids.entries())
+      insertProduct(db, store, id, `Produit ${i}`);
+    for (let n = 0; n < 100; n++) {
+      const date = new Date(Date.parse("2026-01-01T12:00:00Z") + n * 86400000)
+        .toISOString()
+        .slice(0, 10);
+      for (const id of ids) insertProductDay(db, store, id, date, "0.01");
+    }
+    db.exec("COMMIT");
+    const r = await new ExplorerRepository(a).load(
+      store,
+      { kind: "year", year: 2026 },
+      "sales",
+      "2026-10-19",
+      { category: "FRUIT", nature: null, productId: null },
+      20,
+    );
+    expect(r.total).toBe("51.00");
+    expect(r.coverage.complete).toBe(100);
+    expect(r.coverage.missing).toBe(265);
+    expect(r.details?.contributors).toHaveLength(20);
+    expect(r.details?.totalContributors).toBe(51);
+    expect(r.details?.offset).toBe(20);
+    expect(r.comparison).toBeNull();
+  } finally {
+    db.close();
+  }
 });

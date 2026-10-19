@@ -82,3 +82,9 @@ Les sept chantiers M7 restent le suivi de référence. Les onze lots ci-dessus s
 La PR 274 implémente une première tranche de L1/L2/L3 et les vues monétaires Mois/Année de L4 : thème sombre commun, cinq domaines, entrée chat, Explorer natif local, politiques de comparaison qualifiées, sélection contextuelle, drill/retour et état de présentation persistant. Les formules et agrégats métier existants restent canoniques. Voir `../qa/M7_UX_ANALYTICS_EXPLORER.md` pour les preuves et limites. Cette mise à jour remplace uniquement le constat « branche préparée sans modification fonctionnelle » ci-dessus ; la base de l’audit reste PR 273.
 
 Aucun lot L1–L11 n’est annoncé intégralement validé sur cette seule tranche. La suite UX porte sur les filtres/contributions et les liens vers les périodes depuis Aujourd’hui/chat, puis la cohérence des écrans et les médias ; les chantiers métier/documentaires/implantation et toutes les portes M8 restent conservés. Code testé/compilé ne signifie pas livré ou validé sur téléphone.
+
+## Avancement — périmètres et détails Analytics (PR 275)
+
+L3/L4 avancent avec les filtres catégorie/nature/produit, les catégories et montants produits paginés, les semaines ISO intersectant un mois et les accès contextualisés depuis Aujourd’hui/une fiche. Filtres, pagination et deux défilements font partie du contexte restaurable. Les mêmes sommes/couvertures de produits-jours sont réutilisées avec le moteur du chat, sans remplacer le total officiel du rayon par un détail incomplet. Mesure synthétique et portes restantes : `../qa/M7_UX_ANALYTICS_FILTERS.md`.
+
+Les liens des citations du chat ne sont pas encore branchés : des destinations structurées sont nécessaires, aucun décodage approximatif de prose. Recette native, gestes et conservation des formulaires, L5/L6 et les autres engagements métier/documentaires/implantation/M8 restent ouverts. Aucun lot complet n’est déclaré validé ou livré par cette PR.

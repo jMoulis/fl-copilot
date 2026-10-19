@@ -18,3 +18,5 @@ export * from "./period-waste-rate";
 export * from "./analytics-query";
 export * from "./price-scenario";
 export * from "./explorer-period";
+
+export * from "./explorer-products";

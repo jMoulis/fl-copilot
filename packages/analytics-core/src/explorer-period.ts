@@ -275,3 +275,15 @@ export function explorerChartBuckets(
     };
   });
 }
+
+export function explorerMonthWeeks(period: ExplorerPeriod) {
+  if (period.kind !== "month") return [];
+  const range = explorerRange(period),
+    result: ExplorerPeriod[] = [];
+  for (let date = range.start; date <= range.end;) {
+    const week = explorerPeriodFromDate("week", date);
+    result.push(week);
+    date = addExplorerDays(explorerRange(week).end, 1);
+  }
+  return result;
+}

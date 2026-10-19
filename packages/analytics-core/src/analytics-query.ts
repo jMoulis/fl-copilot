@@ -173,28 +173,11 @@ export function executeAnalyticsQuery(input: {
     throw Error("ANALYTICS_QUERY_LIMIT_EXCEEDED");
   let allRows = [...groups].map(([key, group]) => {
     const metrics = query.metrics.map((metric) => {
-      const daily = new Map<string, { values: string[]; complete: number }>();
-      for (const p of group.points) {
-        const d = daily.get(p.businessDate) ?? {
-          values: [],
-          complete: 0,
-        };
-        if (p[metric].value !== null && p[metric].status !== "UNAVAILABLE") {
-          d.values.push(p[metric].value);
-          if (p[metric].status === "AVAILABLE") d.complete++;
-        }
-        daily.set(p.businessDate, d);
-      }
-      const points: DatedKpiValue[] = [...daily].map(([businessDate, d]) => ({
-        businessDate,
-        value: d.values.length ? addDecimals(d.values) : null,
-        status: !d.values.length
-          ? "UNAVAILABLE"
-          : d.complete ===
-              (query.groupBy === "DAY" ? universe.size : group.productIds.size)
-            ? "AVAILABLE"
-            : "PARTIAL",
-      }));
+      const points = aggregateAnalyticsDailyPoints(
+        group.points,
+        metric,
+        query.groupBy === "DAY" ? universe.size : group.productIds.size,
+      );
       const currentPeriod =
         query.groupBy === "DAY"
           ? { start: key, end: key }
@@ -299,4 +282,30 @@ export function executeAnalyticsQuery(input: {
         : null,
     rows: allRows.slice(query.offset, query.offset + query.limit),
   };
+}
+
+/** Shared coverage rule for observed product-days. Callers validate scope/uniqueness first. */
+export function aggregateAnalyticsDailyPoints(
+  points: readonly AnalyticsQueryPoint[],
+  metric: "sales" | "margin" | "waste",
+  expectedProducts: number,
+): DatedKpiValue[] {
+  const daily = new Map<string, { values: string[]; complete: number }>();
+  for (const p of points) {
+    const d = daily.get(p.businessDate) ?? { values: [], complete: 0 };
+    if (p[metric].value !== null && p[metric].status !== "UNAVAILABLE") {
+      d.values.push(p[metric].value);
+      if (p[metric].status === "AVAILABLE") d.complete++;
+    }
+    daily.set(p.businessDate, d);
+  }
+  return [...daily].map(([businessDate, d]) => ({
+    businessDate,
+    value: d.values.length ? addDecimals(d.values) : null,
+    status: !d.values.length
+      ? "UNAVAILABLE"
+      : d.complete === expectedProducts
+        ? "AVAILABLE"
+        : "PARTIAL",
+  }));
 }

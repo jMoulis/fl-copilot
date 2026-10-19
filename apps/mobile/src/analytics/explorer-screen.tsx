@@ -8,7 +8,7 @@ import {
   type NativeScrollEvent,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router, useFocusEffect } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { explorerRange, type ExplorerPeriod } from "@fl-copilot/analytics-core";
 import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
@@ -19,6 +19,9 @@ import {
   InlineAlert,
   SecondaryButton,
 } from "../components/ui";
+import { applyExplorerLink } from "./explorer-link";
+import { ExplorerFilters } from "./explorer-filters";
+import { ExplorerBreakdown } from "./explorer-breakdown";
 import { ExplorerRepository } from "./explorer-repository";
 import {
   ExplorerViewRepository,
@@ -26,6 +29,8 @@ import {
   changeExplorerGranularity,
   shiftExplorerView,
   drillExplorerView,
+  drillExplorerScope,
+  drillExplorerWeek,
   backExplorerView,
   type ExplorerView,
 } from "./explorer-state";
@@ -40,6 +45,9 @@ function tradingToday() {
   }).format(new Date());
 }
 export default function AnalyticsExplorerScreen() {
+  const { selection } = useLocalSearchParams<{
+    selection?: string | string[];
+  }>();
   const { session } = useAuth(),
     storeId = session?.stores[0]?.storeId,
     ownerId = session?.user.id;
@@ -48,6 +56,7 @@ export default function AnalyticsExplorerScreen() {
       key={`${storeId}:${ownerId}`}
       storeId={storeId}
       ownerId={ownerId}
+      selection={selection}
     />
   ) : (
     <AppScreen>
@@ -62,9 +71,11 @@ export default function AnalyticsExplorerScreen() {
 function StoreExplorer({
   storeId,
   ownerId,
+  selection,
 }: {
   storeId: string;
   ownerId: string;
+  selection?: string | string[];
 }) {
   const { sqlite } = useLocalDatabase(),
     sync = useSync(),
@@ -81,6 +92,10 @@ function StoreExplorer({
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>(),
     [picker, setPicker] = useState(false),
+    [filterSheet, setFilterSheet] = useState(false),
+    [catalogue, setCatalogue] =
+      useState<Awaited<ReturnType<ExplorerRepository["catalogue"]>>>(),
+    [catalogueError, setCatalogueError] = useState<string>(),
     [epoch, setEpoch] = useState(0),
     [latest, setLatest] = useState<string | null>(null);
   const current = useRef(view),
@@ -88,7 +103,8 @@ function StoreExplorer({
     writes = useRef(Promise.resolve()),
     alive = useRef(true),
     keyboard = useRef(false),
-    generation = useRef(0);
+    generation = useRef(0),
+    handledLink = useRef<unknown>(undefined);
   useEffect(() => {
     alive.current = true;
     let active = true;
@@ -138,6 +154,21 @@ function StoreExplorer({
     },
     [views],
   );
+  useEffect(() => {
+    if (!view || selection === undefined || selection === handledLink.current)
+      return;
+    handledLink.current = selection;
+    try {
+      const next = applyExplorerLink(current.current!, selection);
+      current.current = next;
+      setView(next);
+      save(next);
+    } catch {
+      setNotice(
+        "Ce lien d’analyse est invalide. Votre contexte local est conservé.",
+      );
+    }
+  }, [view, selection, save]);
   function change(next: ExplorerView) {
     current.current = next;
     setView(next);
@@ -146,7 +177,14 @@ function StoreExplorer({
   const refreshKey = `${epoch}:${sync.pendingCount}:${sync.conflictCount}:${sync.failedCount}`;
   const refreshRef = useRef(refreshKey);
   refreshRef.current = refreshKey;
-  const key = view ? JSON.stringify([view.frame.period, view.metric]) : "";
+  const key = view
+    ? JSON.stringify([
+        view.frame.period,
+        view.metric,
+        view.frame.filters,
+        view.frame.detailsOffset,
+      ])
+    : "";
   useFocusEffect(
     useCallback(() => {
       if (!view) return;
@@ -154,7 +192,14 @@ function StoreExplorer({
       let active = true;
       setError(undefined);
       void Promise.all([
-        repo.load(storeId, view.frame.period, view.metric, tradingToday()),
+        repo.load(
+          storeId,
+          view.frame.period,
+          view.metric,
+          tradingToday(),
+          view.frame.filters,
+          view.frame.detailsOffset,
+        ),
         repo.latestDate(storeId),
       ])
         .then(([value, date]) => {
@@ -167,14 +212,17 @@ function StoreExplorer({
             setLatest(date);
           }
         })
-        .catch(() => {
+        .catch((cause: unknown) => {
           if (
             active &&
             g === generation.current &&
             refreshKey === refreshRef.current
           )
             setError(
-              "Les chiffres locaux n’ont pas pu être relus. Les données enregistrées restent conservées.",
+              cause instanceof Error &&
+                cause.message === "EXPLORER_DETAILS_LIMIT"
+                ? "Ce détail contient trop de lignes. Choisissez une période plus courte ou un produit. Le total du rayon reste consultable en effaçant les filtres."
+                : "Les chiffres locaux n’ont pas pu être relus. Les données enregistrées restent conservées.",
             );
         });
       return () => {
@@ -218,6 +266,25 @@ function StoreExplorer({
       };
     }, [save]),
   );
+  useEffect(() => {
+    if (!filterSheet) return;
+    let active = true;
+    setCatalogueError(undefined);
+    void repo
+      .catalogue(storeId)
+      .then((p) => {
+        if (active) setCatalogue(p);
+      })
+      .catch(() => {
+        if (active)
+          setCatalogueError(
+            "Les produits locaux ne peuvent pas être relus. Les filtres de catégorie et de nature restent disponibles.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [filterSheet, repo, storeId]);
   const data = result?.key === key ? result.value : undefined;
   const scroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (!current.current) return;
@@ -275,6 +342,10 @@ function StoreExplorer({
           </>
         ) : (
           <>
+            <SecondaryButton
+              label="Affiner : catégorie, nature ou produit"
+              onPress={() => setFilterSheet(true)}
+            />
             <ExplorerContent
               view={view}
               data={data}
@@ -299,6 +370,70 @@ function StoreExplorer({
               }
               onBack={() => change(backExplorerView(current.current!))}
               onRefresh={() => setEpoch((e) => e + 1)}
+              onWeek={(period) =>
+                change(drillExplorerWeek(current.current!, period))
+              }
+              onChartScroll={(chartScroll) => {
+                if (current.current)
+                  current.current = {
+                    ...current.current,
+                    frame: { ...current.current.frame, chartScroll },
+                  };
+              }}
+            />
+            {data ? (
+              <ExplorerBreakdown
+                data={data}
+                onCategory={(category) =>
+                  change(
+                    drillExplorerScope(current.current!, {
+                      ...current.current!.frame.filters,
+                      category,
+                      productId: null,
+                    }),
+                  )
+                }
+                onProduct={(productId) =>
+                  change(
+                    drillExplorerScope(current.current!, {
+                      ...current.current!.frame.filters,
+                      productId,
+                    }),
+                  )
+                }
+                onPage={(detailsOffset) =>
+                  change({
+                    ...current.current!,
+                    frame: { ...current.current!.frame, detailsOffset },
+                  })
+                }
+                onOpenProduct={(id) =>
+                  router.push({
+                    pathname: "/(tabs)/products/[id]",
+                    params: { id },
+                  })
+                }
+              />
+            ) : null}
+            <ExplorerFilters
+              visible={filterSheet}
+              filters={view.frame.filters}
+              products={catalogue}
+              error={catalogueError}
+              onClose={() => setFilterSheet(false)}
+              onApply={(filters) => {
+                change({
+                  ...current.current!,
+                  frame: {
+                    ...current.current!.frame,
+                    filters,
+                    scroll: 0,
+                    chartScroll: 0,
+                    detailsOffset: 0,
+                  },
+                });
+                setFilterSheet(false);
+              }}
             />
             {latest &&
             (latest < explorerRange(view.frame.period).start ||
@@ -316,7 +451,14 @@ function StoreExplorer({
                 const anchor = explorerRange(period).start;
                 change({
                   ...current.current!,
-                  frame: { period, anchor, scroll: 0 },
+                  frame: {
+                    period,
+                    anchor,
+                    scroll: 0,
+                    chartScroll: 0,
+                    detailsOffset: 0,
+                    filters: current.current!.frame.filters,
+                  },
                   history: [],
                 });
                 setPicker(false);

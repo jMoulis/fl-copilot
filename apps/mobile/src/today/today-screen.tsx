@@ -1,3 +1,5 @@
+import { randomUUID } from "expo-crypto";
+import { explorerHref } from "@/analytics/explorer-link";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, type Href } from "expo-router";
 import { Pressable, Text, View } from "react-native";
@@ -106,13 +108,32 @@ function TodayContent({ summary }: { summary: TodaySummary }) {
     <>
       <View className="gap-3">
         {summary.kpis.map((kpi) => (
-          <MetricCard
+          <Pressable
             key={kpi.id}
-            label={kpi.label}
-            value={formatCurrency(kpi.value)}
-            detail={comparisonLabel(kpi.comparison)}
-          />
+            accessibilityRole="button"
+            accessibilityLabel={`Explorer ${kpi.label} pour la journée analysée`}
+            accessibilityHint="Ouvre Analyses pour cette date, avec une référence ISO N−1 distincte des écarts J−7 affichés ici."
+            onPress={() =>
+              router.navigate(
+                explorerHref({
+                  requestId: randomUUID(),
+                  period: { kind: "day", date: summary.businessDate },
+                  metric: kpi.id,
+                }),
+              )
+            }
+          >
+            <MetricCard
+              label={kpi.label}
+              value={formatCurrency(kpi.value)}
+              detail={comparisonLabel(kpi.comparison)}
+            />
+          </Pressable>
         ))}
+        <Text className="text-xs leading-5 text-muted">
+          Touchez un indicateur pour explorer la journée et sa référence N−1.
+          Les écarts ci-dessus restent comparés à J−7.
+        </Text>
         <Text className="text-xs leading-5 text-muted">
           {summary.productCount} produit
           {summary.productCount > 1 ? "s" : ""} calculé

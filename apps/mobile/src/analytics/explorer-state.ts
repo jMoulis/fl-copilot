@@ -1,6 +1,8 @@
 import { z } from "zod";
 import {
   analyticsExplorerMetricSchema,
+  analyticsExplorerFiltersSchema,
+  emptyExplorerFilters,
   analyticsExplorerPeriodSchema,
   copilotBusinessDateSchema,
   type AnalyticsExplorerPeriod,
@@ -17,6 +19,9 @@ const frame = z
   .strictObject({
     period: analyticsExplorerPeriodSchema,
     anchor: copilotBusinessDateSchema,
+    filters: analyticsExplorerFiltersSchema.default(emptyExplorerFilters),
+    chartScroll: z.number().min(0).max(10000000).default(0),
+    detailsOffset: z.number().int().min(0).max(10000).default(0),
     scroll: z.number().min(0).max(10000000),
   })
   .refine((v) => {
@@ -41,6 +46,9 @@ export function initialExplorerView(date: string): ExplorerView {
     frame: {
       period: explorerPeriodFromDate("week", date),
       anchor: date,
+      filters: emptyExplorerFilters(),
+      chartScroll: 0,
+      detailsOffset: 0,
       scroll: 0,
     },
     history: [],
@@ -53,6 +61,9 @@ export function changeExplorerGranularity(
   return {
     ...s,
     frame: {
+      chartScroll: 0,
+      detailsOffset: 0,
+      filters: s.frame.filters,
       period: explorerPeriodFromDate(kind, s.frame.anchor),
       anchor: s.frame.anchor,
       scroll: 0,
@@ -82,7 +93,14 @@ export function shiftExplorerView(s: ExplorerView, n: number): ExplorerView {
   }
   return {
     ...s,
-    frame: { period, anchor, scroll: 0 },
+    frame: {
+      period,
+      anchor,
+      scroll: 0,
+      chartScroll: 0,
+      detailsOffset: 0,
+      filters: s.frame.filters,
+    },
     history: [],
   };
 }
@@ -94,6 +112,9 @@ export function drillExplorerView(s: ExplorerView, date: string): ExplorerView {
   return explorerViewSchema.parse({
     ...s,
     frame: {
+      chartScroll: 0,
+      detailsOffset: 0,
+      filters: s.frame.filters,
       period: explorerPeriodFromDate(kind, date),
       anchor: date,
       scroll: 0,
@@ -134,4 +155,41 @@ export class ExplorerViewRepository {
       new Date().toISOString(),
     );
   }
+}
+
+export function drillExplorerScope(
+  s: ExplorerView,
+  filters: ExplorerView["frame"]["filters"],
+): ExplorerView {
+  return explorerViewSchema.parse({
+    ...s,
+    frame: { ...s.frame, filters, scroll: 0, chartScroll: 0, detailsOffset: 0 },
+    history: [...s.history, s.frame].slice(-16),
+  });
+}
+export function drillExplorerWeek(
+  s: ExplorerView,
+  period: AnalyticsExplorerPeriod,
+): ExplorerView {
+  const parent = explorerRange(s.frame.period),
+    child = explorerRange(period);
+  if (
+    s.frame.period.kind !== "month" ||
+    period.kind !== "week" ||
+    child.end < parent.start ||
+    child.start > parent.end
+  )
+    throw Error("EXPLORER_DRILL_OUTSIDE_PERIOD");
+  return explorerViewSchema.parse({
+    ...s,
+    frame: {
+      ...s.frame,
+      period,
+      anchor: child.start < parent.start ? parent.start : child.start,
+      scroll: 0,
+      chartScroll: 0,
+      detailsOffset: 0,
+    },
+    history: [...s.history, s.frame].slice(-16),
+  });
 }

@@ -1,3 +1,5 @@
+import { randomUUID } from "expo-crypto";
+import { explorerHref } from "@/analytics/explorer-link";
 import { StoreEventsView } from "@/needs/store-events-view";
 import { SubstitutionView } from "@/needs/substitution-view";
 import { MembershipView } from "@/needs/membership-view";
@@ -36,6 +38,19 @@ export default function ProductEditorScreen() {
         onPress={() => router.replace("/(tabs)/products")}
       />
 
+      {productId && snapshot && !storeMissing ? (
+        <SecondaryButton
+          label="Explorer les chiffres de ce produit"
+          onPress={() =>
+            router.navigate(
+              explorerHref({
+                requestId: randomUUID(),
+                filters: { category: null, nature: null, productId },
+              }),
+            )
+          }
+        />
+      ) : null}
       {productId && snapshot && !storeMissing ? (
         <SecondaryButton
           label="Trouver un remplaçant"
