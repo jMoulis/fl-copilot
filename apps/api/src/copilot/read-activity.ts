@@ -42,6 +42,7 @@ export function readActivityStage(key: string): CopilotActivity["stage"] {
   if (kind === "reference-preview") return "PROPOSAL";
   if (kind === "plan-validation") return "PROPOSAL";
   if (kind === "preparation-preview") return "PROPOSAL";
+  if (kind === "store-layout-scenario") return "PROPOSAL";
   if (kind === "store-layout-edit") return "PROPOSAL";
   if (kind === "operations-preview") return "PROPOSAL";
   if (kind === "need-preview") return "PROPOSAL";
