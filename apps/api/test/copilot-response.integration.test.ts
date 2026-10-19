@@ -3288,7 +3288,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await current.release();
       }
     });
-    it("serves the default read-only context through authenticated HTTP with real Mongo persistence and retry", async () => {
+    it("serves a safe outage response through authenticated HTTP with real Mongo persistence and retry", async () => {
       const f = await fixture();
       const day = buildDepartmentDailyPerformance({
         storeId: f.storeId,
@@ -3352,8 +3352,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         const first = await app.inject(options);
         expect(first.statusCode, failure).toBe(200);
         expect(first.json().message.text).toContain(
-          "Chiffre d’affaires net (€) — 2026-10-01 : indisponible",
+          "Je n’ai pas pu terminer cette analyse",
         );
+        expect(first.json().message.text).not.toContain("2026-10-01");
+        expect(first.json().message.text).not.toContain("Faits disponibles");
         expect(first.json().message.replyToMessageId).toBe(f.message.id);
         const history = await app.inject({
           url: `/api/v1/copilot/history?conversationId=${f.conversation.id}`,
