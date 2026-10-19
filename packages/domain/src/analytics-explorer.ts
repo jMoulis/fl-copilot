@@ -35,6 +35,7 @@ export const analyticsExplorerMetricSchema = z.enum([
   "sales",
   "margin",
   "waste",
+  "wasteCost",
 ]);
 export type AnalyticsExplorerMetric = z.infer<
   typeof analyticsExplorerMetricSchema

@@ -145,7 +145,10 @@ export function analyzeExplorerProducts(input: {
       (p) => p.businessDate >= range.start && p.businessDate <= range.end,
     );
     const values = current.flatMap((p) => {
-      const { status, value } = p[input.metric];
+      const { status, value } = p[input.metric] ?? {
+        value: null,
+        status: "UNAVAILABLE",
+      };
       return status === "UNAVAILABLE" || value === null ? [] : [value];
     });
     const amount =

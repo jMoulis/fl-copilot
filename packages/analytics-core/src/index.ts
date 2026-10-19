@@ -20,3 +20,4 @@ export * from "./price-scenario";
 export * from "./explorer-period";
 
 export * from "./explorer-products";
+export * from "./waste-purchase-cost";
