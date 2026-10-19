@@ -1,3 +1,4 @@
+import { serializeChatForClient } from "./copilot/conversation-store";
 import { readStoreLayoutScenarioSources } from "./copilot/store-layout-scenario-tool";
 import {
   readRecommendationContext,
@@ -1331,6 +1332,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
             }),
             authorize,
+            supportsAnalyticsDestinations:
+              request.headers["x-copilot-analytics-destinations"] === "1",
             allowMemorySuggestions:
               request.headers["x-copilot-memory-suggestions"] === "1",
             onGenerationFailure: (failure) => {
@@ -1383,12 +1386,21 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           request.body,
           abort.signal,
         );
+        const compatibleResult = {
+          ...result,
+          message: serializeChatForClient(
+            "copilot_message",
+            { ...result.message, _id: result.message.id },
+            true,
+            request.headers["x-copilot-analytics-destinations"] === "1",
+          ) as typeof result.message,
+        };
         if (streaming) {
-          emit({ type: "result", result });
+          emit({ type: "result", result: compatibleResult });
           stream?.end();
           return reply;
         }
-        return result;
+        return compatibleResult;
       } catch (error) {
         if (stream) {
           if (
@@ -1515,6 +1527,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         store.userId,
         request.query,
         request.headers["x-copilot-history-deletion"] === "1",
+        request.headers["x-copilot-analytics-destinations"] === "1",
       );
     },
   );
@@ -1685,6 +1698,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               request.query,
               principal.userId,
               request.headers["x-copilot-history-deletion"] === "1",
+              ...(request.headers["x-copilot-analytics-destinations"] === "1"
+                ? ([true] as const)
+                : []),
             )
           : await syncPull.pull(storeId, request.query);
       } catch (error) {
@@ -1733,6 +1749,13 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
       const store = await auth.authorizeStore(accessToken, storeId);
+      if (request.headers["x-copilot-analytics-destinations"] === "1")
+        return syncBootstrap.bootstrap(
+          store,
+          request.query,
+          request.headers["x-copilot-history-deletion"] === "1",
+          true,
+        );
       return request.headers["x-copilot-history-deletion"] === "1"
         ? syncBootstrap.bootstrap(store, request.query, true)
         : syncBootstrap.bootstrap(store, request.query);

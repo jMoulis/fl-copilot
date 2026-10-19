@@ -3244,7 +3244,8 @@ export function projectCopilotModelValue<T>(value: T): T {
   if (value === undefined) return value;
   return JSON.parse(
     JSON.stringify(value, (key, v: unknown) => {
-      if (key === "analyticsContext") return undefined;
+      if (key === "analyticsContext" || key === "analyticsDestinations")
+        return undefined;
       if (
         v &&
         typeof v === "object" &&

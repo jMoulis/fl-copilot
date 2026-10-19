@@ -1,5 +1,5 @@
 import { buildProductProposalMessages } from "./product-proposal-messages";
-import { renderAnswerText } from "./answer-text.js";
+import { renderAnswerText, renderAnswerContent } from "./answer-text.js";
 import {
   copilotAttachmentReferenceSchema,
   copilotMessageSchema,
@@ -24,6 +24,7 @@ export function buildCopilotResponseMessage(input: {
   parent: CopilotMessage;
   request: CopilotGenerationRequest;
   generation: Generation;
+  supportsAnalyticsDestinations?: boolean;
 }): CopilotMessage {
   const parent = copilotMessageSchema.parse(input.parent);
   const request = copilotGenerationRequestSchema.parse({
@@ -87,29 +88,37 @@ export function buildCopilotResponseMessage(input: {
     if (!item) throw new Error("COPILOT_REPLY_EVIDENCE_INVALID");
     return `${item.label} : ${item.value === null ? "indisponible" : String(item.value)}`;
   });
-  const text = response.narrative
-    ? renderAnswerText(response.narrative, response.facts, [
-        ...evidence.values(),
-      ])
-    : [
-        response.summary,
-        ...(facts.length ? ["Faits disponibles", ...facts] : []),
-        ...(response.interpretation.length
-          ? ["Lecture", ...response.interpretation]
-          : []),
-        ...response.recommendations.map((r) =>
-          [
-            r.title,
-            r.explanation,
-            `Confiance : ${{ LOW: "limitée", MEDIUM: "modérée", HIGH: "élevée" }[r.confidence]}`,
-            ...r.risks.map((v) => `Vigilance : ${v}`),
-            ...r.missingData.map((v) => `Information manquante : ${v}`),
-            `Suivi : ${r.measurement.objective}`,
-            r.measurement.reviewWhen,
-          ].join("\n"),
-        ),
-        ...response.questions,
-      ].join("\n\n");
+  const richContent =
+    response.narrative && input.supportsAnalyticsDestinations
+      ? renderAnswerContent(response.narrative, response.facts, [
+          ...evidence.values(),
+        ])
+      : undefined;
+  const text =
+    richContent?.text ??
+    (response.narrative
+      ? renderAnswerText(response.narrative, response.facts, [
+          ...evidence.values(),
+        ])
+      : [
+          response.summary,
+          ...(facts.length ? ["Faits disponibles", ...facts] : []),
+          ...(response.interpretation.length
+            ? ["Lecture", ...response.interpretation]
+            : []),
+          ...response.recommendations.map((r) =>
+            [
+              r.title,
+              r.explanation,
+              `Confiance : ${{ LOW: "limitée", MEDIUM: "modérée", HIGH: "élevée" }[r.confidence]}`,
+              ...r.risks.map((v) => `Vigilance : ${v}`),
+              ...r.missingData.map((v) => `Information manquante : ${v}`),
+              `Suivi : ${r.measurement.objective}`,
+              r.measurement.reviewWhen,
+            ].join("\n"),
+          ),
+          ...response.questions,
+        ].join("\n\n"));
   // Reject overflow rather than silently losing source/qualification information.
   const message = copilotMessageSchema.parse({
     id: input.id,
@@ -118,6 +127,9 @@ export function buildCopilotResponseMessage(input: {
     conversationId: parent.conversationId,
     role: "ASSISTANT",
     text,
+    ...(richContent?.analyticsDestinations
+      ? { analyticsDestinations: richContent.analyticsDestinations }
+      : {}),
     attachments: [...originals.values()],
     replyToMessageId: parent.id,
     supersedesMessageId: null,

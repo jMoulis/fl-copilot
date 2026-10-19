@@ -341,3 +341,35 @@ it("keeps one workflow when the same advice is prepared again in a later answer"
     f.db.db.close();
   }
 });
+
+it("keeps a recommendation actionable after its answer receives navigation metadata", async () => {
+  const { packAnalyticsDestinations } = await import("@fl-copilot/domain");
+  const { largeAnalyticalContext } =
+    await import("../../../../scripts/test-analytics-destination-fixtures");
+  const { applyCopilotRecord } = await import("./conversation-repository");
+  const { recommendationSourceDigest } =
+    await import("../../../api/src/copilot/recommendation-tracking-tool");
+  const f = await decisionNativeFixture();
+  try {
+    const enriched = {
+      ...f.source,
+      analyticsDestinations: packAnalyticsDestinations([
+        largeAnalyticalContext(),
+      ]),
+    };
+    expect(recommendationSourceDigest(enriched)).toBe(
+      f.preview.basis.sourceDigest,
+    );
+    expect(
+      recommendationSourceDigest({ ...enriched, text: "changed" }),
+    ).not.toBe(f.preview.basis.sourceDigest);
+    await applyCopilotRecord(f.db, f.scope, "copilot_message", enriched);
+    expect((await f.repo.open(f.card)).status).toBe("READY");
+    await saveDecision(f, "ACCEPT");
+    expect((await f.repo.open(f.card)).decision?.revisions[0]?.type).toBe(
+      "ACCEPT",
+    );
+  } finally {
+    f.db.db.close();
+  }
+});

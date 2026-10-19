@@ -228,6 +228,7 @@ export function CopilotChatView({
               {item.role === "ASSISTANT" ? (
                 <AssistantAnswer
                   text={item.text}
+                  analyticsDestinations={item.analyticsDestinations}
                   selectable={false}
                   renderSource={(id) => {
                     const a = item.attachments.find(

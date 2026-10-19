@@ -1,3 +1,4 @@
+import { copilotMessageContent } from "@fl-copilot/domain";
 import {
   actionExecutionSchema,
   sameActionExecutionIdentity,
@@ -162,8 +163,9 @@ export class CopilotActionExecutionRepository {
             source.id !== basis.sourceMessageId ||
             source.createdAt !== basis.sourceCreatedAt ||
             !source.text.includes(basis.quote) ||
-            (await this.digest(JSON.stringify(source))) !==
-              basis.sourceDigest ||
+            (await this.digest(
+              JSON.stringify(copilotMessageContent(source)),
+            )) !== basis.sourceDigest ||
             copilotMessageIsDeleted(source, topic)))
       )
         status = "STALE";

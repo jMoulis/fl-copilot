@@ -3,6 +3,7 @@ import {
   copilotExternalResearchSourceSchema,
   analyticsExplorerContextSchema,
   retailExpertiseCitationSchema,
+  readAnalyticsDestination,
 } from "@fl-copilot/domain";
 const answerSourceSchema = z
   .object({
@@ -13,11 +14,13 @@ const answerSourceSchema = z
     externalResearch: copilotExternalResearchSourceSchema.optional(),
     retailExpertise: retailExpertiseCitationSchema.optional(),
     analyticsContext: analyticsExplorerContextSchema.optional(),
+    analyticsIndex: z.number().int().min(0).max(95).optional(),
   })
   .refine(
     (v) =>
       !(v.externalResearch && v.retailExpertise) &&
-      (!v.analyticsContext ||
+      !(v.analyticsContext && v.analyticsIndex !== undefined) &&
+      (!(v.analyticsContext || v.analyticsIndex !== undefined) ||
         (!v.externalResearch &&
           !v.retailExpertise &&
           ["KPI", "COMPARISON", "DATA_QUALITY"].includes(
@@ -29,9 +32,26 @@ const answerSourceSchema = z
   );
 export type AnswerSource = z.infer<typeof answerSourceSchema>;
 /** Opening a citation cannot execute model content or navigate to a private/provider URL. */
-export function readAnswerSource(encoded: string): AnswerSource {
+export function readAnswerSource(
+  encoded: string,
+  analyticsDestinations?: unknown,
+): AnswerSource {
   if (encoded.length > 100000) throw Error("ANSWER_SOURCE_TOO_LARGE");
-  return answerSourceSchema.parse(JSON.parse(decodeURIComponent(encoded)));
+  const source = answerSourceSchema.parse(
+    JSON.parse(decodeURIComponent(encoded)),
+  );
+  if (
+    source.analyticsIndex === undefined ||
+    analyticsDestinations === undefined
+  )
+    return source;
+  return {
+    ...source,
+    analyticsContext: readAnalyticsDestination(
+      analyticsDestinations,
+      source.analyticsIndex,
+    ),
+  };
 }
 
 export function formatSourcePublication(value: string | null) {

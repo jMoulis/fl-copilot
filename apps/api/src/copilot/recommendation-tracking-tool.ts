@@ -1,3 +1,4 @@
+import { copilotMessageContent } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import { z } from "zod";
@@ -10,7 +11,9 @@ import {
 } from "@fl-copilot/domain";
 export const recommendationSourceDigest = (raw: unknown) =>
   createHash("sha256")
-    .update(JSON.stringify(copilotMessageSchema.parse(raw)))
+    .update(
+      JSON.stringify(copilotMessageContent(copilotMessageSchema.parse(raw))),
+    )
     .digest("hex");
 export async function readRecommendationTracking(
   db: Db,

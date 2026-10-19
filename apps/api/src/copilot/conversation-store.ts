@@ -70,8 +70,14 @@ export function serializeChatForClient(
   type: string,
   row: ChatRecordDocument,
   supportsDeletion = false,
+  supportsAnalyticsDestinations = false,
 ) {
   const record = serializeChat(type, row);
+  if (type === "copilot_message" && !supportsAnalyticsDestinations) {
+    const { analyticsDestinations, ...legacy } = record as CopilotMessage;
+    void analyticsDestinations;
+    return legacy;
+  }
   if (type !== "copilot_conversation" || supportsDeletion) return record;
   const { deletedAt, deletedMessageIds, ...legacy } =
     record as CopilotConversation;
@@ -321,6 +327,7 @@ export async function chatBootstrap(
   ownerId: string,
   session: ClientSession,
   supportsDeletion = false,
+  supportsAnalyticsDestinations = false,
 ) {
   const scope = { storeId, ownerId };
   const messages = await db
@@ -355,7 +362,12 @@ export async function chatBootstrap(
     copilotMessages: messages
       .reverse()
       .map((m) =>
-        serializeChatForClient("copilot_message", m, supportsDeletion),
+        serializeChatForClient(
+          "copilot_message",
+          m,
+          supportsDeletion,
+          supportsAnalyticsDestinations,
+        ),
       ),
     copilotHistoryPartial: true,
   };

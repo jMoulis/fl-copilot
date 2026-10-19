@@ -406,3 +406,15 @@ Le lot Actions/Aujourd’hui inclut aussi le lien exact de la casse au prix d’
 7. **UX/validation : en cours.** L5 progresse sur Casse/Imports/Documents et les états accessibles. Formulaires détaillés, autres écrans, médias et recette native/M8 restent ouverts.
 
 La PR 278 précédente est fusionnée après ses deux CI exactes réussies (`39328076827`, `39328085774`), merge `a1fba2a2dd017f40f23de123a543fda0ed6cf6f3`, branche distante supprimée. Les nouveaux parcours restent en attente de livraison groupée, sans déploiement ou build EAS payant. Preuves et limites de ce lot : `../qa/M7_UX_SOURCE_LISTS.md`.
+
+## Lot courant — sources analytiques longues conservées (19 octobre 2026)
+
+1. **Actions/conflits : en cours.** Les liens de présentation ne changent pas la fraîcheur d’une recommandation ; les décisions et déclarations gardent leurs contrôles et confirmations. Autres corrections/conflits et recette restent ouverts.
+2. **Contre-promo : code prêt**, livraison et acceptation groupées à faire.
+3. **Documents : en cours.** Sources et citations restent lisibles sur les builds installés ; réception Resend et restauration d’originaux restantes inchangées.
+4. **Expertise : en cours.** Aucune surcharge d’instructions ni nouvel outil dans ce lot ; évaluation métier restante.
+5. **Recommandations : en cours.** Une destination ajoutée à un message identique ne périme pas un conseil ; un changement de contenu reste détecté. Parcours jusqu’au bilan réel toujours à accepter.
+6. **Implantation : en cours.** Illustration, contraintes et validation terrain restent ouvertes.
+7. **UX/validation : en cours.** Transport compact des liens exacts Analytics, compatibilité, historique et redémarrage vérifiés localement ; Mongo transactionnel et exports finaux en CI. Recette native et autres portes V1 restent ouvertes.
+
+Preuves/limites : `../qa/M7_COMPACT_ANALYTICAL_SOURCES.md`. PR 279 fusionnée sur deux CI exactes réussies, merge `28c593b82cdbafa1f7aadd1705d3483e6ec410fc`, branche distante supprimée. Le correctif reste à livrer avec API compatible puis binaire groupé ; aucun build EAS ou appel IA payant.

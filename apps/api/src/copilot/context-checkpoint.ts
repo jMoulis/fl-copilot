@@ -1,3 +1,4 @@
+import { copilotMessageContent } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import type { Db, ClientSession } from "mongodb";
 import {
@@ -11,7 +12,9 @@ import {
 import { readSupersededHistoryIds } from "./history-supersession.js";
 import { readAttachedSources } from "./attached-sources.js";
 function fingerprint(source: CopilotMessage) {
-  return createHash("sha256").update(JSON.stringify(source)).digest("hex");
+  return createHash("sha256")
+    .update(JSON.stringify(copilotMessageContent(source)))
+    .digest("hex");
 }
 function sourceManifest(
   sources: readonly CopilotMessage[],

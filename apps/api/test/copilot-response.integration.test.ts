@@ -2660,6 +2660,113 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ).toBe(1);
       },
     );
+    it("commits compact source metadata alongside private tool questions and replays/restores it without provider calls", async () => {
+      const { largeAnalyticalContext } =
+        await import("../../../scripts/test-analytics-destination-fixtures");
+      const { readCopilotHistory } = await import("../src/copilot/history");
+      const { readAnswerSource } =
+        await import("../../mobile/src/copilot/answer-source");
+      const f = await fixture();
+      const evidence = {
+        id: "compact-canonical",
+        sourceType: "KPI" as const,
+        sourceId: "canonical",
+        sourceVersion: null,
+        label: "CA",
+        value: "25.50",
+        factKind: "DERIVED" as const,
+        analyticsContext: largeAnalyticalContext(),
+      };
+      const context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: f.storeId,
+          evaluatedAt: f.message.createdAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Voici le bilan.",
+          narrative: "Le CA renseigné est {{value:0}} € {{source:0}}.",
+          facts: [{ evidenceId: evidence.id }],
+          interpretation: [],
+          recommendations: [],
+          questions: ["Quelle période examiner ensuite ?"],
+        },
+        toolEvidence: [evidence],
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "compact-test",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        informationRequests: [
+          {
+            title: "Période",
+            reason: "Préciser la suite.",
+            fields: [
+              {
+                key: "start_date",
+                label: "Début",
+                type: "DATE" as const,
+                required: true,
+              },
+            ],
+          },
+        ],
+      }));
+      const dependencies = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => f.authority,
+        loadContext: async () => context,
+        supportsAnalyticsDestinations: true,
+      };
+      const turn = {
+        replyId: f.response.id,
+        userMessageId: f.message.id,
+        conversationId: f.conversation.id,
+      };
+      const result = await runCopilotTurn(dependencies, turn);
+      expect(result.message.analyticsDestinations!.targets).toHaveLength(1);
+      expect((await runCopilotTurn(dependencies, turn)).message).toEqual(
+        result.message,
+      );
+      expect(generate).toHaveBeenCalledTimes(1);
+      const tools = await db
+        .collection("copilotMessages")
+        .find({ conversationId: f.conversation.id, role: "TOOL" })
+        .toArray();
+      expect(tools).toHaveLength(1);
+      expect(tools[0]).not.toHaveProperty("analyticsDestinations");
+      const page = await readCopilotHistory(
+        db,
+        f.storeId,
+        f.ownerId,
+        { conversationId: f.conversation.id, limit: 50 },
+        true,
+        true,
+      );
+      const restored = page.messages.find((m) => m.id === result.message.id)!;
+      const encoded = /copilot-source:([^)]*)/.exec(restored.text)![1]!;
+      expect(
+        readAnswerSource(encoded, restored.analyticsDestinations)
+          .analyticsContext,
+      ).toEqual(evidence.analyticsContext);
+      const legacy = await readCopilotHistory(
+        db,
+        f.storeId,
+        f.ownerId,
+        { conversationId: f.conversation.id, limit: 50 },
+        true,
+      );
+      expect(
+        legacy.messages.find((m) => m.id === restored.id),
+      ).not.toHaveProperty("analyticsDestinations");
+    });
     it("persists and restores versioned private context checkpoints across a long conversation without business writes", async () => {
       const f = await fixture();
       const base = Date.parse(f.message.createdAt);

@@ -11,6 +11,7 @@ import {
   Pressable,
 } from "react-native";
 import {
+  type AnalyticsDestinationTable,
   retailExpertiseFreshness,
   isPublicResearchUrl,
 } from "@fl-copilot/domain";
@@ -27,9 +28,11 @@ export function AssistantAnswer({
   text,
   renderSource,
   selectable = true,
+  analyticsDestinations,
 }: {
   text: string;
   selectable?: boolean;
+  analyticsDestinations?: AnalyticsDestinationTable;
   renderSource?(id: string): ReactNode;
 }) {
   const [source, setSource] = useState<AnswerSource>();
@@ -37,7 +40,7 @@ export function AssistantAnswer({
   const blocks = useMemo(() => markdownBlocks(text), [text]);
   function openSource(encoded: string) {
     try {
-      const value = readAnswerSource(encoded);
+      const value = readAnswerSource(encoded, analyticsDestinations);
       setLinkError(false);
       setSource(value);
     } catch {

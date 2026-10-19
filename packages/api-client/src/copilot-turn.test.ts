@@ -35,6 +35,7 @@ it("sends only IDs with authenticated store headers and validates reply scope", 
       method: "POST",
       headers: {
         "content-type": "application/json",
+        "x-copilot-analytics-destinations": "1",
         authorization: "Bearer test-token",
         "x-store-id": id(4),
       },
@@ -525,4 +526,39 @@ it("advertises catalogue receipt correction v2 explicitly without adding model m
     "2",
   );
   expect(JSON.parse(String(transport.mock.calls[0]![1]!.body))).toEqual(input);
+});
+
+it("advertises analytical destinations on turn, history, bootstrap and incremental pull without adding model/request fields", async () => {
+  const paths: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      paths.push(new URL(url).pathname);
+      expect(
+        new Headers(init?.headers).get("x-copilot-analytics-destinations"),
+      ).toBe("1");
+      return new Response(
+        JSON.stringify({
+          code: "UNAVAILABLE",
+          messageFr: "Indisponible",
+          retryable: false,
+        }),
+        { status: 503 },
+      );
+    }),
+  );
+  const api = new ApiClient("https://test.invalid");
+  await expect(
+    api.copilotTurn("token", id(4), id(5), input),
+  ).rejects.toBeInstanceOf(ApiClientError);
+  await expect(api.bootstrapSync("token", id(4))).rejects.toBeInstanceOf(
+    ApiClientError,
+  );
+  await expect(api.pullSync("token", id(4))).rejects.toBeInstanceOf(
+    ApiClientError,
+  );
+  await expect(
+    api.copilotHistory("token", id(4), id(2)),
+  ).rejects.toBeInstanceOf(ApiClientError);
+  expect(paths).toHaveLength(4);
 });

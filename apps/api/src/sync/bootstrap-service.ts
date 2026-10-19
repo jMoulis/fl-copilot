@@ -124,6 +124,7 @@ export interface SyncBootstrapService {
     store: AuthorizedStoreContext,
     query: BootstrapQuery,
     supportsHistoryDeletion?: boolean,
+    supportsAnalyticsDestinations?: boolean,
   ): Promise<BootstrapResponse>;
 }
 
@@ -133,7 +134,12 @@ export function createMongoSyncBootstrapService(
   generateRevision: () => string = randomUUID,
 ): SyncBootstrapService {
   return {
-    async bootstrap(store, query, supportsHistoryDeletion = false) {
+    async bootstrap(
+      store,
+      query,
+      supportsHistoryDeletion = false,
+      supportsAnalyticsDestinations = false,
+    ) {
       if (query.commercialReview === "true")
         await registerCommercialReviewPages(database, store.storeId);
       const mongoDatabase = await database.getDb();
@@ -212,6 +218,7 @@ export function createMongoSyncBootstrapService(
                     store.userId,
                     session,
                     supportsHistoryDeletion,
+                    supportsAnalyticsDestinations,
                   )
                 : {};
             const [

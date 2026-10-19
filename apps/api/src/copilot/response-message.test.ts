@@ -267,3 +267,46 @@ it("preserves the deterministic no-question brief outside the chat", () => {
   });
   expect(message.text).toContain("Ventes : 25");
 });
+
+it("persists compact destinations only when negotiated, retaining canonical facts and actor binding", async () => {
+  const { largeAnalyticalContext } =
+    await import("../../../../scripts/test-analytics-destination-fixtures");
+  const f = fixture();
+  const evidence = {
+    id: "long",
+    sourceType: "KPI" as const,
+    sourceId: "canonical",
+    sourceVersion: null,
+    label: "CA",
+    value: "25.50",
+    factKind: "DERIVED" as const,
+    analyticsContext: largeAnalyticalContext(),
+  };
+  const input = {
+    ...f,
+    generation: {
+      ...f.generation,
+      mode: "AI" as const,
+      evidence: [evidence],
+      response: {
+        language: "fr-FR" as const,
+        summary: "Voici le bilan.",
+        narrative: "Le CA renseigné est {{value:0}} € {{source:0}}.",
+        facts: [{ evidenceId: "long" }],
+        interpretation: [],
+        recommendations: [],
+        questions: [],
+      },
+    },
+  };
+  const modern = buildCopilotResponseMessage({
+    ...input,
+    supportsAnalyticsDestinations: true,
+  });
+  expect(modern.analyticsDestinations!.targets).toHaveLength(1);
+  expect(modern.text).toContain("25,50 €");
+  expect(
+    buildCopilotResponseMessage(input).analyticsDestinations,
+  ).toBeUndefined();
+  expect(modern.ownerId).toBe(f.parent.ownerId);
+});

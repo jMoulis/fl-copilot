@@ -1274,3 +1274,59 @@ it("deletes a complete conversation atomically, cancels its draft and turns and 
     db.close();
   }
 });
+
+it("enriches only server-owned destinations after upgrading a projected history and preserves them across restart/legacy replay", async () => {
+  const { packAnalyticsDestinations } = await import("@fl-copilot/domain");
+  const { largeAnalyticalContext } =
+    await import("../../../../scripts/test-analytics-destination-fixtures");
+  const dir = mkdtempSync(join(tmpdir(), "fl-citation_")),
+    path = join(dir, "chat.db"),
+    f = chatFixture(randomUUID);
+  let db = new DatabaseSync(path);
+  try {
+    let a = new Adapter(db);
+    await runLocalMigrations(a);
+    const base = {
+      ...f.message,
+      role: "ASSISTANT" as const,
+      text: "Bilan [Source](copilot-source:reference)",
+      attachments: [],
+    };
+    await applyCopilotRecord(a, f, "copilot_conversation", f.conversation);
+    await applyCopilotRecord(a, f, "copilot_message", base);
+    const rich = {
+      ...base,
+      analyticsDestinations: packAnalyticsDestinations([
+        largeAnalyticalContext(),
+      ]),
+    };
+    await applyCopilotRecord(a, f, "copilot_message", rich);
+    await applyCopilotRecord(a, f, "copilot_message", base); // older projection cannot erase metadata
+    for (const altered of [
+      { text: "changed" },
+      { ownerId: randomUUID() },
+      {
+        analyticsDestinations: packAnalyticsDestinations([
+          { ...largeAnalyticalContext(), metric: "margin" },
+        ]),
+      },
+    ])
+      await expect(
+        applyCopilotRecord(a, f, "copilot_message", { ...rich, ...altered }),
+      ).rejects.toThrow();
+    db.close();
+    db = new DatabaseSync(path);
+    a = new Adapter(db);
+    const restored = (
+      await new CopilotConversationRepository(a, f).messages(f.conversation.id)
+    ).messages[0]!;
+    expect(restored.entity).toEqual(rich);
+    expect(restored.syncState).toBe("SYNCED");
+    expect(
+      db.prepare("SELECT count(*) AS n FROM sync_outbox").get(),
+    ).toMatchObject({ n: 0 });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

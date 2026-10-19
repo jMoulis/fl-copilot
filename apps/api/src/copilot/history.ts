@@ -23,6 +23,7 @@ export async function readCopilotHistory(
   ownerId: string,
   query: z.infer<typeof historyQuerySchema>,
   supportsDeletion = false,
+  supportsAnalyticsDestinations = false,
 ) {
   const scope = { storeId, ownerId };
   const topic = query.conversationId
@@ -72,7 +73,14 @@ export async function readCopilotHistory(
   const selected = rows.slice(0, query.limit),
     last = selected.at(-1),
     data = selected
-      .map((r) => serializeChatForClient(type, r, supportsDeletion))
+      .map((r) =>
+        serializeChatForClient(
+          type,
+          r,
+          supportsDeletion,
+          supportsAnalyticsDestinations,
+        ),
+      )
       .filter(
         (record) =>
           !topic || !copilotMessageIsDeleted(record as CopilotMessage, topic),

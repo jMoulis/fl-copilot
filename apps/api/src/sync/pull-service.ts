@@ -113,6 +113,7 @@ export interface SyncPullService {
     query: SyncPullQuery,
     ownerId?: string,
     supportsHistoryDeletion?: boolean,
+    supportsAnalyticsDestinations?: boolean,
   ): Promise<SyncPullResponse>;
 }
 
@@ -121,7 +122,13 @@ export function createMongoSyncPullService(
   now: () => Date = () => new Date(),
 ): SyncPullService {
   return {
-    async pull(storeId, query, ownerId, supportsHistoryDeletion = false) {
+    async pull(
+      storeId,
+      query,
+      ownerId,
+      supportsHistoryDeletion = false,
+      supportsAnalyticsDestinations = false,
+    ) {
       const afterSequence = query.cursor
         ? decodeCursor(query.cursor, storeId)
         : Long.ZERO;
@@ -276,6 +283,7 @@ export function createMongoSyncPullService(
                   change.entityType,
                   row,
                   supportsHistoryDeletion,
+                  supportsAnalyticsDestinations,
                 ),
                 changedAt: change.changedAt.toISOString(),
               };
