@@ -11,7 +11,7 @@ The pilot's latest conversation requested November 2024/2025 sales analysis. Thr
 - Simulate timeout, rate limit, configuration and invalid/limited output separately. Record one safe server event with exact known code, generation phase, elapsed time and retryability. Call the provider only once.
 - Emit partial prose, then return an unsupported figure. Grounding fails closed, records a grounding event and commits a safe final response; it never saves the invalid number.
 - A requested historical period or an attachment-only question must not fall back to an unrelated latest-day balance. A no-question deterministic brief and a valid AI answer keep their existing canonical number rendering.
-- Both ordinary HTTP and streaming route observers send synthetic Sentry errors and safe diagnostic attributes. Raw provider error, private question, source contents and financial values are absent. An unexpected error after the stream opens is observable; expected cancellation is not a failure alert.
+- Both ordinary HTTP and streaming route observers write safe attributes directly to the server logger even when Sentry is disabled, and send synthetic Sentry errors when configured. Raw provider error, private question, source contents and financial values are absent. An unexpected error after the stream opens is observable; expected cancellation is not a failure alert.
 - A broken diagnostics sink cannot prevent a safe fallback. Cancellation and programming errors are not reclassified as a known provider fallback.
 - On a disposable real transactional Mongo database, save one fallback reply, retain its parent and business observations, replay the same reply ID without another generation/event, and do not create a successful fact context for the failed generation.
 

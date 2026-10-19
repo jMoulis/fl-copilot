@@ -5,7 +5,7 @@ import { buildApp } from "../src/build-app";
 import { parseEnvironment } from "../src/config";
 import type { AuthService } from "../src/auth/service";
 import { runCopilotTurn, CopilotTurnError } from "../src/copilot/turn-service";
-import { captureApiError, logRemoteEvent } from "../src/observability";
+import { captureApiError } from "../src/observability";
 vi.mock("../src/copilot/turn-service", async (original) => ({
   ...(await original<typeof import("../src/copilot/turn-service")>()),
   runCopilotTurn: vi.fn(),
@@ -71,6 +71,7 @@ it.each([false, true])(
         })),
       } as unknown as AuthService,
     });
+    const serverLog = vi.spyOn(app.log, "error");
     const send = () =>
       app.inject({
         method: "POST",
@@ -87,10 +88,9 @@ it.each([false, true])(
       expect(result.statusCode).toBe(200);
       expect(result.body).toContain(message.text);
       expect(result.body).not.toContain(failure.code);
-      expect(logRemoteEvent).toHaveBeenCalledWith(
-        "error",
-        "Copilot generation fallback",
+      expect(serverLog).toHaveBeenCalledWith(
         expect.objectContaining(failure),
+        "Copilot generation fallback",
       );
       expect(captureApiError).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -98,9 +98,7 @@ it.each([false, true])(
         }),
         expect.objectContaining({ code: failure.code, method: "POST" }),
       );
-      expect(
-        JSON.stringify(vi.mocked(logRemoteEvent).mock.calls),
-      ).not.toContain(storeId);
+      expect(JSON.stringify(serverLog.mock.calls)).not.toContain(storeId);
       if (streaming) {
         vi.clearAllMocks();
         bug = new Error(privateText);
@@ -111,15 +109,14 @@ it.each([false, true])(
           expect.objectContaining({ message: "Copilot stream failed" }),
           expect.objectContaining({ code: "COPILOT_STREAM_FAILED" }),
         );
-        expect(
-          JSON.stringify(vi.mocked(logRemoteEvent).mock.calls),
-        ).not.toContain(privateText);
+        expect(JSON.stringify(serverLog.mock.calls)).not.toContain(privateText);
         vi.clearAllMocks();
         bug = new CopilotTurnError("CANCELLED");
         await send();
         expect(captureApiError).not.toHaveBeenCalled();
       }
     } finally {
+      serverLog.mockRestore();
       await app.close();
     }
   },
