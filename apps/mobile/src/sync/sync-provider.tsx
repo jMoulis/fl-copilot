@@ -1,3 +1,4 @@
+import { VisualFileCache } from "../products/visual-file-cache";
 import { VisualFileJobs } from "../products/visual-file-jobs";
 import {
   VisualFileTransfer,
@@ -304,6 +305,12 @@ export function SyncProvider({ children }: PropsWithChildren) {
         const summary = await service.sync(storeId);
         if (session?.user.id)
           await visualJobs?.process(storeId, session.user.id);
+        if (currentScope())
+          await new VisualFileCache(database.sqlite).clean(
+            storeId,
+            (file) => nativeVisualFileStorage.removeCached(storeId, file),
+            currentScope,
+          );
         await repairMercalysPublications(database.sqlite, storeId, randomUUID);
         await new LocalAnalyticsRecomputationScheduler(
           database.sqlite,

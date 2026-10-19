@@ -839,7 +839,7 @@ CREATE TABLE store_layout_operations(command_id TEXT PRIMARY KEY NOT NULL,store_
   {
     version: 50,
     name: "product-visual-library",
-    sql: `CREATE TABLE visual_assets(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,content_hash TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+    sql: `CREATE TABLE visual_assets(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,content_hash TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0,offline_required INTEGER NOT NULL DEFAULT 0);
 CREATE UNIQUE INDEX visual_asset_hash ON visual_assets(store_id,content_hash);
 CREATE TABLE visual_identities(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX visual_identity_scope ON visual_identities(store_id,id);

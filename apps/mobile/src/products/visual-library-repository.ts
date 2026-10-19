@@ -30,6 +30,7 @@ interface Row {
   remote_version: number | null;
   sync_state: string;
   dirty: number;
+  offline_required?: number;
 }
 export interface LocalVisualRecord<T> {
   entity: T;
@@ -37,6 +38,7 @@ export interface LocalVisualRecord<T> {
   remoteVersion: number | null;
   syncState: string;
   dirty: boolean;
+  offlineRequired?: boolean;
 }
 function mapped<K extends VisualEntityType>(
   kind: K,
@@ -58,6 +60,9 @@ function mapped<K extends VisualEntityType>(
     remoteVersion: row.remote_version,
     syncState: row.sync_state,
     dirty: !!row.dirty,
+    ...(kind === "visual_asset"
+      ? { offlineRequired: !!row.offline_required }
+      : {}),
   };
 }
 async function writeVisual<K extends VisualEntityType>(

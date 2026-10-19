@@ -1,3 +1,4 @@
+import { withVisualFiles } from "./visual-file-lock";
 import { useMemo, useState } from "react";
 import {
   Alert,
@@ -176,23 +177,26 @@ export function ProductVisualPanel({
     setError(undefined);
     try {
       if (choice.kind === "PHOTO") {
-        const copy = await nativeVisualFileStorage.capture(
-          gallery.context.storeId,
-          choice.uri,
-        );
-        const retainedUri = await nativeVisualFileStorage.uri(
-          gallery.context.storeId,
-          "SOURCE",
-          copy,
-        );
-        if (retainedUri) setChoice({ ...choice, uri: retainedUri });
-        await assignCapturedVisual(
-          gallery.sqlite,
-          choice.basis,
-          copy,
-          true,
-          gallery.context,
-        );
+        const ctx = gallery.context;
+        await withVisualFiles(ctx.storeId, async () => {
+          const copy = await nativeVisualFileStorage.capture(
+            ctx.storeId,
+            choice.uri,
+          );
+          const retainedUri = await nativeVisualFileStorage.uri(
+            ctx.storeId,
+            "SOURCE",
+            copy,
+          );
+          if (retainedUri) setChoice({ ...choice, uri: retainedUri });
+          await assignCapturedVisual(
+            gallery.sqlite,
+            choice.basis,
+            copy,
+            true,
+            ctx,
+          );
+        });
         saved(
           "Photo et association enregistrées sur cet appareil. L’envoi se poursuivra en arrière-plan.",
         );
@@ -322,6 +326,38 @@ export function ProductVisualPanel({
       {asset && options ? (
         <>
           <Provenance asset={asset} />
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{
+              checked: !!state?.offlineRequired?.has(asset.id),
+              disabled: busy,
+            }}
+            disabled={busy}
+            onPress={() => {
+              setBusy(true);
+              void gallery
+                .setOfflineRequired(
+                  asset.id,
+                  !state?.offlineRequired?.has(asset.id),
+                )
+                .catch(showError)
+                .finally(() => setBusy(false));
+            }}
+            className="min-h-12 flex-row gap-3 rounded-2xl border border-line p-4"
+          >
+            <Text className="text-lg text-forest">
+              {state?.offlineRequired?.has(asset.id) ? "☑" : "☐"}
+            </Text>
+            <Text className="flex-1 text-base text-ink">
+              Conserver cette image hors connexion
+            </Text>
+          </Pressable>
+          {state?.offlineRequired?.has(asset.id) && !available ? (
+            <Text className="text-sm text-muted">
+              Conservation demandée. Le téléchargement reprendra avec la
+              connexion.
+            </Text>
+          ) : null}
           <SecondaryButton
             label="Télécharger ou reprendre l’aperçu"
             disabled={busy}

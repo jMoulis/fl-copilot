@@ -14,6 +14,7 @@ export type VisualFileDescriptor = Pick<
   "contentHash" | "mimeType" | "sizeBytes"
 >;
 export interface VisualFileStorage {
+  removeCached(storeId: string, file: VerifiedVisualFile): Promise<void>;
   capture(
     storeId: string,
     selectedUri: string,
@@ -96,6 +97,39 @@ async function destination(
 }
 /** App-owned immutable bytes only. No absolute path is stored in sync metadata. */
 export const nativeVisualFileStorage: VisualFileStorage = {
+  async removeCached(storeId, proof) {
+    z.uuid().parse(storeId);
+    const prefix = `visual-library/${storeId}/`;
+    const name = proof.relativePath.startsWith(prefix)
+      ? proof.relativePath.slice(prefix.length)
+      : "";
+    const match =
+      /^(source|preview)-([a-f0-9]{64})\.(jpg|png|webp|heic|heif)$/.exec(name);
+    if (
+      !match ||
+      proof.contentHash !== `sha256:${match[2]}` ||
+      (match[1] === "preview" && match[3] !== "jpg")
+    )
+      throw Error("VISUAL_FILE_LOCATION_INVALID");
+    const { File, Paths } = await import("expo-file-system");
+    const file = new File(Paths.document, proof.relativePath);
+    if (!file.exists) return;
+    if (match[1] === "source") {
+      const mime = {
+        jpg: "image/jpeg",
+        png: "image/png",
+        webp: "image/webp",
+        heic: "image/heic",
+        heif: "image/heif",
+      }[match[3]!] as VisualAsset["mimeType"];
+      await nativeVisualFileStorage.read(storeId, "SOURCE", {
+        contentHash: proof.contentHash,
+        sizeBytes: proof.sizeBytes,
+        mimeType: mime,
+      });
+    }
+    file.delete();
+  },
   async capture(storeId, selectedUri) {
     z.uuid().parse(storeId);
     const { File } = await import("expo-file-system");

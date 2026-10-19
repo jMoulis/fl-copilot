@@ -259,7 +259,7 @@ export class VisualFileJobs {
           permanent
             ? null
             : new Date(
-                time.getTime() +
+                this.now().getTime() +
                   Math.min(
                     60 * 60_000,
                     60_000 * 2 ** Math.min(job.attempt_count - 1, 6),

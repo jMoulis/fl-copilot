@@ -166,12 +166,34 @@ export function useVisualLibrary() {
     },
     [checked, sync.visuals, refresh],
   );
+  const setOfflineRequired = useCallback(
+    async (assetId: string, required: boolean) => {
+      checked();
+      const cache = new VisualFileCache(sqlite);
+      const canChange = () =>
+        current.current.storeId === storeId &&
+        current.current.ownerId === ownerId;
+      await cache.setOfflineRequired(storeId!, assetId, required, canChange);
+      if (!required)
+        await cache.clean(
+          storeId!,
+          (file) => nativeVisualFileStorage.removeCached(storeId!, file),
+          canChange,
+        );
+      await refresh().catch(() => undefined);
+      // The local preference is saved even when a preview cannot yet be queued.
+      if (required && sync.visuals)
+        await sync.visuals.requestPreview(assetId).catch(() => undefined);
+    },
+    [checked, sqlite, storeId, ownerId, refresh, sync.visuals],
+  );
   return {
     state: query.data ?? null,
     loading: query.isLoading,
     error: query.error,
     readUri,
     readDetailUri,
+    setOfflineRequired,
     synchronize: sync.syncNow,
     refresh,
     requestPreview,

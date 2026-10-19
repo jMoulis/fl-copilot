@@ -53,6 +53,7 @@ async function setup() {
     });
   const local = new Map<string, Uint8Array>();
   const files: VisualFileStorage = {
+    removeCached: vi.fn(),
     capture: vi.fn(),
     read: vi.fn(async (store, variant, d) => {
       const bytes = local.get(

@@ -15,6 +15,7 @@ import {
 import type { VisualFileJob } from "./visual-file-jobs";
 export interface VisualLibraryState {
   storeId: string;
+  offlineRequired?: Set<string>;
   assets: Map<string, LocalVisualRecord<VisualAsset>>;
   identities: Map<string, LocalVisualRecord<VisualIdentity>>;
   links: Map<string, LocalVisualRecord<ProductVisualLink>[]>;
@@ -43,6 +44,9 @@ export async function loadVisualLibraryState(
   ]);
   const result: VisualLibraryState = {
     storeId,
+    offlineRequired: new Set(
+      assets.filter((r) => r.offlineRequired).map((r) => r.entity.id),
+    ),
     assets: new Map(assets.map((r) => [r.entity.id, r])),
     identities: new Map(identities.map((r) => [r.entity.id, r])),
     links: new Map(),

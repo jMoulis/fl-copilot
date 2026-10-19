@@ -216,3 +216,29 @@ it("stops on logout and never acknowledges the previous owner’s work under the
     s.db.raw.close();
   }
 });
+
+it("starts backoff after a slow interrupted transfer rather than retrying the same large file immediately", async () => {
+  const s = await setup();
+  try {
+    await s.queue();
+    s.transfer.send.mockImplementationOnce(async () => {
+      s.advance(2 * 60_000);
+      throw new ApiClientError(0, {
+        code: "NETWORK_UNAVAILABLE",
+        messageFr: "Réseau",
+        retryable: true,
+      });
+    });
+    expect(await s.jobs.process(s.f.storeId, s.f.actorId)).toMatchObject({
+      retry: 1,
+      completed: 0,
+    });
+    expect(s.transfer.send).toHaveBeenCalledTimes(1);
+    expect(
+      s.db.raw.prepare("SELECT next_attempt_at FROM local_jobs").get()!
+        .next_attempt_at,
+    ).toBe("2026-10-20T10:03:00.000Z");
+  } finally {
+    s.db.raw.close();
+  }
+});

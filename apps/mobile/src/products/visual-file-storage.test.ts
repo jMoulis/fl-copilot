@@ -198,3 +198,22 @@ it("repairs only a recoverable preview after staging verified bytes, preserving 
     source,
   );
 });
+
+it("constrains cleanup to the store-owned cache and refuses deleting a source whose bytes no longer match its proof", async () => {
+  const file = await storage.write(storeId, "SOURCE", descriptor, source);
+  await expect(
+    storage.removeCached(storeId, {
+      ...file,
+      relativePath: "../../private.jpg",
+    }),
+  ).rejects.toThrow("VISUAL_FILE_LOCATION_INVALID");
+  const uri = `file:///owned/${file.relativePath}`;
+  state.bytes.set(uri, new Uint8Array([255, 216, 255, 216]));
+  await expect(storage.removeCached(storeId, file)).rejects.toThrow(
+    "VISUAL_FILE_INVALID",
+  );
+  expect(state.bytes.has(uri)).toBe(true);
+  state.bytes.set(uri, source.slice());
+  await storage.removeCached(storeId, file);
+  expect(state.bytes.has(uri)).toBe(false);
+});

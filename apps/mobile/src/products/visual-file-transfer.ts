@@ -1,3 +1,4 @@
+import { withVisualFiles } from "./visual-file-lock";
 import {
   readVisualFileManifest,
   type VisualFileManifest,
@@ -169,20 +170,23 @@ export class VisualFileTransfer {
           "preview",
         );
         await this.approved(context, assetId);
-        const proof = await this.files.write(
-          context.storeId,
-          "PREVIEW",
-          manifest.preview,
-          bytes,
-        );
-        await this.approved(context, assetId);
-        await this.cache.remember(
-          context.storeId,
-          assetId,
-          "PREVIEW",
-          proof,
-          manifest,
-        );
+        await withVisualFiles(context.storeId, async () => {
+          await this.approved(context, assetId);
+          const proof = await this.files.write(
+            context.storeId,
+            "PREVIEW",
+            manifest.preview,
+            bytes,
+          );
+          await this.approved(context, assetId);
+          await this.cache.remember(
+            context.storeId,
+            assetId,
+            "PREVIEW",
+            proof,
+            manifest,
+          );
+        });
         return manifest;
       },
     );
