@@ -1,3 +1,8 @@
+import {
+  appendFactContext,
+  readRecommendationContext,
+} from "../src/copilot/fact-context";
+import { actionReviewPerformance } from "../../../scripts/test-action-review-fixtures";
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db, type Document } from "mongodb";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
@@ -474,5 +479,74 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         native.db.db.close();
       }
     });
+    it("preserves an offline historical decision when recorded facts change before synchronization", async () => {
+      const f = await seed(),
+        native = await decisionNativeFixture(f);
+      try {
+        const decision = (await saveDecision(native, "ACCEPT")).decision!;
+        const session = client.startSession();
+        try {
+          await session.withTransaction(async () => {
+            await appendFactContext(
+              db,
+              session,
+              f.source,
+              { reads: [], complete: true },
+              [],
+              false,
+            );
+          });
+        } finally {
+          await session.endSession();
+        }
+        const product = actionReviewPerformance(
+          f.storeId,
+          randomUUID(),
+          "2026-10-18",
+          "100",
+          "0",
+        );
+        const { productId, ...department } = product;
+        void productId;
+        Object.assign(department, {
+          performance: {
+            ...product.performance,
+            formulaVersion: "department-daily-v1",
+          },
+        });
+        await db
+          .collection<Document & { _id: string }>("departmentDailyPerformance")
+          .insertOne(department);
+        const scope = {
+          storeId: f.storeId,
+          ownerId: f.ownerId,
+          conversationId: f.conversation.id,
+        };
+        expect(
+          (await readRecommendationContext(db, scope, f.input)).status,
+        ).toBe("STALE");
+        await sync(f, native.db).sync(f.storeId);
+        expect((await native.repo.open(native.card)).syncState).toBe("SYNCED");
+        const remote = await db
+          .collection("copilotDecisions")
+          .findOne({ _id: decision.id as never });
+        expect(remote).toMatchObject({
+          revisions: [{ type: "ACCEPT" }],
+          version: 1,
+        });
+        expect(
+          await db
+            .collection("actionExecutions")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(0);
+        expect(
+          await db
+            .collection("commercialExecutionTasks")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(0);
+      } finally {
+        native.db.db.close();
+      }
+    }, 60000);
   },
 );

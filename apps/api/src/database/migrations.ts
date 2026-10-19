@@ -834,6 +834,15 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, ownerId: 1 }, { unique: true });
     },
   },
+  {
+    version: 42,
+    name: "private-copilot-fact-context",
+    async up(database) {
+      await database
+        .collection("copilotFactContexts")
+        .createIndex({ storeId: 1, ownerId: 1, conversationId: 1, _id: 1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

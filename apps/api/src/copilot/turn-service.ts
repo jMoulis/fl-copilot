@@ -1,3 +1,4 @@
+import { appendFactContext } from "./fact-context";
 import { buildActionExecutionMessages } from "./action-execution-messages";
 import { buildExecutionLinkMessages } from "./execution-link-messages";
 import { buildRecommendationTrackingMessages } from "./recommendation-tracking-messages.js";
@@ -280,6 +281,18 @@ export async function runCopilotTurn(
           message,
           changes,
         );
+        if (generation.mode === "AI" && generation.factTrace)
+          await appendFactContext(
+            dependencies.db,
+            session,
+            message,
+            generation.factTrace,
+            evidence,
+            context.batch.candidates.length > 0 ||
+              attachedSources.length > 0 ||
+              (request.recentSources?.length ?? 0) > 0 ||
+              !!request.conversationCheckpoint,
+          );
         if (
           generation.mode === "AI" &&
           generation.contextCheckpoint &&

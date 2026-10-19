@@ -2840,3 +2840,10 @@ Acceptance: source/actor/capability checks, atomic rollback, restart, sequential
 ### M7-T13 — review beyond saved commercial tasks (PR 258)
 
 The existing bounded canonical before/during/after metrics and field-event reads now also contextualize one exact private realization from T12. No accepted choice or commercial plan is required. Tests cover private owner/store scope, synchronization from native confirmation, withdrawals and concurrent drift, absent versus zero, source links, SDK boundary/capability and shared-commercial-review regression. This closes the generic-realization-to-review code gap within workstream 5, not the entire workstream: formal operational fact staleness and the full grouped-delivery pilot acceptance remain outstanding. No new native module, migration, paid model call or build is required for this increment.
+
+
+### M7-T11/T15 increment — recorded-read invalidation (PR 259)
+
+Capture bounded server-read fingerprints atomically with new private assistant replies and recheck the same canonical readers before a fresh tracking preview. Changed covered sources yield STALE/À recalculer and no new tracking card; unchanged reads remain distinct from full applicability/operational eligibility. Old or incomplete provenance is unverifiable. Preserve earlier decisions, offline intent and realizations without silent execution. Test private scope, immutable reply/provenance replay, transactional rollback, canonical read changes, source masking, failed/unsupported reads, metric/cache order and native historical choice synchronization after fact drift.
+
+This advances the existing staleness criterion for captured database reads, without declaring the whole operational recommendation lifecycle complete. Unsupported tool/document dependencies, formal current eligibility and the full grouped pilot acceptance remain open. Mongo 42 precedes API delivery; no native schema/module or paid build is introduced. See `docs/qa/M7_FACT_CONTEXT_SCENARIOS.md`.

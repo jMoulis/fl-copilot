@@ -144,3 +144,5 @@ export * from "./copilot-action-review";
 export * from "./copilot-recommendation-decision";
 export * from "./copilot-execution-link";
 export * from "./copilot-action-execution";
+
+export * from "./copilot-fact-context";

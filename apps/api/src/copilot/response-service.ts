@@ -199,6 +199,7 @@ export async function generateCopilotResponse(
   onActivity?: (activity: CopilotActivity) => void,
 ): Promise<{
   mode: "AI" | "FALLBACK";
+  factTrace?: Awaited<ReturnType<CopilotAiProvider["generate"]>>["factTrace"];
   response: CopilotResponse;
   metadata: CopilotGenerationMetadata | null;
   evidence?: CopilotGenerationRequest["evidence"];
@@ -344,6 +345,7 @@ export async function generateCopilotResponse(
       throw new CopilotAiError("COPILOT_AI_CANCELLED", false);
     return {
       mode: "AI",
+      factTrace: generated.factTrace,
       response: validateCopilotResponse(generated.output, request),
       metadata: generated.metadata,
       productPreviews: generated.productPreviews,

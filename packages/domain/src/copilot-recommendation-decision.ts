@@ -19,7 +19,7 @@ export const recommendationTrackingBasisSchema = z.strictObject({
 export const recommendationTrackingPreviewSchema = z
   .strictObject({
     input: recommendationTrackingInputSchema,
-    status: z.enum(["READY", "SOURCE_UNAVAILABLE"]),
+    status: z.enum(["READY", "SOURCE_UNAVAILABLE", "STALE"]),
     basis: recommendationTrackingBasisSchema.nullable(),
     evidence: z.array(copilotEvidenceSchema).min(1).max(1),
   })
