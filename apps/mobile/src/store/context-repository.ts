@@ -96,6 +96,7 @@ export class StoreContextRepository {
   async save(
     input: StoreContextSettings,
     ctx: { commandId: string; deviceId: string },
+    baseline?: StoreContextSettings | null,
   ) {
     const choice = storeContextSettingsSchema.parse(input),
       id = choice.storeId;
@@ -108,6 +109,11 @@ export class StoreContextRepository {
         previous = row ? mapped(row) : null;
       if (row?.sync_state === "CONFLICT")
         throw Error("STORE_CONTEXT_RESOLVE_REQUIRED");
+      if (
+        baseline !== undefined &&
+        JSON.stringify(previous?.entity ?? null) !== JSON.stringify(baseline)
+      )
+        throw Error("STORE_CONTEXT_CHANGED");
       const expected =
         row?.sync_state === "ERROR"
           ? row.remote_version

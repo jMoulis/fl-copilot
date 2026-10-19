@@ -116,3 +116,9 @@ L5 avance sur Casse (liste virtualisée, recherche date/caissier/note, statuts e
 L4 ferme le défaut de perte des destinations dans les longues réponses pour les clients compatibles : table de présentation privée, ensembles partagés factorisés, mêmes périodes/moyennes/filtres, réception et restauration via l’historique et la synchronisation. Les bornes restent explicites ; un dépassement est refusé au lieu de supprimer un périmètre. Le streaming existant garde ses fragments provisoires ; le message final porte les destinations durables. Aucun prompt ni fournisseur supplémentaire. Preuves et limites : `../qa/M7_COMPACT_ANALYTICAL_SOURCES.md`.
 
 La PR 279 est fusionnée après succès des CI push `39329596397` et PR `39329602292` sur `7470f1e`, merge `28c593b82cdbafa1f7aadd1705d3483e6ec410fc` ; branche distante supprimée. Aucun lot L1–L11 n’est déclaré intégralement livré ou accepté sur appareil. Restent notamment les formulaires/écrans détaillés et le chat L5, médias L6, autres portes métier/documentaires/implantation et M8.
+
+## Avancement — réglages magasin et lisibilité des formulaires (20 octobre)
+
+L5 reprend Mon magasin : saisie protégée au retour, lecture initiale et refus explicites, relecture avec abandon confirmé, isolation magasin/utilisateur, libellés français et sélection accessible de la zone. Le dépôt vérifie le snapshot dans la transaction existante pour ne pas écraser des réglages changés depuis l’ouverture. Le garde des produits est réutilisé ; aucun nouveau modèle métier.
+
+Le même lot répare le thème de développement web NativeWind et les classes d’erreur historiques restées sans couleur depuis le passage au sombre. La preuve compile les classes réelles et contrôle le démarrage du composant de sources ; elle ne vaut pas recette du formulaire natif. QA : `../qa/M7_UX_STORE_SETTINGS.md`. Les autres formulaires, chat, médias, L7–L11 et la recette iPhone/Android restent ouverts.

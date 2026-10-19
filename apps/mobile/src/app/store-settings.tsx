@@ -1,6 +1,15 @@
+import { useUnsavedForm } from "@/components/use-unsaved-form";
 import { captureStorePosition } from "@/store/position";
-import { useCallback, useMemo, useState } from "react";
-import { Text, TextInput, Switch, View } from "react-native";
+import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  Alert,
+  Platform,
+  Text,
+  TextInput,
+  Switch,
+  View,
+  Pressable,
+} from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -28,8 +37,31 @@ import { storeContextError } from "@/store/context-presentation";
 const nativeLocation = !!requireOptionalNativeModule("ExpoLocation");
 export default function StoreSettingsScreen() {
   const { session } = useAuth(),
-    storeId = session?.stores[0]?.storeId,
-    { sqlite, deviceId } = useLocalDatabase(),
+    store = session?.stores[0];
+  return store && session ? (
+    <StoreSettingsEditor
+      key={`${store.storeId}:${session.user.id}`}
+      storeId={store.storeId}
+      storeName={store.name}
+    />
+  ) : (
+    <AppScreen>
+      <AppHeader title="Mon magasin" />
+      <InlineAlert
+        title="Magasin indisponible"
+        message="Connectez-vous à votre magasin pour accéder à ses réglages."
+      />
+    </AppScreen>
+  );
+}
+function StoreSettingsEditor({
+  storeId,
+  storeName,
+}: {
+  storeId: string;
+  storeName: string;
+}) {
+  const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow } = useSync();
   const repo = useMemo(() => new StoreContextRepository(sqlite), [sqlite]);
   const [saved, setSaved] = useState<LocalStoreContext | null>(),
@@ -38,37 +70,120 @@ export default function StoreSettingsScreen() {
     [schoolZone, setZone] = useState<StoreContextSettings["schoolZone"]>("C"),
     [pointMode, setPointMode] = useState(false),
     [position, setPosition] = useState<StoreContextSettings["position"]>(null),
-    [busy, setBusy] = useState(false),
+    [activity, setActivity] = useState<"SAVE" | "LOCATION" | "READ" | null>(
+      null,
+    ),
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>(),
     [issues, setIssues] = useState<Record<string, string>>({});
+  const busy = activity !== null;
+  const baseline = useRef<string | undefined>(undefined);
+  const readGeneration = useRef(0);
+  const draft = JSON.stringify([
+    city,
+    postalCode,
+    schoolZone,
+    pointMode,
+    position,
+  ]);
+  const dirty =
+    saved !== undefined &&
+    baseline.current !== undefined &&
+    draft !== baseline.current;
+  const dirtyRef = useRef(dirty),
+    busyRef = useRef(busy);
+  dirtyRef.current = dirty;
+  busyRef.current = busy;
+  useUnsavedForm(dirty, busy);
+  const hydrate = useCallback((s: LocalStoreContext | null) => {
+    const c = s?.entity;
+    const values = {
+      city: c?.city ?? "Asnières-sur-Seine",
+      postalCode: c?.postalCode ?? "92600",
+      schoolZone: c?.schoolZone ?? (c ? null : ("C" as const)),
+      pointMode: c?.locationMode === "POINT",
+      position: c?.position ?? null,
+    };
+    baseline.current = JSON.stringify([
+      values.city,
+      values.postalCode,
+      values.schoolZone,
+      values.pointMode,
+      values.position,
+    ]);
+    dirtyRef.current = false;
+    setSaved(s);
+    setCity(values.city);
+    setPostalCode(values.postalCode);
+    setZone(values.schoolZone);
+    setPointMode(values.pointMode);
+    setPosition(values.position);
+  }, []);
+  const load = useCallback(
+    async (replace = false, active: () => boolean = () => true) => {
+      const generation = ++readGeneration.current;
+      try {
+        const s = await repo.get(storeId);
+        if (
+          generation !== readGeneration.current ||
+          !active() ||
+          (!replace && (busyRef.current || dirtyRef.current))
+        )
+          return;
+        hydrate(s);
+        setError(undefined);
+        setIssues({});
+        setNotice(undefined);
+      } catch {
+        if (generation === readGeneration.current && active())
+          setError(
+            "Les réglages du magasin ne peuvent pas être lus. Votre saisie reste conservée.",
+          );
+      }
+    },
+    [repo, storeId, hydrate],
+  );
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      if (storeId)
-        void repo
-          .get(storeId)
-          .then((s) => {
-            if (active) {
-              setSaved(s);
-              if (s) {
-                setCity(s.entity.city);
-                setPostalCode(s.entity.postalCode);
-                setZone(s.entity.schoolZone);
-                setPointMode(s.entity.locationMode === "POINT");
-                setPosition(s.entity.position);
-              }
-            }
-          })
-          .catch(() => {
-            if (active)
-              setError("Les réglages du magasin ne peuvent pas être lus.");
-          });
+      void load(false, () => active);
       return () => {
         active = false;
       };
-    }, [repo, storeId]),
+    }, [load]),
   );
+  async function performReload() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setActivity("READ");
+    try {
+      await load(true);
+    } finally {
+      busyRef.current = false;
+      setActivity(null);
+    }
+  }
+  function reload() {
+    if (busy) return;
+    if (!dirty) {
+      void performReload();
+      return;
+    }
+    const message =
+      "Vos modifications non enregistrées seront perdues. Les réglages enregistrés seront relus.";
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) void performReload();
+      return;
+    }
+    Alert.alert("Abandonner la saisie ?", message, [
+      { text: "Continuer la saisie", style: "cancel" },
+      {
+        text: "Abandonner et relire",
+        style: "destructive",
+        onPress: () => void performReload(),
+      },
+    ]);
+  }
   function changeTown(value: string, field: "city" | "postalCode") {
     if (field === "city") setCity(value);
     else setPostalCode(value);
@@ -80,11 +195,12 @@ export default function StoreSettingsScreen() {
     setError(undefined);
     if (!nativeLocation) {
       setError(
-        "Installez le nouveau build iPhone pour relever la position. La saisie par commune reste disponible.",
+        "La localisation native n’est pas disponible dans cette version. La saisie par commune reste disponible.",
       );
       return;
     }
-    setBusy(true);
+    busyRef.current = true;
+    setActivity("LOCATION");
     try {
       const Location = await import("expo-location");
       setPosition(
@@ -116,7 +232,8 @@ export default function StoreSettingsScreen() {
               : "La position n’a pas pu être relevée. Réessayez ou utilisez la commune du magasin.",
       );
     } finally {
-      setBusy(false);
+      busyRef.current = false;
+      setActivity(null);
     }
   }
   async function save() {
@@ -143,15 +260,33 @@ export default function StoreSettingsScreen() {
       });
     if (!parsed.success) {
       const fields: Record<string, string> = {};
-      for (const i of parsed.error.issues)
-        fields[String(i.path[0])] = i.message;
+      for (const issue of parsed.error.issues) {
+        const field = String(issue.path[0]);
+        fields[field] =
+          (
+            {
+              city: "Saisissez la commune du magasin.",
+              postalCode: "Saisissez un code postal français à cinq chiffres.",
+              position:
+                "Relevez la position du magasin ou utilisez la localisation par commune.",
+            } as Record<string, string>
+          )[field] ?? "Vérifiez ce réglage avant de l’enregistrer.";
+      }
       setIssues(fields);
       return;
     }
-    setBusy(true);
+    ++readGeneration.current;
+    busyRef.current = true;
+    setActivity("SAVE");
     try {
-      await repo.save(parsed.data, { commandId: randomUUID(), deviceId });
-      setSaved(await repo.get(storeId));
+      await repo.save(
+        parsed.data,
+        { commandId: randomUUID(), deviceId },
+        saved?.entity ?? null,
+      );
+      const stored = await repo.get(storeId);
+      if (!stored) throw Error("STORE_CONTEXT_CHANGED");
+      hydrate(stored);
       setNotice("Réglages enregistrés sur cet appareil.");
       void syncNow(storeId)
         .then(async () => {
@@ -166,7 +301,8 @@ export default function StoreSettingsScreen() {
     } catch (e) {
       setError(storeContextError(e instanceof Error ? e.message : undefined));
     } finally {
-      setBusy(false);
+      busyRef.current = false;
+      setActivity(null);
     }
   }
   return (
@@ -175,7 +311,7 @@ export default function StoreSettingsScreen() {
         title="Mon magasin"
         subtitle="Localisation et contexte de préparation de la semaine."
       />
-      <SecondaryButton label="Retour à Plus" onPress={() => router.back()} />
+      <SecondaryButton label="Retour" onPress={() => router.back()} />
       <MenuRow
         title="Plan et mobilier"
         description="Consulter les îlots, les TG et leurs surfaces de vente."
@@ -183,10 +319,21 @@ export default function StoreSettingsScreen() {
         onPress={() => router.push("/store-layout")}
       />
       {error ? (
-        <InlineAlert title="Réglages à vérifier" message={error} />
+        <>
+          <InlineAlert title="Réglages à vérifier" message={error} />
+          <SecondaryButton
+            label={
+              dirty
+                ? "Relire les réglages et abandonner ma saisie…"
+                : "Relire les réglages"
+            }
+            disabled={busy}
+            onPress={reload}
+          />
+        </>
       ) : null}
       {notice ? <InlineAlert title="Magasin" message={notice} /> : null}
-      <SectionCard title={session?.stores[0]?.name ?? "Magasin pilote"}>
+      <SectionCard title={storeName}>
         <Text className="text-muted">
           {saved
             ? ((
@@ -208,11 +355,17 @@ export default function StoreSettingsScreen() {
           />
         ) : null}
       </SectionCard>
+      {dirty ? (
+        <Text accessibilityLiveRegion="polite" className="text-warning">
+          Modifications non enregistrées
+        </Text>
+      ) : null}
       <SectionCard title="Commune du magasin">
+        <Text className="text-muted">Commune</Text>
         <TextInput
           accessibilityLabel="Commune du magasin"
           value={city}
-          editable={!busy}
+          editable={!busy && saved !== undefined}
           onChangeText={(v) => changeTown(v, "city")}
           maxLength={120}
           className={`rounded-xl border p-3 text-ink ${issues.city ? "border-danger" : "border-line"}`}
@@ -222,10 +375,11 @@ export default function StoreSettingsScreen() {
             {issues.city}
           </Text>
         ) : null}
+        <Text className="text-muted">Code postal</Text>
         <TextInput
           accessibilityLabel="Code postal"
           value={postalCode}
-          editable={!busy}
+          editable={!busy && saved !== undefined}
           onChangeText={(v) => changeTown(v, "postalCode")}
           keyboardType="number-pad"
           maxLength={5}
@@ -249,7 +403,7 @@ export default function StoreSettingsScreen() {
           <Switch
             accessibilityLabel="Utiliser une position précise du magasin"
             value={pointMode}
-            disabled={busy}
+            disabled={busy || saved === undefined}
             onValueChange={(value) => {
               setPointMode(value);
               if (!value) setPosition(null);
@@ -264,8 +418,12 @@ export default function StoreSettingsScreen() {
         {pointMode ? (
           <>
             <SecondaryButton
-              label={busy ? "Relevé…" : "Relever ma position au magasin"}
-              disabled={busy}
+              label={
+                activity === "LOCATION"
+                  ? "Relevé…"
+                  : "Relever ma position au magasin"
+              }
+              disabled={busy || saved === undefined}
               onPress={() => void locate()}
             />
             <Text className="text-ink">
@@ -283,17 +441,35 @@ export default function StoreSettingsScreen() {
       </SectionCard>
       <SectionCard title="Vacances scolaires">
         <Text className="text-sm text-muted">
-          Zone du magasin, à confirmer. La zone C est proposée pour
-          Asnières-sur-Seine.
+          Choisissez la zone du magasin. Elle n’est pas déduite de la position
+          du téléphone.
         </Text>
-        {(["A", "B", "C", null] as const).map((zone) => (
-          <SecondaryButton
-            key={zone ?? "unknown"}
-            label={`${schoolZone === zone ? "✓ " : ""}${zone ? `Zone ${zone}` : "Zone non précisée"}`}
-            disabled={busy}
-            onPress={() => setZone(zone)}
-          />
-        ))}
+        <View
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Zone de vacances scolaires"
+          className="flex-row flex-wrap gap-2"
+        >
+          {(["A", "B", "C", null] as const).map((zone) => (
+            <Pressable
+              key={zone ?? "unknown"}
+              accessibilityRole="radio"
+              accessibilityLabel={zone ? `Zone ${zone}` : "Zone non précisée"}
+              accessibilityState={{
+                checked: schoolZone === zone,
+                disabled: busy || saved === undefined,
+              }}
+              aria-checked={schoolZone === zone}
+              aria-disabled={busy || saved === undefined}
+              disabled={busy || saved === undefined}
+              onPress={() => setZone(zone)}
+              className={`min-h-12 items-center justify-center rounded-xl border px-4 py-3 ${schoolZone === zone ? "border-forest bg-forest-soft" : "border-line bg-surface"}`}
+            >
+              <Text className="text-ink">
+                {zone ? `Zone ${zone}` : "Non précisée"}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       </SectionCard>
       <SectionCard title="Contexte météo">
         <Text className="text-muted">
@@ -303,7 +479,15 @@ export default function StoreSettingsScreen() {
         </Text>
       </SectionCard>
       <PrimaryButton
-        label={busy ? "Enregistrement…" : "Enregistrer les réglages du magasin"}
+        label={
+          activity === "SAVE"
+            ? "Enregistrement…"
+            : activity === "READ"
+              ? "Lecture…"
+              : activity === "LOCATION"
+                ? "Relevé…"
+                : "Enregistrer les réglages du magasin"
+        }
         disabled={
           busy || saved === undefined || saved?.syncState === "CONFLICT"
         }

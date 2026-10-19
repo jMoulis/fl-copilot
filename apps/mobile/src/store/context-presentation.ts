@@ -8,6 +8,8 @@ export function storeContextError(code: string | undefined) {
       {
         STORE_CONTEXT_RESOLVE_REQUIRED:
           "Les réglages sont en conflit. Comparez les deux configurations dans Synchronisation.",
+        STORE_CONTEXT_CHANGED:
+          "Les réglages enregistrés ont changé pendant votre saisie. Votre saisie est conservée ; relisez les réglages avant de les remplacer.",
         STORE_CONTEXT_REVISION_INVALID:
           "Les réglages ont changé. Rouvrez la page Magasin avant d’enregistrer.",
         STORE_CONTEXT_SYNCING:

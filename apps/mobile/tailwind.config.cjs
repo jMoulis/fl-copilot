@@ -1,4 +1,5 @@
 module.exports = {
+  darkMode: "class",
   content: ["./src/**/*.{ts,tsx}"],
   presets: [require("nativewind/preset")],
   theme: {
@@ -19,6 +20,7 @@ module.exports = {
         warning: "#E6B16D",
         "warning-soft": "#3D2E1C",
         critical: "#F59B95",
+        danger: "#F59B95",
         "critical-soft": "#412525",
         info: "#8FC8EF",
         "info-soft": "#183244",
