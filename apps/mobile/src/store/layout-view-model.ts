@@ -153,15 +153,18 @@ export function parseLayoutMeasure(
   text: string,
   previous: Measurement,
   measured: boolean,
+  allowZero = false,
 ): Measurement {
   if (!text.trim()) return { mm: null, quality: "UNKNOWN" };
   const normalized = text.trim().replace(/\s/g, "").replace(",", ".");
   if (!/^\d+(?:\.\d)?$/.test(normalized))
     throw Error("Indiquez des centimètres, avec une décimale au maximum.");
   const mm = Math.round(Number(normalized) * 10);
-  if (mm <= 0 || mm > 100000)
+  if (mm < 0 || (!allowZero && mm === 0) || mm > 100000)
     throw Error(
-      "La mesure doit être supérieure à zéro et ne pas dépasser 10 000 cm.",
+      allowZero
+        ? "Indiquez une valeur entre 0 et 10 000 cm."
+        : "La mesure doit être supérieure à zéro et ne pas dépasser 10 000 cm.",
     );
   if (mm === previous.mm && !measured) return previous;
   return { mm, quality: measured ? "MEASURED" : "DECLARED" };
@@ -227,6 +230,14 @@ export function layoutChanges(
       const prev = old.get(item.id);
       old.delete(item.id);
       if (!prev) {
+        const placement =
+          "x" in item
+            ? ` · depuis la gauche ${layoutMeasurementLabel(item.x)}, depuis le haut ${layoutMeasurementLabel(item.y)} · orientation ${item.rotation === null ? "à préciser" : `${item.rotation}°`}`
+            : "";
+        const host =
+          "hostId" in item && item.kind === "MOBILE"
+            ? ` · ${item.hostId ? `habituellement sous ${after.furniture.find((f) => f.id === item.hostId)?.label ?? "élément à retrouver"}` : "sans meuble associé"}`
+            : "";
         changes.push({
           key: item.id,
           label: item.label,
@@ -239,7 +250,7 @@ export function layoutChanges(
                   `${({ width: "largeur", depth: "profondeur", height: "hauteur" } as Record<string, string>)[key]} ${layoutMeasurementLabel(m)}`,
               )
               .join(" · ") || "mesures à préciser"
-          }`,
+          }${placement}${host}`,
         });
         continue;
       }
