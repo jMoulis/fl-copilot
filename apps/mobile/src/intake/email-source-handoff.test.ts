@@ -16,6 +16,7 @@ import {
   type EmailIntakeReceipt,
 } from "@fl-copilot/sync-contracts";
 import {
+  copilotMessageSchema,
   RECEIPT_PHOTO_BUNDLE_MIME,
   receiptPhotoBundleSchema,
 } from "@fl-copilot/domain";
@@ -255,7 +256,11 @@ async function fixture(
       },
     );
   const makeHandoff = (c = cache) =>
-    new EmailSourceHandoff(c, transfer(c), { read, imageSize, bundle });
+    new EmailSourceHandoff(c, transfer(c), chat.deviceId, {
+      read,
+      imageSize,
+      bundle,
+    });
   const ref = (index = 0) => ({
     conversationId: scope.conversationId,
     receiptId: receipt.id,
@@ -408,7 +413,8 @@ it("captures independent store photos beyond the composer limit without creating
   expect(count(f, "waste_receipts")).toBe(0);
   expect(count(f, "local_jobs")).toBe(12);
   expect(count(f, "copilot_drafts")).toBe(0);
-  expect(count(f, "copilot_messages")).toBe(0);
+  expect(count(f, "copilot_messages")).toBe(12);
+  expect(count(f, "copilot_pending_turns")).toBe(0);
 });
 it("keeps independent waste photos separate and routes an exact duplicate through the existing review guard", async () => {
   const f = await fixture({
@@ -911,7 +917,8 @@ it("drains more than the ten composer attachments in bounded batches without omi
       )
       .get(),
   ).toEqual({ n: 25 });
-  expect(count(f, "copilot_messages")).toBe(0);
+  expect(count(f, "copilot_messages")).toBe(25);
+  expect(count(f, "copilot_pending_turns")).toBe(0);
   expect(count(f, "waste_receipts")).toBe(0);
 });
 it("waits for retained source readiness and refreshes the exact receipt before retrying", async () => {
@@ -991,4 +998,148 @@ it("processes the actual selection's reversed-tap ticket group plus an independe
   );
   for (const file of f.originals)
     expect(existsSync(fileURLToPath(file.localUri))).toBe(true);
+});
+
+it.each(["PDF", "STORE_PHOTO", "WASTE_TICKET", "MULTI_VIEW"] as const)(
+  "links an admitted %s to the exact chat using one durable ordinary attachment without consuming the draft or starting a turn",
+  async (kind) => {
+    const f = await fixture({
+      photo: kind !== "PDF",
+      count: kind === "MULTI_VIEW" ? 3 : 1,
+      mode:
+        kind === "STORE_PHOTO"
+          ? "STORE_PHOTO"
+          : kind === "PDF"
+            ? "AUTO"
+            : "WASTE_TICKET",
+      grouped: kind === "MULTI_VIEW",
+    });
+    const conversations = new CopilotConversationRepository(f.a, f.scope);
+    const draft = {
+      text: "Ma question en cours",
+      attachments: Array.from({ length: 10 }, () => ({
+        sourceDocumentId: randomUUID(),
+        filename: "déjà sélectionné.pdf",
+        mediaType: "application/pdf",
+      })),
+      updatedAt: f.chat.time,
+    };
+    await conversations.saveDraft(f.scope.conversationId, draft);
+    const result = await f.handoff.capture(f.ref());
+    if (result.status !== "CAPTURED") throw Error("source expected");
+    const rows = await f.a.getAllAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM copilot_messages",
+    );
+    expect(rows).toHaveLength(1);
+    const message = copilotMessageSchema.parse(
+      JSON.parse(rows[0]!.payload_json),
+    );
+    expect(message).toMatchObject({
+      ...f.scope,
+      role: "USER",
+      createdAt: f.decision.createdAt,
+      text: "Document reçu par email et confirmé dans cette conversation.",
+      attachments: [{ sourceDocumentId: result.record.sourceDocumentId }],
+    });
+    expect(message.attachments).toHaveLength(1);
+    expect(message.attachments[0]!.mediaType).toBe(
+      kind === "PDF"
+        ? "application/pdf"
+        : kind === "MULTI_VIEW"
+          ? RECEIPT_PHOTO_BUNDLE_MIME
+          : "image/png",
+    );
+    expect(message.text).not.toContain(f.receipt.subject);
+    expect(await conversations.draft(f.scope.conversationId)).toEqual(draft);
+    expect(count(f, "copilot_pending_turns")).toBe(0);
+    const command = await f.a.getAllAsync<{
+      payload_json: string;
+      device_id: string;
+    }>(
+      "SELECT payload_json,device_id FROM sync_outbox WHERE command_type='COPILOT_MESSAGE_APPEND'",
+    );
+    expect(command).toHaveLength(1);
+    expect(JSON.parse(command[0]!.payload_json)).toEqual(message);
+    expect(command[0]!.device_id).toBe(f.chat.deviceId);
+    // Replaying any admitted view uses the one same source/message/command.
+    for (let i = 0; i < f.originals.length; i++)
+      await f.handoff.capture(f.ref(i));
+    expect(count(f, "copilot_messages")).toBe(1);
+    expect(
+      (
+        await f.a.getAllAsync(
+          "SELECT command_id FROM sync_outbox WHERE command_type='COPILOT_MESSAGE_APPEND'",
+        )
+      ).length,
+    ).toBe(1);
+    expect(count(f, "sales_observations")).toBe(0);
+    expect(count(f, "waste_observations")).toBe(0);
+  },
+);
+
+it("rolls source capture and its upload back if the chat-link Outbox append fails; original bytes and draft survive for retry", async () => {
+  const f = await fixture({ photo: true, mode: "STORE_PHOTO" });
+  const conversations = new CopilotConversationRepository(f.a, f.scope);
+  const draft = {
+    text: "Mon brouillon",
+    attachments: [],
+    updatedAt: f.chat.time,
+  };
+  await conversations.saveDraft(f.scope.conversationId, draft);
+  f.db.exec(`CREATE TRIGGER refuse_email_link BEFORE INSERT ON sync_outbox
+    WHEN NEW.command_type='COPILOT_MESSAGE_APPEND' BEGIN SELECT RAISE(ABORT,'INJECTED_MESSAGE_OUTBOX_FAILURE'); END;`);
+  await expect(f.handoff.capture(f.ref())).rejects.toThrow(
+    "INJECTED_MESSAGE_OUTBOX_FAILURE",
+  );
+  for (const table of [
+    "source_documents",
+    "local_files",
+    "local_jobs",
+    "email_source_handoffs",
+    "copilot_messages",
+  ])
+    expect(count(f, table)).toBe(0);
+  expect(await conversations.draft(f.scope.conversationId)).toEqual(draft);
+  expect(readFileSync(fileURLToPath(f.originals[0]!.localUri))).toEqual(
+    Buffer.from(f.originals[0]!.bytes),
+  );
+  f.db.exec("DROP TRIGGER refuse_email_link");
+  await expect(f.handoff.capture(f.ref())).resolves.toMatchObject({
+    status: "CAPTURED",
+  });
+  expect(count(f, "source_documents")).toBe(1);
+  expect(count(f, "local_jobs")).toBe(1);
+  expect(count(f, "copilot_messages")).toBe(1);
+});
+
+it("rolls back the chat source link as well as capture if the account changes while its append is being committed", async () => {
+  const f = await fixture();
+  const run = f.a.runAsync.bind(f.a);
+  const spy = vi
+    .spyOn(f.a, "runAsync")
+    .mockImplementation(async (sql, ...args) => {
+      const result = await run(sql, ...args);
+      if (sql.startsWith("INSERT INTO copilot_messages(")) f.setSession(null);
+      return result;
+    });
+  await expect(f.handoff.capture(f.ref())).rejects.toThrow(
+    "EMAIL_INTAKE_SCOPE_CHANGED",
+  );
+  spy.mockRestore();
+  for (const table of [
+    "source_documents",
+    "local_files",
+    "local_jobs",
+    "email_source_handoffs",
+    "copilot_messages",
+  ])
+    expect(count(f, table)).toBe(0);
+  expect(
+    (
+      await f.a.getAllAsync(
+        "SELECT command_id FROM sync_outbox WHERE command_type='COPILOT_MESSAGE_APPEND'",
+      )
+    ).length,
+  ).toBe(0);
+  expect(existsSync(fileURLToPath(f.originals[0]!.localUri))).toBe(true);
 });
