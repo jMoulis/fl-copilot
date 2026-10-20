@@ -2,7 +2,7 @@ import { MAX_RECEIPT_VIEWS } from "@fl-copilot/domain";
 import { z } from "zod";
 import { sourceOriginalDownloadSchema } from "./source-original";
 const id = z.uuid(),
-  time = z.iso.datetime();
+  time = z.iso.datetime().max(40);
 export const emailIntakeReceivingDomainSchema = z
   .string()
   .regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.resend\.app$/);
@@ -225,3 +225,18 @@ export const emailIntakeDecisionSchema = z
         });
   });
 export type EmailIntakeDecision = z.infer<typeof emailIntakeDecisionSchema>;
+
+/** Bounded restoration of immutable private choices; not an email processing result. */
+export const emailIntakeDecisionPageQuerySchema = z.strictObject({
+  cursor: z.string().min(1).max(1024).optional(),
+});
+export const emailIntakeDecisionPageSchema = z.strictObject({
+  storeId: id,
+  ownerId: id,
+  cursor: z.string().min(1).max(1024).nullable(),
+  decisions: z.array(emailIntakeDecisionSchema).max(50),
+  nextCursor: z.string().min(1).max(1024).nullable(),
+});
+export type EmailIntakeDecisionPage = z.infer<
+  typeof emailIntakeDecisionPageSchema
+>;

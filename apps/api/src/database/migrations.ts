@@ -944,6 +944,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ actionId: 1 }, { unique: true });
     },
   },
+  {
+    version: 47,
+    name: "email_intake_decision_history_pages",
+    async up(db) {
+      await db
+        .collection("emailIntakeDecisions")
+        .createIndex(
+          { storeId: 1, ownerId: 1, _id: 1 },
+          { name: "email_intake_decision_pages" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

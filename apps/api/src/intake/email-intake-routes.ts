@@ -3,6 +3,8 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
   emailIntakeStatusSchema,
+  emailIntakeDecisionPageQuerySchema,
+  emailIntakeDecisionPageSchema,
   emailIntakeRevocationSchema,
   emailIntakeBindingRequestSchema,
   emailIntakeBindingSchema,
@@ -19,6 +21,7 @@ export function registerEmailIntakeRoutes(
     auth: AuthService;
     store?: EmailIntakeStore;
     originals: EmailOriginalAccess;
+    history?: import("./email-decision-history").EmailDecisionHistory;
   },
 ) {
   const api = app.withTypeProvider<ZodTypeProvider>();
@@ -54,6 +57,30 @@ export function registerEmailIntakeRoutes(
       );
     return dependencies.store;
   };
+  api.get(
+    "/api/v1/intake/email/decisions",
+    {
+      schema: {
+        querystring: emailIntakeDecisionPageQuerySchema,
+        response: { 200: emailIntakeDecisionPageSchema },
+      },
+    },
+    async (request, reply) => {
+      const principal = await authorize(request);
+      if (!dependencies.history)
+        throw new AuthError(
+          503,
+          "EMAIL_INTAKE_HISTORY_UNAVAILABLE",
+          "La restauration des confirmations est momentanément indisponible.",
+        );
+      reply.header("cache-control", "private, no-store");
+      return dependencies.history.page(
+        principal.storeId,
+        principal.userId,
+        request.query.cursor,
+      );
+    },
+  );
   api.get(
     "/api/v1/intake/email/status",
     { schema: { response: { 200: emailIntakeStatusSchema } } },

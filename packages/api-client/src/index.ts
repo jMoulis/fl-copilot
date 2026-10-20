@@ -1,4 +1,8 @@
 import {
+  emailIntakeDecisionPageSchema,
+  emailIntakeDecisionPageQuerySchema,
+} from "@fl-copilot/sync-contracts";
+import {
   emailIntakeStatusSchema,
   emailIntakeBindingRequestSchema,
   emailIntakeBindingSchema,
@@ -594,6 +598,21 @@ export class ApiClient {
       { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
       commercialOriginalLinkSchema,
     ) as Promise<CommercialOriginalLink>;
+  }
+  emailIntakeDecisionPage(
+    accessToken: string,
+    storeId: string,
+    cursor?: string,
+  ) {
+    const input = emailIntakeDecisionPageQuerySchema.parse({ cursor });
+    const query = input.cursor
+      ? `?cursor=${encodeURIComponent(input.cursor)}`
+      : "";
+    return this.request(
+      `/api/v1/intake/email/decisions${query}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      emailIntakeDecisionPageSchema,
+    );
   }
   emailIntakeStatus(accessToken: string, storeId: string) {
     return this.request(

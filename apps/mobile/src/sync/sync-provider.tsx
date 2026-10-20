@@ -101,6 +101,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
   const database = useLocalDatabase();
   const { session, withAccessToken } = useAuth();
   const hasLocalSession = Boolean(session);
+  const emailReadSession = useRef(session);
+  emailReadSession.current = session;
   const [state, setState] = useState<Omit<SyncContextValue, "syncNow">>({
     status: "pending",
     pendingCount: 0,
@@ -147,6 +149,10 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
             ),
+          ),
+        emailDecisionPage: (storeId, cursor) =>
+          withAccessToken((token) =>
+            api.emailIntakeDecisionPage(token, storeId, cursor),
           ),
         push: (request) =>
           withAccessToken((token) => api.pushSync(token, request)),
@@ -211,6 +217,11 @@ export function SyncProvider({ children }: PropsWithChildren) {
         substitutionScores: true,
         copilotDecisions: true,
         emailIntake: true,
+        emailIntakeAllowed: (storeId) =>
+          emailReadSession.current?.user.id === session?.user.id &&
+          emailReadSession.current?.stores.some(
+            (store) => store.storeId === storeId && store.role === "MANAGER",
+          ) === true,
         copilotExecutionLinks: true,
         copilotActionExecutions: true,
         copilotKnowledge: true,

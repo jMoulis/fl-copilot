@@ -1,3 +1,8 @@
+import {
+  emailIntakeDecisionPageSchema,
+  type EmailIntakeDecisionPage,
+} from "@fl-copilot/sync-contracts";
+import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
 import { isVisualEntityType, visualEntitySchemas } from "@fl-copilot/domain";
 import {
   applyVisualEntity,
@@ -42,6 +47,10 @@ import {
 
 export interface SyncTransport {
   bootstrap(storeId: string): Promise<BootstrapResponse>;
+  emailDecisionPage?(
+    storeId: string,
+    cursor?: string,
+  ): Promise<EmailIntakeDecisionPage>;
   push(request: SyncPushRequest): Promise<SyncPushResponse>;
   pull(storeId: string, cursor: string): Promise<SyncPullResponse>;
 }
@@ -83,6 +92,7 @@ export interface MobileSyncServiceOptions {
   substitutionScores?: boolean;
   copilotDecisions?: boolean;
   emailIntake?: boolean;
+  emailIntakeAllowed?(storeId: string): boolean;
   copilotExecutionLinks?: boolean;
   copilotActionExecutions?: boolean;
   copilotKnowledge?: boolean;
@@ -266,12 +276,14 @@ export class MobileSyncService {
           `copilot-execution-links:${storeId}:${this.options.copilotOwnerId}`,
         )
       : true;
-    const emailAdopted = this.options.emailIntake
-      ? await this.database.getFirstAsync(
-          "SELECT value FROM app_metadata WHERE key=?",
-          `email-intake:${storeId}:${this.options.copilotOwnerId}`,
-        )
-      : true;
+    const emailAdopted =
+      this.options.emailIntake &&
+      (this.options.emailIntakeAllowed?.(storeId) ?? true)
+        ? await this.database.getFirstAsync(
+            "SELECT value FROM app_metadata WHERE key=?",
+            `email-intake:${storeId}:${this.options.copilotOwnerId}`,
+          )
+        : true;
     const decisionsAdopted = this.options.copilotDecisions
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -391,6 +403,57 @@ export class MobileSyncService {
       this.options.copilotOwnerId,
       this.options.mercalysRecordUpdates,
     );
+    if (
+      snapshot.entities.emailIntakeHistoryRequired &&
+      this.options.emailIntake &&
+      (this.options.emailIntakeAllowed?.(storeId) ?? true)
+    ) {
+      const ownerId = this.options.copilotOwnerId;
+      if (
+        !this.options.emailIntake ||
+        !ownerId ||
+        !this.transport.emailDecisionPage
+      )
+        throw Error("EMAIL_INTAKE_HISTORY_UNAVAILABLE");
+      let cursor: string | undefined;
+      const seen = new Set<string>();
+      for (let index = 0; index < 11; index++) {
+        if (!(this.options.emailIntakeAllowed?.(storeId) ?? true)) return;
+        const requested = cursor;
+        const page = emailIntakeDecisionPageSchema.parse(
+          await this.withRetry(() =>
+            this.transport.emailDecisionPage!(storeId, requested),
+          ),
+        );
+        if (
+          page.storeId !== storeId ||
+          page.ownerId !== ownerId ||
+          page.cursor !== (cursor ?? null) ||
+          (page.nextCursor && seen.has(page.nextCursor))
+        )
+          throw Error("EMAIL_INTAKE_HISTORY_SCOPE_INVALID");
+        if (page.nextCursor) seen.add(page.nextCursor);
+        if (!(this.options.emailIntakeAllowed?.(storeId) ?? true)) return;
+        await this.database.withExclusiveTransactionAsync(async (tx) => {
+          if (!(this.options.emailIntakeAllowed?.(storeId) ?? true))
+            throw Error("EMAIL_INTAKE_SCOPE_CHANGED");
+          for (const decision of page.decisions)
+            await applyEmailDecisionRecord(tx, { storeId, ownerId }, decision);
+          if (!page.nextCursor)
+            await tx.runAsync(
+              "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+              `email-intake:${storeId}:${ownerId}`,
+              "1",
+              this.now(),
+            );
+          if (!(this.options.emailIntakeAllowed?.(storeId) ?? true))
+            throw Error("EMAIL_INTAKE_SCOPE_CHANGED");
+        });
+        if (!page.nextCursor) return;
+        cursor = page.nextCursor;
+      }
+      throw Error("EMAIL_INTAKE_HISTORY_LIMIT");
+    }
   }
 
   private async pushUnlocked(storeId: string): Promise<PushSummary> {

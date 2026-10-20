@@ -91,6 +91,20 @@ export async function applyBootstrap(
         bootstrap.serverTime,
       );
     }
+    if (bootstrap.entities.emailIntakeHistoryRequired) {
+      if (
+        !ownerId ||
+        bootstrap.entities.emailIntakeOwnerId !== ownerId ||
+        bootstrap.entities.emailIntakeDecisions
+      )
+        throw Error("EMAIL_INTAKE_DECISION_SCOPE_INVALID");
+      // A new baseline invalidates a previous adoption marker until every page
+      // is restored. Partial cached choices remain available; no row is deleted.
+      await transaction.runAsync(
+        "DELETE FROM app_metadata WHERE key=?",
+        `email-intake:${storeId}:${ownerId}`,
+      );
+    }
     if (bootstrap.entities.emailIntakeDecisions) {
       if (!ownerId || bootstrap.entities.emailIntakeOwnerId !== ownerId)
         throw Error("EMAIL_INTAKE_DECISION_SCOPE_INVALID");
@@ -444,6 +458,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "copilotExecutionLinkOwnerId",
     "copilotDecisions",
     "emailIntakeDecisions",
+    "emailIntakeHistoryRequired",
     "emailIntakeOwnerId",
     "copilotDecisionOwnerId",
     "copilotKnowledge",

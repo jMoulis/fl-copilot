@@ -218,6 +218,38 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       );
       vi.stubGlobal("fetch", fetchPort);
       const client = new ApiClient("https://local.test");
+      const historyHttp = await app.inject({
+        method: "GET",
+        url: "/api/v1/intake/email/decisions",
+        headers: {
+          authorization: `Bearer ${actor}`,
+          "x-store-id": f.scope.storeId,
+        },
+      });
+      expect(historyHttp.statusCode).toBe(200);
+      expect(historyHttp.headers["cache-control"]).toBe("private, no-store");
+
+      expect(
+        await client.emailIntakeDecisionPage(actor, f.scope.storeId),
+      ).toEqual({
+        storeId: f.scope.storeId,
+        ownerId: actor,
+        cursor: null,
+        decisions: [],
+        nextCursor: null,
+      });
+      await expect(
+        client.emailIntakeDecisionPage(actor, f.scope.storeId, "bad"),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(
+        (
+          await app.inject({
+            method: "GET",
+            url: "/api/v1/intake/email/decisions",
+          })
+        ).statusCode,
+      ).toBe(401);
+
       const session = () => ({
         storeId: f.scope.storeId,
         userId: actor,

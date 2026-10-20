@@ -1,3 +1,7 @@
+import {
+  emailIntakeDecisionSchema,
+  type EmailIntakeDecisionPage,
+} from "@fl-copilot/sync-contracts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1248,4 +1252,191 @@ it("refreshes bootstrap once when upgrading an existing cursor to immutable subs
       .get(`substitution-scores:${storeId}`),
   ).toEqual({ value: "1" });
   database.close();
+});
+
+it.each(["store", "owner", "cursor", "foreign-decision", "cycle"] as const)(
+  "does not complete an email restore with a %s response",
+  async (mode) => {
+    const { adapter, database } = temporaryDatabase();
+    try {
+      await runLocalMigrations(adapter);
+      const ownerId = "55555555-5555-4555-8555-555555555555";
+      const decision = emailIntakeDecisionSchema.parse({
+        id: entityId,
+        receiptId: entityId,
+        actionId: commandId,
+        storeId,
+        ownerId,
+        conversationId: deviceId,
+        version: 1,
+        policyVersion: 1,
+        receiptVersion: 1,
+        choice: "DISMISS",
+        files: [],
+        createdAt: "2026-10-20T08:00:00Z",
+        updatedAt: "2026-10-20T08:00:00Z",
+      });
+      const snapshot = bootstrapResponse();
+      snapshot.entities.emailIntakeHistoryRequired = true;
+      snapshot.entities.emailIntakeOwnerId = ownerId;
+      const service = new MobileSyncService(
+        adapter,
+        {
+          bootstrap: async () => snapshot,
+          push: async () => {
+            throw Error("no command expected");
+          },
+          pull: async () => emptyPull("base"),
+          emailDecisionPage: async (
+            _store,
+            cursor,
+          ): Promise<EmailIntakeDecisionPage> => ({
+            storeId: mode === "store" ? ownerId : storeId,
+            ownerId: mode === "owner" ? storeId : ownerId,
+            cursor: mode === "cursor" ? "unexpected" : (cursor ?? null),
+            decisions:
+              mode === "foreign-decision"
+                ? [
+                    decision,
+                    {
+                      ...decision,
+                      id: commandId,
+                      receiptId: commandId,
+                      ownerId: storeId,
+                    },
+                  ]
+                : [decision],
+            nextCursor: mode === "cycle" ? "repeated" : null,
+          }),
+        },
+        {
+          deviceId,
+          appVersion: "test",
+          copilotOwnerId: ownerId,
+          emailIntake: true,
+          maxRetries: 0,
+        },
+      );
+      await expect(service.bootstrap(storeId)).rejects.toThrow(/EMAIL_INTAKE_/);
+      expect(
+        await adapter.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `email-intake:${storeId}:${ownerId}`,
+        ),
+      ).toBeNull();
+      expect(
+        await adapter.getFirstAsync(
+          "SELECT COUNT(*) AS count FROM email_intake_decisions",
+        ),
+      ).toEqual({ count: mode === "cycle" ? 1 : 0 });
+      expect(
+        await adapter.getFirstAsync("SELECT * FROM sync_outbox"),
+      ).toBeNull();
+    } finally {
+      database.close();
+    }
+  },
+);
+it("retains ordinary synchronization for a reader without fetching private manager history", async () => {
+  const { adapter, database } = temporaryDatabase();
+  try {
+    await runLocalMigrations(adapter);
+    const ownerId = "55555555-5555-4555-8555-555555555555",
+      snapshot = bootstrapResponse();
+    snapshot.entities.emailIntakeHistoryRequired = true;
+    snapshot.entities.emailIntakeOwnerId = ownerId;
+    let bootstraps = 0;
+    const service = new MobileSyncService(
+      adapter,
+      {
+        bootstrap: async () => {
+          bootstraps++;
+          return snapshot;
+        },
+        emailDecisionPage: async () => {
+          throw Error("reader must not request manager history");
+        },
+        push: async () => {
+          throw Error("no command expected");
+        },
+        pull: async () => emptyPull("base"),
+      },
+      {
+        deviceId,
+        appVersion: "test",
+        copilotOwnerId: ownerId,
+        emailIntake: true,
+        emailIntakeAllowed: () => false,
+        maxRetries: 0,
+      },
+    );
+    await service.sync(storeId);
+    await service.sync(storeId);
+    expect(bootstraps).toBe(1);
+    expect(
+      await adapter.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key=?",
+        `email-intake:${storeId}:${ownerId}`,
+      ),
+    ).toBeNull();
+    expect(
+      await adapter.getFirstAsync(
+        "SELECT label FROM sync_test_entities WHERE id=?",
+        entityId,
+      ),
+    ).toEqual({ label: "Créée hors connexion" });
+  } finally {
+    database.close();
+  }
+});
+it("abandons an email page when the active account permission changes during the read", async () => {
+  const { adapter, database } = temporaryDatabase();
+  try {
+    await runLocalMigrations(adapter);
+    const ownerId = "55555555-5555-4555-8555-555555555555",
+      snapshot = bootstrapResponse();
+    snapshot.entities.emailIntakeHistoryRequired = true;
+    snapshot.entities.emailIntakeOwnerId = ownerId;
+    let allowed = true;
+    const service = new MobileSyncService(
+      adapter,
+      {
+        bootstrap: async () => snapshot,
+        emailDecisionPage: async () => {
+          allowed = false;
+          return {
+            storeId,
+            ownerId,
+            cursor: null,
+            decisions: [],
+            nextCursor: null,
+          };
+        },
+        push: async () => {
+          throw Error("no command expected");
+        },
+        pull: async () => emptyPull("base"),
+      },
+      {
+        deviceId,
+        appVersion: "test",
+        copilotOwnerId: ownerId,
+        emailIntake: true,
+        emailIntakeAllowed: () => allowed,
+        maxRetries: 0,
+      },
+    );
+    await service.bootstrap(storeId);
+    expect(
+      await adapter.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key=?",
+        `email-intake:${storeId}:${ownerId}`,
+      ),
+    ).toBeNull();
+    expect(
+      await adapter.getFirstAsync("SELECT * FROM email_intake_decisions"),
+    ).toBeNull();
+  } finally {
+    database.close();
+  }
 });
