@@ -974,7 +974,7 @@ export const mongoMigrations: readonly MongoMigration[] = [
     async up(db) {
       await db
         .collection("copilotLayoutIllustrations")
-        .createIndex({ storeId: 1, ownerId: 1, conversationId: 1 });
+        .createIndex({ storeId: 1, ownerId: 1, createdAt: -1, _id: -1 });
     },
   },
 ];
