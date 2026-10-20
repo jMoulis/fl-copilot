@@ -1,6 +1,6 @@
 # Grouped V1 native acceptance — 20 October preparation
 
-Status: preparation only; no release or build is started by this document. Full V1/M7/M8 remains open. This recipe groups already merged work rather than waiting for or omitting the remaining Resend/illustration/other roadmap commitments.
+Status: grouped API released; iOS build submitted and device acceptance pending. Full V1/M7/M8 remains open. This recipe groups already merged work rather than waiting for or omitting the remaining Resend/illustration/other roadmap commitments.
 
 ## Authoritative baseline rechecked
 
@@ -31,3 +31,13 @@ Status: preparation only; no release or build is started by this document. Full 
 Physical second-device original/image restoration, Android native behavior, storage exhaustion, uncertain commits, full accessibility/performance/security matrices, recovery/backups and the complete real recommendation/decision/execution/review and measured implantation/illustration paths remain explicit V1/M8 gates. Mail intake remains under development and is not part of this installed-binary claim. Follow later coherent recipes for those requirements; none is removed from the full objective.
 
 Seven workstreams remain: 1 actions/conflicts in progress; 2 counter-promotion code ready; 3 documents in progress; 4 expertise in progress; 5 recommendations in progress; 6 implantation in progress; 7 UX/validation in progress. This release-preparation change advances traceable delivery and native validation; it does not make an entire workstream complete.
+
+## Actual grouped delivery — 20 October
+
+- Exact source: `c8a16987ed6c558b20bd2f52fa761c9095a2982b`, clean detached checkout, matching remote master. Master CI `39363869583` completed successfully after the PR 288 push/PR checks. The unfinished Resend branch is excluded.
+- Vercel: verified project `prj_zHAHcfqYnnRixxvjxFSmfKzSjWTN`, team `team_7CGAetNCA5DbQyP3yNVHgnt4`, API root `apps/api`, Node 24. Staged production deployment `dpl_AkaifXtDr139PinPy2W4HQVmeT9o` (`https://fl-copilot-mr3suztuo-julien-3666cb71.vercel.app`) reached READY with the exact source SHA in deployment metadata. Protected-stage health returned JSON with the database connected through the existing authenticated CLI. Source-original manifest, visual manifest and copilot history returned application `401 AUTH_REQUIRED` without an app session. A probe of the nonexistent `/api/v1/copilot/conversations` route returned 404; the actual history route was then checked. These are route/authentication-boundary probes, not successful authenticated business operations.
+- Promoted that same artifact without rebuilding. Inspection of `fl-copilot.vercel.app` resolves to the new deployment ID; public health returns 200/database connected, and the three protected app routes still return 401 without a session. Keep predecessor `dpl_8wxufurZhFMng4GU8bvEyT96WKDi` for rollback. First deployment-scoped runtime scan (03:21–03:36 UTC) returned zero error/fatal records with no excluded intervals; this narrow window does not establish long-term stability.
+- CLI 39 inspection/linking worked, but upload was rejected before deployment because Vercel now requires CLI >=47.2.2. A temporary pinned CLI 64.7.0, task-local configuration/cache and the existing CLI credentials completed the release. The global installation and Mac configuration were not changed. No `.env` file was read/pulled/written; no AI request or mail-receiving configuration was introduced.
+- EAS: rechecked five most recent iOS builds, all finished and predating this source; submitted one grouped standalone/internal staging build with pinned temporary CLI 24.8.0 and `--freeze-credentials`. Existing provisioning includes iPhone Air. Build `dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `c8a1698…`, version **0.1.0 / native build 2**, created `2026-10-20T03:36:23.433Z`, initial status NEW. No completion or installed-device acceptance is claimed. Build page: https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/dd32fb48-c423-4ab7-a444-fe0fb4e0de0e
+
+The complete phone recipe and remaining V1/M8 gates above still apply. Update the existing application rather than uninstalling it. Receipt of a finished binary is distinct from validation on the owner's phone.
