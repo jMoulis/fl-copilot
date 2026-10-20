@@ -1,3 +1,20 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { ApiClient } from "../../../packages/api-client/src/index";
+import { VisualTestDatabase } from "../../../scripts/test-visual-sqlite";
+import { runLocalMigrations } from "../../mobile/src/db/migrations";
+import { EmailIntakeCache } from "../../mobile/src/intake/email-intake-cache";
+import {
+  EmailOriginalTransfer,
+  type EmailOriginalFiles,
+} from "../../mobile/src/intake/email-original-transfer";
+import { SourceOriginalJobs } from "../../mobile/src/documents/source-original-jobs";
+import { buildApp } from "../src/build-app";
+import { AuthError, type AuthService } from "../src/auth/service";
+import { createEmailIntakeStore } from "../src/intake/email-intake-store";
 import { createHash, randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -30,7 +47,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           await database.close();
         }
     }, 60000);
-    async function fixture(storeId = randomUUID()) {
+    async function fixture(
+      storeId = randomUUID(),
+      checksum = `sha256:${"a".repeat(64)}`,
+    ) {
       const db = await database.getDb(),
         scope = {
           storeId,
@@ -41,7 +61,6 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         fileId = randomUUID(),
         bindingId = randomUUID();
       const target = { ...scope, receiptId, fileId },
-        checksum = `sha256:${"a".repeat(64)}`,
         mime = "application/zip";
       let time = Date.parse("2026-10-20T12:00:00Z");
       const now = () => new Date(time);
@@ -141,6 +160,198 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           db.collection<Document & { _id: string }>("emailIntakeReceipts"),
       };
     }
+    it("restores exact unclassified email bytes through authenticated API/client, durable SQLite jobs and offline restart without creating business data", async () => {
+      const bytes = new Uint8Array([80, 75, 3]);
+      const digest = (value: string | Uint8Array) =>
+        `sha256:${createHash("sha256").update(value).digest("hex")}`;
+      const f = await fixture(randomUUID(), digest(bytes));
+      const dir = await mkdtemp(join(tmpdir(), "fl-email-device-proof-"));
+      const path = join(dir, "phone.sqlite"),
+        file = join(dir, "original.bin"),
+        localUri = pathToFileURL(file).href;
+      let phone = new VisualTestDatabase(new DatabaseSync(path));
+      let online = true,
+        actor = f.scope.ownerId;
+      const auth: AuthService = {
+        requestChallenge: vi.fn(),
+        verifyChallenge: vi.fn(),
+        refreshSession: vi.fn(),
+        logout: vi.fn(),
+        authorizeStore: vi.fn(async (token, storeId) => {
+          if (token !== actor || storeId !== f.scope.storeId)
+            throw new AuthError(403, "STORE_FORBIDDEN", "Accès refusé.");
+          return {
+            userId: actor,
+            storeId,
+            role: "MANAGER",
+            storeName: "Test",
+            sessionId: randomUUID(),
+            deviceId: randomUUID(),
+          };
+        }),
+      };
+      const store = createEmailIntakeStore(database, "unit.resend.app");
+      const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
+        database,
+        auth,
+        emailIntake: store,
+        emailOriginalAccess: f.service,
+      });
+      const fetchPort = vi.fn(
+        async (input: string | URL | Request, init?: RequestInit) => {
+          if (!online) throw Error("OFFLINE");
+          const url = new URL(
+            typeof input === "string" || input instanceof URL
+              ? input
+              : input.url,
+          );
+          const response = await app.inject({
+            method: "GET",
+            url: url.pathname + url.search,
+            headers: Object.fromEntries(new Headers(init?.headers)),
+          });
+          return new Response(response.body, {
+            status: response.statusCode,
+            headers: { "content-type": "application/json" },
+          });
+        },
+      );
+      vi.stubGlobal("fetch", fetchPort);
+      const client = new ApiClient("https://local.test");
+      const session = () => ({
+        storeId: f.scope.storeId,
+        userId: actor,
+        canWrite: true,
+      });
+      const files: EmailOriginalFiles = {
+        hash: async (text) => digest(text),
+        existing: async (manifest, owner) => {
+          expect(owner).toBe(f.scope.ownerId);
+          try {
+            const read = await readFile(file);
+            expect(read.byteLength).toBe(manifest.sizeBytes);
+            expect(digest(read)).toBe(manifest.checksum);
+            return { localUri };
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+            throw error;
+          }
+        },
+        receive: async (lease, owner, check) => {
+          check();
+          expect(owner).toBe(f.scope.ownerId);
+          expect(digest(bytes)).toBe(lease.manifest.checksum);
+          expect(bytes.byteLength).toBe(lease.manifest.sizeBytes);
+          await writeFile(file, bytes, { flag: "wx" });
+          check();
+          return { localUri };
+        },
+      };
+      const api = {
+        manifest: (
+          storeId: string,
+          owner: string,
+          ref: Parameters<EmailOriginalTransfer["local"]>[0],
+        ) => client.emailIntakeOriginalManifest(owner, storeId, ref),
+        download: (
+          storeId: string,
+          owner: string,
+          ref: Parameters<EmailOriginalTransfer["local"]>[0],
+        ) => client.emailIntakeOriginalDownload(owner, storeId, ref),
+      };
+      const makeTransfer = () =>
+        new EmailOriginalTransfer(
+          new EmailIntakeCache(phone, session),
+          api,
+          files,
+        );
+      const ref = {
+        conversationId: f.scope.conversationId,
+        receiptId: f.target.receiptId,
+        fileId: f.target.fileId,
+      };
+      const before = await f.receipts().findOne({ _id: f.target.receiptId });
+      try {
+        await runLocalMigrations(phone);
+        const conversation = {
+          id: f.scope.conversationId,
+          storeId: f.scope.storeId,
+          ownerId: f.scope.ownerId,
+          title: "Documents reçus",
+          status: "ACTIVE",
+          version: 1,
+          createdAt: "2026-10-20T12:00:00.000Z",
+          updatedAt: "2026-10-20T12:00:00.000Z",
+        };
+        await phone.runAsync(
+          "INSERT INTO copilot_conversations(id,store_id,owner_id,payload_json,sync_state,dirty) VALUES(?,?,?,?,'SYNCED',0)",
+          conversation.id,
+          conversation.storeId,
+          conversation.ownerId,
+          JSON.stringify(conversation),
+        );
+        const page = await client.emailIntakeList(
+          actor,
+          f.scope.storeId,
+          f.scope.conversationId,
+        );
+        await new EmailIntakeCache(phone, session).storePage(f.scope, page);
+        expect(page.receipts[0]?.files[0]?.id).toBe(f.target.fileId);
+        const source = { recover: vi.fn() };
+        const jobs = new SourceOriginalJobs(
+          phone,
+          source,
+          session,
+          randomUUID,
+          undefined,
+          makeTransfer(),
+        );
+        await jobs.requestEmail(ref);
+        await jobs.process(f.scope.storeId, actor);
+        expect(
+          await phone.getFirstAsync("SELECT status FROM local_jobs"),
+        ).toEqual({ status: "COMPLETED" });
+        expect(new Uint8Array(await readFile(file))).toEqual(bytes);
+        expect(source.recover).not.toHaveBeenCalled();
+        expect(f.sign).toHaveBeenCalledTimes(1);
+        phone.raw.close();
+        phone = new VisualTestDatabase(new DatabaseSync(path));
+        online = false;
+        const calls = fetchPort.mock.calls.length;
+        await expect(makeTransfer().recover(ref)).resolves.toEqual({
+          localUri,
+        });
+        expect(fetchPort).toHaveBeenCalledTimes(calls);
+        expect(
+          await phone.getFirstAsync("SELECT * FROM sync_outbox"),
+        ).toBeNull();
+        expect(
+          await phone.getFirstAsync("SELECT * FROM source_documents"),
+        ).toBeNull();
+        expect(
+          await phone.getFirstAsync("SELECT * FROM source_records"),
+        ).toBeNull();
+        expect(await f.receipts().findOne({ _id: f.target.receiptId })).toEqual(
+          before,
+        );
+        actor = randomUUID();
+        await expect(makeTransfer().local(ref)).rejects.toThrow(
+          "CONVERSATION_UNAVAILABLE",
+        );
+        online = true;
+        await expect(
+          client.emailIntakeOriginalDownload(actor, f.scope.storeId, ref),
+        ).rejects.toMatchObject({
+          response: { code: "EMAIL_ORIGINAL_UNAVAILABLE" },
+        });
+        expect(f.sign).toHaveBeenCalledTimes(1);
+      } finally {
+        vi.unstubAllGlobals();
+        phone.raw.close();
+        await app.close();
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
     it("returns a hash-bound unclassified manifest without private storage paths or capabilities", async () => {
       const f = await fixture(),
         m = await f.service.manifest(f.target, f.authorize),
