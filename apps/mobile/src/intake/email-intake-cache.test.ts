@@ -1,3 +1,11 @@
+import {
+  EmailDecisionRepository,
+  applyEmailDecisionRecord,
+} from "./email-decision-repository";
+import { OutboxRepository } from "../sync/outbox-repository";
+import { MobileSyncService } from "../sync/sync-service";
+import { canDisplayConflict } from "../sync/private-conflict-scope";
+import { ConflictRepository } from "../sync/conflict-repository";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -633,6 +641,338 @@ it("leaves email jobs untouched when the runtime has no email handler", async ()
     ).toEqual({ status: "PENDING", attempt_count: 0 });
     expect(source.recover).not.toHaveBeenCalled();
     expect(f.api.download).not.toHaveBeenCalled();
+  } finally {
+    f.db.raw.close();
+  }
+});
+
+it("commits human admission with exactly one Outbox command, retains it after offline restart and does not publish or parse", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-email-admission-")),
+    path = join(dir, "phone.sqlite");
+  const f = await fixture(path);
+  let db = f.db;
+  try {
+    await f.cache.storePage(f.scope, f.page);
+    await f.makeTransfer().recover(f.ref);
+    const repo = new EmailDecisionRepository(f.cache);
+    const input = {
+      conversationId: f.scope.conversationId,
+      receiptId: f.receipt.id,
+      choice: "ADMIT" as const,
+      files: [
+        {
+          fileId: f.ref.fileId,
+          processingId: randomUUID(),
+          mode: "AUTO" as const,
+        },
+      ],
+    };
+    const actionId = randomUUID(),
+      deviceId = randomUUID();
+    const decision = await repo.decide(input, { actionId, deviceId });
+    expect(decision).toMatchObject({
+      id: f.receipt.id,
+      actionId,
+      files: [
+        {
+          manifestHash: f.manifest.manifestHash,
+          checksum: f.manifest.checksum,
+        },
+      ],
+    });
+    await expect(
+      repo.decide(input, { actionId: randomUUID(), deviceId }),
+    ).resolves.toEqual(decision);
+    expect(
+      await new OutboxRepository(db).listPending(f.scope.storeId),
+    ).toMatchObject([
+      {
+        commandId: actionId,
+        entityType: "email_intake_decision",
+        payload: decision,
+      },
+    ]);
+    expect(
+      await db.getFirstAsync("SELECT COUNT(*) n FROM sync_outbox"),
+    ).toEqual({ n: 1 });
+    expect(await db.getFirstAsync("SELECT * FROM source_documents")).toBeNull();
+    expect(await db.getFirstAsync("SELECT * FROM local_jobs")).toBeNull();
+    db.raw.close();
+    db = new VisualTestDatabase(new DatabaseSync(path));
+    expect(
+      await new EmailDecisionRepository(f.makeCache(db)).get(
+        f.scope.conversationId,
+        f.receipt.id,
+      ),
+    ).toEqual({ decision, state: "PENDING" });
+  } finally {
+    db.raw.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("rolls back admission when Outbox persistence fails and retains all verified raw originals", async () => {
+  const f = await fixture();
+  try {
+    await f.cache.storePage(f.scope, f.page);
+    await f.makeTransfer().recover(f.ref);
+    const before = await f.db.getFirstAsync(
+      "SELECT * FROM email_original_manifests",
+    );
+    await f.db.execAsync(
+      "CREATE TRIGGER admission_failure BEFORE INSERT ON sync_outbox BEGIN SELECT RAISE(ABORT,'disk failure'); END;",
+    );
+    await expect(
+      new EmailDecisionRepository(f.cache).decide(
+        {
+          conversationId: f.scope.conversationId,
+          receiptId: f.receipt.id,
+          choice: "ADMIT",
+          files: [
+            { fileId: f.ref.fileId, processingId: randomUUID(), mode: "AUTO" },
+          ],
+        },
+        { actionId: randomUUID(), deviceId: randomUUID() },
+      ),
+    ).rejects.toThrow("disk failure");
+    expect(
+      await f.db.getFirstAsync("SELECT * FROM email_intake_decisions"),
+    ).toBeNull();
+    expect(await f.db.getFirstAsync("SELECT * FROM sync_outbox")).toBeNull();
+    expect(
+      await f.db.getFirstAsync("SELECT * FROM email_original_manifests"),
+    ).toEqual(before);
+  } finally {
+    f.db.raw.close();
+  }
+});
+
+it.each(["owner", "receipt", "manifest", "kind"])(
+  "refuses %s changes during local admission",
+  async (mode) => {
+    const f = await fixture();
+    try {
+      await f.cache.storePage(f.scope, f.page);
+      await f.makeTransfer().recover(f.ref);
+      const read = f.db.getFirstAsync.bind(f.db);
+      let changed = false;
+      f.db.getFirstAsync = async <T>(
+        sql: string,
+        ...params: (string | number | null)[]
+      ) => {
+        const row = await read<T>(sql, ...params);
+        if (
+          !changed &&
+          sql.startsWith(
+            "SELECT manifest_json,local_uri FROM email_original_manifests",
+          )
+        ) {
+          changed = true;
+          if (mode === "owner")
+            f.changeSession({
+              storeId: f.scope.storeId,
+              userId: randomUUID(),
+              canWrite: true,
+            });
+          if (mode === "receipt") await f.update({ version: 3 });
+          if (mode === "manifest")
+            await f.db.runAsync(
+              "UPDATE email_original_manifests SET manifest_json='{}'",
+            );
+        }
+        return row;
+      };
+      await expect(
+        new EmailDecisionRepository(f.cache).decide(
+          {
+            conversationId: f.scope.conversationId,
+            receiptId: f.receipt.id,
+            choice: "ADMIT",
+            files: [
+              {
+                fileId: f.ref.fileId,
+                processingId: randomUUID(),
+                mode: (mode === "kind" ? "EXECUTE" : "AUTO") as "AUTO",
+              },
+            ],
+          },
+          { actionId: randomUUID(), deviceId: randomUUID() },
+        ),
+      ).rejects.toThrow(mode === "kind" ? /Invalid option/ : /EMAIL_/);
+      expect(
+        await f.db.getFirstAsync("SELECT * FROM email_intake_decisions"),
+      ).toBeNull();
+      expect(await f.db.getFirstAsync("SELECT * FROM sync_outbox")).toBeNull();
+    } finally {
+      f.db.raw.close();
+    }
+  },
+);
+
+it("admits a ready remote attachment without needing a local copy or any file/network access", async () => {
+  const f = await fixture();
+  try {
+    await f.cache.storePage(f.scope, f.page);
+    const decision = await new EmailDecisionRepository(f.cache).decide(
+      {
+        conversationId: f.scope.conversationId,
+        receiptId: f.receipt.id,
+        choice: "ADMIT",
+        files: [
+          { fileId: f.ref.fileId, processingId: randomUUID(), mode: "AUTO" },
+        ],
+      },
+      { actionId: randomUUID(), deviceId: randomUUID() },
+    );
+    expect(decision.files[0]).toMatchObject({
+      manifestHash: null,
+      checksum: null,
+    });
+    expect(f.files.existing).not.toHaveBeenCalled();
+    expect(f.files.receive).not.toHaveBeenCalled();
+    expect(f.api.download).not.toHaveBeenCalled();
+    expect(
+      await f.db.getFirstAsync("SELECT * FROM source_documents"),
+    ).toBeNull();
+  } finally {
+    f.db.raw.close();
+  }
+});
+
+it("allows a rejection without downloading pending files and preserves an explicitly superseded refused command on fresh confirmation", async () => {
+  const f = await fixture();
+  try {
+    await f.cache.storePage(f.scope, f.page);
+    const repo = new EmailDecisionRepository(f.cache),
+      deviceId = randomUUID();
+    const input = {
+      conversationId: f.scope.conversationId,
+      receiptId: f.receipt.id,
+      choice: "DISMISS" as const,
+      files: [],
+    };
+    const first = await repo.decide(input, {
+      actionId: randomUUID(),
+      deviceId,
+    });
+    expect(f.files.receive).not.toHaveBeenCalled();
+    await f.db.runAsync("UPDATE email_intake_decisions SET sync_state='ERROR'");
+    await f.db.runAsync(
+      "UPDATE sync_outbox SET status='FAILED',last_error_code='EMAIL_INTAKE_RECEIPT_CHANGED'",
+    );
+    await expect(
+      repo.decide(input, { actionId: randomUUID(), deviceId }),
+    ).rejects.toThrow("RETRY_REQUIRED");
+    const next = await repo.decide(input, {
+      actionId: randomUUID(),
+      deviceId,
+      retryOfActionId: first.actionId,
+    });
+    expect(next.actionId).not.toBe(first.actionId);
+    expect(
+      await f.db.getFirstAsync("SELECT COUNT(*) n FROM sync_outbox"),
+    ).toEqual({ n: 2 });
+    expect(
+      await f.db.getFirstAsync(
+        "SELECT status,last_error_code FROM sync_outbox WHERE command_id=?",
+        first.actionId,
+      ),
+    ).toEqual({
+      status: "FAILED",
+      last_error_code: "EMAIL_INTAKE_DECISION_SUPERSEDED",
+    });
+    expect(
+      await new OutboxRepository(f.db).countActive(
+        f.scope.storeId,
+        f.scope.ownerId,
+      ),
+    ).toEqual({ pending_count: 1, failed_count: 0 });
+  } finally {
+    f.db.raw.close();
+  }
+});
+
+it("retains a conflicting local decision, hides it from another actor and adopts the accepted remote choice only explicitly", async () => {
+  const f = await fixture();
+  try {
+    await f.cache.storePage(f.scope, f.page);
+    await f.makeTransfer().recover(f.ref);
+    const repo = new EmailDecisionRepository(f.cache);
+    const local = await repo.decide(
+      {
+        conversationId: f.scope.conversationId,
+        receiptId: f.receipt.id,
+        choice: "ADMIT",
+        files: [
+          { fileId: f.ref.fileId, processingId: randomUUID(), mode: "AUTO" },
+        ],
+      },
+      { actionId: randomUUID(), deviceId: randomUUID() },
+    );
+    const remote = {
+      ...local,
+      actionId: randomUUID(),
+      choice: "DISMISS" as const,
+      files: [],
+    };
+    const transport = {
+      bootstrap: vi.fn(),
+      pull: vi.fn(),
+      push: vi.fn(async () => ({
+        results: [
+          {
+            commandId: local.actionId,
+            status: "CONFLICT" as const,
+            entityType: "email_intake_decision",
+            entityId: local.id,
+            remoteVersion: 1,
+            remoteEntity: remote,
+          },
+        ],
+        serverTime: new Date().toISOString(),
+      })),
+    };
+    const options = {
+      appVersion: "test",
+      deviceId: randomUUID(),
+      copilotOwnerId: f.scope.ownerId,
+    };
+    await new MobileSyncService(f.db, transport, {
+      ...options,
+      copilotOwnerId: randomUUID(),
+    }).push(f.scope.storeId);
+    expect(transport.push).not.toHaveBeenCalled();
+    await new MobileSyncService(f.db, transport, options).push(f.scope.storeId);
+    const conflict = await new ConflictRepository(f.db).getById(local.actionId);
+    expect(conflict?.status).toBe("OPEN");
+    expect(canDisplayConflict(conflict!, f.scope.storeId, randomUUID())).toBe(
+      false,
+    );
+    expect(await repo.get(f.scope.conversationId, f.receipt.id)).toEqual({
+      decision: local,
+      state: "CONFLICT",
+    });
+    await applyEmailDecisionRecord(f.db, f.scope, remote);
+    expect(
+      (await repo.get(f.scope.conversationId, f.receipt.id))?.decision,
+    ).toEqual(local);
+    await repo.adoptRemote(f.scope.conversationId, local.actionId);
+    expect(await repo.get(f.scope.conversationId, f.receipt.id)).toEqual({
+      decision: remote,
+      state: "SYNCED",
+    });
+    expect(
+      (await new ConflictRepository(f.db).getById(local.actionId))?.status,
+    ).toBe("RESOLVED_REMOTE");
+    expect(
+      await new OutboxRepository(f.db).countActive(
+        f.scope.storeId,
+        f.scope.ownerId,
+      ),
+    ).toEqual({ pending_count: 0, failed_count: 0 });
+    expect(
+      await f.db.getFirstAsync("SELECT * FROM source_documents"),
+    ).toBeNull();
   } finally {
     f.db.raw.close();
   }

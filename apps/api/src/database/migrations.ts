@@ -928,6 +928,22 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ receiptId: 1, _id: 1 });
     },
   },
+  {
+    version: 46,
+    name: "email-intake-human-decisions",
+    async up(db) {
+      await db.collection("emailIntakeDecisions").createIndex({
+        storeId: 1,
+        ownerId: 1,
+        conversationId: 1,
+        createdAt: -1,
+        _id: -1,
+      });
+      await db
+        .collection("emailIntakeDecisions")
+        .createIndex({ actionId: 1 }, { unique: true });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

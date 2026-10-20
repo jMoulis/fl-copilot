@@ -425,6 +425,7 @@ export class ApiClient {
     storeLayouts = false,
     physicalAllocations = false,
     visualLibrary = false,
+    emailIntake = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -450,6 +451,7 @@ export class ApiClient {
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
+    if (emailIntake) query.set("emailIntake", "true");
     if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
@@ -495,6 +497,7 @@ export class ApiClient {
     storeLayouts = false,
     physicalAllocations = false,
     visualLibrary = false,
+    emailIntake = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -522,6 +525,7 @@ export class ApiClient {
     if (copilotHistory) query.set("copilotHistory", "true");
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
+    if (emailIntake) query.set("emailIntake", "true");
     if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");

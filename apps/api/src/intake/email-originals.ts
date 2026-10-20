@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { get, put } from "@vercel/blob";
 import { z } from "zod";
 import type { ClientSession, Db, Filter } from "mongodb";
-import type { EmailIntakeReceipt } from "@fl-copilot/sync-contracts";
+import {
+  emailIntakeOriginalMetadataSchema,
+  serializeEmailIntakeOriginalMetadata,
+  type EmailIntakeReceipt,
+} from "@fl-copilot/sync-contracts";
 import type { DatabaseService } from "../database/types.js";
 import {
   emailIntakeAtomic,
@@ -40,6 +44,52 @@ export function emailOriginalObjectKey(
   checksum: string,
 ) {
   return `stores/${job.storeId}/private-email/${job.ownerId}/${job.receiptId}/${job._id}/${checksum.slice(7)}`;
+}
+/** Identical immutable metadata for access capabilities and admission validation. */
+export function emailOriginalManifest(
+  receipt: EmailIntakeReceiptRecord,
+  file: EmailIntakeReceipt["files"][number],
+  job: EmailOriginalJob,
+) {
+  if (
+    !job.proof ||
+    job.status !== "DONE" ||
+    job.receiptId !== receipt._id ||
+    job._id !== file.id ||
+    job.storeId !== receipt.storeId ||
+    job.ownerId !== receipt.ownerId ||
+    job.conversationId !== receipt.conversationId ||
+    job.bindingId !== receipt.bindingId
+  )
+    return null;
+  const parsed = emailIntakeOriginalMetadataSchema.safeParse({
+    schemaVersion: 1,
+    storeId: receipt.storeId,
+    ownerId: receipt.ownerId,
+    conversationId: receipt.conversationId,
+    receiptId: receipt._id,
+    fileId: file.id,
+    providerEmailId: receipt.providerEmailId,
+    providerAttachmentId: file.providerAttachmentId,
+    filename: file.filename,
+    declaredMimeType: job.proof.declaredMimeType,
+    sizeBytes: job.proof.sizeBytes,
+    checksum: job.proof.checksum,
+    retainedAt:
+      job.updatedAt instanceof Date && Number.isFinite(job.updatedAt.getTime())
+        ? job.updatedAt.toISOString()
+        : null,
+  });
+  if (
+    !parsed.success ||
+    parsed.data.declaredMimeType !== file.mediaType ||
+    emailOriginalObjectKey(job, parsed.data.checksum) !== job.proof.objectKey
+  )
+    return null;
+  return {
+    ...parsed.data,
+    manifestHash: `sha256:${createHash("sha256").update(serializeEmailIntakeOriginalMetadata(parsed.data)).digest("hex")}`,
+  };
 }
 type FileError = NonNullable<EmailIntakeReceipt["files"][number]["errorCode"]>;
 type Reader = ReturnType<typeof createResendAttachmentReader>;

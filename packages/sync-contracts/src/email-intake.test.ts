@@ -6,6 +6,7 @@ import {
   emailIntakeBindingRequestSchema,
   emailIntakeBindingSchema,
   emailIntakeReceiptSchema,
+  emailIntakeDecisionSchema,
 } from "./email-intake";
 it("keeps authority out of setup requests and normalizes the allowed mailbox", () => {
   const input = {
@@ -83,4 +84,68 @@ it("keeps credentials, download capabilities and provider bodies outside public 
       files: [receipt.files[0], receipt.files[0]],
     }).success,
   ).toBe(false);
+});
+
+it("binds immutable human decisions to one receipt and represents pending preservation without inventing proof", () => {
+  const id = randomUUID(),
+    file = {
+      fileId: randomUUID(),
+      processingId: randomUUID(),
+      mode: "AUTO" as const,
+      manifestHash: null,
+      checksum: null,
+    };
+  const decision = {
+    id,
+    receiptId: id,
+    actionId: randomUUID(),
+    storeId: randomUUID(),
+    ownerId: randomUUID(),
+    conversationId: randomUUID(),
+    version: 1,
+    policyVersion: 1,
+    receiptVersion: 2,
+    choice: "ADMIT",
+    files: [file],
+    createdAt: "2026-10-20T12:00:00.000Z",
+    updatedAt: "2026-10-20T12:00:00.000Z",
+  };
+  expect(emailIntakeDecisionSchema.safeParse(decision).success).toBe(true);
+  for (const change of [
+    { receiptId: randomUUID() },
+    { version: 2 },
+    { policyVersion: 2 },
+    { choice: "DISMISS" },
+    { files: [] },
+    { files: [file, file] },
+    { files: [{ ...file, checksum: `sha256:${"a".repeat(64)}` }] },
+    {
+      files: Array.from({ length: 2 }, () => ({
+        ...file,
+        fileId: randomUUID(),
+      })),
+    },
+    {
+      files: Array.from({ length: 6 }, () => ({
+        ...file,
+        fileId: randomUUID(),
+        mode: "WASTE_TICKET",
+      })),
+    },
+    { updatedAt: "2026-10-20T12:01:00.000Z" },
+    { html: "<b>publish</b>" },
+  ])
+    expect(
+      emailIntakeDecisionSchema.safeParse({ ...decision, ...change }).success,
+    ).toBe(false);
+  expect(
+    emailIntakeDecisionSchema.safeParse({
+      ...decision,
+      files: Array.from({ length: 5 }, () => ({
+        ...file,
+        fileId: randomUUID(),
+        mode: "WASTE_TICKET",
+      })),
+    }).success,
+  ).toBe(true);
 });

@@ -1,10 +1,7 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
-  emailIntakeOriginalMetadataSchema,
   emailIntakeOriginalRequestSchema,
   emailIntakeOriginalDownloadSchema,
-  serializeEmailIntakeOriginalMetadata,
 } from "@fl-copilot/sync-contracts";
 import { AuthError } from "../auth/service.js";
 import type { DatabaseService } from "../database/types.js";
@@ -20,6 +17,7 @@ import {
 } from "./email-intake-store.js";
 import {
   emailOriginalObjectKey,
+  emailOriginalManifest,
   type EmailOriginalJob,
 } from "./email-originals.js";
 const targetSchema = emailIntakeOriginalRequestSchema.extend({
@@ -81,36 +79,11 @@ export function createEmailOriginalAccess(
         { maxTimeMS: 2000 },
       );
     if (!job?.proof) throw unavailable();
-    const parsed = emailIntakeOriginalMetadataSchema.safeParse({
-      schemaVersion: 1,
-      ...scope,
-      receiptId: receipt._id,
-      fileId: file.id,
-      providerEmailId: receipt.providerEmailId,
-      providerAttachmentId: file.providerAttachmentId,
-      filename: file.filename,
-      declaredMimeType: job.proof.declaredMimeType,
-      sizeBytes: job.proof.sizeBytes,
-      checksum: job.proof.checksum,
-      retainedAt:
-        job.updatedAt instanceof Date &&
-        Number.isFinite(job.updatedAt.getTime())
-          ? job.updatedAt.toISOString()
-          : null,
-    });
-    if (!parsed.success || parsed.data.declaredMimeType !== file.mediaType)
-      throw invalid();
-    const metadata = parsed.data,
-      key = emailOriginalObjectKey(job, metadata.checksum);
-    if (key !== job.proof.objectKey) throw invalid();
-    return {
-      key,
-      manifest: {
-        ...metadata,
-        manifestHash: `sha256:${createHash("sha256").update(serializeEmailIntakeOriginalMetadata(metadata)).digest("hex")}`,
-      },
-    };
+    const manifest = emailOriginalManifest(receipt, file, job);
+    if (!manifest) throw invalid();
+    return { key: emailOriginalObjectKey(job, manifest.checksum), manifest };
   }
+
   async function checked(
     input: EmailOriginalTarget,
     authorize?: () => Promise<void>,

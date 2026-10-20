@@ -1,3 +1,4 @@
+import { MAX_RECEIPT_VIEWS } from "@fl-copilot/domain";
 import { z } from "zod";
 import { sourceOriginalDownloadSchema } from "./source-original";
 const id = z.uuid(),
@@ -147,3 +148,80 @@ export type EmailIntakeOriginalManifest = z.infer<
 export type EmailIntakeOriginalDownload = z.infer<
   typeof emailIntakeOriginalDownloadSchema
 >;
+
+/** Authenticated human admission; receiving metadata or an email body cannot create it. */
+export const emailIntakeDecisionSchema = z
+  .strictObject({
+    id,
+    receiptId: id,
+    actionId: id,
+    storeId: id,
+    ownerId: id,
+    conversationId: id,
+    version: z.literal(1),
+    policyVersion: z.literal(1),
+    receiptVersion: z.number().int().positive(),
+    choice: z.enum(["ADMIT", "DISMISS"]),
+    files: z
+      .array(
+        z.strictObject({
+          fileId: id,
+          manifestHash: z
+            .string()
+            .regex(/^sha256:[a-f0-9]{64}$/)
+            .nullable(),
+          checksum: z
+            .string()
+            .regex(/^sha256:[a-f0-9]{64}$/)
+            .nullable(),
+          processingId: id,
+          mode: z.enum(["AUTO", "WASTE_TICKET", "STORE_PHOTO"]),
+        }),
+      )
+      .max(50),
+    createdAt: time,
+    updatedAt: time,
+  })
+  .superRefine((value, ctx) => {
+    if (
+      value.id !== value.receiptId ||
+      value.updatedAt !== value.createdAt ||
+      (value.choice === "ADMIT"
+        ? !value.files.length
+        : value.files.length !== 0) ||
+      new Set(value.files.map((file) => file.fileId)).size !==
+        value.files.length
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid immutable email admission",
+      });
+    if (
+      value.files.some(
+        (file) => (file.manifestHash === null) !== (file.checksum === null),
+      )
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["files"],
+        message: "Incomplete retained-byte proof",
+      });
+    const groups = new Map<string, typeof value.files>();
+    for (const file of value.files)
+      groups.set(file.processingId, [
+        ...(groups.get(file.processingId) ?? []),
+        file,
+      ]);
+    for (const files of groups.values())
+      if (
+        files.length > MAX_RECEIPT_VIEWS ||
+        (files.length > 1 && files.some((file) => file.mode !== "WASTE_TICKET"))
+      )
+        ctx.addIssue({
+          code: "custom",
+          path: ["files"],
+          message:
+            "Only explicitly grouped ticket views share a processing identity",
+        });
+  });
+export type EmailIntakeDecision = z.infer<typeof emailIntakeDecisionSchema>;

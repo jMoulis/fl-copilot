@@ -1,4 +1,9 @@
 import {
+  serializeEmailDecision,
+  readableEmailDecisions,
+  type EmailDecisionDocument,
+} from "../intake/email-decision-sync";
+import {
   visualCollections,
   serializeVisualEntity,
 } from "../products/visual-library-sync";
@@ -213,6 +218,28 @@ export function createMongoSyncBootstrapService(
                 : null;
             if (links && links.length > 500)
               throw Error("COPILOT_EXECUTION_LINK_LIMIT");
+            const emailDecisions =
+              query.emailIntake === "true" && query.copilotHistory === "true"
+                ? await mongoDatabase
+                    .collection<EmailDecisionDocument>("emailIntakeDecisions")
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .limit(501)
+                    .toArray()
+                : null;
+            if (emailDecisions && emailDecisions.length > 500)
+              throw Error("EMAIL_INTAKE_DECISION_LIMIT");
+            const allowedEmailDecisions = emailDecisions
+              ? await readableEmailDecisions(
+                  mongoDatabase,
+                  store.storeId,
+                  store.userId,
+                  emailDecisions,
+                  session,
+                )
+              : null;
             const decisions =
               query.copilotDecisions === "true" &&
               query.copilotHistory === "true"
@@ -473,6 +500,14 @@ export function createMongoSyncBootstrapService(
               },
               entities: {
                 ...copilotHistory,
+                ...(allowedEmailDecisions
+                  ? {
+                      emailIntakeDecisions: allowedEmailDecisions.map(
+                        serializeEmailDecision,
+                      ),
+                      emailIntakeOwnerId: store.userId,
+                    }
+                  : {}),
                 ...(actions
                   ? {
                       copilotActionExecutions: actions.map(

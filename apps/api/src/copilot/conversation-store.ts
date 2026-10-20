@@ -1,4 +1,10 @@
 import {
+  applyEmailDecision,
+  canAccessEmailDecision,
+  serializeEmailDecision,
+  type EmailDecisionDocument,
+} from "../intake/email-decision-sync";
+import {
   canAccessDecision,
   applyDecision,
   serializeDecision,
@@ -30,6 +36,7 @@ import {
   type ActionExecutionDocument,
 } from "./action-execution-store";
 export const chatCollections = {
+  email_intake_decision: "emailIntakeDecisions",
   copilot_action_execution: "actionExecutions",
   copilot_conversation: "copilotConversations",
   copilot_message: "copilotMessages",
@@ -40,6 +47,7 @@ export const chatCollections = {
 export const isChatType = (type: string) =>
   Object.hasOwn(chatCollections, type);
 export type ChatRecordDocument = (
+  | EmailDecisionDocument
   | CopilotConversation
   | CopilotMessage
   | KnowledgeDocument
@@ -50,6 +58,8 @@ export type ChatRecordDocument = (
   _id: string;
 };
 export function serializeChat(type: string, row: ChatRecordDocument) {
+  if (type === "email_intake_decision")
+    return serializeEmailDecision(row as EmailDecisionDocument);
   if (type === "copilot_action_execution")
     return serializeActionExecution(row as ActionExecutionDocument);
   if (type === "copilot_execution_link")
@@ -95,6 +105,8 @@ export async function canAccessChatCommand(
   ownerId: string | undefined,
   c: SyncCommand,
 ) {
+  if (c.entityType === "email_intake_decision")
+    return canAccessEmailDecision(db, storeId, ownerId, c);
   if (c.entityType === "copilot_action_execution")
     return canAccessActionExecution(db, storeId, ownerId, c);
   if (c.entityType === "copilot_execution_link")
@@ -148,7 +160,18 @@ export async function applyChatCommand(
   c: SyncCommand,
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
+  now: () => Date = () => new Date(),
 ): Promise<CommandMutationResult> {
+  if (c.entityType === "email_intake_decision")
+    return applyEmailDecision(
+      ctx,
+      storeId,
+      ownerId,
+      c,
+      requestId,
+      changes,
+      now,
+    );
   if (c.entityType === "copilot_action_execution")
     return applyActionExecution(ctx, storeId, ownerId, c, requestId, changes);
   if (c.entityType === "copilot_execution_link")
