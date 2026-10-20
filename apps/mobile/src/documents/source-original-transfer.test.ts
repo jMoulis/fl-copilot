@@ -10,6 +10,7 @@ import { runLocalMigrations } from "../db/migrations";
 import {
   SourceOriginalTransfer,
   type SourceOriginalProof,
+  type SourceOriginalFiles,
   type SourceOriginalSession,
 } from "./source-original-transfer";
 import { SourceOriginalJobs } from "./source-original-jobs";
@@ -51,7 +52,7 @@ async function fixture() {
   const files = {
     hash: async (text: string) => hash(text),
     existing: vi.fn(async () => proof as SourceOriginalProof | null),
-    receive: vi.fn(async () => proof),
+    receive: vi.fn<SourceOriginalFiles["receive"]>().mockResolvedValue(proof),
   };
   const api = {
     download: vi.fn(async () => ({
@@ -271,6 +272,7 @@ it("does not commit a cancelled active recovery or automatically rearm a failed 
     expect(
       await f.db.getFirstAsync("SELECT status FROM local_jobs"),
     ).toMatchObject({ status: "CANCELLED" });
+    expect(f.api.manifest).not.toHaveBeenCalled();
     expect(
       await f.db.getFirstAsync("SELECT * FROM source_original_manifests"),
     ).toBeNull();
@@ -315,6 +317,238 @@ it("rolls back all file references on an interrupted cache commit and retains th
     expect(
       await f.db.getFirstAsync("SELECT * FROM source_original_manifests"),
     ).toBeNull();
+  } finally {
+    f.db.raw.close();
+  }
+});
+it("reads list state from SQLite without reading binary originals or requesting a capability", async () => {
+  const f = await fixture();
+  try {
+    await f.seed();
+    expect(await f.transfer.state(f.sourceId)).toMatchObject({
+      filename: "ventes.xlsx",
+      retained: true,
+      job: null,
+    });
+    expect(f.files.existing).not.toHaveBeenCalled();
+    expect(f.files.receive).not.toHaveBeenCalled();
+    expect(f.api.download).not.toHaveBeenCalled();
+  } finally {
+    f.db.raw.close();
+  }
+});
+it("does not expose a captured private photo's filename or file state to another account", async () => {
+  const f = await fixture();
+  try {
+    Object.assign(f.manifest, {
+      sourceType: "STORE_PHOTO",
+      access: "OWNER",
+      ownerId: f.actorId,
+      mimeType: "image/png",
+    });
+    await f.seed();
+    await f.db.runAsync(
+      "INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,created_at,updated_at) VALUES(?,'SOURCE_UPLOAD_AND_REGISTER',?,'PENDING',0,'2026-10-20T12:00:00Z','2026-10-20T12:00:00Z')",
+      randomUUID(),
+      JSON.stringify({
+        storeId: f.storeId,
+        ownerId: f.actorId,
+        sourceDocumentId: f.sourceId,
+      }),
+    );
+    expect(await f.transfer.state(f.sourceId)).toMatchObject({
+      filename: "ventes.xlsx",
+      retained: true,
+    });
+    f.changeScope({ storeId: f.storeId, userId: randomUUID() });
+    expect(await f.transfer.state(f.sourceId)).toMatchObject({
+      filename: null,
+      retained: false,
+      job: null,
+    });
+    expect(f.files.existing).not.toHaveBeenCalled();
+    expect(f.api.download).not.toHaveBeenCalled();
+  } finally {
+    f.db.raw.close();
+  }
+});
+it("rebuilds a damaged manifest cache from a fresh scoped proof without replacing existing original bytes", async () => {
+  const f = await fixture();
+  try {
+    await f.transfer.recover(f.sourceId);
+    await f.db.runAsync(
+      "UPDATE source_original_manifests SET manifest_json='{}'",
+    );
+    expect(await f.transfer.state(f.sourceId)).toMatchObject({
+      filename: null,
+      retained: false,
+    });
+    await f.transfer.recover(f.sourceId);
+    expect(f.files.receive).toHaveBeenCalledTimes(1);
+    expect(f.api.download).toHaveBeenCalledTimes(2);
+    expect(await f.transfer.local(f.sourceId)).toEqual(f.proof);
+  } finally {
+    f.db.raw.close();
+  }
+});
+it("refuses contradictory retained receipt view metadata before downloading another original", async () => {
+  const f = await fixture();
+  try {
+    await f.seed();
+    f.files.existing.mockResolvedValue(null);
+    await f.db.runAsync(
+      "INSERT INTO waste_receipt_photo_groups(source_document_id,store_id,checksum,payload_json) VALUES(?,?,?,'[]')",
+      f.sourceId,
+      f.storeId,
+      `sha256:${"b".repeat(64)}`,
+    );
+    await expect(f.transfer.recover(f.sourceId)).rejects.toThrow(
+      "SOURCE_ORIGINAL_BINDING_INVALID",
+    );
+    expect(f.files.receive).not.toHaveBeenCalled();
+    expect(
+      await f.db.getFirstAsync("SELECT * FROM source_original_manifests"),
+    ).toBeNull();
+  } finally {
+    f.db.raw.close();
+  }
+});
+it("reclaims a stale lease after worker restart without creating a second durable request", async () => {
+  const f = await fixture();
+  try {
+    await f.jobs.request(f.sourceId);
+    await f.db.runAsync(
+      "UPDATE local_jobs SET status='RUNNING',updated_at='2026-10-20T12:50:00.000Z'",
+    );
+    const restarted = new SourceOriginalJobs(
+      f.db,
+      f.makeTransfer(),
+      f.session,
+      randomUUID,
+      () => new Date("2026-10-20T13:00:00Z"),
+    );
+    await restarted.process(f.storeId, f.actorId);
+    expect(
+      await f.db.getFirstAsync("SELECT status FROM local_jobs"),
+    ).toMatchObject({ status: "COMPLETED" });
+    expect(
+      await f.db.getFirstAsync("SELECT COUNT(*) n FROM local_jobs"),
+    ).toEqual({ n: 1 });
+    expect(f.files.receive).toHaveBeenCalledTimes(1);
+  } finally {
+    f.db.raw.close();
+  }
+});
+it("interrupts only the departing account's active transfer and retains it for a bounded retry", async () => {
+  const f = await fixture();
+  try {
+    await f.jobs.request(f.sourceId);
+    f.files.receive.mockImplementation(
+      async (_lease, _owner, check, signal) => {
+        f.jobs.interrupt(f.storeId, randomUUID());
+        expect(signal?.aborted).toBe(false);
+        f.jobs.interrupt(f.storeId, f.actorId);
+        expect(signal?.aborted).toBe(true);
+        check();
+        return f.proof;
+      },
+    );
+    await f.jobs.process(f.storeId, f.actorId);
+    expect(
+      await f.db.getFirstAsync("SELECT status FROM local_jobs"),
+    ).toMatchObject({ status: "RETRY" });
+    expect(
+      await f.db.getFirstAsync("SELECT * FROM source_original_manifests"),
+    ).toBeNull();
+    expect(f.api.manifest).not.toHaveBeenCalled();
+  } finally {
+    f.db.raw.close();
+  }
+});
+
+it.each(["withdrawn", "removed", "pointer", "checksum", "scope", "deleted"])(
+  "rechecks %s after an asynchronous original read before exposing it",
+  async (mode) => {
+    const f = await fixture();
+    try {
+      await f.seed();
+      f.files.existing.mockImplementation(async () => {
+        if (mode === "withdrawn")
+          await f.db.runAsync(
+            "UPDATE source_documents SET deleted_at='2026-10-20T14:00:00Z'",
+          );
+        if (mode === "removed")
+          await f.db.runAsync(
+            "UPDATE local_files SET retention_status='REMOVED'",
+          );
+        if (mode === "pointer")
+          await f.db.runAsync(
+            "UPDATE source_documents SET local_file_uri='file:///different.xlsx'",
+          );
+        if (mode === "checksum")
+          await f.db.runAsync(
+            "UPDATE local_files SET checksum=?",
+            `sha256:${"b".repeat(64)}`,
+          );
+        if (mode === "scope")
+          f.changeScope({ storeId: f.storeId, userId: randomUUID() });
+        if (mode === "deleted")
+          await f.db.runAsync("DELETE FROM source_documents");
+        return f.proof;
+      });
+      await expect(f.transfer.local(f.sourceId)).rejects.toThrow(
+        /SOURCE_ORIGINAL_/,
+      );
+      expect(f.api.download).not.toHaveBeenCalled();
+      expect(f.files.receive).not.toHaveBeenCalled();
+    } finally {
+      f.db.raw.close();
+    }
+  },
+);
+it("keeps an offline original readable when unrelated business fields change during its read", async () => {
+  const f = await fixture();
+  try {
+    await f.seed("PENDING");
+    f.files.existing.mockImplementation(async () => {
+      await f.db.runAsync(
+        "UPDATE source_documents SET version=8,local_processing_status='VALIDATED',dirty=1",
+      );
+      return f.proof;
+    });
+    await expect(f.transfer.local(f.sourceId)).resolves.toEqual(f.proof);
+    expect(f.api.download).not.toHaveBeenCalled();
+    expect(await f.db.getFirstAsync("SELECT * FROM sync_outbox")).toBeNull();
+  } finally {
+    f.db.raw.close();
+  }
+});
+it("rechecks a captured photo's uploader after reading pixels", async () => {
+  const f = await fixture();
+  try {
+    Object.assign(f.manifest, {
+      sourceType: "STORE_PHOTO",
+      access: "OWNER",
+      ownerId: f.actorId,
+      mimeType: "image/jpeg",
+    });
+    await f.seed();
+    await f.db.runAsync(
+      "INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,created_at,updated_at) VALUES(?,'SOURCE_UPLOAD_AND_REGISTER',?,'PENDING',0,'2026-10-20T12:00:00Z','2026-10-20T12:00:00Z')",
+      randomUUID(),
+      JSON.stringify({
+        storeId: f.storeId,
+        ownerId: f.actorId,
+        sourceDocumentId: f.sourceId,
+      }),
+    );
+    f.files.existing.mockImplementation(async () => {
+      await f.db.runAsync("DELETE FROM local_jobs");
+      return f.proof;
+    });
+    await expect(f.transfer.local(f.sourceId)).rejects.toThrow(
+      "SOURCE_ORIGINAL_LOCAL_CHANGED",
+    );
   } finally {
     f.db.raw.close();
   }

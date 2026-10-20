@@ -26,6 +26,10 @@ type Job = {
 };
 /** Durable read jobs contain only authenticated scope and source identity, never read URLs. */
 export class SourceOriginalJobs {
+  private controllers = new Map<
+    string,
+    { store: string; owner: string; controller: AbortController }
+  >();
   private active = new Map<string, Promise<void>>();
   constructor(
     private db: Database,
@@ -83,14 +87,33 @@ export class SourceOriginalJobs {
   async cancel(sourceId: string) {
     const s = this.session();
     if (!s) return;
-    await this.db.runAsync(
-      "UPDATE local_jobs SET status='CANCELLED',next_attempt_at=NULL,last_error=NULL,updated_at=? WHERE type='SOURCE_ORIGINAL_TRANSFER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.sourceDocumentId')=? AND status IN ('PENDING','RETRY','RUNNING')",
-      this.now().toISOString(),
-      s.storeId,
-      s.userId,
-      z.uuid().parse(sourceId),
-    );
+    z.uuid().parse(sourceId);
+    let jobId: string | undefined;
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      this.check(s.storeId, s.userId);
+      const running = await tx.getFirstAsync<{ id: string }>(
+        "SELECT id FROM local_jobs WHERE type='SOURCE_ORIGINAL_TRANSFER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.sourceDocumentId')=?",
+        s.storeId,
+        s.userId,
+        sourceId,
+      );
+      this.check(s.storeId, s.userId);
+      await tx.runAsync(
+        "UPDATE local_jobs SET status='CANCELLED',next_attempt_at=NULL,last_error=NULL,updated_at=? WHERE type='SOURCE_ORIGINAL_TRANSFER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.sourceDocumentId')=? AND status IN ('PENDING','RETRY','RUNNING')",
+        this.now().toISOString(),
+        s.storeId,
+        s.userId,
+        sourceId,
+      );
+      this.check(s.storeId, s.userId);
+      jobId = running?.id;
+    });
+    if (jobId) this.controllers.get(jobId)?.controller.abort();
     notifyOutboxChanged();
+  }
+  interrupt(store?: string, owner?: string) {
+    for (const item of this.controllers.values())
+      if (item.store === store && item.owner === owner) item.controller.abort();
   }
   process(storeId: string, actorId: string) {
     this.check(storeId, actorId);
@@ -139,6 +162,8 @@ export class SourceOriginalJobs {
       });
       if (!claimed) break;
       const job = claimed;
+      const controller = new AbortController();
+      this.controllers.set(job.id, { store, owner, controller });
       try {
         const payload = payloadSchema.parse(JSON.parse(job.payload_json));
         if (payload.storeId !== store || payload.ownerId !== owner)
@@ -153,7 +178,11 @@ export class SourceOriginalJobs {
           if (!live || live.payload_json !== job.payload_json)
             throw Error("SOURCE_ORIGINAL_JOB_CHANGED");
         };
-        await this.transfer.recover(payload.sourceDocumentId, authorize);
+        await this.transfer.recover(
+          payload.sourceDocumentId,
+          authorize,
+          controller.signal,
+        );
         await authorize();
         await this.db.runAsync(
           "UPDATE local_jobs SET status='COMPLETED',last_error=NULL,next_attempt_at=NULL,updated_at=? WHERE id=? AND status='RUNNING' AND updated_at=?",
@@ -200,6 +229,9 @@ export class SourceOriginalJobs {
           job.id,
           job.updated_at,
         );
+      } finally {
+        if (this.controllers.get(job.id)?.controller === controller)
+          this.controllers.delete(job.id);
       }
     }
     notifyOutboxChanged();

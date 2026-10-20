@@ -16,6 +16,9 @@ export const sourceOriginalProofSchema = z.strictObject({
   views: localReceiptPhotoViewsSchema.nullable(),
 });
 export type SourceOriginalProof = z.infer<typeof sourceOriginalProofSchema>;
+export type SourceOriginalState = Awaited<
+  ReturnType<SourceOriginalTransfer["state"]>
+>;
 export type SourceOriginalSession = { storeId: string; userId: string };
 export interface SourceOriginalFiles {
   hash(text: string): Promise<string>;
@@ -28,6 +31,7 @@ export interface SourceOriginalFiles {
     lease: SourceOriginalDownload,
     ownerId: string,
     check: () => void,
+    signal?: AbortSignal,
   ): Promise<SourceOriginalProof>;
 }
 export interface SourceOriginalTransport {
@@ -131,19 +135,26 @@ export class SourceOriginalTransfer {
       "SELECT local_file_id,store_id,deleted_at FROM waste_receipts WHERE source_document_id=?",
       id,
     );
+    const group = await tx.getFirstAsync<{
+      store_id: string;
+      checksum: string;
+      payload_json: string;
+    }>(
+      "SELECT store_id,checksum,payload_json FROM waste_receipt_photo_groups WHERE source_document_id=?",
+      id,
+    );
     this.check(scope);
     if (
       (source && (source.store_id !== scope.storeId || source.deleted_at)) ||
       files.some((f) => f.store_id !== scope.storeId) ||
+      (group && group.store_id !== scope.storeId) ||
       (receipt && (receipt.store_id !== scope.storeId || receipt.deleted_at))
     )
       throw Error("SOURCE_ORIGINAL_UNAVAILABLE");
-    return { source, files, receipt };
+    return { source, files, receipt, group };
   }
-  async local(sourceId: string): Promise<SourceOriginalProof | null> {
-    z.uuid().parse(sourceId);
-    const scope = this.scope(),
-      basis = await this.basis(this.db, scope, sourceId);
+  private async record(scope: SourceOriginalSession, sourceId: string) {
+    const basis = await this.basis(this.db, scope, sourceId);
     const row = await this.db.getFirstAsync<{
       manifest_json: string;
       local_file_id: string;
@@ -156,11 +167,16 @@ export class SourceOriginalTransfer {
     let manifest: SourceOriginalManifest;
     let selectedId: string;
     if (row) {
-      manifest = await this.binding(
-        JSON.parse(row.manifest_json),
-        scope,
-        sourceId,
-      );
+      try {
+        manifest = await this.binding(
+          JSON.parse(row.manifest_json),
+          scope,
+          sourceId,
+        );
+      } catch {
+        this.check(scope);
+        return null; // A damaged cache is not source authority; scoped remote recovery may rebuild it.
+      }
       selectedId = row.local_file_id;
     } else {
       // A captured original is already useful offline, even before its upload/remote manifest.
@@ -221,24 +237,90 @@ export class SourceOriginalTransfer {
       file.retention_status !== "RETAINED"
     )
       return null;
+    if (
+      basis.source?.local_file_uri &&
+      basis.source.local_file_uri !== file.local_uri
+    )
+      throw Error("SOURCE_ORIGINAL_BINDING_INVALID");
+    return { manifest, file, source: basis.source };
+  }
+  async state(sourceId: string) {
+    z.uuid().parse(sourceId);
+    const scope = this.scope(),
+      record = await this.record(scope, sourceId);
+    const job = await this.db.getFirstAsync<{
+      status: string;
+      last_error: string | null;
+    }>(
+      "SELECT status,last_error FROM local_jobs WHERE type='SOURCE_ORIGINAL_TRANSFER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.sourceDocumentId')=?",
+      scope.storeId,
+      scope.userId,
+      sourceId,
+    );
+    this.check(scope);
+    return {
+      filename: record?.manifest.filename ?? null,
+      mimeType: record?.manifest.mimeType ?? null,
+      sourceType: record?.manifest.sourceType ?? null,
+      retained: record !== null,
+      job: job
+        ? {
+            status: job.status,
+            lastError:
+              job.last_error && /^[A-Z][A-Z0-9_]{2,90}$/.test(job.last_error)
+                ? job.last_error
+                : null,
+          }
+        : null,
+    };
+  }
+  async local(sourceId: string): Promise<SourceOriginalProof | null> {
+    z.uuid().parse(sourceId);
+    const scope = this.scope(),
+      record = await this.record(scope, sourceId);
+    if (!record) return null;
     const proof = await this.files.existing(
-      manifest,
-      file.local_uri,
+      record.manifest,
+      record.file.local_uri,
       scope.userId,
     );
+    this.check(scope);
+    // Reading native bytes yields: withdrawal, retention or ownership may change meanwhile.
+    const current = await this.record(scope, sourceId);
+    const identity = (r: NonNullable<typeof record>) => ({
+      source: r.source ? r.source.local_file_uri : undefined,
+      sourcePresent: r.source !== null,
+      sourceId: r.manifest.sourceDocumentId,
+      storeId: r.manifest.storeId,
+      access: r.manifest.access,
+      ownerId: r.manifest.ownerId,
+      sourceType: r.manifest.sourceType,
+      filename: r.manifest.filename,
+      fileId: r.file.id,
+      uri: r.file.local_uri,
+      checksum: r.file.checksum,
+      size: r.file.size_bytes,
+      mime: r.file.mime_type,
+    });
+    if (
+      !current ||
+      JSON.stringify(identity(record)) !== JSON.stringify(identity(current))
+    )
+      throw Error("SOURCE_ORIGINAL_LOCAL_CHANGED");
     this.check(scope);
     return proof;
   }
   recover(
     sourceId: string,
     authorize?: (tx?: OutboxDatabase) => Promise<void>,
+    signal?: AbortSignal,
   ): Promise<SourceOriginalProof> {
     z.uuid().parse(sourceId);
     const scope = this.scope(),
       key = `${scope.storeId}:${scope.userId}:${sourceId}`,
       existing = this.active.get(key);
     if (existing) return existing;
-    const work = this.run(scope, sourceId, authorize);
+    const work = this.run(scope, sourceId, authorize, signal);
     this.active.set(key, work);
     void work
       .finally(() => {
@@ -251,12 +333,18 @@ export class SourceOriginalTransfer {
     scope: SourceOriginalSession,
     sourceId: string,
     authorize?: (tx?: OutboxDatabase) => Promise<void>,
+    signal?: AbortSignal,
   ) {
+    const check = () => {
+      this.check(scope);
+      if (signal?.aborted) throw Error("SOURCE_ORIGINAL_CANCELLED");
+    };
+    check();
     await authorize?.();
     const cached = await this.local(sourceId);
     if (cached) {
       await authorize?.();
-      this.check(scope);
+      check();
       return cached;
     }
     const before = await this.basis(this.db, scope, sourceId);
@@ -289,6 +377,8 @@ export class SourceOriginalTransfer {
       )
     )
       throw Error("SOURCE_ORIGINAL_BINDING_INVALID");
+    if (before.group && before.group.checksum !== manifest.checksum)
+      throw Error("SOURCE_ORIGINAL_BINDING_INVALID");
     let proof: SourceOriginalProof | null = null;
     // Prefer verified retained original bytes, even when their old manifest cache is missing.
     for (const file of before.files) {
@@ -301,9 +391,7 @@ export class SourceOriginalTransfer {
       this.check(scope);
       if (proof) break;
     }
-    proof ??= await this.files.receive(lease, scope.userId, () =>
-      this.check(scope),
-    );
+    proof ??= await this.files.receive(lease, scope.userId, check, signal);
     proof = sourceOriginalProofSchema.parse(proof);
     this.check(scope);
     if (
@@ -311,6 +399,8 @@ export class SourceOriginalTransfer {
       (proof.views !== null)
     )
       throw Error("SOURCE_ORIGINAL_FILE_INVALID");
+    check();
+    await authorize?.();
     const current = await this.binding(
       await this.api.manifest(scope.storeId, scope.userId, sourceId),
       scope,

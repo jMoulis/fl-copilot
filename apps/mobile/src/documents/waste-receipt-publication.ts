@@ -1,3 +1,4 @@
+import { attachRecoveredSourceOriginal } from "./source-original-links";
 import {
   wastePublicationSchema,
   synchronizedWastePublicationSchema,
@@ -287,6 +288,7 @@ export async function applyWastePublication(
         dirty: false,
       });
   }
+  await attachRecoveredSourceOriginal(tx, storeId, p.source.id);
   await persistObservations(tx, p, snapshot.remoteVersion);
   await tx.runAsync(
     "UPDATE source_documents SET local_processing_status = 'PUBLISHED', remote_processing_status = 'PUBLISHED', sync_state = 'SYNCED', dirty = 0 WHERE id = ? AND store_id = ?",

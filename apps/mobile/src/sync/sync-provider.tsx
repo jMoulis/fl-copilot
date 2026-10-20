@@ -1,5 +1,8 @@
 import { SourceOriginalTransfer } from "../documents/source-original-transfer";
-import type { SourceOriginalProof } from "../documents/source-original-transfer";
+import type {
+  SourceOriginalProof,
+  SourceOriginalState,
+} from "../documents/source-original-transfer";
 import { nativeSourceOriginalFiles } from "../documents/source-original-files";
 import { SourceOriginalJobs } from "../documents/source-original-jobs";
 import { VisualFileCache } from "../products/visual-file-cache";
@@ -52,6 +55,7 @@ interface LocalSyncSnapshot {
 export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
   originals?: {
+    state(sourceDocumentId: string): Promise<SourceOriginalState>;
     local(sourceDocumentId: string): Promise<SourceOriginalProof | null>;
     request(sourceDocumentId: string, retry?: boolean): Promise<void>;
     cancel(sourceDocumentId: string): Promise<void>;
@@ -265,6 +269,10 @@ export function SyncProvider({ children }: PropsWithChildren) {
           )
         : undefined,
     [database.sqlite, originalTransfer],
+  );
+  useEffect(
+    () => () => originalJobs?.interrupt(defaultStoreId, session?.user.id),
+    [originalJobs, defaultStoreId, session?.user.id],
   );
   const visualJobs = useMemo(() => {
     if (!hasLocalSession) return undefined;
@@ -484,6 +492,12 @@ export function SyncProvider({ children }: PropsWithChildren) {
         throw Error("SOURCE_ORIGINAL_SCOPE_CHANGED");
     };
     return {
+      state: async (id: string) => {
+        check();
+        const state = await originalTransfer.state(id);
+        check();
+        return state;
+      },
       local: async (id: string) => {
         check();
         const proof = await originalTransfer.local(id);

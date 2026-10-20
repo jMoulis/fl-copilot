@@ -854,7 +854,9 @@ CREATE UNIQUE INDEX visual_file_job_identity ON local_jobs(json_extract(payload_
     version: 51,
     name: "verified-remote-source-originals",
     sql: `CREATE TABLE source_original_manifests(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,source_document_id TEXT NOT NULL,manifest_json TEXT NOT NULL,local_file_id TEXT NOT NULL,views_json TEXT,verified_at TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,source_document_id));
-CREATE UNIQUE INDEX source_original_transfer_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.sourceDocumentId')) WHERE type='SOURCE_ORIGINAL_TRANSFER';`,
+CREATE UNIQUE INDEX source_original_transfer_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.sourceDocumentId')) WHERE type='SOURCE_ORIGINAL_TRANSFER';
+CREATE INDEX local_files_source_scope ON local_files(source_document_id,store_id);
+CREATE INDEX waste_receipt_source_scope ON waste_receipts(source_document_id,store_id);`,
   },
 ];
 

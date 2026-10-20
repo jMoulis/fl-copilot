@@ -1,3 +1,5 @@
+import { sourceOriginalHash } from "./source-original-hash";
+import { serializeSourceOriginalMetadata } from "@fl-copilot/sync-contracts";
 import { randomUUID } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import {
@@ -178,3 +180,103 @@ describe("durable Mercalys canonical synchronization", () => {
     }
   });
 });
+it.each(["VALID", "DAMAGED", "FOREIGN", "PRIVATE", "PENDING"])(
+  "joins only a verified original restored before its publication (%s), preserving the business pull",
+  async (mode) => {
+    const first = new MercalysTestDatabase(),
+      second = new MercalysTestDatabase(),
+      storeId = randomUUID(),
+      productId = randomUUID();
+    try {
+      await mercalysLocalFixture(first, storeId, productId);
+      await mercalysLocalFixture(second, storeId, productId);
+      const published = await new MercalysImportPublicationRepository(
+        first,
+        randomUUID,
+      ).publish(mercalysWorkbook(storeId, productId).input);
+      const packet = (await readMercalysPublication(
+        first,
+        storeId,
+        published.sourceDocumentId,
+      ))!;
+      const fileId = randomUUID(),
+        ownerId = randomUUID(),
+        uri = "file:///retained-before-pull.xlsx";
+      const manifest = {
+        schemaVersion: 1,
+        sourceDocumentId: published.sourceDocumentId,
+        storeId,
+        access: "STORE",
+        ownerId: null,
+        sourceType: packet.source.sourceType,
+        filename: packet.source.originalFilename,
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        sizeBytes: 100,
+        checksum: packet.source.checksum,
+        registeredAt: mercalysTimestamp,
+        objectVersion: "blob-version",
+        manifestHash: `sha256:${"a".repeat(64)}`,
+      };
+      const { manifestHash: _previousHash, ...metadata } = manifest;
+      void _previousHash;
+      manifest.manifestHash = sourceOriginalHash(
+        serializeSourceOriginalMetadata(metadata),
+      );
+      if (mode === "DAMAGED")
+        manifest.manifestHash = `sha256:${"b".repeat(64)}`;
+      if (mode === "FOREIGN") manifest.storeId = randomUUID();
+      if (mode === "PRIVATE")
+        Object.assign(manifest, { access: "OWNER", ownerId });
+      await second.runAsync(
+        "INSERT INTO local_files(id,store_id,source_document_id,local_uri,mime_type,size_bytes,checksum,retention_status,upload_status,created_at,updated_at) VALUES(?,?,?,?,?,100,?,'RETAINED','CONFIRMED',?,?)",
+        fileId,
+        storeId,
+        published.sourceDocumentId,
+        uri,
+        manifest.mimeType,
+        manifest.checksum!,
+        mercalysTimestamp,
+        mercalysTimestamp,
+      );
+      await second.runAsync(
+        "INSERT INTO source_original_manifests(store_id,owner_id,source_document_id,manifest_json,local_file_id,verified_at) VALUES(?,?,?,?,?,?)",
+        storeId,
+        ownerId,
+        published.sourceDocumentId,
+        JSON.stringify(manifest),
+        fileId,
+        mercalysTimestamp,
+      );
+      if (mode === "PENDING")
+        await second.runAsync("UPDATE local_files SET upload_status='PENDING'");
+      await second.withExclusiveTransactionAsync((tx) =>
+        applyMercalysPublication(tx, storeId, {
+          id: published.sourceDocumentId,
+          storeId,
+          remoteVersion: 1,
+          publication: packet,
+        }),
+      );
+      expect(
+        await second.getFirstAsync(
+          "SELECT local_file_uri,dirty,remote_version,local_processing_status FROM source_documents",
+        ),
+      ).toEqual({
+        local_file_uri: mode === "VALID" ? uri : null,
+        dirty: 0,
+        remote_version: 1,
+        local_processing_status: "PUBLISHED",
+      });
+      expect(
+        await second.getFirstAsync("SELECT COUNT(*) n FROM sales_observations"),
+      ).toEqual({ n: 1 });
+      expect(await new OutboxRepository(second).listPending(storeId)).toEqual(
+        [],
+      );
+    } finally {
+      first.db.close();
+      second.db.close();
+    }
+  },
+);

@@ -1,3 +1,5 @@
+import { sourceOriginalHash } from "./source-original-hash";
+import { serializeSourceOriginalMetadata } from "@fl-copilot/sync-contracts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -787,3 +789,90 @@ integrationIt.each([false, true])(
   },
   30000,
 );
+it("keeps a recovered original linked when its receipt publication arrives later", async () => {
+  const first = await setup(),
+    second = await setup();
+  try {
+    await first.publisher.publish(input());
+    const p = payload(first.db);
+    p.source.checksum = `sha256:${"a".repeat(64)}`;
+    second.db.exec(
+      "DELETE FROM waste_lines; DELETE FROM waste_receipts; DELETE FROM local_jobs; DELETE FROM local_files; DELETE FROM source_documents;",
+    );
+    const fileId = randomUUID(),
+      uri = "file:///recovered-before-publication.jpg",
+      ownerId = randomUUID();
+    const manifest = {
+      schemaVersion: 1,
+      sourceDocumentId,
+      storeId,
+      access: "STORE",
+      ownerId: null,
+      sourceType: "WASTE_RECEIPT",
+      filename: p.source.originalFilename,
+      mimeType: "image/jpeg",
+      sizeBytes: 100,
+      checksum: p.source.checksum,
+      registeredAt: timestamp,
+      objectVersion: "version",
+      manifestHash: `sha256:${"b".repeat(64)}`,
+    };
+    const { manifestHash: _previousHash, ...metadata } = manifest;
+    void _previousHash;
+    manifest.manifestHash = sourceOriginalHash(
+      serializeSourceOriginalMetadata(metadata),
+    );
+    await second.adapter.runAsync(
+      "INSERT INTO local_files(id,store_id,source_document_id,local_uri,mime_type,size_bytes,checksum,retention_status,upload_status,created_at,updated_at) VALUES(?,?,?,?,?,100,?,'RETAINED','CONFIRMED',?,?)",
+      fileId,
+      storeId,
+      sourceDocumentId,
+      uri,
+      manifest.mimeType,
+      manifest.checksum,
+      timestamp,
+      timestamp,
+    );
+    await second.adapter.runAsync(
+      "INSERT INTO source_original_manifests(store_id,owner_id,source_document_id,manifest_json,local_file_id,verified_at) VALUES(?,?,?,?,?,?)",
+      storeId,
+      ownerId,
+      sourceDocumentId,
+      JSON.stringify(manifest),
+      fileId,
+      timestamp,
+    );
+    await second.adapter.withExclusiveTransactionAsync((tx) =>
+      applyWastePublication(tx, storeId, {
+        id: receiptId,
+        storeId,
+        remoteVersion: 1,
+        publication: p,
+      }),
+    );
+    expect(
+      second.db
+        .prepare(
+          "SELECT local_file_id,processing_status,dirty,version FROM waste_receipts",
+        )
+        .get(),
+    ).toEqual({
+      local_file_id: fileId,
+      processing_status: "PUBLISHED",
+      dirty: 0,
+      version: p.receipt.version,
+    });
+    expect(
+      second.db.prepare("SELECT local_file_uri FROM source_documents").get(),
+    ).toEqual({ local_file_uri: uri });
+    expect(
+      second.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      second.db.prepare("SELECT COUNT(*) n FROM waste_observations").get(),
+    ).toEqual({ n: 1 });
+  } finally {
+    first.db.close();
+    second.db.close();
+  }
+});

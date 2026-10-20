@@ -1,3 +1,4 @@
+import { SourceOriginalButton } from "../documents/source-original-button";
 import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
 import { readCopilotImportStatus } from "@fl-copilot/domain";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
@@ -751,6 +752,9 @@ function renderCommercialOriginal(
         sourceDocumentId={attachment.sourceDocumentId}
       />
     </View>
+  ) : attachment.mediaType ===
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ? (
+    <SourceOriginalButton sourceDocumentId={attachment.sourceDocumentId} />
   ) : null;
 }
 

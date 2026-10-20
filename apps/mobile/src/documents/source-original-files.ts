@@ -1,6 +1,11 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
+import { sourceOriginalHash } from "./source-original-hash";
+import { sourceFileDirectory } from "./source-file-directory";
 import { z } from "zod";
 import {
   detectVisualImageMime,
+  MAX_STORE_PHOTO_PIXELS,
   RECEIPT_PHOTO_BUNDLE_MIME,
   receiptPhotoBundleSchema,
 } from "@fl-copilot/domain";
@@ -15,14 +20,6 @@ import type {
 } from "./source-original-transfer";
 import { assertPdfHeader } from "./commercial-pdf-capture";
 const invalid = () => Error("SOURCE_ORIGINAL_FILE_INVALID");
-async function hash(bytes: Uint8Array) {
-  const { digest, CryptoDigestAlgorithm } = await import("expo-crypto");
-  const result = await digest(
-    CryptoDigestAlgorithm.SHA256,
-    new Uint8Array(bytes),
-  );
-  return `sha256:${Array.from(new Uint8Array(result), (x) => x.toString(16).padStart(2, "0")).join("")}`;
-}
 function extension(mime: string) {
   return (
     (
@@ -56,39 +53,103 @@ async function directory(manifest: SourceOriginalManifest, actorId: string) {
     manifest.sourceDocumentId,
   );
 }
-async function verify(
-  bytes: Uint8Array,
-  expected: { checksum: string; sizeBytes: number; mimeType: string },
+type ExpectedOriginal = {
+  checksum: string;
+  sizeBytes: number;
+  mimeType: string;
+};
+function verifyType(header: Uint8Array, mimeType: string) {
+  if (mimeType.startsWith("image/")) {
+    if (detectVisualImageMime(header) !== mimeType) throw invalid();
+  } else if (mimeType === "application/pdf") {
+    try {
+      assertPdfHeader(header);
+    } catch {
+      throw invalid();
+    }
+  } else if (
+    mimeType !== RECEIPT_PHOTO_BUNDLE_MIME &&
+    !(
+      header[0] === 80 &&
+      header[1] === 75 &&
+      header[2] === 3 &&
+      header[3] === 4
+    )
+  )
+    throw invalid();
+}
+async function verifyFile(
+  file: import("expo-file-system").File,
+  expected: ExpectedOriginal,
 ) {
   if (
-    bytes.length !== expected.sizeBytes ||
+    !file.exists ||
+    file.size !== expected.sizeBytes ||
     expected.sizeBytes <= 0 ||
-    bytes.length > 100 * 1024 * 1024 ||
-    (await hash(bytes)) !== expected.checksum
+    expected.sizeBytes > 100 * 1024 * 1024
   )
     throw invalid();
-  if (expected.mimeType.startsWith("image/")) {
-    if (detectVisualImageMime(bytes) !== expected.mimeType) throw invalid();
-  } else if (expected.mimeType === "application/pdf") assertPdfHeader(bytes);
-  else if (
-    expected.mimeType !== RECEIPT_PHOTO_BUNDLE_MIME &&
-    !(bytes[0] === 80 && bytes[1] === 75 && bytes[2] === 3 && bytes[3] === 4)
-  )
-    throw invalid();
+  const { FileMode } = await import("expo-file-system"),
+    handle = file.open(FileMode.ReadOnly),
+    digest = sha256.create();
+  let count = 0,
+    chunks = 0;
+  try {
+    while (count < expected.sizeBytes) {
+      const part = handle.readBytes(
+        Math.min(1024 * 1024, expected.sizeBytes - count),
+      );
+      if (!part.length || part.length > expected.sizeBytes - count)
+        throw invalid();
+      if (!count) verifyType(part.subarray(0, 1024), expected.mimeType);
+      digest.update(part);
+      count += part.length;
+      if (++chunks % 4 === 0)
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    if (
+      file.size !== expected.sizeBytes ||
+      `sha256:${bytesToHex(digest.digest())}` !== expected.checksum
+    )
+      throw invalid();
+  } finally {
+    handle.close();
+    digest.destroy();
+  }
 }
 async function inspect(
   file: import("expo-file-system").File,
   manifest: SourceOriginalManifest,
   actorId: string,
 ): Promise<SourceOriginalProof> {
-  if (!file.exists || file.size !== manifest.sizeBytes) throw invalid();
-  const bytes = await file.bytes();
-  await verify(bytes, manifest);
+  await verifyFile(file, manifest);
+  if (manifest.sourceType === "STORE_PHOTO") {
+    const { Image } = await import("react-native");
+    let dimensions;
+    try {
+      dimensions = await Image.getSize(file.uri);
+    } catch {
+      throw invalid();
+    }
+    if (
+      !Number.isSafeInteger(dimensions.width) ||
+      !Number.isSafeInteger(dimensions.height) ||
+      dimensions.width <= 0 ||
+      dimensions.height <= 0 ||
+      dimensions.width * dimensions.height > MAX_STORE_PHOTO_PIXELS
+    )
+      throw invalid();
+  }
   if (manifest.mimeType !== RECEIPT_PHOTO_BUNDLE_MIME)
     return { localUri: file.uri, views: null };
-  const bundle = receiptPhotoBundleSchema.parse(
-    JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
-  );
+  const text = await file.text();
+  if (text.includes("\uFFFD")) throw invalid();
+  let bundle;
+  try {
+    bundle = receiptPhotoBundleSchema.parse(JSON.parse(text));
+  } catch {
+    throw invalid();
+  }
   const { File } = await import("expo-file-system"),
     dir = await directory(manifest, actorId);
   dir.create({ intermediates: true, idempotent: true });
@@ -97,7 +158,12 @@ async function inspect(
     const decoded = atob(view.dataBase64);
     if (btoa(decoded) !== view.dataBase64) throw invalid();
     const data = Uint8Array.from(decoded, (c) => c.charCodeAt(0));
-    await verify(data, view);
+    if (
+      data.length !== view.sizeBytes ||
+      sourceOriginalHash(data) !== view.checksum
+    )
+      throw invalid();
+    verifyType(data.subarray(0, 1024), view.mimeType);
     const child = new File(
       dir,
       `view-${view.checksum.slice(7)}.${extension(view.mimeType)}`,
@@ -105,7 +171,7 @@ async function inspect(
     // Immutable paths: an existing file is verified, never overwritten.
     if (!child.exists) child.write(data);
     if (child.size !== view.sizeBytes) throw invalid();
-    await verify(await child.bytes(), view);
+    await verifyFile(child, view);
     views.push({
       localUri: child.uri,
       mimeType: view.mimeType,
@@ -118,15 +184,33 @@ async function inspect(
 /** Stream into a disposable private file; final originals are never overwritten or removed. */
 export const nativeSourceOriginalFiles: SourceOriginalFiles = {
   async hash(text) {
-    const { digestStringAsync, CryptoDigestAlgorithm } =
-      await import("expo-crypto");
-    return `sha256:${await digestStringAsync(CryptoDigestAlgorithm.SHA256, text)}`;
+    return sourceOriginalHash(text);
   },
   async existing(manifest, uri, actorId) {
     sourceOriginalManifestSchema.parse(manifest);
+    if (manifest.access === "OWNER" && manifest.ownerId !== actorId)
+      throw invalid();
     if (!uri.startsWith("file://") || uri.includes("\0")) throw invalid();
     const { File } = await import("expo-file-system");
     let file = new File(uri);
+    if (!file.exists && !uri.includes("/source-originals/")) {
+      const { Paths } = await import("expo-file-system");
+      const ordinary =
+        manifest.sourceType === "WEEKLY_COMMERCIAL_PDF"
+          ? "commercial-pdfs"
+          : manifest.sourceType === "STORE_PHOTO"
+            ? "store-photos"
+            : manifest.sourceType === "WASTE_RECEIPT"
+              ? "waste-receipts"
+              : "mercalys-imports";
+      const name = uri.split("/").at(-1);
+      if (name)
+        file = new File(
+          Paths.document,
+          sourceFileDirectory(uri, ordinary),
+          name,
+        );
+    }
     if (!file.exists) {
       // Only this exact source/account/hash path may follow iOS container relocation.
       const dir = await directory(manifest, actorId),
@@ -136,7 +220,7 @@ export const nativeSourceOriginalFiles: SourceOriginalFiles = {
     if (!file.exists) return null;
     return inspect(file, manifest, actorId);
   },
-  async receive(raw, actorId, check) {
+  async receive(raw, actorId, check, signal) {
     const lease = sourceOriginalDownloadSchema.parse(raw),
       manifest = lease.manifest;
     check();
@@ -153,8 +237,12 @@ export const nativeSourceOriginalFiles: SourceOriginalFiles = {
     if (final.exists) return inspect(final, manifest, actorId);
     const temporary = new File(dir, `${randomUUID()}.partial`),
       abort = new AbortController();
+    const interrupted = () => abort.abort();
+    signal?.addEventListener("abort", interrupted, { once: true });
+    if (signal?.aborted) abort.abort();
     const timeout = setTimeout(() => abort.abort(), 120_000);
-    let moved = false;
+    let moved = false,
+      created = false;
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
     let writer: import("expo-file-system").FileHandle | undefined;
     try {
@@ -185,6 +273,7 @@ export const nativeSourceOriginalFiles: SourceOriginalFiles = {
       )
         throw invalid();
       temporary.create();
+      created = true;
       writer = temporary.open();
       reader = response.body.getReader();
       let count = 0;
@@ -199,18 +288,19 @@ export const nativeSourceOriginalFiles: SourceOriginalFiles = {
       writer.close();
       writer = undefined;
       if (count !== manifest.sizeBytes) throw invalid();
-      await inspect(temporary, manifest, actorId);
+      const verified = await inspect(temporary, manifest, actorId);
       check();
       if (final.exists) return inspect(final, manifest, actorId);
       temporary.move(final);
       moved = true;
-      return inspect(final, manifest, actorId);
+      return { ...verified, localUri: final.uri };
     } finally {
+      signal?.removeEventListener("abort", interrupted);
       clearTimeout(timeout);
       abort.abort();
       writer?.close();
       await reader?.cancel().catch(() => undefined);
-      if (!moved && temporary.exists) temporary.delete();
+      if (created && !moved && temporary.exists) temporary.delete();
     }
   },
 };
