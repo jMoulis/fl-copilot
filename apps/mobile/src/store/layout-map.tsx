@@ -4,6 +4,11 @@ import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import type { StoreLayoutContent } from "@fl-copilot/domain";
 import { colors } from "../design/tokens";
 import {
+  dragStoreLayoutObject,
+  layoutDragHit,
+  type LayoutMapFrame,
+} from "./layout-drag";
+import {
   layoutDrawing,
   layoutViewport,
   type LayoutViewport,
@@ -15,40 +20,217 @@ export function StoreLayoutMap({
   onViewport,
   onSelect,
   annotations,
+  movement,
 }: {
   content: StoreLayoutContent;
   annotations?: Readonly<Record<string, string>>;
+  movement?: {
+    onMove(before: StoreLayoutContent, after: StoreLayoutContent): boolean;
+  };
   selectedId: string | null;
   viewport: LayoutViewport;
   onViewport: (v: LayoutViewport) => void;
   onSelect: (id: string) => void;
 }) {
-  const drawing = useMemo(() => layoutDrawing(content), [content]),
-    [width, setWidth] = useState(300),
+  const [width, setWidth] = useState(300),
     height = 350;
-  const latest = useRef({ viewport, onViewport, width });
-  latest.current = { viewport, onViewport, width };
+  const baseDrawing = useMemo(() => layoutDrawing(content), [content]);
+  const [preview, setPreview] = useState<{
+    before: StoreLayoutContent;
+    after: StoreLayoutContent;
+    id: string;
+  } | null>(null);
+  const [moveError, setMoveError] = useState<{
+    id: string;
+    text: string;
+    content: StoreLayoutContent;
+  }>();
+  const drawing = useMemo(
+    () =>
+      preview &&
+      movement &&
+      preview.before === content &&
+      preview.id === selectedId
+        ? layoutDrawing(preview.after)
+        : baseDrawing,
+    [preview, movement, content, selectedId, baseDrawing],
+  );
+  // Keep the view's frame fixed during a gesture, even when a provisional move extends its drawing bounds.
+  const factor = Math.min(
+      (width - 32) / baseDrawing.width,
+      (height - 52) / baseDrawing.height,
+    ),
+    ox = (width - baseDrawing.width * factor) / 2,
+    oy = (height - baseDrawing.height * factor) / 2;
+  const frame: LayoutMapFrame = { width, height, factor, ox, oy };
+  const latest = useRef({
+    content,
+    viewport,
+    onViewport,
+    selectedId,
+    movement,
+    frame,
+    baseDrawing,
+  });
+  latest.current = {
+    content,
+    viewport,
+    onViewport,
+    selectedId,
+    movement,
+    frame,
+    baseDrawing,
+  };
   const panStart = useRef(viewport),
     pinchStart = useRef(1);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const dragStart = useRef<{
+    content: StoreLayoutContent;
+    viewport: LayoutViewport;
+    frame: LayoutMapFrame;
+    id: string;
+    offsetX: number;
+    offsetY: number;
+  } | null>(null);
   const gesture = useMemo(() => {
+    function currentDrag() {
+      const d = dragStart.current,
+        p = latest.current;
+      return d &&
+        p.movement &&
+        p.selectedId === d.id &&
+        p.content === d.content &&
+        p.frame.width === d.frame.width &&
+        p.frame.factor === d.frame.factor &&
+        p.viewport.scale === d.viewport.scale &&
+        p.viewport.x === d.viewport.x &&
+        p.viewport.y === d.viewport.y
+        ? { d, p }
+        : null;
+    }
+    function failure(id: string, error: unknown) {
+      setPreview(null);
+      setMoveError({
+        id,
+        content: latest.current.content,
+        text:
+          error instanceof Error && !("issues" in error)
+            ? error.message
+            : "Ce déplacement ne peut pas être appliqué. Le brouillon reste inchangé ; vérifiez les positions de l’élément et des mobiles associés.",
+      });
+    }
     const pan = Gesture.Pan()
       .minDistance(8)
+      .maxPointers(1)
       .runOnJS(true)
-      .onStart(() => {
-        panStart.current = latest.current.viewport;
+      .onBegin((e) => {
+        touchStart.current = { x: e.x, y: e.y };
+      })
+      .onStart((e) => {
+        const p = latest.current;
+        panStart.current = p.viewport;
+        dragStart.current = null;
+        setPreview(null);
+        setMoveError(undefined);
+        const initial = touchStart.current ?? {
+          x: e.x - e.translationX,
+          y: e.y - e.translationY,
+        };
+        if (
+          p.movement &&
+          p.selectedId &&
+          layoutDragHit(
+            [...p.baseDrawing.groups, ...p.baseDrawing.fixtures],
+            p.selectedId,
+            p.frame,
+            p.viewport,
+            initial.x,
+            initial.y,
+          )
+        )
+          dragStart.current = {
+            content: p.content,
+            viewport: p.viewport,
+            frame: p.frame,
+            id: p.selectedId,
+            offsetX: e.x - initial.x - e.translationX,
+            offsetY: e.y - initial.y - e.translationY,
+          };
       })
       .onUpdate((e) => {
         const p = latest.current;
-        const next = layoutViewport({
-          ...p.viewport,
-          x: panStart.current.x + e.translationX / p.width,
-          y: panStart.current.y + e.translationY / height,
-        });
-        p.onViewport(next);
+        if (dragStart.current) {
+          const active = currentDrag();
+          if (!active) {
+            setPreview(null);
+            return;
+          }
+          const { d } = active;
+          try {
+            setPreview({
+              before: d.content,
+              after: dragStoreLayoutObject(
+                d.content,
+                d.id,
+                e.translationX + d.offsetX,
+                e.translationY + d.offsetY,
+                d.frame,
+                d.viewport,
+              ),
+              id: d.id,
+            });
+            setMoveError(undefined);
+          } catch (error) {
+            failure(d.id, error);
+          }
+          return;
+        }
+        p.onViewport(
+          layoutViewport({
+            ...p.viewport,
+            x: panStart.current.x + e.translationX / p.frame.width,
+            y: panStart.current.y + e.translationY / p.frame.height,
+          }),
+        );
+      })
+      .onEnd((e, success) => {
+        const active = currentDrag();
+        if (!success || !active) return;
+        const { d, p } = active;
+        try {
+          const after = dragStoreLayoutObject(
+            d.content,
+            d.id,
+            e.translationX + d.offsetX,
+            e.translationY + d.offsetY,
+            d.frame,
+            d.viewport,
+          );
+          if (after !== d.content && !p.movement!.onMove(d.content, after))
+            failure(
+              d.id,
+              Error(
+                "Le plan ou vos droits ont changé. Aucun déplacement appliqué ; reprenez depuis le brouillon actuel.",
+              ),
+            );
+        } catch (error) {
+          failure(d.id, error);
+        }
+      })
+      .onFinalize(() => {
+        dragStart.current = null;
+        touchStart.current = null;
+        setPreview(null);
       });
     const pinch = Gesture.Pinch()
       .runOnJS(true)
+      .onBegin(() => {
+        dragStart.current = null;
+        setPreview(null);
+      })
       .onStart(() => {
+        dragStart.current = null;
+        setPreview(null);
         pinchStart.current = latest.current.viewport.scale;
       })
       .onUpdate((e) => {
@@ -62,12 +244,6 @@ export function StoreLayoutMap({
       });
     return Gesture.Simultaneous(pan, pinch);
   }, []);
-  const factor = Math.min(
-      (width - 32) / drawing.width,
-      (height - 52) / drawing.height,
-    ),
-    ox = (width - drawing.width * factor) / 2,
-    oy = (height - drawing.height * factor) / 2;
   return (
     <View style={{ gap: 12 }}>
       <View
@@ -119,9 +295,10 @@ export function StoreLayoutMap({
                     top: oy + g.y * factor - 3,
                     width: g.width * factor + 6,
                     height: g.height * factor + 6,
-                    borderWidth: 1,
+                    borderWidth: g.id === selectedId ? 2 : 1,
                     borderRadius: 5,
-                    borderColor: colors.muted,
+                    borderColor:
+                      g.id === selectedId ? colors.forest : colors.muted,
                   }}
                 >
                   <Text
@@ -152,7 +329,7 @@ export function StoreLayoutMap({
                   <Pressable
                     key={f.id}
                     accessibilityRole="button"
-                    accessibilityLabel={`${annotations ? "Repérer" : "Ouvrir"} ${f.label}${f.schematic ? ", repère schématique" : ""}${annotations?.[f.id] ? `, affectation ${annotations[f.id]}` : ""}`}
+                    accessibilityLabel={`${movement ? "Sélectionner" : annotations ? "Repérer" : "Ouvrir"} ${f.label}${f.schematic ? ", repère schématique" : ""}${annotations?.[f.id] ? `, affectation ${annotations[f.id]}` : ""}`}
                     accessibilityState={{ selected }}
                     onPress={() => onSelect(f.id)}
                     style={{
@@ -274,8 +451,20 @@ export function StoreLayoutMap({
           {Math.round(viewport.scale * 100)} %
         </Text>
       </View>
+      {movement &&
+      moveError?.id === selectedId &&
+      moveError.content === content ? (
+        <Text
+          accessibilityRole="alert"
+          style={{ color: colors.critical, fontSize: 14 }}
+        >
+          {moveError.text}
+        </Text>
+      ) : null}
       <Text style={{ fontSize: 13, lineHeight: 19, color: colors.muted }}>
-        Pincez pour zoomer, glissez pour explorer. Les meubles restent fixes.
+        {movement
+          ? "Touchez un meuble pour le choisir, puis glissez l’élément sélectionné pour le placer. Glissez ailleurs pour explorer ; pincez pour zoomer. Les nouvelles positions restent déclarées dans le brouillon, jamais relevées sur place."
+          : "Pincez pour zoomer, glissez pour explorer. Les meubles restent fixes."}
         {drawing.schematic
           ? " Les cases en pointillés sont des repères, sans dimensions déduites."
           : ""}

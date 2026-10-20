@@ -678,3 +678,68 @@ it("saves an impossible draft but refuses reference adoption atomically before h
     (await new OutboxRepository(x.tx).countActive(draft.storeId)).pending_count,
   ).toBe(1);
 });
+
+it("keeps drag previews ephemeral and saves one reviewed movement with its reference and stable IDs across offline restart", async () => {
+  const { dragStoreLayoutObject } = await import("./layout-drag");
+  const x = await setup(),
+    first = await x.repo.save(
+      { ...input(x), content: completeLayoutGeometry() },
+      x.ctx,
+    );
+  const reference = await x.repo.save(
+    {
+      storeId: first.storeId,
+      expectedRevisionId: first.revisionId,
+      action: "ADOPT_REFERENCE",
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  const a = reference.content.assemblies[0]!,
+    frame = { width: 390, height: 350, factor: 0.02, ox: 10, oy: 20 },
+    viewport = { scale: 2, x: 0, y: 0 };
+  dragStoreLayoutObject(reference.content, a.id, 10, 10, frame, viewport);
+  const moved = dragStoreLayoutObject(
+    reference.content,
+    a.id,
+    20,
+    20,
+    frame,
+    viewport,
+  );
+  expect(
+    (await new OutboxRepository(x.tx).countActive(first.storeId)).pending_count,
+  ).toBe(2);
+  expect((await x.repo.get(first.storeId))!.entity).toEqual(reference);
+  const request = {
+      storeId: first.storeId,
+      expectedRevisionId: reference.revisionId,
+      action: "SAVE_DRAFT" as const,
+      content: moved,
+    },
+    ctx = { ...x.ctx, commandId: randomUUID() };
+  const saved = await x.repo.save(request, ctx);
+  expect(saved.referenceRevisionId).toBe(reference.revisionId);
+  await expect(
+    x.repo.save(request, { ...ctx, commandId: randomUUID() }),
+  ).rejects.toThrow();
+  expect(
+    (await new OutboxRepository(x.tx).countActive(first.storeId)).pending_count,
+  ).toBe(3);
+  x.db.close();
+  const db = new DatabaseSync(x.path);
+  dbs.push(db);
+  const tx = new Adapter(db),
+    repo = new StoreLayoutRepository(tx, randomUUID, () => saved.updatedAt);
+  expect((await repo.get(first.storeId))!.entity).toEqual(saved);
+  expect((await repo.reference(first.storeId))!.content).toEqual(
+    reference.content,
+  );
+  expect((await repo.get(first.storeId))!.entity.content.surfaces).toEqual(
+    reference.content.surfaces,
+  );
+  expect(await repo.save(request, ctx)).toEqual(saved);
+  expect(
+    (await new OutboxRepository(tx).countActive(first.storeId)).pending_count,
+  ).toBe(3);
+  expect(await repo.history(first.storeId)).toHaveLength(3);
+});
