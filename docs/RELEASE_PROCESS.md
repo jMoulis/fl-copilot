@@ -16,3 +16,9 @@ The owner approved reducing build consumption by grouping releases. This superse
 The project deployment-source policy denies automatic `git` deployments for both system preview and production environments. Explicit CLI/REST releases remain separate. Read back the project settings after changes; do not trigger a billable build just to prove automatic builds are disabled.
 
 Official configuration reference: https://vercel.com/docs/project-configuration/git-configuration
+
+## Grouped native build identity
+
+The staging/internal profile uses the existing remote app-version source and increments the native build number for each new cloud build, as production already does. A fresh staging binary must have a distinct native build version: consecutive binaries previously reused `0.1.0` / build `1`, making installed-version checks and the default Sentry release/dist harder to distinguish. This does not start a build or change the Mac toolchain.
+
+For a grouped acceptance release, record the EAS build ID, exact source commit, profile, app version and native build number after completion. Verify the API-compatible release first and retain its predecessor for rollback. A finished EAS artifact is available for installation; only the owner's actual device feedback proves acceptance. The current application version remains `0.1.0`; the build number identifies the binary iteration.
