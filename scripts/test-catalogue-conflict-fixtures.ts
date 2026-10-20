@@ -24,6 +24,7 @@ export async function nativeCatalogueConflictFixture(
   kind: CatalogueConflictKind,
   path = ":memory:",
   reversal?: "LOCAL" | "REMOTE",
+  remoteDeleted = false,
 ) {
   const s = await nativeReceiptPublicationFixture(path),
     { storeId, ownerId, deviceId } = s.scope,
@@ -109,6 +110,7 @@ export async function nativeCatalogueConflictFixture(
             ...product,
             label: "FIGUE SYNCHRONISÉE VRAC",
             version: 2,
+            deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
             status: reversal === "REMOTE" ? "INACTIVE" : "ACTIVE",
           })
         : kind === "IDENTIFIER"
@@ -116,6 +118,7 @@ export async function nativeCatalogueConflictFixture(
               ...identifier,
               status: "TO_REVIEW",
               version: 2,
+              deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
             })
           : productAliasSchema.parse({
               ...alias,
@@ -127,6 +130,7 @@ export async function nativeCatalogueConflictFixture(
                     : "TO_REVIEW",
               confidence: 0.8,
               version: 2,
+              deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
             });
   if (kind === "PRODUCT")
     await repo.upsertProduct(productSchema.parse(local), {

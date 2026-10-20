@@ -83,21 +83,22 @@ export async function readCatalogueConflictPolicy(
       reactivateRemote: false,
       activateLocal: false,
       activateRemote: false,
+      remoteDeleted: !!r?.deletedAt,
       reason: null as string | null,
       snapshots: [] as unknown[],
       products: {} as Record<string, string>,
     };
   if (!r) return result;
   const supported = !l.deletedAt && !r.deletedAt;
-  result.canAdopt = result.identityValid && supported;
-  if (kind === "PRODUCT") {
+  result.canAdopt = result.identityValid && (supported || !!r.deletedAt);
+  if (kind === "PRODUCT" && !r.deletedAt) {
     const local = productSchema.parse(l),
       remote = productSchema.parse(r);
     result.activateLocal =
       remote.status === "INACTIVE" && local.status !== "INACTIVE";
     result.activateRemote =
       local.status === "INACTIVE" && remote.status !== "INACTIVE";
-  } else if (kind === "ALIAS") {
+  } else if (kind === "ALIAS" && !r.deletedAt) {
     const local = productAliasSchema.parse(l),
       remote = productAliasSchema.parse(r);
     result.reactivateLocal =
@@ -173,12 +174,15 @@ export async function readCatalogueConflictPolicy(
   }
   result.canKeep =
     result.identityValid && supported && parentClear && !collision;
-  if (!supported)
-    result.reason =
-      "Ce conflit concerne une suppression. Les deux versions restent conservées ; utilisez la reprise dédiée de la suppression.";
-  else if (!result.identityValid)
+  if (!result.identityValid)
     result.reason =
       "L’association désigne une autre fiche ou une autre origine. Aucune identité n’est réaffectée automatiquement.";
+  else if (r.deletedAt)
+    result.reason =
+      "Cette donnée a été supprimée dans la version synchronisée. Vous pouvez accepter cette suppression après comparaison ; votre saisie et les commandes antérieures restent conservées sur cet appareil pour traçabilité. Aucune réactivation automatique n’est proposée.";
+  else if (!supported)
+    result.reason =
+      "Ce conflit concerne une suppression locale. Les deux versions restent conservées ; utilisez la reprise dédiée de la suppression.";
   else if (collision)
     result.reason =
       "Le libellé ou le code est déjà utilisé par une autre fiche, ou le contrôle complet dépasse sa limite. Vérifiez le référentiel avant de renvoyer cette version.";
@@ -245,8 +249,9 @@ export class ProductMasterConflictRepository {
       (current.remoteVersion ?? 0) > remote.version ||
       (!!current.snapshot &&
         current.snapshot.version >= remote.version &&
-        (current.snapshot.operation === "DELETE" ||
-          (await this.digest(JSON.stringify(current.remote))) !==
+        (current.snapshot.operation === "DELETE"
+          ? !remote.deletedAt || current.snapshot.version !== remote.version
+          : (await this.digest(JSON.stringify(current.remote))) !==
             (await this.digest(JSON.stringify(remote)))));
     const hash = await this.digest(
       JSON.stringify({
@@ -281,6 +286,7 @@ export class ProductMasterConflictRepository {
       reviewHash: string;
       reactivateRejected?: boolean;
       activateProduct?: boolean;
+      acceptRemoteDeletion?: boolean;
       jobId: string;
       canResolve: () => boolean;
       signal?: AbortSignal;
@@ -309,6 +315,8 @@ export class ProductMasterConflictRepository {
         !ctx.activateProduct
       )
         throw Error("CATALOGUE_CONFLICT_ACTIVATION_REQUIRED");
+      if (!useLocal && policy.remoteDeleted && !ctx.acceptRemoteDeletion)
+        throw Error("CATALOGUE_CONFLICT_DELETION_CONFIRMATION_REQUIRED");
       const now = new Date().toISOString(),
         after = useLocal
           ? rebaseCatalogueConflict(kind, current.entity, remote, now)
@@ -325,8 +333,8 @@ export class ProductMasterConflictRepository {
         conflict.entityType,
         remote.id,
         remote.version,
-        "UPSERT",
-        remote,
+        remote.deletedAt ? "DELETE" : "UPSERT",
+        remote.deletedAt ? null : remote,
       );
       if (useLocal) {
         const repo = new ProductMasterRepository(joined(tx)),

@@ -254,7 +254,9 @@ export async function readStoreConflictReview(
     cataloguePolicy &&
     "snapshot" in current &&
     current.snapshot?.operation === "DELETE" &&
-    current.snapshot.version >= (remote?.version ?? 0)
+    current.snapshot.version >= (remote?.version ?? 0) &&
+    (!cataloguePolicy.remoteDeleted ||
+      current.snapshot.version !== remote?.version)
   )
     block(
       "Une suppression plus récente a été reçue. Synchronisez avant de choisir une version.",

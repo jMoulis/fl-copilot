@@ -244,6 +244,7 @@ export const storeConflictRequestSchema = z.strictObject({
   reactivateRejected: z.boolean().optional(),
   retainWithdrawn: z.boolean().optional(),
   activateProduct: z.boolean().optional(),
+  acceptRemoteDeletion: z.boolean().optional(),
 });
 export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
   .omit({ canManageProducts: true })

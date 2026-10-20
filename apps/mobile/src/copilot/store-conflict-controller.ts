@@ -224,6 +224,7 @@ export class CopilotStoreConflictRuntime {
             jobId: this.id(),
             reactivateRejected: request.reactivateRejected,
             activateProduct: request.activateProduct,
+            acceptRemoteDeletion: request.acceptRemoteDeletion,
             canResolve: () => allowed(authority, request.kind),
             signal,
           });
@@ -358,23 +359,28 @@ export class CopilotStoreConflictController {
         result.entityId !== content.basis.entityId ||
         result.kind !== content.input.kind ||
         JSON.stringify(request) !==
-          JSON.stringify({
-            operationId: result.operationId,
-            conflictId: result.conflictId,
-            entityId: result.entityId,
-            kind: result.kind,
-            basisHash: result.basisHash,
-            decision: result.decision,
-            ...(result.activateProduct !== undefined
-              ? { activateProduct: result.activateProduct }
-              : {}),
-            ...(result.retainWithdrawn !== undefined
-              ? { retainWithdrawn: result.retainWithdrawn }
-              : {}),
-            ...(result.reactivateRejected !== undefined
-              ? { reactivateRejected: result.reactivateRejected }
-              : {}),
-          })
+          JSON.stringify(
+            storeConflictRequestSchema.parse({
+              operationId: result.operationId,
+              conflictId: result.conflictId,
+              entityId: result.entityId,
+              kind: result.kind,
+              basisHash: result.basisHash,
+              decision: result.decision,
+              ...(result.activateProduct !== undefined
+                ? { activateProduct: result.activateProduct }
+                : {}),
+              ...(result.acceptRemoteDeletion !== undefined
+                ? { acceptRemoteDeletion: result.acceptRemoteDeletion }
+                : {}),
+              ...(result.retainWithdrawn !== undefined
+                ? { retainWithdrawn: result.retainWithdrawn }
+                : {}),
+              ...(result.reactivateRejected !== undefined
+                ? { reactivateRejected: result.reactivateRejected }
+                : {}),
+            }),
+          )
       )
         throw Error("STORE_CONFLICT_SCOPE");
       return {
@@ -396,6 +402,7 @@ export class CopilotStoreConflictController {
     reactivateRejected = false,
     retainWithdrawn = false,
     activateProduct = false,
+    acceptRemoteDeletion = false,
   ) {
     const decision = storeConflictDecisionSchema.parse(rawDecision),
       state = await this.open(message);
@@ -411,6 +418,12 @@ export class CopilotStoreConflictController {
       !state.review.conflict
     )
       throw Error("STORE_CONFLICT_STALE");
+    if (
+      decision === "ADOPT_REMOTE" &&
+      state.review.cataloguePolicy?.remoteDeleted &&
+      !acceptRemoteDeletion
+    )
+      throw Error("STORE_CONFLICT_DELETION_CONFIRMATION_REQUIRED");
     const request = storeConflictRequestSchema.parse({
       operationId: message.id,
       conflictId: state.review.conflict.id,
@@ -418,6 +431,10 @@ export class CopilotStoreConflictController {
       kind: state.content.input.kind,
       basisHash,
       decision,
+      ...(isCatalogueConflictKind(state.content.input.kind) &&
+      state.review.cataloguePolicy?.remoteDeleted
+        ? { acceptRemoteDeletion }
+        : {}),
       ...(isCommercialConflictKind(state.content.input.kind) &&
       !isCommercialDecisionConflictKind(state.content.input.kind)
         ? { retainWithdrawn }

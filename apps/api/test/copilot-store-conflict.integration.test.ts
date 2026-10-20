@@ -43,7 +43,12 @@ import {
   detectCopilotConflicts,
   scoreCopilotPriorities,
 } from "@fl-copilot/analytics-core";
-import { syncCommandSchema } from "@fl-copilot/sync-contracts";
+import {
+  syncCommandSchema,
+  syncPushRequestSchema,
+} from "@fl-copilot/sync-contracts";
+import { createMongoSyncPushService } from "../src/sync/push-service";
+import { ConflictRepository } from "../../mobile/src/sync/conflict-repository";
 import { nativeStoreConflictFixture } from "../../../scripts/test-store-conflict-fixtures";
 import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
 import { runMongoMigrations } from "../src/database/migrations";
@@ -123,6 +128,9 @@ describe.skipIf(!uri)(
       ["IDENTIFIER", "ADOPT_REMOTE", "AI"],
       ["ALIAS", "KEEP_LOCAL", "AI"],
       ["ALIAS", "ADOPT_REMOTE", "FALLBACK"],
+      ["PRODUCT", "ADOPT_REMOTE", "DELETION"],
+      ["IDENTIFIER", "ADOPT_REMOTE", "DELETION"],
+      ["ALIAS", "ADOPT_REMOTE", "DELETION"],
       ["PRODUCT", "KEEP_LOCAL", "FOREIGN"],
       ["ALIAS", "KEEP_LOCAL", "FOREIGN"],
       ["ALIAS", "KEEP_LOCAL", "REACTIVATION"],
@@ -158,6 +166,7 @@ describe.skipIf(!uri)(
                 kind,
                 ":memory:",
                 mode === "REACTIVATION" ? "REMOTE" : undefined,
+                mode === "DELETION",
               )
             : kind === "COMMERCIAL_REFERENCE" || kind === "COMMERCIAL_EXECUTION"
               ? await nativeCommercialDecisionConflictFixture(
@@ -372,9 +381,50 @@ describe.skipIf(!uri)(
             for (const m of messages)
               await applyCopilotRecord(tx, chat, "copilot_message", m);
           });
+          if (mode === "DELETION") {
+            // Exercise the real server conflict serializer before reviewing the deletion locally.
+            const response = await createMongoSyncPushService({
+              getDb: async () => db,
+              close: async () => {},
+              checkHealth: async () => "connected",
+            }).push(
+              syncPushRequestSchema.parse({
+                syncProtocolVersion: 1,
+                appVersion: "test",
+                deviceId: s.scope.deviceId,
+                storeId: chat.storeId,
+                commands: [
+                  {
+                    commandId: r.command.commandId,
+                    localSequence: r.command.localSequence,
+                    type: r.command.commandType,
+                    entityType: r.command.entityType,
+                    entityId: r.command.entityId,
+                    expectedRemoteVersion: r.command.expectedRemoteVersion,
+                    createdAt: r.command.createdAt,
+                    payload: r.command.payload,
+                  },
+                ],
+              }),
+              randomUUID(),
+            );
+            expect(response.results[0]).toMatchObject({
+              status: "CONFLICT",
+              remoteVersion: 2,
+              remoteEntity: { deletedAt: "2026-10-20T18:00:00.000Z" },
+            });
+            await s.a.runAsync(
+              "DELETE FROM sync_conflicts WHERE id=?",
+              r.conflict.id,
+            );
+            await new ConflictRepository(s.a).recordPushConflict(
+              r.command,
+              response.results[0]!,
+            );
+          }
           const state = await r.controller.open(card);
           expect(state.status).toBe("READY");
-          if (mode === "REACTIVATION") {
+          if (mode === "REACTIVATION" || mode === "DELETION") {
             await expect(
               r.controller.confirm(
                 card,
@@ -396,6 +446,7 @@ describe.skipIf(!uri)(
                 mode === "REACTIVATION" && kind !== "PRODUCT",
                 false,
                 mode === "REACTIVATION" && kind === "PRODUCT",
+                mode === "DELETION",
               )
             ).status,
           ).toBe("COMPLETED");
@@ -410,6 +461,7 @@ describe.skipIf(!uri)(
                 mode === "REACTIVATION" && kind !== "PRODUCT",
                 false,
                 mode === "REACTIVATION" && kind === "PRODUCT",
+                mode === "DELETION",
               )
             ).status,
           ).toBe("COMPLETED");
@@ -536,6 +588,15 @@ describe.skipIf(!uri)(
               store_id: chat.storeId,
               sync_state: "SYNCED",
             });
+            if (mode === "DELETION") {
+              expect(payload).toMatchObject({
+                deletedAt: "2026-10-20T18:00:00.000Z",
+              });
+              expect(
+                restored.prepare(`SELECT deleted_at FROM ${table}`).get(),
+              ).toMatchObject({ deleted_at: "2026-10-20T18:00:00.000Z" });
+              expect(s.count("product_master_conflict_history")).toBe(1);
+            }
             if (kind === "IDENTIFIER")
               expect(payload).toMatchObject({ value: "00042" });
             if (kind === "ALIAS")
