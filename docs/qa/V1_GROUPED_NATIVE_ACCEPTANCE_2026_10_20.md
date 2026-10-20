@@ -1,6 +1,6 @@
 # Grouped V1 native acceptance — 20 October preparation
 
-Status: grouped API released; iOS build submitted and device acceptance pending. Full V1/M7/M8 remains open. This recipe groups already merged work rather than waiting for or omitting the remaining Resend/illustration/other roadmap commitments.
+Status: grouped API released; iOS build FINISHED and device acceptance pending. Full V1/M7/M8 remains open. This recipe groups already merged work rather than waiting for or omitting the remaining Resend/illustration/other roadmap commitments.
 
 ## Authoritative baseline rechecked
 
@@ -41,3 +41,7 @@ Seven workstreams remain: 1 actions/conflicts in progress; 2 counter-promotion c
 - EAS: rechecked five most recent iOS builds, all finished and predating this source; submitted one grouped standalone/internal staging build with pinned temporary CLI 24.8.0 and `--freeze-credentials`. Existing provisioning includes iPhone Air. Build `dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `c8a1698…`, version **0.1.0 / native build 2**, created `2026-10-20T03:36:23.433Z`, initial status NEW. No completion or installed-device acceptance is claimed. Build page: https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/dd32fb48-c423-4ab7-a444-fe0fb4e0de0e
 
 The complete phone recipe and remaining V1/M8 gates above still apply. Update the existing application rather than uninstalling it. Receipt of a finished binary is distinct from validation on the owner's phone.
+
+### Finished binary
+
+EAS build `dd32fb48-c423-4ab7-a444-fe0fb4e0de0e` reached **FINISHED** at `2026-10-20T03:42:55.154Z`, with no reported build error. Source remains `c8a16987ed6c558b20bd2f52fa761c9095a2982b`, app **0.1.0 / 2**, staging/internal. Its page is ready for installation. The owner has been asked to validate navigation, analysis/back navigation, an existing conversation and an original PDF/XLSX without uninstalling the existing app. No device acceptance has been received yet; the broader recipe and V1/M8 gates remain open. This binary does not include the unfinished Resend branch.

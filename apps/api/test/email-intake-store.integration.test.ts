@@ -275,6 +275,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             .collection("emailIntakeReceipts")
             .countDocuments({ providerEmailId: f.event.data.email_id }),
         ).toBe(0);
+        expect(
+          await f.db
+            .collection("emailIntakeOriginalJobs")
+            .countDocuments({ storeId: f.scope.storeId }),
+        ).toBe(0);
         const ledger = await f.db
           .collection("emailIntakeEvents")
           .findOne({ providerEmailId: f.event.data.email_id });
@@ -344,6 +349,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         });
         expect(retry.statusCode).toBe(200);
         expect((await f.service.list(f.scope)).receipts).toHaveLength(1);
+        expect(
+          await f.db
+            .collection("emailIntakeOriginalJobs")
+            .countDocuments({ storeId: f.scope.storeId }),
+        ).toBe(1);
       } finally {
         await f.db.command({ collMod: "emailIntakeEvents", validator: {} });
         await app.close();

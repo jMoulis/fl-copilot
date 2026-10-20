@@ -10,7 +10,7 @@ export function registerResendIntakeWebhook(
     secret: string;
     admit(
       input: NonNullable<ReturnType<typeof verifyResendReceivedEvent>>,
-    ): Promise<void>;
+    ): Promise<unknown>;
   },
 ) {
   app.register(async (scope) => {

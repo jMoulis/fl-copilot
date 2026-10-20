@@ -36,11 +36,11 @@ HTML, quoted/forwarded instructions, attachment text and filenames remain untrus
 - Real managed receiving address, full receiving-capable account credential and signing secret must be provisioned through authorized secure configuration. Do not read/write `.env` or print secrets. Register/enable the webhook only after a compatible endpoint is deployed and tested; retain revocation and rollback.
 - No sending, domain/DNS change, provider spending, live AI test or EAS build is implied by local development.
 
-## Current evidence — 20 October
+## Initial signature checkpoint — 20 October
 
 The read-only connector inspection found no configured webhooks, no beta inbox objects and zero received messages. This does not prove that the account's managed receiving subdomain is absent. The dashboard requires sign-in; its actual receiving address has been requested from the owner. No account configuration was changed and no email was sent. The installed `resend` SDK is 6.30.0; its actual verification arguments are `webhookSecret` and headers `id`, `timestamp`, `signature`.
 
-`apps/api/src/intake/resend-event.ts` implements the bounded raw-signature/metadata/routing gate. `resend-webhook.ts` supplies the encapsulated Fastify POST handler and awaits an injected durable admission before acknowledgement. Twenty-six tests exercise actual SDK signatures, native Fastify injection, ordinary JSON parser isolation and retriable admission failure. These modules are not wired into `buildApp`, durable Mongo admission, native UI or a provider webhook yet; none of those paths is claimed delivered by these tests.
+`apps/api/src/intake/resend-event.ts` implements the bounded raw-signature/metadata/routing gate. `resend-webhook.ts` supplies the encapsulated Fastify POST handler and awaits an injected durable admission before acknowledgement. Twenty-six tests exercise actual SDK signatures, native Fastify injection, ordinary JSON parser isolation and retriable admission failure. At that initial checkpoint these modules were not wired into `buildApp`, durable Mongo admission, native UI or a provider webhook. The later envelope and preservation checkpoints below record the subsequent local implementation; provider activation and native delivery remain unproven.
 
 Official references checked for implementation:
 
@@ -57,3 +57,14 @@ This checkpoint does not fetch or retain attachment bytes, dispatch processing, 
 For the attachment adapter, the current official endpoint returns a short URL on `inbound-cdn.resend.com` with email/attachment identity in its path. Restrict capabilities to the documented provider host and exact expected identities, enforce expiry/bounds, disable redirects and never take a URL from the email body. The original-fetch path can use the attachment SDK endpoint directly, without fetching or rendering email HTML. These are implementation requirements, not a claim that the worker is already built.
 
 - [Retrieve received attachment](https://resend.com/docs/api-reference/emails/retrieve-received-email-attachment)
+
+
+## Private-original execution checkpoint
+
+The unreleased migration 45 now creates per-file preservation jobs in the same transaction as the envelope and provider ledger. After durable admission, the signed webhook dispatches these stable job identities through the existing Inngest client; queue failures return 503, and a provider replay dispatches the same identities without duplicating the receipt/jobs. The existing recovery function retries due jobs; no new polling service or cron frequency is added. Production receiving configuration requires the execution keys as well.
+
+Each worker claims a scoped, expiring lease, verifies current membership/conversation/binding and receipt state around provider/Blob I/O, and retains one original in private immutable Blob storage. Paths contain application identities/checksum, never an email filename. The exact-byte SHA-256/size/declared-MIME reservation is persisted before upload, so a later invocation can recover a completed upload after a lost acknowledgement without a new provider URL. Metadata/proof/paths remain server-private. Good files survive another file's failure, cancelled authorization or a crashed invocation. Lost leases cannot commit another worker's result. Exhausted crashed jobs resolve explicitly rather than remaining pending forever.
+
+Preservation bounds: 50 attachments from the signed envelope, 50 MiB per file, 100 MiB reserved original bytes per email, atomic aggregate reservations, two concurrent worker executions, six download attempts with backoff and a bounded lease. A final crashed attempt may recover an already stored proof but cannot initiate a seventh provider download. These are original-retention bounds; the existing format/ZIP-expansion/business-validation rules still govern admission to the canonical pipelines.
+
+No original-preservation result creates a canonical source/import/publication, changes the receipt to business COMPLETE or invokes AI. The batch remains AWAITING_CONFIRMATION. Native cache/configuration/admission/Outbox, original access and canonical pipeline integration still belong to this same unfinished delivery lot. These local tests simulate provider, Blob and dispatch ports; no real email download, upload, paid analysis or receiving-provider configuration was performed.

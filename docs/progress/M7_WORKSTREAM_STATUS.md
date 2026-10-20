@@ -550,3 +550,11 @@ La CI de master `c8a1698` (`39363869583`) a réussi. Le lot déjà fusionné est
 Un seul build iOS staging autonome est lancé : `dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `c8a1698`, **0.1.0 / build 2**, certificats gelés et iPhone Air déjà provisionné. Achèvement, installation et retour utilisateur restent à vérifier. Les CLI utilisées pour cette livraison sont temporaires et épinglées ; aucune mise à jour système du Mac. Détails et limites dans `../qa/V1_GROUPED_NATIVE_ACCEPTANCE_2026_10_20.md`.
 
 Les sept chantiers restent **1 en cours ; 2 code prêt ; 3 en cours (originaux livrés côté API, réception Resend encore sur branche) ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours (API livrée, binaire et recette en attente)**. Cette livraison réduit l'écart entre code fusionné et produit disponible, sans retirer la réception mail, les illustrations ni les autres engagements V1/M8.
+
+### 20 octobre — binaire groupé prêt ; conservation privée des emails testée
+
+Le build iOS `dd32fb48-c423-4ab7-a444-fe0fb4e0de0e` est **FINISHED** (03:42:55 UTC), version **0.1.0 / 2**, source `c8a1698`. La livraison API de ce même lot reste en production. Le retour de recette sur l'iPhone a été demandé ; aucune installation ou validation sur appareil n'est encore attestée. Resend n'est pas inclus dans ce binaire.
+
+Sur la branche Resend, les originaux sont désormais pris en charge par des jobs durables par pièce jointe : conservation privée immuable, preuve SHA-256/taille, bail, reprises bornées et réutilisation d'Inngest. Un échec de file reste retriable après enregistrement atomique ; les bons fichiers ne sont pas effacés si un autre échoue. **149 tests ciblés**, types, lint et bundle API passent. Aucun email réel, upload Blob ou appel IA n'a été effectué. L'accès aux originaux depuis le chat, la confirmation SQLite/Outbox et les pipelines métier restent à raccorder dans ce même lot avant PR/livraison.
+
+États des sept chantiers : **1 en cours ; 2 code prêt ; 3 en cours (transport/conservation mail testés localement, intégration native restante) ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours (API et binaire livrés/disponibles, recette sur appareil ouverte)**. La roadmap complète et les exigences M8 restent inchangées.

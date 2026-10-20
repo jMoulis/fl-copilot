@@ -42,7 +42,7 @@ function fixture(enabled = true, webhook = false) {
   const intake: EmailIntakeStore = {
     createBinding: vi.fn(async () => binding),
     revokeBinding: vi.fn(async () => {}),
-    admit: vi.fn(async () => {}),
+    admit: vi.fn(async () => null),
     list: vi.fn(async () => ({
       bindings: [binding],
       receipts: [],
@@ -281,4 +281,15 @@ it("rejects partial or unsafe receiving configuration without exposing secrets",
       expect(String(error)).not.toContain(secret);
     }
   }
+});
+it("requires durable execution keys before production email activation", () => {
+  expect(() =>
+    parseEnvironment({
+      NODE_ENV: "production",
+      MONGODB_URI: "mongodb://127.0.0.1:1",
+      RESEND_RECEIVING_DOMAIN: "unit.resend.app",
+      RESEND_RECEIVING_WEBHOOK_SECRET: "whsec_test_only_long_secret",
+      RESEND_API_KEY: "re_test_unused_only",
+    }),
+  ).toThrow("Invalid environment: INNGEST_EVENT_KEY, INNGEST_SIGNING_KEY");
 });

@@ -131,6 +131,14 @@ export function parseEnvironment(
   }
   if (
     result.data.NODE_ENV === "production" &&
+    result.data.RESEND_RECEIVING_DOMAIN &&
+    (!result.data.INNGEST_EVENT_KEY || !result.data.INNGEST_SIGNING_KEY)
+  )
+    throw new Error(
+      "Invalid environment: INNGEST_EVENT_KEY, INNGEST_SIGNING_KEY",
+    );
+  if (
+    result.data.NODE_ENV === "production" &&
     (!result.data.AUTH_TOKEN_SECRET || !result.data.AUTH_CODE_PEPPER)
   ) {
     throw new Error("Invalid environment: AUTH_TOKEN_SECRET, AUTH_CODE_PEPPER");

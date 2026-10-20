@@ -57,6 +57,17 @@ export const emailIntakeReceiptSchema = z
             "APPLIED",
           ]),
           sourceDocumentId: id.nullable(),
+          errorCode: z
+            .enum([
+              "UNSUPPORTED",
+              "TOO_LARGE",
+              "IDENTITY_CHANGED",
+              "SCOPE_CHANGED",
+              "PROVIDER_UNAVAILABLE",
+              "STORAGE_UNAVAILABLE",
+              "READ_FAILED",
+            ])
+            .optional(),
         }),
       )
       .max(50),

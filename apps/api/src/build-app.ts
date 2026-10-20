@@ -5,6 +5,8 @@ import {
 } from "./intake/email-intake-store.js";
 import { registerEmailIntakeRoutes } from "./intake/email-intake-routes.js";
 import { registerResendIntakeWebhook } from "./intake/resend-webhook.js";
+import { createResendAttachmentReader } from "./intake/resend-attachment.js";
+import { createEmailOriginalProcessor } from "./intake/email-originals.js";
 import { readStorePhoto } from "./copilot/store-photo-reader";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
@@ -273,6 +275,17 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             getVercelOidcToken: () =>
               getVercelOidcToken() ?? config.VERCEL_OIDC_TOKEN,
           }),
+          config.RESEND_RECEIVING_DOMAIN &&
+            config.RESEND_RECEIVING_WEBHOOK_SECRET &&
+            config.RESEND_API_KEY
+            ? createEmailOriginalProcessor(
+                dependencies.database,
+                createResendAttachmentReader(
+                  new Resend(config.RESEND_API_KEY).emails.receiving
+                    .attachments,
+                ),
+              )
+            : undefined,
         )
       : undefined;
   const commercialRecovery =
@@ -1985,7 +1998,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     registerResendIntakeWebhook(app, {
       client: new Resend(config.RESEND_API_KEY),
       secret: config.RESEND_RECEIVING_WEBHOOK_SECRET,
-      admit: emailIntake.admit,
+      admit: async (event) => {
+        const receiptId = await emailIntake.admit(event);
+        if (receiptId) {
+          if (!commercialWorkflows)
+            throw Error("EMAIL_ORIGINAL_QUEUE_UNAVAILABLE");
+          await commercialWorkflows.dispatchEmailOriginals(receiptId);
+        }
+      },
     });
   return app;
 }

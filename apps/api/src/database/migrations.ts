@@ -918,6 +918,14 @@ export const mongoMigrations: readonly MongoMigration[] = [
       await db
         .collection("emailIntakeEvents")
         .createIndex({ providerEmailId: 1, createdAt: -1 });
+      await db.collection("emailIntakeOriginalJobs").createIndex({
+        status: 1,
+        nextAttemptAt: 1,
+        leaseUntil: 1,
+      });
+      await db
+        .collection("emailIntakeOriginalJobs")
+        .createIndex({ receiptId: 1, _id: 1 });
     },
   },
 ];

@@ -31,6 +31,7 @@ type Receipt = Omit<EmailIntakeReceipt, "id" | "receivedAt" | "updatedAt"> & {
   createdAt: Date;
   receivedAt: Date;
   updatedAt: Date;
+  originalReservedBytes?: number;
 };
 type Event = {
   _id: string;
@@ -236,11 +237,11 @@ export function createEmailIntakeStore(
           throw unavailable();
       });
     },
-    async admit(input: VerifiedEvent): Promise<void> {
+    async admit(input: VerifiedEvent): Promise<string | null> {
       // Only the signature-verified route calls this service, never model arguments/email prose.
       const db = await database.getDb(),
         digest = metadataHash(input);
-      await atomic(db, async (session) => {
+      return atomic(db, async (session) => {
         const events = db.collection<Event>("emailIntakeEvents"),
           receipts = db.collection<Receipt>("emailIntakeReceipts");
         const oldEvent = await events.findOne(
@@ -270,7 +271,7 @@ export function createEmailIntakeStore(
               { session },
             );
           }
-          return;
+          return oldEvent.receiptId;
         }
         const ledger: Event = {
           _id: input.eventId,
@@ -291,7 +292,7 @@ export function createEmailIntakeStore(
             old.metadataHash === digest ? "DUPLICATE" : "QUARANTINED";
           if (ledger.result === "QUARANTINED") await quarantine(old._id);
           await events.insertOne(ledger, { session });
-          return;
+          return old._id;
         }
         const data = input.event.data;
         const recipients = [
@@ -352,11 +353,30 @@ export function createEmailIntakeStore(
             };
             receiptDto(receipt);
             await receipts.insertOne(receipt, { session });
+            await db
+              .collection<{ _id: string }>("emailIntakeOriginalJobs")
+              .insertMany(
+                receipt.files.map((file) => ({
+                  _id: file.id,
+                  receiptId: receipt._id,
+                  storeId: receipt.storeId,
+                  ownerId: receipt.ownerId,
+                  conversationId: receipt.conversationId,
+                  bindingId: receipt.bindingId,
+                  status: "PENDING",
+                  attempts: 0,
+                  nextAttemptAt: timestamp,
+                  createdAt: timestamp,
+                  updatedAt: timestamp,
+                })),
+                { session },
+              );
             ledger.receiptId = receipt._id;
             ledger.result = "ADMITTED";
           }
         }
         await events.insertOne(ledger, { session });
+        return ledger.receiptId;
       });
     },
     async list(scope: EmailIntakeScope, cursor?: string) {
@@ -432,3 +452,8 @@ export function createEmailIntakeStore(
   };
 }
 export type EmailIntakeStore = ReturnType<typeof createEmailIntakeStore>;
+export type {
+  Receipt as EmailIntakeReceiptRecord,
+  Binding as EmailIntakeBindingRecord,
+};
+export { authorized as emailIntakeAuthorized, atomic as emailIntakeAtomic };
