@@ -2065,6 +2065,8 @@ Test upgrade from each supported local schema version.
 
 Outbox must survive migration.
 
+Automated evidence (20 October 2026): `apps/mobile/src/db/migration-preservation.test.ts` exercises every declared v1–v60 upgrade/reopen, each pre-commit rollback/retry boundary and seven real process SIGKILL/WAL recoveries. Preserve queued command identities/payloads/order/attempts, files/bytes, device identity, conflict versions and cursors; retain sequence high-water marks and scope interrupted-send recovery. No runtime/migration change. This supports T03 but does not prove native hardware acceptance, corrupted-database repair or the T12 production restore rehearsal. See `../qa/M8_SQLITE_UPGRADE_PRESERVATION_2026_10_20.md`.
+
 ---
 
 # 132. M8-T04 — Local DB recovery
