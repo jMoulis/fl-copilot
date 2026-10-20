@@ -1,8 +1,23 @@
 import { EmailDecisionRepository } from "../intake/email-decision-repository";
-import type { EmailIntakeDecision } from "@fl-copilot/sync-contracts";
+import type {
+  EmailIntakeDecision,
+  EmailIntakeBinding,
+} from "@fl-copilot/sync-contracts";
 import { EmailIntakeCache } from "../intake/email-intake-cache";
+import {
+  EmailIntakeProcessing,
+  emailProcessingFormat,
+} from "../intake/email-intake-processing";
+import { EmailMercalysHandoff } from "../intake/email-mercalys-handoff";
+import { EmailSourceHandoff } from "../intake/email-source-handoff";
+import { readEmailAdmissionAuthority } from "../intake/email-processing-basis";
+import { CopilotMercalysImportController } from "../copilot/mercalys-import-controller";
+import { sourceOriginalHash } from "../documents/source-original-hash";
 import { EmailOriginalTransfer } from "../intake/email-original-transfer";
-import { nativeEmailOriginalFiles } from "../intake/email-original-files";
+import {
+  nativeEmailOriginalFiles,
+  readNativeEmailProcessingBytes,
+} from "../intake/email-original-files";
 import type { EmailOriginalProof } from "../intake/email-original-transfer";
 import type { EmailIntakeOriginalRequest } from "@fl-copilot/sync-contracts";
 import { SourceOriginalTransfer } from "../documents/source-original-transfer";
@@ -62,6 +77,13 @@ interface LocalSyncSnapshot {
 export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
   emailIntake?: {
+    status(conversationId: string): Promise<boolean>;
+    createBinding(
+      conversationId: string,
+      id: string,
+      allowedSender: string,
+    ): Promise<EmailIntakeBinding>;
+    revokeBinding(conversationId: string, id: string): Promise<void>;
     decision(
       conversationId: string,
       receiptId: string,
@@ -73,6 +95,10 @@ export interface SyncContextValue extends LocalSyncSnapshot {
     adoptDecision(conversationId: string, conflictId: string): Promise<void>;
     list(conversationId: string): ReturnType<EmailIntakeCache["list"]>;
     refresh(conversationId: string, cursor?: string): Promise<string | null>;
+    refreshReceipt(ref: {
+      conversationId: string;
+      receiptId: string;
+    }): Promise<void>;
     localOriginal(
       ref: EmailIntakeOriginalRequest,
     ): Promise<EmailOriginalProof | null>;
@@ -81,6 +107,15 @@ export interface SyncContextValue extends LocalSyncSnapshot {
       retry?: boolean,
     ): Promise<void>;
     cancelOriginal(ref: EmailIntakeOriginalRequest): Promise<void>;
+    processingState(
+      ref: EmailIntakeOriginalRequest,
+    ): ReturnType<SourceOriginalJobs["emailProcessingState"]>;
+    retryProcessing(ref: EmailIntakeOriginalRequest): Promise<void>;
+    setPurpose(
+      ref: EmailIntakeOriginalRequest,
+      purpose: "WASTE_TICKET" | "STORE_PHOTO",
+    ): Promise<void>;
+    cancelProcessing(ref: EmailIntakeOriginalRequest): Promise<void>;
   };
   originals?: {
     state(sourceDocumentId: string): Promise<SourceOriginalState>;
@@ -331,6 +366,66 @@ export function SyncProvider({ children }: PropsWithChildren) {
     () => (emailCache ? new EmailDecisionRepository(emailCache) : undefined),
     [emailCache],
   );
+  const emailProcessing = useMemo(() => {
+    if (!emailCache || !emailTransfer) return undefined;
+    const api = new ApiClient(getApiBaseUrl());
+    return new EmailIntakeProcessing(emailCache, emailTransfer, {
+      session: () => visualSession.current,
+      receipt: (scope, ref) =>
+        withAccessToken(
+          (token) => api.emailIntakeReceipt(token, scope.storeId, ref),
+          scope.ownerId,
+        ),
+      format: async (proof) =>
+        emailProcessingFormat(
+          await readNativeEmailProcessingBytes(
+            proof.localUri,
+            50 * 1024 * 1024,
+          ),
+        ),
+      mercalys: new EmailMercalysHandoff(
+        emailCache,
+        emailTransfer,
+        database.deviceId,
+      ),
+      media: new EmailSourceHandoff(emailCache, emailTransfer),
+      runMercalys: (message, authorize, signal) =>
+        new CopilotMercalysImportController(
+          database.sqlite,
+          {
+            storeId: message.storeId,
+            ownerId: message.ownerId,
+            deviceId: database.deviceId,
+            canImport: true,
+          },
+          {
+            authorize,
+            id: randomUUID,
+            digest: async (text) => sourceOriginalHash(text).slice(7),
+            read: (uri) =>
+              readNativeEmailProcessingBytes(uri, 20 * 1024 * 1024),
+            checksum: async (bytes) => sourceOriginalHash(bytes),
+            classify: (labels, abort) =>
+              withAccessToken(
+                (token) =>
+                  api.importClassification(
+                    token,
+                    message.storeId,
+                    { labels },
+                    abort,
+                  ),
+                message.ownerId,
+              ),
+          },
+        ).run(message, signal),
+    });
+  }, [
+    emailCache,
+    emailTransfer,
+    database.deviceId,
+    database.sqlite,
+    withAccessToken,
+  ]);
   const originalJobs = useMemo(
     () =>
       originalTransfer
@@ -341,9 +436,16 @@ export function SyncProvider({ children }: PropsWithChildren) {
             randomUUID,
             undefined,
             emailTransfer,
+            {
+              process: emailProcessing
+                ? (input, lease, signal) =>
+                    emailProcessing.process(input, lease, signal)
+                : undefined,
+              allowed: () => visualSession.current?.canWrite === true,
+            },
           )
         : undefined,
-    [database.sqlite, originalTransfer, emailTransfer],
+    [database.sqlite, originalTransfer, emailTransfer, emailProcessing],
   );
   useEffect(
     () => () => originalJobs?.interrupt(defaultStoreId, session?.user.id),
@@ -428,13 +530,20 @@ export function SyncProvider({ children }: PropsWithChildren) {
         return undefined;
       setState((current) => ({ ...current, status: "syncing" }));
       try {
+        // Previously accepted local work can advance even if the next network sync fails.
+        if (scope && originalJobs) {
+          await emailProcessing?.seed(storeId, scope.userId, originalJobs);
+          await originalJobs.process(storeId, scope.userId, 10);
+        }
         await repairMercalysPublications(database.sqlite, storeId, randomUUID);
         await uploadQueue?.process(storeId, session?.user.id);
         if (session?.user.id)
           await analysisRecovery?.process(storeId, session.user.id);
         const summary = await service.sync(storeId);
-        if (session?.user.id)
-          await originalJobs?.process(storeId, session.user.id);
+        if (scope && originalJobs) {
+          await emailProcessing?.seed(storeId, scope.userId, originalJobs);
+          await originalJobs.process(storeId, scope.userId, 10);
+        }
         if (session?.user.id)
           await visualJobs?.process(storeId, session.user.id);
         if (currentScope())
@@ -481,6 +590,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       uploadQueue,
       analysisRecovery,
       originalJobs,
+      emailProcessing,
       visualJobs,
       session?.user.id,
     ],
@@ -616,7 +726,89 @@ export function SyncProvider({ children }: PropsWithChildren) {
       return scope;
     };
     const api = new ApiClient(getApiBaseUrl());
+    const processingInput = async (ref: EmailIntakeOriginalRequest) => {
+      const scope = scopeFor(ref.conversationId);
+      await emailCache.authorize(scope);
+      const accepted = await emailDecisions.get(
+        ref.conversationId,
+        ref.receiptId,
+      );
+      const file = accepted?.decision.files.find(
+        (file) => file.fileId === ref.fileId,
+      );
+      if (!accepted || !file) throw Error("EMAIL_INTAKE_PROCESSING_FORBIDDEN");
+      await readEmailAdmissionAuthority(database.sqlite, scope, {
+        ...ref,
+        actionId: accepted.decision.actionId,
+        processingId: file.processingId,
+      });
+      await emailCache.authorize(scope);
+      return {
+        ...ref,
+        actionId: accepted.decision.actionId,
+        processingId: file.processingId,
+      };
+    };
     return {
+      status: async (conversationId: string) => {
+        const scope = scopeFor(conversationId);
+        await emailCache.authorize(scope);
+        const result = await withAccessToken(
+          (token) => api.emailIntakeStatus(token, scope.storeId),
+          owner,
+        );
+        await emailCache.authorize(scope);
+        return result.enabled;
+      },
+      createBinding: async (
+        conversationId: string,
+        id: string,
+        allowedSender: string,
+      ) => {
+        const scope = scopeFor(conversationId);
+        await emailCache.authorize(scope);
+        const binding = await withAccessToken(
+          (token) =>
+            api.createEmailIntakeBinding(token, scope.storeId, {
+              conversationId,
+              id,
+              allowedSender,
+            }),
+          owner,
+        );
+        await emailCache.storePage(scope, {
+          bindings: [binding],
+          receipts: [],
+          nextCursor: null,
+        });
+        return binding;
+      },
+      revokeBinding: async (conversationId: string, id: string) => {
+        const scope = scopeFor(conversationId);
+        await emailCache.authorize(scope);
+        await withAccessToken(
+          (token) =>
+            api.revokeEmailIntakeBinding(
+              token,
+              scope.storeId,
+              conversationId,
+              id,
+            ),
+          owner,
+        );
+        emailCache.check(scope);
+        const page = await withAccessToken(
+          (token) => api.emailIntakeList(token, scope.storeId, conversationId),
+          owner,
+        );
+        if (
+          !page.bindings.some(
+            (binding) => binding.id === id && !!binding.revokedAt,
+          )
+        )
+          throw Error("EMAIL_INTAKE_BINDING_REFRESH_REQUIRED");
+        await emailCache.storePage(scope, page);
+      },
       decision: async (conversationId: string, receiptId: string) => {
         const scope = scopeFor(conversationId);
         const decision = await emailDecisions.get(conversationId, receiptId);
@@ -660,6 +852,28 @@ export function SyncProvider({ children }: PropsWithChildren) {
         emailCache.check(scope);
         return emailCache.storePage(scope, page);
       },
+      refreshReceipt: async (ref: {
+        conversationId: string;
+        receiptId: string;
+      }) => {
+        const scope = scopeFor(ref.conversationId);
+        await emailCache.authorize(scope);
+        const receipt = await withAccessToken(
+          (token) =>
+            api.emailIntakeReceipt(token, scope.storeId, {
+              conversationId: ref.conversationId,
+              receiptId: ref.receiptId,
+            }),
+          owner,
+        );
+        if (receipt.id !== ref.receiptId)
+          throw Error("EMAIL_INTAKE_IDENTITY_INVALID");
+        await emailCache.storePage(scope, {
+          bindings: [],
+          receipts: [receipt],
+          nextCursor: null,
+        });
+      },
       localOriginal: async (ref: EmailIntakeOriginalRequest) => {
         const scope = scopeFor(ref.conversationId);
         const result = await emailTransfer.local(ref);
@@ -681,9 +895,37 @@ export function SyncProvider({ children }: PropsWithChildren) {
         await originalJobs.cancelEmail(ref);
         emailCache.check(scope);
       },
+      processingState: async (ref: EmailIntakeOriginalRequest) => {
+        const input = await processingInput(ref);
+        return originalJobs.emailProcessingState(input);
+      },
+      retryProcessing: async (ref: EmailIntakeOriginalRequest) => {
+        const scope = scopeFor(ref.conversationId),
+          input = await processingInput(ref);
+        await originalJobs.requestEmailProcessing(input, true);
+        emailCache.check(scope);
+        void syncNow(scope.storeId);
+      },
+      setPurpose: async (
+        ref: EmailIntakeOriginalRequest,
+        purpose: "WASTE_TICKET" | "STORE_PHOTO",
+      ) => {
+        const scope = scopeFor(ref.conversationId),
+          input = await processingInput(ref);
+        await originalJobs.provideEmailPurpose(input, purpose);
+        emailCache.check(scope);
+        void syncNow(scope.storeId);
+      },
+      cancelProcessing: async (ref: EmailIntakeOriginalRequest) => {
+        const scope = scopeFor(ref.conversationId),
+          input = await processingInput(ref);
+        await originalJobs.cancelEmailProcessing(input);
+        emailCache.check(scope);
+      },
     };
   }, [
     emailCache,
+    database.sqlite,
     emailDecisions,
     database.deviceId,
     emailTransfer,
@@ -774,7 +1016,7 @@ async function readLocalSyncSnapshot(
           AS failed_count
       FROM local_jobs
       WHERE json_extract(payload_json, '$.storeId') = ?
-        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER','EMAIL_ORIGINAL_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
+        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER','EMAIL_ORIGINAL_TRANSFER','EMAIL_INTAKE_PROCESS') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
     `,
     storeId,
     ownerId ?? null,

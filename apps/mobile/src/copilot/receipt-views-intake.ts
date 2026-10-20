@@ -212,10 +212,26 @@ export const nativeReceiptViewsIntakeStorage: ReceiptViewsIntakeStorage = {
     const directory = new Directory(Paths.document, "waste-receipts");
     directory.create({ idempotent: true, intermediates: true });
     const file = new File(directory, `${fileId}.flreceipt`);
-    if (file.exists) throw Error("COPILOT_RECEIPT_PHOTO_NOT_SAVED");
-    file.create();
-    file.write(text);
+    const expected = await checksumOf(new TextEncoder().encode(text));
+    if (!file.exists) {
+      const { randomUUID } = await import("expo-crypto");
+      const partial = new File(directory, `${fileId}.${randomUUID()}.part`);
+      try {
+        partial.create();
+        partial.write(text);
+        if (
+          partial.size !== text.length ||
+          (await checksumOf(await partial.bytes())) !== expected
+        )
+          throw Error("COPILOT_RECEIPT_PHOTO_NOT_SAVED");
+        partial.move(file);
+      } finally {
+        if (partial.exists && partial.uri !== file.uri) partial.delete();
+      }
+    }
     const bytes = await file.bytes();
+    if (bytes.length !== text.length || (await checksumOf(bytes)) !== expected)
+      throw Error("COPILOT_RECEIPT_PHOTO_NOT_SAVED");
     return {
       localUri: file.uri,
       mimeType: RECEIPT_PHOTO_BUNDLE_MIME,

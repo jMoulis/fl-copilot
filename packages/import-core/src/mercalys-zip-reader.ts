@@ -1,5 +1,9 @@
 import { Inflate } from "fflate";
-import { inspectMercalysZip, MercalysZipError } from "./mercalys-zip";
+import {
+  inspectMercalysZip,
+  inspectXlsxZip,
+  MercalysZipError,
+} from "./mercalys-zip";
 const crcTable = new Uint32Array(256);
 for (let n = 0; n < 256; n++) {
   let value = n;
@@ -13,8 +17,22 @@ function updateCrc(state: number, bytes: Uint8Array) {
 }
 /** Stable in-memory archive snapshot. Extract one declared member at a time; never use paths for filesystem writes. */
 export function createMercalysZipReader(input: Uint8Array) {
-  const plan = inspectMercalysZip(input),
-    bytes = input.slice();
+  return createReader(input, inspectMercalysZip(input));
+}
+/** Validate actual expanded sizes and CRCs before the spreadsheet parser inflates again. */
+export async function assertSafeXlsxContainer(
+  input: Uint8Array,
+  signal?: { readonly aborted: boolean },
+) {
+  const reader = createReader(input, inspectXlsxZip(input));
+  for (const entry of reader.files)
+    await reader.extract(entry.path, { signal });
+}
+function createReader(
+  input: Uint8Array,
+  plan: ReturnType<typeof inspectMercalysZip>,
+) {
+  const bytes = input.slice();
   const files = Object.freeze(
       plan.files.map((entry) => Object.freeze({ ...entry })),
     ),

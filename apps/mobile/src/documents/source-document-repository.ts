@@ -24,6 +24,64 @@ export interface LocalSourceAggregate {
 export class SourceDocumentRepository {
   constructor(private readonly database: SourceDocumentDatabase) {}
 
+  createCapturedStorePhoto(input: {
+    storeId: string;
+    ownerId: string;
+    sourceDocumentId: string;
+    fileId: string;
+    capturedAt: string;
+    file: {
+      originalFilename: string;
+      localUri: string;
+      mimeType: string;
+      sizeBytes: number;
+      checksum: string;
+    };
+  }) {
+    const { file, capturedAt: at } = input;
+    return this.createStorePhoto(
+      {
+        document: {
+          id: input.sourceDocumentId,
+          storeId: input.storeId,
+          sourceType: "STORE_PHOTO",
+          originalFilename: file.originalFilename,
+          localFileUri: file.localUri,
+          checksum: file.checksum,
+          sourceGeneratedAt: null,
+          businessPeriodStart: null,
+          businessPeriodEnd: null,
+          localProcessingStatus: "VALIDATED",
+          remoteUploadStatus: "LOCAL_ONLY",
+          remoteProcessingStatus: null,
+          parserVersion: null,
+          extractionModelVersion: null,
+          version: 1,
+          createdAt: at,
+          updatedAt: at,
+          deletedAt: null,
+          syncState: "LOCAL_ONLY",
+          remoteVersion: null,
+          dirty: true,
+        },
+        file: {
+          id: input.fileId,
+          storeId: input.storeId,
+          sourceDocumentId: input.sourceDocumentId,
+          localUri: file.localUri,
+          mimeType: file.mimeType,
+          sizeBytes: file.sizeBytes,
+          checksum: file.checksum,
+          retentionStatus: "RETAINED",
+          uploadStatus: "LOCAL_ONLY",
+          createdAt: at,
+          updatedAt: at,
+        },
+      },
+      input.ownerId,
+    );
+  }
+
   async createWithFile(input: LocalSourceAggregate) {
     const document = localSourceDocumentSchema.parse(input.document);
     const file = localFileMetadataSchema.parse(input.file);

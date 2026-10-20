@@ -122,6 +122,7 @@ describe("local SQLite migrations", () => {
       "email_intake_decisions",
       "email_intake_receipts",
       "email_original_manifests",
+      "email_source_handoffs",
       "import_reconciliations",
       "import_verification_conflicts",
       "local_files",

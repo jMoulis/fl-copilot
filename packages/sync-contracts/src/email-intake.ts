@@ -108,6 +108,11 @@ export const emailIntakeOriginalRequestSchema = z.strictObject({
   receiptId: id,
   fileId: id,
 });
+export const emailIntakeReceiptRequestSchema =
+  emailIntakeOriginalRequestSchema.omit({ fileId: true });
+export type EmailIntakeReceiptRequest = z.infer<
+  typeof emailIntakeReceiptRequestSchema
+>;
 export type EmailIntakeOriginalRequest = z.infer<
   typeof emailIntakeOriginalRequestSchema
 >;

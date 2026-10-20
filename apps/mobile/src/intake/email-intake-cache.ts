@@ -248,4 +248,28 @@ export class EmailIntakeCache {
       throw Error("EMAIL_ORIGINAL_UNAVAILABLE");
     return { receipt, file, snapshot: JSON.stringify(receipt) };
   }
+  async receipt(
+    conversationId: string,
+    receiptId: string,
+    tx: OutboxDatabase = this.db,
+  ) {
+    z.uuid().parse(receiptId);
+    const scope = this.scope(conversationId);
+    await this.authorize(scope, tx);
+    const row = await tx.getFirstAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM email_intake_receipts WHERE store_id=? AND owner_id=? AND conversation_id=? AND id=?",
+      scope.storeId,
+      scope.ownerId,
+      scope.conversationId,
+      receiptId,
+    );
+    await this.authorize(scope, tx);
+    if (!row) return null;
+    const receipt = emailIntakeReceiptSchema.parse(
+      JSON.parse(row.payload_json),
+    );
+    this.scoped(receipt, scope);
+    if (receipt.id !== receiptId) throw invalid();
+    return receipt;
+  }
 }

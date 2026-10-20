@@ -11,6 +11,7 @@ import {
   emailIntakeListSchema,
   emailIntakeOriginalManifestSchema,
   emailIntakeOriginalDownloadSchema,
+  emailIntakeReceiptSchema,
 } from "@fl-copilot/sync-contracts";
 import { AuthError, type AuthService } from "../auth/service.js";
 import type { EmailIntakeStore } from "./email-intake-store.js";
@@ -79,6 +80,37 @@ export function registerEmailIntakeRoutes(
         principal.userId,
         request.query.cursor,
       );
+    },
+  );
+  api.get(
+    "/api/v1/intake/email/receipts/:id",
+    {
+      schema: {
+        params: z.strictObject({ id: z.uuid() }),
+        querystring: z.strictObject({ conversationId: z.uuid() }),
+        response: { 200: emailIntakeReceiptSchema },
+      },
+    },
+    async (request, reply) => {
+      const principal = await authorize(request);
+      const result = await dependencies.originals.receipt({
+        storeId: principal.storeId,
+        ownerId: principal.userId,
+        conversationId: request.query.conversationId,
+        receiptId: request.params.id,
+      });
+      const current = await authorize(request);
+      if (
+        current.userId !== principal.userId ||
+        current.storeId !== principal.storeId
+      )
+        throw new AuthError(
+          403,
+          "EMAIL_INTAKE_FORBIDDEN",
+          "L’accès au magasin a changé.",
+        );
+      reply.header("cache-control", "private, no-store");
+      return result;
     },
   );
   api.get(

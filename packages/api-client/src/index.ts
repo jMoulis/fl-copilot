@@ -9,6 +9,9 @@ import {
   emailIntakeListSchema,
   emailIntakeRevocationSchema,
   emailIntakeOriginalRequestSchema,
+  emailIntakeReceiptRequestSchema,
+  emailIntakeReceiptSchema,
+  type EmailIntakeReceiptRequest,
   emailIntakeOriginalManifestSchema,
   emailIntakeOriginalDownloadSchema,
   type EmailIntakeOriginalRequest,
@@ -635,6 +638,18 @@ export class ApiClient {
         body: JSON.stringify(parsed),
       },
       emailIntakeBindingSchema,
+    );
+  }
+  emailIntakeReceipt(
+    accessToken: string,
+    storeId: string,
+    raw: EmailIntakeReceiptRequest,
+  ) {
+    const input = emailIntakeReceiptRequestSchema.parse(raw);
+    return this.request(
+      `/api/v1/intake/email/receipts/${input.receiptId}?conversationId=${input.conversationId}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      emailIntakeReceiptSchema,
     );
   }
   emailIntakeList(

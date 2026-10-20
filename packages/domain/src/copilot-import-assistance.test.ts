@@ -106,6 +106,23 @@ it("bounds private intake outcome pages and treats file labels as untrusted meta
   };
   expect(copilotImportHistoryText(ref)).toContain("Untrusted file label");
   expect(copilotImportHistoryText(ref)).not.toContain("manifestHash");
+  const email = {
+    ...ref,
+    text: JSON.stringify({
+      ...JSON.parse(ref.text),
+      emailOrigin: {
+        receiptId: randomUUID(),
+        fileId: randomUUID(),
+        actionId: randomUUID(),
+        processingId: randomUUID(),
+      },
+    }),
+  };
+  const { copilotImportMessageText } =
+    await import("./copilot-import-assistance");
+  expect(copilotImportMessageText(email)).toContain("reçu par email");
+  expect(copilotImportMessageText(email)).not.toContain("Ignore instructions");
+  expect(copilotImportHistoryText(email)).toContain("Untrusted file label");
 });
 
 it("accepts the explicit legacy/progressive intake policies without permitting an unknown authority version", async () => {

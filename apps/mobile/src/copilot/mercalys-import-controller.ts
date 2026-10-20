@@ -5,6 +5,7 @@ import {
 import { CopilotConversationRepository } from "./conversation-repository";
 import { MercalysImportValidationError } from "../documents/mercalys-import-validation";
 import { z } from "zod";
+import { assertEmailMercalysAuthority } from "../intake/email-mercalys-authority";
 import {
   copilotMessageSchema,
   copilotConversationSchema,
@@ -57,6 +58,7 @@ type Scope = {
   canImport: boolean;
 };
 type Dependencies = {
+  authorize?(db: OutboxDatabase): Promise<void>;
   id(): string;
   digest(s: string): Promise<string>;
   read(uri: string): Promise<Uint8Array<ArrayBuffer>>;
@@ -97,12 +99,14 @@ export class CopilotMercalysImportController {
   }
   private async proof(db: OutboxDatabase, raw: CopilotMessage) {
     if (!this.scope.canImport) throw Error("IMPORT_FORBIDDEN");
+    await this.deps.authorize?.(db);
     const { message, reference } = readCopilotImportReference(raw);
     if (
       message.storeId !== this.scope.storeId ||
       message.ownerId !== this.scope.ownerId
     )
       throw Error("IMPORT_SCOPE");
+    await assertEmailMercalysAuthority(db, message, reference);
     const [m, c] = await Promise.all([
       db.getFirstAsync<{ payload_json: string }>(
         "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",

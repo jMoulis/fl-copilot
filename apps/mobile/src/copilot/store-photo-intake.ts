@@ -137,44 +137,14 @@ export class CopilotStorePhotoIntake {
           );
           check();
           await this.active(conversations, conversationId);
-          await new SourceDocumentRepository(joined).createStorePhoto(
-            {
-              document: {
-                id: sourceDocumentId,
-                storeId: this.scope.storeId,
-                sourceType: "STORE_PHOTO",
-                originalFilename: asset.filename,
-                localFileUri: retained.localUri,
-                checksum: retained.checksum,
-                sourceGeneratedAt: null,
-                businessPeriodStart: null,
-                businessPeriodEnd: null,
-                localProcessingStatus: "VALIDATED",
-                remoteUploadStatus: "LOCAL_ONLY",
-                remoteProcessingStatus: null,
-                parserVersion: null,
-                extractionModelVersion: null,
-                version: 1,
-                createdAt: at,
-                updatedAt: at,
-                deletedAt: null,
-                syncState: "LOCAL_ONLY",
-                remoteVersion: null,
-                dirty: true,
-              },
-              file: {
-                id: fileId,
-                storeId: this.scope.storeId,
-                sourceDocumentId,
-                ...retained,
-                retentionStatus: "RETAINED",
-                uploadStatus: "LOCAL_ONLY",
-                createdAt: at,
-                updatedAt: at,
-              },
-            },
-            this.scope.ownerId,
-          );
+          await new SourceDocumentRepository(joined).createCapturedStorePhoto({
+            sourceDocumentId,
+            fileId,
+            storeId: this.scope.storeId,
+            ownerId: this.scope.ownerId,
+            capturedAt: at,
+            file: { ...retained, originalFilename: asset.filename },
+          });
           next = await conversations.attachStorePhotos(
             conversationId,
             [sourceDocumentId],

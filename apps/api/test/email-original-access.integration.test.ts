@@ -160,6 +160,64 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           db.collection<Document & { _id: string }>("emailIntakeReceipts"),
       };
     }
+    it("reads an old receipt outside the first list page without a Blob capability or provider activation", async () => {
+      const f = await fixture();
+      await f.receipts().insertMany(
+        Array.from({ length: 30 }, () => ({
+          ...f.receipt,
+          _id: randomUUID(),
+          providerEmailId: randomUUID(),
+          createdAt: new Date("2026-10-21T00:00:00Z"),
+        })),
+      );
+      const intake = createEmailIntakeStore(database, "unit.resend.app");
+      expect(
+        (await intake.list(f.scope)).receipts.some(
+          (receipt) => receipt.id === f.target.receiptId,
+        ),
+      ).toBe(false);
+      const target = { ...f.scope, receiptId: f.target.receiptId };
+      expect(await f.service.receipt(target)).toMatchObject({
+        id: f.target.receiptId,
+        files: [{ id: f.target.fileId, status: "READY" }],
+      });
+      for (const status of ["QUARANTINED", "DISMISSED"]) {
+        await f
+          .receipts()
+          .updateOne({ _id: f.target.receiptId }, { $set: { status } });
+        expect(await f.service.receipt(target)).toMatchObject({ status });
+        await expect(f.service.manifest(f.target)).rejects.toMatchObject({
+          publicCode: "EMAIL_ORIGINAL_UNAVAILABLE",
+        });
+      }
+      expect(f.head).not.toHaveBeenCalled();
+      expect(f.sign).not.toHaveBeenCalled();
+      await f.db
+        .collection("storeMemberships")
+        .updateOne(
+          { storeId: f.scope.storeId, userId: f.scope.ownerId },
+          { $set: { active: false } },
+        );
+      await expect(f.service.receipt(target)).rejects.toMatchObject({
+        publicCode: "EMAIL_ORIGINAL_UNAVAILABLE",
+      });
+    });
+    it("does not expose receipt metadata across current owners or conversations", async () => {
+      const f = await fixture(),
+        other = await fixture(f.scope.storeId);
+      await expect(
+        f.service.receipt({ ...other.scope, receiptId: f.target.receiptId }),
+      ).rejects.toMatchObject({ publicCode: "EMAIL_ORIGINAL_UNAVAILABLE" });
+      await f.db
+        .collection<Document & { _id: string }>("copilotConversations")
+        .updateOne(
+          { _id: f.scope.conversationId },
+          { $set: { status: "ARCHIVED" } },
+        );
+      await expect(
+        f.service.receipt({ ...f.scope, receiptId: f.target.receiptId }),
+      ).rejects.toMatchObject({ publicCode: "EMAIL_ORIGINAL_UNAVAILABLE" });
+    });
     it("restores exact unclassified email bytes through authenticated API/client, durable SQLite jobs and offline restart without creating business data", async () => {
       const bytes = new Uint8Array([80, 75, 3]);
       const digest = (value: string | Uint8Array) =>
@@ -218,6 +276,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       );
       vi.stubGlobal("fetch", fetchPort);
       const client = new ApiClient("https://local.test");
+      expect(
+        await client.emailIntakeReceipt(actor, f.scope.storeId, {
+          conversationId: f.scope.conversationId,
+          receiptId: f.target.receiptId,
+        }),
+      ).toMatchObject({ id: f.target.receiptId });
       const historyHttp = await app.inject({
         method: "GET",
         url: "/api/v1/intake/email/decisions",

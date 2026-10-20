@@ -77,6 +77,15 @@ export const copilotImportReferenceSchema = z.strictObject({
   batchId: z.uuid(),
   label: z.string().trim().min(1).max(240),
   manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
+  // A structured record of the authenticated admission, never email prose.
+  emailOrigin: z
+    .strictObject({
+      receiptId: z.uuid(),
+      fileId: z.uuid(),
+      actionId: z.uuid(),
+      processingId: z.uuid(),
+    })
+    .optional(),
 });
 export function readCopilotImportReference(raw: unknown) {
   const message = copilotMessageSchema.parse(raw);
@@ -95,7 +104,7 @@ export function readCopilotImportReference(raw: unknown) {
 export function copilotImportMessageText(message: CopilotMessage) {
   try {
     const { reference } = readCopilotImportReference(message);
-    return `Importe ${reference.label}. Traite les références sans ambiguïté et demande-moi seulement les décisions nécessaires.`;
+    return `${reference.emailOrigin ? "J’ai confirmé le traitement d’un export Mercalys reçu par email." : `Importe ${reference.label}.`} Traite les références sans ambiguïté et demande-moi seulement les décisions nécessaires.`;
   } catch {
     return message.text;
   }

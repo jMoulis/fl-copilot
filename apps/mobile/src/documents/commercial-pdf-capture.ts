@@ -52,44 +52,7 @@ export async function captureCommercialPdf(
     )
       throw new Error("COMMERCIAL_PDF_SIZE_INVALID");
     sourceUploadChecksumSchema.parse(persisted.checksum);
-    const result = await repository.createCommercialPdf({
-      document: {
-        id: input.documentId,
-        storeId: input.storeId,
-        sourceType: "WEEKLY_COMMERCIAL_PDF",
-        originalFilename: input.originalFilename,
-        localFileUri: persisted.localUri,
-        checksum: persisted.checksum,
-        sourceGeneratedAt: null,
-        businessPeriodStart: null,
-        businessPeriodEnd: null,
-        localProcessingStatus: "PENDING",
-        remoteUploadStatus: "PENDING",
-        remoteProcessingStatus: null,
-        parserVersion: null,
-        extractionModelVersion: null,
-        version: 1,
-        createdAt: input.capturedAt,
-        updatedAt: input.capturedAt,
-        deletedAt: null,
-        syncState: "PENDING",
-        remoteVersion: null,
-        dirty: true,
-      },
-      file: {
-        id: input.fileId,
-        storeId: input.storeId,
-        sourceDocumentId: input.documentId,
-        localUri: persisted.localUri,
-        mimeType: "application/pdf",
-        sizeBytes: persisted.sizeBytes,
-        checksum: persisted.checksum,
-        retentionStatus: "RETAINED",
-        uploadStatus: "PENDING",
-        createdAt: input.capturedAt,
-        updatedAt: input.capturedAt,
-      },
-    });
+    const result = await registerCommercialPdf(input, persisted, repository);
     if (result.duplicate)
       await storage.remove(persisted.localUri).catch(() => undefined);
     return result;
@@ -98,6 +61,64 @@ export async function captureCommercialPdf(
     await storage.remove(persisted.localUri).catch(() => undefined);
     throw error;
   }
+}
+
+/** Register already app-owned verified bytes without copying/removing an immutable email original. */
+export async function registerCommercialPdf(
+  input: {
+    storeId: string;
+    documentId: string;
+    fileId: string;
+    originalFilename: string;
+    capturedAt: string;
+  },
+  persisted: { localUri: string; sizeBytes: number; checksum: string },
+  repository: SourceDocumentRepository,
+) {
+  if (
+    persisted.sizeBytes <= 0 ||
+    persisted.sizeBytes > MAX_COMMERCIAL_PDF_BYTES
+  )
+    throw Error("COMMERCIAL_PDF_SIZE_INVALID");
+  sourceUploadChecksumSchema.parse(persisted.checksum);
+  return repository.createCommercialPdf({
+    document: {
+      id: input.documentId,
+      storeId: input.storeId,
+      sourceType: "WEEKLY_COMMERCIAL_PDF",
+      originalFilename: input.originalFilename,
+      localFileUri: persisted.localUri,
+      checksum: persisted.checksum,
+      sourceGeneratedAt: null,
+      businessPeriodStart: null,
+      businessPeriodEnd: null,
+      localProcessingStatus: "PENDING",
+      remoteUploadStatus: "PENDING",
+      remoteProcessingStatus: null,
+      parserVersion: null,
+      extractionModelVersion: null,
+      version: 1,
+      createdAt: input.capturedAt,
+      updatedAt: input.capturedAt,
+      deletedAt: null,
+      syncState: "PENDING",
+      remoteVersion: null,
+      dirty: true,
+    },
+    file: {
+      id: input.fileId,
+      storeId: input.storeId,
+      sourceDocumentId: input.documentId,
+      localUri: persisted.localUri,
+      mimeType: "application/pdf",
+      sizeBytes: persisted.sizeBytes,
+      checksum: persisted.checksum,
+      retentionStatus: "RETAINED",
+      uploadStatus: "PENDING",
+      createdAt: input.capturedAt,
+      updatedAt: input.capturedAt,
+    },
+  });
 }
 
 const nativeCommercialPdfStorage: CommercialPdfStorage = {
