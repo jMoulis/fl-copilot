@@ -15,7 +15,7 @@ Status: local implementation branch, not a delivered email intake. No provider w
 - 88 tests pass across actual raw-signature/Fastify, real disposable Mongo integration, public contracts and existing application/source-original routes.
 - Two additional API-client tests pass (90 distinct targeted tests total); the shared contract pair was also rechecked with them.
 - All ten TypeScript projects pass; lint, formatting and API build/import pass at this checkpoint.
-- First full regression: 3,008 tests passed, with six suites failing solely in cold Mongo `beforeAll` hooks at the former 10-second deadline (33 tests did not run). All 33 tests then passed in a focused replay. The preparation-hook deadline is now 60 seconds; ordinary test deadlines/assertions are unchanged. A complete replay is running; no final full-suite success is inferred yet.
+- First full regression: 3,008 tests passed, with six suites failing solely in cold Mongo `beforeAll` hooks at the former 10-second deadline (33 tests did not run). All 33 tests then passed in a focused replay. The preparation-hook deadline is now 60 seconds; ordinary test deadlines/assertions are unchanged. The complete replay of the envelope checkpoint (`15fc0c8`) passed: **3,041 tests / 6 skipped** across 377 passing files and one skipped file.
 
 ## Remaining in this same delivery lot
 
@@ -25,3 +25,11 @@ Status: local implementation branch, not a delivered email intake. No provider w
 4. Full source-to-chat-to-business-data integration and two-device proof. No official import/publication, analysis or source document is created by the current envelope metadata gate.
 5. Obtain/provision the managed receiving domain, receiving-capable application credential and signing secret through authorized secure configuration. Deploy a compatible complete endpoint before registering a provider webhook; verify real receiving and rollback without sending unauthorized messages or spending.
 6. Grouped native/real-provider acceptance. Resend/M7 documents and full V1/M8 remain open until these paths are delivered and exercised.
+
+## Attachment transport checkpoint
+
+`resend-attachment.ts` now supplies the bounded provider adapter, with **32 targeted tests** and API type/lint checks. This new test file was added after the full envelope suite was collected, so its result is additional evidence and is not folded into that full-suite count. It is not wired into processing yet.
+
+The adapter uses the authenticated SDK attachment endpoint and the exact documented CDN host/email/file path. It validates metadata identity/expiry/size, blocks redirects and foreign hosts/credentials, omits authorization/cookies on CDN reads, rechecks the scoped callback around I/O, bounds actual bytes, cancels blocked reads and returns SHA-256 with the unchanged original bytes. Signed URLs/provider bodies never become output/errors or durable state. The installed SDK metadata call cannot physically accept an AbortSignal; cancellation stops waiting, handles late settlement and prevents any late download. Body transport uses an actual AbortSignal.
+
+The returned MIME is explicitly **declared** metadata, not a claim of parsed business validity. A worker must persist immutable originals first, then reuse the existing format/classification/import checks before marking them usable or publishing. The adapter does not itself persist a file, create a source, process a workbook/PDF/photo, enqueue an analysis or expose a native approval card. All provider/HTTP paths in these tests are ports; no live provider download occurred.
