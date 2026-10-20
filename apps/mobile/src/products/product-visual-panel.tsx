@@ -1,5 +1,6 @@
 import { withVisualFiles } from "./visual-file-lock";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { IconButton } from "../components/dashboard";
 import {
   Alert,
   Image,
@@ -15,7 +16,6 @@ import {
   InlineAlert,
   PrimaryButton,
   SecondaryButton,
-  SectionCard,
 } from "../components/ui";
 import { colors } from "../design/tokens";
 import { ProductVisual } from "./product-visual";
@@ -48,9 +48,11 @@ type Choice =
 export function ProductVisualPanel({
   product,
   controller: gallery,
+  header,
 }: {
   product: Product;
   controller: VisualLibraryController;
+  header?: ReactNode;
 }) {
   const [options, setOptions] = useState(false);
   const [recovery, setRecovery] = useState<{
@@ -277,20 +279,48 @@ export function ProductVisualPanel({
     );
   };
   return (
-    <SectionCard title="Visuel du produit">
-      <View className="items-start gap-3">
+    <View className="gap-3 rounded-3xl border border-line bg-surface p-4">
+      <View className="relative items-center justify-center rounded-2xl bg-surface-muted py-2">
         <ProductVisual
           category={product.category}
           resolution={resolution}
-          size={180}
+          size={asset ? 156 : 64}
           readUri={gallery.readDetailUri}
           onAvailability={setAvailable}
         />
-        <Text className="text-sm text-muted">
+        {gallery.canWrite && product.status !== "INACTIVE" ? (
+          <View style={{ position: "absolute", top: 8, right: 8 }}>
+            <IconButton
+              label={
+                asset
+                  ? "Changer l’image du produit"
+                  : "Ajouter une image au produit"
+              }
+              icon="camera-outline"
+              disabled={busy || gallery.loading}
+              onPress={() => {
+                void begin();
+              }}
+            />
+          </View>
+        ) : null}
+      </View>
+      {header ?? (
+        <Text
+          accessibilityRole="header"
+          className="text-lg font-semibold text-ink"
+        >
+          Visuel du produit
+        </Text>
+      )}
+      <View className="gap-2">
+        <Text className="text-xs text-muted">
           {asset
             ? (available ? "Copie disponible sur cet appareil. " : "") +
               visualTransferLabel(state!, asset.id)
-            : "Aucune image approuvée associée. Les imports restent disponibles."}
+            : gallery.canWrite
+              ? "Ajoutez une image pour reconnaître ce produit."
+              : "Image du produit non renseignée."}
         </Text>
         {resolution.kind === "ASSET" && resolution.generic ? (
           <Text className="text-sm text-muted">
@@ -335,19 +365,11 @@ export function ProductVisualPanel({
           />
         ) : null}
       </BottomSheet>
-      {gallery.canWrite && product.status !== "INACTIVE" ? (
-        <PrimaryButton
-          label={asset ? "Changer l’image" : "Ajouter une image"}
-          disabled={busy || gallery.loading}
-          onPress={() => {
-            void begin();
-          }}
-        />
-      ) : (
-        <Text className="text-sm text-muted">
+      {!gallery.canWrite ? (
+        <Text className="text-xs text-muted">
           Le responsable du magasin peut gérer les images.
         </Text>
-      )}
+      ) : null}
       {asset ? (
         <SecondaryButton
           label={
@@ -615,7 +637,7 @@ export function ProductVisualPanel({
           </>
         )}
       </BottomSheet>
-    </SectionCard>
+    </View>
   );
 }
 function Provenance({

@@ -153,23 +153,40 @@ export function backExplorerView(s: ExplorerView): ExplorerView {
 export class ExplorerViewRepository {
   constructor(
     private db: OutboxDatabase,
-    private scope: { storeId: string; ownerId: string },
+    private scope: { storeId: string; ownerId: string; productId?: string },
   ) {
     z.uuid().parse(scope.storeId);
     z.uuid().parse(scope.ownerId);
+    if (scope.productId !== undefined) z.uuid().parse(scope.productId);
   }
   private get key() {
-    return `analytics-view:v1:${this.scope.storeId}:${this.scope.ownerId}`;
+    return `analytics-view:v1:${this.scope.storeId}:${this.scope.ownerId}${this.scope.productId ? `:product:${this.scope.productId}` : ""}`;
   }
   async read() {
     const row = await this.db.getFirstAsync<{ value: string }>(
       "SELECT value FROM app_metadata WHERE key=?",
       this.key,
     );
-    return row ? explorerViewSchema.parse(JSON.parse(row.value)) : null;
+    return row ? this.validate(JSON.parse(row.value)) : null;
+  }
+  private validate(raw: unknown) {
+    const value = explorerViewSchema.parse(raw);
+    if (
+      this.scope.productId &&
+      [value.frame, ...value.history].some(
+        (frame) =>
+          frame.filters.productId !== this.scope.productId ||
+          frame.filters.category !== null ||
+          frame.filters.nature !== null ||
+          frame.filters.productIds ||
+          frame.filters.labelContains,
+      )
+    )
+      throw Error("PRODUCT_PERFORMANCE_SCOPE_INVALID");
+    return value;
   }
   async save(value: ExplorerView) {
-    const s = explorerViewSchema.parse(value);
+    const s = this.validate(value);
     await this.db.runAsync(
       "INSERT INTO app_metadata(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
       this.key,

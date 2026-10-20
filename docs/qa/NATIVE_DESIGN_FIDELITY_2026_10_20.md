@@ -36,3 +36,7 @@ Automated result: **1,371 tests passed / 7 skipped**, covering mobile repositori
 Review the real native headers, safe areas, tab bar, text enlargement, keyboard, sheets and gestures with the device. The local web viewport cannot prove these. Complete the treatment of product details, task/execution views, secondary operational forms, approved imagery and category presentation. Decorative hero/product imagery is still a visual gap; no image generation, rights assumption or provider cost is introduced here. The chat stays conversational under the approved arbitration rather than copying the recommendation-card wall from the illustration.
 
 The first correction is code ready after checks; it has not been delivered to the installed build. A new paid EAS build is reserved for a coherent acceptance batch. No API-only deployment can update these native screens. Do not mark V1/M8 complete from this record.
+
+## Later delivery and continuation
+
+The first correction PR 289 is included in the delivered `8ec75c6` / iOS build 3 batch with PR 290. The owner confirms stability; complete design acceptance remains open. Product-detail composition and the existing Explorer bridge are continued in `PRODUCT_DETAIL_OVERVIEW_2026_10_20.md`, still on branch at that checkpoint. Table gestures PR 291 also await the next native batch. This updates delivery status without claiming a successful native review of every screen.

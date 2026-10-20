@@ -59,3 +59,13 @@ export function calendarCells(month: string): (string | null)[] {
   while (cells.length % 7) cells.push(null);
   return cells;
 }
+
+/** Store business date shared by the Explorer and product performance. */
+export function tradingToday(date = new Date()) {
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}

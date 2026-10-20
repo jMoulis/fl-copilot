@@ -1,19 +1,17 @@
+import { ProductPerformance } from "./product-performance";
+import { IconButton, DetailsDisclosure } from "../components/dashboard";
 import { useAuth } from "../auth/auth-provider";
 import { useVisualLibrary } from "./use-visual-library";
 import { ProductVisualPanel } from "./product-visual-panel";
 import { useState } from "react";
 import { Text, View } from "react-native";
 import { router, type Href } from "expo-router";
-import { randomUUID } from "expo-crypto";
-import { explorerHref } from "../analytics/explorer-link";
 import { StoreEventsView } from "../needs/store-events-view";
 import { SubstitutionView } from "../needs/substitution-view";
 import { MembershipView } from "../needs/membership-view";
 import {
   AppScreen,
-  AppHeader,
   InlineAlert,
-  PrimaryButton,
   SecondaryButton,
   SectionCard,
   StatusBadge,
@@ -21,16 +19,30 @@ import {
 import { useProductEditor } from "./use-product-editor";
 import { categoryLabels, natureLabels, unitLabels } from "./catalogue-view";
 
-export function ProductDetailScreen({ id }: { id: string }) {
+export function ProductDetailScreen({
+  id,
+  selection,
+}: {
+  id: string;
+  selection?: unknown;
+}) {
   const { session } = useAuth();
   return (
     <ScopedProductDetailScreen
       key={`${session?.stores[0]?.storeId}:${session?.user.id}:${id}`}
       id={id}
+      selection={selection}
     />
   );
 }
-function ScopedProductDetailScreen({ id }: { id: string }) {
+function ScopedProductDetailScreen({
+  id,
+  selection,
+}: {
+  id: string;
+  selection?: unknown;
+}) {
+  const { session } = useAuth();
   const { snapshot, conflictId, loading, storeMissing, missing, error } =
     useProductEditor(id);
   const [relations, setRelations] = useState(false);
@@ -38,14 +50,26 @@ function ScopedProductDetailScreen({ id }: { id: string }) {
   const p = snapshot?.product.entity;
   return (
     <AppScreen>
-      <AppHeader
-        title={p?.label ?? "Fiche produit"}
-        subtitle="Référentiel du magasin"
-      />
-      <SecondaryButton
-        label="Retour aux produits"
-        onPress={() => router.navigate("/(tabs)/products")}
-      />
+      <View className="flex-row items-center justify-between gap-3">
+        <IconButton
+          label="Retour aux produits"
+          icon="chevron-back"
+          onPress={() => router.navigate("/(tabs)/products")}
+        />
+        <Text className="flex-1 text-center text-sm text-muted">
+          Fiche produit
+        </Text>
+        {p ? (
+          <IconButton
+            label="Modifier la fiche produit"
+            icon="create-outline"
+            disabled={Boolean(conflictId) || !gallery.canWrite}
+            onPress={() => router.push(`/(tabs)/products/edit/${id}` as Href)}
+          />
+        ) : (
+          <View style={{ width: 48 }} />
+        )}
+      </View>
       {error ? (
         <InlineAlert title="Actualisation interrompue" message={error} />
       ) : null}
@@ -58,22 +82,42 @@ function ScopedProductDetailScreen({ id }: { id: string }) {
         <Text className="text-base text-muted">Chargement de la fiche…</Text>
       ) : p && snapshot ? (
         <>
-          <View className="flex-row flex-wrap items-center gap-3">
-            <StatusBadge
-              status={
-                conflictId || snapshot.product.syncState === "CONFLICT"
-                  ? "conflict"
-                  : snapshot.product.syncState === "ERROR"
-                    ? "error"
-                    : snapshot.product.dirty
-                      ? "pending"
-                      : "synced"
-              }
-            />
-            {p.status === "INACTIVE" ? (
-              <Text className="text-warning">Produit inactif</Text>
-            ) : null}
-          </View>
+          <ProductVisualPanel
+            key={`${p.storeId}:${p.id}:${gallery.context?.actorId}`}
+            product={p}
+            controller={gallery}
+            header={
+              <View className="gap-2">
+                <Text
+                  accessibilityRole="header"
+                  className="text-2xl font-bold text-ink"
+                >
+                  {p.label}
+                </Text>
+                <Text className="text-sm text-muted">
+                  {categoryLabels[p.category]} · {natureLabels[p.nature]} ·{" "}
+                  {unitLabels[p.salesUnit]}
+                </Text>
+                <View className="flex-row flex-wrap items-center gap-3">
+                  <StatusBadge
+                    compact
+                    status={
+                      conflictId || snapshot.product.syncState === "CONFLICT"
+                        ? "conflict"
+                        : snapshot.product.syncState === "ERROR"
+                          ? "error"
+                          : snapshot.product.dirty
+                            ? "pending"
+                            : "synced"
+                    }
+                  />
+                  {p.status === "INACTIVE" ? (
+                    <Text className="text-warning">Produit inactif</Text>
+                  ) : null}
+                </View>
+              </View>
+            }
+          />
           {conflictId ? (
             <>
               <InlineAlert
@@ -88,64 +132,58 @@ function ScopedProductDetailScreen({ id }: { id: string }) {
               />
             </>
           ) : null}
-          <PrimaryButton
-            label="Modifier la fiche"
-            disabled={Boolean(conflictId)}
-            onPress={() => router.push(`/(tabs)/products/edit/${id}` as Href)}
-          />
-          <ProductVisualPanel
-            key={`${p.storeId}:${p.id}:${gallery.context?.actorId}`}
-            product={p}
-            controller={gallery}
-          />
-          <SectionCard title="Identité">
-            <Detail label="Catégorie" value={categoryLabels[p.category]} />
-            <Detail label="Nature" value={natureLabels[p.nature]} />
-            <Detail label="Unité de vente" value={unitLabels[p.salesUnit]} />
-            <Detail
-              label="Conditionnement"
-              value={
-                p.packaging
-                  ? `${p.packaging.quantity.replace(".", ",")} ${packagingLabel(p.packaging.unit)}${p.packaging.sourceLabel ? ` · ${p.packaging.sourceLabel}` : ""}`
-                  : "Non renseigné"
-              }
+          {session?.user.id ? (
+            <ProductPerformance
+              key={`${p.storeId}:${session.user.id}:${id}`}
+              productId={id}
+              storeId={p.storeId}
+              ownerId={session.user.id}
+              selection={selection}
             />
-          </SectionCard>
-          <SectionCard title="Codes et alias">
-            {snapshot.identifiers.length ? (
-              snapshot.identifiers.map(({ entity: e }) => (
-                <Detail
-                  key={e.id}
-                  label={`${e.type}${e.status !== "VALIDATED" ? " · À confirmer" : ""}`}
-                  value={e.value}
-                />
-              ))
-            ) : (
-              <Text className="text-sm text-muted">Aucun code renseigné.</Text>
-            )}
-            {snapshot.aliases.length ? (
-              snapshot.aliases.map(({ entity: e }) => (
-                <Detail
-                  key={e.id}
-                  label={`Alias${e.status !== "VALIDATED" ? ` · ${e.status === "REJECTED" ? "Refusé" : "À confirmer"}` : ""}`}
-                  value={e.alias}
-                />
-              ))
-            ) : (
-              <Text className="text-sm text-muted">Aucun alias renseigné.</Text>
-            )}
-          </SectionCard>
-          <SecondaryButton
-            label="Explorer les chiffres de ce produit"
-            onPress={() =>
-              router.navigate(
-                explorerHref({
-                  requestId: randomUUID(),
-                  filters: { category: null, nature: null, productId: id },
-                }),
-              )
-            }
-          />
+          ) : null}
+          <DetailsDisclosure title="Informations du référentiel">
+            <SectionCard title="Identité">
+              <Detail label="Catégorie" value={categoryLabels[p.category]} />
+              <Detail label="Nature" value={natureLabels[p.nature]} />
+              <Detail label="Unité de vente" value={unitLabels[p.salesUnit]} />
+              <Detail
+                label="Conditionnement"
+                value={
+                  p.packaging
+                    ? `${p.packaging.quantity.replace(".", ",")} ${packagingLabel(p.packaging.unit)}${p.packaging.sourceLabel ? ` · ${p.packaging.sourceLabel}` : ""}`
+                    : "Non renseigné"
+                }
+              />
+            </SectionCard>
+            <SectionCard title="Codes et alias">
+              {snapshot.identifiers.length ? (
+                snapshot.identifiers.map(({ entity: e }) => (
+                  <Detail
+                    key={e.id}
+                    label={`${e.type}${e.status !== "VALIDATED" ? " · À confirmer" : ""}`}
+                    value={e.value}
+                  />
+                ))
+              ) : (
+                <Text className="text-sm text-muted">
+                  Aucun code renseigné.
+                </Text>
+              )}
+              {snapshot.aliases.length ? (
+                snapshot.aliases.map(({ entity: e }) => (
+                  <Detail
+                    key={e.id}
+                    label={`Alias${e.status !== "VALIDATED" ? ` · ${e.status === "REJECTED" ? "Refusé" : "À confirmer"}` : ""}`}
+                    value={e.alias}
+                  />
+                ))
+              ) : (
+                <Text className="text-sm text-muted">
+                  Aucun alias renseigné.
+                </Text>
+              )}
+            </SectionCard>
+          </DetailsDisclosure>
           <SecondaryButton
             label="Trouver un remplaçant"
             onPress={() =>
