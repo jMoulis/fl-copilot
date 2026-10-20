@@ -720,15 +720,17 @@ function EmailReceivedCard({
                     )
                       ? "Non sélectionné · "
                       : ""}
-                    {file.status === "READY"
-                      ? "Original conservé"
-                      : file.status === "PENDING"
-                        ? "Réception en cours"
-                        : file.status === "FAILED"
-                          ? "Réception à reprendre"
-                          : file.status === "APPLIED"
-                            ? "Document enregistré"
-                            : "Format non pris en charge"}
+                    {file.errorCode === "DAILY_LIMIT"
+                      ? "Limite quotidienne atteinte · reprise automatique prévue"
+                      : file.status === "READY"
+                        ? "Original conservé"
+                        : file.status === "PENDING"
+                          ? "Réception en cours"
+                          : file.status === "FAILED"
+                            ? "Réception à reprendre"
+                            : file.status === "APPLIED"
+                              ? "Document enregistré"
+                              : "Format non pris en charge"}
                   </Text>
                 </Pressable>
                 {eligible && included && !grouping && showPurpose ? (

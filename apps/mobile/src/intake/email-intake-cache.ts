@@ -39,6 +39,7 @@ function identity(receipt: EmailIntakeReceipt) {
       status: undefined,
       sourceDocumentId: undefined,
       errorCode: undefined,
+      retryAt: undefined,
     })),
   });
 }

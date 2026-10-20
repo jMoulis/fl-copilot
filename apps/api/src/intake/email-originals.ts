@@ -1,3 +1,8 @@
+import {
+  reserveEmailDownload,
+  nextEmailBudgetDay,
+  EMAIL_DOWNLOAD_DAILY_LIMIT,
+} from "./email-daily-budget.js";
 import { createHash, randomUUID } from "node:crypto";
 import { get, put } from "@vercel/blob";
 import { z } from "zod";
@@ -31,6 +36,7 @@ export type EmailOriginalJob = {
   bindingId: string;
   status: "PENDING" | "RUNNING" | "RETRY" | "DONE" | "CANCELLED";
   attempts: number;
+  budgetDeferrals?: number;
   nextAttemptAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -113,14 +119,21 @@ const fileLimit = 50 * 1024 * 1024,
 const attemptsLimit = 6,
   leaseMs = 180000;
 const scopeChanged = () => Error("EMAIL_ATTACHMENT_SCOPE_CHANGED");
+const usedAttempts = (job: Job) => job.attempts - (job.budgetDeferrals ?? 0);
+const attemptsExpression = {
+  $subtract: ["$attempts", { $ifNull: ["$budgetDeferrals", 0] }],
+};
 const due = (timestamp: Date): Filter<Job> => ({
   status: { $in: ["PENDING", "RETRY", "RUNNING"] as Job["status"][] },
   nextAttemptAt: { $lte: timestamp },
   $and: [
     {
       $or: [
-        { attempts: { $lt: attemptsLimit } },
-        { status: "RUNNING", attempts: attemptsLimit },
+        { $expr: { $lt: [attemptsExpression, attemptsLimit] } },
+        {
+          status: "RUNNING",
+          $expr: { $eq: [attemptsExpression, attemptsLimit] },
+        },
       ],
     },
     {
@@ -244,11 +257,13 @@ export function createEmailOriginalProcessor(
     outcome: "READY" | "UNSUPPORTED" | "FAILED",
     error?: FileError,
     retry = false,
+    budgetDeferred = false,
   ) {
     await emailIntakeAtomic(db, async (session) => {
       await context(db, job, session);
       const timestamp = now();
-      const pending = retry && job.attempts < attemptsLimit;
+      const pending =
+        budgetDeferred || (retry && usedAttempts(job) < attemptsLimit);
       const result = await db
         .collection<Job>("emailIntakeOriginalJobs")
         .updateOne(
@@ -261,12 +276,15 @@ export function createEmailOriginalProcessor(
             $set: {
               status: pending ? "RETRY" : "DONE",
               updatedAt: timestamp,
-              nextAttemptAt: new Date(
-                timestamp.getTime() +
-                  Math.min(3600000, 60000 * 2 ** (job.attempts - 1)),
-              ),
+              nextAttemptAt: budgetDeferred
+                ? nextEmailBudgetDay(timestamp)
+                : new Date(
+                    timestamp.getTime() +
+                      Math.min(3600000, 60000 * 2 ** (usedAttempts(job) - 1)),
+                  ),
             },
             $unset: { leaseId: "", leaseUntil: "" },
+            ...(budgetDeferred ? { $inc: { budgetDeferrals: 1 } } : {}),
           },
           { session },
         );
@@ -283,8 +301,21 @@ export function createEmailOriginalProcessor(
               "files.$.status": pending ? "PENDING" : outcome,
               updatedAt: timestamp,
               ...(error ? { "files.$.errorCode": error } : {}),
+              ...(budgetDeferred
+                ? {
+                    "files.$.retryAt":
+                      nextEmailBudgetDay(timestamp).toISOString(),
+                  }
+                : {}),
             },
-            ...(!error ? { $unset: { "files.$.errorCode": "" } } : {}),
+            ...(!error || !budgetDeferred
+              ? {
+                  $unset: {
+                    ...(!error ? { "files.$.errorCode": "" } : {}),
+                    ...(!budgetDeferred ? { "files.$.retryAt": "" } : {}),
+                  },
+                }
+              : {}),
             $inc: { version: 1 },
           },
           { session },
@@ -325,6 +356,7 @@ export function createEmailOriginalProcessor(
                 "files.$.errorCode": "SCOPE_CHANGED",
                 updatedAt: now(),
               },
+              $unset: { "files.$.retryAt": "" },
               $inc: { version: 1 },
             },
             { session },
@@ -398,7 +430,7 @@ export function createEmailOriginalProcessor(
             return { status: "READY" as const };
           }
         }
-        if (job.attempts > attemptsLimit) {
+        if (usedAttempts(job) > attemptsLimit) {
           await finish(db, job, "FAILED", "READ_FAILED");
           return { status: "FAILED" as const, code: "READ_FAILED" as const };
         }
@@ -413,6 +445,12 @@ export function createEmailOriginalProcessor(
           },
           authorize,
           signal,
+          (size) =>
+            emailIntakeAtomic(db, async (session) => {
+              await context(db, job, session);
+              await reserveEmailDownload(db, session, job.ownerId, size, now());
+              await context(db, job, session);
+            }),
         );
         if (
           original.sizeBytes !== original.bytes.byteLength ||
@@ -493,6 +531,7 @@ export function createEmailOriginalProcessor(
           await cancel(db, job);
           return { status: "CANCELLED" as const };
         }
+        const budgetDeferred = message === EMAIL_DOWNLOAD_DAILY_LIMIT;
         const permanent =
           message === "EMAIL_ATTACHMENT_UNSUPPORTED"
             ? "UNSUPPORTED"
@@ -506,11 +545,12 @@ export function createEmailOriginalProcessor(
                   ].includes(message)
                 ? "IDENTITY_CHANGED"
                 : null;
-        const code: FileError =
-          permanent ??
-          (phase === "STORAGE"
-            ? "STORAGE_UNAVAILABLE"
-            : "PROVIDER_UNAVAILABLE");
+        const code: FileError = budgetDeferred
+          ? "DAILY_LIMIT"
+          : (permanent ??
+            (phase === "STORAGE"
+              ? "STORAGE_UNAVAILABLE"
+              : "PROVIDER_UNAVAILABLE"));
         try {
           await finish(
             db,
@@ -518,6 +558,7 @@ export function createEmailOriginalProcessor(
             code === "UNSUPPORTED" ? "UNSUPPORTED" : "FAILED",
             code,
             !permanent,
+            budgetDeferred,
           );
         } catch (failure) {
           if (
@@ -536,7 +577,7 @@ export function createEmailOriginalProcessor(
         }
         return {
           status:
-            permanent || job.attempts >= attemptsLimit
+            !budgetDeferred && (permanent || usedAttempts(job) >= attemptsLimit)
               ? ("FAILED" as const)
               : ("RETRY" as const),
           code,

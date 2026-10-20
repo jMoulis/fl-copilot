@@ -153,3 +153,45 @@ it("binds immutable human decisions to one receipt and represents pending preser
     }).success,
   ).toBe(true);
 });
+
+it("requires a bounded availability state for a daily limit instead of applying a stale deadline to a ready source", () => {
+  const receipt = {
+    id: randomUUID(),
+    storeId: randomUUID(),
+    ownerId: randomUUID(),
+    conversationId: randomUUID(),
+    bindingId: randomUUID(),
+    providerEmailId: randomUUID(),
+    sender: "manager@example.test",
+    subject: "source",
+    receivedAt: "2026-10-20T12:00:00Z",
+    updatedAt: "2026-10-20T12:00:00Z",
+    version: 1,
+    status: "AWAITING_CONFIRMATION",
+    files: [
+      {
+        id: randomUUID(),
+        providerAttachmentId: randomUUID(),
+        filename: "source.zip",
+        mediaType: "application/zip",
+        status: "PENDING",
+        sourceDocumentId: null,
+        errorCode: "DAILY_LIMIT",
+        retryAt: "2026-10-21T00:00:00Z",
+      },
+    ],
+  };
+  expect(emailIntakeReceiptSchema.safeParse(receipt).success).toBe(true);
+  for (const change of [
+    { retryAt: undefined },
+    { status: "READY" },
+    { errorCode: "PROVIDER_UNAVAILABLE" },
+    { retryAt: "tomorrow" },
+  ])
+    expect(
+      emailIntakeReceiptSchema.safeParse({
+        ...receipt,
+        files: [{ ...receipt.files[0], ...change }],
+      }).success,
+    ).toBe(false);
+});

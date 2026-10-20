@@ -59,6 +59,7 @@ export const emailIntakeReceiptSchema = z
             "APPLIED",
           ]),
           sourceDocumentId: id.nullable(),
+          retryAt: z.iso.datetime({ offset: true }).optional(),
           errorCode: z
             .enum([
               "UNSUPPORTED",
@@ -68,6 +69,7 @@ export const emailIntakeReceiptSchema = z
               "PROVIDER_UNAVAILABLE",
               "STORAGE_UNAVAILABLE",
               "READ_FAILED",
+              "DAILY_LIMIT",
             ])
             .optional(),
         }),
@@ -75,6 +77,20 @@ export const emailIntakeReceiptSchema = z
       .max(50),
   })
   .superRefine((value, ctx) => {
+    value.files.forEach((file, index) => {
+      if (
+        (file.errorCode === "DAILY_LIMIT" &&
+          (file.status !== "PENDING" || !file.retryAt)) ||
+        (file.retryAt &&
+          (file.status !== "PENDING" || file.errorCode !== "DAILY_LIMIT"))
+      )
+        ctx.addIssue({
+          code: "custom",
+          path: ["files", index, "retryAt"],
+          message:
+            "Daily-limit availability requires a pending source and deadline",
+        });
+    });
     for (const key of ["id", "providerAttachmentId"] as const)
       if (
         new Set(value.files.map((file) => file[key])).size !==

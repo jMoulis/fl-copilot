@@ -1,3 +1,4 @@
+import { EMAIL_DOWNLOAD_DAILY_LIMITS } from "../src/intake/email-daily-budget.js";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
 import { Inngest } from "inngest";
@@ -92,12 +93,17 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       if (!receiptId) throw Error("Expected receipt");
       const objects = new Map<string, Uint8Array>();
       const bytes = new Uint8Array([7, 4, 2]);
+      const downloaded = vi.fn();
       const read = vi.fn(
         async (
           input: EmailAttachmentTarget,
           authorize: () => Promise<void>,
+          _signal?: AbortSignal,
+          beforeDownload?: (size: number) => Promise<void>,
         ) => {
           await authorize();
+          await beforeDownload?.(bytes.length);
+          downloaded();
           return {
             bytes,
             checksum: checksum(bytes),
@@ -137,6 +143,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         first,
         pending,
         read,
+        downloaded,
         bytes,
         storage,
         objects,
@@ -148,6 +155,129 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         revoke: () => store.revokeBinding(scope, binding.id),
       };
     }
+    it("defers an owner limit without reading bytes or spending an error attempt, then resumes next day", async () => {
+      const f = await fixture(2);
+      const day = f.now().toISOString().slice(0, 10);
+      await f.db
+        .collection<Document & { _id: string }>("emailIntakeDailyUsage")
+        .insertOne({
+          _id: `owner:${f.scope.ownerId}:${day}`,
+          day,
+          ownerId: f.scope.ownerId,
+          bytes: EMAIL_DOWNLOAD_DAILY_LIMITS.owner.bytes - 3,
+          downloads: EMAIL_DOWNLOAD_DAILY_LIMITS.owner.downloads - 1,
+        });
+      expect(await f.processor.preserve(f.pending[0]!.jobId)).toEqual({
+        status: "READY",
+      });
+      expect(await f.processor.preserve(f.pending[1]!.jobId)).toEqual({
+        status: "RETRY",
+        code: "DAILY_LIMIT",
+      });
+      expect(f.downloaded).toHaveBeenCalledTimes(1);
+      const waiting = await f.jobs().findOne({ _id: f.pending[1]!.jobId });
+      expect(waiting).toMatchObject({
+        attempts: 1,
+        budgetDeferrals: 1,
+        status: "RETRY",
+      });
+      expect(
+        (await f.receipt()).files.find(
+          (file) => file.id === f.pending[1]!.jobId,
+        ),
+      ).toMatchObject({
+        status: "PENDING",
+        errorCode: "DAILY_LIMIT",
+        retryAt: expect.any(String),
+      });
+      expect(await f.processor.pending(f.receiptId)).toEqual([]);
+      f.advance(24 * 3600_000);
+      expect(await f.processor.preserve(f.pending[1]!.jobId)).toEqual({
+        status: "READY",
+      });
+      expect(f.downloaded).toHaveBeenCalledTimes(2);
+      expect(
+        (await f.receipt()).files.find(
+          (file) => file.id === f.pending[1]!.jobId,
+        ),
+      ).not.toHaveProperty("retryAt");
+      expect(
+        await f.jobs().findOne({ _id: f.pending[1]!.jobId }),
+      ).toMatchObject({ attempts: 2, budgetDeferrals: 1, status: "DONE" });
+    });
+    it("bounds application-wide reservations across concurrent owners and rolls the losing owner's counters back", async () => {
+      const a = await fixture(),
+        b = await fixture();
+      a.advance(12 * 86400_000);
+      b.advance(12 * 86400_000);
+      const day = a.now().toISOString().slice(0, 10),
+        key = `application:${day}`;
+      await a.db
+        .collection<Document & { _id: string }>("emailIntakeDailyUsage")
+        .insertOne({
+          _id: key,
+          day,
+          ownerId: null,
+          bytes: EMAIL_DOWNLOAD_DAILY_LIMITS.application.bytes - 3,
+          downloads: EMAIL_DOWNLOAD_DAILY_LIMITS.application.downloads - 1,
+        });
+      const results = await Promise.all([
+        a.processor.preserve(a.first),
+        b.processor.preserve(b.first),
+      ]);
+      expect(results.map((r) => r.status).sort()).toEqual(["READY", "RETRY"]);
+      expect(
+        a.downloaded.mock.calls.length + b.downloaded.mock.calls.length,
+      ).toBe(1);
+      expect(
+        await a.db
+          .collection("emailIntakeDailyUsage")
+          .findOne({ _id: key as never }),
+      ).toMatchObject({
+        bytes: EMAIL_DOWNLOAD_DAILY_LIMITS.application.bytes,
+        downloads: EMAIL_DOWNLOAD_DAILY_LIMITS.application.downloads,
+      });
+      const owners = await a.db
+        .collection("emailIntakeDailyUsage")
+        .find({ day, ownerId: { $ne: null } })
+        .toArray();
+      expect(owners).toHaveLength(1);
+      expect(owners[0]).toMatchObject({ bytes: 3, downloads: 1 });
+    });
+    it("preserves monotonically increasing claims through eight quota deferrals without exhausting the six real-error attempts", async () => {
+      const f = await fixture();
+      f.advance(30 * 86400_000);
+      for (let i = 0; i < 8; i++) {
+        const day = f.now().toISOString().slice(0, 10);
+        await f.db
+          .collection<Document & { _id: string }>("emailIntakeDailyUsage")
+          .insertOne({
+            _id: `owner:${f.scope.ownerId}:${day}`,
+            day,
+            ownerId: f.scope.ownerId,
+            bytes: EMAIL_DOWNLOAD_DAILY_LIMITS.owner.bytes,
+            downloads: 0,
+          });
+        expect(await f.processor.preserve(f.first)).toEqual({
+          status: "RETRY",
+          code: "DAILY_LIMIT",
+        });
+        expect(await f.jobs().findOne({ _id: f.first })).toMatchObject({
+          attempts: i + 1,
+          budgetDeferrals: i + 1,
+          status: "RETRY",
+        });
+        f.advance(86400_000);
+      }
+      expect(f.downloaded).not.toHaveBeenCalled();
+      expect(await f.processor.preserve(f.first)).toEqual({ status: "READY" });
+      expect(f.downloaded).toHaveBeenCalledTimes(1);
+      expect(await f.jobs().findOne({ _id: f.first })).toMatchObject({
+        attempts: 9,
+        budgetDeferrals: 8,
+        status: "DONE",
+      });
+    });
     it("retains exact private bytes and exposes no capability/proof or official business observation", async () => {
       const f = await fixture();
       expect(await f.processor.preserve(f.first)).toEqual({ status: "READY" });
@@ -419,9 +549,17 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(f.read).not.toHaveBeenCalled();
       expect(await f.processor.pending(f.receiptId)).toEqual([]);
     });
-    it("recovers a retained proof on an exhausted crashed job without another provider download", async () => {
+    it("recovers a retained proof on an exhausted crashed job without another provider download even when the daily budget is full", async () => {
       const f = await fixture();
       await f.processor.preserve(f.first);
+      await f.db
+        .collection<Document & { _id: string }>("emailIntakeDailyUsage")
+        .updateOne(
+          {
+            _id: `owner:${f.scope.ownerId}:${f.now().toISOString().slice(0, 10)}`,
+          },
+          { $set: { bytes: EMAIL_DOWNLOAD_DAILY_LIMITS.owner.bytes } },
+        );
       await f.jobs().updateOne(
         { _id: f.first },
         {
