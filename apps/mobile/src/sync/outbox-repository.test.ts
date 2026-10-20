@@ -90,6 +90,19 @@ describe("OutboxRepository", () => {
       payload: { ownerId, storeId, content: "private" },
     });
     await failed("own-product", {}, "private URL https://internal.example");
+    await failed(
+      "own-visual",
+      { entityType: "visual_asset", payload: { storeId, updatedBy: ownerId } },
+      "VISUAL_ACCESS_INVALID",
+    );
+    await failed("foreign-visual", {
+      entityType: "visual_identity",
+      payload: { storeId, updatedBy: "owner-b" },
+    });
+    await failed("malformed-visual", {
+      entityType: "product_visual_link",
+      payload: { storeId: "different", updatedBy: ownerId },
+    });
     await failed("superseded", {}, "PRODUCT_MASTER_CONFLICT_SUPERSEDED");
     await failed("foreign-store", { storeId: "different" });
     await failed("wrong-payload-store", {
@@ -104,6 +117,7 @@ describe("OutboxRepository", () => {
     expect(first.items.map((c) => c.commandId)).toEqual([
       "own-private",
       "own-product",
+      "own-visual",
     ]);
     expect(first.hasMore).toBe(false);
     expect(first.items[1]?.code).toBeNull();

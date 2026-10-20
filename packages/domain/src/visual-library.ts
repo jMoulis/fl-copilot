@@ -211,9 +211,22 @@ export function validateVisualMutation<K extends VisualEntityType>(
         previous.provenance.type !== asset.provenance.type)
     )
       throw Error("VISUAL_BINARY_IMMUTABLE");
+    // An inert tombstone may retain its original attestation date, never forge another author.
     if (
       asset.provenance.type === "USER_UPLOAD" &&
       (!previous ||
+        JSON.stringify(previous.provenance) !==
+          JSON.stringify(asset.provenance)) &&
+      asset.provenance.confirmedBy !== context.actorId
+    )
+      throw Error("VISUAL_RIGHTS_CONFIRMATION_INVALID");
+    if (
+      asset.provenance.type === "USER_UPLOAD" &&
+      !asset.deletedAt &&
+      (!previous ||
+        !!previous.deletedAt ||
+        (["REJECTED", "REVOKED"].includes(previous.review.status) &&
+          asset.review.status === "APPROVED") ||
         JSON.stringify(previous.provenance) !==
           JSON.stringify(asset.provenance)) &&
       (asset.provenance.confirmedBy !== context.actorId ||

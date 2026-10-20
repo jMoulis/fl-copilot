@@ -22,6 +22,38 @@ export interface VisualLibraryState {
   files: Map<string, { source: boolean; preview: boolean; uploaded: boolean }>;
   jobs: Map<string, VisualFileJob[]>;
 }
+/** Follow explicit links only, including their tombstone, so a rejected choice remains reachable. */
+export function productVisualRecoveryTargets(
+  state: VisualLibraryState | null,
+  productId: string,
+) {
+  const result: Array<{
+    kind: "visual_asset" | "visual_identity" | "product_visual_link";
+    id: string;
+    label: string;
+  }> = [];
+  const seen = new Set<string>();
+  const add = (
+    kind: "visual_asset" | "visual_identity" | "product_visual_link",
+    r: LocalVisualRecord<{ id: string }> | undefined,
+    label: string,
+  ) => {
+    if (r?.syncState !== "ERROR" || seen.has(`${kind}:${r.entity.id}`)) return;
+    seen.add(`${kind}:${r.entity.id}`);
+    result.push({ kind, id: r.entity.id, label });
+  };
+  for (const link of state?.links.get(productId) ?? []) {
+    const identity = state?.identities.get(link.entity.visualIdentityId);
+    for (const id of [
+      identity?.entity.primaryAssetId,
+      link.entity.overrideAssetId,
+    ])
+      if (id) add("visual_asset", state?.assets.get(id), "Photo à reprendre");
+    add("visual_identity", identity, "Identité visuelle à reprendre");
+    add("product_visual_link", link, "Association au produit à reprendre");
+  }
+  return result;
+}
 export async function loadVisualLibraryState(
   db: OutboxDatabase & AtomicMutationDatabase,
   storeId: string,

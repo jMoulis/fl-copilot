@@ -292,6 +292,48 @@ it("attributes a new or changed rights confirmation without rewriting another up
     ),
   ).toThrow("VISUAL_RIGHTS_CONFIRMATION_INVALID");
 });
+it("retains an original rights event when retiring an inert draft, but requires fresh rights before restoring it", () => {
+  const ctx = { storeId, actorId: actor, canWrite: true },
+    later = "2026-10-20T14:00:00.000Z";
+  const retired = {
+    ...asset,
+    updatedAt: later,
+    deletedAt: later,
+    review: { status: "REVOKED" as const, actorId: actor, at: later },
+  };
+  expect(
+    validateVisualMutation("visual_asset", null, retired, ctx).provenance,
+  ).toEqual(asset.provenance);
+  expect(() =>
+    validateVisualMutation(
+      "visual_asset",
+      null,
+      {
+        ...retired,
+        provenance: { ...asset.provenance, confirmedBy: product.id },
+      },
+      ctx,
+    ),
+  ).toThrow("VISUAL_RIGHTS_CONFIRMATION_INVALID");
+  const active = {
+    ...retired,
+    version: 2,
+    deletedAt: null,
+    review: { status: "APPROVED" as const, actorId: actor, at: later },
+  };
+  expect(() =>
+    validateVisualMutation("visual_asset", retired, active, ctx),
+  ).toThrow("VISUAL_RIGHTS_CONFIRMATION_INVALID");
+  expect(
+    validateVisualMutation(
+      "visual_asset",
+      retired,
+      { ...active, provenance: { ...asset.provenance, confirmedAt: later } },
+      ctx,
+    ).deletedAt,
+  ).toBeNull();
+});
+
 it("recognizes only the supported binary signatures, keeping AVIF out of the HEIF path", () => {
   const ascii = (v: string) =>
     new Uint8Array(Array.from(v, (c) => c.charCodeAt(0)));

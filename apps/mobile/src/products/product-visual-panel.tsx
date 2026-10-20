@@ -23,7 +23,9 @@ import {
   resolveLibraryState,
   visualTransferLabel,
   visualErrorMessage,
+  productVisualRecoveryTargets,
 } from "./visual-library-state";
+import { VisualRecoveryForm } from "./visual-recovery";
 import type { VisualLibraryController } from "./use-visual-library";
 import {
   assignCapturedVisual,
@@ -51,6 +53,10 @@ export function ProductVisualPanel({
   controller: VisualLibraryController;
 }) {
   const [options, setOptions] = useState(false);
+  const [recovery, setRecovery] = useState<{
+    kind: "visual_asset" | "visual_identity" | "product_visual_link";
+    id: string;
+  } | null>(null);
   const [open, setOpen] = useState(false),
     [choice, setChoice] = useState<Choice | null>(null),
     [basis, setBasis] = useState<VisualSelectionBasis | null>(null);
@@ -302,6 +308,33 @@ export function ProductVisualPanel({
           message="Les choix déjà chargés restent visibles. Réessayez de relire la bibliothèque."
         />
       ) : null}
+      {productVisualRecoveryTargets(state, product.id).map((target) => (
+        <SecondaryButton
+          key={`${target.kind}:${target.id}`}
+          label={target.label}
+          disabled={busy || !gallery.canWrite}
+          onPress={() => setRecovery(target)}
+        />
+      ))}
+      <BottomSheet
+        visible={!!recovery}
+        title="Reprendre le visuel"
+        onClose={() => setRecovery(null)}
+      >
+        {recovery ? (
+          <VisualRecoveryForm
+            kind={recovery.kind}
+            id={recovery.id}
+            onRecovered={() => {
+              setRecovery(null);
+              setNotice(
+                "Reprise enregistrée sur cet appareil. L’envoi reste suivi dans Synchronisation.",
+              );
+              void gallery.refresh().catch(() => undefined);
+            }}
+          />
+        ) : null}
+      </BottomSheet>
       {gallery.canWrite && product.status !== "INACTIVE" ? (
         <PrimaryButton
           label={asset ? "Changer l’image" : "Ajouter une image"}

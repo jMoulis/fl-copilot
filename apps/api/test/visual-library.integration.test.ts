@@ -284,6 +284,105 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       ).toBe(1);
     }, 20000);
 
+    it("requires a fresh command after a terminal refusal and fresh rights before restoring an inert draft", async () => {
+      const { f, push, db } = await initialize(),
+        entry = entries(f)[1]!;
+      await db
+        .collection("storeMemberships")
+        .updateOne({ storeId: f.storeId }, { $set: { role: "STAFF" } });
+      const refused = request(f, [entry]);
+      expect(
+        (await push.push(refused, "refused", f.actorId)).results[0]?.error
+          ?.code,
+      ).toBe("VISUAL_ACCESS_INVALID");
+      await db
+        .collection("storeMemberships")
+        .updateOne({ storeId: f.storeId }, { $set: { role: "MANAGER" } });
+      expect(
+        (await push.push(refused, "same-command", f.actorId)).results[0]
+          ?.status,
+      ).toBe("REJECTED");
+      const retry = request(f, [entry]);
+      expect(retry.commands[0]?.commandId).not.toBe(
+        refused.commands[0]?.commandId,
+      );
+      expect(
+        (await push.push(retry, "fresh-command", f.actorId)).results[0]?.status,
+      ).toBe("APPLIED");
+      expect(
+        (await push.push(request(f, [entry]), "unknown-remote", f.actorId))
+          .results[0]?.status,
+      ).toBe("CONFLICT");
+
+      const other = await initialize(),
+        later = "2026-10-20T14:00:00.000Z";
+      const tombstone = rebaseVisualChoice(
+        "visual_asset",
+        {
+          ...other.f.asset,
+          deletedAt: later,
+          review: { status: "REVOKED", actorId: other.f.actorId, at: later },
+        },
+        null,
+        other.f.actorId,
+        later,
+      );
+      expect(tombstone.provenance).toEqual(other.f.asset.provenance);
+      expect(
+        (
+          await other.push.push(
+            request(other.f, [{ ...entries(other.f)[1]!, payload: tombstone }]),
+            "retire-unused",
+            other.f.actorId,
+          )
+        ).results[0]?.status,
+      ).toBe("APPLIED");
+      const withoutRights = {
+        ...tombstone,
+        version: 2,
+        deletedAt: null,
+        review: {
+          status: "APPROVED" as const,
+          actorId: other.f.actorId,
+          at: later,
+        },
+      };
+      expect(
+        (
+          await other.push.push(
+            request(other.f, [
+              { ...entries(other.f)[1]!, payload: withoutRights, expected: 1 },
+            ]),
+            "no-new-rights",
+            other.f.actorId,
+          )
+        ).results[0]?.error?.code,
+      ).toBe("VISUAL_RIGHTS_CONFIRMATION_INVALID");
+      const confirmed = rebaseVisualChoice(
+        "visual_asset",
+        { ...other.f.asset, deletedAt: null },
+        tombstone,
+        other.f.actorId,
+        later,
+      );
+      expect(
+        (
+          await other.push.push(
+            request(other.f, [
+              { ...entries(other.f)[1]!, payload: confirmed, expected: 1 },
+            ]),
+            "rights-confirmed",
+            other.f.actorId,
+          )
+        ).results[0]?.status,
+      ).toBe("APPLIED");
+      expect(
+        await db
+          .collection("visualAssets")
+          .countDocuments({ storeId: other.f.storeId }),
+      ).toBe(1);
+    }, 20000);
+
     it("refuses forged reviewers, inactive/nonmanager memberships and immutable binary replacement", async () => {
       const { f, push, db } = await initialize();
       const forged = { ...f.asset, updatedBy: randomUUID() };

@@ -22,36 +22,39 @@ export function visualReactivationRequired(
 export function rebaseVisualChoice<K extends VisualEntityType>(
   kind: K,
   local: VisualEntityMap[K],
-  remote: VisualEntityMap[K],
+  remote: VisualEntityMap[K] | null,
   actorId: string,
   at: string,
 ) {
-  if (local.id !== remote.id || local.storeId !== remote.storeId)
+  if (remote && (local.id !== remote.id || local.storeId !== remote.storeId))
     throw Error("VISUAL_CONFLICT_SCOPE");
+  if (!remote && local.createdBy !== actorId)
+    throw Error("VISUAL_ACCESS_INVALID");
+  const canonical = remote ?? local;
   if (
     "contentHash" in local &&
-    "contentHash" in remote &&
-    (local.contentHash !== remote.contentHash ||
-      local.provenance.type !== remote.provenance.type)
+    "contentHash" in canonical &&
+    (local.contentHash !== canonical.contentHash ||
+      local.provenance.type !== canonical.provenance.type)
   )
     throw Error("VISUAL_BINARY_IMMUTABLE");
   const choice = {
     ...local,
-    id: remote.id,
-    storeId: remote.storeId,
-    createdAt: remote.createdAt,
-    createdBy: remote.createdBy,
-    version: remote.version + 1,
+    id: canonical.id,
+    storeId: canonical.storeId,
+    createdAt: canonical.createdAt,
+    createdBy: canonical.createdBy,
+    version: (remote?.version ?? 0) + 1,
     updatedBy: actorId,
     updatedAt: at,
   };
-  if ("contentHash" in choice && "contentHash" in remote) {
-    choice.contentHash = remote.contentHash;
-    choice.mimeType = remote.mimeType;
-    choice.width = remote.width;
-    choice.height = remote.height;
-    choice.sizeBytes = remote.sizeBytes;
-    if (choice.provenance.type === "USER_UPLOAD")
+  if ("contentHash" in choice && "contentHash" in canonical) {
+    choice.contentHash = canonical.contentHash;
+    choice.mimeType = canonical.mimeType;
+    choice.width = canonical.width;
+    choice.height = canonical.height;
+    choice.sizeBytes = canonical.sizeBytes;
+    if (choice.provenance.type === "USER_UPLOAD" && !choice.deletedAt)
       choice.provenance = {
         ...choice.provenance,
         confirmedBy: actorId,
@@ -69,7 +72,7 @@ export function rebaseVisualChoice<K extends VisualEntityType>(
     remote,
     visualEntitySchemas[kind].parse(choice),
     {
-      storeId: remote.storeId,
+      storeId: canonical.storeId,
       actorId,
       canWrite: true,
     },

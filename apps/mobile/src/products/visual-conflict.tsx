@@ -105,6 +105,7 @@ function ScopedVisualConflict({ conflict }: { conflict: SyncConflict }) {
   const needsRights =
     decision === "LOCAL" &&
     review &&
+    !review.current.entity.deletedAt &&
     "provenance" in review.current.entity &&
     review.current.entity.provenance.type === "USER_UPLOAD";
   const enabled =
@@ -224,7 +225,7 @@ function ScopedVisualConflict({ conflict }: { conflict: SyncConflict }) {
             }}
           />
           {needsExtra ? (
-            <Check
+            <VisualReviewCheck
               checked={extra}
               disabled={busy}
               label="Je confirme explicitement la remise en diffusion de cet élément retiré ou supprimé."
@@ -232,14 +233,14 @@ function ScopedVisualConflict({ conflict }: { conflict: SyncConflict }) {
             />
           ) : null}
           {needsRights ? (
-            <Check
+            <VisualReviewCheck
               checked={rights}
               disabled={busy}
               label="Je confirme disposer des droits d’utilisation de cette photo."
               onPress={() => setRights(!rights)}
             />
           ) : null}
-          <Check
+          <VisualReviewCheck
             checked={compared}
             disabled={busy || !decision}
             label="J’ai comparé les deux versions et je confirme mon choix."
@@ -258,7 +259,7 @@ function ScopedVisualConflict({ conflict }: { conflict: SyncConflict }) {
     </View>
   );
 }
-function Check({
+export function VisualReviewCheck({
   checked,
   disabled,
   label,
@@ -291,7 +292,7 @@ function Check({
     </Pressable>
   );
 }
-function VisualVersion({
+export function VisualVersion({
   title,
   entity,
   labels,

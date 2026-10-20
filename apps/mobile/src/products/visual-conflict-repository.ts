@@ -29,7 +29,11 @@ type Database = OutboxDatabase & AtomicMutationDatabase;
 type Entity = VisualEntityMap[VisualEntityType];
 const SUPERSEDED = "VISUAL_LIBRARY_SUPERSEDED";
 
-async function parents(db: OutboxDatabase, entity: Entity, actorId: string) {
+export async function readVisualParents(
+  db: OutboxDatabase,
+  entity: Entity,
+  actorId: string,
+) {
   const repo = new VisualLibraryRepository(joinedMutationDatabase(db));
   const snapshots: unknown[] = [];
   const labels: Record<string, string> = {};
@@ -143,8 +147,9 @@ export class VisualConflictRepository {
       status: string;
       payload_json: string;
       expected_remote_version: number | null;
+      last_error_code: string | null;
     }>(
-      "SELECT command_id,status,payload_json,expected_remote_version FROM sync_outbox WHERE store_id=? AND entity_type=? AND entity_id=? AND status IN ('PENDING','SYNCING','FAILED','CONFLICT') AND COALESCE(last_error_code,'')<>? ORDER BY local_sequence LIMIT 101",
+      "SELECT command_id,status,payload_json,expected_remote_version,last_error_code FROM sync_outbox WHERE store_id=? AND entity_type=? AND entity_id=? AND status IN ('PENDING','SYNCING','FAILED','CONFLICT') AND COALESCE(last_error_code,'')<>? ORDER BY local_sequence LIMIT 101",
       storeId,
       kind,
       current.entity.id,
@@ -156,8 +161,12 @@ export class VisualConflictRepository {
       kind,
       current.entity.id,
     );
-    const localParents = await parents(this.db, current.entity, actorId);
-    const remoteParents = await parents(this.db, remote, actorId);
+    const localParents = await readVisualParents(
+      this.db,
+      current.entity,
+      actorId,
+    );
+    const remoteParents = await readVisualParents(this.db, remote, actorId);
     const blocked =
       current.syncState !== "CONFLICT" ||
       !current.dirty ||
@@ -196,6 +205,7 @@ export class VisualConflictRepository {
       conflict,
       current,
       remote,
+      commands,
       hash,
       canKeep: !blocked && canRebase && localParents.clear,
       canAdopt: !blocked,
@@ -253,6 +263,7 @@ export class VisualConflictRepository {
         throw Error("VISUAL_CONFLICT_REACTIVATION_REQUIRED");
       if (
         useLocal &&
+        !review.current.entity.deletedAt &&
         "provenance" in review.current.entity &&
         review.current.entity.provenance.type === "USER_UPLOAD" &&
         !ctx.rightsConfirmed
@@ -291,7 +302,7 @@ export class VisualConflictRepository {
           },
         );
       await tx.runAsync(
-        "INSERT INTO visual_conflict_history(action_id,store_id,entity_type,entity_id,local_json,remote_json,resolved_json,decision,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO visual_conflict_history(action_id,store_id,entity_type,entity_id,local_json,remote_json,resolved_json,decision,actor_id,created_at,commands_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         ctx.commandId,
         storeId,
         kind,
@@ -302,6 +313,7 @@ export class VisualConflictRepository {
         useLocal ? "KEEP_LOCAL" : "ADOPT_REMOTE",
         ctx.actorId,
         at,
+        JSON.stringify(review.commands),
       );
       await tx.runAsync(
         "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",

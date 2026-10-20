@@ -3,6 +3,7 @@ import { visualLibraryFixture } from "../../../../scripts/test-visual-library-fi
 import {
   resolveLibraryState,
   visualTransferLabel,
+  productVisualRecoveryTargets,
   type VisualLibraryState,
 } from "./visual-library-state";
 import type { LocalVisualRecord } from "./visual-library-repository";
@@ -49,6 +50,23 @@ it("never turns a conflicting duplicate link into permission to display the rema
     resolveLibraryState({ ...state, storeId: f.actorId }, f.product).kind,
   ).toBe("PLACEHOLDER");
 });
+it("keeps rejected linked metadata reachable in dependency order even after a link tombstone, without inventing name matches", () => {
+  const { f, state } = setup();
+  state.assets.set(f.asset.id, { ...record(f.asset), syncState: "ERROR" });
+  state.identities.set(f.identity.id, {
+    ...record(f.identity),
+    syncState: "ERROR",
+  });
+  state.links.set(f.product.id, [
+    { ...record({ ...f.link, deletedAt: f.at }), syncState: "ERROR" },
+  ]);
+  expect(
+    productVisualRecoveryTargets(state, f.product.id).map((t) => t.kind),
+  ).toEqual(["visual_asset", "visual_identity", "product_visual_link"]);
+  expect(productVisualRecoveryTargets(state, f.actorId)).toEqual([]);
+  expect(productVisualRecoveryTargets(null, f.product.id)).toEqual([]);
+});
+
 it("keeps transfer status distinct from metadata and does not claim pixels are present from a registry alone", () => {
   const { f, state } = setup();
   expect(visualTransferLabel(state, f.asset.id)).toBe(

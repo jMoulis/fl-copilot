@@ -232,9 +232,15 @@ export class OutboxRepository {
        AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge','copilot_decision','copilot_execution_link','copilot_action_execution') OR
          (? IS NOT NULL AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.ownerId')=?
           AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.storeId')=?))
+       AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link') OR
+         (? IS NOT NULL AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.updatedBy')=?
+          AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.storeId')=?))
        ORDER BY local_sequence LIMIT 21`,
       storeId,
       afterSequence,
+      ownerId ?? null,
+      ownerId ?? null,
+      storeId,
       ownerId ?? null,
       ownerId ?? null,
       storeId,

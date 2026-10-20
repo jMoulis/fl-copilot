@@ -847,7 +847,7 @@ CREATE TABLE product_visual_links(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT
 CREATE UNIQUE INDEX product_visual_active ON product_visual_links(store_id,product_id) WHERE deleted_at IS NULL;
 CREATE TABLE visual_asset_files(asset_id TEXT NOT NULL,store_id TEXT NOT NULL,variant TEXT NOT NULL CHECK(variant IN ('SOURCE','PREVIEW')),relative_path TEXT NOT NULL,verified_hash TEXT NOT NULL,size_bytes INTEGER NOT NULL,last_accessed_at TEXT NOT NULL,pinned INTEGER NOT NULL DEFAULT 1,uploaded INTEGER NOT NULL DEFAULT 0,manifest_json TEXT,PRIMARY KEY(asset_id,variant));
 CREATE INDEX visual_cache_scope ON visual_asset_files(store_id,last_accessed_at);
-CREATE TABLE visual_conflict_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,local_json TEXT NOT NULL,remote_json TEXT NOT NULL,resolved_json TEXT NOT NULL,decision TEXT NOT NULL CHECK(decision IN ('KEEP_LOCAL','ADOPT_REMOTE')),actor_id TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE visual_conflict_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,local_json TEXT NOT NULL,remote_json TEXT NOT NULL,resolved_json TEXT NOT NULL,decision TEXT NOT NULL CHECK(decision IN ('KEEP_LOCAL','ADOPT_REMOTE','RETRY_LOCAL','REMOVE_LINK','RETIRE_LOCAL')),actor_id TEXT NOT NULL,created_at TEXT NOT NULL,commands_json TEXT NOT NULL DEFAULT '[]');
 CREATE UNIQUE INDEX visual_file_job_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.assetId'),json_extract(payload_json,'$.variant')) WHERE type='VISUAL_FILE_TRANSFER';`,
   },
 ];
