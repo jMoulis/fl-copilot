@@ -142,3 +142,7 @@ Un premier lot corrige Aujourd’hui, Analyses, Produits, les surfaces communes 
 ## Fiche produit — complément du lot L5 (20 octobre)
 
 La branche courante replace visuel et lecture métier avant les informations du référentiel. Elle réutilise le graphique et les calculs de l’Explorer, transmet la période/comparaison des liens et conserve un contexte local par produit sans écraser la sélection globale. Identité, codes, alias, image/provenance, conflits, besoins, associations et signalements restent accessibles ; aucun stock ou visuel métier n’est inventé. La première correction PR 289 fait déjà partie du build 3 ; le correctif de tableaux PR 291 et ce nouveau complément sont en attente de livraison native groupée. Le contrôle navigateur/SQLite ne ferme pas la fidélité sur appareil, les autres écrans L5, L10 ou L11. Voir `../qa/PRODUCT_DETAIL_OVERVIEW_2026_10_20.md`.
+
+## Actions — complément du lot L5 (20 octobre)
+
+Liste compacte des tâches du plan, statuts/synchronisation, progression et filtres utilisant le moteur existant ; déclaration dans une feuille, détails facultatifs progressifs, saisie conservée et erreurs visibles dans le formulaire. Les accès semaine/plan/documents restent contextualisés et la gestion reste accessible. Aucune réalisation implicite ni nouvelle action métier. QA : `../qa/ACTION_TASK_OVERVIEW_2026_10_20.md`. Ce complément est postérieur au build 4 (`9c2f66b`, PR 291–301), terminé et disponible ; sa propre recette native reste groupée. Il ne clôt ni L5, ni le cycle de recommandation complet, ni L10/L11/M8.

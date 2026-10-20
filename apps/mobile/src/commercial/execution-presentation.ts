@@ -1,5 +1,24 @@
 import { commercialExecutionActualsSummary } from "@fl-copilot/domain";
-import type { CommercialExecutionTask } from "@fl-copilot/sync-contracts";
+import type {
+  CommercialExecutionTask,
+  CommercialWeekPlan,
+} from "@fl-copilot/sync-contracts";
+import { commercialMechanismDescription } from "./choice-presentation";
+export function executionTaskContext(
+  plan: CommercialWeekPlan,
+  targetId: string,
+) {
+  const offer = plan.offers.find((o) => o.id === targetId);
+  if (offer)
+    return `Affiche · ${commercialMechanismDescription(offer.customerMechanism)}. À vérifier avant impression.`;
+  const tg = plan.preparation.placements.find((t) => t.id === targetId);
+  return tg
+    ? plan.offers
+        .filter((o) => tg.offerIds.includes(o.choiceId))
+        .map((o) => o.rawProductLabel)
+        .join(" · ")
+    : "";
+}
 export const executionStatusLabels = {
   TODO: "À faire",
   DONE: "Fait",

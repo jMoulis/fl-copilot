@@ -1,7 +1,4 @@
-import {
-  commercialExecutionActualsNotFuture,
-  commercialExecutionActualsSummary,
-} from "@fl-copilot/domain";
+import { commercialExecutionActualsNotFuture } from "@fl-copilot/domain";
 import {
   ExecutionActualsEditor,
   executionActualsDraft,
@@ -9,9 +6,21 @@ import {
   type ExecutionActualsDraft,
 } from "./execution-actuals-editor";
 import { useCallback, useMemo, useState } from "react";
-import { Text, TextInput, View, Modal, Alert, Pressable } from "react-native";
+import {
+  Text,
+  TextInput,
+  View,
+  Alert,
+  Pressable,
+  Platform,
+} from "react-native";
 import { useFocusEffect, router } from "expo-router";
-import { LinkedProductVisual } from "../products/linked-product-visual";
+import {
+  ExecutionChecklistView,
+  type ExecutionFilter,
+} from "./execution-checklist-view";
+import { DetailsDisclosure } from "../components/dashboard";
+import { colors } from "../design/tokens";
 import { useVisualLibrary } from "../products/use-visual-library";
 import {
   digestStringAsync,
@@ -20,7 +29,6 @@ import {
 } from "expo-crypto";
 import {
   commercialExecutionChecklist,
-  commercialExecutionProgress,
   commercialExecutionSameTarget,
   type CommercialExecutionProposal,
 } from "@fl-copilot/commercial-core";
@@ -32,8 +40,7 @@ import {
 import { useLocalDatabase } from "@/providers/database-provider";
 import { useSync } from "@/sync/sync-provider";
 import {
-  AppScreen,
-  AppHeader,
+  BottomSheet,
   SectionCard,
   SecondaryButton,
   PrimaryButton,
@@ -47,8 +54,8 @@ import {
 import {
   executionStatusLabels,
   commercialExecutionError,
+  executionTaskContext,
 } from "./execution-presentation";
-import { commercialMechanismDescription } from "./choice-presentation";
 const digest = (s: string) =>
   digestStringAsync(CryptoDigestAlgorithm.SHA256, s);
 type Editor = {
@@ -74,16 +81,16 @@ export function CommercialExecutionView({
       [sqlite],
     );
   const [loadedRevision, setLoadedRevision] = useState<string>();
-  const [filter, setFilter] = useState<
-    "ALL" | CommercialExecutionTask["status"]
-  >("TODO");
+  const [filter, setFilter] = useState<ExecutionFilter>("TODO");
   const [proposals, setProposals] = useState<CommercialExecutionProposal[]>([]),
     [records, setRecords] = useState<LocalCommercialExecution[]>([]),
     [editor, setEditor] = useState<Editor | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>(),
-    [noteError, setNoteError] = useState<string>();
+    [noteError, setNoteError] = useState<string>(),
+    [actualsError, setActualsError] = useState<string>(),
+    [actualsOpen, setActualsOpen] = useState(false);
   const refresh = useCallback(async () => {
     const [p, r] = await Promise.all([
       commercialExecutionChecklist(plan, digest),
@@ -119,6 +126,8 @@ export function CommercialExecutionView({
     sourcePlan: CommercialWeekPlan,
   ) {
     setNoteError(undefined);
+    setActualsError(undefined);
+    setActualsOpen(false);
     setError(undefined);
     setEditor({
       proposal: p,
@@ -154,19 +163,22 @@ export function CommercialExecutionView({
     if (!editor || busy) return;
     setError(undefined);
     setNoteError(undefined);
+    setActualsError(undefined);
     const now = new Date().toISOString(),
       old = editor.record?.entity;
     let actuals;
     try {
       actuals = parseExecutionActualsDraft(editor.actuals);
     } catch {
-      setNoteError(
+      setActualsOpen(true);
+      setActualsError(
         "Vérifiez les dates réelles, le prix (jusqu’à deux décimales) et son unité.",
       );
       return;
     }
     if (!commercialExecutionActualsNotFuture(actuals, now)) {
-      setNoteError("Une date réelle ne peut pas être future.");
+      setActualsOpen(true);
+      setActualsError("Une date réelle ne peut pas être future.");
       return;
     }
     const parsed = commercialExecutionTaskSchema.safeParse({
@@ -222,6 +234,15 @@ export function CommercialExecutionView({
         editor.note !== (editor.record?.entity.note ?? "") ||
         JSON.stringify(editor.actuals) !==
           JSON.stringify(executionActualsDraft(editor.record?.entity.actuals)));
+    if (changed && Platform.OS === "web") {
+      if (
+        window.confirm(
+          "Fermer sans enregistrer ? Les modifications de cette déclaration ne sont pas encore enregistrées.",
+        )
+      )
+        setEditor(null);
+      return;
+    }
     if (changed)
       Alert.alert(
         "Fermer sans enregistrer ?",
@@ -240,41 +261,20 @@ export function CommercialExecutionView({
   const loaded = loadedRevision === plan.revisionId;
   const visibleProposals = loaded ? proposals : [];
   const visibleRecords = loaded ? records : [];
-  const progress = commercialExecutionProgress(
-      visibleProposals,
-      visibleRecords.map((r) => r.entity),
-    ),
-    others = visibleRecords.filter(
-      (r) =>
-        !visibleProposals.some((p) =>
-          commercialExecutionSameTarget(r.entity, p),
-        ),
-    );
+  const others = visibleRecords.filter(
+    (r) =>
+      !visibleProposals.some((p) => commercialExecutionSameTarget(r.entity, p)),
+  );
   return (
     <SectionCard
       title={
         compact ? "Vos tâches" : `Suivi d’exécution · version ${plan.version}`
       }
-      description={
-        compact
-          ? "Affiches et TG du plan validé. Leur réalisation reste à déclarer."
-          : "Notez séparément les affiches imprimées et les TG installées. Marquer Fait ne confirme ni toute la promotion, ni un prix appliqué en caisse, ni un résultat de vente."
-      }
+      description="Affiches et TG du plan validé. Ouvrez une tâche pour déclarer sa réalisation."
     >
       {!loaded ? (
         <Text className="text-muted">Lecture des tâches enregistrées…</Text>
-      ) : (
-        <Text className="text-base text-ink">
-          {progress.DONE}/{progress.total} tâches faites · {progress.TODO} à
-          faire · {progress.SKIPPED} ignorées · {progress.NOT_APPLICABLE} non
-          applicables
-        </Text>
-      )}
-      <Text className="text-sm text-muted">
-        {compact
-          ? "Une tâche à faire reste une proposition jusqu’à votre déclaration. Chaque version du plan possède son propre suivi."
-          : "Chaque version du plan possède son propre suivi. Les propositions À faire ne créent aucun événement tant que vous n’enregistrez pas une déclaration."}
-      </Text>
+      ) : null}
       {notice ? <InlineAlert title="Enregistré" message={notice} /> : null}
       {error ? (
         <InlineAlert title="Déclaration à vérifier" message={error} />
@@ -294,138 +294,30 @@ export function CommercialExecutionView({
           />
         </>
       ) : null}
-      {compact && loaded ? (
-        <View className="flex-row flex-wrap gap-2">
-          {(["TODO", "DONE", "ALL"] as const).map((value) => (
-            <Pressable
-              key={value}
-              accessibilityRole="radio"
-              aria-checked={filter === value}
-              accessibilityState={{ checked: filter === value }}
-              accessibilityLabel={`Tâches : ${value === "ALL" ? "Toutes" : executionStatusLabels[value]}`}
-              onPress={() => setFilter(value)}
-              className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${filter === value ? "border-forest bg-forest" : "border-line bg-surface"}`}
-            >
-              <Text
-                className={
-                  filter === value ? "font-semibold text-on-accent" : "text-ink"
-                }
-              >
-                {value === "ALL" ? "Toutes" : executionStatusLabels[value]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+      {loaded ? (
+        <ExecutionChecklistView
+          plan={plan}
+          proposals={visibleProposals}
+          records={visibleRecords}
+          filter={compact ? filter : undefined}
+          onFilter={setFilter}
+          disabled={busy}
+          visuals={visuals}
+          onOpen={(proposal, record) =>
+            record?.syncState === "CONFLICT"
+              ? router.push("/sync-center")
+              : void edit(proposal, record, plan)
+          }
+        />
       ) : null}
-      {visibleProposals.map((p) => {
-        const r = visibleRecords.find((r) =>
-            commercialExecutionSameTarget(r.entity, p),
-          ),
-          offer = plan.offers.find((o) => o.id === p.targetId),
-          tg = plan.preparation.placements.find((t) => t.id === p.targetId);
-        if (
-          compact &&
-          filter !== "ALL" &&
-          (r?.entity.status ?? "TODO") !== filter
-        )
-          return null;
-        return (
-          <SectionCard key={p.id} title={p.label}>
-            <View className="flex-row items-center gap-3">
-              {offer ? (
-                <LinkedProductVisual
-                  productId={offer.productId}
-                  storeId={offer.storeId}
-                  visuals={visuals}
-                />
-              ) : null}
-              <Text className="flex-1 font-semibold text-ink">
-                {executionStatusLabels[r?.entity.status ?? "TODO"]}
-              </Text>
-            </View>
-            {offer ? (
-              <Text className="text-sm text-muted">
-                Cadre de prix prévu :{" "}
-                {commercialMechanismDescription(offer.customerMechanism)}.
-                Vérifiez l’affiche avant impression.
-              </Text>
-            ) : null}
-            {tg ? (
-              <Text className="text-sm text-muted">
-                {plan.offers
-                  .filter((o) => tg.offerIds.includes(o.choiceId))
-                  .map((o) => o.rawProductLabel)
-                  .join(" · ")}
-              </Text>
-            ) : null}
-            {r?.entity.actuals ? (
-              <Text selectable className="text-sm text-ink">
-                {commercialExecutionActualsSummary(r.entity.actuals)}
-                {r.entity.status !== "DONE"
-                  ? " Ces détails conservés ne confirment pas le statut actuel de la tâche."
-                  : ""}
-              </Text>
-            ) : null}
-            {r?.entity.note ? (
-              <Text selectable className="text-base text-ink">
-                {r.entity.note}
-              </Text>
-            ) : null}
-            {r?.entity.completedAt ? (
-              <Text className="text-sm text-muted">
-                Déclaré fait le{" "}
-                {new Date(r.entity.completedAt).toLocaleString("fr-FR")}
-              </Text>
-            ) : null}
-            {r ? (
-              <Text className="text-sm text-muted">
-                {(
-                  {
-                    PENDING: "À synchroniser",
-                    SYNCED: "Synchronisé",
-                    CONFLICT: "Conflit à résoudre",
-                    ERROR: "Envoi refusé : déclaration locale conservée",
-                  } as Record<string, string>
-                )[r.syncState] ?? r.syncState}
-              </Text>
-            ) : null}
-            {r?.syncState === "ERROR" ? (
-              <InlineAlert
-                title="Envoi refusé"
-                message={commercialExecutionError(r.lastErrorCode ?? undefined)}
-              />
-            ) : null}
-            <SecondaryButton
-              label={
-                r?.syncState === "CONFLICT"
-                  ? "Comparer dans Synchronisation"
-                  : "Mettre à jour cette tâche"
-              }
-              disabled={busy}
-              onPress={() =>
-                r?.syncState === "CONFLICT"
-                  ? router.push("/sync-center")
-                  : void edit(p, r ?? null, plan)
-              }
-            />
-          </SectionCard>
-        );
-      })}
-      {compact &&
-      loaded &&
-      !visibleProposals.some(
-        (p) =>
-          filter === "ALL" ||
-          (visibleRecords.find((r) =>
-            commercialExecutionSameTarget(r.entity, p),
-          )?.entity.status ?? "TODO") === filter,
-      ) ? (
-        <Text className="text-base text-muted">
-          {filter === "TODO"
-            ? "Aucune tâche à faire dans cette version. Consultez Toutes pour revoir les déclarations conservées."
-            : "Aucune tâche dans ce filtre."}
+      <DetailsDisclosure title="À propos de ce suivi">
+        <Text className="text-sm leading-5 text-muted">
+          Chaque version du plan possède son propre suivi. Une proposition à
+          faire ne crée aucune déclaration tant que vous ne l’enregistrez pas.
+          Marquer Fait ne confirme ni un prix en caisse, ni un résultat de
+          vente.
         </Text>
-      ) : null}
+      </DetailsDisclosure>
       {others.length ? (
         <SectionCard title="Autres déclarations conservées pour cette version">
           <Text className="text-sm text-muted">
@@ -448,80 +340,173 @@ export function CommercialExecutionView({
         </SectionCard>
       ) : null}
       {editor ? (
-        <Modal
-          visible
-          animationType="slide"
-          presentationStyle="pageSheet"
-          onRequestClose={closeEditor}
-        >
-          <AppScreen>
-            <AppHeader
-              title="Mettre à jour la tâche"
-              subtitle={`Plan version ${editor.proposal.planVersion}`}
-            />
-            <SectionCard
-              title={`Modifier la déclaration · version ${editor.proposal.planVersion}`}
-            >
-              <Text className="font-semibold text-ink">
-                {editor.proposal.label}
-              </Text>
-              <Text className="text-sm text-muted">
-                Cette modification reste liée à la copie du plan choisie à
-                l’ouverture. La date indique le moment où vous déclarez la tâche
-                faite.
-              </Text>
-              {(
-                Object.keys(
-                  executionStatusLabels,
-                ) as CommercialExecutionTask["status"][]
-              ).map((status) => (
-                <SecondaryButton
-                  key={status}
-                  label={`${editor.status === status ? "✓ " : ""}${executionStatusLabels[status]}`}
-                  disabled={busy}
-                  onPress={() =>
-                    setEditor((e) => (e ? { ...e, status } : null))
-                  }
-                />
-              ))}
-              <TextInput
-                accessibilityLabel="Note ou motif de la déclaration"
-                value={editor.note}
-                editable={!busy}
-                multiline
-                maxLength={1200}
-                placeholder="Note ; motif requis pour Ignoré ou Non applicable"
-                onChangeText={(note) =>
-                  setEditor((e) => (e ? { ...e, note } : null))
-                }
-                className={`rounded-xl border p-3 text-ink ${noteError ? "border-danger" : "border-line"}`}
-              />
-              <ExecutionActualsEditor
-                value={editor.actuals}
-                disabled={busy}
-                onChange={(actuals) =>
-                  setEditor((e) => (e ? { ...e, actuals } : null))
-                }
-              />
-              {noteError ? (
-                <Text accessibilityRole="alert" className="text-danger">
-                  {noteError}
-                </Text>
-              ) : null}
-              <PrimaryButton
-                label={busy ? "Enregistrement…" : "Enregistrer la déclaration"}
-                disabled={busy}
-                onPress={() => void save()}
-              />
-              <SecondaryButton
-                label="Fermer sans enregistrer"
-                disabled={busy}
-                onPress={closeEditor}
-              />
-            </SectionCard>
-          </AppScreen>
-        </Modal>
+        <ExecutionDeclarationSheet
+          editor={editor}
+          busy={busy}
+          error={error}
+          noteError={noteError}
+          actualsError={actualsError}
+          actualsOpen={actualsOpen}
+          onToggleActuals={() => setActualsOpen((value) => !value)}
+          onChange={(patch) =>
+            setEditor((e) => (e ? { ...e, ...patch } : null))
+          }
+          onClose={closeEditor}
+          onSave={() => void save()}
+        />
       ) : null}
     </SectionCard>
+  );
+}
+
+/** The canonical controller owns drafts, validation and saving; this sheet only renders them. */
+export function ExecutionDeclarationSheet({
+  editor,
+  busy,
+  error,
+  noteError,
+  actualsError,
+  actualsOpen,
+  onToggleActuals,
+  onChange,
+  onClose,
+  onSave,
+}: {
+  editor: Pick<Editor, "proposal" | "status" | "note" | "actuals" | "plan"> & {
+    record?: LocalCommercialExecution | null;
+  };
+  busy: boolean;
+  error?: string;
+  noteError?: string;
+  actualsError?: string;
+  actualsOpen: boolean;
+  onToggleActuals(): void;
+  onChange(patch: Partial<Pick<Editor, "status" | "note" | "actuals">>): void;
+  onClose(): void;
+  onSave(): void;
+}) {
+  return (
+    <BottomSheet
+      visible
+      title="Déclarer la tâche"
+      onClose={onClose}
+      swipeToClose
+      avoidKeyboard
+    >
+      <View className="gap-4">
+        <Text className="font-semibold text-ink">{editor.proposal.label}</Text>
+        <Text className="text-sm text-muted">
+          Plan version {editor.proposal.planVersion} · Choisissez le statut
+          constaté. La date de déclaration est distincte des dates réelles
+          facultatives.
+        </Text>
+        <Text className="text-sm leading-5 text-muted">
+          {executionTaskContext(editor.plan, editor.proposal.targetId)}
+        </Text>
+        {editor.record?.entity.completedAt ? (
+          <Text className="text-sm text-muted">
+            Déclaré fait le{" "}
+            {new Date(editor.record.entity.completedAt).toLocaleString("fr-FR")}
+          </Text>
+        ) : null}
+        {error ? (
+          <InlineAlert title="Déclaration non enregistrée" message={error} />
+        ) : null}
+        <View
+          className="flex-row flex-wrap gap-2"
+          accessibilityRole="radiogroup"
+          accessibilityLabel="Statut déclaré de la tâche"
+        >
+          {(
+            Object.keys(
+              executionStatusLabels,
+            ) as CommercialExecutionTask["status"][]
+          ).map((status) => (
+            <Pressable
+              key={status}
+              accessibilityRole="radio"
+              accessibilityLabel={`Statut déclaré : ${executionStatusLabels[status]}`}
+              aria-checked={editor.status === status}
+              accessibilityState={{
+                checked: editor.status === status,
+                disabled: busy,
+              }}
+              disabled={busy}
+              onPress={() => onChange({ status })}
+              className={`min-h-12 justify-center rounded-2xl border px-4 py-3 ${editor.status === status ? "border-forest bg-forest-soft" : "border-line bg-surface"}`}
+            >
+              <Text
+                className={
+                  editor.status === status
+                    ? "font-semibold text-forest"
+                    : "text-ink"
+                }
+              >
+                {editor.status === status ? "✓ " : ""}
+                {executionStatusLabels[status]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <TextInput
+          accessibilityLabel="Note ou motif de la déclaration"
+          value={editor.note}
+          editable={!busy}
+          multiline
+          maxLength={1200}
+          placeholder="Note ; motif requis pour Ignoré ou Non applicable"
+          placeholderTextColor={colors.muted}
+          onChangeText={(note) => onChange({ note })}
+          className={`min-h-20 rounded-xl border p-3 text-ink ${noteError ? "border-danger" : "border-line"}`}
+        />
+        {Object.values(editor.actuals).some((value) => value.trim()) ? (
+          <Text className="text-sm text-muted">
+            Détails de réalisation renseignés. Vous pouvez les consulter ou les
+            modifier ci-dessous.
+          </Text>
+        ) : null}
+        <View
+          className={`gap-3 rounded-2xl ${actualsError ? "border border-danger p-3" : ""}`}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Dates, prix et emplacement réels (facultatif)"
+            aria-expanded={actualsOpen}
+            accessibilityState={{ expanded: actualsOpen }}
+            onPress={onToggleActuals}
+            className="min-h-12 flex-row items-center justify-between gap-2"
+          >
+            <Text className="flex-1 text-sm text-muted">
+              Dates, prix et emplacement réels (facultatif)
+            </Text>
+            <Text className="text-lg text-muted">
+              {actualsOpen ? "−" : "+"}
+            </Text>
+          </Pressable>
+          {actualsOpen ? (
+            <ExecutionActualsEditor
+              value={editor.actuals}
+              disabled={busy}
+              onChange={(actuals) => onChange({ actuals })}
+            />
+          ) : null}
+          {actualsError ? (
+            <Text accessibilityRole="alert" className="text-danger">
+              {actualsError}
+            </Text>
+          ) : null}
+        </View>
+        {noteError ? (
+          <Text accessibilityRole="alert" className="text-danger">
+            {noteError}
+          </Text>
+        ) : null}
+        <PrimaryButton
+          label={busy ? "Enregistrement…" : "Enregistrer la déclaration"}
+          disabled={busy}
+          onPress={onSave}
+        />
+      </View>
+    </BottomSheet>
   );
 }
