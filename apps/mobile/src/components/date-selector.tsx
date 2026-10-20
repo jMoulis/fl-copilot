@@ -25,6 +25,7 @@ export function DateSelector({
   disabled = false,
   label = "Date de casse",
   description = "Choisissez la date imprimée en bas du ticket.",
+  triggerLabel,
 }: {
   value: string;
   onConfirm(value: string): void;
@@ -32,6 +33,7 @@ export function DateSelector({
   issue?: string;
   label?: string;
   description?: string;
+  triggerLabel?: string;
 }) {
   const [visible, setVisible] = useState(false);
   const [selected, setSelected] = useState("");
@@ -53,10 +55,18 @@ export function DateSelector({
         onPress={open}
         className={`min-h-12 justify-center rounded-xl border px-4 py-3 ${issue ? "border-critical bg-critical-soft" : "border-line bg-canvas"}`}
       >
-        <Text className="text-base text-ink">
-          {formatFrenchCalendarDate(value)}
+        <Text
+          className={
+            triggerLabel
+              ? "text-center text-base font-semibold text-ink"
+              : "text-base text-ink"
+          }
+        >
+          {triggerLabel ?? formatFrenchCalendarDate(value)}
         </Text>
-        <Text className="text-sm text-muted">Ouvrir le calendrier</Text>
+        {!triggerLabel ? (
+          <Text className="text-sm text-muted">Ouvrir le calendrier</Text>
+        ) : null}
       </Pressable>
       <Modal
         visible={visible}

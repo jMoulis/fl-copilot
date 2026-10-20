@@ -564,3 +564,27 @@ Sur la branche Resend, les originaux sont désormais pris en charge par des jobs
 La branche Resend fournit maintenant les contrats, routes authentifiées et client typé de récupération d'un original prêt : contrôle du compte/magasin/conversation/fichier, empreinte des métadonnées, vérification du stockage et lien privé éphémère. Un ZIP reçu n'est pas présenté comme une vente, une casse ou un PDF métier avant classification. **165 tests ciblés** passent, ainsi que les types des dix projets, lint et bundle API. Aucun service réel n'a été appelé par ces tests. La conservation locale et la confirmation SQLite/Outbox dans le chat restent à implémenter avant la PR complète.
 
 Les sept états restent **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**. API et build iOS 2 du lot fusionné sont disponibles ; le retour de recette sur appareil et le reste de la V1/M8 demeurent ouverts. Aucun nouveau build payant ou déploiement supplémentaire.
+
+### 20 octobre — retour iPhone et reprise de la fidélité visuelle
+
+Le build staging **0.1.0 / 2** (`dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `c8a1698`) est installé et examiné par Julien : l’application lui convient mais le design est jugé insuffisamment fidèle aux maquettes. La recette UX reste ouverte. Ce retour devient la priorité du chantier 7 ; le travail Resend reste conservé sur sa branche, sans activation.
+
+Premier lot de correction : hiérarchie compacte Aujourd’hui/Analyses/Produits, surfaces et navigation, montants et graphique réunis, explications dépliables avec couverture toujours visible, listes et accès secondaires plus discrets, sélecteur de semaine Actions compact. Les composants réels sont examinés localement à 390 et 320 points, avec jeux de test identifiés et sans publication. **1 371 tests réussis / 7 ignorés** sur le mobile et le moteur analytique. Le détail des preuves et des manques visuels restants est dans `../qa/NATIVE_DESIGN_FIDELITY_2026_10_20.md` ; aucune nouvelle validation iPhone ni livraison de ces corrections n’est revendiquée.
+
+Sept chantiers : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours**. Ce lot avance le chantier 7, sans crédit supplémentaire sur les six autres ni fermeture de V1/M8.
+
+## Lot prioritaire — stabilité du chat et des images (20 octobre 2026)
+
+- **1 — Actions/conflits : en cours**, inchangé.
+- **2 — Contre-promo : code prêt**, dialogue réel encore à valider.
+- **3 — Documents : en cours.** Le pont natif partagé évite aussi le chargement des modules obsolètes à la lecture d’une photo de rayon ou d’un original. Réception email et restauration complète restent ouvertes.
+- **4 — Expertise/dialogue : en cours.** Une analyse valide de 241 références peut aller de la lecture déterministe à l’enregistrement de la réponse ; le plafond du contexte initial reste distinct du résultat des outils. Test Mongo de persistance/rejeu et contrôles des faits conservés. La dernière question utilisateur n’a pas pu être lue via le connecteur Mongo, et la recette du dialogue réel reste nécessaire.
+- **5 — Recommandations : en cours**, inchangé.
+- **6 — Implantation : en cours**, inchangé.
+- **7 — UX/validation : en cours.** Correction du crash Sentry lors du changement d’image produit, test de régression et règle de lint. Ce lot doit être livré avec la fidélité visuelle PR 289 dans un build groupé, puis accepté sur appareil. Les autres écarts UX/M8 restent ouverts.
+
+Voir `../qa/CHAT_IMAGE_STABILITY_2026_10_20.md`. Codé/testé, fusionné, déployé et validé sur iPhone restent des états distincts ; aucun chantier entier n’est déclaré terminé par ce correctif.
+
+## Lot courant — défilement des tableaux du chat (20 octobre 2026)
+
+**7 — UX/validation : en cours.** Suppression du capteur d’appui long autour des réponses du copilote ; menu conservé sur le texte et les cellules. Largeur du tableau bornée au message et défilement natif configuré pour les deux axes imbriqués. Contrôles locaux du composant à 320/390/844 px, brouillon et source conservés ; tests des contrôleurs existants. Le blocage iPhone n’a pas été reproduit dans le navigateur : recette native encore nécessaire après livraison groupée. Le build 3 précédent ne contient pas ce changement. Aucun déploiement API ni nouveau build EAS payant pour ce correctif isolé. Chantiers 1/3/4/5/6 inchangés, en cours ; 2 reste code prêt. Voir `../qa/CHAT_TABLE_SCROLL_2026_10_20.md`.

@@ -1,36 +1,20 @@
 import { StoreEventsView } from "@/needs/store-events-view";
-import { randomUUID } from "expo-crypto";
-import { explorerHref } from "@/analytics/explorer-link";
-import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, type Href } from "expo-router";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import {
   AppHeader,
   AppScreen,
   EmptyState,
   InlineAlert,
-  MetricCard,
   PrimaryButton,
   SecondaryButton,
-  SectionCard,
   StatusBadge,
 } from "@/components/ui";
-import { colors } from "@/design/tokens";
+import { IconButton } from "@/components/dashboard";
 import { useSync } from "@/sync/sync-provider";
-import type {
-  TodayMovement,
-  TodayPriority,
-  TodaySummary,
-} from "@/today/today-summary";
-import {
-  formatBusinessDate,
-  formatCurrency,
-  formatSignedCurrency,
-  formatSignedPercentage,
-  priorityFact,
-  priorityPresentation,
-} from "@/today/today-priority-presentation";
-import { useTodaySummary } from "@/today/use-today-summary";
+import { formatBusinessDate } from "./today-priority-presentation";
+import { useTodaySummary } from "./use-today-summary";
+import { TodayContent } from "./today-overview";
 
 export default function TodayScreen() {
   const { loading, refreshing, storeMissing, summary, error, refresh } =
@@ -45,7 +29,15 @@ export default function TodayScreen() {
       }}
     >
       <AppHeader
-        title="Aujourd’hui"
+        compact
+        title="Votre rayon aujourd’hui"
+        action={
+          <IconButton
+            label="Magasin et synchronisation"
+            icon="options-outline"
+            onPress={() => router.push("/(tabs)/more" as Href)}
+          />
+        }
         subtitle={
           summary
             ? `Journée analysée : ${formatBusinessDate(summary.businessDate)}`
@@ -54,17 +46,14 @@ export default function TodayScreen() {
       >
         {summary ? (
           <View className="flex-row flex-wrap gap-2 pt-1">
-            {summary.origin === "LOCAL" ? <StatusBadge status="local" /> : null}
-            <StatusBadge status={sync.status} />
+            {summary.origin === "LOCAL" ? (
+              <StatusBadge status="local" compact />
+            ) : null}
+            <StatusBadge status={sync.status} compact />
           </View>
         ) : null}
       </AppHeader>
 
-      <SecondaryButton
-        label="Signaler une observation magasin"
-        disabled={storeMissing}
-        onPress={() => router.push("/store-event" as Href)}
-      />
       {error ? (
         <InlineAlert title="Lecture impossible" message={error} />
       ) : null}
@@ -77,10 +66,18 @@ export default function TodayScreen() {
       ) : loading ? (
         <Text className="text-base text-muted">Préparation de la journée…</Text>
       ) : summary ? (
-        <TodayContent summary={summary} />
+        <>
+          <TodayContent summary={summary} />
+          <StoreEventsView compact />
+        </>
       ) : error ? null : (
         <EmptyToday />
       )}
+      <SecondaryButton
+        label="Signaler une observation magasin"
+        disabled={storeMissing}
+        onPress={() => router.push("/store-event" as Href)}
+      />
     </AppScreen>
   );
 }
@@ -102,238 +99,4 @@ function EmptyToday() {
       />
     </EmptyState>
   );
-}
-
-function TodayContent({ summary }: { summary: TodaySummary }) {
-  return (
-    <>
-      <View className="gap-3">
-        {summary.kpis.map((kpi) => (
-          <Pressable
-            key={kpi.id}
-            accessibilityRole="button"
-            accessibilityLabel={`Explorer ${kpi.label} pour la journée analysée`}
-            accessibilityHint="Ouvre Analyses pour cette date, avec une référence ISO N−1 distincte des écarts J−7 affichés ici."
-            onPress={() =>
-              router.navigate(
-                explorerHref({
-                  requestId: randomUUID(),
-                  period: { kind: "day", date: summary.businessDate },
-                  metric: kpi.id === "waste" ? "wasteCost" : kpi.id,
-                }),
-              )
-            }
-          >
-            <MetricCard
-              label={kpi.label}
-              value={formatCurrency(kpi.value)}
-              detail={comparisonLabel(kpi.comparison)}
-            />
-          </Pressable>
-        ))}
-        <Text className="text-xs leading-5 text-muted">
-          Touchez un indicateur pour explorer la journée et sa référence N−1.
-          Les écarts ci-dessus restent comparés à J−7.
-        </Text>
-        <Text className="text-xs leading-5 text-muted">
-          {summary.productCount} produit
-          {summary.productCount > 1 ? "s" : ""} calculé
-          {summary.productCount > 1 ? "s" : ""} · Mise à jour{" "}
-          {formatFreshness(summary.computedAt)}
-        </Text>
-      </View>
-
-      <SectionCard
-        title="Priorités"
-        description="Les points à examiner dans vos chiffres, classés par impact."
-      >
-        {summary.priorities.length === 0 ? (
-          <Text className="text-base leading-6 text-muted">
-            Aucune priorité ne dépasse les seuils actuels pour cette journée.
-          </Text>
-        ) : (
-          <View className="gap-3">
-            {summary.priorities.map((priority) => (
-              <PriorityCard key={priority.id} priority={priority} />
-            ))}
-          </View>
-        )}
-      </SectionCard>
-
-      <SectionCard
-        title="Mouvements clés"
-        description="Écarts économiques les plus importants par rapport à J-7."
-      >
-        {summary.movements.length === 0 ? (
-          <Text className="text-base leading-6 text-muted">
-            Les mouvements apparaîtront lorsqu’une journée comparable J-7 sera
-            disponible.
-          </Text>
-        ) : (
-          <View className="gap-1">
-            {summary.movements.map((movement) => (
-              <MovementRow key={movement.id} movement={movement} />
-            ))}
-          </View>
-        )}
-      </SectionCard>
-
-      <StoreEventsView compact />
-
-      {summary.dataQuality.alertMessage ? (
-        <View className="gap-3">
-          <InlineAlert
-            title="Données à vérifier"
-            message={summary.dataQuality.alertMessage}
-          />
-          {summary.dataQuality.unresolvedProductCount > 0 ? (
-            <SecondaryButton
-              label="Voir les imports"
-              onPress={() => router.push("/(tabs)/imports" as Href)}
-            />
-          ) : null}
-        </View>
-      ) : null}
-    </>
-  );
-}
-
-function PriorityCard({ priority }: { priority: TodayPriority }) {
-  const presentation = priorityPresentation(priority);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${priority.rank}. ${presentation.title}. ${presentation.reason}`}
-      onPress={() =>
-        router.push({
-          pathname: "/(tabs)/priority/[id]",
-          params: { id: priority.id },
-        } as Href)
-      }
-      className="gap-3 rounded-2xl bg-surface-muted p-4"
-      style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
-    >
-      <View className="flex-row items-start gap-3">
-        <View className="h-9 w-9 items-center justify-center rounded-full bg-forest">
-          <Text className="text-base font-bold text-on-accent">
-            {priority.rank}
-          </Text>
-        </View>
-        <View className="flex-1 gap-1">
-          <Text className="text-xs font-bold uppercase tracking-wider text-forest">
-            À examiner
-          </Text>
-          <Text className="text-lg font-semibold text-ink">
-            {presentation.title}
-          </Text>
-          <Text className="text-sm leading-5 text-muted">
-            {presentation.reason}
-          </Text>
-        </View>
-        <Ionicons
-          name="chevron-forward"
-          size={20}
-          color={colors.muted}
-          accessible={false}
-        />
-      </View>
-      <View className="rounded-xl bg-surface px-3 py-2">
-        <Text className="text-sm font-semibold text-ink">
-          {priorityFact(priority)}
-        </Text>
-      </View>
-      <View className="gap-1">
-        <Text className="text-xs font-bold uppercase tracking-wider text-muted">
-          Action proposée
-        </Text>
-        <Text className="text-sm leading-5 text-ink">
-          {presentation.action}
-        </Text>
-      </View>
-      {priority.status === "LOW_QUALITY" ? (
-        <StatusBadge status="incomplete" />
-      ) : null}
-    </Pressable>
-  );
-}
-
-function MovementRow({ movement }: { movement: TodayMovement }) {
-  const positive = isPositiveMovement(movement);
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${movement.productLabel}. ${movementLabel(movement)}`}
-      onPress={() =>
-        router.push(`/(tabs)/products/${movement.productId}` as Href)
-      }
-      className="flex-row items-center gap-3 border-b border-line py-3"
-      style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
-    >
-      <View
-        className={`rounded-xl p-2 ${positive ? "bg-positive-soft" : "bg-critical-soft"}`}
-      >
-        <Ionicons
-          name={positive ? "trending-up" : "trending-down"}
-          size={20}
-          color={positive ? colors.positive : colors.critical}
-          accessible={false}
-        />
-      </View>
-      <View className="flex-1 gap-1">
-        <Text className="text-base font-semibold text-ink">
-          {movement.productLabel}
-        </Text>
-        <Text className="text-sm leading-5 text-muted">
-          {movementLabel(movement)}
-        </Text>
-      </View>
-      <Ionicons
-        name="chevron-forward"
-        size={20}
-        color={colors.muted}
-        accessible={false}
-      />
-    </Pressable>
-  );
-}
-
-function movementLabel(movement: TodayMovement) {
-  const metric =
-    movement.metric === "SALES"
-      ? "ventes"
-      : movement.metric === "MARGIN"
-        ? "marge"
-        : "casse";
-  const amount = formatSignedCurrency(movement.absoluteDifference);
-  const percentage = formatSignedPercentage(movement.percentageDifference);
-  return `${amount} de ${metric}${percentage ? ` · ${percentage}` : ""}`;
-}
-
-function comparisonLabel(
-  comparison: TodaySummary["kpis"][number]["comparison"],
-) {
-  if (
-    comparison.status === "UNAVAILABLE" ||
-    comparison.absoluteDifference === null
-  ) {
-    return "Comparaison J-7 indisponible";
-  }
-  const percentage = formatSignedPercentage(comparison.percentageDifference);
-  return percentage
-    ? `${percentage} vs J-7`
-    : `${formatSignedCurrency(comparison.absoluteDifference)} vs J-7`;
-}
-
-function isPositiveMovement(movement: TodayMovement) {
-  const positive = Number(movement.absoluteDifference) >= 0;
-  return movement.metric === "WASTE" ? !positive : positive;
-}
-
-function formatFreshness(value: string) {
-  return new Intl.DateTimeFormat("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
 }

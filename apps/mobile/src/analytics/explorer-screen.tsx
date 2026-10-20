@@ -35,6 +35,7 @@ import {
   type ExplorerView,
 } from "./explorer-state";
 import { ExplorerContent, ExplorerPeriodPicker } from "./explorer-view";
+import { IconButton } from "../components/dashboard";
 import { colors } from "../design/tokens";
 import { useVisualLibrary } from "../products/use-visual-library";
 function tradingToday() {
@@ -306,9 +307,9 @@ function StoreExplorer({
       <ScrollView
         ref={scroller}
         contentContainerStyle={{
-          padding: 20,
-          paddingTop: 24,
-          gap: 20,
+          padding: 16,
+          paddingTop: 16,
+          gap: 14,
           paddingBottom: 40,
         }}
         onScroll={scroll}
@@ -316,14 +317,17 @@ function StoreExplorer({
         keyboardShouldPersistTaps="handled"
       >
         <AppHeader
+          compact
           title="Analyses"
-          subtitle="Les chiffres de votre rayon, à votre rythme."
-        >
-          <SecondaryButton
-            label="Magasin et synchronisation"
-            onPress={() => router.push("/(tabs)/more")}
-          />
-        </AppHeader>
+          subtitle="Comprenez les performances de votre rayon."
+          action={
+            <IconButton
+              label="Affiner : catégorie, nature ou produit"
+              icon="options-outline"
+              onPress={() => setFilterSheet(true)}
+            />
+          }
+        />
         {notice ? (
           <InlineAlert title="Contexte de navigation" message={notice} />
         ) : null}
@@ -344,10 +348,6 @@ function StoreExplorer({
           </>
         ) : (
           <>
-            <SecondaryButton
-              label="Affiner : catégorie, nature ou produit"
-              onPress={() => setFilterSheet(true)}
-            />
             <ExplorerContent
               view={view}
               data={data}

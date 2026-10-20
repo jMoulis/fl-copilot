@@ -108,8 +108,8 @@ export const nativeVisualFileStorage: VisualFileStorage = {
     const bytes = await selected.bytes(),
       mimeType = detectVisualImageMime(bytes);
     if (!mimeType) throw Error("VISUAL_FILE_INVALID");
-    const { Image } = await import("react-native");
-    const { width, height } = await Image.getSize(selected.uri);
+    const { readNativeImageSize } = await import("../media/image-size");
+    const { width, height } = await readNativeImageSize(selected.uri);
     if (
       !Number.isInteger(width) ||
       !Number.isInteger(height) ||

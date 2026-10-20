@@ -20,6 +20,8 @@ import {
   StatusBadge,
   type SyncStatus,
 } from "../components/ui";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { DetailsDisclosure, SegmentedControl } from "../components/dashboard";
 import { DateSelector } from "../components/date-selector";
 import { explorerScopeLabel } from "./explorer-breakdown";
 import { colors } from "../design/tokens";
@@ -44,43 +46,6 @@ const metrics = {
   waste: "Casse au prix de vente",
   wasteCost: "Casse au prix d’achat",
 } as const;
-function Choice({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={{
-        minHeight: 48,
-        paddingHorizontal: 12,
-        paddingVertical: 12,
-        borderRadius: 12,
-        backgroundColor: selected ? colors.forest : colors.surfaceMuted,
-        justifyContent: "center",
-        flexGrow: 1,
-      }}
-    >
-      <Text
-        style={{
-          color: selected ? colors.onAccent : colors.ink,
-          fontWeight: "600",
-          textAlign: "center",
-        }}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
 export function ExplorerContent({
   view,
   data,
@@ -137,29 +102,32 @@ export function ExplorerContent({
     }, parseDecimal("0").value);
   return (
     <>
-      {view.metric === "wasteCost" ? (
-        <Text className="text-sm leading-5 text-muted">
-          Coût d’achat connu et estimé selon les données disponibles, distinct
-          de la valeur au prix de vente.
-        </Text>
-      ) : null}
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-        {Object.entries(kinds).map(([k, label]) => (
-          <Choice
-            key={k}
-            label={label}
-            selected={period.kind === k}
-            onPress={() => onGranularity(k as AnalyticsExplorerGranularity)}
-          />
-        ))}
-      </View>
+      <SegmentedControl
+        label="Période"
+        value={period.kind}
+        options={Object.entries(kinds).map(([value, label]) => ({
+          value: value as AnalyticsExplorerGranularity,
+          label,
+        }))}
+        onChange={onGranularity}
+      />
       {view.history.length ? (
         <SecondaryButton
           label={`Retour à ${explorerLabel(view.history.at(-1)!.period)}`}
           onPress={onBack}
         />
       ) : null}
-      <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+      <View
+        style={{
+          flexDirection: "row",
+          gap: 4,
+          alignItems: "center",
+          backgroundColor: colors.surface,
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: colors.line,
+        }}
+      >
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Période précédente"
@@ -191,7 +159,7 @@ export function ExplorerContent({
           <Text
             style={{
               color: colors.ink,
-              fontSize: 19,
+              fontSize: 16,
               fontWeight: "700",
               textAlign: "center",
             }}
@@ -204,11 +172,11 @@ export function ExplorerContent({
               {formatFrenchCalendarDate(range.end)}
             </Text>
           ) : null}
-          <Text style={{ color: colors.forest, fontSize: 12 }}>
-            {period.kind === "range"
-              ? "Dates et calcul repris de la discussion"
-              : "Choisir une période"}
-          </Text>
+          {period.kind === "range" ? (
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              Période de la discussion
+            </Text>
+          ) : null}
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -226,23 +194,11 @@ export function ExplorerContent({
           <Text style={{ fontSize: 26, color: colors.forest }}>›</Text>
         </Pressable>
       </View>
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-        {(["sales", "margin", "waste"] as const).map((m) => (
-          <Choice
-            key={m}
-            label={
-              m === "sales" ? "CA" : m === "margin" ? "Marge €" : "Casse €"
-            }
-            selected={view.metric === m}
-            onPress={() => onMetric(m)}
-          />
-        ))}
-      </View>
       <View
         style={{
           backgroundColor: colors.surface,
           borderRadius: 20,
-          padding: 20,
+          padding: 14,
           gap: 12,
           borderWidth: 1,
           borderColor: colors.line,
@@ -250,7 +206,7 @@ export function ExplorerContent({
       >
         <Text style={{ color: colors.muted }}>{metrics[view.metric]}</Text>
         {data ? (
-          <Text style={{ color: colors.ink, fontWeight: "600" }}>
+          <Text style={{ color: colors.muted, fontSize: 12 }}>
             {explorerScopeLabel(data)}
           </Text>
         ) : null}
@@ -270,7 +226,16 @@ export function ExplorerContent({
                 ? "Indisponible"
                 : formatCurrency(data.total)}
             </Text>
-            <Text style={{ color: colors.muted }}>
+            <Text
+              style={{
+                color:
+                  data.coverage.partial || data.coverage.missing
+                    ? colors.warning
+                    : colors.muted,
+                fontSize: 12,
+                lineHeight: 18,
+              }}
+            >
               {period.kind === "range" && period.aggregation === "AVERAGE"
                 ? "Moyenne des jours renseignés"
                 : "Cumul renseigné"}{" "}
@@ -283,6 +248,178 @@ export function ExplorerContent({
                 ? ` · ${data.coverage.missing} sans donnée`
                 : ""}
             </Text>
+            {c ? (
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <View
+                  style={{
+                    backgroundColor: colors.surfaceMuted,
+                    borderRadius: 8,
+                    paddingHorizontal: 9,
+                    paddingVertical: 5,
+                  }}
+                >
+                  <Text style={{ color, fontWeight: "700", fontSize: 13 }}>
+                    {percent !== null
+                      ? formatSignedPercentage(percent)
+                      : c.absoluteDifference !== null
+                        ? formatSignedCurrency(c.absoluteDifference)
+                        : "Écart indisponible"}
+                  </Text>
+                </View>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                  Sur {data.comparedDays} jours{" "}
+                  {data.mode === "EXPLICIT"
+                    ? "de la période citée"
+                    : "clos comparables · N−1"}
+                </Text>
+              </View>
+            ) : (
+              <Text style={{ color: colors.warning, fontSize: 12 }}>
+                Comparaison indisponible · voir la couverture
+              </Text>
+            )}
+          </>
+        )}
+        {data && period.kind !== "day" ? (
+          <View style={{ gap: 12 }}>
+            <Text
+              style={{ color: colors.ink, fontSize: 18, fontWeight: "700" }}
+            >
+              {period.kind === "year" ||
+              (period.kind === "range" && bins[0]?.monthly)
+                ? "Détail par mois"
+                : "Détail par jour"}
+            </Text>
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
+              Touchez une colonne pour explorer · €
+            </Text>
+            <ScrollView
+              ref={chart}
+              onScroll={(e) =>
+                onChartScroll(Math.max(0, e.nativeEvent.contentOffset.x))
+              }
+              scrollEventThrottle={120}
+              horizontal
+              contentContainerStyle={{
+                gap: 3,
+                flexGrow: 1,
+                alignItems: "flex-end",
+                paddingVertical: 8,
+              }}
+            >
+              {bins.map((b) => {
+                const negative =
+                    b.value !== null &&
+                    parseDecimal(b.value).value.isNegative(),
+                  height =
+                    b.value === null
+                      ? 0
+                      : max.isZero()
+                        ? 2
+                        : Math.max(
+                            2,
+                            Math.min(
+                              100,
+                              parseDecimal(b.value)
+                                .value.abs()
+                                .div(max)
+                                .toNumber() * 100,
+                            ),
+                          ),
+                  label = b.monthly
+                    ? new Intl.DateTimeFormat("fr-FR", {
+                        month: "short",
+                        ...(period.kind === "range"
+                          ? { year: "numeric" as const }
+                          : {}),
+                        timeZone: "UTC",
+                      }).format(new Date(b.date + "T12:00:00Z"))
+                    : b.date.slice(8);
+                return (
+                  <Pressable
+                    key={b.date}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${formatFrenchCalendarDate(b.date)} : ${b.value === null ? "sans donnée" : formatCurrency(b.value)}${b.complete ? "" : " · données incomplètes"}. Ouvrir le détail.`}
+                    onPress={() => onDrill(b.date)}
+                    style={{
+                      minWidth: 44,
+                      width: 44,
+                      flexGrow: 1,
+                      minHeight: 190,
+                      justifyContent: "flex-start",
+                      alignItems: "center",
+                      gap: 7,
+                    }}
+                  >
+                    <View
+                      style={{
+                        height: 132,
+                        width: 26,
+                        justifyContent: "flex-end",
+                        borderBottomWidth: 1,
+                        borderColor: colors.line,
+                      }}
+                    >
+                      {b.value !== null ? (
+                        <View
+                          style={{
+                            height: height * 1.28,
+                            width: 26,
+                            borderTopLeftRadius: 4,
+                            borderTopRightRadius: 4,
+                            backgroundColor: negative
+                              ? colors.critical
+                              : colors.forest,
+                            opacity: b.complete ? 1 : 0.5,
+                            borderTopWidth: 2,
+                            borderColor: colors.positive,
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            height: 20,
+                            borderWidth: 1,
+                            borderStyle: "dashed",
+                            borderColor: colors.muted,
+                            borderRadius: 4,
+                          }}
+                        />
+                      )}
+                    </View>
+                    <Text style={{ color: colors.ink, fontSize: 12 }}>
+                      {label}
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        lineHeight: 13,
+                        minHeight: 26,
+                        textAlign: "center",
+                        color: colors.warning,
+                      }}
+                    >
+                      {!b.complete
+                        ? b.value === null
+                          ? "Sans donnée"
+                          : "Partiel"
+                        : ""}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        ) : null}
+        {data ? (
+          <DetailsDisclosure title="Couverture et comparaison">
             {c ? (
               <View
                 style={{
@@ -358,124 +495,25 @@ export function ExplorerContent({
                 {formatFrenchCalendarDate(data.referenceRange.end)}
               </Text>
             ) : null}
-          </>
-        )}
+            {view.metric === "wasteCost" ? (
+              <Text style={{ color: colors.muted }}>
+                Coût d’achat connu et estimé selon les données disponibles,
+                distinct de la valeur au prix de vente.
+              </Text>
+            ) : null}
+          </DetailsDisclosure>
+        ) : null}
       </View>
-      {data && period.kind !== "day" ? (
-        <View style={{ gap: 12 }}>
-          <Text style={{ color: colors.ink, fontSize: 18, fontWeight: "700" }}>
-            {period.kind === "year" ||
-            (period.kind === "range" && bins[0]?.monthly)
-              ? "Détail par mois"
-              : "Détail par jour"}
-          </Text>
-          <Text style={{ color: colors.muted }}>
-            Touchez une colonne pour ouvrir le détail. Les montants partiels
-            restent signalés.
-          </Text>
-          <ScrollView
-            ref={chart}
-            onScroll={(e) =>
-              onChartScroll(Math.max(0, e.nativeEvent.contentOffset.x))
-            }
-            scrollEventThrottle={120}
-            horizontal
-            contentContainerStyle={{
-              gap: 8,
-              alignItems: "flex-end",
-              paddingVertical: 8,
-            }}
-          >
-            {bins.map((b) => {
-              const negative =
-                  b.value !== null && parseDecimal(b.value).value.isNegative(),
-                height =
-                  b.value === null
-                    ? 0
-                    : max.isZero()
-                      ? 2
-                      : Math.max(
-                          2,
-                          Math.min(
-                            100,
-                            parseDecimal(b.value)
-                              .value.abs()
-                              .div(max)
-                              .toNumber() * 100,
-                          ),
-                        ),
-                label = b.monthly
-                  ? new Intl.DateTimeFormat("fr-FR", {
-                      month: "short",
-                      ...(period.kind === "range"
-                        ? { year: "numeric" as const }
-                        : {}),
-                      timeZone: "UTC",
-                    }).format(new Date(b.date + "T12:00:00Z"))
-                  : b.date.slice(8);
-              return (
-                <Pressable
-                  key={b.date}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${formatFrenchCalendarDate(b.date)} : ${b.value === null ? "sans donnée" : formatCurrency(b.value)}${b.complete ? "" : " · données incomplètes"}. Ouvrir le détail.`}
-                  onPress={() => onDrill(b.date)}
-                  style={{
-                    minWidth: 52,
-                    minHeight: 170,
-                    padding: 4,
-                    justifyContent: "flex-end",
-                    alignItems: "center",
-                    gap: 7,
-                  }}
-                >
-                  <Text style={{ fontSize: 11, color: colors.muted }}>
-                    {b.value === null ? "—" : formatCurrency(b.value)}
-                  </Text>
-                  <View
-                    style={{
-                      height: 104,
-                      width: 30,
-                      justifyContent: "flex-end",
-                      borderBottomWidth: 1,
-                      borderColor: colors.line,
-                    }}
-                  >
-                    {b.value !== null ? (
-                      <View
-                        style={{
-                          height,
-                          width: 30,
-                          borderRadius: 5,
-                          backgroundColor: negative
-                            ? colors.critical
-                            : colors.forest,
-                          opacity: b.complete ? 1 : 0.5,
-                        }}
-                      />
-                    ) : (
-                      <View
-                        style={{
-                          height: 20,
-                          borderWidth: 1,
-                          borderStyle: "dashed",
-                          borderColor: colors.muted,
-                          borderRadius: 4,
-                        }}
-                      />
-                    )}
-                  </View>
-                  <Text style={{ color: colors.ink }}>{label}</Text>
-                  {!b.complete ? (
-                    <Text style={{ fontSize: 10, color: colors.warning }}>
-                      {b.value === null ? "Sans donnée" : "Partiel"}
-                    </Text>
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      ) : null}
+      <SegmentedControl
+        label="Indicateur"
+        value={view.metric}
+        options={[
+          { value: "sales" as const, label: "CA" },
+          { value: "margin" as const, label: "Marge €" },
+          { value: "waste" as const, label: "Casse €" },
+        ]}
+        onChange={onMetric}
+      />
       {data?.total === null ? (
         <InlineAlert
           title="Aucun montant disponible"
@@ -488,15 +526,41 @@ export function ExplorerContent({
             Semaines de ce mois
           </Text>
           {explorerMonthWeeks(period).map((week) => (
-            <SecondaryButton
+            <Pressable
               key={JSON.stringify(week)}
-              label={`${explorerLabel(week)} · ${formatFrenchCalendarDate(explorerRange(week).start)} – ${formatFrenchCalendarDate(explorerRange(week).end)}`}
+              accessibilityRole="button"
+              accessibilityLabel={`Explorer ${explorerLabel(week)}`}
               onPress={() => onWeek(week)}
-            />
+              style={{
+                minHeight: 52,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 12,
+                padding: 12,
+                borderBottomWidth: 1,
+                borderColor: colors.line,
+              }}
+            >
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={{ color: colors.ink, fontWeight: "600" }}>
+                  {explorerLabel(week)}
+                </Text>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                  {formatFrenchCalendarDate(explorerRange(week).start)} –{" "}
+                  {formatFrenchCalendarDate(explorerRange(week).end)}
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color={colors.muted}
+                accessible={false}
+              />
+            </Pressable>
           ))}
         </View>
       ) : null}
-      <StatusBadge status={syncStatus} />
+      <StatusBadge status={syncStatus} compact />
       <SecondaryButton
         label="Actualiser les chiffres locaux"
         onPress={onRefresh}

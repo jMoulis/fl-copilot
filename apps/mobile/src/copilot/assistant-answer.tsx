@@ -29,10 +29,12 @@ export function AssistantAnswer({
   renderSource,
   selectable = true,
   analyticsDestinations,
+  onLongPress,
 }: {
   text: string;
   selectable?: boolean;
   analyticsDestinations?: AnalyticsDestinationTable;
+  onLongPress?(): void;
   renderSource?(id: string): ReactNode;
 }) {
   const [source, setSource] = useState<AnswerSource>();
@@ -91,6 +93,11 @@ export function AssistantAnswer({
           <ScrollView
             key={i}
             horizontal
+            directionalLockEnabled
+            nestedScrollEnabled
+            canCancelContentTouches
+            keyboardShouldPersistTaps="handled"
+            indicatorStyle="white"
             showsHorizontalScrollIndicator
             accessibilityLabel="Tableau de chiffres, faites défiler horizontalement"
             style={styles.tableScroll}
@@ -102,6 +109,7 @@ export function AssistantAnswer({
                     <Text
                       key={c}
                       selectable={selectable}
+                      onLongPress={onLongPress}
                       style={[styles.cell, r === 0 && styles.bold]}
                     >
                       {inline(cell)}
@@ -115,6 +123,7 @@ export function AssistantAnswer({
           <Text
             key={i}
             selectable={selectable}
+            onLongPress={onLongPress}
             style={[styles.text, block.type === "heading" && styles.heading]}
           >
             {block.type === "list" ? "• " : ""}
@@ -244,14 +253,15 @@ export function AssistantAnswer({
   );
 }
 const styles = StyleSheet.create({
-  answer: { gap: 14 },
+  answer: { gap: 14, minWidth: 0, maxWidth: "100%" },
   externalLink: { minHeight: 44, paddingVertical: 10, gap: 4 },
   text: { fontSize: 17, lineHeight: 26, color: colors.ink },
   heading: { fontSize: 19, fontWeight: "600" },
   bold: { fontWeight: "600" },
   link: { fontSize: 13, color: colors.forest, textDecorationLine: "underline" },
-  tableScroll: { marginVertical: 4 },
+  tableScroll: { marginVertical: 4, width: "100%", flexGrow: 0 },
   table: {
+    alignSelf: "flex-start",
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 12,
@@ -265,6 +275,7 @@ const styles = StyleSheet.create({
   header: { backgroundColor: colors.surface },
   cell: {
     width: 156,
+    flexShrink: 0,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,

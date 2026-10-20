@@ -92,8 +92,9 @@ function StoreActions({ storeId }: { storeId: string }) {
   return (
     <AppScreen>
       <AppHeader
+        compact
         title="Actions"
-        subtitle="Votre travail en rayon, semaine par semaine."
+        subtitle="Vos tâches et décisions sur le terrain."
       />
       <View className="gap-3">
         <View className="flex-row items-center justify-between gap-2">
@@ -102,24 +103,22 @@ function StoreActions({ storeId }: { storeId: string }) {
             sign="‹"
             onPress={() => selected(addExplorerDays(week.start, -7))}
           />
-          <Text
-            accessibilityRole="header"
-            className="flex-1 text-center text-lg font-semibold text-ink"
-          >
-            Semaine {week.number} · {week.year}
-          </Text>
+          <View className="flex-1">
+            <DateSelector
+              value={week.start}
+              label="Choisir la semaine"
+              triggerLabel={`Semaine ${week.number} · ${week.year}`}
+              description="Choisissez une date de la semaine à consulter. Aucune déclaration n’est modifiée."
+              onConfirm={selected}
+            />
+          </View>
           <WeekArrow
             label="Semaine suivante"
             sign="›"
             onPress={() => selected(addExplorerDays(week.start, 7))}
           />
         </View>
-        <DateSelector
-          value={week.start}
-          label="Choisir la semaine"
-          description="Choisissez une date de la semaine à consulter. Aucune déclaration n’est modifiée."
-          onConfirm={selected}
-        />
+
         {week.start !== currentCommercialWeek().start ? (
           <SecondaryButton
             label="Revenir à cette semaine"

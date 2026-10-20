@@ -37,7 +37,7 @@ export function AppScreen({
     <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-canvas">
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={{ padding: 24, gap: 24, paddingBottom: 40 }}
+        contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           onRefresh ? (
@@ -59,15 +59,30 @@ export function AppHeader({
   title,
   subtitle,
   children,
-}: PropsWithChildren<{ title: string; subtitle?: string }>) {
+  compact = false,
+  action,
+}: PropsWithChildren<{
+  title: string;
+  subtitle?: string;
+  compact?: boolean;
+  action?: React.ReactNode;
+}>) {
   return (
     <View className="gap-2">
-      <Text className="text-xs font-bold uppercase tracking-widest text-forest">
-        Fruits & légumes
-      </Text>
-      <Text accessibilityRole="header" className="text-3xl font-bold text-ink">
-        {title}
-      </Text>
+      {!compact ? (
+        <Text className="text-xs font-bold uppercase tracking-widest text-forest">
+          Fruits & légumes
+        </Text>
+      ) : null}
+      <View className="flex-row items-center justify-between gap-3">
+        <Text
+          accessibilityRole="header"
+          className="flex-1 text-3xl font-bold text-ink"
+        >
+          {title}
+        </Text>
+        {action}
+      </View>
       {subtitle ? (
         <Text className="text-base leading-6 text-muted">{subtitle}</Text>
       ) : null}
@@ -199,22 +214,28 @@ const statusPresentation = {
   },
 } as const;
 export type SyncStatus = keyof typeof statusPresentation;
-export function StatusBadge({ status }: { status: SyncStatus }) {
+export function StatusBadge({
+  status,
+  compact = false,
+}: {
+  status: SyncStatus;
+  compact?: boolean;
+}) {
   const presentation = statusPresentation[status];
   return (
     <View
       accessible
       accessibilityLabel={presentation.label}
-      className={`flex-row items-center gap-2 self-start rounded-xl px-3 py-2 ${presentation.containerClass}`}
+      className={`flex-row items-center gap-1.5 self-start rounded-lg ${compact ? "px-2 py-1" : "px-3 py-2"} ${presentation.containerClass}`}
     >
       <Ionicons
         name={presentation.icon}
-        size={18}
+        size={compact ? 14 : 18}
         color={presentation.iconColor}
         accessible={false}
       />
       <Text
-        className={`flex-shrink text-sm font-semibold ${presentation.textClass}`}
+        className={`flex-shrink ${compact ? "text-xs" : "text-sm"} font-semibold ${presentation.textClass}`}
       >
         {presentation.label}
       </Text>

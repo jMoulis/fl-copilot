@@ -28,6 +28,19 @@ export default tseslint.config(
     },
   },
   {
+    files: ["apps/mobile/src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "ImportExpression[source.value='react-native']",
+          message:
+            "Use a named React Native import. Metro's namespace import evaluates legacy native getters and can crash iOS.",
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.cjs"],
     rules: { "@typescript-eslint/no-require-imports": "off" },
   },
