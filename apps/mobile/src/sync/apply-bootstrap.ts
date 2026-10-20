@@ -1,3 +1,4 @@
+import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
 import { applyVisualEntity } from "../products/visual-library-repository";
 import {
   applyStoreLayout,
@@ -86,6 +87,22 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
         `copilot-execution-links:${storeId}:${ownerId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
+    if (bootstrap.entities.emailIntakeDecisions) {
+      if (!ownerId || bootstrap.entities.emailIntakeOwnerId !== ownerId)
+        throw Error("EMAIL_INTAKE_DECISION_SCOPE_INVALID");
+      for (const entity of bootstrap.entities.emailIntakeDecisions)
+        await applyEmailDecisionRecord(
+          transaction,
+          { storeId, ownerId },
+          entity,
+        );
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `email-intake:${storeId}:${ownerId}`,
         "1",
         bootstrap.serverTime,
       );
@@ -426,6 +443,8 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "copilotActionExecutionOwnerId",
     "copilotExecutionLinkOwnerId",
     "copilotDecisions",
+    "emailIntakeDecisions",
+    "emailIntakeOwnerId",
     "copilotDecisionOwnerId",
     "copilotKnowledge",
     "copilotKnowledgeOwnerId",

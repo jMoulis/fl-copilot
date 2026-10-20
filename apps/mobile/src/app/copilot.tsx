@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { CopilotStorePhotoIntake } from "@/copilot/store-photo-intake";
 import { LayoutPreparationController } from "@/copilot/layout-preparation-controller";
 import { readStoreLayoutScenarioCard } from "@fl-copilot/domain";
@@ -120,7 +121,7 @@ import { selectCopilotPdfs } from "@/copilot/pdf-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import {
   randomUUID,
   digest,
@@ -194,6 +195,9 @@ export default function CopilotScreen() {
   );
 }
 function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
+  const { conversationId: requestedConversation } = useLocalSearchParams<{
+    conversationId?: string;
+  }>();
   const visuals = useVisualLibrary();
   const { sqlite, deviceId } = useLocalDatabase();
   const { withAccessToken, session } = useAuth();
@@ -1394,6 +1398,41 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     }
   }
 
+  const [linkError, setLinkError] = useState<string>();
+  useFocusEffect(
+    useCallback(() => {
+      if (requestedConversation === undefined) {
+        setLinkError(undefined);
+        return;
+      }
+      const target = z.uuid().safeParse(requestedConversation);
+      if (!target.success) {
+        setLinkError("Le lien de conversation est invalide.");
+        return;
+      }
+      let activeLink = true;
+      // Opening is read-only and uses the existing scoped controller; URL input
+      // cannot select a store/owner or create another conversation.
+      void controller
+        .open(target.data)
+        .then(() => {
+          if (!activeLink) return;
+          setActive(target.data);
+          setMenu(false);
+          setLinkError(undefined);
+          router.setParams({ conversationId: undefined });
+        })
+        .catch(() => {
+          if (activeLink)
+            setLinkError(
+              "Cette conversation n’est pas disponible pour ce compte ou ce magasin. Votre conversation actuelle est conservée.",
+            );
+        });
+      return () => {
+        activeLink = false;
+      };
+    }, [controller, requestedConversation]),
+  );
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string>();
   const createLocked = useRef(false);
@@ -1559,6 +1598,9 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           title="Copilote"
           subtitle="Vos conversations et brouillons restent disponibles sur ce téléphone."
         />
+        {linkError ? (
+          <InlineAlert title="Conversation indisponible" message={linkError} />
+        ) : null}
         {topics}
       </AppScreen>
     );
@@ -1567,6 +1609,9 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       edges={["top", "bottom", "left", "right"]}
       style={{ flex: 1, backgroundColor: colors.canvas }}
     >
+      {linkError ? (
+        <InlineAlert title="Conversation indisponible" message={linkError} />
+      ) : null}
       <CopilotLocalChatPanel
         controller={controller}
         conversationId={active}

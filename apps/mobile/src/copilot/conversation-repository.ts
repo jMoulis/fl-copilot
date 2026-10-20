@@ -1,3 +1,4 @@
+import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
 import { MAX_STORE_PHOTOS_PER_TURN } from "@fl-copilot/domain";
 import { applyActionExecutionRecord } from "./action-execution-repository";
 import { applyExecutionLinkRecord } from "./execution-link-repository";
@@ -53,6 +54,7 @@ export async function applyCopilotRecord(
   scope: Scope,
   type:
     | keyof typeof schemas
+    | "email_intake_decision"
     | "copilot_knowledge"
     | "copilot_decision"
     | "copilot_execution_link"
@@ -60,6 +62,8 @@ export async function applyCopilotRecord(
   payload: unknown,
   ackVersion?: number,
 ) {
+  if (type === "email_intake_decision")
+    return applyEmailDecisionRecord(db, scope, payload, ackVersion);
   if (type === "copilot_action_execution")
     return applyActionExecutionRecord(db, scope, payload, ackVersion);
   if (type === "copilot_execution_link")

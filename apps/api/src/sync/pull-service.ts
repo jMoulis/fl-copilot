@@ -173,6 +173,8 @@ export function createMongoSyncPullService(
               .map((change) => change.entityId);
             if (
               !ids.length ||
+              (type === "email_intake_decision" &&
+                query.emailIntake !== "true") ||
               (type === "copilot_action_execution" &&
                 query.copilotActionExecutions !== "true") ||
               (type === "copilot_execution_link" &&
@@ -222,6 +224,8 @@ export function createMongoSyncPullService(
                 query.copilotActionExecutions === "true") &&
               (change.entityType !== "copilot_execution_link" ||
                 query.copilotExecutionLinks === "true") &&
+              (change.entityType !== "email_intake_decision" ||
+                query.emailIntake === "true") &&
               (change.entityType !== "copilot_decision" ||
                 query.copilotDecisions === "true") &&
               (change.entityType !== "copilot_knowledge" ||

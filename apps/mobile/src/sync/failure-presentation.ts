@@ -7,6 +7,7 @@ const labels: Record<string, string> = {
   copilot_conversation: "Conversation privée",
   copilot_message: "Message privé",
   copilot_decision: "Décision du copilote",
+  email_intake_decision: "Confirmation des documents reçus par email",
   copilot_execution_link: "Association de mise en place",
   copilot_action_execution: "Réalisation déclarée",
   copilot_knowledge: "Pratique mémorisée",
@@ -53,6 +54,9 @@ export function syncFailurePresentation(
   )
     message =
       "Ce code semble déjà associé à un produit. Examinez le référentiel avant de corriger l’association.";
+  if (entityType === "email_intake_decision")
+    message =
+      "La confirmation n’a pas été acceptée. Les originaux sont conservés. Actualisez l’email dans sa conversation, examinez le motif puis confirmez à nouveau si nécessaire.";
   if (code === "VISUAL_TARGET_UNAVAILABLE")
     message =
       "Un produit, une identité visuelle ou une image liée a été retiré ou doit être corrigé. La photo et le choix sont conservés ; reprenez d’abord la cible concernée.";

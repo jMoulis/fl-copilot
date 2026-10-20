@@ -868,6 +868,12 @@ CREATE INDEX email_intake_receipt_page ON email_intake_receipts(store_id,owner_i
 CREATE TABLE email_original_manifests(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,receipt_id TEXT NOT NULL,file_id TEXT NOT NULL,manifest_json TEXT NOT NULL,local_uri TEXT NOT NULL,verified_at TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id,receipt_id,file_id));
 CREATE UNIQUE INDEX email_original_transfer_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.conversationId'),json_extract(payload_json,'$.receiptId'),json_extract(payload_json,'$.fileId')) WHERE type='EMAIL_ORIGINAL_TRANSFER';`,
   },
+  {
+    version: 53,
+    name: "email-intake-decisions",
+    sql: `CREATE TABLE email_intake_decisions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX email_intake_decision_scope ON email_intake_decisions(store_id,owner_id,conversation_id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

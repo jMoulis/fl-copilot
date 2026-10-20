@@ -119,6 +119,7 @@ describe("local SQLite migrations", () => {
       "device_reminder_history",
       "device_reminder_preferences",
       "email_intake_bindings",
+      "email_intake_decisions",
       "email_intake_receipts",
       "email_original_manifests",
       "import_reconciliations",

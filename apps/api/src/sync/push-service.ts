@@ -266,6 +266,7 @@ async function applyCommand(
       command,
       requestId,
       syncChanges,
+      now,
     );
   if (command.type === "MERCALYS_PUBLISH")
     return applyMercalysPublicationCommand(

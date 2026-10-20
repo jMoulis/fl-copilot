@@ -1,3 +1,4 @@
+import { EmailDecisionConflict } from "@/intake/email-decision-conflict";
 import { RecommendationDecisionConflict } from "@/copilot/recommendation-decision-conflict";
 import { ProductMasterConflict } from "@/products/conflict";
 import { VisualLibraryConflict } from "@/products/visual-conflict";
@@ -66,7 +67,9 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          {isVisualEntityType(conflict.entityType) ? (
+          {conflict.entityType === "email_intake_decision" ? (
+            <EmailDecisionConflict key={conflict.id} conflict={conflict} />
+          ) : isVisualEntityType(conflict.entityType) ? (
             <VisualLibraryConflict conflict={conflict} />
           ) : ["product", "product_identifier", "product_alias"].includes(
               conflict.entityType,
@@ -137,63 +140,65 @@ export default function SyncConflictDetailScreen() {
               </SectionCard>
             </>
           )}
-          <SectionCard title="Actions autorisées">
-            {review?.success ? (
-              <SecondaryButton
-                label="Comparer dans le document commercial"
-                onPress={() =>
-                  router.push(
-                    `/commercial-review/${review.data.sourceDocumentId}`,
-                  )
-                }
-              />
-            ) : null}
-            {conflict.entityType === "product_alias" ? (
-              <SecondaryButton
-                label={
-                  resolving ? "Reprise…" : "Reprendre l’annulation du libellé"
-                }
-                disabled={resolving}
-                onPress={() => {
-                  setResolving(true);
-                  setError(undefined);
-                  void new ProductMasterRepository(database.sqlite)
-                    .retryWasteAliasDeletion(conflict.id, {
-                      commandId: randomUUID(),
-                      deviceId: database.deviceId,
-                    })
-                    .then(async () => {
-                      await syncNow(conflict.storeId);
-                      router.back();
-                    })
-                    .catch(() =>
-                      setError(
-                        "Cette annulation ne peut pas être reprise automatiquement : l’association a changé ou ce conflit ne concerne pas une suppression de libellé de casse. Aucune donnée distante n’a été remplacée.",
-                      ),
+          {conflict.entityType !== "email_intake_decision" ? (
+            <SectionCard title="Actions autorisées">
+              {review?.success ? (
+                <SecondaryButton
+                  label="Comparer dans le document commercial"
+                  onPress={() =>
+                    router.push(
+                      `/commercial-review/${review.data.sourceDocumentId}`,
                     )
-                    .finally(() => setResolving(false));
-                }}
-              />
-            ) : null}
-            {error ? (
-              <InlineAlert title="Résolution impossible" message={error} />
-            ) : null}
-            <Text className="text-base leading-6 text-muted">
-              {conflict.entityType === "commercial_execution_task"
-                ? "Comparez les statuts, les notes et la date de déclaration. Les deux versions restent dans l’historique."
-                : conflict.entityType === "commercial_week_plan"
-                  ? "Le plan et son historique restent conservés. La résolution recontrôle les données avant de retenir un plan local ; aucune exécution n’est confirmée."
-                  : conflict.entityType === "commercial_version_decision"
-                    ? "Comparez les deux préférences de PDF. La résolution conserve leur historique, vos offres et vos TG."
-                    : conflict.entityType === "commercial_week_preparation"
-                      ? "La préparation reste un brouillon. Comparez les affectations avant de choisir une version."
-                      : conflict.entityType === "commercial_offer_choice"
-                        ? "Comparez les deux choix ci-dessus. La résolution conserve leur historique et ne confirme aucune action exécutée."
-                        : conflict.entityType === "product_alias"
-                          ? "La reprise vérifie que le libellé désigne toujours le même produit avant de renvoyer votre annulation."
-                          : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
-            </Text>
-          </SectionCard>
+                  }
+                />
+              ) : null}
+              {conflict.entityType === "product_alias" ? (
+                <SecondaryButton
+                  label={
+                    resolving ? "Reprise…" : "Reprendre l’annulation du libellé"
+                  }
+                  disabled={resolving}
+                  onPress={() => {
+                    setResolving(true);
+                    setError(undefined);
+                    void new ProductMasterRepository(database.sqlite)
+                      .retryWasteAliasDeletion(conflict.id, {
+                        commandId: randomUUID(),
+                        deviceId: database.deviceId,
+                      })
+                      .then(async () => {
+                        await syncNow(conflict.storeId);
+                        router.back();
+                      })
+                      .catch(() =>
+                        setError(
+                          "Cette annulation ne peut pas être reprise automatiquement : l’association a changé ou ce conflit ne concerne pas une suppression de libellé de casse. Aucune donnée distante n’a été remplacée.",
+                        ),
+                      )
+                      .finally(() => setResolving(false));
+                  }}
+                />
+              ) : null}
+              {error ? (
+                <InlineAlert title="Résolution impossible" message={error} />
+              ) : null}
+              <Text className="text-base leading-6 text-muted">
+                {conflict.entityType === "commercial_execution_task"
+                  ? "Comparez les statuts, les notes et la date de déclaration. Les deux versions restent dans l’historique."
+                  : conflict.entityType === "commercial_week_plan"
+                    ? "Le plan et son historique restent conservés. La résolution recontrôle les données avant de retenir un plan local ; aucune exécution n’est confirmée."
+                    : conflict.entityType === "commercial_version_decision"
+                      ? "Comparez les deux préférences de PDF. La résolution conserve leur historique, vos offres et vos TG."
+                      : conflict.entityType === "commercial_week_preparation"
+                        ? "La préparation reste un brouillon. Comparez les affectations avant de choisir une version."
+                        : conflict.entityType === "commercial_offer_choice"
+                          ? "Comparez les deux choix ci-dessus. La résolution conserve leur historique et ne confirme aucune action exécutée."
+                          : conflict.entityType === "product_alias"
+                            ? "La reprise vérifie que le libellé désigne toujours le même produit avant de renvoyer votre annulation."
+                            : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
+              </Text>
+            </SectionCard>
+          ) : null}
         </>
       )}
 

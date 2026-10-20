@@ -1,3 +1,5 @@
+import { EmailDecisionRepository } from "../intake/email-decision-repository";
+import type { EmailIntakeDecision } from "@fl-copilot/sync-contracts";
 import { EmailIntakeCache } from "../intake/email-intake-cache";
 import { EmailOriginalTransfer } from "../intake/email-original-transfer";
 import { nativeEmailOriginalFiles } from "../intake/email-original-files";
@@ -60,6 +62,15 @@ interface LocalSyncSnapshot {
 export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
   emailIntake?: {
+    decision(
+      conversationId: string,
+      receiptId: string,
+    ): ReturnType<EmailDecisionRepository["get"]>;
+    decide(
+      input: Parameters<EmailDecisionRepository["decide"]>[0],
+      retryOfActionId?: string,
+    ): Promise<EmailIntakeDecision>;
+    adoptDecision(conversationId: string, conflictId: string): Promise<void>;
     list(conversationId: string): ReturnType<EmailIntakeCache["list"]>;
     refresh(conversationId: string, cursor?: string): Promise<string | null>;
     localOriginal(
@@ -134,6 +145,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         push: (request) =>
@@ -145,6 +157,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -197,6 +210,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         substitutionEvidence: true,
         substitutionScores: true,
         copilotDecisions: true,
+        emailIntake: true,
         copilotExecutionLinks: true,
         copilotActionExecutions: true,
         copilotKnowledge: true,
@@ -302,6 +316,10 @@ export function SyncProvider({ children }: PropsWithChildren) {
       nativeEmailOriginalFiles,
     );
   }, [emailCache, withAccessToken]);
+  const emailDecisions = useMemo(
+    () => (emailCache ? new EmailDecisionRepository(emailCache) : undefined),
+    [emailCache],
+  );
   const originalJobs = useMemo(
     () =>
       originalTransfer
@@ -572,6 +590,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
   const emailIntake = useMemo(() => {
     if (
       !emailCache ||
+      !emailDecisions ||
       !emailTransfer ||
       !originalJobs ||
       !defaultStoreId ||
@@ -587,6 +606,32 @@ export function SyncProvider({ children }: PropsWithChildren) {
     };
     const api = new ApiClient(getApiBaseUrl());
     return {
+      decision: async (conversationId: string, receiptId: string) => {
+        const scope = scopeFor(conversationId);
+        const decision = await emailDecisions.get(conversationId, receiptId);
+        emailCache.check(scope);
+        return decision;
+      },
+      decide: async (
+        input: Parameters<EmailDecisionRepository["decide"]>[0],
+        retryOfActionId?: string,
+      ) => {
+        const scope = scopeFor(input.conversationId);
+        const decision = await emailDecisions.decide(input, {
+          actionId: randomUUID(),
+          deviceId: database.deviceId,
+          ...(retryOfActionId ? { retryOfActionId } : {}),
+        });
+        emailCache.check(scope);
+        void syncNow(scope.storeId);
+        return decision;
+      },
+      adoptDecision: async (conversationId: string, conflictId: string) => {
+        const scope = scopeFor(conversationId);
+        await emailDecisions.adoptRemote(conversationId, conflictId);
+        emailCache.check(scope);
+        void syncNow(scope.storeId);
+      },
       list: async (conversationId: string) => {
         const scope = scopeFor(conversationId);
         const result = await emailCache.list(conversationId);
@@ -628,6 +673,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
     };
   }, [
     emailCache,
+    emailDecisions,
+    database.deviceId,
     emailTransfer,
     originalJobs,
     defaultStoreId,
@@ -670,6 +717,7 @@ async function readLocalSyncSnapshot(
 ): Promise<LocalSyncSnapshot> {
   const outboxCounts = await new OutboxRepository(database).countActive(
     storeId,
+    ownerId,
   );
   const conflictCounts = await database.getFirstAsync<{
     conflict_count: number;
@@ -678,8 +726,13 @@ async function readLocalSyncSnapshot(
         SELECT COUNT(*) AS conflict_count
         FROM sync_conflicts
         WHERE store_id = ? AND status = 'OPEN'
+          AND (entity_type!='email_intake_decision' OR
+            (json_extract(local_payload_json,'$.ownerId')=? AND
+             (remote_payload_json='null' OR json_extract(remote_payload_json,'$.ownerId')=?)))
       `,
     storeId,
+    ownerId ?? null,
+    ownerId ?? null,
   );
   const importVerificationCounts = await database.getFirstAsync<{
     conflict_count: number;
