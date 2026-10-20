@@ -186,6 +186,22 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         const foreign = await push.push(f.request, "foreign", randomUUID());
         expect(foreign.results[0]?.status).toBe("REJECTED");
         expect(foreign.results[0]?.remoteEntity).toBeUndefined();
+        await f.dbMongo
+          .collection<Document & { _id: string }>("storeMemberships")
+          .updateOne(
+            { storeId: f.scope.storeId, userId: f.scope.ownerId },
+            { $set: { role: "EMPLOYEE" } },
+          );
+        expect(
+          (await push.push(f.request, "role-revoked", f.scope.ownerId))
+            .results[0]?.status,
+        ).toBe("REJECTED");
+        await f.dbMongo
+          .collection<Document & { _id: string }>("storeMemberships")
+          .updateOne(
+            { storeId: f.scope.storeId, userId: f.scope.ownerId },
+            { $set: { role: "MANAGER" } },
+          );
         const changed = structuredClone(f.request);
         changed.commands[0]!.commandId = randomUUID();
         changed.commands[0]!.payload = {

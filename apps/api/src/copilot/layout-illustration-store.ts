@@ -43,7 +43,10 @@ async function sources(
     opts = { session };
   const member = await db
     .collection("storeMemberships")
-    .findOne({ storeId: e.storeId, userId: e.ownerId, active: true }, opts);
+    .findOne(
+      { storeId: e.storeId, userId: e.ownerId, active: true, role: "MANAGER" },
+      opts,
+    );
   const topicRow = await db
     .collection<{ _id: string } & Record<string, unknown>>(
       "copilotConversations",
