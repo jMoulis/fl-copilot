@@ -1,3 +1,4 @@
+import type { LayoutIllustrationTransfer } from "./layout-illustration-transfer";
 import { LayoutIllustrationPanel } from "./layout-illustration-panel";
 import { router } from "expo-router";
 import type { LayoutIllustrationRepository } from "./layout-illustration-repository";
@@ -215,6 +216,7 @@ export function StoreLayoutScenarioCard({
   preparation?: LayoutPreparationController;
   illustration?: {
     repository: LayoutIllustrationRepository;
+    files?: Pick<LayoutIllustrationTransfer, "load" | "refresh">;
     deviceId: string;
     canPrepare: boolean;
   };

@@ -977,6 +977,19 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, ownerId: 1, createdAt: -1, _id: -1 });
     },
   },
+  {
+    version: 50,
+    name: "private_layout_illustration_files",
+    async up(db) {
+      await db.collection("copilotLayoutIllustrationFiles").createIndex({
+        storeId: 1,
+        ownerId: 1,
+        preparationId: 1,
+        createdAt: -1,
+        _id: -1,
+      });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

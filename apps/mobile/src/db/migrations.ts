@@ -897,6 +897,12 @@ CREATE UNIQUE INDEX email_original_retry_active ON local_jobs(json_extract(paylo
     sql: `CREATE TABLE copilot_layout_illustrations(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX copilot_layout_illustration_scope ON copilot_layout_illustrations(store_id,owner_id,conversation_id);`,
   },
+  {
+    version: 58,
+    name: "private-layout-illustration-files",
+    sql: `CREATE TABLE copilot_layout_illustration_files(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,preparation_id TEXT NOT NULL,created_at TEXT NOT NULL,manifest_json TEXT NOT NULL);
+CREATE INDEX copilot_layout_illustration_files_scope ON copilot_layout_illustration_files(store_id,owner_id,preparation_id,created_at DESC,id DESC);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

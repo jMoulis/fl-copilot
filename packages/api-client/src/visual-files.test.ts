@@ -131,6 +131,7 @@ it("transfers opaque bytes within the exact manifest bounds without exposing a s
     {
       headers: { authorization: "Bearer token", "x-store-id": f.storeId },
       redirect: "error",
+      signal: expect.any(AbortSignal),
     },
   );
 });

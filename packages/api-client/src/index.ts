@@ -1,4 +1,10 @@
 import {
+  layoutIllustrationFileStateSchema,
+  layoutIllustrationManifestSchema,
+  type LayoutIllustrationManifest,
+  type LayoutIllustrationFileVariant,
+} from "@fl-copilot/sync-contracts";
+import {
   emailIntakeDecisionPageSchema,
   emailIntakeDecisionPageQuerySchema,
 } from "@fl-copilot/sync-contracts";
@@ -865,90 +871,149 @@ export class ApiClient {
     const manifest = visualFileManifestSchema.parse(raw);
     if (manifest.storeId !== storeId) throw new Error("VISUAL_SCOPE_INVALID");
     const expected = manifest[variant];
-    let response: Response;
+    return this.downloadPrivateBinary(
+      `/api/v1/visual-assets/${encodeURIComponent(manifest.assetId)}/${variant}`,
+      authorizedStoreHeaders(accessToken, storeId),
+      expected,
+      "VISUAL_FILE",
+    );
+  }
+  async layoutIllustrationManifest(
+    accessToken: string,
+    storeId: string,
+    preparationId: string,
+  ) {
+    const abort = new AbortController(),
+      timer = setTimeout(() => abort.abort(), 120000);
     try {
-      response = await fetch(
-        `${this.baseUrl}/api/v1/visual-assets/${encodeURIComponent(manifest.assetId)}/${variant}`,
+      return await this.request(
+        `/api/v1/copilot/layout-illustrations/${encodeURIComponent(preparationId)}/manifest`,
         {
+          method: "GET",
           headers: authorizedStoreHeaders(accessToken, storeId),
-          redirect: "error",
+          signal: abort.signal,
         },
+        layoutIllustrationFileStateSchema,
       );
-    } catch {
-      throw new ApiClientError(0, {
-        code: "NETWORK_UNAVAILABLE",
-        messageFr:
-          "L’image ne peut pas être téléchargée. Vérifiez votre réseau.",
-        retryable: true,
-      });
-    }
-    if (!response.ok) {
-      const parsed = apiErrorSchema.safeParse(
-        await response.json().catch(() => undefined),
-      );
-      throw new ApiClientError(
-        response.status,
-        parsed.success
-          ? parsed.data
-          : {
-              code: "VISUAL_FILE_UNAVAILABLE",
-              messageFr: "L’image n’est pas disponible.",
-              retryable: response.status >= 500,
-            },
-      );
-    }
-    const invalid = () =>
-      new ApiClientError(response.status, {
-        code: "VISUAL_FILE_INVALID",
-        messageFr:
-          "L’image reçue est incomplète ou ne correspond pas au fichier attendu.",
-        retryable: true,
-      });
-    const length = response.headers.get("content-length"),
-      type = response.headers
-        .get("content-type")
-        ?.split(";", 1)[0]
-        ?.trim()
-        .toLowerCase();
-    if (
-      type !== expected.mimeType ||
-      (length !== null &&
-        (!/^\d+$/.test(length) || Number(length) !== expected.sizeBytes))
-    ) {
-      await response.body?.cancel?.();
-      throw invalid();
-    }
-    if (!response.body?.getReader) {
-      if (length === null) throw invalid();
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      if (bytes.byteLength !== expected.sizeBytes) throw invalid();
-      return bytes;
-    }
-    const reader = response.body.getReader(),
-      chunks: Uint8Array[] = [];
-    let size = 0;
-    try {
-      for (;;) {
-        const part = await reader.read();
-        if (part.done) break;
-        size += part.value.byteLength;
-        if (size > expected.sizeBytes) {
-          await reader.cancel();
-          throw invalid();
-        }
-        chunks.push(part.value);
-      }
     } finally {
-      reader.releaseLock();
+      clearTimeout(timer);
+      abort.abort();
     }
-    if (size !== expected.sizeBytes) throw invalid();
-    const bytes = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.byteLength;
+  }
+  async downloadLayoutIllustrationFile(
+    accessToken: string,
+    storeId: string,
+    raw: LayoutIllustrationManifest,
+    variant: LayoutIllustrationFileVariant,
+  ) {
+    const manifest = layoutIllustrationManifestSchema.parse(raw);
+    if (
+      manifest.preparation.storeId !== storeId ||
+      !Object.hasOwn(manifest.files, variant)
+    )
+      throw Error("LAYOUT_ILLUSTRATION_SCOPE_INVALID");
+    return this.downloadPrivateBinary(
+      `/api/v1/copilot/layout-illustrations/${encodeURIComponent(manifest.preparation.id)}/results/${encodeURIComponent(manifest.id)}/${variant}`,
+      authorizedStoreHeaders(accessToken, storeId),
+      manifest.files[variant],
+      "LAYOUT_ILLUSTRATION_FILE",
+    );
+  }
+  private async downloadPrivateBinary(
+    path: string,
+    headers: Record<string, string>,
+    expected: { sizeBytes: number; mimeType: string },
+    prefix: string,
+  ) {
+    const abort = new AbortController(),
+      timer = setTimeout(() => abort.abort(), 120000);
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${this.baseUrl}${path}`, {
+          headers,
+          redirect: "error",
+          signal: abort.signal,
+        });
+      } catch {
+        throw new ApiClientError(0, {
+          code: "NETWORK_UNAVAILABLE",
+          messageFr:
+            "L’image ne peut pas être téléchargée. Vérifiez votre réseau.",
+          retryable: true,
+        });
+      }
+      if (!response.ok) {
+        const parsed = apiErrorSchema.safeParse(
+          await response.json().catch(() => undefined),
+        );
+        throw new ApiClientError(
+          response.status,
+          parsed.success
+            ? parsed.data
+            : {
+                code: `${prefix}_UNAVAILABLE`,
+                messageFr: "L’image n’est pas disponible.",
+                retryable: response.status >= 500,
+              },
+        );
+      }
+      const invalid = () =>
+        new ApiClientError(response.status, {
+          code: `${prefix}_INVALID`,
+          messageFr:
+            "L’image reçue est incomplète ou ne correspond pas au fichier attendu.",
+          retryable: true,
+        });
+      const length = response.headers.get("content-length"),
+        type = response.headers
+          .get("content-type")
+          ?.split(";", 1)[0]
+          ?.trim()
+          .toLowerCase();
+      if (
+        type !== expected.mimeType ||
+        (length !== null &&
+          (!/^\d+$/.test(length) || Number(length) !== expected.sizeBytes))
+      ) {
+        await response.body?.cancel?.();
+        throw invalid();
+      }
+      if (!response.body?.getReader) {
+        if (length === null) throw invalid();
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (bytes.byteLength !== expected.sizeBytes) throw invalid();
+        return bytes;
+      }
+      const reader = response.body.getReader(),
+        chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        for (;;) {
+          const part = await reader.read();
+          if (part.done) break;
+          size += part.value.byteLength;
+          if (size > expected.sizeBytes) {
+            await reader.cancel();
+            throw invalid();
+          }
+          chunks.push(part.value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      if (size !== expected.sizeBytes) throw invalid();
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return bytes;
+    } finally {
+      clearTimeout(timer);
+      abort.abort();
     }
-    return bytes;
   }
 
   private async request<T extends z.ZodType>(

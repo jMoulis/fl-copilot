@@ -131,7 +131,9 @@ export async function bindLayoutIllustrationSource(
     binding: {
       schemaVersion: 1 as const,
       renderer: LAYOUT_ILLUSTRATION_RENDERER,
-      ...scope,
+      storeId: scope.storeId,
+      ownerId: scope.ownerId,
+      conversationId: scope.conversationId,
       scenarioMessageId: message.id,
       assistantMessageId: content.assistantMessageId,
       scenarioHash,
