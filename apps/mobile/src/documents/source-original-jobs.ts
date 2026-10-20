@@ -2,6 +2,8 @@ import { z } from "zod";
 import { ApiClientError } from "@fl-copilot/api-client";
 import {
   emailIntakeOriginalRequestSchema,
+  emailIntakeOriginalRetrySchema,
+  type EmailIntakeOriginalRetry,
   type EmailIntakeOriginalRequest,
 } from "@fl-copilot/sync-contracts";
 import type { EmailOriginalTransfer } from "../intake/email-original-transfer";
@@ -23,6 +25,17 @@ const emailPayloadSchema = emailIntakeOriginalRequestSchema.extend({
   storeId: z.uuid(),
   ownerId: z.uuid(),
 });
+const emailRetryJobSchema = emailIntakeOriginalRetrySchema.extend({
+  storeId: z.uuid(),
+  ownerId: z.uuid(),
+  resume: z
+    .strictObject({
+      fileId: z.uuid(),
+      actionId: z.uuid(),
+      processingId: z.uuid(),
+    })
+    .optional(),
+});
 export const emailProcessingJobSchema = emailPayloadSchema.extend({
   actionId: z.uuid(),
   processingId: z.uuid(),
@@ -39,7 +52,10 @@ const processingOutcomeSchema = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("COMPLETED") }),
   z.strictObject({
     status: z.literal("DEFERRED"),
-    code: z.literal("EMAIL_INTAKE_SOURCE_DAILY_LIMIT"),
+    code: z.enum([
+      "EMAIL_INTAKE_SOURCE_DAILY_LIMIT",
+      "EMAIL_INTAKE_SOURCE_WAITING",
+    ]),
     nextAttemptAt: z.iso.datetime({ offset: true }),
   }),
   z.strictObject({
@@ -60,14 +76,29 @@ export type EmailProcessingHandler = (
 type Payload =
   | z.infer<typeof payloadSchema>
   | z.infer<typeof emailPayloadSchema>
-  | EmailProcessingJob;
+  | EmailProcessingJob
+  | z.infer<typeof emailRetryJobSchema>;
 type JobType =
   | "SOURCE_ORIGINAL_TRANSFER"
   | "EMAIL_ORIGINAL_TRANSFER"
+  | "EMAIL_ORIGINAL_RETRY"
   | "EMAIL_INTAKE_PROCESS";
 function target(type: JobType, payload: Payload) {
   const keys =
     " AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=?";
+  if (type === "EMAIL_ORIGINAL_RETRY" && "actionId" in payload)
+    return {
+      where: `type=?${keys} AND json_extract(payload_json,'$.conversationId')=? AND json_extract(payload_json,'$.receiptId')=? AND json_extract(payload_json,'$.fileId')=? AND json_extract(payload_json,'$.actionId')=?`,
+      values: [
+        type,
+        payload.storeId,
+        payload.ownerId,
+        payload.conversationId,
+        payload.receiptId,
+        payload.fileId,
+        payload.actionId,
+      ],
+    };
   if ("processingId" in payload)
     return {
       where: `type=?${keys} AND json_extract(payload_json,'$.conversationId')=? AND json_extract(payload_json,'$.receiptId')=? AND json_extract(payload_json,'$.actionId')=? AND json_extract(payload_json,'$.processingId')=?`,
@@ -128,7 +159,8 @@ export class SourceOriginalJobs {
     private session: () => SourceOriginalSession | null,
     private id: () => string,
     private now: () => Date = () => new Date(),
-    private email?: Pick<EmailOriginalTransfer, "recover">,
+    private email?: Pick<EmailOriginalTransfer, "recover"> &
+      Partial<Pick<EmailOriginalTransfer, "requestRetry">>,
     private emailWork?: {
       process?: EmailProcessingHandler;
       allowed?(): boolean;
@@ -164,6 +196,21 @@ export class SourceOriginalJobs {
       ownerId: s.userId,
     });
     return this.enqueue("EMAIL_ORIGINAL_TRANSFER", payload, force);
+  }
+  async requestEmailRetry(
+    input: EmailIntakeOriginalRetry,
+    resume?: { fileId: string; actionId: string; processingId: string },
+  ) {
+    const s = this.session();
+    if (!s || !this.email?.requestRetry || !this.emailAllowed())
+      throw Error("EMAIL_INTAKE_SESSION_REQUIRED");
+    const payload = emailRetryJobSchema.parse({
+      ...input,
+      storeId: s.storeId,
+      ownerId: s.userId,
+      resume,
+    });
+    return this.enqueue("EMAIL_ORIGINAL_RETRY", payload, false);
   }
   async requestEmailProcessing(input: EmailProcessingInput, force = false) {
     const s = this.session();
@@ -257,11 +304,28 @@ export class SourceOriginalJobs {
     const key = target(type, payload);
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       this.check(payload.storeId, payload.ownerId);
+      if (type === "EMAIL_ORIGINAL_RETRY" && "fileId" in payload) {
+        const pending = await tx.getFirstAsync<{ id: string }>(
+          "SELECT id FROM local_jobs WHERE type='EMAIL_ORIGINAL_RETRY' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.conversationId')=? AND json_extract(payload_json,'$.receiptId')=? AND json_extract(payload_json,'$.fileId')=? AND status IN ('PENDING','RETRY','RUNNING') LIMIT 1",
+          payload.storeId,
+          payload.ownerId,
+          payload.conversationId,
+          payload.receiptId,
+          payload.fileId,
+        );
+        this.check(payload.storeId, payload.ownerId);
+        if (pending) return;
+      }
       const prior = await tx.getFirstAsync<Job>(
         `SELECT * FROM local_jobs WHERE ${key.where}`,
         ...key.values,
       );
-      if (prior && type === "EMAIL_INTAKE_PROCESS" && !force) return;
+      if (
+        prior &&
+        ["EMAIL_INTAKE_PROCESS", "EMAIL_ORIGINAL_RETRY"].includes(type) &&
+        !force
+      )
+        return;
       if (
         prior &&
         (prior.status === "RUNNING" ||
@@ -384,7 +448,7 @@ export class SourceOriginalJobs {
       await this.db.withExclusiveTransactionAsync(async (tx) => {
         this.check(store, owner);
         const row = await tx.getFirstAsync<Job>(
-          "SELECT * FROM local_jobs WHERE (type='SOURCE_ORIGINAL_TRANSFER' OR (type='EMAIL_ORIGINAL_TRANSFER' AND ?=1) OR (type='EMAIL_INTAKE_PROCESS' AND ?=1)) AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND ((status IN ('PENDING','RETRY') AND (next_attempt_at IS NULL OR next_attempt_at<=?)) OR (status='RUNNING' AND updated_at<?)) ORDER BY created_at,id LIMIT 1",
+          "SELECT * FROM local_jobs WHERE (type='SOURCE_ORIGINAL_TRANSFER' OR (type IN ('EMAIL_ORIGINAL_TRANSFER','EMAIL_ORIGINAL_RETRY') AND ?=1) OR (type='EMAIL_INTAKE_PROCESS' AND ?=1)) AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND ((status IN ('PENDING','RETRY') AND (next_attempt_at IS NULL OR next_attempt_at<=?)) OR (status='RUNNING' AND updated_at<?)) ORDER BY created_at,id LIMIT 1",
           this.email && this.emailAllowed() ? 1 : 0,
           this.processEmail && this.emailAllowed() ? 1 : 0,
           store,
@@ -416,9 +480,11 @@ export class SourceOriginalJobs {
         const payload = (
           job.type === "EMAIL_INTAKE_PROCESS"
             ? emailProcessingJobSchema
-            : job.type === "EMAIL_ORIGINAL_TRANSFER"
-              ? emailPayloadSchema
-              : payloadSchema
+            : job.type === "EMAIL_ORIGINAL_RETRY"
+              ? emailRetryJobSchema
+              : job.type === "EMAIL_ORIGINAL_TRANSFER"
+                ? emailPayloadSchema
+                : payloadSchema
         ).parse(JSON.parse(job.payload_json));
         if (payload.storeId !== store || payload.ownerId !== owner)
           throw Error("SOURCE_ORIGINAL_JOB_INVALID");
@@ -448,6 +514,47 @@ export class SourceOriginalJobs {
               controller.signal,
             ),
           );
+        } else if (job.type === "EMAIL_ORIGINAL_RETRY") {
+          if (!this.email?.requestRetry)
+            throw Error("EMAIL_ORIGINAL_JOB_INVALID");
+          const retry = emailRetryJobSchema.parse(payload);
+          const { conversationId, receiptId, fileId, actionId } = retry;
+          await this.email.requestRetry(
+            { conversationId, receiptId, fileId, actionId },
+            authorize,
+            controller.signal,
+          );
+          await this.db.withExclusiveTransactionAsync(async (tx) => {
+            await authorize(tx);
+            if (!retry.resume) return;
+            const resume = emailProcessingJobSchema.parse({
+              storeId: store,
+              ownerId: owner,
+              conversationId,
+              receiptId,
+              ...retry.resume,
+            });
+            const parent = target("EMAIL_INTAKE_PROCESS", resume);
+            const failed = await tx.getFirstAsync<Job>(
+              `SELECT * FROM local_jobs WHERE ${parent.where} AND status='FAILED' AND last_error='EMAIL_INTAKE_SOURCE_FAILED'`,
+              ...parent.values,
+            );
+            if (!failed) return;
+            const previous = emailProcessingJobSchema.parse(
+              JSON.parse(failed.payload_json),
+            );
+            await tx.runAsync(
+              "UPDATE local_jobs SET status='PENDING',next_attempt_at=NULL,last_error=NULL,payload_json=?,updated_at=? WHERE id=? AND status='FAILED' AND last_error='EMAIL_INTAKE_SOURCE_FAILED'",
+              JSON.stringify({
+                ...previous,
+                attemptBase: failed.attempt_count,
+                availabilityDeferrals: 0,
+              }),
+              this.now().toISOString(),
+              failed.id,
+            );
+            await authorize(tx);
+          });
         } else if ("sourceDocumentId" in payload) {
           await this.transfer.recover(
             payload.sourceDocumentId,
@@ -510,6 +617,8 @@ export class SourceOriginalJobs {
               : "SOURCE_ORIGINAL_TRANSFER_INTERRUPTED";
         let exhausted = false,
           retryAttempt = job.attempt_count;
+        if (job.type === "EMAIL_ORIGINAL_RETRY")
+          exhausted = job.attempt_count >= 6;
         if (job.type === "EMAIL_INTAKE_PROCESS") {
           try {
             const processing = emailProcessingJobSchema.safeParse(

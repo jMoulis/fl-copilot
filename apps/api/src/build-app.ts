@@ -1,3 +1,4 @@
+import { createEmailOriginalRetry } from "./intake/email-original-retry.js";
 import { createEmailDecisionHistory } from "./intake/email-decision-history.js";
 import { Resend } from "resend";
 import {
@@ -243,6 +244,9 @@ type AppDependencies = {
   sourceOriginals?: SourceOriginalService;
   emailIntake?: EmailIntakeStore;
   emailOriginalAccess?: EmailOriginalAccess;
+  emailOriginalRetry?: Parameters<
+    typeof registerEmailIntakeRoutes
+  >[1]["retryOriginal"];
   visualFiles?: VisualFileService;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
@@ -1997,6 +2001,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       : undefined);
   registerEmailIntakeRoutes(app, {
     auth,
+    retryOriginal:
+      dependencies.emailOriginalRetry ??
+      (emailIntake && commercialWorkflows
+        ? {
+            request: createEmailOriginalRetry(dependencies.database).request,
+            dispatch: (receiptId: string) =>
+              commercialWorkflows.dispatchEmailOriginals(receiptId),
+          }
+        : undefined),
     history: createEmailDecisionHistory(dependencies.database),
     store: emailIntake,
     originals:

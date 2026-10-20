@@ -1,0 +1,29 @@
+# Email original retention recovery — 20 October 2026
+
+## User path and boundary
+
+An exhausted server retention job previously remained DONE/FAILED even when the native "Reprendre" button restarted local processing. The local handler immediately saw the same failed original. The explicit recovery now targets retention first, using the existing server processed-command ledger, original job, native local_jobs queue and authenticated receipt cache. No second agent, runner, poller, prompt or business admission is introduced.
+
+"Reprendre la réception" is available on recoverable READ_FAILED, PROVIDER_UNAVAILABLE and STORAGE_UNAVAILABLE originals, before or after admission. The request commits locally before network work, survives process reconstruction/restart and reuses its action UUID on transport retries. Repeated taps while a request is active collapse to that same request. The private pending-work summary includes this new job type. A local acknowledgement means only a recorded request; the receipt's actual returned state remains authoritative for retention. A new receipt version releases the temporary button guard so a later genuine failure can be retried again.
+
+For an already acknowledged processing group, a successful request delivery may rearm only the exact parent FAILED with EMAIL_INTAKE_SOURCE_FAILED. CANCELLED, WAITING_INPUT and unrelated failures remain unchanged. Processing rechecks its original acknowledged admission, account/store/conversation and lease before canonical effects. A recovered group retains its IDs, purpose, original order and existing source handoff. A retry never creates an admission, publishes observations or starts an AI turn.
+
+## Server and identity
+
+POST `/api/v1/intake/email/original-retries` accepts only conversationId, receiptId, fileId and actionId. Current authenticated manager/store/owner/device authority is used; body authority and foreign identities are rejected. Current membership, active owned conversation, binding, receipt and file are checked before cached replay, during mutation and after. The existing processedCommands transaction makes concurrent/lost-ack replays idempotent, including after later recovery attempts.
+
+Only exhausted recoverable jobs restart. Claims, budget deferrals, immutable original identity and stored byte proof remain intact. retryAttemptBase defines a new six-error series without resetting the lifetime counters. An active PENDING/RETRY/RUNNING job keeps its lease, quota deadline and schedule; READY/APPLIED is a no-op. Permanent integrity/format/scope errors are not rearmed. Queue dispatch failure leaves a durable replayable request. Responses are private/no-store and authorization is rechecked after I/O. No private object key or signed download capability is returned by this endpoint.
+
+Native migration 56 adds unique retry-action and active-file indexes; original jobs, decisions and unsynchronized work are retained. Receipt updates use the existing immutable-identity and monotone-version checks, with the current job lease guarded inside the cache transaction. Cancellation/account/role/lease changes during I/O or commit prevent response caching.
+
+An expired cached quota deadline falls back to ordinary source availability; it never becomes a new processing error. A source still PENDING is a scheduled availability wait in the existing processing queue, rather than one of the six real failures. Delay grows from one minute to one hour; a quota's server deadline remains distinct. The next ordinary foreground/manual sync performs due work. There is no added timer. Availability counts do not erase prior genuine errors.
+
+## Evidence and limits
+
+**186 tests in seven targeted files pass**, together with strict types in ten projects, lint/format/structure, API bundle/import and local Hermes iOS/Android exports. Targeted verification covers real isolated transactional Mongo, native SQLite and files; provider attachment access, Blob and native image decoding use explicit test ports. Scenarios include six-error exhaustion, concurrent request replay, permanent refusals, owner/global quota history preservation, offline request/reconstruction, unchanged action UUID after a lost acknowledgement, cache rollback, scope/role/lease loss, waiting more than six availability cycles, cancellation and unrelated parent failures.
+
+The combined scenario acknowledges an admission through the real Outbox/Mongo sync, exposes an exhausted original, fails its local processing, queues native retention recovery, loses the reply after the server commits, preserves the same original, replays the same action, then resumes actual canonical photo capture. It verifies one retained object, one canonical source, one upload task and one ordinary chat message, with no AI turn or published sales. This demonstrates that source/transport path; it does not claim live Resend reception, native image decoding, remote upload completion, every file format or phone acceptance.
+
+The actual inbox component was exercised locally at 390 and 320 px with clearly marked simulated ports. Recovery records the request, disables repeated taps for that receipt version and leaves the independent ready file and admission choices visible, without page overflow. Harness/screenshot and logs are retained in task artifacts, not shipped as a route. Native iOS/Android gestures remain device acceptance work.
+
+Code/merge/release/device acceptance remain separate. This lot needs both exact-head push and PR CI before merge. Deliver later with the coherent API-first/native email batch. Receiving configuration, real provider acceptance, ZIP exclusions, per-file remote completion and complete multi-format/two-device restoration remain open. No email, paid AI request, EAS build, provider setup, environment-file access or system change was performed for this verification.

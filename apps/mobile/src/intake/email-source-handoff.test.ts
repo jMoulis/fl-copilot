@@ -592,6 +592,7 @@ it("does not resurrect a deleted canonical source or reinterpret its stored purp
 });
 
 function processingRuntime(f: Awaited<ReturnType<typeof fixture>>, db = f.a) {
+  let at = new Date("2026-10-20T18:00:00Z");
   const cache = f.makeCache(db),
     session = () => ({
       storeId: f.scope.storeId,
@@ -602,19 +603,23 @@ function processingRuntime(f: Awaited<ReturnType<typeof fixture>>, db = f.a) {
     runMercalys = vi.fn(async () => {
       throw Error("UNEXPECTED_MERCALYS");
     }),
-    runtime = new EmailIntakeProcessing(cache, f.transfer(cache), {
-      session,
-      receipt,
-      format: async () => "MEDIA",
-      mercalys: {
-        attach: vi.fn(async () => {
-          throw Error("UNEXPECTED_MERCALYS");
-        }),
+    runtime = new EmailIntakeProcessing(
+      cache,
+      f.transfer(cache),
+      {
+        session,
+        receipt,
+        format: async () => "MEDIA",
+        mercalys: {
+          attach: vi.fn(async () => {
+            throw Error("UNEXPECTED_MERCALYS");
+          }),
+        },
+        media: f.makeHandoff(cache),
+        runMercalys,
       },
-      media: f.makeHandoff(cache),
-      runMercalys,
-    });
-  let at = new Date("2026-10-20T18:00:00Z");
+      () => at,
+    );
   const jobs = new SourceOriginalJobs(
     db,
     {
@@ -1217,4 +1222,150 @@ it("defers a server daily limit through eight days, keeps an earlier real failur
   });
   expect(count(f, "source_documents")).toBe(1);
   expect(count(f, "waste_observations")).toBe(0);
+});
+
+it("keeps ordinary source-availability waits out of the six real-error budget and resumes the same capture", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  const waiting = {
+    ...f.receipt,
+    version: 3,
+    files: f.receipt.files.map((file) => ({
+      ...file,
+      status: "PENDING" as const,
+    })),
+  };
+  await f.cache.storePage(f.scope, {
+    bindings: [],
+    receipts: [waiting],
+    nextCursor: null,
+  });
+  p.receipt.mockResolvedValue(waiting);
+  for (let i = 0; i < 9; i++) {
+    await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+    expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+      status: "RETRY",
+      code: "EMAIL_INTAKE_SOURCE_WAITING",
+      attempts: i + 1,
+    });
+    await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+    expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+      attempts: i + 1,
+    });
+    p.advance();
+  }
+  expect(count(f, "source_documents")).toBe(0);
+  p.receipt.mockResolvedValue({ ...f.receipt, version: 4 });
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "COMPLETED",
+    attempts: 10,
+  });
+  expect(count(f, "source_documents")).toBe(1);
+  expect(count(f, "copilot_messages")).toBe(1);
+  expect(count(f, "copilot_pending_turns")).toBe(0);
+});
+it.each(["FAILED", "CANCELLED", "WAITING_INPUT", "OTHER_FAILED"])(
+  "retention recovery resumes only a source-failed parent, preserving a %s parent otherwise",
+  async (status) => {
+    const f = await fixture(),
+      p = processingRuntime(f);
+    await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+    await f.a.runAsync(
+      "UPDATE local_jobs SET status=?,last_error=?,attempt_count=6 WHERE type='EMAIL_INTAKE_PROCESS'",
+      status === "OTHER_FAILED" ? "FAILED" : status,
+      status === "OTHER_FAILED"
+        ? "EMAIL_INTAKE_FILE_FORMAT_INVALID"
+        : status === "WAITING_INPUT"
+          ? "EMAIL_INTAKE_PURPOSE_REQUIRED"
+          : "EMAIL_INTAKE_SOURCE_FAILED",
+    );
+    const session = () => ({
+      storeId: f.scope.storeId,
+      userId: f.scope.ownerId,
+    });
+    const actionId = randomUUID();
+    const requestRetry = vi.fn(
+      async (
+        _input: unknown,
+        authorize?: (tx?: OutboxDatabase) => Promise<void>,
+      ) => {
+        await authorize?.();
+      },
+    );
+    const jobs = new SourceOriginalJobs(
+      f.a,
+      { recover: vi.fn() },
+      session,
+      randomUUID,
+      () => new Date("2026-10-20T18:00:00Z"),
+      { recover: vi.fn(), requestRetry },
+    );
+    await jobs.requestEmailRetry(
+      { ...f.ref(), actionId },
+      {
+        fileId: f.ref().fileId,
+        actionId: f.decision.actionId,
+        processingId: f.decision.files[0]!.processingId,
+      },
+    );
+    await jobs.process(f.scope.storeId, f.scope.ownerId, 1);
+    expect(requestRetry).toHaveBeenCalledTimes(1);
+    expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+      status:
+        status === "FAILED"
+          ? "PENDING"
+          : status === "OTHER_FAILED"
+            ? "FAILED"
+            : status,
+      attempts: 6,
+    });
+    if (status === "FAILED") {
+      await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+      expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+        status: "COMPLETED",
+        attempts: 7,
+      });
+      expect(count(f, "source_documents")).toBe(1);
+    } else expect(count(f, "source_documents")).toBe(0);
+  },
+);
+
+it("treats an expired cached quota deadline as ordinary availability, rather than a new processing failure", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  const pending = {
+    ...f.receipt,
+    version: 3,
+    files: f.receipt.files.map((file) => ({
+      ...file,
+      status: "PENDING" as const,
+      errorCode: "DAILY_LIMIT" as const,
+      retryAt: "2026-10-20T00:00:00Z",
+    })),
+  };
+  await f.cache.storePage(f.scope, {
+    bindings: [],
+    receipts: [pending],
+    nextCursor: null,
+  });
+  p.receipt.mockResolvedValueOnce(pending);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "RETRY",
+    code: "EMAIL_INTAKE_SOURCE_WAITING",
+    attempts: 1,
+    nextAttemptAt: "2026-10-20T18:01:00.000Z",
+  });
+  expect(count(f, "source_documents")).toBe(0);
+  p.advance();
+  p.receipt.mockResolvedValueOnce({ ...f.receipt, version: 4 });
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "COMPLETED",
+    attempts: 2,
+  });
+  expect(count(f, "source_documents")).toBe(1);
 });

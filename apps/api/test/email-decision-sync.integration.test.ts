@@ -1,3 +1,7 @@
+import { createEmailOriginalRetry } from "../src/intake/email-original-retry";
+import { createEmailOriginalProcessor } from "../src/intake/email-originals";
+import { SourceOriginalJobs } from "../../mobile/src/documents/source-original-jobs";
+import { EmailIntakeProcessing } from "../../mobile/src/intake/email-intake-processing";
 import { SourceDocumentRepository } from "../../mobile/src/documents/source-document-repository";
 import { SourceOriginalTransfer } from "../../mobile/src/documents/source-original-transfer";
 import { readConversationGenerationHistory } from "../src/copilot/generation-history";
@@ -341,6 +345,263 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         },
       };
     }
+    it("recovers an exhausted original via the durable native retry after a lost acknowledgement, then resumes one canonical capture", async () => {
+      const bytes = new Uint8Array(
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aZkAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      );
+      const f = await fixture(undefined, {
+        bytes,
+        filename: "rayon.png",
+        mediaType: "image/png",
+      });
+      try {
+        const a = await f.phone();
+        const received = (await f.store.list(f.scope)).receipts[0]!;
+        await f.store.createBinding(f.scope, {
+          id: received.bindingId,
+          conversationId: f.scope.conversationId,
+          allowedSender: received.sender,
+        });
+        const decision = await a.decide("ADMIT", "STORE_PHOTO");
+        expect(await a.service.push(f.scope.storeId)).toMatchObject({
+          pushed: 1,
+          failed: 0,
+          conflicts: 0,
+        });
+        await f.db
+          .collection<Document & { _id: string }>("emailIntakeOriginalJobs")
+          .updateOne(
+            { _id: f.fileId },
+            { $set: { status: "DONE", attempts: 6 }, $unset: { proof: "" } },
+          );
+        await f.db
+          .collection<Document & { _id: string }>("emailIntakeReceipts")
+          .updateOne(
+            { _id: f.receiptId },
+            {
+              $set: {
+                "files.0.status": "FAILED",
+                "files.0.errorCode": "PROVIDER_UNAVAILABLE",
+              },
+              $inc: { version: 1 },
+            },
+          );
+        await a.cache.storePage(f.scope, await f.store.list(f.scope));
+        let at = new Date(),
+          firstReply = true;
+        const retryService = createEmailOriginalRetry(database, () => at);
+        const retry = vi.fn(
+          async (
+            _store: string,
+            _owner: string,
+            input: Parameters<typeof retryService.request>[0],
+          ) => {
+            await retryService.request(input, {
+              ...f.scope,
+              deviceId: a.deviceId,
+            });
+            if (firstReply) {
+              firstReply = false;
+              throw Error("OFFLINE");
+            }
+            return {
+              actionId: input.actionId,
+              receipt: (await f.store.list(f.scope)).receipts[0]!,
+            };
+          },
+        );
+        const requestTransfer = new EmailOriginalTransfer(
+          a.cache,
+          {
+            retry,
+            manifest: async () => {
+              throw Error("UNEXPECTED_MANIFEST");
+            },
+            download: async () => {
+              throw Error("UNEXPECTED_DOWNLOAD");
+            },
+          },
+          {
+            hash: async (text) => hash(text),
+            existing: async () => null,
+            receive: async () => {
+              throw Error("UNEXPECTED_BYTES");
+            },
+          },
+        );
+        const { EmailSourceHandoff } = await import(
+          "../../mobile/src/intake/" + "email-source-handoff"
+        );
+        const media = new EmailSourceHandoff(a.cache, a.transfer, a.deviceId, {
+          read: async (uri: string) =>
+            new Uint8Array(await readFile(fileURLToPath(uri))),
+          imageSize: async () => ({ width: 1, height: 1 }),
+          bundle: async () => {
+            throw Error("UNEXPECTED_BUNDLE");
+          },
+        });
+        const session = () => ({
+          storeId: f.scope.storeId,
+          userId: f.scope.ownerId,
+          canWrite: true,
+        });
+        const runtime = new EmailIntakeProcessing(
+          a.cache,
+          a.transfer,
+          {
+            session,
+            receipt: async () => (await f.store.list(f.scope)).receipts[0]!,
+            format: async () => "MEDIA",
+            media,
+            mercalys: {
+              attach: async () => {
+                throw Error("UNEXPECTED_IMPORT");
+              },
+            },
+            runMercalys: async () => {
+              throw Error("UNEXPECTED_IMPORT");
+            },
+          },
+          () => at,
+        );
+        const makeJobs = () =>
+          new SourceOriginalJobs(
+            a.local,
+            {
+              recover: async () => {
+                throw Error("UNEXPECTED_SOURCE");
+              },
+            },
+            session,
+            randomUUID,
+            () => at,
+            {
+              recover: (...args) => a.transfer.recover(...args),
+              requestRetry: (...args) => requestTransfer.requestRetry(...args),
+            },
+            { process: (...args) => runtime.process(...args) },
+          );
+        let jobs = makeJobs();
+        await runtime.seed(f.scope.storeId, f.scope.ownerId, jobs);
+        const input = {
+          conversationId: f.scope.conversationId,
+          receiptId: f.receiptId,
+          fileId: f.fileId,
+          actionId: decision.actionId,
+          processingId: decision.files[0]!.processingId,
+        };
+        await jobs.process(f.scope.storeId, f.scope.ownerId, 1);
+        expect(await jobs.emailProcessingState(input)).toMatchObject({
+          status: "FAILED",
+          code: "EMAIL_INTAKE_SOURCE_FAILED",
+        });
+        const request = {
+          conversationId: input.conversationId,
+          receiptId: input.receiptId,
+          fileId: input.fileId,
+          actionId: randomUUID(),
+        };
+        await jobs.requestEmailRetry(request, {
+          fileId: input.fileId,
+          actionId: input.actionId,
+          processingId: input.processingId,
+        });
+        await jobs.process(f.scope.storeId, f.scope.ownerId, 1);
+        expect(await jobs.emailProcessingState(input)).toMatchObject({
+          status: "FAILED",
+          attempts: 1,
+        });
+        expect(retry).toHaveBeenCalledTimes(1);
+        expect(
+          await a.local.getFirstAsync(
+            "SELECT status,last_error FROM local_jobs WHERE type='EMAIL_ORIGINAL_RETRY'",
+          ),
+        ).toEqual({ status: "RETRY", last_error: "OFFLINE" });
+        expect(
+          await f.db
+            .collection<Document & { _id: string }>("emailIntakeOriginalJobs")
+            .findOne({ _id: f.fileId }),
+        ).toMatchObject({ status: "PENDING", retryAttemptBase: 6 });
+        const objects = new Map<string, Uint8Array>();
+        const write = vi.fn(async (key: string, data: Uint8Array) => {
+          if (objects.has(key)) throw Error("DUPLICATE_ORIGINAL");
+          objects.set(key, data);
+        });
+        const processor = createEmailOriginalProcessor(
+          database,
+          {
+            read: async (target, authorize, _signal, before) => {
+              await authorize();
+              await before?.(bytes.length);
+              return {
+                bytes,
+                checksum: hash(bytes),
+                sizeBytes: bytes.length,
+                declaredMimeType: target.mediaType,
+                filename: target.filename,
+              };
+            },
+          },
+          { read: async (key) => objects.get(key) ?? null, write },
+          () => at,
+        );
+        expect(await processor.preserve(f.fileId)).toEqual({ status: "READY" });
+        at = new Date(at.getTime() + 3600_000);
+        jobs = makeJobs();
+        await jobs.process(f.scope.storeId, f.scope.ownerId, 2);
+        expect(retry.mock.calls.map((call) => call[2])).toEqual([
+          request,
+          request,
+        ]);
+        expect(
+          await f.db
+            .collection<Document & { _id: string }>("processedCommands")
+            .countDocuments({ _id: request.actionId }),
+        ).toBe(1);
+        expect(
+          await f.db
+            .collection<Document & { _id: string }>("emailIntakeOriginalJobs")
+            .findOne({ _id: f.fileId }),
+        ).toMatchObject({ attempts: 7, retryAttemptBase: 6, status: "DONE" });
+        expect(await jobs.emailProcessingState(input)).toMatchObject({
+          status: "COMPLETED",
+          attempts: 2,
+        });
+        await runtime.seed(f.scope.storeId, f.scope.ownerId, jobs);
+        await jobs.process(f.scope.storeId, f.scope.ownerId, 5);
+        expect(write).toHaveBeenCalledTimes(1);
+        expect(
+          await a.local.getFirstAsync(
+            "SELECT COUNT(*) n FROM source_documents",
+          ),
+        ).toEqual({ n: 1 });
+        expect(
+          await a.local.getFirstAsync(
+            "SELECT COUNT(*) n FROM copilot_messages",
+          ),
+        ).toEqual({ n: 1 });
+        expect(
+          await a.local.getFirstAsync(
+            "SELECT COUNT(*) n FROM copilot_pending_turns",
+          ),
+        ).toEqual({ n: 0 });
+        expect(
+          await a.local.getFirstAsync(
+            "SELECT COUNT(*) n FROM local_jobs WHERE type='SOURCE_UPLOAD_AND_REGISTER'",
+          ),
+        ).toEqual({ n: 1 });
+        expect(
+          await f.db
+            .collection("salesObservations")
+            .countDocuments({ storeId: f.scope.storeId }),
+        ).toBe(0);
+      } finally {
+        await f.cleanup();
+      }
+    });
     it("restores an admitted email photo through the real private chat and source services on a fresh device, then remains usable offline", async () => {
       const bytes = new Uint8Array(
         Buffer.from(

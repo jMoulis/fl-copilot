@@ -4,7 +4,7 @@ import { buildApp } from "../src/build-app.js";
 import { parseEnvironment } from "../src/config.js";
 import { AuthError, type AuthService } from "../src/auth/service.js";
 import type { EmailIntakeStore } from "../src/intake/email-intake-store.js";
-function fixture(enabled = true, webhook = false) {
+function fixture(enabled = true, webhook = false, retryEnabled = false) {
   const ownerId = randomUUID(),
     storeId = randomUUID(),
     conversationId = randomUUID(),
@@ -119,10 +119,19 @@ function fixture(enabled = true, webhook = false) {
         }
       : {}),
   });
+  const retryOriginal = {
+    request: vi.fn(async (input: { actionId: string }) => ({
+      actionId: input.actionId,
+    })),
+    dispatch: vi.fn<(receiptId: string) => Promise<unknown>>(
+      async () => undefined,
+    ),
+  };
   const app = buildApp(config, {
     auth,
     emailIntake: enabled ? intake : undefined,
     emailOriginalAccess: originals,
+    emailOriginalRetry: retryEnabled ? retryOriginal : undefined,
     database: {
       getDb: vi.fn(),
       checkHealth: async () => "connected",
@@ -141,6 +150,7 @@ function fixture(enabled = true, webhook = false) {
     manifest,
     download,
     originals,
+    retryOriginal,
     headers: { authorization: "Bearer valid", "x-store-id": storeId },
     role: (v: typeof role) => {
       role = v;
@@ -435,6 +445,117 @@ it("withholds an original capability after authorization changes", async () => {
     });
     expect(response.statusCode).toBe(403);
     expect(response.body).not.toContain("signature=test-only");
+  } finally {
+    await f.app.close();
+  }
+});
+
+it("authenticates explicit original retry, refuses body authority and returns the current private receipt after dispatch", async () => {
+  const f = fixture(true, false, true),
+    payload = { ...f.target, actionId: randomUUID() };
+  const url = "/api/v1/intake/email/original-retries";
+  try {
+    expect(
+      (await f.app.inject({ method: "POST", url, payload })).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await f.app.inject({
+          method: "POST",
+          url,
+          payload: { ...payload, ownerId: randomUUID() },
+          headers: f.headers,
+        })
+      ).statusCode,
+    ).toBe(400);
+    f.role("USER");
+    expect(
+      (await f.app.inject({ method: "POST", url, payload, headers: f.headers }))
+        .statusCode,
+    ).toBe(403);
+    expect(f.retryOriginal.request).not.toHaveBeenCalled();
+    f.role("MANAGER");
+    const response = await f.app.inject({
+      method: "POST",
+      url,
+      payload,
+      headers: f.headers,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(response.json()).toEqual({
+      actionId: payload.actionId,
+      receipt: await f.originals.receipt(),
+    });
+    expect(f.retryOriginal.request).toHaveBeenCalledExactlyOnceWith(payload, {
+      storeId: f.scope.storeId,
+      ownerId: f.scope.ownerId,
+      deviceId: expect.any(String),
+    });
+    expect(f.retryOriginal.dispatch).toHaveBeenCalledExactlyOnceWith(
+      payload.receiptId,
+    );
+  } finally {
+    await f.app.close();
+  }
+});
+it("keeps a committed retry replayable after dispatch failure and discloses no receipt after authorization changes", async () => {
+  const f = fixture(true, false, true),
+    payload = { ...f.target, actionId: randomUUID() },
+    url = "/api/v1/intake/email/original-retries";
+  try {
+    f.retryOriginal.dispatch.mockRejectedValueOnce(
+      Error("provider secret must not leak"),
+    );
+    const interrupted = await f.app.inject({
+      method: "POST",
+      url,
+      payload,
+      headers: f.headers,
+    });
+    expect(interrupted.statusCode).toBe(503);
+    expect(interrupted.json().code).toBe(
+      "EMAIL_ORIGINAL_RETRY_QUEUE_UNAVAILABLE",
+    );
+    expect(interrupted.body).not.toContain("provider secret");
+    expect(f.originals.receipt).not.toHaveBeenCalled();
+    expect(
+      (await f.app.inject({ method: "POST", url, payload, headers: f.headers }))
+        .statusCode,
+    ).toBe(200);
+    expect(f.retryOriginal.request.mock.calls.map((call) => call[0])).toEqual([
+      payload,
+      payload,
+    ]);
+    f.retryOriginal.dispatch.mockImplementationOnce(async () => {
+      f.revoke();
+    });
+    const revoked = await f.app.inject({
+      method: "POST",
+      url,
+      payload,
+      headers: f.headers,
+    });
+    expect(revoked.statusCode).toBe(403);
+    expect(revoked.body).not.toContain(f.binding.allowedSender);
+  } finally {
+    await f.app.close();
+  }
+});
+it("reports unavailable retry without a receipt mutation or provider call", async () => {
+  const f = fixture(false),
+    payload = { ...f.target, actionId: randomUUID() };
+  try {
+    const result = await f.app.inject({
+      method: "POST",
+      url: "/api/v1/intake/email/original-retries",
+      payload,
+      headers: f.headers,
+    });
+    expect(result.statusCode).toBe(503);
+    expect(result.json().code).toBe("EMAIL_ORIGINAL_RETRY_UNAVAILABLE");
+    expect(f.retryOriginal.request).not.toHaveBeenCalled();
+    expect(f.originals.receipt).not.toHaveBeenCalled();
   } finally {
     await f.app.close();
   }

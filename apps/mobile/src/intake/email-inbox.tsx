@@ -32,6 +32,7 @@ type Inbox = Pick<
   | "revokeBinding"
   | "decision"
   | "decide"
+  | "retryOriginal"
 > &
   EmailProcessingControlsPort;
 type Cached = Awaited<ReturnType<Inbox["list"]>>;
@@ -409,6 +410,7 @@ function EmailReceivedCard({
     [grouping, setGrouping] = useState(false),
     [views, setViews] = useState<Set<string>>(new Set()),
     [purposeFile, setPurposeFile] = useState<string>(),
+    [retryQueued, setRetryQueued] = useState<Map<string, number>>(new Map()),
     [error, setError] = useState<string>(),
     [, changed] = useState(0);
   const alive = useRef(true),
@@ -450,6 +452,32 @@ function EmailReceivedCard({
   for (const file of selected) {
     const group = draft.tickets.get(file.id);
     if (group) groups.set(group, [...(groups.get(group) ?? []), file.id]);
+  }
+  async function retryOriginal(fileId: string) {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await inbox.retryOriginal({
+        conversationId,
+        receiptId: receipt.id,
+        fileId,
+      });
+      if (alive.current)
+        setRetryQueued(
+          (prior) => new Map([...prior, [fileId, receipt.version]]),
+        );
+      await onChanged();
+    } catch {
+      if (alive.current)
+        setError(
+          "La reprise n’a pas pu être enregistrée. L’original reste conservé.",
+        );
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
+    }
   }
   function choosePurpose(fileId: string, purpose: EmailFilePurpose) {
     if (busy || !canChoose) return;
@@ -733,6 +761,31 @@ function EmailReceivedCard({
                               : "Format non pris en charge"}
                   </Text>
                 </Pressable>
+                {file.status === "FAILED" &&
+                [
+                  "READ_FAILED",
+                  "PROVIDER_UNAVAILABLE",
+                  "STORAGE_UNAVAILABLE",
+                ].includes(file.errorCode ?? "") &&
+                !["DISMISSED", "QUARANTINED"].includes(receipt.status) ? (
+                  <View style={{ gap: 8 }}>
+                    {retryQueued.get(file.id) === receipt.version ? (
+                      <Text
+                        accessibilityLiveRegion="polite"
+                        style={{ color: colors.muted }}
+                      >
+                        Demande de reprise enregistrée · à synchroniser.
+                      </Text>
+                    ) : null}
+                    <SecondaryButton
+                      label="Reprendre la réception"
+                      disabled={
+                        busy || retryQueued.get(file.id) === receipt.version
+                      }
+                      onPress={() => void retryOriginal(file.id)}
+                    />
+                  </View>
+                ) : null}
                 {eligible && included && !grouping && showPurpose ? (
                   <View style={{ gap: 8, paddingBottom: 12 }}>
                     <Pressable

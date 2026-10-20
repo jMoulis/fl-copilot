@@ -37,6 +37,7 @@ export type EmailOriginalJob = {
   status: "PENDING" | "RUNNING" | "RETRY" | "DONE" | "CANCELLED";
   attempts: number;
   budgetDeferrals?: number;
+  retryAttemptBase?: number;
   nextAttemptAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -119,9 +120,13 @@ const fileLimit = 50 * 1024 * 1024,
 const attemptsLimit = 6,
   leaseMs = 180000;
 const scopeChanged = () => Error("EMAIL_ATTACHMENT_SCOPE_CHANGED");
-const usedAttempts = (job: Job) => job.attempts - (job.budgetDeferrals ?? 0);
+const usedAttempts = (job: Job) =>
+  job.attempts - (job.budgetDeferrals ?? 0) - (job.retryAttemptBase ?? 0);
 const attemptsExpression = {
-  $subtract: ["$attempts", { $ifNull: ["$budgetDeferrals", 0] }],
+  $subtract: [
+    { $subtract: ["$attempts", { $ifNull: ["$budgetDeferrals", 0] }] },
+    { $ifNull: ["$retryAttemptBase", 0] },
+  ],
 };
 const due = (timestamp: Date): Filter<Job> => ({
   status: { $in: ["PENDING", "RETRY", "RUNNING"] as Job["status"][] },
@@ -189,6 +194,55 @@ export function createEmailOriginalBlobStorage(): EmailOriginalStorage {
   };
 }
 
+/** Current private source authority shared by preservation and an explicit retry.
+ * A retry never needs a live download lease and never changes this source identity. */
+export async function emailOriginalScope(
+  db: Db,
+  job: Job,
+  session?: ClientSession,
+) {
+  if (
+    !(await emailIntakeAuthorized(
+      db,
+      {
+        storeId: job.storeId,
+        ownerId: job.ownerId,
+        conversationId: job.conversationId,
+      },
+      session,
+    ))
+  )
+    throw scopeChanged();
+  const binding = await db
+    .collection<EmailIntakeBindingRecord>("emailIntakeBindings")
+    .findOne(
+      {
+        _id: job.bindingId,
+        storeId: job.storeId,
+        ownerId: job.ownerId,
+        conversationId: job.conversationId,
+        revokedAt: null,
+      },
+      { session, maxTimeMS: 2000 },
+    );
+  const receipt = await db
+    .collection<EmailIntakeReceiptRecord>("emailIntakeReceipts")
+    .findOne(
+      {
+        _id: job.receiptId,
+        bindingId: job.bindingId,
+        storeId: job.storeId,
+        ownerId: job.ownerId,
+        conversationId: job.conversationId,
+        status: { $nin: ["DISMISSED", "QUARANTINED"] },
+      },
+      { session, maxTimeMS: 2000 },
+    );
+  const file = receipt?.files.find((f) => f.id === job._id);
+  if (!binding || !receipt || !file) throw scopeChanged();
+  return { receipt, file };
+}
+
 /** Each invocation preserves one file. Canonical parsing/publication is deliberately not invoked here. */
 export function createEmailOriginalProcessor(
   database: DatabaseService,
@@ -209,46 +263,8 @@ export function createEmailOriginalProcessor(
       { session, maxTimeMS: 2000 },
     );
     if (!live) throw Error("EMAIL_ATTACHMENT_SCOPE_UNAVAILABLE");
-    if (
-      !(await emailIntakeAuthorized(
-        db,
-        {
-          storeId: job.storeId,
-          ownerId: job.ownerId,
-          conversationId: job.conversationId,
-        },
-        session,
-      ))
-    )
-      throw scopeChanged();
-    const binding = await db
-      .collection<EmailIntakeBindingRecord>("emailIntakeBindings")
-      .findOne(
-        {
-          _id: job.bindingId,
-          storeId: job.storeId,
-          ownerId: job.ownerId,
-          conversationId: job.conversationId,
-          revokedAt: null,
-        },
-        { session, maxTimeMS: 2000 },
-      );
-    const receipt = await db
-      .collection<EmailIntakeReceiptRecord>("emailIntakeReceipts")
-      .findOne(
-        {
-          _id: job.receiptId,
-          bindingId: job.bindingId,
-          storeId: job.storeId,
-          ownerId: job.ownerId,
-          conversationId: job.conversationId,
-          status: { $nin: ["DISMISSED", "QUARANTINED"] },
-        },
-        { session, maxTimeMS: 2000 },
-      );
-    const file = receipt?.files.find((f) => f.id === job._id);
-    if (!binding || !receipt || !file || file.status === "APPLIED")
-      throw scopeChanged();
+    const { receipt, file } = await emailOriginalScope(db, job, session);
+    if (file.status === "APPLIED") throw scopeChanged();
     return { live, receipt, file };
   }
   async function finish(

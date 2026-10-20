@@ -3,6 +3,8 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
   emailIntakeStatusSchema,
+  emailIntakeOriginalRetrySchema,
+  emailIntakeOriginalRetryResultSchema,
   emailIntakeDecisionPageQuerySchema,
   emailIntakeDecisionPageSchema,
   emailIntakeRevocationSchema,
@@ -23,6 +25,10 @@ export function registerEmailIntakeRoutes(
     store?: EmailIntakeStore;
     originals: EmailOriginalAccess;
     history?: import("./email-decision-history").EmailDecisionHistory;
+    retryOriginal?: {
+      request: import("./email-original-retry").EmailOriginalRetry["request"];
+      dispatch(receiptId: string): Promise<unknown>;
+    };
   },
 ) {
   const api = app.withTypeProvider<ZodTypeProvider>();
@@ -58,6 +64,61 @@ export function registerEmailIntakeRoutes(
       );
     return dependencies.store;
   };
+  api.post(
+    "/api/v1/intake/email/original-retries",
+    {
+      schema: {
+        body: emailIntakeOriginalRetrySchema,
+        response: { 200: emailIntakeOriginalRetryResultSchema },
+      },
+    },
+    async (request, reply) => {
+      const principal = await authorize(request),
+        retry = dependencies.retryOriginal;
+      if (!retry)
+        throw new AuthError(
+          503,
+          "EMAIL_ORIGINAL_RETRY_UNAVAILABLE",
+          "La reprise de réception est momentanément indisponible.",
+        );
+      await retry.request(request.body, {
+        storeId: principal.storeId,
+        ownerId: principal.userId,
+        deviceId: principal.deviceId,
+      });
+      const check = async () => {
+        const current = await authorize(request);
+        if (
+          current.userId !== principal.userId ||
+          current.storeId !== principal.storeId
+        )
+          throw new AuthError(
+            403,
+            "EMAIL_ORIGINAL_RETRY_FORBIDDEN",
+            "L’accès à la réception a changé.",
+          );
+      };
+      await check();
+      try {
+        await retry.dispatch(request.body.receiptId);
+      } catch {
+        throw new AuthError(
+          503,
+          "EMAIL_ORIGINAL_RETRY_QUEUE_UNAVAILABLE",
+          "La demande est conservée ; l’envoi au traitement reste à reprendre.",
+        );
+      }
+      const receipt = await dependencies.originals.receipt({
+        storeId: principal.storeId,
+        ownerId: principal.userId,
+        conversationId: request.body.conversationId,
+        receiptId: request.body.receiptId,
+      });
+      await check();
+      reply.header("cache-control", "private, no-store");
+      return { actionId: request.body.actionId, receipt };
+    },
+  );
   api.get(
     "/api/v1/intake/email/decisions",
     {

@@ -99,7 +99,11 @@ export class EmailIntakeCache {
     )
       throw invalid();
   }
-  async storePage(scope: EmailIntakeScope, raw: unknown) {
+  async storePage(
+    scope: EmailIntakeScope,
+    raw: unknown,
+    guard?: (tx: OutboxDatabase) => Promise<void>,
+  ) {
     const page = emailIntakeListSchema.parse(raw);
     // Validate the entire page before writes; one foreign item rolls back the page.
     for (const item of [...page.bindings, ...page.receipts])
@@ -111,6 +115,7 @@ export class EmailIntakeCache {
       throw invalid();
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       await this.authorize(scope, tx);
+      await guard?.(tx);
       const keys = [scope.storeId, scope.ownerId, scope.conversationId];
       for (const binding of page.bindings) {
         const row = await tx.getFirstAsync<{ payload_json: string }>(
@@ -188,6 +193,7 @@ export class EmailIntakeCache {
         );
       }
       await this.authorize(scope, tx);
+      await guard?.(tx);
     });
     return page.nextCursor;
   }

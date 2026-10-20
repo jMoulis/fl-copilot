@@ -111,6 +111,7 @@ export interface SyncContextValue extends LocalSyncSnapshot {
       ref: EmailIntakeOriginalRequest,
     ): ReturnType<SourceOriginalJobs["emailProcessingState"]>;
     retryProcessing(ref: EmailIntakeOriginalRequest): Promise<void>;
+    retryOriginal(ref: EmailIntakeOriginalRequest): Promise<void>;
     setPurpose(
       ref: EmailIntakeOriginalRequest,
       purpose: "WASTE_TICKET" | "STORE_PHOTO",
@@ -351,6 +352,11 @@ export function SyncProvider({ children }: PropsWithChildren) {
         manifest: (store, owner, ref) =>
           withAccessToken(
             (token) => api.emailIntakeOriginalManifest(token, store, ref),
+            owner,
+          ),
+        retry: (store, owner, input) =>
+          withAccessToken(
+            (token) => api.retryEmailIntakeOriginal(token, store, input),
             owner,
           ),
         download: (store, owner, ref) =>
@@ -730,6 +736,58 @@ export function SyncProvider({ children }: PropsWithChildren) {
       return scope;
     };
     const api = new ApiClient(getApiBaseUrl());
+    const queueOriginalRetry = async (ref: EmailIntakeOriginalRequest) => {
+      const scope = scopeFor(ref.conversationId);
+      const receipt = await emailCache.receipt(
+        ref.conversationId,
+        ref.receiptId,
+      );
+      const file = receipt?.files.find((file) => file.id === ref.fileId);
+      if (
+        !receipt ||
+        ["DISMISSED", "QUARANTINED"].includes(receipt.status) ||
+        !file
+      )
+        throw Error("EMAIL_ORIGINAL_UNAVAILABLE");
+      const accepted = await emailDecisions.get(
+        ref.conversationId,
+        ref.receiptId,
+      );
+      const selected = accepted?.decision.files.find(
+        (file) => file.fileId === ref.fileId,
+      );
+      let resume:
+        { fileId: string; actionId: string; processingId: string } | undefined;
+      if (
+        accepted?.state === "SYNCED" &&
+        accepted.decision.choice === "ADMIT" &&
+        selected
+      ) {
+        const leader = receipt.files.find((member) =>
+          accepted.decision.files.some(
+            (selection) =>
+              selection.fileId === member.id &&
+              selection.processingId === selected.processingId,
+          ),
+        );
+        if (!leader) throw Error("EMAIL_INTAKE_IDENTITY_INVALID");
+        resume = {
+          fileId: leader.id,
+          actionId: accepted.decision.actionId,
+          processingId: selected.processingId,
+        };
+        await readEmailAdmissionAuthority(database.sqlite, scope, {
+          receiptId: ref.receiptId,
+          ...resume,
+        });
+      }
+      await emailCache.authorize(scope);
+      await originalJobs.requestEmailRetry(
+        { ...ref, actionId: randomUUID() },
+        resume,
+      );
+      emailCache.check(scope);
+    };
     const processingInput = async (ref: EmailIntakeOriginalRequest) => {
       const scope = scopeFor(ref.conversationId);
       await emailCache.authorize(scope);
@@ -903,10 +961,37 @@ export function SyncProvider({ children }: PropsWithChildren) {
         const input = await processingInput(ref);
         return originalJobs.emailProcessingState(input);
       },
+      retryOriginal: async (ref: EmailIntakeOriginalRequest) => {
+        const scope = scopeFor(ref.conversationId);
+        await queueOriginalRetry(ref);
+        emailCache.check(scope);
+        void syncNow(scope.storeId);
+      },
       retryProcessing: async (ref: EmailIntakeOriginalRequest) => {
         const scope = scopeFor(ref.conversationId),
           input = await processingInput(ref);
-        await originalJobs.requestEmailProcessing(input, true);
+        const receipt = await emailCache.receipt(
+          ref.conversationId,
+          ref.receiptId,
+        );
+        const accepted = await emailDecisions.get(
+          ref.conversationId,
+          ref.receiptId,
+        );
+        const failed =
+          receipt?.files.filter(
+            (file) =>
+              file.status === "FAILED" &&
+              accepted?.decision.files.some(
+                (selection) =>
+                  selection.fileId === file.id &&
+                  selection.processingId === input.processingId,
+              ),
+          ) ?? [];
+        if (failed.length) {
+          for (const file of failed)
+            await queueOriginalRetry({ ...ref, fileId: file.id });
+        } else await originalJobs.requestEmailProcessing(input, true);
         emailCache.check(scope);
         void syncNow(scope.storeId);
       },
@@ -1020,7 +1105,7 @@ async function readLocalSyncSnapshot(
           AS failed_count
       FROM local_jobs
       WHERE json_extract(payload_json, '$.storeId') = ?
-        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER','EMAIL_ORIGINAL_TRANSFER','EMAIL_INTAKE_PROCESS') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
+        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER','EMAIL_ORIGINAL_TRANSFER','EMAIL_ORIGINAL_RETRY','EMAIL_INTAKE_PROCESS') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
     `,
     storeId,
     ownerId ?? null,
