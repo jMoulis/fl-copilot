@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { useFocusEffect } from "expo-router";
-import { readStorePhotoOriginal } from "./store-photo-original";
+import { SourceOriginalButton } from "../documents/source-original-button";
 import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import { useSync } from "../sync/sync-provider";
-import { BottomSheet, InlineAlert, SecondaryButton } from "../components/ui";
+import { InlineAlert, SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
 import { SourceUploadRecoveryRepository } from "../documents/source-upload-recovery";
 import { ReceiptAttachmentPanel } from "./receipt-attachment-panel";
@@ -28,9 +28,7 @@ export function SourceImageAttachment({
   const [kind, setKind] = useState<string>(),
     [photo, setPhoto] = useState<Photo>(),
     [error, setError] = useState<string>();
-  const [open, setOpen] = useState(false),
-    [imageUri, setImageUri] = useState<string>(),
-    [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
   const revision = useRef(0),
     locked = useRef(false),
     actor = useRef(session);
@@ -62,8 +60,6 @@ export function SourceImageAttachment({
   useFocusEffect(
     useCallback(() => {
       revision.current++;
-      setImageUri(undefined);
-      setOpen(false);
       setKind(undefined);
       setPhoto(undefined);
       setError(undefined);
@@ -74,41 +70,12 @@ export function SourceImageAttachment({
       });
       return () => {
         revision.current++;
-        setImageUri(undefined);
-        setOpen(false);
       };
     }, [read]),
   );
   useEffect(() => {
     if (sync.lastSyncedAt) void read().catch(() => undefined);
   }, [read, sync.lastSyncedAt]);
-  const show = async () => {
-    if (locked.current || !photo || !storeId) return;
-    locked.current = true;
-    setBusy(true);
-    setError(undefined);
-    const v = revision.current;
-    try {
-      const uri = await readStorePhotoOriginal(
-        sqlite,
-        storeId,
-        sourceDocumentId,
-        ownerId!,
-      );
-      if (v === revision.current) {
-        setImageUri(uri);
-        setOpen(true);
-      }
-    } catch {
-      if (v === revision.current)
-        setError(
-          "L’original n’a pas été retrouvé ou ne correspond plus à cette photo. Il ne sera pas remplacé automatiquement.",
-        );
-    } finally {
-      locked.current = false;
-      setBusy(false);
-    }
-  };
   const retry = async () => {
     if (locked.current || !storeId) return;
     locked.current = true;
@@ -152,9 +119,22 @@ export function SourceImageAttachment({
     }
   };
   if (kind === "WASTE_RECEIPT")
-    return <ReceiptAttachmentPanel sourceDocumentId={sourceDocumentId} />;
+    return (
+      <View style={{ gap: 10 }}>
+        <ReceiptAttachmentPanel sourceDocumentId={sourceDocumentId} />
+        <SourceOriginalButton
+          sourceDocumentId={sourceDocumentId}
+          label="Consulter les photos originales"
+        />
+      </View>
+    );
   if (!photo)
-    return error ? <InlineAlert title="Photo" message={error} /> : null;
+    return (
+      <View style={{ gap: 10 }}>
+        <SourceOriginalButton sourceDocumentId={sourceDocumentId} />
+        {error ? <InlineAlert title="Photo" message={error} /> : null}
+      </View>
+    );
   return (
     <View className="gap-2">
       <Text style={{ color: colors.muted, fontSize: 13 }}>
@@ -166,10 +146,9 @@ export function SourceImageAttachment({
               ? "Photo conservée · envoi en cours"
               : "Photo conservée · envoi en attente"}
       </Text>
-      <SecondaryButton
+      <SourceOriginalButton
+        sourceDocumentId={sourceDocumentId}
         label="Voir la photo du rayon"
-        disabled={busy}
-        onPress={() => void show()}
       />
       {photo.status !== "CONFIRMED" ? (
         <SecondaryButton
@@ -179,26 +158,6 @@ export function SourceImageAttachment({
         />
       ) : null}
       {error ? <InlineAlert title="Photo du rayon" message={error} /> : null}
-      <BottomSheet
-        visible={open}
-        title={photo.filename}
-        onClose={() => {
-          setOpen(false);
-          setImageUri(undefined);
-        }}
-      >
-        {imageUri ? (
-          <Image
-            source={{ uri: imageUri }}
-            accessibilityLabel="Photo originale du rayon"
-            resizeMode="contain"
-            style={{ width: "100%", height: 420 }}
-          />
-        ) : null}
-        <Text style={{ color: colors.muted }}>
-          L’original est conservé sur cet appareil.
-        </Text>
-      </BottomSheet>
     </View>
   );
 }

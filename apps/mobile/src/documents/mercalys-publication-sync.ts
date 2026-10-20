@@ -1,3 +1,4 @@
+import { attachRecoveredSourceOriginal } from "./source-original-links";
 import {
   mercalysPublicationSchema,
   synchronizedMercalysPublicationSchema,
@@ -248,6 +249,7 @@ export async function applyMercalysPublication(
       p.source.createdAt,
       snapshot.remoteVersion,
     );
+  await attachRecoveredSourceOriginal(tx, storeId, snapshot.id);
   for (const r of p.records) {
     const exists = await tx.getFirstAsync<{
       store_id: string;

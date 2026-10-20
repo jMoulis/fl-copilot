@@ -18,7 +18,7 @@ export async function readPendingWork(
   }>(
     `SELECT type,status,COUNT(*) AS count,MAX(last_error) AS last_error FROM local_jobs
  WHERE json_extract(payload_json,'$.storeId')=? AND status IN ('PENDING','RETRY','RUNNING','FAILED')
- AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
+ AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
  GROUP BY type,status ORDER BY type,status LIMIT 20`,
     storeId,
     ownerId ?? null,
@@ -40,15 +40,17 @@ export async function readPendingWork(
       : []),
     ...jobs.map((j) => ({
       label:
-        j.type === "ANALYTICS_RECOMPUTE_PRODUCT_DATES"
-          ? "Calcul des indicateurs locaux"
-          : j.type === "SOURCE_UPLOAD_AND_REGISTER"
-            ? "Envoi et vérification des fichiers"
-            : j.type === "VISUAL_FILE_TRANSFER"
-              ? "Images des produits"
-              : j.type === "COMMERCIAL_ANALYSIS_RESUME"
-                ? "Demandes de reprise d’analyse commerciale"
-                : "Traitement local",
+        j.type === "SOURCE_ORIGINAL_TRANSFER"
+          ? "Récupération des originaux"
+          : j.type === "ANALYTICS_RECOMPUTE_PRODUCT_DATES"
+            ? "Calcul des indicateurs locaux"
+            : j.type === "SOURCE_UPLOAD_AND_REGISTER"
+              ? "Envoi et vérification des fichiers"
+              : j.type === "VISUAL_FILE_TRANSFER"
+                ? "Images des produits"
+                : j.type === "COMMERCIAL_ANALYSIS_RESUME"
+                  ? "Demandes de reprise d’analyse commerciale"
+                  : "Traitement local",
       count: Number(j.count),
       state:
         j.status === "RUNNING"

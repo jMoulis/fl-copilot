@@ -1,3 +1,4 @@
+import { SourceOriginalButton } from "./source-original-button";
 import { SourceUploadRecoveryPanel } from "./source-upload-recovery-panel";
 import { MercalysBatchPanel } from "@/documents/mercalys-batch-panel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1017,6 +1018,12 @@ function ValidationSummary({
       ) : null}
 
       <SectionCard title="Publication">
+        {publication ? (
+          <SourceOriginalButton
+            sourceDocumentId={publication.sourceDocumentId}
+            label="Consulter le fichier Mercalys original"
+          />
+        ) : null}
         {publication ? (
           <InlineAlert
             title={`${publication.publishedCount} ligne${publication.publishedCount > 1 ? "s" : ""} publiée${publication.publishedCount > 1 ? "s" : ""} localement`}

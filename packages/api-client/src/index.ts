@@ -1,4 +1,8 @@
 import {
+  sourceOriginalManifestSchema,
+  sourceOriginalDownloadSchema,
+} from "@fl-copilot/sync-contracts";
+import {
   commercialProcessingReviewSchema,
   commercialProcessingRequestedSchema,
   type CommercialProcessingReview,
@@ -574,6 +578,28 @@ export class ApiClient {
       { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
       commercialOriginalLinkSchema,
     ) as Promise<CommercialOriginalLink>;
+  }
+  sourceOriginalManifest(
+    accessToken: string,
+    storeId: string,
+    sourceDocumentId: string,
+  ) {
+    return this.request(
+      `/api/v1/source-documents/${encodeURIComponent(sourceDocumentId)}/original-manifest`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      sourceOriginalManifestSchema,
+    );
+  }
+  sourceOriginalDownload(
+    accessToken: string,
+    storeId: string,
+    sourceDocumentId: string,
+  ) {
+    return this.request(
+      `/api/v1/source-documents/${encodeURIComponent(sourceDocumentId)}/original-download`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      sourceOriginalDownloadSchema,
+    );
   }
   initSourceUpload(
     accessToken: string,

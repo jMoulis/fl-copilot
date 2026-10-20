@@ -1,3 +1,5 @@
+import { SourceOriginalButton } from "./source-original-button";
+import { sourceFileDirectory } from "./source-file-directory";
 import { useEffect, useState } from "react";
 import { Image, Text, View } from "react-native";
 import { useLocalDatabase } from "../providers/database-provider";
@@ -36,7 +38,13 @@ export function ReceiptSourcePhotos({
           if (original.exists) return original.uri;
           const name = uri.split("/").at(-1);
           const moved = name
-            ? new File(new Directory(Paths.document, "waste-receipts"), name)
+            ? new File(
+                new Directory(
+                  Paths.document,
+                  sourceFileDirectory(uri, "waste-receipts"),
+                ),
+                name,
+              )
             : null;
           return moved?.exists ? moved.uri : null;
         });
@@ -52,6 +60,12 @@ export function ReceiptSourcePhotos({
   const photos = state.scope === scope ? state.photos : [];
   return (
     <View className="gap-3">
+      {sourceDocumentId ? (
+        <SourceOriginalButton
+          sourceDocumentId={sourceDocumentId}
+          label="Consulter ou récupérer les originaux"
+        />
+      ) : null}
       {photos.length ? (
         photos.map((uri, index) => (
           <View key={index}>

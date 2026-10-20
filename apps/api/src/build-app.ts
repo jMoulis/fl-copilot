@@ -131,6 +131,14 @@ import {
 import { createCommercialVisualProvider } from "./commercial/visual-provider.js";
 import { createCommercialOriginalLinkService } from "./commercial/original-link.js";
 import { commercialOriginalLinkSchema } from "@fl-copilot/sync-contracts";
+import {
+  sourceOriginalManifestSchema,
+  sourceOriginalDownloadSchema,
+} from "@fl-copilot/sync-contracts";
+import {
+  createSourceOriginalService,
+  type SourceOriginalService,
+} from "./uploads/source-original-service.js";
 import { createCommercialAiProvider } from "./commercial/ai-provider.js";
 import { serve as serveInngest } from "inngest/fastify";
 import { createCommercialInngestWorkflows } from "./commercial/inngest-workflows.js";
@@ -218,6 +226,7 @@ type AppDependencies = {
   syncPull?: SyncPullService;
   syncPush?: SyncPushService;
   sourceUploads?: SourceUploadService;
+  sourceOriginals?: SourceOriginalService;
   visualFiles?: VisualFileService;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
@@ -290,6 +299,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       createMongoWasteReceiptDraftReader(dependencies.database),
       commercialWorkflows?.dispatch,
     );
+  const sourceOriginals =
+    dependencies.sourceOriginals ??
+    createSourceOriginalService(dependencies.database);
   const importVerification =
     dependencies.importVerification ??
     createMongoImportVerificationService(dependencies.database);
@@ -1669,6 +1681,51 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       );
     },
   );
+  for (const operation of ["manifest", "download"] as const) {
+    app.get(
+      `/api/v1/source-documents/:id/original-${operation}`,
+      {
+        schema: {
+          params: z.strictObject({ id: z.uuid() }),
+          response: {
+            200:
+              operation === "manifest"
+                ? sourceOriginalManifestSchema
+                : sourceOriginalDownloadSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        const header = request.headers.authorization;
+        if (!header?.startsWith("Bearer "))
+          throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+        const storeId = request.headers["x-store-id"];
+        if (typeof storeId !== "string")
+          throw new AuthError(
+            400,
+            "STORE_CONTEXT_REQUIRED",
+            "Le magasin doit être indiqué.",
+          );
+        const context = await auth.authorizeStore(header.slice(7), storeId);
+        const authorize = async () => {
+          const current = await auth.authorizeStore(header.slice(7), storeId);
+          if (current.userId !== context.userId || current.storeId !== storeId)
+            throw new AuthError(
+              403,
+              "STORE_FORBIDDEN",
+              "L’accès au magasin a changé.",
+            );
+        };
+        reply.header("cache-control", "private, no-store");
+        return sourceOriginals[operation](
+          storeId,
+          context.userId,
+          request.params.id,
+          authorize,
+        );
+      },
+    );
+  }
   app.get(
     "/api/v1/commercial/:id/original-link",
     {

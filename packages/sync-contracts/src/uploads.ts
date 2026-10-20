@@ -7,7 +7,7 @@ import {
   storePhotoMimeSchema,
 } from "@fl-copilot/domain";
 
-const uploadSourceTypeSchema = sourceTypeSchema.extract([
+export const uploadSourceTypeSchema = sourceTypeSchema.extract([
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
   "WASTE_RECEIPT",
