@@ -116,3 +116,4 @@ export * from "./commercial-processing";
 export * from "./store-layout";
 
 export * from "./source-original";
+export * from "./email-intake";

@@ -3,7 +3,7 @@ import type { Resend } from "resend";
 import { verifyResendReceivedEvent } from "./resend-event.js";
 
 /** The admission callback must durably record the verified envelope before resolving. */
-export async function registerResendIntakeWebhook(
+export function registerResendIntakeWebhook(
   app: FastifyInstance,
   dependencies: {
     client: Pick<Resend, "webhooks">;
@@ -13,7 +13,7 @@ export async function registerResendIntakeWebhook(
     ): Promise<void>;
   },
 ) {
-  await app.register(async (scope) => {
+  app.register(async (scope) => {
     // Encapsulation keeps ordinary JSON API routes on their existing object parser.
     scope.removeContentTypeParser("application/json");
     scope.addContentTypeParser(

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { emailIntakeReceivingDomainSchema } from "@fl-copilot/sync-contracts";
 const environmentSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -32,6 +33,12 @@ const environmentSchema = z.object({
     .regex(/^\d{6}$/)
     .optional(),
   RESEND_API_KEY: z.string().trim().startsWith("re_").min(11).optional(),
+  RESEND_RECEIVING_DOMAIN: emailIntakeReceivingDomainSchema.optional(),
+  RESEND_RECEIVING_WEBHOOK_SECRET: z
+    .string()
+    .startsWith("whsec_")
+    .min(20)
+    .optional(),
   AUTH_EMAIL_FROM: z.string().trim().email().optional(),
   OPENAI_API_KEY: z.string().trim().startsWith("sk-").min(20).optional(),
   AI_GATEWAY_API_KEY: z.string().trim().min(20).optional(),
@@ -109,6 +116,16 @@ export function parseEnvironment(
       `Invalid environment: ${result.error.issues.map((issue) => issue.path.join(".")).join(", ")}`,
     );
   }
+  if (
+    (result.data.RESEND_RECEIVING_DOMAIN ||
+      result.data.RESEND_RECEIVING_WEBHOOK_SECRET) &&
+    (!result.data.RESEND_API_KEY ||
+      !result.data.RESEND_RECEIVING_DOMAIN ||
+      !result.data.RESEND_RECEIVING_WEBHOOK_SECRET)
+  )
+    throw new Error(
+      "Invalid environment: RESEND_API_KEY, RESEND_RECEIVING_DOMAIN, RESEND_RECEIVING_WEBHOOK_SECRET",
+    );
   if (result.data.NODE_ENV === "production" && !result.data.MONGODB_URI) {
     throw new Error("Invalid environment: MONGODB_URI");
   }

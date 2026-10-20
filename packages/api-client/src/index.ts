@@ -1,4 +1,12 @@
 import {
+  emailIntakeStatusSchema,
+  emailIntakeBindingRequestSchema,
+  emailIntakeBindingSchema,
+  emailIntakeListSchema,
+  emailIntakeRevocationSchema,
+  type EmailIntakeBindingRequest,
+} from "@fl-copilot/sync-contracts";
+import {
   sourceOriginalManifestSchema,
   sourceOriginalDownloadSchema,
 } from "@fl-copilot/sync-contracts";
@@ -63,7 +71,7 @@ import {
   type SyncPushResponse,
   type VerifyImportRequest,
 } from "@fl-copilot/sync-contracts";
-import type { z } from "zod";
+import { z } from "zod";
 
 export class ApiClientError extends Error {
   constructor(
@@ -578,6 +586,62 @@ export class ApiClient {
       { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
       commercialOriginalLinkSchema,
     ) as Promise<CommercialOriginalLink>;
+  }
+  emailIntakeStatus(accessToken: string, storeId: string) {
+    return this.request(
+      "/api/v1/intake/email/status",
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      emailIntakeStatusSchema,
+    );
+  }
+  createEmailIntakeBinding(
+    accessToken: string,
+    storeId: string,
+    input: EmailIntakeBindingRequest,
+  ) {
+    const parsed = emailIntakeBindingRequestSchema.parse(input);
+    return this.request(
+      "/api/v1/intake/email/bindings",
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(parsed),
+      },
+      emailIntakeBindingSchema,
+    );
+  }
+  emailIntakeList(
+    accessToken: string,
+    storeId: string,
+    conversationId: string,
+    cursor?: string,
+  ) {
+    z.uuid().parse(conversationId);
+    const query = cursor
+      ? `?cursor=${encodeURIComponent(z.string().min(1).max(1024).parse(cursor))}`
+      : "";
+    return this.request(
+      `/api/v1/intake/email/conversations/${conversationId}${query}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      emailIntakeListSchema,
+    );
+  }
+  revokeEmailIntakeBinding(
+    accessToken: string,
+    storeId: string,
+    conversationId: string,
+    bindingId: string,
+  ) {
+    z.uuid().parse(conversationId);
+    z.uuid().parse(bindingId);
+    return this.request(
+      `/api/v1/intake/email/bindings/${bindingId}?conversationId=${conversationId}`,
+      {
+        method: "DELETE",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+      },
+      emailIntakeRevocationSchema,
+    );
   }
   sourceOriginalManifest(
     accessToken: string,

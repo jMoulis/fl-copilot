@@ -1,3 +1,10 @@
+import { Resend } from "resend";
+import {
+  createEmailIntakeStore,
+  type EmailIntakeStore,
+} from "./intake/email-intake-store.js";
+import { registerEmailIntakeRoutes } from "./intake/email-intake-routes.js";
+import { registerResendIntakeWebhook } from "./intake/resend-webhook.js";
 import { readStorePhoto } from "./copilot/store-photo-reader";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
@@ -227,6 +234,7 @@ type AppDependencies = {
   syncPush?: SyncPushService;
   sourceUploads?: SourceUploadService;
   sourceOriginals?: SourceOriginalService;
+  emailIntake?: EmailIntakeStore;
   visualFiles?: VisualFileService;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
@@ -1958,5 +1966,26 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       throw new Error("M0-T10 API monitoring test error");
     });
   }
+  const emailIntake =
+    dependencies.emailIntake ??
+    (config.RESEND_RECEIVING_DOMAIN &&
+    config.RESEND_RECEIVING_WEBHOOK_SECRET &&
+    config.RESEND_API_KEY
+      ? createEmailIntakeStore(
+          dependencies.database,
+          config.RESEND_RECEIVING_DOMAIN,
+        )
+      : undefined);
+  registerEmailIntakeRoutes(app, { auth, store: emailIntake });
+  if (
+    emailIntake &&
+    config.RESEND_RECEIVING_WEBHOOK_SECRET &&
+    config.RESEND_API_KEY
+  )
+    registerResendIntakeWebhook(app, {
+      client: new Resend(config.RESEND_API_KEY),
+      secret: config.RESEND_RECEIVING_WEBHOOK_SECRET,
+      admit: emailIntake.admit,
+    });
   return app;
 }

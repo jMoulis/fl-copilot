@@ -47,3 +47,13 @@ Official references checked for implementation:
 - [Receiving emails and the managed subdomain](https://resend.com/docs/dashboard/receiving/introduction)
 - [Retrieve received email](https://resend.com/docs/api-reference/emails/retrieve-received-email)
 - [Get email content](https://resend.com/docs/dashboard/receiving/get-email-content)
+
+## Durable envelope checkpoint
+
+The branch now includes Mongo migration 45, atomic envelope/event receipt, immutable bindings, explicit revocation, owner-scoped pagination and authenticated API routes with typed client methods. Real Mongo tests cover concurrent replay, metadata quarantine, revoked/archived/foreign scopes and transaction rollback through the actual raw Fastify webhook. The application registers the inbound route only with explicit complete receiving configuration; ordinary API behavior remains unchanged. No live webhook/configuration has been provisioned.
+
+This checkpoint does not fetch or retain attachment bytes, dispatch processing, expose a native intake card or commit an admission Outbox action. Those are the next parts of the same delivery lot, not optional follow-ups. Preserve originals asynchronously as soon as an authorized delivery is queued; business processing/AI still waits for authenticated admission. Do not leave already received originals dependent on a long-lived provider download capability.
+
+For the attachment adapter, the current official endpoint returns a short URL on `inbound-cdn.resend.com` with email/attachment identity in its path. Restrict capabilities to the documented provider host and exact expected identities, enforce expiry/bounds, disable redirects and never take a URL from the email body. The original-fetch path can use the attachment SDK endpoint directly, without fetching or rendering email HTML. These are implementation requirements, not a claim that the worker is already built.
+
+- [Retrieve received attachment](https://resend.com/docs/api-reference/emails/retrieve-received-email-attachment)
