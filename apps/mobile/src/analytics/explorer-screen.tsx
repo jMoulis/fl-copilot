@@ -1,3 +1,6 @@
+import { tradingToday } from "../dates/calendar";
+import { productDetailHref } from "../products/product-performance-context";
+import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BackHandler,
@@ -38,14 +41,6 @@ import { ExplorerContent, ExplorerPeriodPicker } from "./explorer-view";
 import { IconButton } from "../components/dashboard";
 import { colors } from "../design/tokens";
 import { useVisualLibrary } from "../products/use-visual-library";
-function tradingToday() {
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Europe/Paris",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
-}
 export default function AnalyticsExplorerScreen() {
   const { selection } = useLocalSearchParams<{
     selection?: string | string[];
@@ -418,10 +413,9 @@ function StoreExplorer({
                   })
                 }
                 onOpenProduct={(id) =>
-                  router.push({
-                    pathname: "/(tabs)/products/[id]",
-                    params: { id },
-                  })
+                  router.push(
+                    productDetailHref(id, randomUUID(), current.current!),
+                  )
                 }
               />
             ) : null}

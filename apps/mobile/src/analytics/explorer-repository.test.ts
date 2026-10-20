@@ -621,3 +621,86 @@ it("keeps purchase-cost and selling-value waste distinct for both department and
     db.close();
   }
 });
+
+it("uses exactly the same product values through the detail context and Explorer link after offline restart, retaining zero and missing days", async () => {
+  const { productPerformanceView, productPerformanceHref } =
+    await import("../products/product-performance-context");
+  const { applyExplorerLink } = await import("./explorer-link");
+  const dir = mkdtempSync(join(tmpdir(), "fl-product-overview-data-")),
+    path = join(dir, "store.db"),
+    storeId = randomUUID(),
+    ownerId = randomUUID(),
+    productId = randomUUID();
+  let db = new DatabaseSync(path);
+  try {
+    let a = new Adapter(db);
+    await runLocalMigrations(a);
+    insertProduct(db, storeId, productId, "Tomate");
+    insertProduct(db, storeId, randomUUID(), "Autre produit");
+    insert(db, storeId, "2026-10-12", "9999");
+    insertProductDay(db, storeId, productId, "2026-10-12", "10.10");
+    insertProductDay(db, storeId, productId, "2026-10-13", "0");
+    insertProductDay(db, storeId, productId, "2026-10-14", "5.55");
+    const view = productPerformanceView(productId, "2026-10-15");
+    await new ExplorerViewRepository(a, { storeId, ownerId, productId }).save(
+      view,
+    );
+    const first = await new ExplorerRepository(a).load(
+      storeId,
+      view.frame.period,
+      "sales",
+      "2026-10-20",
+      view.frame.filters,
+    );
+    expect(first.total).toBe("15.65");
+    expect(first.coverage).toEqual({
+      complete: 3,
+      partial: 0,
+      missing: 4,
+      expected: 7,
+    });
+    expect(first.points[1]!.value).toBe("0");
+    expect(first.points[3]!.value).toBeNull();
+    const selected = applyExplorerLink(
+      initialExplorerView("2026-10-20"),
+      productPerformanceHref(productId, randomUUID(), view).params.selection,
+    );
+    db.close();
+    db = new DatabaseSync(path);
+    a = new Adapter(db);
+    const restored = await new ExplorerViewRepository(a, {
+      storeId,
+      ownerId,
+      productId,
+    }).read();
+    expect(restored).toEqual(view);
+    const reopened = await new ExplorerRepository(a).load(
+      storeId,
+      selected.frame.period,
+      selected.metric,
+      "2026-10-20",
+      selected.frame.filters,
+    );
+    expect(reopened).toEqual(first);
+    db.prepare("UPDATE products SET category='VEGETABLE' WHERE id=?").run(
+      productId,
+    );
+    expect(
+      (
+        await new ExplorerRepository(a).load(
+          storeId,
+          view.frame.period,
+          "sales",
+          "2026-10-20",
+          view.frame.filters,
+        )
+      ).total,
+    ).toBe("15.65");
+    expect(await a.getFirstAsync("SELECT COUNT(*) n FROM sync_outbox")).toEqual(
+      { n: 0 },
+    );
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

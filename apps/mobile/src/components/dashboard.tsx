@@ -114,12 +114,14 @@ export function DashboardMetric({
   detail,
   icon,
   tone = "neutral",
+  compact = false,
 }: {
   label: string;
   value: string | null;
   detail?: string;
   icon: Icon;
   tone?: "neutral" | "positive" | "critical";
+  compact?: boolean;
 }) {
   const color =
     tone === "positive"
@@ -128,17 +130,28 @@ export function DashboardMetric({
         ? colors.critical
         : colors.muted;
   return (
-    <View className="gap-3 rounded-2xl border border-line bg-surface p-4">
-      <View className="flex-row items-center gap-2">
-        <View className="h-8 w-8 items-center justify-center rounded-xl bg-forest-soft">
+    <View
+      className={`rounded-2xl border border-line bg-surface ${compact ? "flex-1 gap-2 p-3" : "gap-3 p-4"}`}
+    >
+      <View
+        className="flex-row items-center gap-2"
+        style={compact ? { minHeight: 32 } : undefined}
+      >
+        <View
+          className={`${compact ? "h-6 w-6" : "h-8 w-8"} items-center justify-center rounded-xl bg-forest-soft`}
+        >
           <Ionicons
             name={icon}
-            size={17}
+            size={compact ? 14 : 17}
             color={colors.forest}
             accessible={false}
           />
         </View>
-        <Text className="flex-1 text-sm text-muted">{label}</Text>
+        <Text
+          className={`flex-1 ${compact ? "text-xs" : "text-sm"} text-muted`}
+        >
+          {label}
+        </Text>
       </View>
       <Text
         className="text-2xl font-bold text-ink"
