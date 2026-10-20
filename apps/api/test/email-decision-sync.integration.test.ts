@@ -1,3 +1,4 @@
+import { createEmailDecisionHistory } from "../src/intake/email-decision-history";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
@@ -10,6 +11,7 @@ import {
   bootstrapQuerySchema,
   syncPullQuerySchema,
   emailIntakeDecisionSchema,
+  emailIntakeDecisionPageSchema,
   type SyncPushRequest,
   type EmailIntakeDecision,
 } from "@fl-copilot/sync-contracts";
@@ -58,7 +60,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           await database.close();
         }
     }, 60000);
-    async function fixture() {
+    async function fixture(receiptIdentity?: string) {
       const db = await database.getDb(),
         scope = {
           storeId: randomUUID(),
@@ -68,7 +70,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         at = new Date(),
         stamp = at.toISOString();
       const bytes = new Uint8Array([80, 75, 3]),
-        receiptId = randomUUID(),
+        receiptId = receiptIdentity ?? randomUUID(),
         fileId = randomUUID(),
         bindingId = randomUUID();
       await db.collection("storeMemberships").insertOne({
@@ -228,37 +230,44 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         const send = vi.fn((request: SyncPushRequest) =>
           push.push(request, randomUUID(), ownerId),
         );
-        const service = new MobileSyncService(
-          local,
-          {
-            push: send,
-            pull: (storeId, cursor) =>
-              pull.pull(
-                storeId,
-                syncPullQuerySchema.parse({
-                  cursor,
-                  copilotHistory: "true",
-                  emailIntake: "true",
-                }),
-                ownerId,
-              ),
-            bootstrap: () =>
-              bootstrap.bootstrap(
-                principal,
-                bootstrapQuerySchema.parse({
-                  copilotHistory: "true",
-                  emailIntake: "true",
-                }),
-              ),
-          },
-          {
-            deviceId,
-            appVersion: "test",
-            copilotOwnerId: ownerId,
-            copilotHistory: true,
-            emailIntake: true,
-          },
+        const historyPage = vi.fn((storeId: string, cursor?: string) =>
+          createEmailDecisionHistory(database).page(storeId, ownerId, cursor),
         );
+        const makeService = (deviceDb: VisualTestDatabase = local) =>
+          new MobileSyncService(
+            deviceDb,
+            {
+              push: send,
+              emailDecisionPage: historyPage,
+              pull: (storeId, cursor) =>
+                pull.pull(
+                  storeId,
+                  syncPullQuerySchema.parse({
+                    cursor,
+                    copilotHistory: "true",
+                    emailIntake: "true",
+                  }),
+                  ownerId,
+                ),
+              bootstrap: () =>
+                bootstrap.bootstrap(
+                  principal,
+                  bootstrapQuerySchema.parse({
+                    copilotHistory: "true",
+                    emailIntake: "true",
+                  }),
+                ),
+            },
+            {
+              deviceId,
+              appVersion: "test",
+              copilotOwnerId: ownerId,
+              copilotHistory: true,
+              emailIntake: true,
+              maxRetries: 0,
+            },
+          );
+        const service = makeService();
         async function decide(choice: "ADMIT" | "DISMISS") {
           if (choice === "ADMIT")
             await transfer.recover({
@@ -285,6 +294,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           transfer,
           repository,
           service,
+          makeService,
+          historyPage,
           send,
           decide,
           principal,
@@ -304,12 +315,283 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         access,
         cleanup: async () => {
           for (const p of phones) {
-            p.db.raw.close();
+            if (p.db.raw.isOpen) p.db.raw.close();
             await rm(p.dir, { recursive: true, force: true });
           }
         },
       };
     }
+    it("restores all 500 maximal decisions in bounded pages and resumes a partial disk restore after restart", async () => {
+      const f = await fixture();
+      let reopened: VisualTestDatabase | undefined;
+      try {
+        const rows = Array.from({ length: 500 }, () => {
+          const id = randomUUID(),
+            at = `2026-10-20T08:00:00.${"0".repeat(19)}Z`;
+          const decision = emailIntakeDecisionSchema.parse({
+            id,
+            receiptId: id,
+            actionId: randomUUID(),
+            ...f.scope,
+            version: 1,
+            policyVersion: 1,
+            receiptVersion: 1,
+            choice: "ADMIT",
+            files: Array.from({ length: 50 }, () => ({
+              fileId: randomUUID(),
+              processingId: randomUUID(),
+              mode: "WASTE_TICKET",
+              manifestHash: `sha256:${"a".repeat(64)}`,
+              checksum: `sha256:${"b".repeat(64)}`,
+            })),
+            createdAt: at,
+            updatedAt: at,
+          });
+          return { ...decision, _id: id };
+        });
+        await f.db
+          .collection<Document & { _id: string }>("emailIntakeDecisions")
+          .insertMany(rows);
+        const phone = await f.phone();
+        const initial = await f.bootstrap.bootstrap(
+          phone.principal,
+          bootstrapQuerySchema.parse({
+            copilotHistory: "true",
+            emailIntake: "true",
+          }),
+        );
+        expect(initial.entities.emailIntakeHistoryRequired).toBe(true);
+        expect(initial.entities).not.toHaveProperty("emailIntakeDecisions");
+        expect(Buffer.byteLength(JSON.stringify(initial))).toBeLessThan(
+          1024 * 1024,
+        );
+        await phone.local.runAsync(
+          "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+          `email-intake:${f.scope.storeId}:${f.scope.ownerId}`,
+          "1",
+          new Date().toISOString(),
+        );
+        const realPage = phone.historyPage.getMockImplementation()!;
+        phone.historyPage.mockImplementation(async (store, cursor) => {
+          if (cursor) throw Error("test interrupted connection");
+          return realPage(store, cursor);
+        });
+        await expect(phone.service.bootstrap(f.scope.storeId)).rejects.toThrow(
+          "test interrupted connection",
+        );
+        expect(
+          await phone.local.getFirstAsync(
+            "SELECT value FROM app_metadata WHERE key=?",
+            `email-intake:${f.scope.storeId}:${f.scope.ownerId}`,
+          ),
+        ).toBeNull();
+        expect(
+          await phone.local.getFirstAsync<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM email_intake_decisions",
+          ),
+        ).toEqual({ count: 50 });
+        const path = (await phone.local.getFirstAsync<{ file: string }>(
+          "PRAGMA database_list",
+        ))!.file;
+        phone.local.raw.close();
+        reopened = new VisualTestDatabase(new DatabaseSync(path));
+        expect(
+          await reopened.getFirstAsync<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM email_intake_decisions",
+          ),
+        ).toEqual({ count: 50 });
+        phone.historyPage.mockImplementation(realPage);
+        phone.historyPage.mockClear();
+        await phone.makeService(reopened).bootstrap(f.scope.storeId);
+        expect(phone.historyPage).toHaveBeenCalledTimes(10);
+        expect(
+          await reopened.getFirstAsync<{ count: number }>(
+            "SELECT COUNT(*) AS count FROM email_intake_decisions",
+          ),
+        ).toEqual({ count: 500 });
+        expect(
+          await reopened.getFirstAsync(
+            "SELECT value FROM app_metadata WHERE key=?",
+            `email-intake:${f.scope.storeId}:${f.scope.ownerId}`,
+          ),
+        ).toEqual({ value: "1" });
+        for (const promise of phone.historyPage.mock.results) {
+          const page = emailIntakeDecisionPageSchema.parse(await promise.value);
+          expect(page.decisions).toHaveLength(50);
+          expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThan(
+            1024 * 1024,
+          );
+        }
+        expect(
+          await f.db
+            .collection("sourceDocuments")
+            .countDocuments({ storeId: f.scope.storeId }),
+        ).toBe(0);
+        expect(
+          await reopened.getFirstAsync("SELECT * FROM sync_outbox"),
+        ).toBeNull();
+      } finally {
+        reopened?.raw.close();
+        await f.cleanup();
+      }
+    }, 30000);
+    it("catches a newly admitted choice inserted before the current history page through the base incremental cursor", async () => {
+      const f = await fixture("00000000-0000-4000-8000-000000000001");
+      try {
+        const at = new Date().toISOString();
+        await f.db
+          .collection<Document & { _id: string }>("emailIntakeDecisions")
+          .insertMany(
+            Array.from({ length: 51 }, (_, i) => {
+              const id = `ffffffff-ffff-4fff-8fff-${i.toString(16).padStart(12, "0")}`;
+              return {
+                ...emailIntakeDecisionSchema.parse({
+                  id,
+                  receiptId: id,
+                  actionId: randomUUID(),
+                  ...f.scope,
+                  version: 1,
+                  policyVersion: 1,
+                  receiptVersion: 1,
+                  choice: "DISMISS",
+                  files: [],
+                  createdAt: at,
+                  updatedAt: at,
+                }),
+                _id: id,
+              };
+            }),
+          );
+        const reader = await f.phone(),
+          writer = await f.phone(),
+          real = reader.historyPage.getMockImplementation()!;
+        let published = false;
+        reader.historyPage.mockImplementation(async (store, cursor) => {
+          const page = await real(store, cursor);
+          if (!published) {
+            published = true;
+            const choice = await writer.decide("DISMISS");
+            // A real second phone has its own process-level sync coordinator.
+            // Deliver its actual Outbox choice directly to the remote service.
+            const accepted = await f.push.push(
+              {
+                syncProtocolVersion: 1,
+                deviceId: writer.deviceId,
+                appVersion: "test",
+                storeId: store,
+                commands: [
+                  {
+                    commandId: choice.actionId,
+                    localSequence: 1,
+                    type: "EMAIL_INTAKE_DECIDE",
+                    entityType: "email_intake_decision",
+                    entityId: choice.id,
+                    expectedRemoteVersion: null,
+                    createdAt: choice.createdAt,
+                    payload: choice,
+                  },
+                ],
+              },
+              randomUUID(),
+              f.scope.ownerId,
+            );
+            expect(accepted.results[0]?.status).toBe("APPLIED");
+          }
+          return page;
+        });
+        await reader.service.sync(f.scope.storeId);
+        const pageIds = (
+          await Promise.all(
+            reader.historyPage.mock.results.map((result) => result.value),
+          )
+        ).flatMap((page) =>
+          emailIntakeDecisionPageSchema
+            .parse(page)
+            .decisions.map((row) => row.id),
+        );
+        expect(pageIds).toHaveLength(51);
+        expect(pageIds).not.toContain(f.receiptId);
+        expect(
+          await reader.local.getFirstAsync(
+            "SELECT COUNT(*) AS count FROM email_intake_decisions",
+          ),
+        ).toEqual({ count: 52 });
+        expect(
+          (await reader.repository.get(f.scope.conversationId, f.receiptId))
+            ?.decision.choice,
+        ).toBe("DISMISS");
+        expect(
+          await reader.local.getFirstAsync("SELECT * FROM sync_outbox"),
+        ).toBeNull();
+      } finally {
+        await f.cleanup();
+      }
+    });
+    it("binds history cursors to their store/owner and advances past archived choices", async () => {
+      const f = await fixture();
+      try {
+        const at = new Date().toISOString();
+        await f.db
+          .collection<Document & { _id: string }>("emailIntakeDecisions")
+          .insertMany(
+            Array.from({ length: 51 }, () => {
+              const id = randomUUID();
+              return {
+                ...emailIntakeDecisionSchema.parse({
+                  id,
+                  receiptId: id,
+                  actionId: randomUUID(),
+                  ...f.scope,
+                  version: 1,
+                  policyVersion: 1,
+                  receiptVersion: 1,
+                  choice: "DISMISS",
+                  files: [],
+                  createdAt: at,
+                  updatedAt: at,
+                }),
+                _id: id,
+              };
+            }),
+          );
+        const history = createEmailDecisionHistory(database),
+          first = await history.page(f.scope.storeId, f.scope.ownerId);
+        expect(first.decisions).toHaveLength(50);
+        expect(first.nextCursor).not.toBeNull();
+        const altered = JSON.parse(
+          Buffer.from(first.nextCursor!, "base64url").toString(),
+        );
+        altered.ownerId = randomUUID();
+        await expect(
+          history.page(
+            f.scope.storeId,
+            f.scope.ownerId,
+            Buffer.from(JSON.stringify(altered)).toString("base64url"),
+          ),
+        ).rejects.toMatchObject({ statusCode: 403 });
+        await expect(
+          history.page(f.scope.storeId, f.scope.ownerId, "invalid"),
+        ).rejects.toMatchObject({ statusCode: 403 });
+        await f.db
+          .collection<Document & { _id: string }>("copilotConversations")
+          .updateOne(
+            { _id: f.scope.conversationId },
+            { $set: { status: "ARCHIVED" } },
+          );
+        const hidden = await history.page(f.scope.storeId, f.scope.ownerId);
+        expect(hidden.decisions).toEqual([]);
+        expect(hidden.nextCursor).not.toBeNull();
+        const end = await history.page(
+          f.scope.storeId,
+          f.scope.ownerId,
+          hidden.nextCursor!,
+        );
+        expect(end.decisions).toEqual([]);
+        expect(end.nextCursor).toBeNull();
+      } finally {
+        await f.cleanup();
+      }
+    });
     it.each(["ADMIT", "DISMISS"] as const)(
       "preserves the first %s choice across two devices, private pull/bootstrap and explicit conflict resolution without starting business processing",
       async (first) => {
@@ -479,7 +761,24 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               emailIntake: "true",
             }),
           );
-          expect(result.entities.emailIntakeDecisions).toEqual([]);
+          expect(result.entities.emailIntakeHistoryRequired).toBe(true);
+          if (mode === "role" || mode === "membership") {
+            await expect(
+              createEmailDecisionHistory(database).page(
+                f.scope.storeId,
+                f.scope.ownerId,
+              ),
+            ).rejects.toMatchObject({ statusCode: 403 });
+          } else {
+            expect(
+              (
+                await createEmailDecisionHistory(database).page(
+                  f.scope.storeId,
+                  f.scope.ownerId,
+                )
+              ).decisions,
+            ).toEqual([]);
+          }
           const page = await f.pull.pull(
             f.scope.storeId,
             syncPullQuerySchema.parse({

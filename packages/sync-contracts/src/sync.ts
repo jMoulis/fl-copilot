@@ -170,6 +170,7 @@ export const bootstrapEntitiesSchema = z.object({
   productVisualLinks: z.array(jsonObjectSchema).optional(),
   copilotDecisions: z.array(jsonObjectSchema).optional(),
   emailIntakeDecisions: z.array(jsonObjectSchema).optional(),
+  emailIntakeHistoryRequired: z.literal(true).optional(),
   emailIntakeOwnerId: idSchema.optional(),
   copilotExecutionLinks: z.array(jsonObjectSchema).optional(),
   copilotActionExecutions: z.array(jsonObjectSchema).optional(),

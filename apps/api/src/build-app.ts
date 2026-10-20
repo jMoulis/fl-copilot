@@ -1,3 +1,4 @@
+import { createEmailDecisionHistory } from "./intake/email-decision-history.js";
 import { Resend } from "resend";
 import {
   createEmailIntakeStore,
@@ -1996,6 +1997,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       : undefined);
   registerEmailIntakeRoutes(app, {
     auth,
+    history: createEmailDecisionHistory(dependencies.database),
     store: emailIntake,
     originals:
       dependencies.emailOriginalAccess ??

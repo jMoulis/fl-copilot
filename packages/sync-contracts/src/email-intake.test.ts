@@ -133,6 +133,10 @@ it("binds immutable human decisions to one receipt and represents pending preser
       })),
     },
     { updatedAt: "2026-10-20T12:01:00.000Z" },
+    {
+      createdAt: `2026-10-20T12:00:00.${"0".repeat(2000)}Z`,
+      updatedAt: `2026-10-20T12:00:00.${"0".repeat(2000)}Z`,
+    },
     { html: "<b>publish</b>" },
   ])
     expect(
