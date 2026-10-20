@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import { readContextCheckpoint, type CopilotMessage } from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
 import { SecondaryButton } from "../components/ui";

@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Text } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import { router, useFocusEffect } from "expo-router";
 import {
   readKnowledgeSuggestion,

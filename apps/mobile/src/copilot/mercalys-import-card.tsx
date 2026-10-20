@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import {
   mercalysProductTargetBlocker,
   readCopilotImportReference,

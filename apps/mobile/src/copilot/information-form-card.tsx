@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import {
   CopilotFormError,
   CopilotToolError,

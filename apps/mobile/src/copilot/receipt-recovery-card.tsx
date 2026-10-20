@@ -5,9 +5,9 @@ import {
   Image,
   Pressable,
   Switch,
-  Text,
   View,
 } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotReceiptRecoveryController } from "./receipt-recovery-controller";
 import { colors } from "../design/tokens";
@@ -256,7 +256,7 @@ export function ReceiptRecoveryCard({
               >
                 <Text
                   style={{
-                    color: "white",
+                    color: colors.onAccent,
                     textAlign: "center",
                     fontWeight: "600",
                   }}

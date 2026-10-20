@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import {
   commercialExecutionActualsSummary,
   type CopilotMessage,
@@ -185,7 +186,7 @@ export function ActionExecutionCard({
               >
                 <Text
                   style={{
-                    color: "white",
+                    color: colors.onAccent,
                     textAlign: "center",
                     fontWeight: "600",
                   }}

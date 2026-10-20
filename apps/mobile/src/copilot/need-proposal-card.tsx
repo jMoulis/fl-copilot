@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotNeedProposalController } from "./need-proposal-controller";
 import { colors } from "../design/tokens";
@@ -207,7 +208,7 @@ export function NeedProposalCard({
             >
               <Text
                 style={{
-                  color: "white",
+                  color: colors.onAccent,
                   textAlign: "center",
                   fontWeight: "600",
                 }}

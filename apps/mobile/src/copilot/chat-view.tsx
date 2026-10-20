@@ -7,7 +7,8 @@ import { CopyMessage } from "./copy-message";
 import { CopilotActivityTrail } from "./activity-trail";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { AssistantAnswer } from "./assistant-answer";
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -23,6 +24,7 @@ import {
 } from "react-native";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import { colors } from "../design/tokens";
+import { followsChatEnd, type ChatScrollPosition } from "./chat-scroll";
 
 function isImportMessage(message: CopilotMessage) {
   try {
@@ -51,6 +53,8 @@ export function CopilotChatView({
   onDraftChange,
   onSend,
   onConversations,
+  onNewConversation,
+  creatingConversation = false,
   onRemember,
   onDeleteMessage,
   onAttach,
@@ -78,6 +82,8 @@ export function CopilotChatView({
   onDraftChange(value: string): void;
   onSend(): void;
   onConversations(): void;
+  onNewConversation?(): void;
+  creatingConversation?: boolean;
   onRemember?(message: CopilotMessage): void;
   onDeleteMessage?(message: CopilotMessage): void;
   onAttach?(): void;
@@ -96,6 +102,8 @@ export function CopilotChatView({
 }) {
   const list = useRef<FlatList<CopilotMessage>>(null);
   const followLatest = useRef(true);
+  const scrollPosition = useRef<ChatScrollPosition | undefined>(undefined);
+  const [showLatest, setShowLatest] = useState(false);
   const visible = messages.filter(
     (message) => message.role !== "TOOL" || !!renderToolMessage?.(message),
   );
@@ -111,11 +119,18 @@ export function CopilotChatView({
   const onScroll = ({
     nativeEvent,
   }: NativeSyntheticEvent<NativeScrollEvent>) => {
-    followLatest.current =
-      nativeEvent.contentSize.height -
-        nativeEvent.layoutMeasurement.height -
-        nativeEvent.contentOffset.y <
-      80;
+    const position = {
+      offset: nativeEvent.contentOffset.y,
+      height: nativeEvent.contentSize.height,
+      viewport: nativeEvent.layoutMeasurement.height,
+    };
+    followLatest.current = followsChatEnd(
+      followLatest.current,
+      scrollPosition.current,
+      position,
+    );
+    scrollPosition.current = position;
+    setShowLatest(!followLatest.current);
   };
   return (
     <KeyboardAvoidingView
@@ -129,169 +144,207 @@ export function CopilotChatView({
           onPress={onConversations}
           style={styles.menu}
         >
-          <Text style={styles.menuText}>☰</Text>
+          <Ionicons name="menu-outline" size={24} color={colors.ink} />
         </Pressable>
         <Text accessibilityRole="header" numberOfLines={1} style={styles.title}>
           {title || "Copilote"}
         </Text>
+        {onNewConversation ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Nouvelle conversation"
+            accessibilityState={{
+              disabled: creatingConversation,
+              busy: creatingConversation,
+            }}
+            disabled={creatingConversation}
+            onPress={onNewConversation}
+            style={styles.menu}
+          >
+            <Ionicons name="create-outline" size={23} color={colors.ink} />
+          </Pressable>
+        ) : null}
       </View>
-      <FlatList
-        ref={list}
-        data={visible}
-        keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
-        onScroll={onScroll}
-        scrollEventThrottle={100}
-        contentContainerStyle={styles.history}
-        onContentSizeChange={() => {
-          if (followLatest.current)
-            list.current?.scrollToEnd({ animated: false });
-        }}
-        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-        ListHeaderComponent={
-          onOlder || historyError || intakeSummary ? (
-            <View>
-              {intakeSummary}
-              {historyError ? (
-                <Text accessibilityRole="alert" style={styles.error}>
-                  {historyError}
-                </Text>
-              ) : null}
-              {onOlder ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{
-                    disabled: loadingOlder,
-                    busy: loadingOlder,
-                  }}
-                  disabled={loadingOlder}
-                  onPress={() => {
-                    followLatest.current = false;
-                    onOlder();
-                  }}
-                  style={styles.retry}
-                >
-                  <Text
-                    accessibilityLiveRegion="polite"
-                    style={styles.retryText}
-                  >
-                    {loadingOlder
-                      ? "Lecture de l’historique…"
-                      : "Voir les messages précédents"}
+      <View style={styles.thread}>
+        <FlatList
+          ref={list}
+          data={visible}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          onScroll={onScroll}
+          scrollEventThrottle={100}
+          contentContainerStyle={styles.history}
+          onLayout={() => {
+            if (followLatest.current)
+              list.current?.scrollToEnd({ animated: false });
+          }}
+          onContentSizeChange={() => {
+            if (followLatest.current)
+              list.current?.scrollToEnd({ animated: false });
+          }}
+          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+          ListHeaderComponent={
+            onOlder || historyError || intakeSummary ? (
+              <View>
+                {intakeSummary}
+                {historyError ? (
+                  <Text accessibilityRole="alert" style={styles.error}>
+                    {historyError}
                   </Text>
-                </Pressable>
-              ) : null}
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            <Text style={styles.welcome}>De quoi avez-vous besoin ?</Text>
-            <Text style={styles.hint}>
-              Préparer la semaine, comprendre les ventes ou faire le point sur
-              le rayon.
-            </Text>
-          </View>
-        }
-        ListFooterComponent={
-          streamingText || status === "GENERATING" ? (
-            <View style={{ padding: 20, gap: 12 }}>
-              {status === "GENERATING" ? (
-                <CopilotActivityTrail activities={activities} />
-              ) : null}
-              {streamingText ? <AssistantAnswer text={streamingText} /> : null}
-            </View>
-          ) : null
-        }
-        renderItem={({ item }) =>
-          item.role === "TOOL" ? (
-            <View style={styles.assistantMessage}>
-              {renderToolMessage?.(item)}
-            </View>
-          ) : (
-            <Pressable
-              onLongPress={
-                status !== "GENERATING" && onDeleteMessage
-                  ? () => showMessageMenu(item, () => onDeleteMessage(item))
-                  : undefined
-              }
-              delayLongPress={450}
-              style={
-                item.role === "USER"
-                  ? styles.userMessage
-                  : styles.assistantMessage
-              }
-            >
-              <Text style={styles.author}>
-                {item.role === "USER" ? "Vous" : "Copilote"}
-              </Text>
-              {item.role === "ASSISTANT" ? (
-                <AssistantAnswer
-                  text={item.text}
-                  analyticsDestinations={item.analyticsDestinations}
-                  selectable={false}
-                  renderSource={(id) => {
-                    const a = item.attachments.find(
-                      (a) => a.sourceDocumentId === id,
-                    );
-                    return a ? renderAttachment?.(a, item) : null;
-                  }}
-                />
-              ) : (
-                <View style={{ gap: 12 }}>
-                  <Text style={styles.message}>
-                    {copilotImportMessageText(item)}
-                  </Text>
-                  {(() => {
-                    try {
-                      readCopilotImportReference(item);
-                      return renderToolMessage?.(item);
-                    } catch {
-                      return null;
-                    }
-                  })()}
-                </View>
-              )}
-              <View
-                style={{
-                  flexDirection: "row",
-                  gap: 12,
-                  alignItems: "center",
-                  flexWrap: "wrap",
-                }}
-              >
-                {item.role === "USER" &&
-                item.text.trim() &&
-                onRemember &&
-                !isImportMessage(item) ? (
+                ) : null}
+                {onOlder ? (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Mémoriser une pratique à partir de ce message"
+                    accessibilityState={{
+                      disabled: loadingOlder,
+                      busy: loadingOlder,
+                    }}
+                    disabled={loadingOlder}
+                    onPress={() => {
+                      followLatest.current = false;
+                      setShowLatest(true);
+                      onOlder();
+                    }}
                     style={styles.retry}
-                    onPress={() => onRemember(item)}
                   >
-                    <Text style={styles.retryText}>Mémoriser</Text>
+                    <Text
+                      accessibilityLiveRegion="polite"
+                      style={styles.retryText}
+                    >
+                      {loadingOlder
+                        ? "Lecture de l’historique…"
+                        : "Voir les messages précédents"}
+                    </Text>
                   </Pressable>
                 ) : null}
-                <CopyMessage
-                  text={copilotImportMessageText(item)}
-                  assistant={item.role === "ASSISTANT"}
-                />
               </View>
-              {(item.role === "ASSISTANT" &&
-              item.text.includes("copilot-source:")
-                ? []
-                : item.attachments
-              ).map((attachment) => (
-                <View key={attachment.sourceDocumentId}>
-                  <Text style={styles.attachment}>{attachment.filename}</Text>
-                  {renderAttachment?.(attachment, item)}
+            ) : null
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={styles.welcome}>De quoi avez-vous besoin ?</Text>
+              <Text style={styles.hint}>
+                Préparer la semaine, comprendre les ventes ou faire le point sur
+                le rayon.
+              </Text>
+            </View>
+          }
+          ListFooterComponent={
+            streamingText || status === "GENERATING" ? (
+              <View style={{ padding: 20, gap: 12 }}>
+                {status === "GENERATING" ? (
+                  <CopilotActivityTrail activities={activities} />
+                ) : null}
+                {streamingText ? (
+                  <AssistantAnswer text={streamingText} />
+                ) : null}
+              </View>
+            ) : null
+          }
+          renderItem={({ item }) =>
+            item.role === "TOOL" ? (
+              <View style={styles.assistantMessage}>
+                {renderToolMessage?.(item)}
+              </View>
+            ) : (
+              <Pressable
+                onLongPress={
+                  status !== "GENERATING" && onDeleteMessage
+                    ? () => showMessageMenu(item, () => onDeleteMessage(item))
+                    : undefined
+                }
+                delayLongPress={450}
+                style={
+                  item.role === "USER"
+                    ? styles.userMessage
+                    : styles.assistantMessage
+                }
+              >
+                <Text style={styles.author}>
+                  {item.role === "USER" ? "Vous" : "Copilote"}
+                </Text>
+                {item.role === "ASSISTANT" ? (
+                  <AssistantAnswer
+                    text={item.text}
+                    analyticsDestinations={item.analyticsDestinations}
+                    selectable={false}
+                    renderSource={(id) => {
+                      const a = item.attachments.find(
+                        (a) => a.sourceDocumentId === id,
+                      );
+                      return a ? renderAttachment?.(a, item) : null;
+                    }}
+                  />
+                ) : (
+                  <View style={{ gap: 12 }}>
+                    <Text style={styles.message}>
+                      {copilotImportMessageText(item)}
+                    </Text>
+                    {(() => {
+                      try {
+                        readCopilotImportReference(item);
+                        return renderToolMessage?.(item);
+                      } catch {
+                        return null;
+                      }
+                    })()}
+                  </View>
+                )}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    gap: 12,
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {item.role === "USER" &&
+                  item.text.trim() &&
+                  onRemember &&
+                  !isImportMessage(item) ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Mémoriser une pratique à partir de ce message"
+                      style={styles.retry}
+                      onPress={() => onRemember(item)}
+                    >
+                      <Text style={styles.retryText}>Mémoriser</Text>
+                    </Pressable>
+                  ) : null}
+                  <CopyMessage
+                    text={copilotImportMessageText(item)}
+                    assistant={item.role === "ASSISTANT"}
+                  />
                 </View>
-              ))}
-            </Pressable>
-          )
-        }
-      />
+                {(item.role === "ASSISTANT" &&
+                item.text.includes("copilot-source:")
+                  ? []
+                  : item.attachments
+                ).map((attachment) => (
+                  <View key={attachment.sourceDocumentId}>
+                    <Text style={styles.attachment}>{attachment.filename}</Text>
+                    {renderAttachment?.(attachment, item)}
+                  </View>
+                ))}
+              </Pressable>
+            )
+          }
+        />
+        {showLatest ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Revenir aux derniers messages"
+            style={styles.latest}
+            onPress={() => {
+              followLatest.current = true;
+              setShowLatest(false);
+              list.current?.scrollToEnd({ animated: true });
+            }}
+          >
+            <Ionicons name="arrow-down" size={22} color={colors.ink} />
+          </Pressable>
+        ) : null}
+      </View>
       <View style={styles.footer}>
         {statusLabels[status] && !streamingText && status !== "GENERATING" ? (
           <Text accessibilityLiveRegion="polite" style={styles.state}>
@@ -318,7 +371,7 @@ export function CopilotChatView({
         ) : null}
         {attaching ? (
           <Text accessibilityLiveRegion="polite" style={styles.state}>
-            Conservation du PDF…
+            Conservation des fichiers…
           </Text>
         ) : null}
         {draftAttachments.length ? (
@@ -379,6 +432,8 @@ export function CopilotChatView({
             accessibilityLabel="Message au copilote"
             placeholder="Écrivez au copilote…"
             placeholderTextColor={colors.muted}
+            selectionColor={colors.forest}
+            keyboardAppearance="dark"
             multiline
             maxLength={6000}
             value={draft}
@@ -394,6 +449,7 @@ export function CopilotChatView({
             onPress={() => {
               if (canSend) {
                 followLatest.current = true;
+                setShowLatest(false);
                 onSend();
               }
             }}
@@ -408,6 +464,20 @@ export function CopilotChatView({
 }
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas },
+  thread: { flex: 1 },
+  latest: {
+    position: "absolute",
+    bottom: 12,
+    right: 16,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -416,8 +486,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line,
   },
   menu: {
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -496,6 +566,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  sendText: { color: colors.surface, fontSize: 25, fontWeight: "600" },
+  sendText: { color: colors.onAccent, fontSize: 25, fontWeight: "600" },
   disabled: { opacity: 0.4 },
 });

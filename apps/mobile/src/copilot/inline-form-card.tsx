@@ -1,4 +1,5 @@
 import { Pressable, Text, TextInput, View } from "react-native";
+import { colors } from "../design/tokens";
 import type {
   CopilotForm,
   CopilotFormAnswers,
@@ -113,6 +114,9 @@ export function CopilotInlineFormCard({
                     className={`flex-row items-center rounded-xl border px-3 ${issue ? "border-critical bg-critical-soft" : "border-line bg-canvas"}`}
                   >
                     <TextInput
+                      placeholderTextColor={colors.muted}
+                      selectionColor={colors.forest}
+                      keyboardAppearance="dark"
                       value={text}
                       editable={!busy}
                       onChangeText={(v) => onAnswer(field.key, v)}

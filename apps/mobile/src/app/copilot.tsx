@@ -1396,6 +1396,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       setMenu(false);
     } catch {
       setError("La conversation n’a pas pu être créée. Réessayez.");
+      setMenu(true);
     } finally {
       createLocked.current = false;
       setCreating(false);
@@ -1472,7 +1473,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                   );
                 }}
               >
-                <Text style={{ color: "white", fontWeight: "600" }}>
+                <Text style={{ color: colors.onAccent, fontWeight: "600" }}>
                   Supprimer
                 </Text>
               </Pressable>
@@ -1516,6 +1517,10 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         scopeKey={`${storeId}/${ownerId}`}
         delivery={delivery}
         onConversations={refreshMenu}
+        onNewConversation={() => {
+          void create();
+        }}
+        creatingConversation={creating}
         onRemember={(message) =>
           router.push({
             pathname: "/copilot-memory",
@@ -1544,7 +1549,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           <>
             {captureStatus ? (
               <View style={{ padding: 12, gap: 8 }}>
-                <Text accessibilityLiveRegion="polite">{captureStatus}</Text>
+                <Text
+                  accessibilityLiveRegion="polite"
+                  style={{ color: colors.muted, lineHeight: 22 }}
+                >
+                  {captureStatus}
+                </Text>
                 <SecondaryButton
                   label="Masquer"
                   onPress={() => setCaptureStatus(undefined)}

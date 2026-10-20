@@ -19,7 +19,8 @@ import { membershipSummary } from "../needs/membership-presentation";
 import { substitutionSummary } from "../needs/substitution-presentation";
 import { useCallback, useRef, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
-import { ActivityIndicator, Pressable, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Switch, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import {
   needUnitSchema,
   needMembershipSchema,
@@ -457,7 +458,11 @@ export function StoreConflictCard({
             }}
           >
             <Text
-              style={{ color: "white", fontWeight: "600", textAlign: "center" }}
+              style={{
+                color: colors.onAccent,
+                fontWeight: "600",
+                textAlign: "center",
+              }}
             >
               {saving ? "Enregistrement…" : "Confirmer cette résolution"}
             </Text>
