@@ -25,6 +25,7 @@ export async function nativeCatalogueConflictFixture(
   path = ":memory:",
   reversal?: "LOCAL" | "REMOTE",
   remoteDeleted = false,
+  localDeleted = false,
 ) {
   const s = await nativeReceiptPublicationFixture(path),
     { storeId, ownerId, deviceId } = s.scope,
@@ -32,7 +33,10 @@ export async function nativeCatalogueConflictFixture(
     ctx = () => ({ commandId: randomUUID(), deviceId }),
     product = productSchema.parse({
       ...s.product,
-      status: "ACTIVE",
+      status:
+        localDeleted && kind === "PRODUCT" && reversal === "LOCAL"
+          ? "INACTIVE"
+          : "ACTIVE",
       category: "FRUIT",
       nature: "BULK",
       salesUnit: "KG",
@@ -45,7 +49,10 @@ export async function nativeCatalogueConflictFixture(
       alias: "Figues jaunes",
       normalizedAlias: normalizeProductLabel("Figues jaunes"),
       source: "USER",
-      status: "TO_REVIEW",
+      status:
+        localDeleted && kind === "ALIAS" && reversal === "LOCAL"
+          ? "REJECTED"
+          : "TO_REVIEW",
       confidence: 0.4,
       version: 1,
       createdAt: product.createdAt,
@@ -85,54 +92,63 @@ export async function nativeCatalogueConflictFixture(
       1,
     );
   await s.a.runAsync("UPDATE sync_outbox SET status='ACKNOWLEDGED'");
-  const local =
-      kind === "PRODUCT"
-        ? productSchema.parse({
-            ...product,
-            label: "FIGUE LOCALE VRAC",
+  let local =
+    kind === "PRODUCT"
+      ? productSchema.parse({
+          ...product,
+          label: "FIGUE LOCALE VRAC",
+          version: 2,
+          status: reversal === "LOCAL" ? "INACTIVE" : "ACTIVE",
+        })
+      : kind === "IDENTIFIER"
+        ? productIdentifierSchema.parse({
+            ...identifier,
+            status: "VALIDATED",
             version: 2,
-            status: reversal === "LOCAL" ? "INACTIVE" : "ACTIVE",
           })
-        : kind === "IDENTIFIER"
-          ? productIdentifierSchema.parse({
-              ...identifier,
-              status: "VALIDATED",
-              version: 2,
-            })
-          : productAliasSchema.parse({
-              ...alias,
-              status: reversal === "LOCAL" ? "REJECTED" : "VALIDATED",
-              version: 2,
-            }),
-    remote =
-      kind === "PRODUCT"
-        ? productSchema.parse({
-            ...product,
-            label: "FIGUE SYNCHRONISÉE VRAC",
+        : productAliasSchema.parse({
+            ...alias,
+            status: reversal === "LOCAL" ? "REJECTED" : "VALIDATED",
+            version: 2,
+          });
+  const remote =
+    kind === "PRODUCT"
+      ? productSchema.parse({
+          ...product,
+          label: "FIGUE SYNCHRONISÉE VRAC",
+          version: 2,
+          deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
+          status: reversal === "REMOTE" ? "INACTIVE" : "ACTIVE",
+        })
+      : kind === "IDENTIFIER"
+        ? productIdentifierSchema.parse({
+            ...identifier,
+            status: "TO_REVIEW",
             version: 2,
             deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
-            status: reversal === "REMOTE" ? "INACTIVE" : "ACTIVE",
           })
-        : kind === "IDENTIFIER"
-          ? productIdentifierSchema.parse({
-              ...identifier,
-              status: "TO_REVIEW",
-              version: 2,
-              deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
-            })
-          : productAliasSchema.parse({
-              ...alias,
-              status:
-                reversal === "REMOTE"
-                  ? "REJECTED"
-                  : reversal === "LOCAL"
-                    ? "VALIDATED"
-                    : "TO_REVIEW",
-              confidence: 0.8,
-              version: 2,
-              deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
-            });
-  if (kind === "PRODUCT")
+        : productAliasSchema.parse({
+            ...alias,
+            status:
+              reversal === "REMOTE"
+                ? "REJECTED"
+                : reversal === "LOCAL"
+                  ? "VALIDATED"
+                  : "TO_REVIEW",
+            confidence: 0.8,
+            version: 2,
+            deletedAt: remoteDeleted ? "2026-10-20T18:00:00.000Z" : null,
+          });
+  if (localDeleted) {
+    const at = "2026-10-20T19:00:00.000Z";
+    const baseline =
+      kind === "PRODUCT" ? product : kind === "IDENTIFIER" ? identifier : alias;
+    await repo.delete(catalogueConflictTypes[kind], baseline.id, storeId, at, {
+      ...ctx(),
+      expectedRemoteVersion: 1,
+    });
+    local = { ...baseline, version: 2, updatedAt: at, deletedAt: at };
+  } else if (kind === "PRODUCT")
     await repo.upsertProduct(productSchema.parse(local), {
       ...ctx(),
       expectedRemoteVersion: 1,
@@ -149,9 +165,9 @@ export async function nativeCatalogueConflictFixture(
     });
   const entityType = catalogueConflictTypes[kind],
     table = catalogueConflictTables[kind],
-    command = (await new OutboxRepository(s.a).listPending(storeId)).find(
-      (c) => c.entityType === entityType,
-    )!;
+    command = (await new OutboxRepository(s.a).listPending(storeId))
+      .filter((c) => c.entityType === entityType)
+      .at(-1)!;
   const conflict = await new ConflictRepository(s.a).recordPushConflict(
     command,
     {

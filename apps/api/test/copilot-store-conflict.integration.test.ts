@@ -1,3 +1,4 @@
+import { createMongoSyncPullService } from "../src/sync/pull-service";
 import { nativeCatalogueConflictFixture } from "../../../scripts/test-catalogue-conflict-fixtures";
 import {
   isCatalogueConflictKind,
@@ -45,6 +46,7 @@ import {
 } from "@fl-copilot/analytics-core";
 import {
   syncCommandSchema,
+  syncPullQuerySchema,
   syncPushRequestSchema,
 } from "@fl-copilot/sync-contracts";
 import { createMongoSyncPushService } from "../src/sync/push-service";
@@ -131,6 +133,12 @@ describe.skipIf(!uri)(
       ["PRODUCT", "ADOPT_REMOTE", "DELETION"],
       ["IDENTIFIER", "ADOPT_REMOTE", "DELETION"],
       ["ALIAS", "ADOPT_REMOTE", "DELETION"],
+      ["PRODUCT", "KEEP_LOCAL", "LOCAL_DELETION"],
+      ["PRODUCT", "ADOPT_REMOTE", "LOCAL_DELETION"],
+      ["IDENTIFIER", "KEEP_LOCAL", "LOCAL_DELETION"],
+      ["IDENTIFIER", "ADOPT_REMOTE", "LOCAL_DELETION"],
+      ["ALIAS", "KEEP_LOCAL", "LOCAL_DELETION"],
+      ["ALIAS", "ADOPT_REMOTE", "LOCAL_DELETION"],
       ["PRODUCT", "KEEP_LOCAL", "FOREIGN"],
       ["ALIAS", "KEEP_LOCAL", "FOREIGN"],
       ["ALIAS", "KEEP_LOCAL", "REACTIVATION"],
@@ -167,6 +175,7 @@ describe.skipIf(!uri)(
                 ":memory:",
                 mode === "REACTIVATION" ? "REMOTE" : undefined,
                 mode === "DELETION",
+                mode === "LOCAL_DELETION",
               )
             : kind === "COMMERCIAL_REFERENCE" || kind === "COMMERCIAL_EXECUTION"
               ? await nativeCommercialDecisionConflictFixture(
@@ -381,7 +390,7 @@ describe.skipIf(!uri)(
             for (const m of messages)
               await applyCopilotRecord(tx, chat, "copilot_message", m);
           });
-          if (mode === "DELETION") {
+          if (mode === "DELETION" || mode === "LOCAL_DELETION") {
             // Exercise the real server conflict serializer before reviewing the deletion locally.
             const response = await createMongoSyncPushService({
               getDb: async () => db,
@@ -411,7 +420,10 @@ describe.skipIf(!uri)(
             expect(response.results[0]).toMatchObject({
               status: "CONFLICT",
               remoteVersion: 2,
-              remoteEntity: { deletedAt: "2026-10-20T18:00:00.000Z" },
+              remoteEntity: {
+                deletedAt:
+                  mode === "DELETION" ? "2026-10-20T18:00:00.000Z" : null,
+              },
             });
             await s.a.runAsync(
               "DELETE FROM sync_conflicts WHERE id=?",
@@ -424,7 +436,11 @@ describe.skipIf(!uri)(
           }
           const state = await r.controller.open(card);
           expect(state.status).toBe("READY");
-          if (mode === "REACTIVATION" || mode === "DELETION") {
+          if (
+            mode === "REACTIVATION" ||
+            mode === "DELETION" ||
+            mode === "LOCAL_DELETION"
+          ) {
             await expect(
               r.controller.confirm(
                 card,
@@ -443,10 +459,15 @@ describe.skipIf(!uri)(
                 decision,
                 true,
                 undefined,
-                mode === "REACTIVATION" && kind !== "PRODUCT",
-                false,
-                mode === "REACTIVATION" && kind === "PRODUCT",
-                mode === "DELETION",
+                {
+                  reactivateRejected:
+                    mode === "REACTIVATION" && kind !== "PRODUCT",
+                  retainWithdrawn: false,
+                  activateProduct:
+                    mode === "REACTIVATION" && kind === "PRODUCT",
+                  acceptRemoteDeletion: mode === "DELETION",
+                  confirmLocalDeletionChoice: mode === "LOCAL_DELETION",
+                },
               )
             ).status,
           ).toBe("COMPLETED");
@@ -458,10 +479,15 @@ describe.skipIf(!uri)(
                 decision,
                 true,
                 undefined,
-                mode === "REACTIVATION" && kind !== "PRODUCT",
-                false,
-                mode === "REACTIVATION" && kind === "PRODUCT",
-                mode === "DELETION",
+                {
+                  reactivateRejected:
+                    mode === "REACTIVATION" && kind !== "PRODUCT",
+                  retainWithdrawn: false,
+                  activateProduct:
+                    mode === "REACTIVATION" && kind === "PRODUCT",
+                  acceptRemoteDeletion: mode === "DELETION",
+                  confirmLocalDeletionChoice: mode === "LOCAL_DELETION",
+                },
               )
             ).status,
           ).toBe("COMPLETED");
@@ -480,50 +506,117 @@ describe.skipIf(!uri)(
               payload: command.payload,
               createdAt: command.createdAt,
             });
-            await session.withTransaction(async () => {
-              const applyCatalogue: typeof applyNeedUnitCommand = (
-                ctx,
-                store,
-                command,
-                requestId,
-                changes,
-              ) =>
-                applyProductMasterCommand(
+            if (mode === "LOCAL_DELETION") {
+              const service = createMongoSyncPushService({
+                getDb: async () => db,
+                close: async () => {},
+                checkHealth: async () => "connected",
+              });
+              const request = syncPushRequestSchema.parse({
+                syncProtocolVersion: 1,
+                appVersion: "test",
+                storeId: chat.storeId,
+                deviceId: s.scope.deviceId,
+                commands: [wire],
+              });
+              expect(
+                (await service.push(request, randomUUID())).results[0],
+              ).toMatchObject({ status: "APPLIED", remoteVersion: 3 });
+              expect(
+                (await service.push(request, randomUUID())).results[0],
+              ).toMatchObject({ status: "ALREADY_APPLIED", remoteVersion: 3 });
+            } else
+              await session.withTransaction(async () => {
+                const applyCatalogue: typeof applyNeedUnitCommand = (
                   ctx,
                   store,
                   command,
                   requestId,
-                  () => new Date(),
                   changes,
+                ) =>
+                  applyProductMasterCommand(
+                    ctx,
+                    store,
+                    command,
+                    requestId,
+                    () => new Date(),
+                    changes,
+                  );
+                const apply = {
+                  PRODUCT: applyCatalogue,
+                  IDENTIFIER: applyCatalogue,
+                  ALIAS: applyCatalogue,
+                  COMMERCIAL_REFERENCE: applyCommercialVersionDecisionCommand,
+                  COMMERCIAL_EXECUTION: applyCommercialExecutionCommand,
+                  COMMERCIAL_CHOICE: applyCommercialChoiceCommand,
+                  COMMERCIAL_PREPARATION: applyCommercialPreparationCommand,
+                  COMMERCIAL_PLAN: applyCommercialPlanCommand,
+                  FIELD_EVENT: applyStoreProductEventCommand,
+                  SETTINGS: applyStoreContextCommand,
+                  NEED: applyNeedUnitCommand,
+                  MEMBERSHIP: applyNeedMembershipCommand,
+                  SUBSTITUTION: applyProductSubstitutionCommand,
+                }[kind];
+                const result = await apply(
+                  { database: db, session },
+                  chat.storeId,
+                  wire,
+                  randomUUID(),
+                  createMongoSyncChangeService(),
                 );
-              const apply = {
-                PRODUCT: applyCatalogue,
-                IDENTIFIER: applyCatalogue,
-                ALIAS: applyCatalogue,
-                COMMERCIAL_REFERENCE: applyCommercialVersionDecisionCommand,
-                COMMERCIAL_EXECUTION: applyCommercialExecutionCommand,
-                COMMERCIAL_CHOICE: applyCommercialChoiceCommand,
-                COMMERCIAL_PREPARATION: applyCommercialPreparationCommand,
-                COMMERCIAL_PLAN: applyCommercialPlanCommand,
-                FIELD_EVENT: applyStoreProductEventCommand,
-                SETTINGS: applyStoreContextCommand,
-                NEED: applyNeedUnitCommand,
-                MEMBERSHIP: applyNeedMembershipCommand,
-                SUBSTITUTION: applyProductSubstitutionCommand,
-              }[kind];
-              const result = await apply(
-                { database: db, session },
-                chat.storeId,
-                wire,
-                randomUUID(),
-                createMongoSyncChangeService(),
-              );
-              expect(result.resultStatus).toBe("APPLIED");
-            });
+                expect(result.resultStatus).toBe("APPLIED");
+              });
           }
           expect(
             (await collection(name).findOne({ _id: r.remote.id }))!.version,
           ).toBe(decision === "KEEP_LOCAL" ? 3 : 2);
+          if (
+            mode === "LOCAL_DELETION" &&
+            decision === "KEEP_LOCAL" &&
+            isCatalogueConflictKind(kind)
+          ) {
+            const second = new DatabaseSync(":memory:"),
+              local = new ReceiptTestDatabase(second);
+            try {
+              await runLocalMigrations(local);
+              await applyProductMasterChange(local, chat.storeId, {
+                entityType: r.entityType,
+                entityId: r.remote.id,
+                entityVersion: r.remote.version,
+                operation: "UPSERT",
+                entity: r.remote,
+              });
+              const page = await createMongoSyncPullService({
+                getDb: async () => db,
+                close: async () => {},
+                checkHealth: async () => "connected",
+              }).pull(chat.storeId, syncPullQuerySchema.parse({ limit: 100 }));
+              const deletion = page.changes.find(
+                (c) =>
+                  c.entityType === r.entityType && c.entityId === r.remote.id,
+              )!;
+              expect(deletion).toMatchObject({
+                operation: "DELETE",
+                entityVersion: 3,
+              });
+              await applyProductMasterChange(local, chat.storeId, deletion);
+              const table = {
+                PRODUCT: "products",
+                IDENTIFIER: "product_identifiers",
+                ALIAS: "product_aliases",
+              }[kind];
+              expect(
+                second
+                  .prepare(`SELECT COUNT(*) n FROM ${table} WHERE id=?`)
+                  .get(r.remote.id)!.n,
+              ).toBe(0);
+              expect(
+                second.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n,
+              ).toBe(0);
+            } finally {
+              second.close();
+            }
+          }
           const restored = new DatabaseSync(":memory:"),
             adapter = new ReceiptTestDatabase(restored);
           try {

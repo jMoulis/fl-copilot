@@ -174,3 +174,7 @@ L10 progresse avec le devis privé signé, la confirmation locale explicite et l
 ## L7/L5 — suppression distante connue dans une comparaison (20 octobre)
 
 Le chat et la comparaison manuelle du référentiel distinguent une suppression prouvée d’une donnée indisponible. Acceptation explicite, conservation locale des versions/anciennes commandes, pas de réactivation ni nouvel envoi ; reprise idempotente et refus des versions plus récentes. Le résumé indique « Supprimé du référentiel » et réutilise le thème sombre. QA : `../qa/M7_CATALOGUE_DELETION_CONFLICTS_2026_10_20.md`. Les autres absences/refus et la recette native restent ouverts ; aucun lot complet V1/M8 n’est déclaré clos.
+
+## L7/L5 — choix après suppression locale du référentiel (20 octobre)
+
+Les deux parcours existants proposent de maintenir ou d’annuler une suppression locale face à une version distante complète et de même identité. Deux consentements distincts : comparaison et conséquence de ce choix ; réactivation éventuelle séparée. Un seul DELETE canonique ou adoption sans envoi, versions conservées sans cascade ni changement des chiffres. QA : `../qa/M7_CATALOGUE_LOCAL_DELETION_CONFLICTS_2026_10_20.md`. Les cibles absentes/réaffectées, refus génériques, recette native et autres critères V1/M8 restent ouverts ; aucun lot entier n’est fermé.

@@ -245,6 +245,7 @@ export const storeConflictRequestSchema = z.strictObject({
   retainWithdrawn: z.boolean().optional(),
   activateProduct: z.boolean().optional(),
   acceptRemoteDeletion: z.boolean().optional(),
+  confirmLocalDeletionChoice: z.boolean().optional(),
 });
 export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
   .omit({ canManageProducts: true })

@@ -43,6 +43,7 @@ export function ProductMasterConflict({
     ),
     [compared, setCompared] = useState(false),
     [extra, setExtra] = useState(false),
+    [localDeletionConfirmed, setLocalDeletionConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
   const revision = useRef(0),
@@ -55,6 +56,7 @@ export function ProductMasterConflict({
       setDecision(null);
       setCompared(false);
       setExtra(false);
+      setLocalDeletionConfirmed(false);
       setError(undefined);
       setBusy(false);
       if (allowed)
@@ -88,7 +90,15 @@ export function ProductMasterConflict({
           ? review?.policy.activateRemote
           : false,
     deletion = decision === "ADOPT_REMOTE" && !!review?.policy.remoteDeleted,
-    needsExtra = reactivate || activate || deletion;
+    needsExtra = reactivate || activate || deletion,
+    localDeletion =
+      !!decision &&
+      !!review?.policy.localDeleted &&
+      !review.policy.remoteDeleted,
+    localDeletionLabel =
+      decision === "KEEP_LOCAL"
+        ? "Je confirme le maintien de ma suppression malgré la modification synchronisée."
+        : "Je confirme l’annulation de ma suppression et le rétablissement de la version synchronisée.";
   async function confirm() {
     if (
       locked.current ||
@@ -96,6 +106,7 @@ export function ProductMasterConflict({
       !decision ||
       !compared ||
       (needsExtra && !extra) ||
+      (localDeletion && !localDeletionConfirmed) ||
       !authority.current
     )
       return;
@@ -118,6 +129,7 @@ export function ProductMasterConflict({
           reactivateRejected: !!reactivate && extra,
           activateProduct: !!activate && extra,
           acceptRemoteDeletion: deletion && extra,
+          confirmLocalDeletionChoice: localDeletion && localDeletionConfirmed,
           canResolve: () => authority.current,
           signal: cancel.signal,
         },
@@ -131,6 +143,7 @@ export function ProductMasterConflict({
         setCompared(false);
         setDecision(null);
         setExtra(false);
+        setLocalDeletionConfirmed(false);
         setError(
           "La comparaison a changé ou la résolution n’a pas été enregistrée. Relisez les versions avant de confirmer.",
         );
@@ -168,6 +181,7 @@ export function ProductMasterConflict({
         setDecision(value);
         setCompared(false);
         setExtra(false);
+        setLocalDeletionConfirmed(false);
       }}
       style={{
         minHeight: 44,
@@ -226,14 +240,37 @@ export function ProductMasterConflict({
           {review.reason ? (
             <Text style={{ color: colors.ink }}>{review.reason}</Text>
           ) : null}
-          {choice("KEEP_LOCAL", "Conserver ma version locale", review.canKeep)}
+          {choice(
+            "KEEP_LOCAL",
+            review.policy.localDeleted && !review.policy.remoteDeleted
+              ? "Maintenir ma suppression locale"
+              : "Conserver ma version locale",
+            review.canKeep,
+          )}
           {choice(
             "ADOPT_REMOTE",
             review.policy.remoteDeleted
               ? "Accepter la suppression synchronisée"
-              : "Adopter la version synchronisée",
+              : review.policy.localDeleted
+                ? "Annuler ma suppression et rétablir la version synchronisée"
+                : "Adopter la version synchronisée",
             review.canAdopt,
           )}
+          {localDeletion ? (
+            <View
+              style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
+            >
+              <Switch
+                disabled={busy}
+                accessibilityLabel={localDeletionLabel}
+                value={localDeletionConfirmed}
+                onValueChange={setLocalDeletionConfirmed}
+              />
+              <Text style={{ color: colors.ink, flex: 1 }}>
+                {localDeletionLabel}
+              </Text>
+            </View>
+          ) : null}
           {needsExtra ? (
             <View
               style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
@@ -275,10 +312,18 @@ export function ProductMasterConflict({
             accessibilityState={{
               busy,
               disabled:
-                busy || !decision || !compared || (!!needsExtra && !extra),
+                busy ||
+                !decision ||
+                !compared ||
+                (!!needsExtra && !extra) ||
+                (localDeletion && !localDeletionConfirmed),
             }}
             disabled={
-              busy || !decision || !compared || (!!needsExtra && !extra)
+              busy ||
+              !decision ||
+              !compared ||
+              (!!needsExtra && !extra) ||
+              (localDeletion && !localDeletionConfirmed)
             }
             onPress={() => void confirm()}
             style={{
@@ -287,7 +332,11 @@ export function ProductMasterConflict({
               borderRadius: 12,
               backgroundColor: colors.forest,
               opacity:
-                busy || !decision || !compared || (needsExtra && !extra)
+                busy ||
+                !decision ||
+                !compared ||
+                (needsExtra && !extra) ||
+                (localDeletion && !localDeletionConfirmed)
                   ? 0.45
                   : 1,
             }}

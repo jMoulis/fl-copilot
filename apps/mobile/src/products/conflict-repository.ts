@@ -84,13 +84,13 @@ export async function readCatalogueConflictPolicy(
       activateLocal: false,
       activateRemote: false,
       remoteDeleted: !!r?.deletedAt,
+      localDeleted: !!l.deletedAt,
       reason: null as string | null,
       snapshots: [] as unknown[],
       products: {} as Record<string, string>,
     };
   if (!r) return result;
-  const supported = !l.deletedAt && !r.deletedAt;
-  result.canAdopt = result.identityValid && (supported || !!r.deletedAt);
+  result.canAdopt = result.identityValid;
   if (kind === "PRODUCT" && !r.deletedAt) {
     const local = productSchema.parse(l),
       remote = productSchema.parse(r);
@@ -121,7 +121,7 @@ export async function readCatalogueConflictPolicy(
       result.products[parent.entity.id] = parent.entity.label;
   }
   let collision = false;
-  if (kind === "IDENTIFIER") {
+  if (kind === "IDENTIFIER" && !l.deletedAt) {
     const local = productIdentifierSchema.parse(l);
     const duplicates = await db.getAllAsync<{ id: string; product_id: string }>(
       "SELECT id,product_id FROM product_identifiers WHERE store_id=? AND id!=? AND type=? AND value=? AND deleted_at IS NULL ORDER BY id LIMIT 101",
@@ -133,8 +133,9 @@ export async function readCatalogueConflictPolicy(
     result.snapshots.push(duplicates);
     collision = duplicates.length > 0;
   } else if (
-    kind === "PRODUCT" ||
-    (kind === "ALIAS" && productAliasSchema.parse(l).status === "VALIDATED")
+    !l.deletedAt &&
+    (kind === "PRODUCT" ||
+      (kind === "ALIAS" && productAliasSchema.parse(l).status === "VALIDATED"))
   ) {
     const label =
         kind === "PRODUCT"
@@ -172,17 +173,25 @@ export async function readCatalogueConflictPolicy(
         products,
       ) !== "READY";
   }
+  // Keeping a local tombstone deletes only this same identity; it does not reactivate
+  // its status, require an active parent or publish conflicting label/code edits.
+  if (l.deletedAt) {
+    result.activateLocal = false;
+    result.reactivateLocal = false;
+  }
   result.canKeep =
-    result.identityValid && supported && parentClear && !collision;
+    result.identityValid &&
+    !r.deletedAt &&
+    (!!l.deletedAt || (parentClear && !collision));
   if (!result.identityValid)
     result.reason =
       "L’association désigne une autre fiche ou une autre origine. Aucune identité n’est réaffectée automatiquement.";
   else if (r.deletedAt)
     result.reason =
       "Cette donnée a été supprimée dans la version synchronisée. Vous pouvez accepter cette suppression après comparaison ; votre saisie et les commandes antérieures restent conservées sur cet appareil pour traçabilité. Aucune réactivation automatique n’est proposée.";
-  else if (!supported)
+  else if (l.deletedAt)
     result.reason =
-      "Ce conflit concerne une suppression locale. Les deux versions restent conservées ; utilisez la reprise dédiée de la suppression.";
+      "Vous avez supprimé cette donnée sur cet appareil, mais sa version synchronisée a été modifiée. Comparez-les puis choisissez de maintenir votre suppression ou de l’annuler. Les autres fiches et les chiffres publiés restent inchangés.";
   else if (collision)
     result.reason =
       "Le libellé ou le code est déjà utilisé par une autre fiche, ou le contrôle complet dépasse sa limite. Vérifiez le référentiel avant de renvoyer cette version.";
@@ -287,6 +296,7 @@ export class ProductMasterConflictRepository {
       reactivateRejected?: boolean;
       activateProduct?: boolean;
       acceptRemoteDeletion?: boolean;
+      confirmLocalDeletionChoice?: boolean;
       jobId: string;
       canResolve: () => boolean;
       signal?: AbortSignal;
@@ -317,9 +327,22 @@ export class ProductMasterConflictRepository {
         throw Error("CATALOGUE_CONFLICT_ACTIVATION_REQUIRED");
       if (!useLocal && policy.remoteDeleted && !ctx.acceptRemoteDeletion)
         throw Error("CATALOGUE_CONFLICT_DELETION_CONFIRMATION_REQUIRED");
+      if (
+        policy.localDeleted &&
+        !policy.remoteDeleted &&
+        !ctx.confirmLocalDeletionChoice
+      )
+        throw Error("CATALOGUE_CONFLICT_LOCAL_DELETION_CONFIRMATION_REQUIRED");
       const now = new Date().toISOString(),
         after = useLocal
-          ? rebaseCatalogueConflict(kind, current.entity, remote, now)
+          ? policy.localDeleted
+            ? catalogueConflictSchemas[kind].parse({
+                ...remote,
+                version: remote.version + 1,
+                updatedAt: now,
+                deletedAt: now,
+              })
+            : rebaseCatalogueConflict(kind, current.entity, remote, now)
           : remote;
       await tx.runAsync(
         "UPDATE sync_outbox SET status='FAILED',last_error_code='PRODUCT_MASTER_CONFLICT_SUPERSEDED' WHERE store_id=? AND entity_type=? AND entity_id=? AND status IN ('PENDING','FAILED','CONFLICT')",
@@ -343,7 +366,29 @@ export class ProductMasterConflictRepository {
             deviceId: ctx.deviceId,
             expectedRemoteVersion: remote.version,
           };
-        if (kind === "PRODUCT")
+        if (policy.localDeleted) {
+          // The canonical DELETE writer requires a live baseline. Installing the reviewed
+          // remote row and enqueuing its deletion are in this same exclusive transaction.
+          await applyProductMasterChange(
+            tx,
+            storeId,
+            {
+              entityType: conflict.entityType,
+              entityId: remote.id,
+              entityVersion: remote.version,
+              operation: "UPSERT",
+              entity: remote,
+            },
+            current.entity.version,
+          );
+          await repo.delete(
+            catalogueConflictTypes[kind],
+            remote.id,
+            storeId,
+            now,
+            context,
+          );
+        } else if (kind === "PRODUCT")
           await repo.upsertProduct(productSchema.parse(after), context);
         else if (kind === "IDENTIFIER")
           await repo.upsertIdentifier(
