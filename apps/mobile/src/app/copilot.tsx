@@ -1,3 +1,5 @@
+import { LayoutIllustrationTransfer } from "../copilot/layout-illustration-transfer";
+import { nativeLayoutIllustrationFiles } from "../copilot/layout-illustration-native-files";
 import { LayoutIllustrationRepository } from "@/copilot/layout-illustration-repository";
 import { EmailInbox, EmailInboxIndicator } from "@/intake/email-inbox";
 import { z } from "zod";
@@ -276,6 +278,48 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, canManageProducts],
   );
+  const illustrationFileSession = useRef<{
+    storeId: string;
+    userId: string;
+  } | null>(null);
+  illustrationFileSession.current =
+    session?.user.id === ownerId &&
+    session.stores.some((s) => s.storeId === storeId)
+      ? { storeId, userId: ownerId }
+      : null;
+  useEffect(
+    () => () => {
+      illustrationFileSession.current = null;
+    },
+    [],
+  );
+  const illustrationFiles = useMemo(() => {
+    const api = new ApiClient(getApiBaseUrl());
+    return new LayoutIllustrationTransfer(
+      sqlite,
+      layoutIllustrations,
+      {
+        manifest: (store, id) =>
+          withAccessToken(
+            (token) => api.layoutIllustrationManifest(token, store, id),
+            ownerId,
+          ),
+        download: (store, manifest, variant) =>
+          withAccessToken(
+            (token) =>
+              api.downloadLayoutIllustrationFile(
+                token,
+                store,
+                manifest,
+                variant,
+              ),
+            ownerId,
+          ),
+      },
+      nativeLayoutIllustrationFiles,
+      () => illustrationFileSession.current,
+    );
+  }, [sqlite, layoutIllustrations, ownerId, withAccessToken]);
   const layoutScenarios = useMemo(
     () => new CopilotStoreLayoutScenarioReader(sqlite, { storeId, ownerId }),
     [sqlite, storeId, ownerId],
@@ -802,6 +846,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           reader={layoutScenarios}
           illustration={{
             repository: layoutIllustrations,
+            files: illustrationFiles,
             deviceId,
             canPrepare: canManageProducts,
           }}

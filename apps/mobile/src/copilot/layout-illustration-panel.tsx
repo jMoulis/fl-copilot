@@ -1,3 +1,5 @@
+import { LayoutIllustrationViewer } from "./layout-illustration-viewer";
+import type { LayoutIllustrationTransfer } from "./layout-illustration-transfer";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View } from "react-native";
 import { randomUUID } from "expo-crypto";
@@ -10,6 +12,7 @@ import type { CopilotStoreLayoutScenarioReader } from "./store-layout-scenario-r
 type State = Awaited<ReturnType<CopilotStoreLayoutScenarioReader["open"]>>;
 export function LayoutIllustrationPanel({
   repository,
+  files,
   message,
   state,
   deviceId,
@@ -17,6 +20,7 @@ export function LayoutIllustrationPanel({
   onOpenPlan,
 }: {
   repository: Pick<LayoutIllustrationRepository, "prepare" | "find">;
+  files?: Pick<LayoutIllustrationTransfer, "load" | "refresh">;
   message: CopilotMessage;
   state: State;
   deviceId: string;
@@ -148,9 +152,16 @@ export function LayoutIllustrationPanel({
                 : "Synchronisation à vérifier"}
           </Text>
           <Text className="text-muted">
-            Le plan et les affectations d’origine sont conservés. Aucune image
-            n’a encore été générée.
+            Le plan et les affectations d’origine sont conservés.
           </Text>
+          {files ? (
+            <LayoutIllustrationViewer
+              transfer={files}
+              message={message}
+              current={state.freshness === "CURRENT"}
+              synced={record.syncState === "SYNCED"}
+            />
+          ) : null}
         </>
       ) : (
         <>

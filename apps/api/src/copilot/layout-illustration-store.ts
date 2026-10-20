@@ -30,10 +30,11 @@ export function serializeLayoutIllustration(row: LayoutIllustrationDocument) {
   return value;
 }
 /** Before cached command replay as well as mutation: revocation/deletion never exposes an old ACK. */
-async function sources(
+export async function readLayoutIllustrationPreparationSource(
   db: Db,
   e: LayoutIllustrationPreparation,
   session?: ClientSession,
+  requireManager = true,
 ) {
   const scope = {
       storeId: e.storeId,
@@ -41,12 +42,15 @@ async function sources(
       conversationId: e.conversationId,
     },
     opts = { session };
-  const member = await db
-    .collection("storeMemberships")
-    .findOne(
-      { storeId: e.storeId, userId: e.ownerId, active: true, role: "MANAGER" },
-      opts,
-    );
+  const member = await db.collection("storeMemberships").findOne(
+    {
+      storeId: e.storeId,
+      userId: e.ownerId,
+      active: true,
+      ...(requireManager ? { role: "MANAGER" } : {}),
+    },
+    opts,
+  );
   const topicRow = await db
     .collection<{ _id: string } & Record<string, unknown>>(
       "copilotConversations",
@@ -148,7 +152,7 @@ export async function canAccessLayoutIllustration(
     !sameLayoutIllustrationPreparation(serializeLayoutIllustration(old), p.data)
   )
     return false;
-  return !!(await sources(db, p.data, session));
+  return !!(await readLayoutIllustrationPreparationSource(db, p.data, session));
 }
 export async function applyLayoutIllustration(
   ctx: MongoCommandMutationContext,

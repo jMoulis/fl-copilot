@@ -1,3 +1,8 @@
+import {
+  createLayoutIllustrationFiles,
+  type LayoutIllustrationFiles,
+} from "./copilot/layout-illustration-files";
+import { registerLayoutIllustrationFileRoutes } from "./copilot/layout-illustration-file-routes";
 import { createEmailOriginalRetry } from "./intake/email-original-retry.js";
 import { createEmailDecisionHistory } from "./intake/email-decision-history.js";
 import { Resend } from "resend";
@@ -248,6 +253,7 @@ type AppDependencies = {
     typeof registerEmailIntakeRoutes
   >[1]["retryOriginal"];
   visualFiles?: VisualFileService;
+  layoutIllustrationFiles?: LayoutIllustrationFiles;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
 };
@@ -1889,6 +1895,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         ? syncBootstrap.bootstrap(store, request.query, true)
         : syncBootstrap.bootstrap(store, request.query);
     },
+  );
+  registerLayoutIllustrationFileRoutes(
+    app,
+    auth,
+    dependencies.layoutIllustrationFiles ??
+      createLayoutIllustrationFiles(dependencies.database),
   );
   registerVisualFileRoutes(
     app,
