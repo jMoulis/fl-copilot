@@ -93,7 +93,7 @@ export function ProductVisual({
           accessibilityLabel="Aucun visuel disponible sur cet appareil"
         />
       )}
-      {visual?.illustrative ? (
+      {uri && (visual?.illustrative || visual?.generic) ? (
         <View
           style={{
             position: "absolute",
@@ -107,7 +107,7 @@ export function ProductVisual({
           <Text
             style={{ fontSize: 10, color: colors.ink, textAlign: "center" }}
           >
-            Illustration
+            {visual?.illustrative ? "Illustration" : "Générique"}
           </Text>
         </View>
       ) : null}

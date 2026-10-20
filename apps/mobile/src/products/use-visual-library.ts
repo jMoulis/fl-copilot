@@ -5,7 +5,11 @@ import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import { useSync } from "../sync/sync-provider";
 import { subscribeOutboxChanges } from "../sync/outbox-repository";
-import { loadVisualLibraryState } from "./visual-library-state";
+import {
+  loadVisualLibraryState,
+  shareVisualLibraryState,
+  type VisualLibraryState,
+} from "./visual-library-state";
 import { nativeVisualFileStorage } from "./visual-file-storage";
 import { VisualFileCache } from "./visual-file-cache";
 import { VisualLibraryRepository } from "./visual-library-repository";
@@ -22,7 +26,7 @@ export function useVisualLibrary() {
   const current = useRef({ storeId, ownerId, manager });
   current.current = { storeId, ownerId, manager };
   const key = useMemo(
-    () => ["visual-library", deviceId, storeId, ownerId],
+    () => ["visual-library", 2, deviceId, storeId, ownerId],
     [deviceId, storeId, ownerId],
   );
   const query = useQuery({
@@ -30,16 +34,24 @@ export function useVisualLibrary() {
     enabled: !!storeId && !!ownerId,
     queryFn: () => loadVisualLibraryState(sqlite, storeId!, ownerId!),
     staleTime: Infinity,
+    structuralSharing: (previous, next) =>
+      shareVisualLibraryState(
+        previous as VisualLibraryState | undefined,
+        next as VisualLibraryState,
+      ),
   });
   const refresh = useCallback(async () => {
-    await client.invalidateQueries({ queryKey: key, exact: true });
+    await client.invalidateQueries(
+      { queryKey: key, exact: true },
+      { cancelRefetch: false },
+    );
   }, [client, key]);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = subscribeOutboxChanges(() => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        void refresh();
+        void refresh().catch(() => undefined);
       }, 50);
     });
     return () => {
@@ -48,7 +60,7 @@ export function useVisualLibrary() {
     };
   }, [refresh]);
   useEffect(() => {
-    if (sync.lastSyncedAt) void refresh();
+    if (sync.lastSyncedAt) void refresh().catch(() => undefined);
   }, [sync.lastSyncedAt, refresh]);
   const checked = useCallback(() => {
     if (
@@ -78,8 +90,9 @@ export function useVisualLibrary() {
   );
   const reads = useMemo(
     () => new Map<string, Promise<string | null>>(),
-    [query.dataUpdatedAt, storeId, ownerId],
+    [query.data?.assets, query.data?.files, query.data?.jobs, storeId, ownerId],
   );
+  const queuePreview = sync.visuals?.requestPreview;
   const readImageUri = useCallback(
     (asset: VisualAsset, original = false) => {
       checked();
@@ -133,12 +146,23 @@ export function useVisualLibrary() {
               throw error;
           }
         }
+        // Return the placeholder now; the durable worker fetches only the small
+        // preview after metadata acknowledgement, including on another device.
+        if (
+          !record.dirty &&
+          record.remoteVersion !== null &&
+          record.remoteVersion >= record.entity.version &&
+          queuePreview
+        ) {
+          checked();
+          void queuePreview(asset.id).catch(() => undefined);
+        }
         return null;
       })();
       reads.set(key, task);
       return task;
     },
-    [checked, reads, sqlite, storeId],
+    [checked, reads, sqlite, storeId, queuePreview],
   );
   const readUri = useCallback(
     (asset: VisualAsset) => readImageUri(asset, false),

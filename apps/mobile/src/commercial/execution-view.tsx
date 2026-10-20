@@ -11,6 +11,8 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { Text, TextInput, View, Modal, Alert, Pressable } from "react-native";
 import { useFocusEffect, router } from "expo-router";
+import { LinkedProductVisual } from "../products/linked-product-visual";
+import { useVisualLibrary } from "../products/use-visual-library";
 import {
   digestStringAsync,
   CryptoDigestAlgorithm,
@@ -64,6 +66,7 @@ export function CommercialExecutionView({
   plan: CommercialWeekPlan;
   compact?: boolean;
 }) {
+  const visuals = useVisualLibrary();
   const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow, status: syncStatus } = useSync(),
     repo = useMemo(
@@ -328,9 +331,18 @@ export function CommercialExecutionView({
           return null;
         return (
           <SectionCard key={p.id} title={p.label}>
-            <Text className="font-semibold text-ink">
-              {executionStatusLabels[r?.entity.status ?? "TODO"]}
-            </Text>
+            <View className="flex-row items-center gap-3">
+              {offer ? (
+                <LinkedProductVisual
+                  productId={offer.productId}
+                  storeId={offer.storeId}
+                  visuals={visuals}
+                />
+              ) : null}
+              <Text className="flex-1 font-semibold text-ink">
+                {executionStatusLabels[r?.entity.status ?? "TODO"]}
+              </Text>
+            </View>
             {offer ? (
               <Text className="text-sm text-muted">
                 Cadre de prix prévu :{" "}

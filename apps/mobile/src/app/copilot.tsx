@@ -145,6 +145,7 @@ import {
   InlineAlert,
 } from "@/components/ui";
 import { colors } from "@/design/tokens";
+import { useVisualLibrary } from "@/products/use-visual-library";
 const executionDigest = (s: string) =>
   digestStringAsync(CryptoDigestAlgorithm.SHA256, s);
 
@@ -192,6 +193,7 @@ export default function CopilotScreen() {
   );
 }
 function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
+  const visuals = useVisualLibrary();
   const { sqlite, deviceId } = useLocalDatabase();
   const { withAccessToken, session } = useAuth();
   const canManageProducts =
@@ -947,6 +949,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         message={message}
         controller={proposals}
         canConfirm={canManageProducts}
+        visuals={visuals}
       />
     );
   };

@@ -13,8 +13,14 @@ import {
   type LocalVisualRecord,
 } from "./visual-library-repository";
 import type { VisualFileJob } from "./visual-file-jobs";
+import {
+  ProductMasterRepository,
+  type LocalProductMasterRecord,
+} from "./product-master-repository";
 export interface VisualLibraryState {
   storeId: string;
+  products: Map<string, LocalProductMasterRecord<Product>>;
+  unavailableProducts: Set<string>;
   offlineRequired?: Set<string>;
   assets: Map<string, LocalVisualRecord<VisualAsset>>;
   identities: Map<string, LocalVisualRecord<VisualIdentity>>;
@@ -60,22 +66,30 @@ export async function loadVisualLibraryState(
   ownerId: string,
 ): Promise<VisualLibraryState> {
   const repo = new VisualLibraryRepository(db);
-  const [assets, identities, links, files, jobs] = await Promise.all([
-    repo.list("visual_asset", storeId),
-    repo.list("visual_identity", storeId),
-    repo.list("product_visual_link", storeId),
-    db.getAllAsync<{ asset_id: string; variant: string; uploaded: number }>(
-      "SELECT asset_id,variant,uploaded FROM visual_asset_files WHERE store_id=?",
-      storeId,
-    ),
-    db.getAllAsync<VisualFileJob>(
-      "SELECT * FROM local_jobs WHERE type='VISUAL_FILE_TRANSFER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? ORDER BY created_at DESC",
-      storeId,
-      ownerId,
-    ),
-  ]);
+  const [assets, identities, links, files, jobs, products, removedProducts] =
+    await Promise.all([
+      repo.list("visual_asset", storeId),
+      repo.list("visual_identity", storeId),
+      repo.list("product_visual_link", storeId),
+      db.getAllAsync<{ asset_id: string; variant: string; uploaded: number }>(
+        "SELECT asset_id,variant,uploaded FROM visual_asset_files WHERE store_id=?",
+        storeId,
+      ),
+      db.getAllAsync<VisualFileJob>(
+        "SELECT * FROM local_jobs WHERE type='VISUAL_FILE_TRANSFER' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? ORDER BY created_at DESC",
+        storeId,
+        ownerId,
+      ),
+      new ProductMasterRepository(db).listProducts(storeId),
+      db.getAllAsync<{ entity_id: string }>(
+        "SELECT entity_id FROM product_master_remote_snapshots WHERE store_id=? AND entity_type='product' AND (operation='DELETE' OR json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.status')='INACTIVE' OR json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.deletedAt') IS NOT NULL)",
+        storeId,
+      ),
+    ]);
   const result: VisualLibraryState = {
     storeId,
+    products: new Map(products.map((p) => [p.entity.id, p])),
+    unavailableProducts: new Set(removedProducts.map((p) => p.entity_id)),
     offlineRequired: new Set(
       assets.filter((r) => r.offlineRequired).map((r) => r.entity.id),
     ),
@@ -121,11 +135,37 @@ const safe = <T extends { deletedAt: string | null }>(
   r: LocalVisualRecord<T> | undefined,
 ): r is LocalVisualRecord<T> =>
   !!r && !r.remote?.deletedAt && !["ERROR", "CONFLICT"].includes(r.syncState);
+/** Images in other domains use the real current catalogue, never a Product reconstructed from prose. */
+export function resolveLibraryProduct(
+  state: VisualLibraryState | null,
+  storeId: string,
+  productId: string,
+): ProductVisualResolution {
+  if (!state || state.storeId !== storeId)
+    return { kind: "PLACEHOLDER", category: "UNKNOWN" };
+  const product = state?.products.get(productId);
+  if (
+    !product ||
+    state.unavailableProducts.has(productId) ||
+    ["CONFLICT", "ERROR"].includes(product.syncState)
+  )
+    return {
+      kind: "PLACEHOLDER",
+      category: product?.entity.category ?? "UNKNOWN",
+    };
+  return resolveLibraryState(state, product.entity);
+}
 export function resolveLibraryState(
   state: VisualLibraryState | null,
   product: Product,
 ): ProductVisualResolution {
-  if (!state || state.storeId !== product.storeId)
+  if (
+    !state ||
+    state.storeId !== product.storeId ||
+    state.unavailableProducts.has(product.id) ||
+    !state.products.has(product.id) ||
+    ["ERROR", "CONFLICT"].includes(state.products.get(product.id)!.syncState)
+  )
     return { kind: "PLACEHOLDER", category: product.category };
   const links = (state.links.get(product.id) ?? []).filter(
     (r) => !r.entity.deletedAt,
@@ -158,6 +198,56 @@ export function resolveLibraryState(
     ],
     assets: [...new Map(assets.map((r) => [r.entity.id, r.entity])).values()],
   });
+}
+
+function sharedMap<K, V>(previous: Map<K, V>, next: Map<K, V>) {
+  let same = previous.size === next.size;
+  const result = new Map<K, V>();
+  for (const [key, value] of next) {
+    const old = previous.get(key),
+      equal =
+        previous.has(key) && JSON.stringify(old) === JSON.stringify(value);
+    result.set(key, equal ? old! : value);
+    if (!equal) same = false;
+  }
+  return same ? previous : result;
+}
+function sharedSet(
+  previous: Set<string> | undefined,
+  next: Set<string> | undefined,
+) {
+  return previous &&
+    next &&
+    previous.size === next.size &&
+    [...next].every((id) => previous.has(id))
+    ? previous
+    : next;
+}
+/** Query refreshes retain unchanged records, so a sync heartbeat does not reread every thumbnail. */
+export function shareVisualLibraryState(
+  previous: VisualLibraryState | undefined,
+  next: VisualLibraryState,
+) {
+  if (!previous || previous.storeId !== next.storeId) return next;
+  const result = {
+    ...next,
+    products: sharedMap(previous.products, next.products),
+    assets: sharedMap(previous.assets, next.assets),
+    identities: sharedMap(previous.identities, next.identities),
+    links: sharedMap(previous.links, next.links),
+    files: sharedMap(previous.files, next.files),
+    jobs: sharedMap(previous.jobs, next.jobs),
+    unavailableProducts: sharedSet(
+      previous.unavailableProducts,
+      next.unavailableProducts,
+    )!,
+    offlineRequired: sharedSet(previous.offlineRequired, next.offlineRequired),
+  };
+  return (Object.keys(result) as Array<keyof typeof result>).every(
+    (key) => result[key] === previous[key],
+  )
+    ? previous
+    : result;
 }
 export function visualTransferLabel(
   state: VisualLibraryState,

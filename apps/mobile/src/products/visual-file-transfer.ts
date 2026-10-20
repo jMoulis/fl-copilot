@@ -8,7 +8,7 @@ import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { VisualFileCache } from "./visual-file-cache";
 import { VisualLibraryRepository } from "./visual-library-repository";
-import type { VisualFileStorage } from "./visual-file-storage";
+import type { VisualFileStorage } from "./visual-file-storage-port";
 export interface VisualFileTransport {
   init(
     storeId: string,

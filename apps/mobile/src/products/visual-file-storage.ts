@@ -4,50 +4,15 @@ import {
   VISUAL_LIBRARY_POLICY,
   type VisualAsset,
 } from "@fl-copilot/domain";
-import {
-  visualFilePath,
-  type VerifiedVisualFile,
-  type VisualFileVariant,
-} from "./visual-file-cache";
-export type VisualFileDescriptor = Pick<
-  VisualAsset,
-  "contentHash" | "mimeType" | "sizeBytes"
->;
-export interface VisualFileStorage {
-  removeCached(storeId: string, file: VerifiedVisualFile): Promise<void>;
-  capture(
-    storeId: string,
-    selectedUri: string,
-  ): Promise<
-    VerifiedVisualFile & {
-      mimeType: VisualAsset["mimeType"];
-      width: number;
-      height: number;
-    }
-  >;
-  read(
-    storeId: string,
-    variant: VisualFileVariant,
-    descriptor: VisualFileDescriptor,
-  ): Promise<Uint8Array>;
-  write(
-    storeId: string,
-    variant: VisualFileVariant,
-    descriptor: VisualFileDescriptor,
-    bytes: Uint8Array,
-  ): Promise<VerifiedVisualFile>;
-  uri(
-    storeId: string,
-    variant: VisualFileVariant,
-    descriptor: VisualFileDescriptor,
-  ): Promise<string | null>;
-  upload(
-    storeId: string,
-    descriptor: VisualFileDescriptor,
-    url: string,
-    headers: Record<string, string>,
-  ): Promise<void>;
-}
+import { visualFilePath, type VisualFileVariant } from "./visual-file-cache";
+import type {
+  VisualFileDescriptor,
+  VisualFileStorage,
+} from "./visual-file-storage-port";
+export type {
+  VisualFileDescriptor,
+  VisualFileStorage,
+} from "./visual-file-storage-port";
 let activeReads = 0;
 const waitingReaders: Array<() => void> = [];
 async function boundedRead<T>(read: () => Promise<T>): Promise<T> {

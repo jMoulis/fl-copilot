@@ -389,12 +389,22 @@ export function SyncProvider({ children }: PropsWithChildren) {
     return () => clearTimeout(retry);
   }, [defaultStoreId, service, state.pendingCount, state.status, syncNow]);
 
+  const previewWake = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  useEffect(
+    () => () => clearTimeout(previewWake.current),
+    [defaultStoreId, session?.user.id, visualJobs, syncNow],
+  );
   const requestVisualPreview = useCallback(
     async (assetId: string) => {
       if (!defaultStoreId || !session?.user.id || !visualJobs)
         throw Error("VISUAL_ACCESS_INVALID");
       await visualJobs.requestPreview(defaultStoreId, session.user.id, assetId);
-      void syncNow(defaultStoreId);
+      clearTimeout(previewWake.current);
+      previewWake.current = setTimeout(() => {
+        void syncNow(defaultStoreId);
+      }, 150);
     },
     [defaultStoreId, session?.user.id, visualJobs, syncNow],
   );

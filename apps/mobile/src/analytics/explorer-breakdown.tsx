@@ -8,6 +8,10 @@ import {
   formatSignedCurrency,
 } from "../today/today-priority-presentation";
 import type { ExplorerRepository } from "./explorer-repository";
+import {
+  LinkedProductVisual,
+  type SharedProductVisuals,
+} from "../products/linked-product-visual";
 type Data = Awaited<ReturnType<ExplorerRepository["load"]>>;
 const categoryLabels = {
   FRUIT: "Fruits",
@@ -46,12 +50,16 @@ export function ExplorerBreakdown({
   onProduct,
   onOpenProduct,
   onPage,
+  visuals,
+  storeId,
 }: {
   data: Data;
   onCategory: (c: NonNullable<AnalyticsExplorerFilters["category"]>) => void;
   onProduct: (id: string) => void;
   onOpenProduct: (id: string) => void;
   onPage: (offset: number) => void;
+  visuals?: SharedProductVisuals;
+  storeId?: string;
 }) {
   const details = data.details;
   return (
@@ -120,9 +128,20 @@ export function ExplorerBreakdown({
                 backgroundColor: colors.surface,
               }}
             >
-              <Text style={{ color: colors.ink, fontWeight: "600" }}>
-                {p.label}
-              </Text>
+              <View
+                style={{ flexDirection: "row", gap: 12, alignItems: "center" }}
+              >
+                {visuals && storeId ? (
+                  <LinkedProductVisual
+                    productId={p.productId}
+                    storeId={storeId}
+                    visuals={visuals}
+                  />
+                ) : null}
+                <Text style={{ color: colors.ink, fontWeight: "600", flex: 1 }}>
+                  {p.label}
+                </Text>
+              </View>
               <Text style={{ color: colors.ink }}>
                 {p.analysis.total === null
                   ? "Indisponible"

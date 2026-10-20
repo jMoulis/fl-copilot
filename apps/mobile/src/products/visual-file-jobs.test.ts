@@ -242,3 +242,55 @@ it("starts backoff after a slow interrupted transfer rather than retrying the sa
     s.db.raw.close();
   }
 });
+
+it("coalesces thumbnail requests, preserves retry deadlines and terminal errors, and rearms a completed preview for cache repair", async () => {
+  const s = await setup();
+  try {
+    const request = () =>
+      s.jobs.requestPreview(s.f.storeId, s.f.actorId, s.f.asset.id);
+    await request();
+    await request();
+    expect(s.db.raw.prepare("SELECT COUNT(*) n FROM local_jobs").get()!.n).toBe(
+      1,
+    );
+    s.transfer.fetchPreview.mockRejectedValueOnce(
+      new ApiClientError(0, {
+        code: "NETWORK_UNAVAILABLE",
+        messageFr: "Réseau indisponible",
+        retryable: true,
+      }),
+    );
+    await s.jobs.process(s.f.storeId, s.f.actorId);
+    const retry = s.db.raw.prepare("SELECT * FROM local_jobs").get();
+    await request();
+    expect(s.db.raw.prepare("SELECT * FROM local_jobs").get()).toEqual(retry);
+    await s.newWorker().process(s.f.storeId, s.f.actorId);
+    expect(s.transfer.fetchPreview).toHaveBeenCalledTimes(1);
+    s.advance(60_000);
+    s.transfer.fetchPreview.mockRejectedValueOnce(Error("VISUAL_FILE_INVALID"));
+    await s.jobs.process(s.f.storeId, s.f.actorId);
+    const failed = s.db.raw.prepare("SELECT * FROM local_jobs").get();
+    expect(failed).toMatchObject({ status: "FAILED", attempt_count: 2 });
+    await request();
+    expect(s.db.raw.prepare("SELECT * FROM local_jobs").get()).toEqual(failed);
+    s.advance(60 * 60_000);
+    await s.newWorker().process(s.f.storeId, s.f.actorId);
+    expect(s.transfer.fetchPreview).toHaveBeenCalledTimes(2);
+    await s.jobs.retry(s.f.storeId, s.f.actorId, s.f.asset.id);
+    await s.jobs.process(s.f.storeId, s.f.actorId);
+    expect(s.transfer.fetchPreview).toHaveBeenCalledTimes(3);
+    // The display has detected a missing/corrupt physical file after completion.
+    await request();
+    await request();
+    expect(s.db.raw.prepare("SELECT COUNT(*) n FROM local_jobs").get()!.n).toBe(
+      1,
+    );
+    await s.newWorker().process(s.f.storeId, s.f.actorId);
+    expect(s.transfer.fetchPreview).toHaveBeenCalledTimes(4);
+    expect(
+      s.db.raw.prepare("SELECT status FROM local_jobs").get()!.status,
+    ).toBe("COMPLETED");
+  } finally {
+    s.db.raw.close();
+  }
+});
