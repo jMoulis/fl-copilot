@@ -1,3 +1,14 @@
+import { SourceDocumentRepository } from "../../mobile/src/documents/source-document-repository";
+import { SourceOriginalTransfer } from "../../mobile/src/documents/source-original-transfer";
+import { readConversationGenerationHistory } from "../src/copilot/generation-history";
+import { readAttachedSources } from "../src/copilot/attached-sources";
+import {
+  createMongoSourceUploadService,
+  type SourceBlobMetadata,
+} from "../src/uploads/source-upload-service";
+import { createSourceOriginalService } from "../src/uploads/source-original-service";
+import { copilotMessageSchema } from "@fl-copilot/domain";
+import { fileURLToPath } from "node:url";
 import { createEmailDecisionHistory } from "../src/intake/email-decision-history";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -60,7 +71,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           await database.close();
         }
     }, 60000);
-    async function fixture(receiptIdentity?: string) {
+    async function fixture(
+      receiptIdentity?: string,
+      source?: { bytes: Uint8Array; filename: string; mediaType: string },
+    ) {
       const db = await database.getDb(),
         scope = {
           storeId: randomUUID(),
@@ -69,7 +83,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         },
         at = new Date(),
         stamp = at.toISOString();
-      const bytes = new Uint8Array([80, 75, 3]),
+      const bytes = source?.bytes ?? new Uint8Array([80, 75, 3]),
         receiptId = receiptIdentity ?? randomUUID(),
         fileId = randomUUID(),
         bindingId = randomUUID();
@@ -109,8 +123,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           {
             id: fileId,
             providerAttachmentId: randomUUID(),
-            filename: "sales.zip",
-            mediaType: "application/zip",
+            filename: source?.filename ?? "sales.zip",
+            mediaType: source?.mediaType ?? "application/zip",
             status: "READY",
             sourceDocumentId: null,
           },
@@ -139,7 +153,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             objectKey: key,
             checksum: hash(bytes),
             sizeBytes: bytes.byteLength,
-            declaredMimeType: "application/zip",
+            declaredMimeType: source?.mediaType ?? "application/zip",
           },
         });
       const access = createEmailOriginalAccess(
@@ -148,7 +162,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           head: async (pathname) => ({
             pathname,
             size: bytes.byteLength,
-            contentType: "application/zip",
+            contentType: source?.mediaType ?? "application/zip",
             url: "https://not-a-capability.test/original",
             etag: "version",
           }),
@@ -268,7 +282,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             },
           );
         const service = makeService();
-        async function decide(choice: "ADMIT" | "DISMISS") {
+        async function decide(
+          choice: "ADMIT" | "DISMISS",
+          mode: "AUTO" | "WASTE_TICKET" | "STORE_PHOTO" = "AUTO",
+        ) {
           if (choice === "ADMIT")
             await transfer.recover({
               conversationId: scope.conversationId,
@@ -282,7 +299,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               choice,
               files:
                 choice === "ADMIT"
-                  ? [{ fileId, processingId: randomUUID(), mode: "AUTO" }]
+                  ? [{ fileId, processingId: randomUUID(), mode }]
                   : [],
             },
             { actionId: randomUUID(), deviceId },
@@ -290,6 +307,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         }
         return {
           local,
+          dir,
           cache,
           transfer,
           repository,
@@ -305,6 +323,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       return {
         db,
         scope,
+        at,
+        bytes,
         receiptId,
         fileId,
         phone,
@@ -321,6 +341,232 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         },
       };
     }
+    it("restores an admitted email photo through the real private chat and source services on a fresh device, then remains usable offline", async () => {
+      const bytes = new Uint8Array(
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aZkAAAAASUVORK5CYII=",
+          "base64",
+        ),
+      );
+      const f = await fixture(undefined, {
+        bytes,
+        filename: "rayon.png",
+        mediaType: "image/png",
+      });
+      try {
+        const a = await f.phone();
+        const decision = await a.decide("ADMIT", "STORE_PHOTO");
+        expect(await a.service.push(f.scope.storeId)).toMatchObject({
+          pushed: 1,
+          conflicts: 0,
+          failed: 0,
+        });
+        // Load the actual native capture at runtime, keeping RN/Expo ambient globals
+        // out of this Node-only compilation. The mobile project checks its constructor.
+        const { EmailSourceHandoff } = await import(
+          "../../mobile/src/intake/" + "email-source-handoff"
+        );
+        const media = new EmailSourceHandoff(a.cache, a.transfer, a.deviceId, {
+          read: async (uri: string) =>
+            new Uint8Array(await readFile(fileURLToPath(uri))),
+          imageSize: async () => ({ width: 1, height: 1 }), // Native decode is a test port; bytes are real.
+          bundle: async () => {
+            throw Error("UNEXPECTED_BUNDLE");
+          },
+        });
+        const result = await media.capture({
+          conversationId: f.scope.conversationId,
+          receiptId: f.receiptId,
+          fileId: f.fileId,
+        });
+        if (result.status !== "CAPTURED")
+          throw Error("Expected canonical media");
+        const sourceId = result.record.sourceDocumentId;
+        const [message] = (
+          await a.local.getAllAsync<{ payload_json: string }>(
+            "SELECT payload_json FROM copilot_messages",
+          )
+        ).map((r) => copilotMessageSchema.parse(JSON.parse(r.payload_json)));
+        expect(message!.attachments[0]!.sourceDocumentId).toBe(sourceId);
+        // The ordinary Outbox, not direct insertion of a message into Mongo.
+        expect(await a.service.push(f.scope.storeId)).toMatchObject({
+          pushed: 1,
+          conflicts: 0,
+          failed: 0,
+        });
+        let blob: SourceBlobMetadata | null = null;
+        let key = "";
+        const upload = createMongoSourceUploadService(
+          database,
+          {
+            head: async () => blob,
+            createUploadUrl: async (input) => {
+              key = input.pathname;
+              return "https://upload.test.invalid/original";
+            },
+          },
+          () => f.at,
+        );
+        const canonical = await new SourceDocumentRepository(
+          a.local,
+        ).getDocument(sourceId);
+        const localFile = await new SourceDocumentRepository(
+          a.local,
+        ).getFileForDocument(sourceId);
+        const input = {
+          sourceDocumentId: sourceId,
+          sourceType: "STORE_PHOTO" as const,
+          filename: canonical!.originalFilename!,
+          checksum: localFile!.checksum,
+          sizeBytes: localFile!.sizeBytes,
+          mimeType: "image/png" as const,
+        };
+        const initiated = await upload.init(
+          f.scope.storeId,
+          f.scope.ownerId,
+          input,
+        );
+        const uploaded = new Uint8Array(
+          await readFile(fileURLToPath(localFile!.localUri)),
+        );
+        expect(uploaded).toEqual(bytes);
+        blob = {
+          pathname: key,
+          size: bytes.length,
+          contentType: "image/png",
+          etag: "email-source-original",
+          url: "https://unit.private.blob.vercel-storage.com/canonical",
+        };
+        expect(
+          await upload.complete(
+            f.scope.storeId,
+            initiated.uploadId,
+            { checksum: input.checksum, sizeBytes: input.sizeBytes },
+            f.scope.ownerId,
+          ),
+        ).toMatchObject({ remoteUploadStatus: "CONFIRMED" });
+        const remote = createSourceOriginalService(
+          database,
+          { head: async () => blob },
+          async () => blob!.url,
+          () => f.at,
+        );
+        const query = {
+          ...message!,
+          id: randomUUID(),
+          text: "Que vois-tu sur la photo du rayon reçue par email ?",
+          attachments: [],
+          createdAt: new Date(
+            Date.parse(message!.createdAt) + 1000,
+          ).toISOString(),
+        };
+        const history = await readConversationGenerationHistory(f.db, query);
+        expect(
+          history.recentAttachmentReferences.map((r) => r.sourceDocumentId),
+        ).toContain(sourceId);
+        const available = await readAttachedSources(
+          f.db,
+          f.scope.storeId,
+          history.recentAttachmentReferences,
+        );
+        expect(available).toMatchObject([
+          {
+            sourceDocumentId: sourceId,
+            sourceType: "STORE_PHOTO",
+            status: "CONFIRMED",
+          },
+        ]);
+        await expect(
+          remote.download(f.scope.storeId, randomUUID(), sourceId),
+        ).rejects.toMatchObject({ statusCode: 404 });
+
+        const b = await f.phone();
+        await b.service.bootstrap(f.scope.storeId);
+        expect(
+          (await b.repository.get(f.scope.conversationId, f.receiptId))
+            ?.decision,
+        ).toEqual(decision);
+        const restoredMessages = await b.local.getAllAsync<{
+          payload_json: string;
+        }>("SELECT payload_json FROM copilot_messages");
+        expect(
+          restoredMessages.map((r) =>
+            copilotMessageSchema.parse(JSON.parse(r.payload_json)),
+          ),
+        ).toContainEqual(message);
+        const receive = vi.fn(async () => {
+          const path = join(b.dir, "restored-canonical.png");
+          await writeFile(path, bytes, { flag: "wx" });
+          return { localUri: pathToFileURL(path).href, views: null };
+        });
+        const transport = {
+          manifest: vi.fn((store: string, owner: string, id: string) =>
+            remote.manifest(store, owner, id),
+          ),
+          download: vi.fn((store: string, owner: string, id: string) =>
+            remote.download(store, owner, id),
+          ),
+        };
+        const originalTransfer = (local = b.local) =>
+          new SourceOriginalTransfer(
+            local,
+            transport,
+            {
+              hash: async (text) => hash(text),
+              receive,
+              existing: async (manifest, uri) => {
+                const actual = await readFile(fileURLToPath(uri));
+                expect(hash(actual)).toBe(manifest.checksum);
+                expect(actual.length).toBe(manifest.sizeBytes);
+                return { localUri: uri, views: null };
+              },
+            },
+            () => ({ storeId: f.scope.storeId, userId: f.scope.ownerId }),
+            randomUUID,
+            () => f.at,
+          );
+        const restored = originalTransfer();
+        expect(await restored.local(sourceId)).toBeNull();
+        const copy = await restored.recover(sourceId);
+        expect(
+          new Uint8Array(await readFile(fileURLToPath(copy.localUri))),
+        ).toEqual(bytes);
+        transport.download.mockRejectedValue(Error("OFFLINE"));
+        transport.manifest.mockRejectedValue(Error("OFFLINE"));
+        b.local.raw.close();
+        const reopened = new VisualTestDatabase(
+          new DatabaseSync(join(b.dir, "phone.sqlite")),
+        );
+        try {
+          await runLocalMigrations(reopened);
+          expect(await originalTransfer(reopened).recover(sourceId)).toEqual(
+            copy,
+          );
+          expect(receive).toHaveBeenCalledTimes(1);
+          expect(
+            await reopened.getFirstAsync(
+              "SELECT * FROM sync_outbox WHERE status!='ACKNOWLEDGED'",
+            ),
+          ).toBeNull();
+          expect(
+            await reopened.getFirstAsync("SELECT * FROM waste_observations"),
+          ).toBeNull();
+          expect(
+            await reopened.getFirstAsync("SELECT * FROM copilot_pending_turns"),
+          ).toBeNull();
+        } finally {
+          reopened.raw.close();
+        }
+        expect(
+          await f.db.collection("sourceUploads").countDocuments({
+            storeId: f.scope.storeId,
+            sourceDocumentId: sourceId,
+          }),
+        ).toBe(1);
+      } finally {
+        await f.cleanup();
+      }
+    });
     it("restores all 500 maximal decisions in bounded pages and resumes a partial disk restore after restart", async () => {
       const f = await fixture();
       let reopened: VisualTestDatabase | undefined;

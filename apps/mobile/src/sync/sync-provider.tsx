@@ -388,7 +388,11 @@ export function SyncProvider({ children }: PropsWithChildren) {
         emailTransfer,
         database.deviceId,
       ),
-      media: new EmailSourceHandoff(emailCache, emailTransfer),
+      media: new EmailSourceHandoff(
+        emailCache,
+        emailTransfer,
+        database.deviceId,
+      ),
       runMercalys: (message, authorize, signal) =>
         new CopilotMercalysImportController(
           database.sqlite,
