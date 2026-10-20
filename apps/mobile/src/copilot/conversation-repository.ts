@@ -8,6 +8,7 @@ import { readReceiptPhotoViews } from "../documents/receipt-photo-views";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { applyKnowledgeRecord } from "./knowledge-repository";
 import { ConflictRepository } from "../sync/conflict-repository";
+import { applyLayoutIllustrationRecord } from "./layout-illustration-repository";
 import {
   copilotTurnRequestSchema,
   copilotConversationSchema,
@@ -58,10 +59,14 @@ export async function applyCopilotRecord(
     | "copilot_knowledge"
     | "copilot_decision"
     | "copilot_execution_link"
-    | "copilot_action_execution",
+    | "copilot_action_execution"
+    | "copilot_layout_illustration",
+
   payload: unknown,
   ackVersion?: number,
 ) {
+  if (type === "copilot_layout_illustration")
+    return applyLayoutIllustrationRecord(db, scope, payload, ackVersion);
   if (type === "email_intake_decision")
     return applyEmailDecisionRecord(db, scope, payload, ackVersion);
   if (type === "copilot_action_execution")

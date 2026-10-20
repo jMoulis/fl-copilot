@@ -1,3 +1,8 @@
+import { applyLayoutIllustrationRecord } from "../copilot/layout-illustration-repository";
+import {
+  copilotHistoryPageSchema,
+  type CopilotHistoryPage,
+} from "@fl-copilot/sync-contracts";
 import {
   emailIntakeDecisionPageSchema,
   type EmailIntakeDecisionPage,
@@ -47,6 +52,10 @@ import {
 
 export interface SyncTransport {
   bootstrap(storeId: string): Promise<BootstrapResponse>;
+  illustrationHistoryPage?(
+    storeId: string,
+    before?: { createdAt: string; id: string },
+  ): Promise<CopilotHistoryPage>;
   emailDecisionPage?(
     storeId: string,
     cursor?: string,
@@ -90,6 +99,7 @@ export interface MobileSyncServiceOptions {
   storeProductEvents?: boolean;
   substitutionEvidence?: boolean;
   substitutionScores?: boolean;
+  layoutIllustrations?: boolean;
   copilotDecisions?: boolean;
   emailIntake?: boolean;
   emailIntakeAllowed?(storeId: string): boolean;
@@ -284,6 +294,12 @@ export class MobileSyncService {
             `email-intake:${storeId}:${this.options.copilotOwnerId}`,
           )
         : true;
+    const illustrationsAdopted = this.options.layoutIllustrations
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `layout-illustrations:${storeId}:${this.options.copilotOwnerId}`,
+        )
+      : true;
     const decisionsAdopted = this.options.copilotDecisions
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -372,6 +388,7 @@ export class MobileSyncService {
       !historyDeletionAdopted ||
       !knowledgeAdopted ||
       !decisionsAdopted ||
+      !illustrationsAdopted ||
       !emailAdopted ||
       !linksAdopted ||
       !actionsAdopted ||
@@ -403,6 +420,79 @@ export class MobileSyncService {
       this.options.copilotOwnerId,
       this.options.mercalysRecordUpdates,
     );
+    if (
+      snapshot.entities.layoutIllustrationHistoryRequired &&
+      this.options.layoutIllustrations
+    ) {
+      const ownerId = this.options.copilotOwnerId;
+      if (!ownerId || !this.transport.illustrationHistoryPage)
+        throw Error("LAYOUT_ILLUSTRATION_HISTORY_UNAVAILABLE");
+      let before: { createdAt: string; id: string } | undefined;
+      const seen = new Set<string>();
+      do {
+        const page = copilotHistoryPageSchema.parse(
+          await this.withRetry(() =>
+            this.transport.illustrationHistoryPage!(storeId, before),
+          ),
+        );
+        if (
+          page.storeId !== storeId ||
+          page.ownerId !== ownerId ||
+          page.conversationId !== null ||
+          !page.layoutIllustrations ||
+          page.messages.length ||
+          page.conversations.length
+        )
+          throw Error("LAYOUT_ILLUSTRATION_HISTORY_INVALID");
+        const next = page.hasMore ? page.before : null;
+        const entries = page.layoutIllustrations;
+        const earlier = (
+          a: { createdAt: string; id: string },
+          b: { createdAt: string; id: string },
+        ) =>
+          a.createdAt < b.createdAt ||
+          (a.createdAt === b.createdAt && a.id < b.id);
+        if (
+          entries.some(
+            (e, i) =>
+              (i > 0 && !earlier(e, entries[i - 1]!)) ||
+              (before && !earlier(e, before)),
+          ) ||
+          (page.hasMore &&
+            (!entries.length ||
+              !next ||
+              next.id !== entries.at(-1)!.id ||
+              next.createdAt !== entries.at(-1)!.createdAt))
+        )
+          throw Error("LAYOUT_ILLUSTRATION_HISTORY_ORDER_INVALID");
+        const key = JSON.stringify(next);
+        if (
+          page.hasMore &&
+          (!next ||
+            seen.has(key) ||
+            (before &&
+              !(
+                next.createdAt < before.createdAt ||
+                (next.createdAt === before.createdAt && next.id < before.id)
+              )))
+        )
+          throw Error("LAYOUT_ILLUSTRATION_HISTORY_CURSOR_INVALID");
+        await this.database.withExclusiveTransactionAsync(async (tx) => {
+          for (const e of page.layoutIllustrations!)
+            await applyLayoutIllustrationRecord(tx, { storeId, ownerId }, e);
+          if (!page.hasMore)
+            await tx.runAsync(
+              "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+              `layout-illustrations:${storeId}:${ownerId}`,
+              "1",
+              snapshot.serverTime,
+            );
+        });
+        if (!page.hasMore) break;
+        seen.add(key);
+        before = next!;
+      } while (before !== undefined);
+    }
     if (
       snapshot.entities.emailIntakeHistoryRequired &&
       this.options.emailIntake &&
@@ -540,6 +630,7 @@ export class MobileSyncService {
                 "copilot_message",
                 "copilot_knowledge",
                 "copilot_decision",
+                "copilot_layout_illustration",
                 "email_intake_decision",
                 "copilot_execution_link",
                 "copilot_action_execution",
@@ -652,6 +743,7 @@ export class MobileSyncService {
             command.entityType === "copilot_message" ||
             command.entityType === "copilot_knowledge" ||
             command.entityType === "copilot_decision" ||
+            command.entityType === "copilot_layout_illustration" ||
             command.entityType === "email_intake_decision" ||
             command.entityType === "copilot_action_execution" ||
             command.entityType === "copilot_execution_link"
@@ -885,12 +977,13 @@ export class MobileSyncService {
             command.entityType === "copilot_message" ||
             command.entityType === "copilot_knowledge" ||
             command.entityType === "copilot_decision" ||
+            command.entityType === "copilot_layout_illustration" ||
             command.entityType === "email_intake_decision" ||
             command.entityType === "copilot_action_execution" ||
             command.entityType === "copilot_execution_link"
           )
             await transaction.runAsync(
-              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_layout_illustration" ? "copilot_layout_illustrations" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
               command.entityId,
               storeId,
             );
@@ -1003,12 +1096,13 @@ export class MobileSyncService {
             command.entityType === "copilot_message" ||
             command.entityType === "copilot_knowledge" ||
             command.entityType === "copilot_decision" ||
+            command.entityType === "copilot_layout_illustration" ||
             command.entityType === "email_intake_decision" ||
             command.entityType === "copilot_action_execution" ||
             command.entityType === "copilot_execution_link"
           )
             await transaction.runAsync(
-              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
+              `UPDATE ${command.entityType === "copilot_conversation" ? "copilot_conversations" : command.entityType === "copilot_knowledge" ? "copilot_knowledge" : command.entityType === "copilot_action_execution" ? "action_executions" : command.entityType === "copilot_execution_link" ? "copilot_execution_links" : command.entityType === "email_intake_decision" ? "email_intake_decisions" : command.entityType === "copilot_layout_illustration" ? "copilot_layout_illustrations" : command.entityType === "copilot_decision" ? "copilot_decisions" : "copilot_messages"} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
               command.entityId,
               storeId,
             );

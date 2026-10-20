@@ -1,3 +1,4 @@
+import { LayoutIllustrationRepository } from "@/copilot/layout-illustration-repository";
 import { EmailInbox, EmailInboxIndicator } from "@/intake/email-inbox";
 import { z } from "zod";
 import { CopilotStorePhotoIntake } from "@/copilot/store-photo-intake";
@@ -265,6 +266,15 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canPrepareCommercialWeek],
+  );
+  const layoutIllustrations = useMemo(
+    () =>
+      new LayoutIllustrationRepository(
+        sqlite,
+        { storeId, ownerId, canPrepare: canManageProducts },
+        async (text) => `sha256:${await executionDigest(text)}`,
+      ),
+    [sqlite, storeId, ownerId, canManageProducts],
   );
   const layoutScenarios = useMemo(
     () => new CopilotStoreLayoutScenarioReader(sqlite, { storeId, ownerId }),
@@ -790,6 +800,11 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           key={message.id}
           message={message}
           reader={layoutScenarios}
+          illustration={{
+            repository: layoutIllustrations,
+            deviceId,
+            canPrepare: canManageProducts,
+          }}
           preparation={
             canPrepareCommercialWeek ? layoutPreparationLink : undefined
           }

@@ -17,6 +17,10 @@ import {
   type ChatRecordDocument,
 } from "./conversation-store";
 import type { Db } from "mongodb";
+import {
+  serializeLayoutIllustration,
+  type LayoutIllustrationDocument,
+} from "./layout-illustration-store";
 export async function readCopilotHistory(
   db: Db,
   storeId: string,
@@ -26,6 +30,41 @@ export async function readCopilotHistory(
   supportsAnalyticsDestinations = false,
 ) {
   const scope = { storeId, ownerId };
+  if (query.recordType === "LAYOUT_ILLUSTRATIONS") {
+    const rows = await db
+      .collection<LayoutIllustrationDocument>("copilotLayoutIllustrations")
+      .find(
+        {
+          ...scope,
+          ...(query.beforeId
+            ? {
+                $or: [
+                  { createdAt: { $lt: query.beforeCreatedAt } },
+                  {
+                    createdAt: query.beforeCreatedAt,
+                    _id: { $lt: query.beforeId },
+                  },
+                ],
+              }
+            : {}),
+        },
+        { maxTimeMS: 2000 },
+      )
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(query.limit + 1)
+      .toArray();
+    const selected = rows.slice(0, query.limit),
+      last = selected.at(-1);
+    return historyPageSchema.parse({
+      ...scope,
+      conversationId: null,
+      conversations: [],
+      messages: [],
+      layoutIllustrations: selected.map(serializeLayoutIllustration),
+      hasMore: rows.length > query.limit,
+      before: last ? { createdAt: last.createdAt, id: last.id } : null,
+    });
+  }
   const topic = query.conversationId
     ? await db
         .collection<CopilotConversation & { _id: string }>(

@@ -24,7 +24,7 @@ export async function readPendingWork(
     ownerId ?? null,
   );
   const commands = await db.getFirstAsync<{ count: number }>(
-    `SELECT COUNT(*) AS count FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING') AND (entity_type!='email_intake_decision' OR json_extract(payload_json,'$.ownerId')=?)`,
+    `SELECT COUNT(*) AS count FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING') AND ((entity_type NOT GLOB 'copilot_*' AND entity_type!='email_intake_decision') OR json_extract(payload_json,'$.ownerId')=?)`,
     storeId,
     ownerId ?? null,
   );
