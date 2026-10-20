@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Db } from "mongodb";
 import type { DatabaseService } from "../src/database/types.js";
 import {
@@ -416,3 +416,67 @@ function matches(
     return document[key] === value;
   });
 }
+
+it("confirms a department photo idempotently without invoking any receipt or commercial processor", async () => {
+  const database = new MemoryDatabase();
+  let blob: SourceBlobMetadata | null = null;
+  const normalize = vi.fn(),
+    extract = vi.fn(),
+    validate = vi.fn(),
+    match = vi.fn(),
+    read = vi.fn(),
+    dispatch = vi.fn();
+  const service = createMongoSourceUploadService(
+    database,
+    {
+      createUploadUrl: async () => "https://upload.invalid/photo",
+      head: async () => blob,
+    },
+    () => new Date("2026-10-20T12:00:00Z"),
+    { normalize },
+    { extract },
+    { validate },
+    { match },
+    { read },
+    dispatch,
+  );
+  const input = {
+    sourceDocumentId,
+    sourceType: "STORE_PHOTO" as const,
+    filename: "rayon.jpg",
+    mimeType: "image/jpeg" as const,
+    sizeBytes: 4000,
+    checksum,
+  };
+  const initialized = await service.init(storeId, userId, input);
+  blob = {
+    pathname: initialized.objectKey,
+    size: input.sizeBytes,
+    contentType: input.mimeType,
+    url: "https://blob.invalid/photo",
+    etag: "etag-photo",
+  };
+  for (let i = 0; i < 2; i++)
+    expect(
+      await service.complete(storeId, initialized.uploadId, {
+        checksum,
+        sizeBytes: input.sizeBytes,
+      }),
+    ).toMatchObject({
+      sourceDocumentId,
+      remoteUploadStatus: "CONFIRMED",
+      jobId: null,
+    });
+  expect((await service.init(storeId, userId, input)).status).toBe(
+    "ALREADY_UPLOADED",
+  );
+  for (const spy of [normalize, extract, validate, match, read, dispatch])
+    expect(spy).not.toHaveBeenCalled();
+  expect(database.collections.get("sourceUploads")?.documents).toHaveLength(1);
+  expect(database.collections.get("sourceDocuments")?.documents).toHaveLength(
+    1,
+  );
+  expect(
+    database.collections.get("commercialDocumentJobs")?.documents ?? [],
+  ).toHaveLength(0);
+});

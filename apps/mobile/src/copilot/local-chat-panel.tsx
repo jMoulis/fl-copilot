@@ -3,7 +3,8 @@ import { readCopilotImportStatus } from "@fl-copilot/domain";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { BottomSheet, MenuRow } from "../components/ui";
-import { ReceiptAttachmentPanel } from "./receipt-attachment-panel";
+import { SourceImageAttachment } from "./source-image-attachment";
+import type { StorePhotoIntakeResult } from "./store-photo-intake";
 import type { ReceiptPhotoSelection } from "./receipt-photo-intake";
 import type { CopilotPdfSelection } from "./pdf-selection";
 import type { ReactNode } from "react";
@@ -48,6 +49,11 @@ type PanelProps = {
     signal: AbortSignal,
     capacity: number,
   ): Promise<ReceiptPhotoSelection | undefined>;
+  onAttachStorePhotos?(
+    conversationId: string,
+    signal: AbortSignal,
+    capacity: number,
+  ): Promise<StorePhotoIntakeResult | undefined>;
   onAttachReceipts?(
     conversationId: string,
     signal: AbortSignal,
@@ -82,6 +88,7 @@ function LocalChatPanel({
   delivery,
   onAttachPdf,
   onAttachReceipts,
+  onAttachStorePhotos,
   onPhotographReceipt,
   onAttachReceiptViews,
   renderToolMessage,
@@ -111,7 +118,13 @@ function LocalChatPanel({
   );
   const [fileMenu, setFileMenu] = useState(false);
   const queuedFileAction = useRef<
-    "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA" | undefined
+    | "PDF"
+    | "MERCALYS"
+    | "RECEIPTS"
+    | "RECEIPT_VIEWS"
+    | "CAMERA"
+    | "STORE_PHOTOS"
+    | undefined
   >(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [loadedController, setLoadedController] =
@@ -350,11 +363,18 @@ function LocalChatPanel({
     }
   }
   function performFileAction(
-    kind: "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA",
+    kind:
+      | "PDF"
+      | "MERCALYS"
+      | "RECEIPTS"
+      | "RECEIPT_VIEWS"
+      | "CAMERA"
+      | "STORE_PHOTOS",
   ) {
     if (!isCurrent()) return;
     if (kind === "PDF") void attach();
     else if (
+      kind === "STORE_PHOTOS" ||
       kind === "RECEIPTS" ||
       kind === "RECEIPT_VIEWS" ||
       kind === "CAMERA"
@@ -363,7 +383,13 @@ function LocalChatPanel({
     else onOpenMercalys?.();
   }
   function selectFileAction(
-    kind: "PDF" | "MERCALYS" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA",
+    kind:
+      | "PDF"
+      | "MERCALYS"
+      | "RECEIPTS"
+      | "RECEIPT_VIEWS"
+      | "CAMERA"
+      | "STORE_PHOTOS",
   ) {
     setFileMenu(false);
     // UIKit must finish dismissing this sheet before another modal/picker opens.
@@ -414,13 +440,17 @@ function LocalChatPanel({
       if (isCurrent()) setAttaching(false);
     }
   }
-  async function attachReceipts(kind: "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA") {
+  async function attachReceipts(
+    kind: "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA" | "STORE_PHOTOS",
+  ) {
     const attachPhotos =
-      kind === "CAMERA"
-        ? onPhotographReceipt
-        : kind === "RECEIPT_VIEWS"
-          ? onAttachReceiptViews
-          : onAttachReceipts;
+      kind === "STORE_PHOTOS"
+        ? onAttachStorePhotos
+        : kind === "CAMERA"
+          ? onPhotographReceipt
+          : kind === "RECEIPT_VIEWS"
+            ? onAttachReceiptViews
+            : onAttachReceipts;
     if (!attachPhotos || attachmentAbort.current || locked.current) return;
     const attempt = new AbortController();
     attachmentAbort.current = attempt;
@@ -439,12 +469,15 @@ function LocalChatPanel({
       if (selection.failures.length)
         setError(
           selection.failures
-            .map((f) => `${f.filename} : ${attachmentError(new Error(f.code))}`)
+            .map(
+              (f) =>
+                `${f.filename} : ${attachmentError(new Error(f.code), kind)}`,
+            )
             .join("\n"),
         );
     } catch (reason) {
       if (isCurrent() && !attempt.signal.aborted) {
-        setError(attachmentError(reason));
+        setError(attachmentError(reason, kind));
         const refreshed = await controller
           .open(conversationId)
           .catch(() => undefined);
@@ -503,6 +536,7 @@ function LocalChatPanel({
         draftAttachments={snapshot.draft?.attachments ?? []}
         attaching={attaching}
         onAttach={
+          onAttachStorePhotos ||
           onAttachPdf ||
           onOpenMercalys ||
           onAttachReceipts ||
@@ -511,6 +545,7 @@ function LocalChatPanel({
             ? () => {
                 if (
                   onOpenMercalys ||
+                  onAttachStorePhotos ||
                   onAttachReceipts ||
                   onAttachReceiptViews ||
                   onPhotographReceipt
@@ -633,6 +668,14 @@ function LocalChatPanel({
             onPress={() => selectFileAction("CAMERA")}
           />
         ) : null}
+        {onAttachStorePhotos ? (
+          <MenuRow
+            title="Photos du rayon"
+            description="Jusqu’à trois photos pour en discuter avec le copilote."
+            icon="image-outline"
+            onPress={() => selectFileAction("STORE_PHOTOS")}
+          />
+        ) : null}
         {onAttachReceipts ? (
           <MenuRow
             title="Tickets de casse"
@@ -697,7 +740,7 @@ function renderCommercialOriginal(
     attachment.mediaType === RECEIPT_PHOTO_BUNDLE_MIME
   )
     return (
-      <ReceiptAttachmentPanel sourceDocumentId={attachment.sourceDocumentId} />
+      <SourceImageAttachment sourceDocumentId={attachment.sourceDocumentId} />
     );
   return attachment.mediaType === "application/pdf" ? (
     <View className="gap-2">
@@ -711,10 +754,18 @@ function renderCommercialOriginal(
   ) : null;
 }
 
-function attachmentError(error: unknown) {
+function attachmentError(error: unknown, kind?: string) {
   const code = error instanceof Error ? error.message : "";
+  if (code === "STORE_PHOTO_TURN_LIMIT")
+    return "Joignez au maximum trois photos du rayon à une même question.";
+  if (code === "STORE_PHOTO_CAPTURE_FORBIDDEN")
+    return "Votre rôle ne permet plus d’ajouter une photo du rayon.";
+  if (code === "STORE_PHOTO_SIZE_LIMIT")
+    return "Chaque photo du rayon doit peser au maximum 20 Mio.";
+  if (code === "STORE_PHOTO_NOT_SAVED")
+    return "La photo n’a pas pu être enregistrée. Votre sélection et les photos déjà conservées restent intactes.";
   if (code === "WASTE_RECEIPT_IMAGE_UNSUPPORTED")
-    return "Choisissez des photos JPEG, PNG ou HEIC de tickets de casse.";
+    return "Choisissez des photos JPEG, PNG ou HEIC.";
   if (code === "COPILOT_RECEIPT_CAMERA_UNAVAILABLE")
     return "L’appareil photo est indisponible dans cette version de l’application. Vous pouvez importer une photo depuis la photothèque.";
   if (code === "COPILOT_RECEIPT_PICKER_UNAVAILABLE")
@@ -739,5 +790,7 @@ function attachmentError(error: unknown) {
     return "Le PDF est vide ou dépasse la taille acceptée de 100 Mio.";
   if (code.includes("PDF_INVALID"))
     return "Choisissez un PDF commercial valide.";
+  if (kind === "STORE_PHOTOS")
+    return "La photo du rayon n’a pas pu être jointe. Les originaux déjà conservés restent disponibles ; réessayez.";
   return "Le PDF n’a pas pu être joint au brouillon. Un original déjà conservé reste disponible dans Ma semaine ; réessayez pour l’associer.";
 }

@@ -19,6 +19,7 @@ const supportedSources = [
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
   "WEEKLY_COMMERCIAL_PDF",
+  "STORE_PHOTO",
 ];
 interface DocumentRow {
   id: string;
@@ -243,7 +244,7 @@ export class SourceUploadRecoveryRepository {
         scope.conversationId,
       );
     const rows = await this.db.getAllAsync<{ id: string; created_at: string }>(
-      `SELECT d.id,d.created_at FROM source_documents d WHERE d.store_id=? AND d.deleted_at IS NULL AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','WEEKLY_COMMERCIAL_PDF') AND d.remote_upload_status!='CONFIRMED'
+      `SELECT d.id,d.created_at FROM source_documents d WHERE d.store_id=? AND d.deleted_at IS NULL AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE','WEEKLY_COMMERCIAL_PDF','STORE_PHOTO') AND d.remote_upload_status!='CONFIRMED'
       AND EXISTS (SELECT 1 FROM local_jobs j WHERE j.type='SOURCE_UPLOAD_AND_REGISTER' AND json_extract(j.payload_json,'$.storeId')=d.store_id AND json_extract(j.payload_json,'$.sourceDocumentId')=d.id)
       ${scope ? `AND EXISTS (SELECT 1 FROM mercalys_intake_batches b, json_each(b.request_json,'$.files') f WHERE b.store_id=d.store_id AND b.owner_id=? AND b.conversation_id=? AND json_extract(f.value,'$.checksum')=d.checksum)` : ""}
       AND (? IS NULL OR d.created_at<? OR (d.created_at=? AND d.id<?)) ORDER BY d.created_at DESC,d.id DESC LIMIT 21`,

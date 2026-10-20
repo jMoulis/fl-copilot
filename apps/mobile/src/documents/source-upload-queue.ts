@@ -665,9 +665,11 @@ const nativeBinaryUploader: SourceBinaryUploader = {
           input.localUri,
           input.sourceType === "WASTE_RECEIPT"
             ? "waste-receipts"
-            : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
-              ? "commercial-pdfs"
-              : "mercalys-imports",
+            : input.sourceType === "STORE_PHOTO"
+              ? "store-photos"
+              : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
+                ? "commercial-pdfs"
+                : "mercalys-imports",
         ),
         filename,
       );

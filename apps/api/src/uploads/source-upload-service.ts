@@ -429,7 +429,10 @@ async function confirmUpload(
   ]);
 }
 
-function sourceObjectKey(storeId: string, input: InitSourceUploadRequest) {
+export function sourceObjectKey(
+  storeId: string,
+  input: InitSourceUploadRequest,
+) {
   const safeFilename =
     input.filename
       .normalize("NFKD")

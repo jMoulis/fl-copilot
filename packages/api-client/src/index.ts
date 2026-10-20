@@ -89,6 +89,7 @@ export class ApiClient {
       actionExecutions?: boolean;
       executionActuals?: boolean;
       retailExpertise?: boolean;
+      storePhotos?: boolean;
       choiceUpdate?: boolean;
       choiceRetention?: boolean;
       choiceCreate?: boolean;
@@ -212,6 +213,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.recommendationTracking
                   ? { "x-copilot-recommendation-tracking": "1" }
+                  : {}),
+                ...(streaming.storePhotos
+                  ? { "x-copilot-store-photos": "1" }
                   : {}),
                 ...(streaming.retailExpertise
                   ? { "x-copilot-retail-expertise": "1" }

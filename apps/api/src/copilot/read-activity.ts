@@ -61,6 +61,7 @@ export function readActivityStage(key: string): CopilotActivity["stage"] {
       "offers",
       "waste-documents",
       "waste-receipt",
+      "store-photo",
     ].includes(kind)
   )
     return "DOCUMENTS";

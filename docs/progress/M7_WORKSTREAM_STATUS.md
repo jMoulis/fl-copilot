@@ -480,3 +480,19 @@ L6/M7 7 : les surfaces réutilisent les associations explicites du catalogue ré
 La PR 284 est fusionnée en `51ebd03beef883b485b49bca2a7bc31798694652`, branche supprimée, après succès des contrôles exacts push `39349059475` et PR `39349097430` sur `f95e041` : **2 859 tests réussis / 6 ignorés**, dont les huit scénarios Mongo visuels réellement exécutés et le nouveau parcours complet entre bases locales. Aucun déploiement API ou natif ; la recette groupée reste ouverte.
 
 L5/M7 7 : contraste des cartes et saisies du chat, raccourci de nouvelle conversation, radios lisibles et accessibles, retour aux derniers messages et distinction du défilement volontaire face à la croissance d’une réponse. Contrôle local à largeur téléphone avec données synthétiques et deux régressions de suivi ; voir `../qa/M7_UX_COPILOT.md`. Les services métier, l’autorisation d’exécution et les instructions de l’IA ne changent pas. Sept états inchangés : **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**. Le nouveau lot de chat est encore sur branche ; la recette réelle du chat et les autres engagements V1/M8 restent ouverts.
+
+### 20 octobre — photos du rayon dans la conversation
+
+La PR 285 du chat est fusionnée en `7f8a8112c152d720f1e714f27299db5853b91e18`, après succès des contrôles exacts push `39350715994` et PR `39350742786` sur `0bee3ef` : **2 861 tests réussis / 6 ignorés**. Branches supprimées ; aucune livraison native n’est déduite de cette fusion.
+
+L7 : entrée explicite « Photos du rayon », copies originales locales et brouillon/tâche d’envoi atomiques, consultation de l’original et suivi distinct des tickets. L’agent existant reçoit les pixels vérifiés par un outil multimodal borné, sans seconde analyse IA à l’import et sans nouvelle autorité d’écriture. Les chiffres officiels restent canoniques ; les constats visuels sont des interprétations à confirmer. Voir `../specs/STORE_PHOTO_SPEC.md` et `../qa/M7_STORE_PHOTOS.md`.
+
+1. **Actions/conflits : en cours.** Aucun nouveau droit d’exécution ; exceptions CRUD et recette multi-appareils ouvertes.
+2. **Contre-promo : code prêt**, livraison/acceptation groupées restantes.
+3. **Documents : en cours.** Photo de rayon séparée de la casse, envoi commun et reprise locale. Réception Resend, restauration distante des originaux/manifests et autres reprises restent ouvertes en L8.
+4. **Expertise : en cours.** Lecture visuelle branchée sur le même agent ; qualité des conseils sur photos réelles encore à évaluer avec les cas métier.
+5. **Recommandations : en cours**, boucle réelle décision/réalisation/bilan et fraîcheur ouvertes.
+6. **Implantation : en cours.** Une photo n’est pas une mesure validée ni une illustration de scénario ; L10 demeure ouvert.
+7. **UX/validation : en cours.** Menu et erreurs ciblés contrôlés en rendu téléphone ; Photos/iOS/Android, original, reprise réseau et qualité réelle de l’agent restent à accepter sur le futur binaire.
+
+Ce lot est encore sur branche. Aucun déploiement API, appel IA payant ni build EAS ; la livraison reste groupée, API compatible avant le binaire. Aucun critère V1/M8 n’est clos par ces seules preuves.
