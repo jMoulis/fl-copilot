@@ -20,7 +20,8 @@
       "pnpm": "9.15.9",
       "env": {
         "EXPO_PUBLIC_APP_ENV": "staging"
-      }
+      },
+      "autoIncrement": true
     },
     "production": {
       "autoIncrement": true,
