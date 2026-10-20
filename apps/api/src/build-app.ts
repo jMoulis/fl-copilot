@@ -7,6 +7,10 @@ import { registerEmailIntakeRoutes } from "./intake/email-intake-routes.js";
 import { registerResendIntakeWebhook } from "./intake/resend-webhook.js";
 import { createResendAttachmentReader } from "./intake/resend-attachment.js";
 import { createEmailOriginalProcessor } from "./intake/email-originals.js";
+import {
+  createEmailOriginalAccess,
+  type EmailOriginalAccess,
+} from "./intake/email-original-access.js";
 import { readStorePhoto } from "./copilot/store-photo-reader";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
@@ -237,6 +241,7 @@ type AppDependencies = {
   sourceUploads?: SourceUploadService;
   sourceOriginals?: SourceOriginalService;
   emailIntake?: EmailIntakeStore;
+  emailOriginalAccess?: EmailOriginalAccess;
   visualFiles?: VisualFileService;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
@@ -1989,7 +1994,13 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           config.RESEND_RECEIVING_DOMAIN,
         )
       : undefined);
-  registerEmailIntakeRoutes(app, { auth, store: emailIntake });
+  registerEmailIntakeRoutes(app, {
+    auth,
+    store: emailIntake,
+    originals:
+      dependencies.emailOriginalAccess ??
+      createEmailOriginalAccess(dependencies.database),
+  });
   if (
     emailIntake &&
     config.RESEND_RECEIVING_WEBHOOK_SECRET &&

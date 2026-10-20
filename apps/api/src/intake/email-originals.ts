@@ -18,7 +18,7 @@ type Proof = {
   sizeBytes: number;
   declaredMimeType: string;
 };
-type Job = {
+export type EmailOriginalJob = {
   _id: string;
   receiptId: string;
   storeId: string;
@@ -34,6 +34,13 @@ type Job = {
   leaseUntil?: Date;
   proof?: Proof;
 };
+type Job = EmailOriginalJob;
+export function emailOriginalObjectKey(
+  job: Pick<Job, "storeId" | "ownerId" | "receiptId" | "_id">,
+  checksum: string,
+) {
+  return `stores/${job.storeId}/private-email/${job.ownerId}/${job.receiptId}/${job._id}/${checksum.slice(7)}`;
+}
 type FileError = NonNullable<EmailIntakeReceipt["files"][number]["errorCode"]>;
 type Reader = ReturnType<typeof createResendAttachmentReader>;
 export interface EmailOriginalStorage {
@@ -373,7 +380,7 @@ export function createEmailOriginalProcessor(
           throw Error("EMAIL_ATTACHMENT_IDENTITY_CHANGED");
         if (!proof) {
           proof = {
-            objectKey: `stores/${job.storeId}/private-email/${job.ownerId}/${job.receiptId}/${job._id}/${original.checksum.slice(7)}`,
+            objectKey: emailOriginalObjectKey(job, original.checksum),
             checksum: original.checksum,
             sizeBytes: original.sizeBytes,
             declaredMimeType: original.declaredMimeType,

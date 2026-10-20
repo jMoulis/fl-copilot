@@ -102,3 +102,71 @@ it("rejects invalid identity/authority locally before emitting an intake request
   ).toThrow();
   expect(fetch).not.toHaveBeenCalled();
 });
+it("uses scoped original endpoints and validates private capabilities before returning them", async () => {
+  const storeId = randomUUID(),
+    ownerId = randomUUID(),
+    conversationId = randomUUID(),
+    receiptId = randomUUID(),
+    fileId = randomUUID();
+  const target = { conversationId, receiptId, fileId };
+  const manifest = {
+    schemaVersion: 1,
+    storeId,
+    ownerId,
+    ...target,
+    providerEmailId: randomUUID(),
+    providerAttachmentId: randomUUID(),
+    filename: "sources.zip",
+    declaredMimeType: "application/zip",
+    sizeBytes: 3,
+    checksum: `sha256:${"a".repeat(64)}`,
+    retainedAt: "2026-10-20T12:00:00Z",
+    manifestHash: `sha256:${"b".repeat(64)}`,
+  };
+  let unsafe = false;
+  const fetch = vi.fn(
+    async (url: string) =>
+      new Response(
+        JSON.stringify(
+          url.includes("original-manifest")
+            ? manifest
+            : {
+                manifest,
+                url: unsafe
+                  ? "https://foreign.test/private"
+                  : "https://unit.private.blob.vercel-storage.com/private?signature=test-only",
+                expiresAt: "2026-10-20T12:02:00Z",
+              },
+        ),
+      ),
+  );
+  vi.stubGlobal("fetch", fetch);
+  const api = new ApiClient("https://api.test.invalid");
+  expect(
+    await api.emailIntakeOriginalManifest("unit-token", storeId, target),
+  ).toEqual(manifest);
+  expect(
+    (await api.emailIntakeOriginalDownload("unit-token", storeId, target))
+      .manifest,
+  ).toEqual(manifest);
+  expect(fetch.mock.calls[0]![0]).toBe(
+    `https://api.test.invalid/api/v1/intake/email/${receiptId}/files/${fileId}/original-manifest?conversationId=${conversationId}`,
+  );
+  unsafe = true;
+  await expect(
+    api.emailIntakeOriginalDownload("unit-token", storeId, target),
+  ).rejects.toThrow();
+  expect(() =>
+    api.emailIntakeOriginalManifest("unit-token", storeId, {
+      ...target,
+      fileId: "../foreign",
+    }),
+  ).toThrow();
+  expect(() =>
+    api.emailIntakeOriginalDownload("unit-token", storeId, {
+      ...target,
+      ownerId,
+    } as typeof target),
+  ).toThrow();
+  expect(fetch).toHaveBeenCalledTimes(3);
+});

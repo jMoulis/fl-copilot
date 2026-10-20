@@ -51,6 +51,40 @@ function fixture(enabled = true, webhook = false) {
   };
   const bytes = Buffer.alloc(32, 12),
     secret = `whsec_${bytes.toString("base64")}`;
+  const target = {
+    receiptId: randomUUID(),
+    fileId: randomUUID(),
+    conversationId,
+  };
+  const manifest = {
+    schemaVersion: 1 as const,
+    storeId,
+    ownerId,
+    ...target,
+    providerEmailId: randomUUID(),
+    providerAttachmentId: randomUUID(),
+    filename: "sources.zip",
+    declaredMimeType: "application/zip",
+    sizeBytes: 3,
+    checksum: `sha256:${"a".repeat(64)}`,
+    retainedAt: "2026-10-20T12:00:00Z",
+    manifestHash: `sha256:${"b".repeat(64)}`,
+  };
+  const download = {
+    manifest,
+    url: "https://unit.private.blob.vercel-storage.com/private-original?signature=test-only",
+    expiresAt: "2026-10-20T12:02:00Z",
+  };
+  const originals = {
+    manifest: vi.fn(async (_input: unknown, check?: () => Promise<void>) => {
+      await check?.();
+      return manifest;
+    }),
+    download: vi.fn(async (_input: unknown, check?: () => Promise<void>) => {
+      await check?.();
+      return download;
+    }),
+  };
   const config = parseEnvironment({
     NODE_ENV: "test",
     ...(webhook
@@ -64,6 +98,7 @@ function fixture(enabled = true, webhook = false) {
   const app = buildApp(config, {
     auth,
     emailIntake: enabled ? intake : undefined,
+    emailOriginalAccess: originals,
     database: {
       getDb: vi.fn(),
       checkHealth: async () => "connected",
@@ -78,6 +113,10 @@ function fixture(enabled = true, webhook = false) {
     scope: { storeId, ownerId, conversationId },
     bytes,
     secret,
+    target,
+    manifest,
+    download,
+    originals,
     headers: { authorization: "Bearer valid", "x-store-id": storeId },
     role: (v: typeof role) => {
       role = v;
@@ -292,4 +331,57 @@ it("requires durable execution keys before production email activation", () => {
       RESEND_API_KEY: "re_test_unused_only",
     }),
   ).toThrow("Invalid environment: INNGEST_EVENT_KEY, INNGEST_SIGNING_KEY");
+});
+it("authenticates private original routes, binds scope to the principal and prevents response caching", async () => {
+  const f = fixture();
+  const path = `/api/v1/intake/email/${f.target.receiptId}/files/${f.target.fileId}`;
+  try {
+    expect(
+      (
+        await f.app.inject({
+          url: `${path}/original-manifest?conversationId=${f.scope.conversationId}`,
+        })
+      ).statusCode,
+    ).toBe(401);
+    for (const operation of ["manifest", "download"] as const) {
+      const response = await f.app.inject({
+        url: `${path}/original-${operation}?conversationId=${f.scope.conversationId}`,
+        headers: f.headers,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+      expect(response.json()).toEqual(
+        operation === "manifest" ? f.manifest : f.download,
+      );
+      expect(f.originals[operation]).toHaveBeenCalledWith(
+        { ...f.target, storeId: f.scope.storeId, ownerId: f.scope.ownerId },
+        expect.any(Function),
+      );
+    }
+    const invalid = await f.app.inject({
+      url: `${path}/original-download?conversationId=${f.scope.conversationId}&objectKey=foreign`,
+      headers: f.headers,
+    });
+    expect(invalid.statusCode).toBe(400);
+  } finally {
+    await f.app.close();
+  }
+});
+it("withholds an original capability after authorization changes", async () => {
+  const f = fixture();
+  f.originals.download.mockImplementationOnce(async (_input, check) => {
+    f.revoke();
+    await check?.();
+    return f.download;
+  });
+  try {
+    const response = await f.app.inject({
+      url: `/api/v1/intake/email/${f.target.receiptId}/files/${f.target.fileId}/original-download?conversationId=${f.scope.conversationId}`,
+      headers: f.headers,
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.body).not.toContain("signature=test-only");
+  } finally {
+    await f.app.close();
+  }
 });

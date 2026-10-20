@@ -4,6 +4,10 @@ import {
   emailIntakeBindingSchema,
   emailIntakeListSchema,
   emailIntakeRevocationSchema,
+  emailIntakeOriginalRequestSchema,
+  emailIntakeOriginalManifestSchema,
+  emailIntakeOriginalDownloadSchema,
+  type EmailIntakeOriginalRequest,
   type EmailIntakeBindingRequest,
 } from "@fl-copilot/sync-contracts";
 import {
@@ -641,6 +645,30 @@ export class ApiClient {
         headers: authorizedStoreHeaders(accessToken, storeId),
       },
       emailIntakeRevocationSchema,
+    );
+  }
+  emailIntakeOriginalManifest(
+    accessToken: string,
+    storeId: string,
+    raw: EmailIntakeOriginalRequest,
+  ) {
+    const input = emailIntakeOriginalRequestSchema.parse(raw);
+    return this.request(
+      `/api/v1/intake/email/${input.receiptId}/files/${input.fileId}/original-manifest?conversationId=${input.conversationId}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      emailIntakeOriginalManifestSchema,
+    );
+  }
+  emailIntakeOriginalDownload(
+    accessToken: string,
+    storeId: string,
+    raw: EmailIntakeOriginalRequest,
+  ) {
+    const input = emailIntakeOriginalRequestSchema.parse(raw);
+    return this.request(
+      `/api/v1/intake/email/${input.receiptId}/files/${input.fileId}/original-download?conversationId=${input.conversationId}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      emailIntakeOriginalDownloadSchema,
     );
   }
   sourceOriginalManifest(

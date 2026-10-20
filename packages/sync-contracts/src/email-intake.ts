@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sourceOriginalDownloadSchema } from "./source-original";
 const id = z.uuid(),
   time = z.iso.datetime();
 export const emailIntakeReceivingDomainSchema = z
@@ -99,3 +100,50 @@ export const emailIntakeStatusSchema = z.strictObject({ enabled: z.boolean() });
 export const emailIntakeRevocationSchema = z.strictObject({
   revoked: z.literal(true),
 });
+
+/** Private raw email bytes, before source classification. No canonical source type is invented. */
+export const emailIntakeOriginalRequestSchema = z.strictObject({
+  conversationId: id,
+  receiptId: id,
+  fileId: id,
+});
+export type EmailIntakeOriginalRequest = z.infer<
+  typeof emailIntakeOriginalRequestSchema
+>;
+export const emailIntakeOriginalMetadataSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  storeId: id,
+  ownerId: id,
+  conversationId: id,
+  receiptId: id,
+  fileId: id,
+  providerEmailId: id,
+  providerAttachmentId: id,
+  filename: z.string().max(1024).nullable(),
+  declaredMimeType: z.string().min(1).max(120),
+  sizeBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(50 * 1024 * 1024),
+  checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  retainedAt: time,
+});
+export const emailIntakeOriginalManifestSchema =
+  emailIntakeOriginalMetadataSchema.extend({
+    manifestHash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  });
+export const emailIntakeOriginalDownloadSchema = z.strictObject({
+  manifest: emailIntakeOriginalManifestSchema,
+  url: sourceOriginalDownloadSchema.shape.url,
+  expiresAt: time,
+});
+export function serializeEmailIntakeOriginalMetadata(raw: unknown) {
+  return JSON.stringify(emailIntakeOriginalMetadataSchema.parse(raw));
+}
+export type EmailIntakeOriginalManifest = z.infer<
+  typeof emailIntakeOriginalManifestSchema
+>;
+export type EmailIntakeOriginalDownload = z.infer<
+  typeof emailIntakeOriginalDownloadSchema
+>;

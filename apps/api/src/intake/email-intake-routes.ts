@@ -7,12 +7,19 @@ import {
   emailIntakeBindingRequestSchema,
   emailIntakeBindingSchema,
   emailIntakeListSchema,
+  emailIntakeOriginalManifestSchema,
+  emailIntakeOriginalDownloadSchema,
 } from "@fl-copilot/sync-contracts";
 import { AuthError, type AuthService } from "../auth/service.js";
 import type { EmailIntakeStore } from "./email-intake-store.js";
+import type { EmailOriginalAccess } from "./email-original-access.js";
 export function registerEmailIntakeRoutes(
   app: FastifyInstance,
-  dependencies: { auth: AuthService; store?: EmailIntakeStore },
+  dependencies: {
+    auth: AuthService;
+    store?: EmailIntakeStore;
+    originals: EmailOriginalAccess;
+  },
 ) {
   const api = app.withTypeProvider<ZodTypeProvider>();
   async function authorize(request: FastifyRequest) {
@@ -144,4 +151,47 @@ export function registerEmailIntakeRoutes(
       return { revoked: true as const };
     },
   );
+  for (const operation of ["manifest", "download"] as const)
+    api.get(
+      `/api/v1/intake/email/:receiptId/files/:fileId/original-${operation}`,
+      {
+        schema: {
+          params: z.strictObject({ receiptId: z.uuid(), fileId: z.uuid() }),
+          querystring: z.strictObject({ conversationId: z.uuid() }),
+          response: {
+            200:
+              operation === "manifest"
+                ? emailIntakeOriginalManifestSchema
+                : emailIntakeOriginalDownloadSchema,
+          },
+        },
+      },
+      async (request, reply) => {
+        const principal = await authorize(request);
+        configured();
+        const check = async () => {
+          const current = await authorize(request);
+          if (
+            current.userId !== principal.userId ||
+            current.storeId !== principal.storeId
+          )
+            throw new AuthError(
+              403,
+              "EMAIL_INTAKE_FORBIDDEN",
+              "L’accès au magasin a changé.",
+            );
+        };
+        reply.header("cache-control", "private, no-store");
+        return dependencies.originals[operation](
+          {
+            storeId: principal.storeId,
+            ownerId: principal.userId,
+            conversationId: request.query.conversationId,
+            receiptId: request.params.receiptId,
+            fileId: request.params.fileId,
+          },
+          check,
+        );
+      },
+    );
 }
