@@ -2,6 +2,8 @@ import { Text, View, Pressable } from "react-native";
 import { explorerHasFilters } from "@fl-copilot/analytics-core";
 import type { AnalyticsExplorerFilters } from "@fl-copilot/domain";
 import { InlineAlert, SecondaryButton } from "../components/ui";
+import { DetailsDisclosure, IconButton } from "../components/dashboard";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "../design/tokens";
 import {
   formatCurrency,
@@ -68,14 +70,17 @@ export function ExplorerBreakdown({
         accessibilityRole="header"
         style={{ color: colors.ink, fontSize: 19, fontWeight: "700" }}
       >
-        Détail des montants renseignés
+        Répartition par produit
       </Text>
       <Text style={{ color: colors.ink }}>{explorerScopeLabel(data)}</Text>
-      <Text style={{ color: colors.muted }}>
-        Classement par montant décroissant, selon le catalogue actuel. Des
-        produits ou journées sans montant restent inconnus, jamais à zéro. Ce
-        détail peut différer du total du rayon si les sources sont incomplètes.
-      </Text>
+      <DetailsDisclosure title="Comprendre cette répartition">
+        <Text style={{ color: colors.muted }}>
+          Classement par montant décroissant, selon le catalogue actuel. Des
+          produits ou journées sans montant restent inconnus, jamais à zéro. Ce
+          détail peut différer du total du rayon si les sources sont
+          incomplètes.
+        </Text>
+      </DetailsDisclosure>
       {data.detailsUnavailable ? (
         <InlineAlert
           title="Détail trop volumineux"
@@ -103,6 +108,8 @@ export function ExplorerBreakdown({
                     gap: 6,
                     borderRadius: 14,
                     backgroundColor: colors.surface,
+                    borderWidth: 1,
+                    borderColor: colors.line,
                   }}
                 >
                   <Text style={{ color: colors.ink, fontWeight: "600" }}>
@@ -122,14 +129,31 @@ export function ExplorerBreakdown({
             <View
               key={p.productId}
               style={{
-                gap: 8,
-                padding: 14,
-                borderRadius: 14,
+                padding: 12,
+                borderRadius: 16,
                 backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.line,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 10,
               }}
             >
-              <View
-                style={{ flexDirection: "row", gap: 12, alignItems: "center" }}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${data.filters.productId ? "Ouvrir la fiche" : "Explorer"} : ${p.label}. ${p.analysis.total === null ? "Montant indisponible" : formatCurrency(p.analysis.total)}`}
+                onPress={() =>
+                  data.filters.productId
+                    ? onOpenProduct(p.productId)
+                    : onProduct(p.productId)
+                }
+                style={{
+                  flex: 1,
+                  minHeight: 52,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                }}
               >
                 {visuals && storeId ? (
                   <LinkedProductVisual
@@ -138,42 +162,63 @@ export function ExplorerBreakdown({
                     visuals={visuals}
                   />
                 ) : null}
-                <Text style={{ color: colors.ink, fontWeight: "600", flex: 1 }}>
-                  {p.label}
-                </Text>
-              </View>
-              <Text style={{ color: colors.ink }}>
-                {p.analysis.total === null
-                  ? "Indisponible"
-                  : formatCurrency(p.analysis.total)}
-              </Text>
-              <Text style={{ color: colors.muted }}>
-                {p.analysis.coverage.complete}/{p.analysis.coverage.expected}{" "}
-                jours complets · {p.analysis.coverage.partial} partiels ·{" "}
-                {p.analysis.coverage.missing} sans donnée
-              </Text>
-              {p.analysis.comparison?.absoluteDifference !== null &&
-              p.analysis.comparison ? (
-                <Text style={{ color: colors.muted }}>
-                  {formatSignedCurrency(
-                    p.analysis.comparison.absoluteDifference!,
-                  )}{" "}
-                  sur {p.analysis.comparedDays} jours{" "}
-                  {data.mode === "EXPLICIT"
-                    ? "de la période citée"
-                    : "clos comparables en N−1"}
-                </Text>
-              ) : null}
+                <View style={{ flex: 1, gap: 5 }}>
+                  <Text style={{ color: colors.ink, fontWeight: "600" }}>
+                    {p.label}
+                  </Text>
+                  <Text
+                    style={{
+                      color: colors.ink,
+                      fontWeight: "700",
+                      fontVariant: ["tabular-nums"],
+                    }}
+                  >
+                    {p.analysis.total === null
+                      ? "Indisponible"
+                      : formatCurrency(p.analysis.total)}
+                  </Text>
+                  <Text
+                    style={{
+                      color:
+                        p.analysis.coverage.partial ||
+                        p.analysis.coverage.missing
+                          ? colors.warning
+                          : colors.muted,
+                      fontSize: 12,
+                    }}
+                  >
+                    {p.analysis.coverage.complete}/
+                    {p.analysis.coverage.expected} jours complets ·{" "}
+                    {p.analysis.coverage.partial} partiels ·{" "}
+                    {p.analysis.coverage.missing} sans donnée
+                  </Text>
+                  {p.analysis.comparison?.absoluteDifference !== null &&
+                  p.analysis.comparison ? (
+                    <Text style={{ color: colors.muted, fontSize: 12 }}>
+                      {formatSignedCurrency(
+                        p.analysis.comparison.absoluteDifference!,
+                      )}{" "}
+                      sur {p.analysis.comparedDays} jours{" "}
+                      {data.mode === "EXPLICIT"
+                        ? "de la période citée"
+                        : "clos comparables · N−1"}
+                    </Text>
+                  ) : null}
+                </View>
+                <Ionicons
+                  name="chevron-forward"
+                  size={17}
+                  color={colors.muted}
+                  accessible={false}
+                />
+              </Pressable>
               {!data.filters.productId ? (
-                <SecondaryButton
-                  label="Explorer ce produit"
-                  onPress={() => onProduct(p.productId)}
+                <IconButton
+                  label={`Ouvrir la fiche produit : ${p.label}`}
+                  icon="information-circle-outline"
+                  onPress={() => onOpenProduct(p.productId)}
                 />
               ) : null}
-              <SecondaryButton
-                label="Ouvrir la fiche produit"
-                onPress={() => onOpenProduct(p.productId)}
-              />
             </View>
           ))}
           {!details.contributors.length ? (

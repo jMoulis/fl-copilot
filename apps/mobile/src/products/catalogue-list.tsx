@@ -21,6 +21,7 @@ import {
   SecondaryButton,
   StatusBadge,
 } from "../components/ui";
+import { IconButton } from "../components/dashboard";
 import { colors } from "../design/tokens";
 import type { ProductListItem } from "./product-editor-hooks.types";
 import {
@@ -88,7 +89,7 @@ export function CatalogueList({
         ref={list}
         data={rows}
         keyExtractor={(item) => item.record.entity.id}
-        contentContainerStyle={{ padding: 24, paddingBottom: 40, gap: 10 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 8 }}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         initialNumToRender={20}
@@ -111,44 +112,80 @@ export function CatalogueList({
         ListHeaderComponent={
           <View className="gap-4 pb-4">
             <AppHeader
+              compact
               title="Produits"
-              subtitle="Votre référentiel, disponible hors connexion."
+              action={
+                <IconButton
+                  label="Ajouter un produit"
+                  icon="add"
+                  disabled={storeMissing}
+                  onPress={onAdd}
+                />
+              }
             />
-            <View className="flex-row items-center gap-3 rounded-2xl border border-line bg-surface px-4">
-              <Ionicons
-                name="search-outline"
-                color={colors.muted}
-                size={21}
-                accessible={false}
-              />
-              <TextInput
-                value={view.query}
-                onChangeText={(query) => update({ query })}
-                maxLength={200}
-                placeholder="Nom, alias ou code"
-                placeholderTextColor={colors.muted}
-                accessibilityLabel="Rechercher un produit par nom, alias ou code"
-                autoCorrect={false}
-                className="min-h-12 flex-1 py-3 text-base text-ink"
-              />
-            </View>
-            <View className="flex-row flex-wrap items-center gap-3">
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Filtrer les produits"
-                onPress={() => setFilters(true)}
-                className="min-h-12 flex-row items-center gap-2 rounded-2xl border border-line bg-surface px-4"
-              >
+            <View className="flex-row items-center gap-2">
+              <View className="flex-1 flex-row items-center gap-3 rounded-2xl border border-line bg-surface px-3">
                 <Ionicons
-                  name="options-outline"
-                  size={20}
-                  color={colors.forest}
+                  name="search-outline"
+                  color={colors.muted}
+                  size={21}
                   accessible={false}
                 />
-                <Text className="font-semibold text-ink">
-                  Filtres{active ? " actifs" : ""}
-                </Text>
-              </Pressable>
+                <TextInput
+                  value={view.query}
+                  onChangeText={(query) => update({ query })}
+                  maxLength={200}
+                  placeholder="Nom, alias ou code"
+                  placeholderTextColor={colors.muted}
+                  accessibilityLabel="Rechercher un produit par nom, alias ou code"
+                  autoCorrect={false}
+                  className="min-h-12 flex-1 py-3 text-base text-ink"
+                />
+              </View>
+              <IconButton
+                label={
+                  active
+                    ? "Filtrer les produits · filtres actifs"
+                    : "Filtrer les produits"
+                }
+                icon="options-outline"
+                onPress={() => setFilters(true)}
+              />
+            </View>
+            <View className="flex-row flex-wrap gap-2">
+              {(
+                [
+                  ["ALL", "Tous"],
+                  ["FRUIT", "Fruits"],
+                  ["VEGETABLE", "Légumes"],
+                ] as const
+              ).map(([category, label]) => (
+                <Pressable
+                  key={category}
+                  accessibilityRole="radio"
+                  aria-checked={view.category === category}
+                  accessibilityLabel={`Catégorie : ${label}`}
+                  accessibilityState={{ checked: view.category === category }}
+                  onPress={() => update({ category })}
+                  className="min-h-12 justify-center py-1"
+                >
+                  <View
+                    className={`rounded-full border px-4 py-2 ${view.category === category ? "border-forest bg-forest" : "border-line bg-surface"}`}
+                  >
+                    <Text
+                      className={
+                        view.category === category
+                          ? "text-sm font-semibold text-on-accent"
+                          : "text-sm text-muted"
+                      }
+                    >
+                      {label}
+                    </Text>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+            <View className="flex-row flex-wrap items-center gap-3">
               <Text
                 accessibilityLiveRegion="polite"
                 className="flex-shrink text-sm text-muted"
@@ -171,11 +208,7 @@ export function CatalogueList({
                   .join(" · ")}
               </Text>
             ) : null}
-            <PrimaryButton
-              label="Ajouter un produit"
-              disabled={storeMissing}
-              onPress={onAdd}
-            />
+
             {storeMissing ? (
               <InlineAlert
                 title="Aucun magasin actif"
@@ -330,22 +363,23 @@ const CatalogueRow = memo(function CatalogueRow({
       accessibilityRole="button"
       accessibilityLabel={`Voir ${p.label}`}
       onPress={() => onOpen(p.id)}
-      className="flex-row items-center gap-3 rounded-2xl border border-line bg-surface p-4"
+      className="flex-row items-center gap-3 rounded-2xl border border-line bg-surface px-3 py-3"
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
     >
       <ProductVisual
         category={p.category}
+        size={52}
         resolution={resolveLibraryState(visuals?.state ?? null, p)}
         readUri={visuals?.readUri}
       />
-      <View className="flex-1 gap-2">
+      <View className="flex-1 gap-1.5">
         <Text className="text-base font-semibold text-ink">{p.label}</Text>
-        <Text className="text-sm text-muted">
-          {categoryLabels[p.category]} · {natureLabels[p.nature]} ·{" "}
-          {unitLabels[p.salesUnit]}
-        </Text>
         <View className="flex-row flex-wrap items-center gap-2">
+          <Text className="text-xs text-muted">
+            {natureLabels[p.nature]} · {unitLabels[p.salesUnit]}
+          </Text>
           <StatusBadge
+            compact
             status={
               conflictId || record.syncState === "CONFLICT"
                 ? "conflict"
@@ -357,7 +391,7 @@ const CatalogueRow = memo(function CatalogueRow({
             }
           />
           {productIsIncomplete(p) ? (
-            <Text className="text-sm text-warning">Fiche à compléter</Text>
+            <Text className="text-xs text-warning">Fiche à compléter</Text>
           ) : null}
           {p.status === "INACTIVE" ? (
             <Text className="text-sm text-muted">Inactif</Text>

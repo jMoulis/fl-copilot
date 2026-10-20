@@ -14,6 +14,7 @@ import { CommercialExecutionView } from "@/commercial/execution-view";
 import { DateSelector } from "@/components/date-selector";
 import {
   AppScreen,
+  BottomSheet,
   AppHeader,
   SecondaryButton,
   InlineAlert,
@@ -47,6 +48,7 @@ function StoreActions({ storeId }: { storeId: string }) {
     [sqlite],
   );
   const [week, setWeek] = useState(() => currentCommercialWeek());
+  const [periodPicker, setPeriodPicker] = useState(false);
   const [snapshot, setSnapshot] = useState<{
     week: string;
     plan: CommercialWeekPlan | null;
@@ -92,8 +94,9 @@ function StoreActions({ storeId }: { storeId: string }) {
   return (
     <AppScreen>
       <AppHeader
+        compact
         title="Actions"
-        subtitle="Votre travail en rayon, semaine par semaine."
+        subtitle="Vos tâches et décisions sur le terrain."
       />
       <View className="gap-3">
         <View className="flex-row items-center justify-between gap-2">
@@ -102,24 +105,38 @@ function StoreActions({ storeId }: { storeId: string }) {
             sign="‹"
             onPress={() => selected(addExplorerDays(week.start, -7))}
           />
-          <Text
-            accessibilityRole="header"
-            className="flex-1 text-center text-lg font-semibold text-ink"
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Choisir la semaine · semaine ${week.number}, ${week.year}`}
+            onPress={() => setPeriodPicker(true)}
+            className="min-h-12 flex-1 items-center justify-center rounded-xl bg-surface px-2"
           >
-            Semaine {week.number} · {week.year}
-          </Text>
+            <Text className="text-center text-base font-semibold text-ink">
+              Semaine {week.number} · {week.year}
+            </Text>
+          </Pressable>
           <WeekArrow
             label="Semaine suivante"
             sign="›"
             onPress={() => selected(addExplorerDays(week.start, 7))}
           />
         </View>
-        <DateSelector
-          value={week.start}
-          label="Choisir la semaine"
-          description="Choisissez une date de la semaine à consulter. Aucune déclaration n’est modifiée."
-          onConfirm={selected}
-        />
+        <BottomSheet
+          visible={periodPicker}
+          title="Choisir la semaine"
+          swipeToClose
+          onClose={() => setPeriodPicker(false)}
+        >
+          <DateSelector
+            value={week.start}
+            label="Date dans la semaine"
+            description="Choisissez une date de la semaine à consulter."
+            onConfirm={(date) => {
+              selected(date);
+              setPeriodPicker(false);
+            }}
+          />
+        </BottomSheet>
         {week.start !== currentCommercialWeek().start ? (
           <SecondaryButton
             label="Revenir à cette semaine"
