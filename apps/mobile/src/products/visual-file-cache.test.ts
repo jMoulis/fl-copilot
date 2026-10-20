@@ -5,7 +5,10 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import { visualFileManifestSchema } from "@fl-copilot/sync-contracts";
-import { visualLibraryFixture } from "../../../../scripts/test-visual-library-fixtures";
+import {
+  visualLibraryFixture,
+  testVisualId,
+} from "../../../../scripts/test-visual-library-fixtures";
 import { runLocalMigrations } from "../db/migrations";
 import { VisualTestDatabase as DB } from "../../../../scripts/test-visual-sqlite";
 import { applyVisualEntity } from "./visual-library-repository";
@@ -231,9 +234,9 @@ it("counts shared binaries once and uses the most recent reference for eviction"
     await cache.remember(f.storeId, f.asset.id, "PREVIEW", preview, manifest);
     const another = {
       ...f.asset,
-      id: randomUUID(),
       contentHash: `sha256:${"d".repeat(64)}`,
     };
+    another.id = testVisualId("visual_asset", f.storeId, another.contentHash);
     await applyVisualEntity(db, f.storeId, "visual_asset", another);
     const samePreview = {
       ...manifest,
@@ -460,9 +463,9 @@ it("brings a representative thumbnail cache below its budget without touching a 
     for (let i = 0; i < 40; i++) {
       const a = {
         ...f.asset,
-        id: randomUUID(),
         contentHash: `sha256:${(1000 + i).toString(16).padStart(64, "0")}`,
       };
+      a.id = testVisualId("visual_asset", f.storeId, a.contentHash);
       await applyVisualEntity(db, f.storeId, "visual_asset", a);
       const manifest = visualFileManifestSchema.parse({
         assetId: a.id,

@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { visualLibraryFixture } from "../../../scripts/test-visual-library-fixtures";
+import {
+  visualLibraryFixture,
+  testVisualId,
+} from "../../../scripts/test-visual-library-fixtures";
 import { createMongoDatabase } from "../src/database/mongo";
 import type { DatabaseService } from "../src/database/types";
 import { parseEnvironment } from "../src/config";
@@ -52,6 +55,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         sizeBytes: bytes.byteLength,
         contentHash: visualBytesHash(bytes),
       };
+      f.asset.id = testVisualId("visual_asset", f.storeId, f.asset.contentHash);
       await db.collection("storeMemberships").insertOne({
         storeId: f.storeId,
         userId: f.actorId,

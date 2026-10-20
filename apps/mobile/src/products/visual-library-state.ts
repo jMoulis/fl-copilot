@@ -54,11 +54,10 @@ export async function loadVisualLibraryState(
     jobs: new Map(),
   };
   for (const link of links)
-    if (!link.entity.deletedAt)
-      result.links.set(link.entity.productId, [
-        ...(result.links.get(link.entity.productId) ?? []),
-        link,
-      ]);
+    result.links.set(link.entity.productId, [
+      ...(result.links.get(link.entity.productId) ?? []),
+      link,
+    ]);
   for (const file of files) {
     const prior = result.files.get(file.asset_id) ?? {
       source: false,
@@ -96,7 +95,9 @@ export function resolveLibraryState(
 ): ProductVisualResolution {
   if (!state || state.storeId !== product.storeId)
     return { kind: "PLACEHOLDER", category: product.category };
-  const links = state.links.get(product.id) ?? [];
+  const links = (state.links.get(product.id) ?? []).filter(
+    (r) => !r.entity.deletedAt,
+  );
   if (links.length !== 1 || !safe(links[0]))
     return { kind: "PLACEHOLDER", category: product.category };
   const identities = links

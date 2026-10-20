@@ -225,6 +225,31 @@ it("requires a fresh selection before replacing a link and retains original/libr
     expect(
       await s.library.get("visual_asset", s.f.storeId, asset.id),
     ).not.toBeNull();
+    const removed = await readProductVisualLink(
+      s.library,
+      s.f.storeId,
+      s.f.product.id,
+    );
+    expect(removed?.entity.deletedAt).not.toBeNull();
+    await assignLibraryVisual(
+      s.db,
+      { ...s.basis, link: removed },
+      identity,
+      s.ctx,
+    );
+    const restored = await readProductVisualLink(
+      s.library,
+      s.f.storeId,
+      s.f.product.id,
+    );
+    expect(restored?.entity.id).toBe(current.link?.entity.id);
+    expect(restored?.entity.version).toBe(removed!.entity.version + 1);
+    expect(restored?.entity.createdAt).toBe(current.link?.entity.createdAt);
+    expect(restored?.entity.deletedAt).toBeNull();
+    expect((await s.library.resolve(s.f.product)).kind).toBe("ASSET");
+    expect(
+      (await s.library.list("product_visual_link", s.f.storeId)).length,
+    ).toBe(1);
   } finally {
     s.db.raw.close();
   }

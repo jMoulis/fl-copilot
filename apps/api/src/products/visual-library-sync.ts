@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { visualIdMaterial, visualIdFromDigest } from "@fl-copilot/domain";
 import {
   visualEntitySchemas,
   validateVisualMutation,
@@ -62,6 +64,24 @@ export async function applyVisualCommand(
     command.type !== `${kind.toUpperCase()}_UPSERT`
   )
     return reject("VISUAL_COMMAND_INVALID");
+  if (kind !== "visual_identity") {
+    const value = parsed.data,
+      key =
+        "contentHash" in value
+          ? value.contentHash
+          : "productId" in value
+            ? value.productId
+            : "";
+    if (
+      value.id !==
+      visualIdFromDigest(
+        createHash("sha256")
+          .update(visualIdMaterial(kind, storeId, key))
+          .digest("hex"),
+      )
+    )
+      return reject("VISUAL_ID_INVALID");
+  }
   const collection = ctx.database.collection<Document & { _id: string }>(
     visualCollections[kind],
   );

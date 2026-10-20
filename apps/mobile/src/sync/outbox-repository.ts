@@ -109,7 +109,7 @@ function assertChanged(result: SQLiteRunResult, transition: string) {
 }
 
 export const ACTIVE_FAILED_OUTBOX_SQL =
-  "status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED')";
+  "status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED')";
 
 export class OutboxRepository {
   constructor(
@@ -198,13 +198,13 @@ export class OutboxRepository {
       `
         SELECT * FROM sync_outbox
         WHERE store_id = ? AND status = 'PENDING'
-          AND (entity_type NOT IN ('mercalys_publication','copilot_knowledge','copilot_decision','copilot_execution_link','copilot_action_execution','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','store_layout','need_unit','need_membership','product_substitution','store_product_event','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
+          AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link','mercalys_publication','copilot_knowledge','copilot_decision','copilot_execution_link','copilot_action_execution','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','store_layout','need_unit','need_membership','product_substitution','store_product_event','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
             SELECT 1 FROM sync_outbox prior
             WHERE prior.store_id = sync_outbox.store_id
               AND prior.entity_type = sync_outbox.entity_type
               AND prior.entity_id = sync_outbox.entity_id
               AND prior.local_sequence < sync_outbox.local_sequence
-              AND ((prior.status IN ('PENDING', 'SYNCING') OR (prior.status='FAILED' AND COALESCE(prior.last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED'))) OR
+              AND ((prior.status IN ('PENDING', 'SYNCING') OR (prior.status='FAILED' AND COALESCE(prior.last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED'))) OR
                 (prior.status = 'CONFLICT' AND NOT EXISTS (
                   SELECT 1 FROM sync_conflicts c WHERE c.command_id = prior.command_id AND c.status IN ('RESOLVED_LOCAL', 'RESOLVED_REMOTE', 'MERGED')
                 )))

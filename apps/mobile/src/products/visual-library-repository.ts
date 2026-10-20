@@ -1,3 +1,4 @@
+import { assertCanonicalVisualId } from "./visual-id";
 import { z } from "zod";
 import {
   visualEntitySchemas,
@@ -15,7 +16,6 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
 
 export const visualTables = {
   visual_asset: "visual_assets",
@@ -123,6 +123,7 @@ export async function applyVisualEntity<K extends VisualEntityType>(
   ackVersion?: number,
 ) {
   const p = visualEntitySchemas[kind].parse(raw) as VisualEntityMap[K];
+  await assertCanonicalVisualId(kind, p);
   if (
     p.storeId !== storeId ||
     (ackVersion !== undefined && ackVersion !== p.version)
@@ -157,72 +158,6 @@ export async function applyVisualEntity<K extends VisualEntityType>(
     return;
   }
   if (local && (local.remoteVersion ?? 0) > p.version) return;
-  const collision =
-    kind === "visual_asset" && "contentHash" in p
-      ? await db.getFirstAsync<Row>(
-          "SELECT * FROM visual_assets WHERE store_id=? AND content_hash=? AND id<>?",
-          storeId,
-          p.contentHash,
-          p.id,
-        )
-      : kind === "product_visual_link" && "productId" in p && !p.deletedAt
-        ? await db.getFirstAsync<Row>(
-            "SELECT * FROM product_visual_links WHERE store_id=? AND product_id=? AND deleted_at IS NULL AND id<>?",
-            storeId,
-            p.productId,
-            p.id,
-          )
-        : null;
-  if (collision) {
-    const pending = await db.getFirstAsync<{ command_id: string }>(
-      "SELECT command_id FROM sync_outbox WHERE store_id=? AND entity_type=? AND entity_id=? AND status<>'ACKNOWLEDGED' ORDER BY local_sequence DESC LIMIT 1",
-      storeId,
-      kind,
-      collision.id,
-    );
-    if (!collision.dirty || !pending) throw Error("VISUAL_CANONICAL_COLLISION");
-    const command = await new OutboxRepository(db).getById(pending.command_id);
-    if (!command) throw Error("VISUAL_PENDING_COMMAND_MISSING");
-    const code =
-      kind === "visual_asset"
-        ? "VISUAL_BINARY_COLLISION"
-        : "VISUAL_LINK_COLLISION";
-    await new ConflictRepository(db).recordPushConflict(command, {
-      commandId: command.commandId,
-      entityType: kind,
-      entityId: collision.id,
-      status: "CONFLICT",
-      remoteVersion: p.version,
-      remoteEntity: p,
-      error: {
-        code,
-        messageFr:
-          "Un autre choix a été synchronisé. Votre version locale est conservée.",
-        retryable: false,
-        requestId: command.commandId,
-      },
-    });
-    await db.runAsync(
-      "UPDATE sync_conflicts SET remote_payload_json=?,remote_version=?,conflict_type=? WHERE id=? AND status='OPEN'",
-      serialized,
-      p.version,
-      code,
-      command.commandId,
-    );
-    await db.runAsync(
-      "UPDATE sync_outbox SET status='CONFLICT',last_error_code=? WHERE store_id=? AND entity_type=? AND entity_id=? AND status<>'ACKNOWLEDGED'",
-      code,
-      storeId,
-      kind,
-      collision.id,
-    );
-    await db.runAsync(
-      `UPDATE ${visualTables[kind]} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
-      collision.id,
-      storeId,
-    );
-    return;
-  }
   await writeVisual(db, kind, p, serialized, p.version, false);
 }
 
@@ -278,6 +213,7 @@ export class VisualLibraryRepository {
       if ((before?.entity.version ?? null) !== ctx.expectedLocalVersion)
         throw Error("VISUAL_REVISION_INVALID");
       const p = validateVisualMutation(kind, before?.entity ?? null, raw, ctx);
+      await assertCanonicalVisualId(kind, p);
       if (kind === "visual_identity") {
         const identity = p as VisualEntityMap["visual_identity"];
         if (identity.primaryAssetId && !identity.deletedAt) {

@@ -1,3 +1,4 @@
+import { nativeVisualId } from "./visual-id";
 import { z } from "zod";
 import {
   catalogueSnapshotIdentity,
@@ -58,7 +59,7 @@ export async function readProductVisualLink(
   productId: string,
 ) {
   const links = (await repo.list("product_visual_link", storeId)).filter(
-    (r) => r.entity.productId === productId && !r.entity.deletedAt,
+    (r) => r.entity.productId === productId,
   );
   if (links.length > 1) throw Error("VISUAL_LINK_CONFLICT");
   return links[0] ?? null;
@@ -128,7 +129,7 @@ function mutation(ctx: VisualActionContext, version: number | null) {
     canWrite: ctx.canWrite(),
   };
 }
-function nextLink(
+async function nextLink(
   ctx: VisualActionContext,
   at: string,
   old: LocalVisualRecord<ProductVisualLink> | null,
@@ -138,6 +139,7 @@ function nextLink(
 ) {
   return productVisualLinkSchema.parse({
     ...base(ctx, at),
+    id: await nativeVisualId("product_visual_link", ctx.storeId, productId),
     ...(old
       ? {
           id: old.entity.id,
@@ -190,6 +192,11 @@ export async function assignCapturedVisual(
     if (!asset) {
       asset = visualAssetSchema.parse({
         ...base(ctx, at),
+        id: await nativeVisualId(
+          "visual_asset",
+          ctx.storeId,
+          source.contentHash,
+        ),
         contentHash: source.contentHash,
         mimeType: source.mimeType,
         width: source.width,
@@ -235,7 +242,7 @@ export async function assignCapturedVisual(
       });
       await current.repo.save("visual_identity", identity, mutation(ctx, null));
     }
-    const link = nextLink(
+    const link = await nextLink(
       ctx,
       at,
       current.link,
@@ -311,7 +318,7 @@ export async function assignLibraryVisual(
       asset.entity.provenance.type === "AI_GENERATED"
     )
       throw Error("VISUAL_SELECTION_INVALID");
-    const link = nextLink(
+    const link = await nextLink(
       ctx,
       at,
       current.link,

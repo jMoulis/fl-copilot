@@ -160,6 +160,7 @@ describe("local SQLite migrations", () => {
       "sync_test_entities",
       "visual_asset_files",
       "visual_assets",
+      "visual_conflict_history",
       "visual_identities",
       "waste_lines",
       "waste_observations",

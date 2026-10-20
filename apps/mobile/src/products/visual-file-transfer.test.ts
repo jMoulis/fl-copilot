@@ -2,7 +2,10 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { visualFileManifestSchema } from "@fl-copilot/sync-contracts";
-import { visualLibraryFixture } from "../../../../scripts/test-visual-library-fixtures";
+import {
+  visualLibraryFixture,
+  testVisualId,
+} from "../../../../scripts/test-visual-library-fixtures";
 import { VisualTestDatabase } from "../../../../scripts/test-visual-sqlite";
 import { runLocalMigrations } from "../db/migrations";
 import { applyVisualEntity } from "./visual-library-repository";
@@ -30,6 +33,7 @@ async function setup() {
     contentHash: hash(source),
     sizeBytes: source.byteLength,
   };
+  f.asset.id = testVisualId("visual_asset", f.storeId, f.asset.contentHash);
   await applyVisualEntity(db, f.storeId, "visual_asset", f.asset);
   const cache = new VisualFileCache(db),
     manifest = visualFileManifestSchema.parse({

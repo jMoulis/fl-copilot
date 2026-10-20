@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
-import { isVisualEntityType } from "@fl-copilot/domain";
+import { isVisualEntityType, rebaseVisualChoice } from "@fl-copilot/domain";
 import type { SyncPushRequest } from "@fl-copilot/sync-contracts";
 import { visualLibraryFixture } from "../../../scripts/test-visual-library-fixtures";
 import { createMongoDatabase } from "../src/database/mongo";
@@ -146,6 +146,144 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .countDocuments({ storeId: f.storeId }),
       ).toBe(0);
     }, 20000);
+    it("reconciles simultaneous canonical creations without renaming IDs and bootstraps a removed link", async () => {
+      const { f, push, db } = await initialize();
+      await push.push(request(f, entries(f)), "first-device", f.actorId);
+      const actor = randomUUID(),
+        device = { ...f, deviceId: randomUUID() },
+        at = "2026-10-20T12:00:00.000Z";
+      await db.collection("storeMemberships").insertOne({
+        storeId: f.storeId,
+        userId: actor,
+        role: "MANAGER",
+        active: true,
+      });
+      const localAsset = {
+        ...f.asset,
+        createdBy: actor,
+        updatedBy: actor,
+        createdAt: at,
+        updatedAt: at,
+        provenance: {
+          type: "USER_UPLOAD" as const,
+          rights: "USER_CONFIRMED" as const,
+          confirmedBy: actor,
+          confirmedAt: at,
+        },
+        review: { ...f.asset.review, actorId: actor, at },
+      };
+      expect(
+        (
+          await push.push(
+            request(device, [{ ...entries(f)[1]!, payload: localAsset }]),
+            "simultaneous-asset",
+            actor,
+          )
+        ).results[0],
+      ).toMatchObject({ status: "CONFLICT", remoteEntity: f.asset });
+      const rebased = rebaseVisualChoice(
+        "visual_asset",
+        localAsset,
+        f.asset,
+        actor,
+        at,
+      );
+      expect(
+        (
+          await push.push(
+            request(device, [
+              { ...entries(f)[1]!, payload: rebased, expected: 1 },
+            ]),
+            "chosen-asset",
+            actor,
+          )
+        ).results[0]?.status,
+      ).toBe("APPLIED");
+      expect(
+        await db
+          .collection("visualAssets")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(1);
+      expect(
+        await db.collection("visualAssets").findOne({ id: f.asset.id }),
+      ).toMatchObject({
+        id: f.asset.id,
+        createdBy: f.actorId,
+        updatedBy: actor,
+        version: 2,
+      });
+      const localLink = {
+        ...f.link,
+        createdBy: actor,
+        updatedBy: actor,
+        createdAt: at,
+        updatedAt: at,
+        verifiedBy: actor,
+        verifiedAt: at,
+      };
+      expect(
+        (
+          await push.push(
+            request(device, [{ ...entries(f)[3]!, payload: localLink }]),
+            "simultaneous-link",
+            actor,
+          )
+        ).results[0]?.status,
+      ).toBe("CONFLICT");
+      const removed = {
+        ...rebaseVisualChoice(
+          "product_visual_link",
+          localLink,
+          f.link,
+          actor,
+          at,
+        ),
+        deletedAt: at,
+      };
+      expect(
+        (
+          await push.push(
+            request(device, [
+              { ...entries(f)[3]!, payload: removed, expected: 1 },
+            ]),
+            "removed-link",
+            actor,
+          )
+        ).results[0]?.status,
+      ).toBe("APPLIED");
+      const snapshot = await createMongoSyncBootstrapService(
+        database,
+      ).bootstrap(
+        {
+          userId: actor,
+          sessionId: randomUUID(),
+          deviceId: device.deviceId,
+          storeId: f.storeId,
+          storeName: "Test",
+          role: "MANAGER",
+        },
+        { rawObservationDays: 90, visualLibrary: "true" },
+      );
+      expect(snapshot.entities.productVisualLinks).toEqual([removed]);
+      const restored = { ...removed, version: 3, deletedAt: null };
+      expect(
+        (
+          await push.push(
+            request(device, [
+              { ...entries(f)[3]!, payload: restored, expected: 2 },
+            ]),
+            "restored-link",
+            actor,
+          )
+        ).results[0]?.status,
+      ).toBe("APPLIED");
+      expect(
+        await db
+          .collection("productVisualLinks")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(1);
+    }, 20000);
+
     it("refuses forged reviewers, inactive/nonmanager memberships and immutable binary replacement", async () => {
       const { f, push, db } = await initialize();
       const forged = { ...f.asset, updatedBy: randomUUID() };
@@ -206,7 +344,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             f.actorId,
           )
         ).results[0]?.error?.code,
-      ).toBe("VISUAL_BINARY_EXISTS");
+      ).toBe("VISUAL_ID_INVALID");
       expect(
         (
           await push.push(
@@ -217,7 +355,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             f.actorId,
           )
         ).results[0]?.error?.code,
-      ).toBe("VISUAL_LINK_EXISTS");
+      ).toBe("VISUAL_ID_INVALID");
       const first = {
         ...f.asset,
         version: 2,

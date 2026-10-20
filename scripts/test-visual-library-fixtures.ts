@@ -1,10 +1,25 @@
-import { randomUUID } from "node:crypto";
+import {
+  visualIdMaterial,
+  visualIdFromDigest,
+} from "../packages/domain/src/visual-id";
+import { randomUUID, createHash } from "node:crypto";
 import {
   visualAssetSchema,
   visualIdentitySchema,
   productVisualLinkSchema,
 } from "../packages/domain/src/visual-library";
 import { productSchema } from "../packages/domain/src/products";
+export function testVisualId(
+  kind: "visual_asset" | "product_visual_link",
+  storeId: string,
+  key: string,
+) {
+  return visualIdFromDigest(
+    createHash("sha256")
+      .update(visualIdMaterial(kind, storeId, key))
+      .digest("hex"),
+  );
+}
 export function visualLibraryFixture() {
   const storeId = randomUUID(),
     actorId = randomUUID(),
@@ -31,10 +46,11 @@ export function visualLibraryFixture() {
     familyId: null,
     subfamilyId: null,
   });
+  const contentHash = `sha256:${randomUUID().replaceAll("-", "").repeat(2)}`;
   const asset = visualAssetSchema.parse({
     ...base,
-    id: randomUUID(),
-    contentHash: `sha256:${randomUUID().replaceAll("-", "").repeat(2)}`,
+    id: testVisualId("visual_asset", storeId, contentHash),
+    contentHash,
     mimeType: "image/jpeg",
     width: 500,
     height: 500,
@@ -59,7 +75,7 @@ export function visualLibraryFixture() {
   });
   const link = productVisualLinkSchema.parse({
     ...base,
-    id: randomUUID(),
+    id: testVisualId("product_visual_link", storeId, product.id),
     productId: product.id,
     visualIdentityId: identity.id,
     overrideAssetId: asset.id,

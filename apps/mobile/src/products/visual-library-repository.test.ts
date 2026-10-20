@@ -1,3 +1,4 @@
+import { testVisualId } from "../../../../scripts/test-visual-library-fixtures";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -65,7 +66,7 @@ const base = {
 };
 const asset = visualAssetSchema.parse({
   ...base,
-  id: "44444444-4444-4444-8444-444444444444",
+  id: testVisualId("visual_asset", storeId, `sha256:${"a".repeat(64)}`),
   contentHash: `sha256:${"a".repeat(64)}`,
   mimeType: "image/jpeg",
   width: 500,
@@ -100,7 +101,7 @@ const product: Product = {
 };
 const link = productVisualLinkSchema.parse({
   ...base,
-  id: "77777777-7777-4777-8777-777777777777",
+  id: testVisualId("product_visual_link", storeId, product.id),
   productId: product.id,
   visualIdentityId: identity.id,
   overrideAssetId: asset.id,
@@ -147,7 +148,7 @@ it("retains one reusable approved asset and a manual override through product re
       "product_visual_link",
       {
         ...link,
-        id: deviceId,
+        id: testVisualId("product_visual_link", storeId, other.id),
         productId: other.id,
         linkType: "INHERITED_GENERIC",
         overrideAssetId: null,
@@ -232,7 +233,14 @@ it("keeps a newer offline choice through an older ACK, then hides a remotely rev
       review: { ...asset.review, at: later },
     };
     await repo.save("visual_asset", next, ctx(1));
+    const outbox = new OutboxRepository(db);
+    const first = (await outbox.listPending(storeId)).filter(
+      (c) => c.entityType === "visual_asset",
+    );
+    expect(first.map((c) => c.expectedRemoteVersion)).toEqual([null]);
+    await outbox.markSyncing(first[0]!.commandId);
     await applyVisualEntity(db, storeId, "visual_asset", asset, 1);
+    await outbox.markAcknowledged(first[0]!.commandId);
     expect(await repo.get("visual_asset", storeId, asset.id)).toMatchObject({
       entity: { version: 2 },
       remoteVersion: 1,
@@ -260,7 +268,7 @@ it("keeps a newer offline choice through an older ACK, then hides a remotely rev
     const pending = (
       await new OutboxRepository(db).listPending(storeId)
     ).filter((c) => c.entityType === "visual_asset");
-    expect(pending.map((c) => c.expectedRemoteVersion)).toEqual([null, 1]);
+    expect(pending.map((c) => c.expectedRemoteVersion)).toEqual([1]);
   } finally {
     raw.close();
   }
@@ -318,7 +326,7 @@ it("refuses stale, foreign, unauthorized, mutable-binary and unreviewed decision
 });
 
 it.each(["visual_asset", "product_visual_link"] as const)(
-  "retains a cross-device %s collision as an explicit conflict instead of blocking the pull",
+  "refuses a noncanonical %s ID without changing the existing local decision",
   async (kind) => {
     const { raw, db, repo } = await setup();
     try {
@@ -329,48 +337,22 @@ it.each(["visual_asset", "product_visual_link"] as const)(
         kind === "visual_asset"
           ? { ...asset, id: deviceId }
           : { ...link, id: deviceId };
-      await db.withExclusiveTransactionAsync((tx) =>
-        applyVisualEntity(tx, storeId, kind, incoming),
-      );
-      const localId = kind === "visual_asset" ? asset.id : link.id;
-      expect(await repo.get(kind, storeId, localId)).toMatchObject({
-        syncState: "CONFLICT",
-        dirty: true,
-        entity: { id: localId },
-      });
-      expect(await repo.get(kind, storeId, incoming.id)).toBeNull();
-      const conflict = await db.getFirstAsync<{
-        remote_payload_json: string;
-        local_payload_json: string;
-      }>(
-        "SELECT remote_payload_json,local_payload_json FROM sync_conflicts WHERE entity_type=?",
-        kind,
-      );
-      expect(JSON.parse(conflict!.remote_payload_json).id).toBe(incoming.id);
-      expect(JSON.parse(conflict!.local_payload_json).id).toBe(localId);
-      expect(await repo.resolve(product)).toMatchObject({
-        kind: "PLACEHOLDER",
-      });
-      if (kind === "visual_asset") {
-        const revoked = {
-          ...asset,
-          id: deviceId,
-          version: 2,
-          review: { status: "REVOKED" as const, actorId, at },
-        };
-        await db.withExclusiveTransactionAsync((tx) =>
-          applyVisualEntity(tx, storeId, kind, revoked),
-        );
-        const refreshed = await db.getFirstAsync<{
-          remote_payload_json: string;
-        }>(
-          "SELECT remote_payload_json FROM sync_conflicts WHERE entity_type=?",
-          kind,
-        );
-        expect(JSON.parse(refreshed!.remote_payload_json).review.status).toBe(
-          "REVOKED",
-        );
-      }
+      await expect(
+        db.withExclusiveTransactionAsync((tx) =>
+          applyVisualEntity(tx, storeId, kind, incoming),
+        ),
+      ).rejects.toThrow("VISUAL_ID_INVALID");
+      expect(
+        (
+          await repo.get(
+            kind,
+            storeId,
+            kind === "visual_asset" ? asset.id : link.id,
+          )
+        )?.syncState,
+      ).toBe("PENDING");
+      expect(await repo.get(kind, storeId, deviceId)).toBeNull();
+      expect(await repo.resolve(product)).toMatchObject({ kind: "ASSET" });
     } finally {
       raw.close();
     }

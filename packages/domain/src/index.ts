@@ -158,3 +158,6 @@ export * from "./store-layout-scenario";
 export * from "./physical-allocation-compatibility";
 export * from "./analytics-explorer";
 export * from "./analytics-destination-table";
+
+export * from "./visual-id";
+export * from "./visual-conflict";
