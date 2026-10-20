@@ -1,4 +1,8 @@
 import {
+  layoutIllustrationQuoteStateSchema,
+  layoutIllustrationGenerationRecordSchema,
+} from "@fl-copilot/sync-contracts";
+import {
   layoutIllustrationFileStateSchema,
   layoutIllustrationManifestSchema,
   type LayoutIllustrationManifest,
@@ -447,6 +451,7 @@ export class ApiClient {
     visualLibrary = false,
     emailIntake = false,
     layoutIllustrations = false,
+    layoutIllustrationGenerations = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -475,6 +480,8 @@ export class ApiClient {
     if (emailIntake) query.set("emailIntake", "true");
     if (layoutIllustrations && copilotHistory)
       query.set("layoutIllustrations", "true");
+    if (layoutIllustrationGenerations && copilotHistory)
+      query.set("layoutIllustrationGenerations", "true");
     if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
@@ -522,6 +529,7 @@ export class ApiClient {
     visualLibrary = false,
     emailIntake = false,
     layoutIllustrations = false,
+    layoutIllustrationGenerations = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -552,6 +560,8 @@ export class ApiClient {
     if (emailIntake) query.set("emailIntake", "true");
     if (layoutIllustrations && copilotHistory)
       query.set("layoutIllustrations", "true");
+    if (layoutIllustrationGenerations && copilotHistory)
+      query.set("layoutIllustrationGenerations", "true");
     if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
@@ -570,7 +580,7 @@ export class ApiClient {
     conversationId?: string,
     before?: { createdAt: string; id: string },
     limit = 50,
-    recordType?: "LAYOUT_ILLUSTRATIONS",
+    recordType?: "LAYOUT_ILLUSTRATIONS" | "LAYOUT_ILLUSTRATION_GENERATIONS",
   ): Promise<CopilotHistoryPage> {
     const query = new URLSearchParams({ limit: String(limit) });
     if (recordType) query.set("recordType", recordType);
@@ -877,6 +887,50 @@ export class ApiClient {
       expected,
       "VISUAL_FILE",
     );
+  }
+  async layoutIllustrationQuote(
+    accessToken: string,
+    storeId: string,
+    preparationId: string,
+  ) {
+    const abort = new AbortController(),
+      timer = setTimeout(() => abort.abort(), 30000);
+    try {
+      return await this.request(
+        `/api/v1/copilot/layout-illustrations/${encodeURIComponent(preparationId)}/quote`,
+        {
+          method: "GET",
+          headers: authorizedStoreHeaders(accessToken, storeId),
+          signal: abort.signal,
+        },
+        layoutIllustrationQuoteStateSchema,
+      );
+    } finally {
+      clearTimeout(timer);
+      abort.abort();
+    }
+  }
+  async layoutIllustrationGeneration(
+    accessToken: string,
+    storeId: string,
+    id: string,
+  ) {
+    const abort = new AbortController(),
+      timer = setTimeout(() => abort.abort(), 30000);
+    try {
+      return await this.request(
+        `/api/v1/copilot/layout-illustration-generations/${encodeURIComponent(id)}`,
+        {
+          method: "GET",
+          headers: authorizedStoreHeaders(accessToken, storeId),
+          signal: abort.signal,
+        },
+        layoutIllustrationGenerationRecordSchema,
+      );
+    } finally {
+      clearTimeout(timer);
+      abort.abort();
+    }
   }
   async layoutIllustrationManifest(
     accessToken: string,

@@ -1,4 +1,10 @@
 import {
+  canAccessIllustrationGeneration,
+  serializeIllustrationGeneration,
+  type IllustrationGenerationDocument,
+  type LayoutIllustrationGenerationService,
+} from "./layout-illustration-generation";
+import {
   applyEmailDecision,
   canAccessEmailDecision,
   serializeEmailDecision,
@@ -42,6 +48,8 @@ import {
   type ActionExecutionDocument,
 } from "./action-execution-store";
 export const chatCollections = {
+  copilot_layout_illustration_generation:
+    "copilotLayoutIllustrationGenerations",
   copilot_layout_illustration: "copilotLayoutIllustrations",
   email_intake_decision: "emailIntakeDecisions",
   copilot_action_execution: "actionExecutions",
@@ -54,6 +62,7 @@ export const chatCollections = {
 export const isChatType = (type: string) =>
   Object.hasOwn(chatCollections, type);
 export type ChatRecordDocument = (
+  | IllustrationGenerationDocument
   | LayoutIllustrationDocument
   | EmailDecisionDocument
   | CopilotConversation
@@ -66,6 +75,10 @@ export type ChatRecordDocument = (
   _id: string;
 };
 export function serializeChat(type: string, row: ChatRecordDocument) {
+  if (type === "copilot_layout_illustration_generation")
+    return serializeIllustrationGeneration(
+      row as IllustrationGenerationDocument,
+    );
   if (type === "copilot_layout_illustration")
     return serializeLayoutIllustration(row as LayoutIllustrationDocument);
   if (type === "email_intake_decision")
@@ -115,6 +128,8 @@ export async function canAccessChatCommand(
   ownerId: string | undefined,
   c: SyncCommand,
 ) {
+  if (c.entityType === "copilot_layout_illustration_generation")
+    return canAccessIllustrationGeneration(db, storeId, ownerId, c);
   if (c.entityType === "copilot_layout_illustration")
     return canAccessLayoutIllustration(db, storeId, ownerId, c);
   if (c.entityType === "email_intake_decision")
@@ -173,7 +188,24 @@ export async function applyChatCommand(
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
   now: () => Date = () => new Date(),
+  illustrationGeneration?: Pick<LayoutIllustrationGenerationService, "apply">,
 ): Promise<CommandMutationResult> {
+  if (c.entityType === "copilot_layout_illustration_generation")
+    return illustrationGeneration
+      ? illustrationGeneration.apply(ctx, storeId, ownerId, c, requestId)
+      : {
+          resultStatus: "REJECTED",
+          resultingVersion: null,
+          responseJson: {
+            error: {
+              code: "LAYOUT_ILLUSTRATION_DISABLED",
+              messageFr:
+                "La génération d’illustrations n’est pas activée. Aucune image n’a été demandée.",
+              retryable: false,
+              requestId,
+            },
+          },
+        };
   if (c.entityType === "copilot_layout_illustration")
     return applyLayoutIllustration(
       ctx,

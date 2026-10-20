@@ -148,3 +148,55 @@ it.each(["manifest", "file"])(
     await failure;
   },
 );
+it("uses bounded, authenticated reads for generation review/progress with no mutation or credentials in the URL", async () => {
+  const requests: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init: RequestInit) => {
+      requests.push({ url, init });
+      return new Response(JSON.stringify({ state: "DISABLED" }), {
+        status: 200,
+      });
+    }),
+  );
+  const api = new ApiClient("https://api.example.test");
+  expect(
+    await api.layoutIllustrationQuote("private-token", storeId, id),
+  ).toEqual({ state: "DISABLED" });
+  expect(requests[0]?.url).toBe(
+    `https://api.example.test/api/v1/copilot/layout-illustrations/${id}/quote`,
+  );
+  expect(requests[0]?.init.method).toBe("GET");
+  expect(requests[0]?.init.headers).toMatchObject({
+    authorization: "Bearer private-token",
+    "x-store-id": storeId,
+  });
+  expect(requests[0]?.url).not.toContain("private-token");
+  await expect(
+    api.layoutIllustrationGeneration("private-token", storeId, id),
+  ).rejects.toBeInstanceOf(ApiClientError);
+  expect(requests[1]?.url).toBe(
+    `https://api.example.test/api/v1/copilot/layout-illustration-generations/${id}`,
+  );
+});
+it("cancels generation metadata reads after thirty seconds instead of waiting indefinitely", async () => {
+  vi.useFakeTimers();
+  let observed: AbortSignal | undefined;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          observed = init.signal as AbortSignal;
+          observed.addEventListener("abort", () => reject(Error("ABORTED")));
+        }),
+    ),
+  );
+  const task = new ApiClient(
+    "https://api.example.test",
+  ).layoutIllustrationQuote("token", storeId, id);
+  const rejected = expect(task).rejects.toBeInstanceOf(ApiClientError);
+  await vi.advanceTimersByTimeAsync(30000);
+  await rejected;
+  expect(observed?.aborted).toBe(true);
+});

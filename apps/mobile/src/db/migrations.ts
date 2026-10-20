@@ -911,6 +911,12 @@ ALTER TABLE copilot_layout_illustration_files ADD COLUMN offline_required INTEGE
 UPDATE copilot_layout_illustration_files SET last_accessed_at=created_at;
 CREATE INDEX copilot_layout_illustration_cache_lru ON copilot_layout_illustration_files(store_id,owner_id,last_accessed_at,id);`,
   },
+  {
+    version: 60,
+    name: "private-layout-illustration-generation-decisions",
+    sql: `CREATE TABLE copilot_layout_illustration_generations(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,preparation_id TEXT NOT NULL,created_at TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illustration_generations(store_id,owner_id,preparation_id,created_at DESC,id DESC);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

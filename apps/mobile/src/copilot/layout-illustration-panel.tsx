@@ -1,3 +1,5 @@
+import { LayoutIllustrationGenerationPanel } from "./layout-illustration-generation-panel";
+import type { LayoutIllustrationGenerationRepository } from "./layout-illustration-generation-repository";
 import { LayoutIllustrationViewer } from "./layout-illustration-viewer";
 import type { LayoutIllustrationTransfer } from "./layout-illustration-transfer";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -12,6 +14,7 @@ import type { CopilotStoreLayoutScenarioReader } from "./store-layout-scenario-r
 type State = Awaited<ReturnType<CopilotStoreLayoutScenarioReader["open"]>>;
 export function LayoutIllustrationPanel({
   repository,
+  generation,
   files,
   message,
   state,
@@ -20,6 +23,13 @@ export function LayoutIllustrationPanel({
   onOpenPlan,
 }: {
   repository: Pick<LayoutIllustrationRepository, "prepare" | "find">;
+  generation?: {
+    repository: Pick<
+      LayoutIllustrationGenerationRepository,
+      "find" | "confirm"
+    >;
+    quote(id: string): Promise<unknown>;
+  };
   files?: Pick<
     LayoutIllustrationTransfer,
     "load" | "refresh" | "setOfflineRequired"
@@ -33,6 +43,7 @@ export function LayoutIllustrationPanel({
   const [record, setRecord] = useState<
       Awaited<ReturnType<LayoutIllustrationRepository["find"]>> | undefined
     >(),
+    [imageEpoch, setImageEpoch] = useState(0),
     [error, setError] = useState<string>(),
     [busy, setBusy] = useState(false),
     working = useRef(false),
@@ -157,8 +168,30 @@ export function LayoutIllustrationPanel({
           <Text className="text-muted">
             Le plan et les affectations d’origine sont conservés.
           </Text>
+          {generation ? (
+            <LayoutIllustrationGenerationPanel
+              repository={generation.repository}
+              quote={generation.quote}
+              message={message}
+              preparation={record.entity}
+              deviceId={deviceId}
+              canGenerate={canPrepare}
+              current={state.freshness === "CURRENT"}
+              synced={record.syncState === "SYNCED"}
+              onCompleted={() => {
+                const epoch = active.current;
+                void files
+                  ?.refresh(message)
+                  .then(() => {
+                    if (epoch === active.current) setImageEpoch((v) => v + 1);
+                  })
+                  .catch(() => undefined);
+              }}
+            />
+          ) : null}
           {files ? (
             <LayoutIllustrationViewer
+              key={imageEpoch}
               transfer={files}
               message={message}
               current={state.freshness === "CURRENT"}

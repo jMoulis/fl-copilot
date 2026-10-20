@@ -1,3 +1,4 @@
+import { applyIllustrationGenerationRecord } from "../copilot/layout-illustration-generation-repository";
 import { applyLayoutIllustrationRecord } from "../copilot/layout-illustration-repository";
 import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
 import { applyVisualEntity } from "../products/visual-library-repository";
@@ -85,6 +86,37 @@ export async function applyBootstrap(
       await transaction.runAsync(
         "DELETE FROM app_metadata WHERE key=?",
         `layout-illustrations:${storeId}:${ownerId}`,
+      );
+    }
+    if (bootstrap.entities.layoutIllustrationGenerations) {
+      if (
+        !ownerId ||
+        ownerId !== bootstrap.entities.layoutIllustrationGenerationOwnerId
+      )
+        throw Error("LAYOUT_ILLUSTRATION_SCOPE_INVALID");
+      for (const e of bootstrap.entities.layoutIllustrationGenerations)
+        await applyIllustrationGenerationRecord(
+          transaction,
+          { storeId, ownerId },
+          e,
+        );
+      if (!bootstrap.entities.layoutIllustrationGenerationHistoryRequired)
+        await transaction.runAsync(
+          "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+          `layout-illustration-generations:${storeId}:${ownerId}`,
+          "1",
+          bootstrap.serverTime,
+        );
+    }
+    if (bootstrap.entities.layoutIllustrationGenerationHistoryRequired) {
+      if (
+        !ownerId ||
+        ownerId !== bootstrap.entities.layoutIllustrationGenerationOwnerId
+      )
+        throw Error("LAYOUT_ILLUSTRATION_SCOPE_INVALID");
+      await transaction.runAsync(
+        "DELETE FROM app_metadata WHERE key=?",
+        `layout-illustration-generations:${storeId}:${ownerId}`,
       );
     }
     if (bootstrap.entities.copilotActionExecutions) {
@@ -482,6 +514,9 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "copilotActionExecutions",
     "copilotActionExecutionOwnerId",
     "copilotExecutionLinkOwnerId",
+    "layoutIllustrationGenerations",
+    "layoutIllustrationGenerationOwnerId",
+    "layoutIllustrationGenerationHistoryRequired",
     "layoutIllustrations",
     "layoutIllustrationOwnerId",
     "layoutIllustrationHistoryRequired",

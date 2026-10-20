@@ -1,3 +1,4 @@
+import type { LayoutIllustrationGenerationService } from "../copilot/layout-illustration-generation";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
   applyVisualCommand,
@@ -87,6 +88,7 @@ export function createMongoSyncPushService(
   database: DatabaseService,
   now: () => Date = () => new Date(),
   mercalysReader?: PrivateSourceReader,
+  illustrationGeneration?: Pick<LayoutIllustrationGenerationService, "apply">,
 ): SyncPushService {
   const processedCommands = createMongoProcessedCommandService(database, now);
   const syncChanges = createMongoSyncChangeService(now);
@@ -147,6 +149,7 @@ export function createMongoSyncPushService(
                 syncChanges,
                 ownerId,
                 mercalysReader,
+                illustrationGeneration,
               ),
           );
           if (
@@ -247,6 +250,7 @@ async function applyCommand(
   syncChanges: ReturnType<typeof createMongoSyncChangeService>,
   ownerId?: string,
   mercalysReader?: PrivateSourceReader,
+  illustrationGeneration?: Pick<LayoutIllustrationGenerationService, "apply">,
 ) {
   if (isVisualEntityType(command.entityType))
     return applyVisualCommand(
@@ -267,6 +271,7 @@ async function applyCommand(
       requestId,
       syncChanges,
       now,
+      illustrationGeneration,
     );
   if (command.type === "MERCALYS_PUBLISH")
     return applyMercalysPublicationCommand(

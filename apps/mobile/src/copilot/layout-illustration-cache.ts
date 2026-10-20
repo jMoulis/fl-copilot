@@ -60,6 +60,7 @@ export async function reserveIllustrationCache(
   additionalBytes: number,
   check: () => void,
   budgetBytes = LAYOUT_ILLUSTRATION_CACHE_BYTES,
+  displayedResultId?: string,
 ) {
   z.number().int().nonnegative().parse(additionalBytes);
   z.number().int().nonnegative().parse(budgetBytes);
@@ -79,20 +80,25 @@ export async function reserveIllustrationCache(
   const rows = await db.getAllAsync<{
     id: string;
     preparation_id: string;
+    created_at: string;
     manifest_json: string;
     offline_required: number;
   }>(
-    "SELECT id,preparation_id,manifest_json,offline_required FROM copilot_layout_illustration_files WHERE store_id=? AND owner_id=? ORDER BY last_accessed_at,id",
+    "SELECT id,preparation_id,created_at,manifest_json,offline_required FROM copilot_layout_illustration_files WHERE store_id=? AND owner_id=? ORDER BY last_accessed_at,id",
     scope.storeId,
     scope.userId,
   );
   check();
+  const displayed =
+    displayedResultId ??
+    rows
+      .filter((r) => r.preparation_id === incoming.preparation.id)
+      .sort(
+        (a, b) =>
+          b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id),
+      )[0]?.id;
   for (const row of rows) {
-    if (
-      row.id === incoming.id ||
-      row.preparation_id === incoming.preparation.id ||
-      row.offline_required
-    )
+    if (row.id === incoming.id || row.id === displayed || row.offline_required)
       continue;
     let m: LayoutIllustrationManifest;
     try {

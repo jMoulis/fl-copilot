@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { layoutIllustrationGenerationPolicySchema } from "@fl-copilot/domain";
 import { emailIntakeReceivingDomainSchema } from "@fl-copilot/sync-contracts";
 const environmentSchema = z.object({
   NODE_ENV: z
@@ -71,6 +72,11 @@ const environmentSchema = z.object({
     .min(4096)
     .max(1048576)
     .default(524288),
+  LAYOUT_ILLUSTRATION_GENERATION_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  LAYOUT_ILLUSTRATION_GENERATION_POLICY: z.string().max(4000).optional(),
   WASTE_RECEIPT_VISION_MODEL: z.string().trim().min(1).default("gpt-5.6-luna"),
   WASTE_RECEIPT_ARITHMETIC_TOLERANCE_EUR: z
     .string()
@@ -126,6 +132,26 @@ export function parseEnvironment(
     throw new Error(
       "Invalid environment: RESEND_API_KEY, RESEND_RECEIVING_DOMAIN, RESEND_RECEIVING_WEBHOOK_SECRET",
     );
+  if (result.data.LAYOUT_ILLUSTRATION_GENERATION_ENABLED) {
+    let validPolicy = false;
+    try {
+      validPolicy = layoutIllustrationGenerationPolicySchema.safeParse(
+        JSON.parse(result.data.LAYOUT_ILLUSTRATION_GENERATION_POLICY ?? "null"),
+      ).success;
+    } catch {
+      /* names only */
+    }
+    if (
+      !validPolicy ||
+      !result.data.OPENAI_API_KEY ||
+      !result.data.INNGEST_EVENT_KEY ||
+      !result.data.INNGEST_SIGNING_KEY ||
+      !result.data.AUTH_TOKEN_SECRET
+    )
+      throw new Error(
+        "Invalid environment: LAYOUT_ILLUSTRATION_GENERATION_POLICY, OPENAI_API_KEY, INNGEST_EVENT_KEY, INNGEST_SIGNING_KEY, AUTH_TOKEN_SECRET",
+      );
+  }
   if (result.data.NODE_ENV === "production" && !result.data.MONGODB_URI) {
     throw new Error("Invalid environment: MONGODB_URI");
   }

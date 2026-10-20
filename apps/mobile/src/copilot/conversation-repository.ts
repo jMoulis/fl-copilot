@@ -1,3 +1,4 @@
+import { applyIllustrationGenerationRecord } from "./layout-illustration-generation-repository";
 import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
 import { MAX_STORE_PHOTOS_PER_TURN } from "@fl-copilot/domain";
 import { applyActionExecutionRecord } from "./action-execution-repository";
@@ -60,11 +61,14 @@ export async function applyCopilotRecord(
     | "copilot_decision"
     | "copilot_execution_link"
     | "copilot_action_execution"
+    | "copilot_layout_illustration_generation"
     | "copilot_layout_illustration",
 
   payload: unknown,
   ackVersion?: number,
 ) {
+  if (type === "copilot_layout_illustration_generation")
+    return applyIllustrationGenerationRecord(db, scope, payload, ackVersion);
   if (type === "copilot_layout_illustration")
     return applyLayoutIllustrationRecord(db, scope, payload, ackVersion);
   if (type === "email_intake_decision")
