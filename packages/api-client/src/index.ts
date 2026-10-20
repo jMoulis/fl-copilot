@@ -132,6 +132,7 @@ export class ApiClient {
       layoutScenarios?: boolean;
       layoutPreparation?: boolean;
       layoutEdits?: boolean;
+      layoutInventory?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
       storeConflicts?: boolean | 2 | 3 | 4 | 5;
@@ -213,6 +214,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.layoutEdits
                   ? { "x-copilot-layout-edits": "1" }
+                  : {}),
+                ...(streaming.layoutEdits && streaming.layoutInventory
+                  ? { "x-copilot-layout-inventory": "1" }
                   : {}),
                 ...(streaming.storeOperations
                   ? { "x-copilot-store-operations": "1" }

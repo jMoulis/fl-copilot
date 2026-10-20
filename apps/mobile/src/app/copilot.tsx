@@ -1034,6 +1034,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               layoutScenarios: true,
               layoutPreparation: true,
               layoutEdits: canManageStoreSettings,
+              layoutInventory: canManageStoreSettings,
               storeOperations: canCaptureStoreEvents || canManageStoreSettings,
               needProposals: canManageProducts,
               storeConflicts:

@@ -1197,6 +1197,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                   }
                 : {}),
               layoutEdits: request.headers["x-copilot-layout-edits"] === "1",
+              layoutInventory:
+                request.headers["x-copilot-layout-edits"] === "1" &&
+                request.headers["x-copilot-layout-inventory"] === "1",
               storeLayout: async () => {
                 const principal = await authorize();
                 const result = await readCopilotStoreLayoutSnapshot(

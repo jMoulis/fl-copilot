@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { it, expect } from "vitest";
-import { copilotLayoutEditInputSchema } from "@fl-copilot/domain";
+import {
+  copilotLayoutEditInputSchema,
+  legacyCopilotLayoutEditInputSchema,
+  layoutInventoryCreatedIdsSchema,
+  copilotMessageSchema,
+  readCopilotLayoutEditProposal,
+} from "@fl-copilot/domain";
 import {
   layoutFixture,
   nextLayout,
@@ -278,3 +284,279 @@ it("strictly rejects invented authority, query, IDs and measured quality; unknow
     ).status,
   ).toBe("BLOCKED");
 });
+
+it.each([
+  "ADD_ASSEMBLY",
+  "ADD_TG",
+  "ADD_FIXED",
+  "ADD_TG_SURFACE",
+  "COPY_ASSEMBLY",
+  "COPY_FURNITURE",
+] as const)(
+  "replays %s with server-owned identities and the same native inventory engine",
+  (action) => {
+    const f = fixture(),
+      a = f.head.content.assemblies[0]!,
+      tg = f.head.content.furniture.find((v) => v.kind === "TG")!;
+    const details =
+      action === "ADD_FIXED"
+        ? { assemblyId: a.id, face: "A", order: 5 }
+        : action === "ADD_TG_SURFACE"
+          ? { furnitureId: tg.id, surfaceKind: "BAC" }
+          : action === "COPY_ASSEMBLY"
+            ? { targetId: a.id, copyDimensions: false }
+            : action === "COPY_FURNITURE"
+              ? {
+                  targetId: f.head.content.furniture[0]!.id,
+                  copyDimensions: true,
+                  slot: { assemblyId: a.id, face: "A", order: 5 },
+                }
+              : {};
+    const input = {
+      action,
+      expectedRevisionId: f.head.revisionId,
+      label: "Nouvel élément",
+      ...details,
+    };
+    const original = JSON.stringify(f.head);
+    const preview = presentStoreLayoutEdit(
+      f.head.storeId,
+      input,
+      f.snapshot,
+      randomUUID,
+    );
+    expect(preview.status).toBe("READY");
+    const created = layoutInventoryCreatedIdsSchema.parse(preview.created);
+    expect(created.ids.length).toBe(
+      action === "COPY_ASSEMBLY"
+        ? 25
+        : ["ADD_FIXED", "COPY_FURNITURE"].includes(action)
+          ? 3
+          : 1,
+    );
+    const replay = prepareStoreLayoutEdit(
+      f.head.storeId,
+      input,
+      f.snapshot,
+      created,
+    );
+    expect(replay.status).toBe("READY");
+    expect(replay.created).toEqual(created);
+    expect(replay.changes).toEqual(preview.changes);
+    const prior = new Set(
+      [
+        ...f.head.content.assemblies,
+        ...f.head.content.furniture,
+        ...f.head.content.surfaces,
+      ].map((v) => v.id),
+    );
+    const newItems = [
+      ...replay.after!.assemblies,
+      ...replay.after!.furniture,
+      ...replay.after!.surfaces,
+    ].filter((v) => !prior.has(v.id));
+    expect(new Set(newItems.map((v) => v.id))).toEqual(new Set(created.ids));
+    for (const item of newItems) {
+      if ("x" in item) expect(item.x.mm).toBeNull();
+      if ("rotation" in item) expect(item.rotation).toBeNull();
+      if ("maxLoadKg" in item) expect(item.maxLoadKg).toBeNull();
+      for (const m of Object.values(item.dimensions))
+        expect(["UNKNOWN", "DECLARED"]).toContain(m.quality);
+    }
+    expect(JSON.stringify(f.head)).toBe(original);
+    expect(() =>
+      buildStoreLayoutEditMessages(
+        copilotMessageSchema.parse({
+          id: randomUUID(),
+          storeId: f.head.storeId,
+          ownerId: f.head.updatedBy,
+          conversationId: randomUUID(),
+          role: "ASSISTANT",
+          text: "À examiner",
+          attachments: [],
+          replyToMessageId: randomUUID(),
+          supersedesMessageId: null,
+          version: 1,
+          createdAt: f.head.updatedAt,
+        }),
+        [preview],
+      ),
+    ).not.toThrow();
+  },
+);
+it("refuses missing, unused, duplicate and colliding server identities without changing any source record", () => {
+  const f = fixture(),
+    input = {
+      action: "ADD_FIXED",
+      expectedRevisionId: f.head.revisionId,
+      label: "Élément",
+      assemblyId: f.head.content.assemblies[0]!.id,
+      face: "A",
+      order: 5,
+    };
+  const original = JSON.stringify(f.head);
+  for (const ids of [
+    [],
+    [randomUUID()],
+    Array.from({ length: 4 }, randomUUID),
+    [f.head.content.furniture[0]!.id, randomUUID(), randomUUID()],
+    Array(3).fill(randomUUID()),
+  ]) {
+    expect(
+      prepareStoreLayoutEdit(f.head.storeId, input, f.snapshot, { ids }).status,
+    ).toBe("BLOCKED");
+  }
+  expect(prepareStoreLayoutEdit(f.head.storeId, input, f.snapshot).status).toBe(
+    "BLOCKED",
+  );
+  expect(JSON.stringify(f.head)).toBe(original);
+  for (const field of [
+    "created",
+    "ids",
+    "storeId",
+    "actorId",
+    "canWrite",
+    "query",
+  ])
+    expect(
+      copilotLayoutEditInputSchema.safeParse({
+        ...input,
+        [field]: randomUUID(),
+      }).success,
+    ).toBe(false);
+  expect(legacyCopilotLayoutEditInputSchema.safeParse(input).success).toBe(
+    false,
+  );
+});
+it("removes assemblies and fixed furniture only from the new draft, detaches mobiles and rejects mandatory surface removal", () => {
+  const f = fixture(),
+    host = f.head.content.furniture[0]!;
+  f.head.content = addStoreLayoutMobile(
+    f.head.content,
+    randomUUID,
+    "Mobile",
+    host.id,
+  );
+  const mobile = f.head.content.furniture.at(-1)!,
+    surface = f.head.content.surfaces.at(-1)!;
+  for (const [action, targetId] of [
+    ["REMOVE_ASSEMBLY", host.assemblyId],
+    ["REMOVE_FURNITURE", host.id],
+  ]) {
+    const r = prepareStoreLayoutEdit(
+      f.head.storeId,
+      { action, expectedRevisionId: f.head.revisionId, targetId },
+      f.snapshot,
+    );
+    expect(r.status).toBe("READY");
+    expect(r.created).toBeNull();
+    expect(r.after!.furniture.find((v) => v.id === mobile.id)).toEqual({
+      ...mobile,
+      hostId: null,
+    });
+    expect(r.after!.surfaces.find((v) => v.id === surface.id)).toEqual(surface);
+    expect(r.after!.furniture.some((v) => v.id === host.id)).toBe(false);
+    expect(f.head.content.furniture.some((v) => v.id === host.id)).toBe(true);
+  }
+  for (const targetId of [
+    f.head.content.surfaces[0]!.id,
+    surface.id,
+    randomUUID(),
+  ])
+    expect(
+      prepareStoreLayoutEdit(
+        f.head.storeId,
+        {
+          action: "REMOVE_TG_SURFACE",
+          expectedRevisionId: f.head.revisionId,
+          targetId,
+        },
+        f.snapshot,
+      ).status,
+    ).toBe("BLOCKED");
+});
+it("requires vacant fixed slots, explicit copy dimensions, and TG surface composition; keeps complete large proposals in the private message bound", () => {
+  const f = fixture(),
+    fixed = f.head.content.furniture[0]!,
+    tg = f.head.content.furniture.find((v) => v.kind === "TG")!;
+  const copy = {
+    action: "COPY_FURNITURE",
+    expectedRevisionId: f.head.revisionId,
+    targetId: fixed.id,
+    label: "Copie",
+    copyDimensions: false,
+    slot: null,
+  };
+  expect(presentStoreLayoutEdit(f.head.storeId, copy, f.snapshot).status).toBe(
+    "BLOCKED",
+  );
+  expect(
+    presentStoreLayoutEdit(
+      f.head.storeId,
+      {
+        ...copy,
+        slot: {
+          assemblyId: fixed.assemblyId,
+          face: fixed.face,
+          order: fixed.order,
+        },
+      },
+      f.snapshot,
+    ).status,
+  ).toBe("BLOCKED");
+  expect(
+    copilotLayoutEditInputSchema.safeParse({
+      ...copy,
+      copyDimensions: undefined,
+    }).success,
+  ).toBe(false);
+  expect(
+    presentStoreLayoutEdit(
+      f.head.storeId,
+      {
+        ...copy,
+        targetId: tg.id,
+        slot: { assemblyId: fixed.assemblyId, face: "A", order: 5 },
+      },
+      f.snapshot,
+    ).status,
+  ).toBe("BLOCKED");
+  const template = f.head.content.surfaces[0]!;
+  f.head.content.surfaces.push(
+    ...Array.from({ length: 176 }, () => ({
+      ...template,
+      id: randomUUID(),
+      furnitureId: tg.id,
+    })),
+  );
+  const preview = presentStoreLayoutEdit(
+    f.head.storeId,
+    { ...copy, targetId: tg.id },
+    f.snapshot,
+  );
+  expect(preview.status).toBe("READY");
+  expect(
+    layoutInventoryCreatedIdsSchema.parse(preview.created).ids,
+  ).toHaveLength(177);
+  const assistant = copilotMessageSchema.parse({
+    id: randomUUID(),
+    storeId: f.head.storeId,
+    ownerId: f.head.updatedBy,
+    conversationId: randomUUID(),
+    role: "ASSISTANT",
+    text: "À examiner",
+    attachments: [],
+    replyToMessageId: randomUUID(),
+    supersedesMessageId: null,
+    version: 1,
+    createdAt: f.head.updatedAt,
+  });
+  const card = buildStoreLayoutEditMessages(assistant, [preview])[0]!;
+  expect(card.text.length).toBeLessThan(16000);
+  expect(readCopilotLayoutEditProposal(card).content.created).toEqual(
+    preview.created,
+  );
+});
+
+import { presentStoreLayoutEdit } from "../src/copilot/store-layout-edit-tool";
+import { buildStoreLayoutEditMessages } from "../src/copilot/store-layout-edit-messages";
