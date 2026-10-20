@@ -20,7 +20,10 @@ export function LayoutIllustrationPanel({
   onOpenPlan,
 }: {
   repository: Pick<LayoutIllustrationRepository, "prepare" | "find">;
-  files?: Pick<LayoutIllustrationTransfer, "load" | "refresh">;
+  files?: Pick<
+    LayoutIllustrationTransfer,
+    "load" | "refresh" | "setOfflineRequired"
+  >;
   message: CopilotMessage;
   state: State;
   deviceId: string;

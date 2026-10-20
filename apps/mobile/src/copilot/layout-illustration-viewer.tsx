@@ -12,7 +12,10 @@ export function LayoutIllustrationViewer({
   current,
   synced,
 }: {
-  transfer: Pick<LayoutIllustrationTransfer, "load" | "refresh">;
+  transfer: Pick<
+    LayoutIllustrationTransfer,
+    "load" | "refresh" | "setOfflineRequired"
+  >;
   message: CopilotMessage;
   current: boolean;
   synced: boolean;
@@ -70,10 +73,38 @@ export function LayoutIllustrationViewer({
             "Aucune illustration n’est disponible pour cette préparation.",
           );
       }
+    } catch (err) {
+      if (e === epoch.current)
+        setError(
+          err instanceof Error &&
+            err.message === "LAYOUT_ILLUSTRATION_CACHE_FULL"
+            ? "L’espace réservé aux illustrations est plein (64 Mo par magasin et compte). Retirez la conservation hors connexion d’anciennes illustrations avant de réessayer. Les photos et documents d’origine restent conservés."
+            : "Les images n’ont pas pu être récupérées. Les images déjà conservées restent disponibles.",
+        );
+    } finally {
+      if (e === epoch.current) {
+        working.current = false;
+        setBusy(false);
+      }
+    }
+  }
+  async function retainOffline() {
+    if (working.current || reading || !view) return;
+    const e = epoch.current;
+    working.current = true;
+    setBusy(true);
+    setError(undefined);
+    try {
+      const next = await transfer.setOfflineRequired(
+        message,
+        view.manifest.id,
+        !view.offlineRequired,
+      );
+      if (e === epoch.current) setView(next);
     } catch {
       if (e === epoch.current)
         setError(
-          "Les images n’ont pas pu être récupérées. Les images déjà conservées restent disponibles.",
+          "La préférence de conservation n’a pas pu être enregistrée. Vos images restent inchangées.",
         );
     } finally {
       if (e === epoch.current) {
@@ -158,9 +189,30 @@ export function LayoutIllustrationViewer({
         <Text className="text-muted">
           {reading
             ? "Lecture des images conservées…"
-            : "Aucune illustration n’est conservée sur cet appareil."}
+            : view
+              ? "Les images de cette illustration ne sont pas toutes disponibles sur cet appareil."
+              : "Aucune illustration n’est conservée sur cet appareil."}
         </Text>
       )}
+      {view && (ready || view.offlineRequired) ? (
+        <View className="gap-3">
+          {" "}
+          <Text className="text-muted">
+            {view.offlineRequired
+              ? "Ces images sont conservées hors connexion sur cet appareil."
+              : "Les anciennes copies peuvent être libérées pour limiter l’espace utilisé. Leurs originaux restent récupérables."}
+          </Text>
+          <SecondaryButton
+            label={
+              view.offlineRequired
+                ? "Autoriser la libération de ces copies"
+                : "Conserver hors connexion"
+            }
+            disabled={busy || reading}
+            onPress={() => void retainOffline()}
+          />
+        </View>
+      ) : null}
       <SecondaryButton
         label={
           busy

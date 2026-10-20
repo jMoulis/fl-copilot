@@ -175,6 +175,30 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         const filename = (id: string, v: string) =>
           join(root, "native", f.scope.storeId, f.scope.ownerId, id, v);
         const filePort: LayoutIllustrationFilePort = {
+          usage: async (scope) => {
+            const fs = await import("node:fs/promises");
+            async function size(path: string): Promise<number> {
+              try {
+                const stat = await fs.stat(path);
+                if (stat.isFile()) return stat.size;
+                return (
+                  await Promise.all(
+                    (await fs.readdir(path)).map((name) =>
+                      size(join(path, name)),
+                    ),
+                  )
+                ).reduce((a, b) => a + b, 0);
+              } catch (e) {
+                if ((e as NodeJS.ErrnoException).code === "ENOENT") return 0;
+                throw e;
+              }
+            }
+            return size(join(root, "native", scope.storeId, scope.userId));
+          },
+          remove: async (m, v, check) => {
+            check();
+            await rm(filename(m.id, v), { force: true });
+          },
           existing: async (manifest, v) => {
             const path = filename(manifest.id, v);
             try {

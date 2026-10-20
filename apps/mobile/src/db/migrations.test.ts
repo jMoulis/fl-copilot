@@ -604,3 +604,33 @@ INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,last_error,crea
     database.close();
   }
 });
+it("upgrades illustration cache v58 without losing private recovery metadata or pending commands", async () => {
+  const { adapter, database } = openTemporaryDatabase();
+  try {
+    await runLocalMigrations(adapter, localMigrations.slice(0, 58));
+    database
+      .prepare(
+        "INSERT INTO copilot_layout_illustration_files(id,store_id,owner_id,preparation_id,created_at,manifest_json) VALUES('result','store','owner','preparation','2026-10-20T12:00:00Z','{\"preserved\":true}')",
+      )
+      .run();
+    const before = database.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    await runLocalMigrations(adapter);
+    expect(
+      database.prepare("SELECT * FROM copilot_layout_illustration_files").get(),
+    ).toEqual({
+      id: "result",
+      store_id: "store",
+      owner_id: "owner",
+      preparation_id: "preparation",
+      created_at: "2026-10-20T12:00:00Z",
+      manifest_json: '{"preserved":true}',
+      last_accessed_at: "2026-10-20T12:00:00Z",
+      offline_required: 0,
+    });
+    expect(
+      database.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+    ).toEqual(before);
+  } finally {
+    database.close();
+  }
+});

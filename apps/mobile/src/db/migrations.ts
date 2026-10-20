@@ -903,6 +903,14 @@ CREATE INDEX copilot_layout_illustration_scope ON copilot_layout_illustrations(s
     sql: `CREATE TABLE copilot_layout_illustration_files(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,preparation_id TEXT NOT NULL,created_at TEXT NOT NULL,manifest_json TEXT NOT NULL);
 CREATE INDEX copilot_layout_illustration_files_scope ON copilot_layout_illustration_files(store_id,owner_id,preparation_id,created_at DESC,id DESC);`,
   },
+  {
+    version: 59,
+    name: "private-layout-illustration-cache-retention",
+    sql: `ALTER TABLE copilot_layout_illustration_files ADD COLUMN last_accessed_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE copilot_layout_illustration_files ADD COLUMN offline_required INTEGER NOT NULL DEFAULT 0;
+UPDATE copilot_layout_illustration_files SET last_accessed_at=created_at;
+CREATE INDEX copilot_layout_illustration_cache_lru ON copilot_layout_illustration_files(store_id,owner_id,last_accessed_at,id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

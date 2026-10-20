@@ -34,6 +34,21 @@ vi.mock("expo-file-system", async () => {
     constructor(...parts: (string | { uri: string })[]) {
       this.uri = url.pathToFileURL(p(parts)).href;
     }
+    get exists() {
+      return fs.existsSync(url.fileURLToPath(this.uri));
+    }
+    list() {
+      return fs
+        .readdirSync(url.fileURLToPath(this.uri), { withFileTypes: true })
+        .map((e) =>
+          e.isDirectory()
+            ? new Directory(this, e.name)
+            : new File(this, e.name),
+        );
+    }
+    delete() {
+      fs.rmdirSync(url.fileURLToPath(this.uri));
+    }
     create() {
       fs.mkdirSync(url.fileURLToPath(this.uri), { recursive: true });
     }
@@ -168,5 +183,158 @@ it("repairs only a corrupt derived cache after verifying a complete replacement;
     expect(await files.existing(f.manifest, "image")).toBe(uri);
   } finally {
     f.db.close();
+  }
+});
+it("counts actual private copies and interrupted/unknown downloads, removing only the exact selected remote-copy path", async () => {
+  const f = await illustrationAssetsFixture();
+  try {
+    const uri = await files.write(
+        f.manifest,
+        "source",
+        f.bytes.source,
+        () => {},
+      ),
+      scope = { storeId: f.scope.storeId, userId: f.scope.ownerId };
+    expect(await files.usage(scope)).toBe(f.bytes.source.length);
+    const unknown = join(fileURLToPath(uri), "..", "abandoned.partial");
+    await writeFile(unknown, new Uint8Array([1, 2, 3]));
+    expect(await files.usage(scope)).toBe(f.bytes.source.length + 3);
+    expect(
+      await files.usage({
+        ...scope,
+        userId: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).toBe(0);
+    await expect(
+      files.remove(f.manifest, "source", () => {
+        throw Error("SCOPE_CHANGED");
+      }),
+    ).rejects.toThrow("SCOPE_CHANGED");
+    expect(await files.existing(f.manifest, "source")).toBe(uri);
+    await files.remove(f.manifest, "source", () => {});
+    expect(await files.existing(f.manifest, "source")).toBeNull();
+    expect(await files.usage(scope)).toBe(3);
+    expect(new Uint8Array(await readFile(unknown))).toEqual(
+      new Uint8Array([1, 2, 3]),
+    );
+  } finally {
+    f.db.close();
+  }
+});
+it("enforces the quota through the production transfer and real files, then restores its pinned comparison from SQLite after restart", async () => {
+  const { randomUUID } = await import("node:crypto"),
+    { DatabaseSync } = await import("node:sqlite"),
+    { LayoutIllustrationTransfer } =
+      await import("./layout-illustration-transfer"),
+    { LayoutIllustrationRepository } =
+      await import("./layout-illustration-repository"),
+    { AllocationSqliteAdapter } =
+      await import("../../../../scripts/test-physical-allocation-sqlite"),
+    { illustrationDigest } =
+      await import("../../../../scripts/test-layout-illustration-preparations"),
+    { serializeLayoutIllustrationMetadata } =
+      await import("@fl-copilot/sync-contracts"),
+    { sourceOriginalHash } = await import("../documents/source-original-hash"),
+    path = join(native.root, `${randomUUID()}.sqlite`),
+    f = await illustrationAssetsFixture(path);
+  let closed = false;
+  try {
+    const { manifestHash: hash, ...oldMetadata } = f.manifest;
+    void hash;
+    const metadata = {
+        ...oldMetadata,
+        id: randomUUID(),
+        preparation: { ...f.preparation, id: randomUUID() },
+      },
+      old = {
+        ...metadata,
+        manifestHash: sourceOriginalHash(
+          serializeLayoutIllustrationMetadata(metadata),
+        ),
+      },
+      scope = { storeId: f.scope.storeId, userId: f.scope.ownerId },
+      budgetBytes = f.bytes.source.length + f.bytes.image.length,
+      originalDocument = join(
+        native.root,
+        `${randomUUID()}-unsynced-receipt.jpg`,
+      );
+    await writeFile(originalDocument, new Uint8Array([9, 8, 7]));
+    await f.a.runAsync(
+      "INSERT INTO copilot_layout_illustration_files(id,store_id,owner_id,preparation_id,created_at,manifest_json,last_accessed_at,offline_required) VALUES(?,?,?,?,?,?,?,1)",
+      old.id,
+      scope.storeId,
+      scope.userId,
+      old.preparation.id,
+      old.createdAt,
+      JSON.stringify(old),
+      old.createdAt,
+    );
+    await files.write(old, "source", f.bytes.source, () => {});
+    await files.write(old, "image", f.bytes.image, () => {});
+    let downloads = 0;
+    const api = {
+        manifest: async () => ({ state: "READY", manifest: f.manifest }),
+        download: async (_s: string, _m: unknown, v: keyof typeof f.bytes) => {
+          downloads++;
+          return f.bytes[v];
+        },
+      },
+      transfer = new LayoutIllustrationTransfer(
+        f.a,
+        f.repo,
+        api,
+        files,
+        () => scope,
+        { budgetBytes },
+      );
+    await expect(transfer.refresh(f.card)).rejects.toThrow("CACHE_FULL");
+    expect(downloads).toBe(0);
+    expect(await files.usage(scope)).toBe(budgetBytes);
+    await f.a.runAsync(
+      "UPDATE copilot_layout_illustration_files SET offline_required=0 WHERE id=?",
+      old.id,
+    );
+    const restored = await transfer.refresh(f.card);
+    expect(restored?.sourceUri).toBeTruthy();
+    expect(restored?.imageUri).toBeTruthy();
+    expect(await files.existing(old, "source")).toBeNull();
+    expect(await files.existing(old, "image")).toBeNull();
+    expect(await files.usage(scope)).toBe(budgetBytes);
+    expect(new Uint8Array(await readFile(originalDocument))).toEqual(
+      new Uint8Array([9, 8, 7]),
+    );
+    const retained = await transfer.setOfflineRequired(
+        f.card,
+        f.manifest.id,
+        true,
+      ),
+      before = await f.a.getAllAsync("SELECT * FROM sync_outbox");
+    f.db.close();
+    closed = true;
+    const db = new DatabaseSync(path),
+      a = new AllocationSqliteAdapter(db);
+    try {
+      const offline = new LayoutIllustrationTransfer(
+        a,
+        new LayoutIllustrationRepository(a, f.scope, illustrationDigest),
+        {
+          manifest: async () => {
+            throw Error("OFFLINE");
+          },
+          download: async () => {
+            throw Error("OFFLINE");
+          },
+        },
+        files,
+        () => scope,
+        { budgetBytes },
+      );
+      expect(await offline.load(f.card)).toEqual(retained);
+      expect(await a.getAllAsync("SELECT * FROM sync_outbox")).toEqual(before);
+    } finally {
+      db.close();
+    }
+  } finally {
+    if (!closed) f.db.close();
   }
 });
