@@ -160,9 +160,8 @@ function inspectContainer(bytes: Uint8Array, workbook: boolean) {
     if (directory && (uncompressedSize || compressedSize)) fail("INVALID");
     if (
       !directory &&
-      (!uncompressedSize ||
-        !compressedSize ||
-        uncompressedSize / compressedSize > 100)
+      uncompressedSize > 0 &&
+      (!compressedSize || uncompressedSize / compressedSize > 100)
     )
       fail("LIMIT");
     if (method === 0 && compressedSize !== uncompressedSize) fail("INVALID");

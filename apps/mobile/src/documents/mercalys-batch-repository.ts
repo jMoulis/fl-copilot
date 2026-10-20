@@ -170,6 +170,39 @@ export class MercalysBatchRepository {
       for (const file of input.files) {
         const previous = files.find((f) => f.id === file.id);
         if (previous) {
+          if (previous.localUri === null || file.localUri === null) {
+            if (
+              JSON.stringify({ ...previous, localUri: undefined }) !==
+              JSON.stringify({ ...file, localUri: undefined })
+            )
+              throw Error("MERCALYS_BATCH_ID_REUSED");
+            // Fill only a missing device copy. Existing membership, order, publication
+            // and non-null retained pointers are never rewritten by a failed retry.
+            if (previous.localUri === null && file.localUri !== null) {
+              const currentItem = await this.readItem(tx, input.id, file.id);
+              const next = mercalysBatchItemSchema.parse({
+                ...currentItem,
+                localUri: file.localUri,
+                version: currentItem.version + 1,
+                updatedAt: new Date().toISOString(),
+                result:
+                  currentItem.result.status === "FAILED"
+                    ? { status: "QUEUED" }
+                    : currentItem.result,
+              });
+              await tx.runAsync(
+                "UPDATE mercalys_intake_items SET payload_json=? WHERE id=? AND batch_id=?",
+                JSON.stringify(next),
+                file.id,
+                input.id,
+              );
+              files[files.findIndex((f) => f.id === file.id)] = {
+                ...previous,
+                localUri: file.localUri,
+              };
+            }
+            continue;
+          }
           if (JSON.stringify(previous) !== JSON.stringify(file))
             throw Error("MERCALYS_BATCH_ID_REUSED");
           continue;
@@ -357,7 +390,9 @@ export class MercalysBatchRepository {
       item.sizeBytes,
     );
     if (rows.length > 1) throw Error("MERCALYS_RESTORED_LOCATION_AMBIGUOUS");
-    return rows[0]?.local_uri ?? item.localUri;
+    const location = rows[0]?.local_uri ?? item.localUri;
+    if (!location) throw Error("MERCALYS_BATCH_MEMBER_COPY_REQUIRED");
+    return location;
   }
   private async readItem(tx: OutboxDatabase, batchId: string, itemId: string) {
     const batch = await this.owned(tx, batchId);

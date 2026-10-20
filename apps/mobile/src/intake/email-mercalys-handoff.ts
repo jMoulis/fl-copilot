@@ -41,7 +41,12 @@ const nativeDependencies: Dependencies = {
   zip: nativeMercalysZipStorage,
 };
 export type EmailMercalysHandoffResult =
-  | { status: "ATTACHED"; message: CopilotMessage; batchId: string }
+  | {
+      status: "ATTACHED";
+      message: CopilotMessage;
+      batchId: string;
+      failures?: Array<{ path: string; code: string }>;
+    }
   | {
       status: "RETRY";
       archiveId: string;
@@ -136,6 +141,7 @@ export class EmailMercalysHandoff {
       filename,
       zip ? "Exports.zip" : "Export.xlsx",
     );
+    let memberFailures: Array<{ path: string; code: string }> = [];
     if (zip) {
       const archiveId = emailProcessingIdentity(scope, origin, "ARCHIVE"),
         archives = new MercalysArchiveRepository(database, scope);
@@ -164,10 +170,13 @@ export class EmailMercalysHandoff {
               await allowed();
               return result;
             },
-            member: async (data, id) => {
+            validate: async (data) => {
               await allowed();
               await assertSafeXlsxContainer(data, signal);
-              new SheetJsSpreadsheetParser().parse(data);
+              await allowed();
+            },
+            member: async (data, id) => {
+              await allowed();
               const result = await this.dependencies.zip.member(data, id);
               await allowed();
               return result;
@@ -177,13 +186,14 @@ export class EmailMercalysHandoff {
         );
         if (result.outcome.status !== "PROCESSED")
           throw Error("EMAIL_MERCALYS_ARCHIVE_INVALID");
-        if (result.outcome.failures.length)
+        if (result.identityPending || result.identifiedCount === 0)
           return {
             status: "RETRY",
             archiveId,
             retainedCount: result.outcome.retainedCount,
             failures: result.outcome.failures,
           };
+        memberFailures = result.outcome.failures;
       }
     } else {
       await batches.create({
@@ -231,6 +241,11 @@ export class EmailMercalysHandoff {
         preserveDraft: true,
       });
     });
-    return { status: "ATTACHED", message, batchId };
+    return {
+      status: "ATTACHED",
+      message,
+      batchId,
+      ...(memberFailures.length ? { failures: memberFailures } : {}),
+    };
   }
 }

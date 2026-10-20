@@ -49,7 +49,7 @@ export class MercalysBatchPreparation {
       await this.dependencies.catalog(),
     );
     cancel();
-    return { item, summary };
+    return { item, summary, localUri: location };
   }
   async prepare(batchId: string, itemId: string, signal?: AbortSignal) {
     const cancel = () => {
@@ -100,7 +100,10 @@ export class MercalysBatchPreparation {
           reason instanceof MercalysImportValidationError
             ? reason.code
             : reason instanceof Error &&
-                reason.message === "MERCALYS_BATCH_FILE_CHANGED"
+                [
+                  "MERCALYS_BATCH_FILE_CHANGED",
+                  "MERCALYS_BATCH_MEMBER_COPY_REQUIRED",
+                ].includes(reason.message)
               ? reason.message
               : "MERCALYS_BATCH_PREPARATION_FAILED",
       };

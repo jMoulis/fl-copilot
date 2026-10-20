@@ -2,12 +2,14 @@ import {
   MAX_MERCALYS_BATCH_BYTES,
   mercalysArchiveInputSchema,
   retainedMercalysBatchFileSchema,
+  mercalysBatchFileSchema,
   type MercalysArchiveInput,
   type MercalysBatchInput,
 } from "@fl-copilot/domain";
 import {
   createMercalysZipReader,
   MercalysZipError,
+  assertSafeXlsxContainer,
 } from "@fl-copilot/import-core";
 import type { MercalysArchiveRepository } from "./mercalys-archive-repository";
 import type { MercalysBatchRepository } from "./mercalys-batch-repository";
@@ -18,6 +20,7 @@ export interface MercalysZipStorage {
   ): Promise<{ localUri: string; sizeBytes: number; checksum: string }>;
   read(uri: string): Promise<Uint8Array<ArrayBuffer>>;
   checksum(bytes: Uint8Array<ArrayBuffer>): Promise<string>;
+  validate?(bytes: Uint8Array<ArrayBuffer>): Promise<void>;
   member(
     bytes: Uint8Array<ArrayBuffer>,
     id: string,
@@ -68,6 +71,7 @@ export async function extractRetainedMercalysZip(
   let ignored: string[] = [];
   let fatal: string | undefined;
   let interrupted = false;
+  let identityPending = false;
   try {
     const bytes = await storage.read(a.localUri);
     cancel();
@@ -81,31 +85,65 @@ export async function extractRetainedMercalysZip(
     ignored = [...reader.ignored];
     for (const entry of reader.files) {
       cancel();
+      let identified:
+        Omit<MercalysBatchInput["files"][number], "localUri"> | undefined;
+      let stage: "EXTRACT" | "IDENTITY" | "VALIDATE" | "COPY" = "EXTRACT";
       try {
         const decoded = await reader.extract(entry.path, {
           signal,
           pause: () => storage.pause(),
         });
         cancel();
+        if (!decoded.length) throw new MercalysZipError("INVALID");
+        stage = "IDENTITY";
         const id = retainedMercalysBatchFileSchema.shape.id.parse(
-            await storage.memberId(a.id, entry.path),
-          ),
-          copy = await storage.member(decoded, id);
+          await storage.memberId(a.id, entry.path),
+        );
+        const identity = {
+          id,
+          filename: entry.path,
+          sizeBytes: decoded.length,
+          checksum: await storage.checksum(decoded),
+        };
+        // Verify the full logical member before the copy: a copy interruption must
+        // not erase its position or alter the immutable import manifest on retry.
+        mercalysBatchFileSchema.parse({ ...identity, localUri: null });
+        identified = identity;
+        cancel();
+        stage = "VALIDATE";
+        await storage.validate?.(decoded);
+        cancel();
+        stage = "COPY";
+        const copy = await storage.member(decoded, id);
+        if (
+          copy.sizeBytes !== identified.sizeBytes ||
+          copy.checksum !== identified.checksum
+        )
+          throw Error("MERCALYS_ZIP_MEMBER_CHANGED");
         files.push(
           retainedMercalysBatchFileSchema.parse({
-            id,
-            filename: entry.path,
+            ...identified,
             ...copy,
           }),
         );
       } catch (reason) {
         cancel();
+        if (identified)
+          files.push(
+            mercalysBatchFileSchema.parse({ ...identified, localUri: null }),
+          );
+        else if (!(reason instanceof MercalysZipError)) identityPending = true;
         failures.push({
           path: entry.path,
           code:
-            reason instanceof MercalysZipError
-              ? reason.message
-              : "MERCALYS_ZIP_COPY_FAILED",
+            stage === "VALIDATE"
+              ? "MERCALYS_ZIP_WORKBOOK_INVALID"
+              : reason instanceof MercalysZipError
+                ? reason.message
+                : reason instanceof Error &&
+                    reason.message === "MERCALYS_ZIP_MEMBER_CHANGED"
+                  ? reason.message
+                  : "MERCALYS_ZIP_COPY_FAILED",
         });
       }
     }
@@ -132,15 +170,22 @@ export async function extractRetainedMercalysZip(
       files,
     });
   if (interrupted || signal?.aborted) throw new MercalysZipError("CANCELLED");
-  return archives.finish(
+  const result = await archives.finish(
     a.id,
     a.version,
     fatal
       ? { status: "FAILED", code: fatal }
-      : { status: "PROCESSED", retainedCount: files.length, failures, ignored },
+      : {
+          status: "PROCESSED",
+          retainedCount: files.filter((file) => file.localUri !== null).length,
+          failures,
+          ignored,
+        },
   );
+  return { ...result, identityPending, identifiedCount: files.length };
 }
 export const nativeMercalysZipStorage: MercalysZipStorage = {
+  validate: (bytes) => assertSafeXlsxContainer(bytes),
   async retain(uri, id) {
     const { File, Directory, Paths } = await import("expo-file-system");
     const source = new File(uri);
@@ -178,6 +223,7 @@ export const nativeMercalysZipStorage: MercalysZipStorage = {
     return `sha256:${Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("")}`;
   },
   async member(bytes, id) {
+    retainedMercalysBatchFileSchema.shape.id.parse(id);
     const { File, Directory, Paths } = await import("expo-file-system");
     const d = new Directory(Paths.document, "mercalys-batches");
     d.create({ idempotent: true, intermediates: true });
@@ -190,10 +236,28 @@ export const nativeMercalysZipStorage: MercalysZipStorage = {
       )
         throw Error("MERCALYS_ZIP_MEMBER_CHANGED");
     } else {
-      copy.create();
-      copy.write(bytes);
-      if (!copy.exists || copy.size !== bytes.length)
-        throw Error("MERCALYS_ZIP_COPY_FAILED");
+      const { randomUUID } = await import("expo-crypto");
+      const temporary = new File(d, `${id}.${randomUUID()}.tmp`);
+      try {
+        temporary.create();
+        temporary.write(bytes);
+        if (
+          !temporary.exists ||
+          temporary.size !== bytes.length ||
+          (await this.checksum(await temporary.bytes())) !== checksum
+        )
+          throw Error("MERCALYS_ZIP_COPY_FAILED");
+        if (copy.exists) {
+          if (
+            copy.size !== bytes.length ||
+            (await this.checksum(await copy.bytes())) !== checksum
+          )
+            throw Error("MERCALYS_ZIP_MEMBER_CHANGED");
+        } else temporary.move(copy);
+      } finally {
+        // move changes the File handle URI; never delete the retained final file.
+        if (temporary.uri !== copy.uri && temporary.exists) temporary.delete();
+      }
     }
     return { localUri: copy.uri, sizeBytes: bytes.length, checksum };
   },

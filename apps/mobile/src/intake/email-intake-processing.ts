@@ -51,7 +51,11 @@ type Dependencies = {
       authorize?: Authorize,
       format?: "XLSX" | "ZIP",
     ): Promise<
-      | { status: "ATTACHED"; message: CopilotMessage }
+      | {
+          status: "ATTACHED";
+          message: CopilotMessage;
+          failures?: Array<{ path: string; code: string }>;
+        }
       | { status: "RETRY"; failures?: Array<{ path: string; code: string }> }
     >;
   };
@@ -293,6 +297,16 @@ export class EmailIntakeProcessing {
     }
     await this.dependencies.runMercalys(result.message, allowed, signal);
     await allowed();
+    if (result.failures?.length) {
+      if (
+        result.failures.some((file) => file.code === "MERCALYS_ZIP_COPY_FAILED")
+      )
+        throw Error("EMAIL_MERCALYS_MEMBERS_RETRY_REQUIRED");
+      return {
+        status: "WAITING_INPUT",
+        code: "EMAIL_MERCALYS_PARTIAL_REVIEW_REQUIRED",
+      };
+    }
     return { status: "COMPLETED" };
   }
 }

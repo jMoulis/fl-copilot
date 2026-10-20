@@ -350,6 +350,7 @@ export class CopilotMercalysImportController {
                 [
                   "IMPORT_REVIEW_LIMIT",
                   "MERCALYS_BATCH_FILE_CHANGED",
+                  "MERCALYS_BATCH_MEMBER_COPY_REQUIRED",
                   ...continuationCodes,
                 ].includes(e.message)
               ? e.message
@@ -990,7 +991,7 @@ export class CopilotMercalysImportController {
                 : await publication.publish({
                     storeId: this.scope.storeId,
                     filename: current.item.filename,
-                    localFileUri: current.item.localUri,
+                    localFileUri: current.localUri,
                     sizeBytes: current.item.sizeBytes,
                     checksum: current.item.checksum,
                     mimeType:
@@ -1217,7 +1218,7 @@ export class CopilotMercalysImportController {
           const result = await pub.publish({
             storeId: this.scope.storeId,
             filename: current.item.filename,
-            localFileUri: current.item.localUri,
+            localFileUri: current.localUri,
             sizeBytes: current.item.sizeBytes,
             checksum: current.item.checksum,
             mimeType:

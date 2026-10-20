@@ -499,6 +499,15 @@ it("retains ZIP lineage, retries missing copies without duplicating reviewed chi
     conversationId,
   );
   const initial = (await s.repo.page(first.batchId)).items[0]!;
+  const pending = (await s.repo.page(first.batchId)).items[1]!;
+  expect(pending).toMatchObject({
+    filename: "waste.xlsx",
+    localUri: null,
+    position: 1,
+  });
+  await expect(
+    s.repo.retainedLocation(first.batchId, pending.id),
+  ).rejects.toThrow("MERCALYS_BATCH_MEMBER_COPY_REQUIRED");
   await s.repo.finish(first.batchId, initial.id, 1, {
     status: "FAILED",
     code: "PRESERVED_REVIEW",
@@ -518,6 +527,17 @@ it("retains ZIP lineage, retries missing copies without duplicating reviewed chi
     version: 2,
     result: { code: "PRESERVED_REVIEW" },
   });
+  expect(page.items[1]).toMatchObject({
+    id: pending.id,
+    position: 1,
+    version: 2,
+    localUri: expect.stringMatching(/^file:\/\//),
+  });
+  // A later copy failure cannot downgrade a previously retained member or reset its review.
+  fail = true;
+  await extractRetainedMercalysZip(id, archives, s.repo, storage);
+  expect((await s.repo.page(first.batchId)).items).toEqual(page.items);
+  fail = false;
   await extractRetainedMercalysZip(id, archives, s.repo, storage);
   expect((await s.repo.page(first.batchId)).items).toHaveLength(2);
   await expect(
@@ -1241,4 +1261,21 @@ it("automatically publishes an identical original only once across two paths", a
   expect(
     s.db.prepare("SELECT COUNT(*) AS n FROM sales_observations").get(),
   ).toEqual({ n: 1 });
+});
+
+it("does not accept a pending standalone file or a fabricated archive as a retained source", async () => {
+  const s = await setup(1),
+    pending = {
+      ...s.input,
+      id: randomUUID(),
+      files: s.input.files.map((file) => ({ ...file, localUri: null })),
+    };
+  await s.repo.create(s.input);
+  expect(mercalysBatchInputSchema.safeParse(pending).success).toBe(false);
+  await expect(
+    s.repo.create({ ...pending, archiveId: randomUUID() }),
+  ).rejects.toThrow("MERCALYS_ARCHIVE_SCOPE_INVALID");
+  expect((await s.repo.recent()).batches.map((batch) => batch.id)).toEqual([
+    s.input.id,
+  ]);
 });

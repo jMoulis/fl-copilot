@@ -206,11 +206,12 @@ export class MercalysBatchPublication {
         remainingCount: selected.remainingCount,
       };
       try {
-        const { item, summary } = await this.preparation.readValidated(
-          plan.batchId,
-          selected.itemId,
-          signal,
-        );
+        const { item, summary, localUri } =
+          await this.preparation.readValidated(
+            plan.batchId,
+            selected.itemId,
+            signal,
+          );
         if (
           await this.publication.findExactDuplicate(
             this.batches.storeId,
@@ -249,7 +250,7 @@ export class MercalysBatchPublication {
         const result = await this.publication.publish({
           storeId: this.batches.storeId,
           filename: item.filename,
-          localFileUri: item.localUri,
+          localFileUri: localUri,
           sizeBytes: item.sizeBytes,
           checksum: item.checksum,
           mimeType:
