@@ -299,3 +299,41 @@ it("does not accept a provider error message impersonating an internal code", as
     "EMAIL_ATTACHMENT_READ_FAILED",
   );
 });
+
+it("reserves the authenticated metadata size before fetching bytes, and never fetches on a daily limit", async () => {
+  const f = fixture();
+  let reserved = false;
+  f.fetcher.mockImplementation(async () => {
+    expect(reserved).toBe(true);
+    return new Response(f.bytes, {
+      headers: {
+        "content-type": f.target.mediaType,
+        "content-length": String(f.bytes.length),
+      },
+    });
+  });
+  const budget = vi.fn(async (size: number) => {
+    expect(size).toBe(f.bytes.length);
+    reserved = true;
+  });
+  await f.reader.read(f.target, f.authorize, undefined, budget);
+  expect(budget).toHaveBeenCalledOnce();
+  f.fetcher.mockClear();
+  await expect(
+    f.reader.read(f.target, f.authorize, undefined, async () => {
+      throw Error("EMAIL_INTAKE_DAILY_LIMIT");
+    }),
+  ).rejects.toThrow("EMAIL_INTAKE_DAILY_LIMIT");
+  expect(f.fetcher).not.toHaveBeenCalled();
+});
+it("rechecks scope after reserving before it can start a download", async () => {
+  const f = fixture();
+  await expect(
+    f.reader.read(f.target, f.authorize, undefined, async () => {
+      f.authorize.mockRejectedValueOnce(
+        Error("EMAIL_ATTACHMENT_SCOPE_CHANGED"),
+      );
+    }),
+  ).rejects.toThrow("EMAIL_ATTACHMENT_SCOPE_CHANGED");
+  expect(f.fetcher).not.toHaveBeenCalled();
+});

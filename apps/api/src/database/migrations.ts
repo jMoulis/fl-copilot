@@ -956,6 +956,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 48,
+    name: "email_intake_daily_download_budget",
+    async up(db) {
+      await db
+        .collection("emailIntakeDailyUsage")
+        .createIndex(
+          { day: 1, ownerId: 1 },
+          { name: "email_daily_usage_scope" },
+        );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

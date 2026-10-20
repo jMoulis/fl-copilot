@@ -28,6 +28,7 @@ export const emailProcessingJobSchema = emailPayloadSchema.extend({
   processingId: z.uuid(),
   purpose: z.enum(["WASTE_TICKET", "STORE_PHOTO"]).optional(),
   attemptBase: z.number().int().nonnegative().default(0),
+  availabilityDeferrals: z.number().int().nonnegative().optional(),
 });
 export type EmailProcessingJob = z.infer<typeof emailProcessingJobSchema>;
 type EmailProcessingInput = EmailIntakeOriginalRequest & {
@@ -36,6 +37,11 @@ type EmailProcessingInput = EmailIntakeOriginalRequest & {
 };
 const processingOutcomeSchema = z.discriminatedUnion("status", [
   z.strictObject({ status: z.literal("COMPLETED") }),
+  z.strictObject({
+    status: z.literal("DEFERRED"),
+    code: z.literal("EMAIL_INTAKE_SOURCE_DAILY_LIMIT"),
+    nextAttemptAt: z.iso.datetime({ offset: true }),
+  }),
   z.strictObject({
     status: z.literal("WAITING_INPUT"),
     code: z.enum([
@@ -238,6 +244,7 @@ export class SourceOriginalJobs {
           ...payload,
           purpose,
           attemptBase: prior.attempt_count,
+          availabilityDeferrals: 0,
         }),
         this.now().toISOString(),
         prior.id,
@@ -274,6 +281,7 @@ export class SourceOriginalJobs {
             ? JSON.stringify({
                 ...priorPayload,
                 attemptBase: prior.attempt_count,
+                availabilityDeferrals: 0,
               })
             : prior.payload_json,
           prior.id,
@@ -456,10 +464,36 @@ export class SourceOriginalJobs {
           );
         }
         await authorize();
+        if (completion.status === "DEFERRED") {
+          const delay =
+            Date.parse(completion.nextAttemptAt) - this.now().getTime();
+          if (
+            delay <= 0 ||
+            delay > 48 * 3600_000 ||
+            !("processingId" in payload)
+          )
+            throw Error("EMAIL_INTAKE_AVAILABILITY_INVALID");
+        }
+        const deferred = completion.status === "DEFERRED";
+        const processingPayload = deferred
+          ? emailProcessingJobSchema.parse(payload)
+          : null;
+        const nextPayload = processingPayload
+          ? JSON.stringify({
+              ...processingPayload,
+              availabilityDeferrals:
+                (processingPayload.availabilityDeferrals ?? 0) + 1,
+            })
+          : job.payload_json;
         await this.db.runAsync(
-          "UPDATE local_jobs SET status=?,last_error=?,next_attempt_at=NULL,updated_at=? WHERE id=? AND status='RUNNING' AND updated_at=? AND attempt_count=?",
-          completion.status,
-          completion.status === "WAITING_INPUT" ? completion.code : null,
+          "UPDATE local_jobs SET status=?,last_error=?,next_attempt_at=?,payload_json=?,updated_at=? WHERE id=? AND status='RUNNING' AND updated_at=? AND attempt_count=?",
+          deferred ? "RETRY" : completion.status,
+          completion.status === "WAITING_INPUT" ||
+            completion.status === "DEFERRED"
+            ? completion.code
+            : null,
+          completion.status === "DEFERRED" ? completion.nextAttemptAt : null,
+          nextPayload,
           this.now().toISOString(),
           job.id,
           job.updated_at,
@@ -483,9 +517,15 @@ export class SourceOriginalJobs {
             );
             exhausted =
               !processing.success ||
-              job.attempt_count - processing.data.attemptBase >= 6;
+              job.attempt_count -
+                processing.data.attemptBase -
+                (processing.data.availabilityDeferrals ?? 0) >=
+                6;
             if (processing.success)
-              retryAttempt = job.attempt_count - processing.data.attemptBase;
+              retryAttempt =
+                job.attempt_count -
+                processing.data.attemptBase -
+                (processing.data.availabilityDeferrals ?? 0);
           } catch {
             exhausted = true;
           }

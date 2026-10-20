@@ -1,3 +1,4 @@
+import { EMAIL_DOWNLOAD_DAILY_LIMIT } from "./email-daily-budget.js";
 import { createHash } from "node:crypto";
 import type { Resend } from "resend";
 import { z } from "zod";
@@ -74,6 +75,7 @@ export function createResendAttachmentReader(
       raw: EmailAttachmentTarget,
       authorize: () => Promise<void>,
       external?: AbortSignal,
+      beforeDownload?: (sizeBytes: number) => Promise<void>,
     ) {
       const target = targetSchema.parse(raw);
       if (!allowed.has(target.mediaType)) throw failure("UNSUPPORTED");
@@ -140,6 +142,13 @@ export function createResendAttachmentReader(
         if (signal.aborted) throw abortError();
         if (Date.parse(metadata.expires_at) <= now())
           throw failure("CAPABILITY_EXPIRED");
+        if (beforeDownload) {
+          await wait(beforeDownload(metadata.size));
+          if (signal.aborted) throw abortError();
+          await wait(authorize());
+        }
+        if (Date.parse(metadata.expires_at) <= now())
+          throw failure("CAPABILITY_EXPIRED");
         const response = await wait(
           fetcher(url, {
             method: "GET",
@@ -196,6 +205,11 @@ export function createResendAttachmentReader(
       } catch (error) {
         if (signal.aborted) throw abortError();
         if (error instanceof AttachmentReadError) throw error;
+        if (
+          error instanceof Error &&
+          error.message === EMAIL_DOWNLOAD_DAILY_LIMIT
+        )
+          throw error;
         if (
           error instanceof Error &&
           [

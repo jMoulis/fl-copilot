@@ -58,15 +58,19 @@ export async function readPendingWork(
                       : "Traitement local",
       count: Number(j.count),
       state:
-        j.status === "WAITING_INPUT"
-          ? "Information à confirmer"
-          : j.status === "RUNNING"
-            ? "En cours"
-            : j.status === "RETRY"
-              ? "Nouvelle tentative en attente"
-              : j.status === "FAILED"
-                ? "Échec à examiner"
-                : "En attente",
+        j.type === "EMAIL_INTAKE_PROCESS" &&
+        j.status === "RETRY" &&
+        j.last_error === "EMAIL_INTAKE_SOURCE_DAILY_LIMIT"
+          ? "Limite quotidienne · reprise prévue"
+          : j.status === "WAITING_INPUT"
+            ? "Information à confirmer"
+            : j.status === "RUNNING"
+              ? "En cours"
+              : j.status === "RETRY"
+                ? "Nouvelle tentative en attente"
+                : j.status === "FAILED"
+                  ? "Échec à examiner"
+                  : "En attente",
       code:
         j.last_error && /^[A-Z][A-Z0-9_]{2,90}$/.test(j.last_error)
           ? j.last_error

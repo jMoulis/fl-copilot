@@ -245,7 +245,26 @@ export class EmailIntakeProcessing {
       )
     )
       throw Error("EMAIL_INTAKE_SOURCE_FAILED");
-    if (!ready()) throw Error("EMAIL_INTAKE_SOURCE_WAITING");
+    if (!ready()) {
+      const deferred = selections.flatMap((selection) =>
+        receipt!.files.filter(
+          (file) =>
+            file.id === selection.fileId &&
+            file.status === "PENDING" &&
+            file.errorCode === "DAILY_LIMIT" &&
+            file.retryAt,
+        ),
+      );
+      if (deferred.length)
+        return {
+          status: "DEFERRED",
+          code: "EMAIL_INTAKE_SOURCE_DAILY_LIMIT",
+          nextAttemptAt: new Date(
+            Math.max(...deferred.map((file) => Date.parse(file.retryAt!))),
+          ).toISOString(),
+        };
+      throw Error("EMAIL_INTAKE_SOURCE_WAITING");
+    }
     let first: EmailOriginalProof | undefined;
     for (const file of selections) {
       await allowed();

@@ -642,8 +642,8 @@ function processingRuntime(f: Awaited<ReturnType<typeof fixture>>, db = f.a) {
     receipt,
     runMercalys,
     input,
-    advance: () => {
-      at = new Date(at.getTime() + 3_600_000);
+    advance: (ms = 3_600_000) => {
+      at = new Date(at.getTime() + ms);
     },
   };
 }
@@ -1142,4 +1142,79 @@ it("rolls back the chat source link as well as capture if the account changes wh
     ).length,
   ).toBe(0);
   expect(existsSync(fileURLToPath(f.originals[0]!.localUri))).toBe(true);
+});
+
+it("defers a server daily limit through eight days, keeps an earlier real failure in the budget, and resumes automatically when the source is ready", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  f.read.mockRejectedValueOnce(Error("OFFLINE"));
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "RETRY",
+    attempts: 1,
+  });
+  p.advance();
+  for (let day = 0; day < 8; day++) {
+    const pending = {
+      ...f.receipt,
+      version: day + 3,
+      files: f.receipt.files.map((file) => ({
+        ...file,
+        status: "PENDING" as const,
+        errorCode: "DAILY_LIMIT" as const,
+        retryAt: new Date(Date.UTC(2026, 9, 21 + day)).toISOString(),
+      })),
+    };
+    await f.cache.storePage(f.scope, {
+      bindings: [],
+      receipts: [pending],
+      nextCursor: null,
+    });
+    p.receipt.mockResolvedValue(pending);
+    if (day) p.advance(24 * 3600_000);
+    await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+    expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+      status: "RETRY",
+      code: "EMAIL_INTAKE_SOURCE_DAILY_LIMIT",
+      attempts: day + 2,
+      nextAttemptAt: pending.files[0]!.retryAt,
+    });
+    const row = await f.a.getFirstAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM local_jobs WHERE type='EMAIL_INTAKE_PROCESS'",
+    );
+    expect(JSON.parse(row!.payload_json)).toMatchObject({
+      attemptBase: 0,
+      availabilityDeferrals: day + 1,
+    });
+    expect(
+      await readPendingWork(f.a, f.scope.storeId, f.scope.ownerId),
+    ).toContainEqual({
+      label: "Traitement des fichiers reçus par email",
+      count: 1,
+      state: "Limite quotidienne · reprise prévue",
+      code: "EMAIL_INTAKE_SOURCE_DAILY_LIMIT",
+    });
+    // Repeated manual sync before the deadline does not claim another attempt.
+    await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+    expect((await p.jobs.emailProcessingState(p.input()))?.attempts).toBe(
+      day + 2,
+    );
+  }
+  expect(count(f, "source_documents")).toBe(0);
+  const ready = { ...f.receipt, version: 99 };
+  await f.cache.storePage(f.scope, {
+    bindings: [],
+    receipts: [ready],
+    nextCursor: null,
+  });
+  p.receipt.mockResolvedValue(ready);
+  p.advance(24 * 3600_000);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "COMPLETED",
+    attempts: 10,
+  });
+  expect(count(f, "source_documents")).toBe(1);
+  expect(count(f, "waste_observations")).toBe(0);
 });
