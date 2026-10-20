@@ -538,3 +538,7 @@ Sept chantiers : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 D
 - **7 — UX/validation : en cours.** Correction du crash Sentry lors du changement d’image produit, test de régression et règle de lint. Ce lot doit être livré avec la fidélité visuelle PR 289 dans un build groupé, puis accepté sur appareil. Les autres écarts UX/M8 restent ouverts.
 
 Voir `../qa/CHAT_IMAGE_STABILITY_2026_10_20.md`. Codé/testé, fusionné, déployé et validé sur iPhone restent des états distincts ; aucun chantier entier n’est déclaré terminé par ce correctif.
+
+## Lot courant — défilement des tableaux du chat (20 octobre 2026)
+
+**7 — UX/validation : en cours.** Suppression du capteur d’appui long autour des réponses du copilote ; menu conservé sur le texte et les cellules. Largeur du tableau bornée au message et défilement natif configuré pour les deux axes imbriqués. Contrôles locaux du composant à 320/390/844 px, brouillon et source conservés ; tests des contrôleurs existants. Le blocage iPhone n’a pas été reproduit dans le navigateur : recette native encore nécessaire après livraison groupée. Le build 3 précédent ne contient pas ce changement. Aucun déploiement API ni nouveau build EAS payant pour ce correctif isolé. Chantiers 1/3/4/5/6 inchangés, en cours ; 2 reste code prêt. Voir `../qa/CHAT_TABLE_SCROLL_2026_10_20.md`.
