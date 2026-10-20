@@ -73,6 +73,24 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         dispatch,
       );
       const init = await service.init(scope.storeId, scope.ownerId, input);
+      const otherActor = randomUUID();
+      await expect(
+        service.init(scope.storeId, otherActor, input),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        publicCode: "SOURCE_UPLOAD_NOT_FOUND",
+      });
+      await expect(
+        service.complete(
+          scope.storeId,
+          init.uploadId,
+          { checksum: input.checksum, sizeBytes: input.sizeBytes },
+          otherActor,
+        ),
+      ).rejects.toMatchObject({
+        statusCode: 404,
+        publicCode: "SOURCE_UPLOAD_NOT_FOUND",
+      });
       const read = vi.fn(async () => bytes.slice());
       await expect(
         readStorePhoto(db, scope, { sourceDocumentId }, read),
@@ -87,10 +105,15 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       };
       for (let i = 0; i < 2; i++)
         expect(
-          await service.complete(scope.storeId, init.uploadId, {
-            checksum: input.checksum,
-            sizeBytes: input.sizeBytes,
-          }),
+          await service.complete(
+            scope.storeId,
+            init.uploadId,
+            {
+              checksum: input.checksum,
+              sizeBytes: input.sizeBytes,
+            },
+            scope.ownerId,
+          ),
         ).toMatchObject({
           sourceDocumentId,
           remoteUploadStatus: "CONFIRMED",

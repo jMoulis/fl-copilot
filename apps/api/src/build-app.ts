@@ -1854,11 +1854,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "Le magasin doit être indiqué pour confirmer le fichier.",
         );
       }
-      await auth.authorizeStore(authorization.slice("Bearer ".length), storeId);
+      const context = await auth.authorizeStore(
+        authorization.slice("Bearer ".length),
+        storeId,
+      );
       return sourceUploads.complete(
         storeId,
         request.params.uploadId,
         request.body,
+        context.userId,
       );
     },
   );
