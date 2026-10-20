@@ -29,6 +29,21 @@ export interface MercalysZipEntry {
 /** ZIP32 metadata preflight only. Actual decompressed length/CRC must still be verified by extraction.
  * Format: https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT */
 export function inspectMercalysZip(bytes: Uint8Array) {
+  return inspectContainer(bytes, false);
+}
+/** Same bounded container validation for workbook internals, without trusting a suffix. */
+export function inspectXlsxZip(bytes: Uint8Array) {
+  const plan = inspectContainer(bytes, true);
+  const paths = new Set(plan.files.map((entry) => entry.path));
+  if (
+    !paths.has("[Content_Types].xml") ||
+    !paths.has("xl/workbook.xml") ||
+    !plan.files.some((entry) => /^xl\/worksheets\/[^/]+\.xml$/.test(entry.path))
+  )
+    throw new MercalysZipError("UNSUPPORTED");
+  return plan;
+}
+function inspectContainer(bytes: Uint8Array, workbook: boolean) {
   const fail = (code: MercalysZipError["code"]): never => {
     throw new MercalysZipError(code);
   };
@@ -188,10 +203,18 @@ export function inspectMercalysZip(bytes: Uint8Array) {
     if (localEnd > dirStart) fail("INVALID");
     spans.push({ start: local, end: localEnd });
     if (!directory) {
-      if (parts[0] === "__MACOSX" || parts.at(-1)!.startsWith("._"))
+      if (
+        !workbook &&
+        (parts[0] === "__MACOSX" || parts.at(-1)!.startsWith("._"))
+      )
         ignored.push(path!);
       else {
-        if (!path!.toLowerCase().endsWith(".xlsx")) fail("UNSUPPORTED");
+        if (
+          workbook
+            ? /(^|\/)vbaProject\.bin$/i.test(path!)
+            : !path!.toLowerCase().endsWith(".xlsx")
+        )
+          fail("UNSUPPORTED");
         files.push({
           path: path!,
           compression: method as 0 | 8,

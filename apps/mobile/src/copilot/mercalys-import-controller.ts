@@ -5,6 +5,7 @@ import {
 import { CopilotConversationRepository } from "./conversation-repository";
 import { MercalysImportValidationError } from "../documents/mercalys-import-validation";
 import { z } from "zod";
+import { assertEmailMercalysAuthority } from "../intake/email-mercalys-authority";
 import {
   copilotMessageSchema,
   copilotConversationSchema,
@@ -103,6 +104,7 @@ export class CopilotMercalysImportController {
       message.ownerId !== this.scope.ownerId
     )
       throw Error("IMPORT_SCOPE");
+    await assertEmailMercalysAuthority(db, message, reference);
     const [m, c] = await Promise.all([
       db.getFirstAsync<{ payload_json: string }>(
         "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
