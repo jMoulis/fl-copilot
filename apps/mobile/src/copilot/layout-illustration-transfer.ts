@@ -3,7 +3,6 @@ import { verifyPrivateToolRecord } from "./private-tool-record";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import {
   readLayoutIllustrationManifest,
-  serializeLayoutIllustrationMetadata,
   layoutIllustrationFileStateSchema,
   type LayoutIllustrationManifest,
   type LayoutIllustrationFileVariant,
@@ -12,7 +11,14 @@ import { sourceOriginalHash } from "../documents/source-original-hash";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import { LayoutIllustrationRepository } from "./layout-illustration-repository";
-export interface LayoutIllustrationFilePort {
+import {
+  checkedIllustrationManifest,
+  reserveIllustrationCache,
+  withIllustrationCache,
+  LAYOUT_ILLUSTRATION_CACHE_BYTES,
+  type LayoutIllustrationCacheFiles,
+} from "./layout-illustration-cache";
+export interface LayoutIllustrationFilePort extends LayoutIllustrationCacheFiles {
   existing(
     manifest: LayoutIllustrationManifest,
     variant: LayoutIllustrationFileVariant,
@@ -29,6 +35,7 @@ export type LayoutIllustrationView = {
   sourceUri: string | null;
   imageUri: string | null;
   originalUri: string | null;
+  offlineRequired: boolean;
 };
 export interface LayoutIllustrationFileTransport {
   manifest(storeId: string, preparationId: string): Promise<unknown>;
@@ -47,6 +54,7 @@ export class LayoutIllustrationTransfer {
     private api: LayoutIllustrationFileTransport,
     private files: LayoutIllustrationFilePort,
     private session: () => { storeId: string; userId: string } | null,
+    private policy: { budgetBytes?: number; now?: () => string } = {},
   ) {}
   private scope(message: CopilotMessage) {
     const s = this.session();
@@ -62,24 +70,41 @@ export class LayoutIllustrationTransfer {
   private async bound(message: CopilotMessage, raw: unknown) {
     const record = await this.repository.find(message);
     if (!record) throw Error("LAYOUT_ILLUSTRATION_SOURCE_UNAVAILABLE");
-    const m = readLayoutIllustrationManifest(raw, record.entity),
-      { manifestHash, ...metadata } = m;
-    if (
-      sourceOriginalHash(serializeLayoutIllustrationMetadata(metadata)) !==
-      manifestHash
-    )
-      throw Error("LAYOUT_ILLUSTRATION_MANIFEST_INVALID");
+    const m = checkedIllustrationManifest(
+      readLayoutIllustrationManifest(raw, record.entity),
+    );
     return m;
   }
-  private async view(manifest: LayoutIllustrationManifest) {
-    return {
+  private async view(
+    message: CopilotMessage,
+    manifest: LayoutIllustrationManifest,
+  ) {
+    const row = await this.db.getFirstAsync<{ offline_required: number }>(
+      "SELECT MAX(offline_required) offline_required FROM copilot_layout_illustration_files WHERE preparation_id=? AND store_id=? AND owner_id=?",
+      manifest.preparation.id,
+      manifest.preparation.storeId,
+      manifest.preparation.ownerId,
+    );
+    const view = {
+      offlineRequired: !!row?.offline_required,
       manifest,
-      sourceUri: await this.files.existing(manifest, "source"),
-      imageUri: await this.files.existing(manifest, "image"),
-      originalUri: await this.files.existing(manifest, "original"),
+      sourceUri: await this.files
+        .existing(manifest, "source")
+        .catch(() => null),
+      imageUri: await this.files.existing(manifest, "image").catch(() => null),
+      originalUri: await this.files
+        .existing(manifest, "original")
+        .catch(() => null),
     };
+    // Native file reads yield: logical deletion must still win before displaying.
+    await this.bound(message, manifest);
+    return view;
   }
   async load(message: CopilotMessage) {
+    const scope = this.scope(message);
+    return withIllustrationCache(scope, () => this.read(message));
+  }
+  private async read(message: CopilotMessage) {
     const scope = this.scope(message),
       record = await this.repository.find(message);
     this.check(scope);
@@ -92,16 +117,59 @@ export class LayoutIllustrationTransfer {
     );
     if (!row) return null;
     const manifest = await this.bound(message, JSON.parse(row.manifest_json)),
-      view = await this.view(manifest);
+      view = await this.view(message, manifest);
+    this.check(scope);
+    await this.db.runAsync(
+      "UPDATE copilot_layout_illustration_files SET last_accessed_at=? WHERE id=? AND store_id=? AND owner_id=?",
+      this.now(),
+      manifest.id,
+      scope.storeId,
+      scope.userId,
+    );
     this.check(scope);
     return view;
+  }
+  private now() {
+    return this.policy.now?.() ?? new Date().toISOString();
+  }
+  async setOfflineRequired(
+    message: CopilotMessage,
+    resultId: string,
+    required: boolean,
+  ) {
+    const scope = this.scope(message);
+    return withIllustrationCache(scope, async () => {
+      this.check(scope);
+      const row = await this.db.getFirstAsync<{ manifest_json: string }>(
+        "SELECT manifest_json FROM copilot_layout_illustration_files WHERE id=? AND store_id=? AND owner_id=?",
+        resultId,
+        scope.storeId,
+        scope.userId,
+      );
+      if (!row) throw Error("LAYOUT_ILLUSTRATION_SOURCE_UNAVAILABLE");
+      const manifest = await this.bound(message, JSON.parse(row.manifest_json));
+      if (manifest.id !== resultId)
+        throw Error("LAYOUT_ILLUSTRATION_RESULT_IMMUTABLE");
+      if (required) {
+        const cached = await this.view(message, manifest);
+        this.check(scope);
+        if (!cached.sourceUri || !cached.imageUri)
+          throw Error("LAYOUT_ILLUSTRATION_FILES_MISSING");
+      }
+      await this.register(message, manifest, scope, required);
+      const view = await this.view(message, manifest);
+      this.check(scope);
+      return view;
+    });
   }
   refresh(message: CopilotMessage, original = false) {
     const scope = this.scope(message),
       key = `${scope.storeId}/${scope.userId}/${message.id}/${original}`;
     const pending = this.flights.get(key);
     if (pending) return pending;
-    const task = this.receive(message, scope, original);
+    const task = withIllustrationCache(scope, () =>
+      this.receive(message, scope, original),
+    );
     this.flights.set(key, task);
     void task
       .finally(() => {
@@ -131,11 +199,26 @@ export class LayoutIllustrationTransfer {
     }
     const manifest = await this.bound(message, reply.manifest);
     check();
-    for (const variant of [
+    const variants = [
       "source",
       "image",
       ...(original ? ["original" as const] : []),
-    ] as const) {
+    ] as const;
+    let additional = 0;
+    for (const variant of variants) {
+      if (!(await this.files.existing(manifest, variant).catch(() => null)))
+        additional += manifest.files[variant].sizeBytes;
+      check();
+    }
+    await reserveIllustrationCache(
+      this.db,
+      this.files,
+      manifest,
+      additional,
+      check,
+      this.policy.budgetBytes ?? LAYOUT_ILLUSTRATION_CACHE_BYTES,
+    );
+    for (const variant of variants) {
       if (await this.files.existing(manifest, variant).catch(() => null)) {
         check();
         continue;
@@ -149,9 +232,24 @@ export class LayoutIllustrationTransfer {
         sourceOriginalHash(bytes) !== e.checksum
       )
         throw Error("LAYOUT_ILLUSTRATION_FILE_INVALID");
+      // Register the authenticated, bound manifest before installing its first copy.
+      // Partial downloads remain discoverable for safe cleanup/recovery after restart.
+      await this.register(message, manifest, scope);
       await this.files.write(manifest, variant, bytes, check);
       check();
     }
+    await this.register(message, manifest, scope);
+    const view = await this.view(message, manifest);
+    check();
+    return view;
+  }
+  private async register(
+    message: CopilotMessage,
+    manifest: LayoutIllustrationManifest,
+    scope: { storeId: string; userId: string },
+    offlineRequired?: boolean,
+  ) {
+    const check = () => this.check(scope);
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       check();
       // Revalidate the private source inside this transaction without nesting the original repository transaction.
@@ -174,14 +272,41 @@ export class LayoutIllustrationTransfer {
         manifest.id,
         scope.storeId,
         scope.userId,
-        record.entity.id,
+        manifest.preparation.id,
         manifest.createdAt,
         JSON.stringify(manifest),
       );
+      const retention = await tx.getFirstAsync<{ required: number }>(
+        "SELECT MAX(offline_required) required FROM copilot_layout_illustration_files WHERE preparation_id=? AND store_id=? AND owner_id=?",
+        manifest.preparation.id,
+        scope.storeId,
+        scope.userId,
+      );
+      await tx.runAsync(
+        "UPDATE copilot_layout_illustration_files SET last_accessed_at=?,offline_required=? WHERE id=? AND store_id=? AND owner_id=?",
+        this.now(),
+        offlineRequired === undefined
+          ? retention?.required
+            ? 1
+            : 0
+          : offlineRequired
+            ? 1
+            : 0,
+        manifest.id,
+        scope.storeId,
+        scope.userId,
+      );
+      // A newer result must not hide an older pinned version forever. The visible
+      // preparation preference applies to all its downloaded result copies.
+      if (offlineRequired !== undefined)
+        await tx.runAsync(
+          "UPDATE copilot_layout_illustration_files SET offline_required=? WHERE preparation_id=? AND store_id=? AND owner_id=?",
+          offlineRequired ? 1 : 0,
+          manifest.preparation.id,
+          scope.storeId,
+          scope.userId,
+        );
       check();
     });
-    const view = await this.view(manifest);
-    check();
-    return view;
   }
 }

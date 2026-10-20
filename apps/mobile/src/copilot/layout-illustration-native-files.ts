@@ -3,6 +3,7 @@ import {
   type LayoutIllustrationManifest,
   type LayoutIllustrationFileVariant,
 } from "@fl-copilot/sync-contracts";
+import { z } from "zod";
 import { detectVisualImageMime } from "@fl-copilot/domain";
 import { verifyPrivateOriginalFile } from "../documents/private-original-file";
 import { sourceOriginalHash } from "../documents/source-original-hash";
@@ -26,6 +27,13 @@ async function location(
   );
   return {
     directory,
+    preparationDirectory: new Directory(
+      Paths.document,
+      "copilot-illustrations",
+      m.preparation.storeId,
+      m.preparation.ownerId,
+      m.preparation.id,
+    ),
     File,
     file: new File(
       directory,
@@ -57,6 +65,49 @@ async function inspect(
   return file.uri;
 }
 export const nativeLayoutIllustrationFiles: LayoutIllustrationFilePort = {
+  async usage(scope) {
+    z.uuid().parse(scope.storeId);
+    z.uuid().parse(scope.userId);
+    return withVisualFiles(scope.storeId, async () => {
+      const { Directory, File, Paths } = await import("expo-file-system");
+      const root = new Directory(
+        Paths.document,
+        "copilot-illustrations",
+        scope.storeId,
+        scope.userId,
+      );
+      if (!root.exists) return 0;
+      let count = 0;
+      function bytes(
+        directory: import("expo-file-system").Directory,
+        depth: number,
+      ): number {
+        if (depth > 8) throw invalid();
+        return directory.list().reduce((total, entry) => {
+          if (++count > 4096) throw invalid();
+          if (entry instanceof File) {
+            const size = entry.size;
+            if (!Number.isSafeInteger(size) || size < 0) throw invalid();
+            return total + size;
+          }
+          return total + bytes(entry, depth + 1);
+        }, 0);
+      }
+      return bytes(root, 0);
+    });
+  },
+  async remove(m, v, check) {
+    return withVisualFiles(m.preparation.storeId, async () => {
+      check();
+      const { file, directory, preparationDirectory } = await location(m, v);
+      check();
+      // This directory contains downloaded server copies only, never captured originals.
+      if (file.exists) file.delete();
+      if (directory.exists && !directory.list().length) directory.delete();
+      if (preparationDirectory.exists && !preparationDirectory.list().length)
+        preparationDirectory.delete();
+    });
+  },
   async existing(m, v) {
     return withVisualFiles(m.preparation.storeId, async () => {
       const { file } = await location(m, v);

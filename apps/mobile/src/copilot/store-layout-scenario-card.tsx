@@ -216,7 +216,10 @@ export function StoreLayoutScenarioCard({
   preparation?: LayoutPreparationController;
   illustration?: {
     repository: LayoutIllustrationRepository;
-    files?: Pick<LayoutIllustrationTransfer, "load" | "refresh">;
+    files?: Pick<
+      LayoutIllustrationTransfer,
+      "load" | "refresh" | "setOfflineRequired"
+    >;
     deviceId: string;
     canPrepare: boolean;
   };
