@@ -400,3 +400,132 @@ it.each([
     expect(state.files.get(uri)).toBeDefined();
   },
 );
+
+function emailLease(bytes: Uint8Array) {
+  const metadata = {
+    schemaVersion: 1 as const,
+    storeId: scope.storeId,
+    ownerId: scope.ownerId,
+    conversationId: randomUUID(),
+    receiptId: randomUUID(),
+    fileId: randomUUID(),
+    providerEmailId: randomUUID(),
+    providerAttachmentId: randomUUID(),
+    filename: "../../not-an-instruction.html",
+    declaredMimeType: "application/octet-stream",
+    sizeBytes: bytes.length,
+    checksum: checksum(bytes),
+    retainedAt: "2026-10-20T12:00:00Z",
+  };
+  return {
+    manifest: {
+      ...metadata,
+      manifestHash: checksum(
+        new TextEncoder().encode(JSON.stringify(metadata)),
+      ),
+    },
+    url: "https://test.private.blob.vercel-storage.com/original?secret=fixture",
+    expiresAt: "2026-10-20T13:02:00Z",
+  };
+}
+it("retains email bytes without trusting filename, declared format or body as a canonical source", async () => {
+  const { nativeEmailOriginalFiles } =
+    await import("../intake/email-original-files");
+  const bytes = new TextEncoder().encode(
+      "Unclassified source bytes, not instructions",
+    ),
+    l = emailLease(bytes);
+  state.fetch.mockResolvedValue(
+    new Response(bytes, {
+      headers: { "content-type": l.manifest.declaredMimeType },
+    }),
+  );
+  const proof = await nativeEmailOriginalFiles.receive(
+    l,
+    scope.ownerId,
+    () => {},
+  );
+  expect(proof.localUri).toBe(
+    `file:///app/email-originals/${scope.storeId}/${scope.ownerId}/${l.manifest.receiptId}/${l.manifest.fileId}/original-${l.manifest.checksum.slice(7)}.bin`,
+  );
+  expect(state.files.get(proof.localUri)).toEqual(bytes);
+  expect(
+    await nativeEmailOriginalFiles.existing(l.manifest, scope.ownerId),
+  ).toEqual(proof);
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+  expect(state.dimensions).not.toHaveBeenCalled();
+  expect([...state.files.keys()]).toEqual([proof.localUri]);
+});
+it.each([
+  "foreign-owner",
+  "expired",
+  "checksum",
+  "short",
+  "mime",
+  "scope",
+  "cancelled",
+])(
+  "refuses %s email original and preserves only prior immutable files",
+  async (mode) => {
+    const { nativeEmailOriginalFiles } =
+      await import("../intake/email-original-files");
+    const bytes = new TextEncoder().encode("original raw source"),
+      l = emailLease(bytes),
+      abort = new AbortController();
+    const precious = "file:///app/unrelated-unsent-original";
+    state.files.set(precious, bytes.slice());
+    if (mode === "expired") l.expiresAt = "2026-10-20T12:59:59Z";
+    if (mode === "cancelled") abort.abort();
+    state.fetch.mockResolvedValue(
+      new Response(
+        mode === "short"
+          ? bytes.slice(1)
+          : mode === "checksum"
+            ? bytes.slice().fill(1)
+            : bytes,
+        {
+          headers: {
+            "content-type":
+              mode === "mime" ? "text/plain" : l.manifest.declaredMimeType,
+          },
+        },
+      ),
+    );
+    let checks = 0;
+    await expect(
+      nativeEmailOriginalFiles.receive(
+        l,
+        mode === "foreign-owner" ? randomUUID() : scope.ownerId,
+        () => {
+          if (mode === "scope" && ++checks > 1) throw Error("SCOPE_CHANGED");
+        },
+        abort.signal,
+      ),
+    ).rejects.toThrow();
+    expect([...state.files.keys()]).toEqual([precious]);
+  },
+);
+it("does not accept a cached email original belonging to another owner or a tampered immutable original", async () => {
+  const { nativeEmailOriginalFiles } =
+    await import("../intake/email-original-files");
+  const bytes = new TextEncoder().encode("raw source"),
+    l = emailLease(bytes);
+  state.fetch.mockResolvedValue(
+    new Response(bytes, {
+      headers: { "content-type": l.manifest.declaredMimeType },
+    }),
+  );
+  const proof = await nativeEmailOriginalFiles.receive(
+    l,
+    scope.ownerId,
+    () => {},
+  );
+  await expect(
+    nativeEmailOriginalFiles.existing(l.manifest, randomUUID()),
+  ).rejects.toThrow("EMAIL_ORIGINAL_FILE_INVALID");
+  state.files.set(proof.localUri, bytes.slice().fill(1));
+  await expect(
+    nativeEmailOriginalFiles.existing(l.manifest, scope.ownerId),
+  ).rejects.toThrow("EMAIL_ORIGINAL_FILE_INVALID");
+  expect(state.files.get(proof.localUri)).toEqual(bytes.slice().fill(1));
+});

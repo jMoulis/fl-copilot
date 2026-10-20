@@ -858,6 +858,16 @@ CREATE UNIQUE INDEX source_original_transfer_identity ON local_jobs(json_extract
 CREATE INDEX local_files_source_scope ON local_files(source_document_id,store_id);
 CREATE INDEX waste_receipt_source_scope ON waste_receipts(source_document_id,store_id);`,
   },
+  {
+    version: 52,
+    name: "private-email-intake-cache",
+    sql: `CREATE TABLE email_intake_bindings(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,id TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id,id));
+CREATE TABLE email_intake_receipts(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id,id));
+CREATE UNIQUE INDEX email_intake_provider_identity ON email_intake_receipts(store_id,owner_id,conversation_id,json_extract(payload_json,'$.providerEmailId'));
+CREATE INDEX email_intake_receipt_page ON email_intake_receipts(store_id,owner_id,conversation_id,json_extract(payload_json,'$.receivedAt') DESC,id DESC);
+CREATE TABLE email_original_manifests(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,receipt_id TEXT NOT NULL,file_id TEXT NOT NULL,manifest_json TEXT NOT NULL,local_uri TEXT NOT NULL,verified_at TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id,receipt_id,file_id));
+CREATE UNIQUE INDEX email_original_transfer_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.conversationId'),json_extract(payload_json,'$.receiptId'),json_extract(payload_json,'$.fileId')) WHERE type='EMAIL_ORIGINAL_TRANSFER';`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

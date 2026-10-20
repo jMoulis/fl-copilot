@@ -1,4 +1,5 @@
 import { createCommercialProcessingRecovery } from "./processing-recovery.js";
+import type { EmailOriginalProcessor } from "../intake/email-originals.js";
 import { createSubstitutionEvidenceProcessor } from "../substitution/processor.js";
 import { createCommercialVisualProcessor } from "./visual-processing.js";
 import type { CommercialVisualProvider } from "./visual-provider.js";
@@ -18,6 +19,7 @@ export function createCommercialInngestWorkflows(
   signingKey: string,
   aiProvider?: CommercialAiProvider,
   visualProvider?: CommercialVisualProvider,
+  emailOriginals?: EmailOriginalProcessor,
 ) {
   const client = new Inngest({
     id: "fl-copilot-api",
@@ -25,6 +27,36 @@ export function createCommercialInngestWorkflows(
     signingKey,
     isDev: false,
   });
+  const emailOriginal = emailOriginals
+    ? client.createFunction(
+        {
+          id: "email-preserve-original-v1",
+          concurrency: 2,
+          retries: 3,
+          triggers: [{ event: "email/original.preserve" }],
+        },
+        async ({ event, step }) => {
+          const input = z.strictObject({ jobId: z.uuid() }).parse(event.data);
+          return step.run("preserve-private-original", () =>
+            emailOriginals.preserve(input.jobId),
+          );
+        },
+      )
+    : undefined;
+  async function dispatchEmailOriginals(receiptId?: string) {
+    const pending = emailOriginals
+      ? await emailOriginals.pending(receiptId)
+      : [];
+    if (pending.length)
+      await client.send(
+        pending.map((job) => ({
+          id: `email-original.v1:${job.jobId}:${job.generation}`,
+          name: "email/original.preserve",
+          data: { jobId: job.jobId },
+        })),
+      );
+    return pending.length;
+  }
   const recovery = createCommercialProcessingRecovery(
     database,
     {
@@ -224,6 +256,10 @@ export function createCommercialInngestWorkflows(
       triggers: [{ cron: "*/5 * * * *" }],
     },
     async ({ step }) => {
+      if (emailOriginals)
+        await step.run("recover-email-originals", () =>
+          dispatchEmailOriginals(),
+        );
       await step.run("dispatch-document-recovery-requests", () =>
         recovery.pendingDispatches(),
       );
@@ -298,11 +334,13 @@ export function createCommercialInngestWorkflows(
   return {
     client,
     recovery,
+    dispatchEmailOriginals,
     functions: [
       resume,
       extract,
       recover,
       evidence,
+      ...(emailOriginal ? [emailOriginal] : []),
       ...(aiDocument && aiPage ? [aiDocument, aiPage] : []),
       ...(visualPage ? [visualPage] : []),
     ],

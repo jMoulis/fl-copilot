@@ -1,5 +1,7 @@
-import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex } from "@noble/hashes/utils.js";
+import {
+  verifyPrivateOriginalFile,
+  receivePrivateOriginalFile,
+} from "./private-original-file";
 import { sourceOriginalHash } from "./source-original-hash";
 import { sourceFileDirectory } from "./source-file-directory";
 import { z } from "zod";
@@ -82,40 +84,9 @@ async function verifyFile(
   file: import("expo-file-system").File,
   expected: ExpectedOriginal,
 ) {
-  if (
-    !file.exists ||
-    file.size !== expected.sizeBytes ||
-    expected.sizeBytes <= 0 ||
-    expected.sizeBytes > 100 * 1024 * 1024
-  )
-    throw invalid();
-  const { FileMode } = await import("expo-file-system"),
-    handle = file.open(FileMode.ReadOnly),
-    digest = sha256.create();
-  let count = 0,
-    chunks = 0;
-  try {
-    while (count < expected.sizeBytes) {
-      const part = handle.readBytes(
-        Math.min(1024 * 1024, expected.sizeBytes - count),
-      );
-      if (!part.length || part.length > expected.sizeBytes - count)
-        throw invalid();
-      if (!count) verifyType(part.subarray(0, 1024), expected.mimeType);
-      digest.update(part);
-      count += part.length;
-      if (++chunks % 4 === 0)
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-    }
-    if (
-      file.size !== expected.sizeBytes ||
-      `sha256:${bytesToHex(digest.digest())}` !== expected.checksum
-    )
-      throw invalid();
-  } finally {
-    handle.close();
-    digest.destroy();
-  }
+  await verifyPrivateOriginalFile(file, expected, invalid, (header) =>
+    verifyType(header, expected.mimeType),
+  );
 }
 async function inspect(
   file: import("expo-file-system").File,
@@ -224,83 +195,30 @@ export const nativeSourceOriginalFiles: SourceOriginalFiles = {
     const lease = sourceOriginalDownloadSchema.parse(raw),
       manifest = lease.manifest;
     check();
-    if (Date.parse(lease.expiresAt) <= Date.now())
-      throw Error("SOURCE_ORIGINAL_LEASE_EXPIRED");
-    const { File } = await import("expo-file-system"),
-      { randomUUID } = await import("expo-crypto");
+    const { File } = await import("expo-file-system");
     const dir = await directory(manifest, actorId);
     dir.create({ intermediates: true, idempotent: true });
-    const final = new File(
-      dir,
-      `original-${manifest.checksum.slice(7)}.${extension(manifest.mimeType)}`,
-    );
-    if (final.exists) return inspect(final, manifest, actorId);
-    const temporary = new File(dir, `${randomUUID()}.partial`),
-      abort = new AbortController();
-    const interrupted = () => abort.abort();
-    signal?.addEventListener("abort", interrupted, { once: true });
-    if (signal?.aborted) abort.abort();
-    const timeout = setTimeout(() => abort.abort(), 120_000);
-    let moved = false,
-      created = false;
-    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-    let writer: import("expo-file-system").FileHandle | undefined;
-    try {
-      const { fetch } = await import("expo/fetch");
-      const response = await fetch(lease.url, {
-        redirect: "error",
-        credentials: "omit",
-        signal: abort.signal,
-      });
-      check();
-      if (!response.ok)
-        throw Error(
-          response.status === 401 || response.status === 403
-            ? "SOURCE_ORIGINAL_LEASE_EXPIRED"
-            : "SOURCE_ORIGINAL_DOWNLOAD_UNAVAILABLE",
-        );
-      const size = response.headers.get("content-length"),
-        mime = response.headers
-          .get("content-type")
-          ?.split(";", 1)[0]
-          ?.trim()
-          .toLowerCase();
-      if (
-        (size !== null &&
-          (!/^\d+$/.test(size) || Number(size) !== manifest.sizeBytes)) ||
-        mime !== manifest.mimeType ||
-        !response.body?.getReader
-      )
-        throw invalid();
-      temporary.create();
-      created = true;
-      writer = temporary.open();
-      reader = response.body.getReader();
-      let count = 0;
-      for (;;) {
-        check();
-        const part = await reader.read();
-        if (part.done) break;
-        count += part.value.byteLength;
-        if (count > manifest.sizeBytes) throw invalid();
-        writer.writeBytes(part.value);
-      }
-      writer.close();
-      writer = undefined;
-      if (count !== manifest.sizeBytes) throw invalid();
-      const verified = await inspect(temporary, manifest, actorId);
-      check();
-      if (final.exists) return inspect(final, manifest, actorId);
-      temporary.move(final);
-      moved = true;
-      return { ...verified, localUri: final.uri };
-    } finally {
-      signal?.removeEventListener("abort", interrupted);
-      clearTimeout(timeout);
-      abort.abort();
-      writer?.close();
-      await reader?.cancel().catch(() => undefined);
-      if (created && !moved && temporary.exists) temporary.delete();
-    }
+    return receivePrivateOriginalFile({
+      url: lease.url,
+      expiresAt: lease.expiresAt,
+      sizeBytes: manifest.sizeBytes,
+      mimeType: manifest.mimeType,
+      directory: dir,
+      final: new File(
+        dir,
+        `original-${manifest.checksum.slice(7)}.${extension(manifest.mimeType)}`,
+      ),
+      check,
+      signal,
+      inspect: (file) => inspect(file, manifest, actorId),
+      fault: (kind) =>
+        kind === "INVALID"
+          ? invalid()
+          : Error(
+              kind === "EXPIRED"
+                ? "SOURCE_ORIGINAL_LEASE_EXPIRED"
+                : "SOURCE_ORIGINAL_DOWNLOAD_UNAVAILABLE",
+            ),
+    });
   },
 };

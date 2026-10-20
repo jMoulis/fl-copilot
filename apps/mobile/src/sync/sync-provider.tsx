@@ -1,3 +1,8 @@
+import { EmailIntakeCache } from "../intake/email-intake-cache";
+import { EmailOriginalTransfer } from "../intake/email-original-transfer";
+import { nativeEmailOriginalFiles } from "../intake/email-original-files";
+import type { EmailOriginalProof } from "../intake/email-original-transfer";
+import type { EmailIntakeOriginalRequest } from "@fl-copilot/sync-contracts";
 import { SourceOriginalTransfer } from "../documents/source-original-transfer";
 import type {
   SourceOriginalProof,
@@ -54,6 +59,18 @@ interface LocalSyncSnapshot {
 
 export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
+  emailIntake?: {
+    list(conversationId: string): ReturnType<EmailIntakeCache["list"]>;
+    refresh(conversationId: string, cursor?: string): Promise<string | null>;
+    localOriginal(
+      ref: EmailIntakeOriginalRequest,
+    ): Promise<EmailOriginalProof | null>;
+    requestOriginal(
+      ref: EmailIntakeOriginalRequest,
+      retry?: boolean,
+    ): Promise<void>;
+    cancelOriginal(ref: EmailIntakeOriginalRequest): Promise<void>;
+  };
   originals?: {
     state(sourceDocumentId: string): Promise<SourceOriginalState>;
     local(sourceDocumentId: string): Promise<SourceOriginalProof | null>;
@@ -258,6 +275,33 @@ export function SyncProvider({ children }: PropsWithChildren) {
       randomUUID,
     );
   }, [database.sqlite, hasLocalSession, withAccessToken]);
+  const emailCache = useMemo(
+    () =>
+      hasLocalSession
+        ? new EmailIntakeCache(database.sqlite, () => visualSession.current)
+        : undefined,
+    [database.sqlite, hasLocalSession],
+  );
+  const emailTransfer = useMemo(() => {
+    if (!emailCache) return undefined;
+    const api = new ApiClient(getApiBaseUrl());
+    return new EmailOriginalTransfer(
+      emailCache,
+      {
+        manifest: (store, owner, ref) =>
+          withAccessToken(
+            (token) => api.emailIntakeOriginalManifest(token, store, ref),
+            owner,
+          ),
+        download: (store, owner, ref) =>
+          withAccessToken(
+            (token) => api.emailIntakeOriginalDownload(token, store, ref),
+            owner,
+          ),
+      },
+      nativeEmailOriginalFiles,
+    );
+  }, [emailCache, withAccessToken]);
   const originalJobs = useMemo(
     () =>
       originalTransfer
@@ -266,9 +310,11 @@ export function SyncProvider({ children }: PropsWithChildren) {
             originalTransfer,
             () => visualSession.current,
             randomUUID,
+            undefined,
+            emailTransfer,
           )
         : undefined,
-    [database.sqlite, originalTransfer],
+    [database.sqlite, originalTransfer, emailTransfer],
   );
   useEffect(
     () => () => originalJobs?.interrupt(defaultStoreId, session?.user.id),
@@ -523,12 +569,79 @@ export function SyncProvider({ children }: PropsWithChildren) {
     session?.user.id,
     syncNow,
   ]);
+  const emailIntake = useMemo(() => {
+    if (
+      !emailCache ||
+      !emailTransfer ||
+      !originalJobs ||
+      !defaultStoreId ||
+      !session?.user.id
+    )
+      return undefined;
+    const owner = session.user.id;
+    const scopeFor = (conversationId: string) => {
+      const scope = emailCache.scope(conversationId);
+      if (scope.storeId !== defaultStoreId || scope.ownerId !== owner)
+        throw Error("EMAIL_INTAKE_SCOPE_CHANGED");
+      return scope;
+    };
+    const api = new ApiClient(getApiBaseUrl());
+    return {
+      list: async (conversationId: string) => {
+        const scope = scopeFor(conversationId);
+        const result = await emailCache.list(conversationId);
+        emailCache.check(scope);
+        return result;
+      },
+      refresh: async (conversationId: string, cursor?: string) => {
+        const scope = scopeFor(conversationId);
+        await emailCache.authorize(scope);
+        const page = await withAccessToken(
+          (token) =>
+            api.emailIntakeList(token, scope.storeId, conversationId, cursor),
+          owner,
+        );
+        emailCache.check(scope);
+        return emailCache.storePage(scope, page);
+      },
+      localOriginal: async (ref: EmailIntakeOriginalRequest) => {
+        const scope = scopeFor(ref.conversationId);
+        const result = await emailTransfer.local(ref);
+        emailCache.check(scope);
+        return result;
+      },
+      requestOriginal: async (
+        ref: EmailIntakeOriginalRequest,
+        retry = false,
+      ) => {
+        const scope = scopeFor(ref.conversationId);
+        await emailCache.originalBasis(scope, ref);
+        await originalJobs.requestEmail(ref, retry);
+        emailCache.check(scope);
+        void syncNow(scope.storeId);
+      },
+      cancelOriginal: async (ref: EmailIntakeOriginalRequest) => {
+        const scope = scopeFor(ref.conversationId);
+        await originalJobs.cancelEmail(ref);
+        emailCache.check(scope);
+      },
+    };
+  }, [
+    emailCache,
+    emailTransfer,
+    originalJobs,
+    defaultStoreId,
+    session?.user.id,
+    withAccessToken,
+    syncNow,
+  ]);
   return (
     <SyncContext.Provider
       value={{
         ...state,
         syncNow,
         originals,
+        emailIntake,
         visuals: { requestPreview: requestVisualPreview, retry: retryVisual },
       }}
     >
@@ -597,7 +710,7 @@ async function readLocalSyncSnapshot(
           AS failed_count
       FROM local_jobs
       WHERE json_extract(payload_json, '$.storeId') = ?
-        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
+        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER','EMAIL_ORIGINAL_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
     `,
     storeId,
     ownerId ?? null,

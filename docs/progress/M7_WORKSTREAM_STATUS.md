@@ -519,6 +519,52 @@ Preuves locales du nouvel état : **136 tests ciblés réussis / 2 ignorés**, i
 
 Sept chantiers : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours**. Réception Resend, autres lots V1 et recette M8 demeurent ouverts.
 
+### 20 octobre — originaux fusionnés ; réception Resend démarrée
+
+La PR 287 est fusionnée en `5bcb752ba86b2d24b73f482adaa80193ba257018` après succès des deux CI exactes push `39360965569` et PR `39360987957` sur `2b4fc43a559f3b9a3e90a6e54bc9c38c6d3eae69`. Les deux suites comptent **2 992 tests réussis / 6 ignorés**, dont la récupération SQLite A → Mongo → SQLite B/relecture hors connexion. Exports Hermes iOS/Android réussis. Branches locale/distante supprimées. Le code est fusionné, sans déploiement ni validation sur téléphone ; les limites de la preuve et la recette groupée restent dans `../qa/M7_SOURCE_ORIGINAL_RECOVERY.md`.
+
+L8 : nouvelle branche de réception Resend. Signature sur corps brut, métadonnées bornées, routage destinataire/expéditeur sans nouvelle autorité, route POST Fastify encapsulée et admission durable attendue avant accusé de réception : **26 tests locaux passent**, types API/lint passent. Aucune route activée dans l’application, tâche Mongo, pièce jointe téléchargée, réception configurée ou livraison n’est déduite de ce premier contrôle. Le compte ne contient pas de webhook ; l’adresse de réception gérée a été demandée au propriétaire après vérification de l’accès disponible. Les autres travaux continuent indépendamment. Voir `../specs/RESEND_SOURCE_INTAKE_SPEC.md`.
+
+Sept chantiers : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents en cours (originaux fusionnés, réception mail en construction) ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours (consultation commune fusionnée, recette native ouverte)**. Aucun build EAS, appel IA payant, changement de compte ou configuration système.
+
+### 20 octobre — réception Resend durable, parcours de livraison vérifié
+
+L8/M7 3 avance sur branche locale : migration Mongo 45, adresses opaques non réaffectables, révocation explicite, admission atomique des métadonnées d’email et identités stables des pièces jointes. Rejeux concurrents, contradictions/quarantaine, perte de droits, conversation supprimée/archivée et échec d’enregistrement sont contrôlés. Les routes privées et le client typé sont branchés ; la réception reste désactivée sans configuration explicite complète. **90 tests ciblés distincts**, dix projets TypeScript, lint/format et bundle API passent. Le premier contrôle global a trouvé six délais de préparation Mongo de 10 secondes ; les 33 tests concernés passent après adaptation du délai de préparation, et la suite globale complète est rejouée. Voir `../qa/M7_RESEND_SOURCE_INTAKE.md`. Aucun original n’est encore téléchargé par ce nouveau canal ; conservation des octets, travail durable et confirmation SQLite/Outbox dans le chat restent dans le même lot avant livraison.
+
+La vérification en lecture seule confirme l’API publique Ready du 17 octobre (`dpl_8wxufurZhFMng4GU8bvEyT96WKDi`, santé 200/base connectée) et le dernier artefact iOS fini `ff8a26ba-49ce-4733-bead-0f4a9b69235a`, commit `d0b40ca9c1d1e5a7f4d738f837d546eb6677fffa`, version 0.1.0/build 1. Ce dernier état ne prouve pas la version installée sur le téléphone. Une branche séparée prépare une recette groupée du code déjà fusionné, avec incrément du numéro natif staging pour tracer le prochain binaire ; elle n’intègre pas le chantier Resend inachevé. Aucun déploiement ni build EAS n’a été déclenché par ces lectures/préparations.
+
+Les sept chantiers restent : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours**. La prochaine recette du socle UX/médias/originaux requiert une livraison API compatible puis un binaire iOS groupé ; les autres engagements V1/M8 ne sont pas retirés du périmètre.
+
+### 20 octobre — contrôle global Resend passé ; préparation du binaire fusionnée
+
+Le socle d’enveloppes de réception `15fc0c8` passe la suite globale avec Mongo réel : **3 041 tests réussis / 6 ignorés**. Les délais de préparation de bases froides sont désormais adaptés à l’historique complet des migrations ; les assertions et délais métier ne changent pas. L’adaptateur de pièces jointes ajoute ensuite **32 tests ciblés réussis**, types/lint API passés ; il reste à le raccorder au stockage privé durable, au travail de traitement et à la confirmation SQLite/Outbox dans le chat. Aucun email ni original réel n’est téléchargé par ces tests.
+
+La PR 288 est fusionnée en `c8a16987ed6c558b20bd2f52fa761c9095a2982b`, après CI finales push `39363231191` et PR `39363260997` réussies sur `923f6372746a206b941f61dcc5dde72435c7f92d` : **2 992 tests réussis / 6 ignorés**, bundle API et exports natifs passés. Branches supprimées. Elle prépare l’identité native distincte des builds staging et la recette groupée dans `../qa/V1_GROUPED_NATIVE_ACCEPTANCE_2026_10_20.md`. Ce changement de configuration n’a déclenché ni build EAS ni livraison API. La CI du nouveau master est encore à vérifier avant une livraison depuis cette tête.
+
+Les sept états restent **1 en cours ; 2 code prêt ; 3 en cours (enveloppes/transport de mail sur branche) ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours (préparation de recette fusionnée, livraison/acceptation restantes)**. La V1 complète, réception mail et autres engagements M8 inclus, reste l’objectif.
+
+### 20 octobre — API groupée livrée, build iOS de recette lancé
+
+La CI de master `c8a1698` (`39363869583`) a réussi. Le lot déjà fusionné est déployé en production : `dpl_AkaifXtDr139PinPy2W4HQVmeT9o`, même artefact préparé, contrôlé puis promu. Santé publique 200/base connectée ; routes originaux, visuels et historique protégées par la session. Aucun appel IA payant, changement de configuration de réception mail ou remplacement des données métier. L'ancien déploiement est conservé. La recette ne prétend pas encore valider les opérations authentifiées de l'utilisateur sur son téléphone.
+
+Un seul build iOS staging autonome est lancé : `dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `c8a1698`, **0.1.0 / build 2**, certificats gelés et iPhone Air déjà provisionné. Achèvement, installation et retour utilisateur restent à vérifier. Les CLI utilisées pour cette livraison sont temporaires et épinglées ; aucune mise à jour système du Mac. Détails et limites dans `../qa/V1_GROUPED_NATIVE_ACCEPTANCE_2026_10_20.md`.
+
+Les sept chantiers restent **1 en cours ; 2 code prêt ; 3 en cours (originaux livrés côté API, réception Resend encore sur branche) ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours (API livrée, binaire et recette en attente)**. Cette livraison réduit l'écart entre code fusionné et produit disponible, sans retirer la réception mail, les illustrations ni les autres engagements V1/M8.
+
+### 20 octobre — binaire groupé prêt ; conservation privée des emails testée
+
+Le build iOS `dd32fb48-c423-4ab7-a444-fe0fb4e0de0e` est **FINISHED** (03:42:55 UTC), version **0.1.0 / 2**, source `c8a1698`. La livraison API de ce même lot reste en production. Le retour de recette sur l'iPhone a été demandé ; aucune installation ou validation sur appareil n'est encore attestée. Resend n'est pas inclus dans ce binaire.
+
+Sur la branche Resend, les originaux sont désormais pris en charge par des jobs durables par pièce jointe : conservation privée immuable, preuve SHA-256/taille, bail, reprises bornées et réutilisation d'Inngest. Un échec de file reste retriable après enregistrement atomique ; les bons fichiers ne sont pas effacés si un autre échoue. **149 tests ciblés**, types, lint et bundle API passent. Aucun email réel, upload Blob ou appel IA n'a été effectué. L'accès aux originaux depuis le chat, la confirmation SQLite/Outbox et les pipelines métier restent à raccorder dans ce même lot avant PR/livraison.
+
+États des sept chantiers : **1 en cours ; 2 code prêt ; 3 en cours (transport/conservation mail testés localement, intégration native restante) ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours (API et binaire livrés/disponibles, recette sur appareil ouverte)**. La roadmap complète et les exigences M8 restent inchangées.
+
+### 20 octobre — accès privé aux originaux reçus par email
+
+La branche Resend fournit maintenant les contrats, routes authentifiées et client typé de récupération d'un original prêt : contrôle du compte/magasin/conversation/fichier, empreinte des métadonnées, vérification du stockage et lien privé éphémère. Un ZIP reçu n'est pas présenté comme une vente, une casse ou un PDF métier avant classification. **165 tests ciblés** passent, ainsi que les types des dix projets, lint et bundle API. Aucun service réel n'a été appelé par ces tests. La conservation locale et la confirmation SQLite/Outbox dans le chat restent à implémenter avant la PR complète.
+
+Les sept états restent **1 en cours ; 2 code prêt ; 3 en cours ; 4 en cours ; 5 en cours ; 6 en cours ; 7 en cours**. API et build iOS 2 du lot fusionné sont disponibles ; le retour de recette sur appareil et le reste de la V1/M8 demeurent ouverts. Aucun nouveau build payant ou déploiement supplémentaire.
+
 ### 20 octobre — retour iPhone et reprise de la fidélité visuelle
 
 Le build staging **0.1.0 / 2** (`dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `c8a1698`) est installé et examiné par Julien : l’application lui convient mais le design est jugé insuffisamment fidèle aux maquettes. La recette UX reste ouverte. Ce retour devient la priorité du chantier 7 ; le travail Resend reste conservé sur sa branche, sans activation.
@@ -542,3 +588,9 @@ Voir `../qa/CHAT_IMAGE_STABILITY_2026_10_20.md`. Codé/testé, fusionné, déplo
 ## Lot courant — défilement des tableaux du chat (20 octobre 2026)
 
 **7 — UX/validation : en cours.** Suppression du capteur d’appui long autour des réponses du copilote ; menu conservé sur le texte et les cellules. Largeur du tableau bornée au message et défilement natif configuré pour les deux axes imbriqués. Contrôles locaux du composant à 320/390/844 px, brouillon et source conservés ; tests des contrôleurs existants. Le blocage iPhone n’a pas été reproduit dans le navigateur : recette native encore nécessaire après livraison groupée. Le build 3 précédent ne contient pas ce changement. Aucun déploiement API ni nouveau build EAS payant pour ce correctif isolé. Chantiers 1/3/4/5/6 inchangés, en cours ; 2 reste code prêt. Voir `../qa/CHAT_TABLE_SCROLL_2026_10_20.md`.
+
+### 20 octobre — cache natif et reprise des originaux email
+
+**3 — Documents : en cours.** La branche Resend conserve maintenant les métadonnées privées dans SQLite et récupère les octets vérifiés via la file de synchronisation existante. Les tests couvrent la fermeture/réouverture hors connexion, les réponses anciennes/contradictoires, le changement de compte, l’annulation et la perte de bail. Une preuve traverse Mongo, les routes API authentifiées, le client typé, la file locale, le fichier et la réouverture hors ligne ; elle ne publie aucune donnée métier. La confirmation du lot avec Outbox, l’intégration aux imports/PDF/photos et l’interface dans le chat restent à terminer avant livraison complète. L’adresse réelle de réception attend toujours sa configuration autorisée.
+
+**Codé et vérifié localement ; non fusionné, non déployé, non validé sur appareil.** Les exports locaux iOS/Android passent sans build EAS. Chantiers **1/4/5/6/7 en cours ; 2 code prêt**, sans progression additionnelle revendiquée sur ces six chantiers. Aucun nouveau coût fournisseur, réglage système ou déploiement. Voir `../qa/M7_RESEND_SOURCE_INTAKE.md`.

@@ -889,6 +889,45 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 45,
+    name: "private-email-source-intake",
+    async up(db) {
+      await db
+        .collection("emailIntakeBindings")
+        .createIndex({ recipient: 1 }, { unique: true });
+      await db
+        .collection("emailIntakeBindings")
+        .createIndex(
+          { storeId: 1, ownerId: 1, conversationId: 1 },
+          { unique: true, partialFilterExpression: { revokedAt: null } },
+        );
+      await db
+        .collection("emailIntakeReceipts")
+        .createIndex({ providerEmailId: 1 }, { unique: true });
+      await db.collection("emailIntakeReceipts").createIndex({
+        storeId: 1,
+        ownerId: 1,
+        conversationId: 1,
+        createdAt: -1,
+        _id: -1,
+      });
+      await db
+        .collection("emailIntakeReceipts")
+        .createIndex({ bindingId: 1, status: 1, createdAt: -1 });
+      await db
+        .collection("emailIntakeEvents")
+        .createIndex({ providerEmailId: 1, createdAt: -1 });
+      await db.collection("emailIntakeOriginalJobs").createIndex({
+        status: 1,
+        nextAttemptAt: 1,
+        leaseUntil: 1,
+      });
+      await db
+        .collection("emailIntakeOriginalJobs")
+        .createIndex({ receiptId: 1, _id: 1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(
