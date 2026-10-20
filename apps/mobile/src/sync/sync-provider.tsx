@@ -1,3 +1,7 @@
+import { SourceOriginalTransfer } from "../documents/source-original-transfer";
+import type { SourceOriginalProof } from "../documents/source-original-transfer";
+import { nativeSourceOriginalFiles } from "../documents/source-original-files";
+import { SourceOriginalJobs } from "../documents/source-original-jobs";
 import { VisualFileCache } from "../products/visual-file-cache";
 import { VisualFileJobs } from "../products/visual-file-jobs";
 import {
@@ -47,6 +51,11 @@ interface LocalSyncSnapshot {
 
 export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
+  originals?: {
+    local(sourceDocumentId: string): Promise<SourceOriginalProof | null>;
+    request(sourceDocumentId: string, retry?: boolean): Promise<void>;
+    cancel(sourceDocumentId: string): Promise<void>;
+  };
   visuals?: {
     requestPreview(assetId: string): Promise<void>;
     retry(assetId: string): Promise<void>;
@@ -223,6 +232,40 @@ export function SyncProvider({ children }: PropsWithChildren) {
           canWrite: session.stores[0]?.role === "MANAGER",
         }
       : null;
+  const originalTransfer = useMemo(() => {
+    if (!hasLocalSession) return undefined;
+    const api = new ApiClient(getApiBaseUrl());
+    return new SourceOriginalTransfer(
+      database.sqlite,
+      {
+        manifest: (store, owner, id) =>
+          withAccessToken(
+            (token) => api.sourceOriginalManifest(token, store, id),
+            owner,
+          ),
+        download: (store, owner, id) =>
+          withAccessToken(
+            (token) => api.sourceOriginalDownload(token, store, id),
+            owner,
+          ),
+      },
+      nativeSourceOriginalFiles,
+      () => visualSession.current,
+      randomUUID,
+    );
+  }, [database.sqlite, hasLocalSession, withAccessToken]);
+  const originalJobs = useMemo(
+    () =>
+      originalTransfer
+        ? new SourceOriginalJobs(
+            database.sqlite,
+            originalTransfer,
+            () => visualSession.current,
+            randomUUID,
+          )
+        : undefined,
+    [database.sqlite, originalTransfer],
+  );
   const visualJobs = useMemo(() => {
     if (!hasLocalSession) return undefined;
     const api = new ApiClient(getApiBaseUrl());
@@ -308,6 +351,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
           await analysisRecovery?.process(storeId, session.user.id);
         const summary = await service.sync(storeId);
         if (session?.user.id)
+          await originalJobs?.process(storeId, session.user.id);
+        if (session?.user.id)
           await visualJobs?.process(storeId, session.user.id);
         if (currentScope())
           await new VisualFileCache(database.sqlite).clean(
@@ -352,6 +397,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       service,
       uploadQueue,
       analysisRecovery,
+      originalJobs,
       visualJobs,
       session?.user.id,
     ],
@@ -421,11 +467,54 @@ export function SyncProvider({ children }: PropsWithChildren) {
     },
     [defaultStoreId, session?.user.id, visualJobs, syncNow],
   );
+  const originals = useMemo(() => {
+    if (
+      !originalTransfer ||
+      !originalJobs ||
+      !defaultStoreId ||
+      !session?.user.id
+    )
+      return undefined;
+    const ownerId = session.user.id;
+    const check = () => {
+      if (
+        visualSession.current?.storeId !== defaultStoreId ||
+        visualSession.current.userId !== ownerId
+      )
+        throw Error("SOURCE_ORIGINAL_SCOPE_CHANGED");
+    };
+    return {
+      local: async (id: string) => {
+        check();
+        const proof = await originalTransfer.local(id);
+        check();
+        return proof;
+      },
+      request: async (id: string, retry = false) => {
+        check();
+        await originalJobs.request(id, retry);
+        check();
+        void syncNow(defaultStoreId);
+      },
+      cancel: async (id: string) => {
+        check();
+        await originalJobs.cancel(id);
+        check();
+      },
+    };
+  }, [
+    originalTransfer,
+    originalJobs,
+    defaultStoreId,
+    session?.user.id,
+    syncNow,
+  ]);
   return (
     <SyncContext.Provider
       value={{
         ...state,
         syncNow,
+        originals,
         visuals: { requestPreview: requestVisualPreview, retry: retryVisual },
       }}
     >
@@ -494,7 +583,7 @@ async function readLocalSyncSnapshot(
           AS failed_count
       FROM local_jobs
       WHERE json_extract(payload_json, '$.storeId') = ?
-        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
+        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER','SOURCE_ORIGINAL_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
     `,
     storeId,
     ownerId ?? null,

@@ -142,6 +142,7 @@ describe("local SQLite migrations", () => {
       "products",
       "sales_observations",
       "source_documents",
+      "source_original_manifests",
       "source_original_restorations",
       "source_records",
       "store_context_history",

@@ -850,6 +850,12 @@ CREATE INDEX visual_cache_scope ON visual_asset_files(store_id,last_accessed_at)
 CREATE TABLE visual_conflict_history(action_id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT NOT NULL,local_json TEXT NOT NULL,remote_json TEXT NOT NULL,resolved_json TEXT NOT NULL,decision TEXT NOT NULL CHECK(decision IN ('KEEP_LOCAL','ADOPT_REMOTE','RETRY_LOCAL','REMOVE_LINK','RETIRE_LOCAL')),actor_id TEXT NOT NULL,created_at TEXT NOT NULL,commands_json TEXT NOT NULL DEFAULT '[]');
 CREATE UNIQUE INDEX visual_file_job_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.assetId'),json_extract(payload_json,'$.variant')) WHERE type='VISUAL_FILE_TRANSFER';`,
   },
+  {
+    version: 51,
+    name: "verified-remote-source-originals",
+    sql: `CREATE TABLE source_original_manifests(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,source_document_id TEXT NOT NULL,manifest_json TEXT NOT NULL,local_file_id TEXT NOT NULL,views_json TEXT,verified_at TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,source_document_id));
+CREATE UNIQUE INDEX source_original_transfer_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.sourceDocumentId')) WHERE type='SOURCE_ORIGINAL_TRANSFER';`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

@@ -1,26 +1,9 @@
-import { issueSignedToken, presignUrl } from "@vercel/blob";
 import type { DatabaseService } from "../database/types.js";
 import { AuthError } from "../auth/service.js";
-import { getVercelOidcToken } from "../vercel-request-context.js";
+import { signPrivateOriginal } from "../uploads/private-original-link.js";
 export function createCommercialOriginalLinkService(
   database: DatabaseService,
-  sign = async (pathname: string, validUntil: number) => {
-    const token = await issueSignedToken({
-      pathname,
-      operations: ["get"],
-      validUntil,
-      oidcToken: getVercelOidcToken() ?? process.env.VERCEL_OIDC_TOKEN,
-    });
-    return (
-      await presignUrl(token, {
-        operation: "get",
-        access: "private",
-        pathname,
-        validUntil,
-        useCache: true,
-      })
-    ).presignedUrl;
-  },
+  sign = signPrivateOriginal,
   now: () => Date = () => new Date(),
 ) {
   return {
