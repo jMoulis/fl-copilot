@@ -14,58 +14,136 @@ const cm = z
 const label = z.string().trim().min(1).max(120);
 const base = { expectedRevisionId: z.uuid() };
 /** The model supplies a requested patch, never identities of new records, authority or measurement quality. */
+export const legacyCopilotLayoutEditInputSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.strictObject({
+      ...base,
+      action: z.literal("EDIT"),
+      targetId: z.uuid().nullable(),
+      patch: z
+        .strictObject({
+          label: label.optional(),
+          widthCm: cm.optional(),
+          depthCm: cm.optional(),
+          heightCm: cm.optional(),
+          xCm: cm.optional(),
+          yCm: cm.optional(),
+          rotation: z
+            .union([
+              z.literal(0),
+              z.literal(90),
+              z.literal(180),
+              z.literal(270),
+            ])
+            .nullable()
+            .optional(),
+          clearanceBelowCm: cm.optional(),
+          maxLoadKg: z
+            .number()
+            .finite()
+            .min(0)
+            .max(100000)
+            .nullable()
+            .optional(),
+        })
+        .refine((p) => Object.keys(p).length > 0),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("ADD_MOBILE"),
+      label,
+      hostId: z.uuid().nullable(),
+      patch: z
+        .strictObject({
+          widthCm: cm.optional(),
+          depthCm: cm.optional(),
+          heightCm: cm.optional(),
+          xCm: cm.optional(),
+          yCm: cm.optional(),
+          rotation: z
+            .union([
+              z.literal(0),
+              z.literal(90),
+              z.literal(180),
+              z.literal(270),
+            ])
+            .nullable()
+            .optional(),
+        })
+        .optional(),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("ASSOCIATE_MOBILE"),
+      targetId: z.uuid(),
+      hostId: z.uuid().nullable(),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("REMOVE_MOBILE"),
+      targetId: z.uuid(),
+    }),
+  ],
+);
+const slot = z.strictObject({
+  assemblyId: z.uuid(),
+  face: z.enum(["A", "B"]),
+  order: z.number().int().min(1).max(64),
+});
+export const copilotLayoutInventoryInputSchema = z.discriminatedUnion(
+  "action",
+  [
+    z.strictObject({ ...base, action: z.literal("ADD_ASSEMBLY"), label }),
+    z.strictObject({ ...base, action: z.literal("ADD_TG"), label }),
+    z.strictObject({
+      ...base,
+      action: z.literal("ADD_FIXED"),
+      label,
+      ...slot.shape,
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("ADD_TG_SURFACE"),
+      furnitureId: z.uuid(),
+      label,
+      surfaceKind: z.enum(["BAC", "UPPER_SHELF", "OTHER"]),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("COPY_ASSEMBLY"),
+      targetId: z.uuid(),
+      label,
+      copyDimensions: z.boolean(),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("COPY_FURNITURE"),
+      targetId: z.uuid(),
+      label,
+      copyDimensions: z.boolean(),
+      slot: slot.nullable(),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("REMOVE_ASSEMBLY"),
+      targetId: z.uuid(),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("REMOVE_FURNITURE"),
+      targetId: z.uuid(),
+    }),
+    z.strictObject({
+      ...base,
+      action: z.literal("REMOVE_TG_SURFACE"),
+      targetId: z.uuid(),
+    }),
+  ],
+);
 export const copilotLayoutEditInputSchema = z.discriminatedUnion("action", [
-  z.strictObject({
-    ...base,
-    action: z.literal("EDIT"),
-    targetId: z.uuid().nullable(),
-    patch: z
-      .strictObject({
-        label: label.optional(),
-        widthCm: cm.optional(),
-        depthCm: cm.optional(),
-        heightCm: cm.optional(),
-        xCm: cm.optional(),
-        yCm: cm.optional(),
-        rotation: z
-          .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
-          .nullable()
-          .optional(),
-        clearanceBelowCm: cm.optional(),
-        maxLoadKg: z.number().finite().min(0).max(100000).nullable().optional(),
-      })
-      .refine((p) => Object.keys(p).length > 0),
-  }),
-  z.strictObject({
-    ...base,
-    action: z.literal("ADD_MOBILE"),
-    label,
-    hostId: z.uuid().nullable(),
-    patch: z
-      .strictObject({
-        widthCm: cm.optional(),
-        depthCm: cm.optional(),
-        heightCm: cm.optional(),
-        xCm: cm.optional(),
-        yCm: cm.optional(),
-        rotation: z
-          .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
-          .nullable()
-          .optional(),
-      })
-      .optional(),
-  }),
-  z.strictObject({
-    ...base,
-    action: z.literal("ASSOCIATE_MOBILE"),
-    targetId: z.uuid(),
-    hostId: z.uuid().nullable(),
-  }),
-  z.strictObject({
-    ...base,
-    action: z.literal("REMOVE_MOBILE"),
-    targetId: z.uuid(),
-  }),
+  ...legacyCopilotLayoutEditInputSchema.options,
+  ...copilotLayoutInventoryInputSchema.options,
 ]);
 export type CopilotLayoutEditInput = z.infer<
   typeof copilotLayoutEditInputSchema
@@ -79,11 +157,26 @@ export const layoutEditBasisSchema = z.strictObject({
 export const layoutCreatedIdsSchema = z
   .strictObject({ furnitureId: z.uuid(), surfaceId: z.uuid() })
   .refine((v) => v.furnitureId !== v.surfaceId);
+/** At most half the bounded inventory can be copied into the same plan (64 furniture + 192 surfaces + island). */
+export const layoutInventoryCreatedIdsSchema = z.strictObject({
+  ids: z
+    .array(z.uuid())
+    .min(1)
+    .max(257)
+    .refine((ids) => new Set(ids).size === ids.length),
+});
+export const layoutProposalCreatedIdsSchema = z.union([
+  layoutCreatedIdsSchema,
+  layoutInventoryCreatedIdsSchema,
+]);
+export type CopilotLayoutCreatedIds = z.infer<
+  typeof layoutProposalCreatedIdsSchema
+>;
 export const copilotLayoutEditPreviewSchema = z.strictObject({
   input: copilotLayoutEditInputSchema,
   status: z.enum(["READY", "UNCHANGED", "ABSENT", "STALE", "BLOCKED"]),
   basis: layoutEditBasisSchema.nullable(),
-  created: layoutCreatedIdsSchema.nullable(),
+  created: layoutProposalCreatedIdsSchema.nullable(),
   changes: z
     .array(
       z.strictObject({
@@ -111,13 +204,18 @@ export const copilotLayoutEditProposalSchema = z
     assistantMessageId: z.uuid(),
     input: copilotLayoutEditInputSchema,
     basis: layoutEditBasisSchema,
-    created: layoutCreatedIdsSchema.nullable(),
+    created: layoutProposalCreatedIdsSchema.nullable(),
   })
   .superRefine((v, c) => {
-    if (
-      v.input.expectedRevisionId !== v.basis.revisionId ||
-      (v.input.action === "ADD_MOBILE") !== (v.created !== null)
-    )
+    const createsInventory =
+      v.input.action.startsWith("ADD_") || v.input.action.startsWith("COPY_");
+    const validCreated =
+      v.input.action === "ADD_MOBILE"
+        ? layoutCreatedIdsSchema.safeParse(v.created).success
+        : createsInventory
+          ? layoutInventoryCreatedIdsSchema.safeParse(v.created).success
+          : v.created === null;
+    if (v.input.expectedRevisionId !== v.basis.revisionId || !validCreated)
       c.addIssue({
         code: "custom",
         message: "Proposition physique incohérente.",

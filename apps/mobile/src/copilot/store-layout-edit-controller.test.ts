@@ -4,7 +4,12 @@ import { mkdtempSync, rmSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { it, expect } from "vitest";
-import { copilotMessageSchema } from "@fl-copilot/domain";
+import {
+  copilotMessageSchema,
+  type CopilotLayoutEditInput,
+  type StoreLayout,
+  layoutCreatedIdsSchema,
+} from "@fl-copilot/domain";
 import { runLocalMigrations } from "../db/migrations";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import {
@@ -52,7 +57,11 @@ class Adapter implements OutboxDatabase {
     }
   }
 }
-async function setup(path = ":memory:", mobile = false) {
+async function setup(
+  path = ":memory:",
+  mobile = false,
+  inventory?: (head: StoreLayout) => CopilotLayoutEditInput,
+) {
   const db = new DatabaseSync(path),
     a = new Adapter(db),
     f = chatFixture(randomUUID),
@@ -74,19 +83,21 @@ async function setup(path = ":memory:", mobile = false) {
       revisionId: id,
       referenceRevisionId: id,
     });
-  const input = mobile
-    ? {
-        action: "ADD_MOBILE",
-        expectedRevisionId: head.revisionId,
-        label: "Mobile pommes",
-        hostId: head.content.furniture[0]!.id,
-      }
-    : {
-        action: "EDIT",
-        expectedRevisionId: head.revisionId,
-        targetId: null,
-        patch: { widthCm: 1140.5 },
-      };
+  const input = inventory
+    ? inventory(head)
+    : mobile
+      ? {
+          action: "ADD_MOBILE",
+          expectedRevisionId: head.revisionId,
+          label: "Mobile pommes",
+          hostId: head.content.furniture[0]!.id,
+        }
+      : {
+          action: "EDIT",
+          expectedRevisionId: head.revisionId,
+          targetId: null,
+          patch: { widthCm: 1140.5 },
+        };
   const preview = presentStoreLayoutEdit(f.storeId, input, {
     head,
     reference: head,
@@ -159,10 +170,10 @@ it("confirms once offline with unchanged adopted reference, restarts and replays
     expect(p?.entity.referenceRevisionId).toBe(s.head.revisionId);
     expect(p?.syncState).toBe("PENDING");
     expect(p?.entity.content.furniture.at(-1)?.id).toBe(
-      s.preview.created?.furnitureId,
+      layoutCreatedIdsSchema.parse(s.preview.created).furnitureId,
     );
     expect(p?.entity.content.surfaces.at(-1)?.id).toBe(
-      s.preview.created?.surfaceId,
+      layoutCreatedIdsSchema.parse(s.preview.created).surfaceId,
     );
     expect(s.counts()).toEqual({ history: 3, outbox: 1, results: 1 });
     await s.controller.confirm(s.message);
@@ -184,7 +195,7 @@ it("confirms once offline with unchanged adopted reference, restarts and replays
       (
         await new StoreLayoutRepository(a, randomUUID).get(s.f.storeId)
       )?.entity.content.furniture.at(-1)?.id,
-    ).toBe(s.preview.created?.furnitureId);
+    ).toBe(layoutCreatedIdsSchema.parse(s.preview.created).furnitureId);
   } finally {
     try {
       s.db.close();
@@ -365,7 +376,7 @@ it("gives independent offline devices distinct sync commands for the same card, 
         s.f.storeId,
       );
       expect(head?.entity.content.furniture.at(-1)?.id).toBe(
-        s.preview.created?.furnitureId,
+        layoutCreatedIdsSchema.parse(s.preview.created).furnitureId,
       );
       expect(head?.entity.parentRevisionId).toBe(s.head.revisionId);
     }
@@ -396,3 +407,94 @@ it("gives independent offline devices distinct sync commands for the same card, 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it.each(["ADD_FIXED", "COPY_ASSEMBLY", "REMOVE_ASSEMBLY"] as const)(
+  "confirms %s through SQLite/history/Outbox, preserves the reference and replays after a real close/reopen",
+  async (action) => {
+    const dir = mkdtempSync(join(tmpdir(), "fl-inventory-chat-")),
+      path = join(dir, "local.db");
+    const s = await setup(path, false, (head) => {
+      const a = head.content.assemblies[0]!;
+      if (action === "ADD_FIXED")
+        return {
+          action,
+          expectedRevisionId: head.revisionId,
+          label: "Élément ajouté",
+          assemblyId: a.id,
+          face: "A",
+          order: 5,
+        };
+      if (action === "COPY_ASSEMBLY")
+        return {
+          action,
+          expectedRevisionId: head.revisionId,
+          label: "Îlot copie",
+          targetId: a.id,
+          copyDimensions: false,
+        };
+      return { action, expectedRevisionId: head.revisionId, targetId: a.id };
+    });
+    let reopened: DatabaseSync | undefined;
+    try {
+      const review = await s.controller.open(s.message);
+      expect(review.status).toBe("READY");
+      expect(s.counts()).toEqual({ history: 2, outbox: 0, results: 0 });
+      const expected = review.review!.after;
+      const denied = new CopilotStoreLayoutEditController(
+        s.a,
+        { ...s.scope, canManageStoreLayout: false },
+        randomUUID,
+        s.clock,
+      );
+      await expect(denied.confirm(s.message)).rejects.toThrow();
+      expect(s.counts()).toEqual({ history: 2, outbox: 0, results: 0 });
+      const aborted = new AbortController();
+      aborted.abort();
+      await expect(
+        s.controller.confirm(s.message, aborted.signal),
+      ).rejects.toThrow();
+      expect(s.counts()).toEqual({ history: 2, outbox: 0, results: 0 });
+      await s.controller.confirm(s.message);
+      const saved = (await s.repo.get(s.f.storeId))!.entity;
+      expect(saved.content).toEqual(expected);
+      expect(saved.action).toBe("SAVE_DRAFT");
+      expect(saved.referenceRevisionId).toBe(s.head.revisionId);
+      expect(
+        (await s.repo.getRevision(s.f.storeId, s.head.revisionId))!.content,
+      ).toEqual(s.head.content);
+      expect(s.counts()).toEqual({ history: 3, outbox: 1, results: 1 });
+      s.db.close();
+      reopened = new DatabaseSync(path);
+      const a = new Adapter(reopened),
+        controller = new CopilotStoreLayoutEditController(
+          a,
+          s.scope,
+          randomUUID,
+          s.clock,
+        );
+      expect((await controller.confirm(s.message)).status).toBe("COMPLETED");
+      expect(
+        (await new StoreLayoutRepository(a, randomUUID).get(s.f.storeId))!
+          .entity.content,
+      ).toEqual(expected);
+      expect(
+        (await a.getFirstAsync<{ n: number }>(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='store_layout'",
+        ))!.n,
+      ).toBe(1);
+      expect(
+        (await a.getFirstAsync<{ n: number }>(
+          "SELECT COUNT(*) n FROM copilot_tool_results",
+        ))!.n,
+      ).toBe(1);
+    } finally {
+      try {
+        s.db.close();
+      } catch {
+        /* already closed */
+      }
+      reopened?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

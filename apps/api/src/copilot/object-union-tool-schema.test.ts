@@ -82,3 +82,28 @@ it("validates and normalizes through the original schema rather than trusting th
     ).success,
   ).toBe(false);
 });
+
+it("keeps legacy physical actions strict while exposing inventory variants to a compatible client", async () => {
+  const { copilotLayoutEditInputSchema, legacyCopilotLayoutEditInputSchema } =
+    await import("@fl-copilot/domain");
+  const legacy = objectUnionToolSchema(legacyCopilotLayoutEditInputSchema),
+    current = objectUnionToolSchema(copilotLayoutEditInputSchema);
+  const add = {
+    action: "ADD_FIXED",
+    expectedRevisionId: id,
+    label: "Élément",
+    assemblyId: id,
+    face: "A",
+    order: 5,
+  };
+  expect((await legacy.validate!(add)).success).toBe(false);
+  expect((await current.validate!(add)).success).toBe(true);
+  expect(
+    (await current.validate!({ ...add, created: { ids: [id] } })).success,
+  ).toBe(false);
+  expect((await current.validate!({ ...add, hostId: id })).success).toBe(false);
+  expect((await current.validate!({ ...add, face: "C" })).success).toBe(false);
+  const old = { action: "REMOVE_MOBILE", expectedRevisionId: id, targetId: id };
+  expect((await legacy.validate!(old)).success).toBe(true);
+  expect((await current.validate!(old)).success).toBe(true);
+});

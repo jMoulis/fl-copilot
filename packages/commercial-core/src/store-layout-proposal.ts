@@ -1,11 +1,19 @@
 import {
   copilotLayoutEditInputSchema,
   layoutCreatedIdsSchema,
+  layoutInventoryCreatedIdsSchema,
   validateStoreLayoutReadSnapshot,
   storeLayoutContentSchema,
   type StoreLayoutContent,
   type CopilotLayoutEditInput,
+  type CopilotLayoutCreatedIds,
 } from "@fl-copilot/domain";
+import {
+  addStoreLayoutInventory,
+  addStoreLayoutTgSurface,
+  duplicateStoreLayoutInventory,
+  removeStoreLayoutInventory,
+} from "./store-layout-inventory";
 import {
   placeStoreLayoutObject,
   addStoreLayoutMobile,
@@ -20,6 +28,7 @@ export function prepareStoreLayoutEdit(
   raw: unknown,
   snapshot: unknown,
   rawCreated: unknown = null,
+  uuid?: () => string,
 ) {
   const input = copilotLayoutEditInputSchema.parse(raw),
     { head, reference } = validateStoreLayoutReadSnapshot(storeId, snapshot);
@@ -63,7 +72,36 @@ export function prepareStoreLayoutEdit(
   try {
     const before = source.content;
     let after = storeLayoutContentSchema.parse(before),
-      created = null;
+      created: CopilotLayoutCreatedIds | null = null;
+    const inventoryCreation =
+      input.action !== "ADD_MOBILE" &&
+      (input.action.startsWith("ADD_") || input.action.startsWith("COPY_"));
+    const ids =
+      inventoryCreation && rawCreated !== null
+        ? layoutInventoryCreatedIdsSchema.parse(rawCreated).ids
+        : [];
+    let at = 0;
+    const nextId = () => {
+      if (at >= 257)
+        throw Error("La copie dépasse les limites d’inventaire du plan.");
+      if (rawCreated === null) {
+        if (!uuid)
+          throw Error(
+            "Les identités de cette proposition sont absentes. Demandez une nouvelle proposition.",
+          );
+        ids.push(uuid());
+      }
+      const id = ids[at++];
+      if (!id)
+        throw Error("Les identités de cette proposition sont incomplètes.");
+      return id;
+    };
+    if (
+      !inventoryCreation &&
+      input.action !== "ADD_MOBILE" &&
+      rawCreated !== null
+    )
+      throw Error("Cette modification ne crée aucune identité.");
     if (input.action === "EDIT") {
       after = applyRequestedFields(after, input.targetId, input.patch);
     } else if (input.action === "ADD_MOBILE") {
@@ -80,7 +118,84 @@ export function prepareStoreLayoutEdit(
         after = applyRequestedFields(after, created.furnitureId, input.patch);
     } else if (input.action === "ASSOCIATE_MOBILE")
       after = associateStoreLayoutMobile(after, input.targetId, input.hostId);
-    else after = removeStoreLayoutMobile(after, input.targetId);
+    else if (input.action === "REMOVE_MOBILE")
+      after = removeStoreLayoutMobile(after, input.targetId);
+    else if (input.action === "ADD_ASSEMBLY" || input.action === "ADD_TG")
+      after = addStoreLayoutInventory(
+        after,
+        {
+          kind: input.action === "ADD_ASSEMBLY" ? "ASSEMBLY" : "TG",
+          label: input.label,
+        },
+        nextId,
+      ).content;
+    else if (input.action === "ADD_FIXED")
+      after = addStoreLayoutInventory(
+        after,
+        {
+          kind: "FIXED",
+          label: input.label,
+          assemblyId: input.assemblyId,
+          face: input.face,
+          order: input.order,
+        },
+        nextId,
+      ).content;
+    else if (input.action === "ADD_TG_SURFACE")
+      after = addStoreLayoutTgSurface(
+        after,
+        input.furnitureId,
+        input.label,
+        input.surfaceKind,
+        nextId,
+      ).content;
+    else if (
+      input.action === "COPY_ASSEMBLY" ||
+      input.action === "COPY_FURNITURE"
+    ) {
+      const furniture =
+        input.action === "COPY_FURNITURE"
+          ? after.furniture.find((f) => f.id === input.targetId)
+          : null;
+      if (
+        input.action === "COPY_FURNITURE" &&
+        !!input.slot !== (furniture?.kind === "FIXED")
+      )
+        throw Error(
+          "Un élément fixe exige un rang libre ; une TG ou un mobile ne rejoint pas une face d’îlot.",
+        );
+      after = duplicateStoreLayoutInventory(
+        after,
+        {
+          kind: input.action === "COPY_ASSEMBLY" ? "ASSEMBLY" : "FURNITURE",
+          id: input.targetId,
+        },
+        {
+          label: input.label,
+          copyDimensions: input.copyDimensions,
+          ...(input.action === "COPY_FURNITURE" && input.slot
+            ? { slot: input.slot }
+            : {}),
+        },
+        nextId,
+      ).content;
+    } else
+      after = removeStoreLayoutInventory(after, {
+        kind:
+          input.action === "REMOVE_ASSEMBLY"
+            ? "ASSEMBLY"
+            : input.action === "REMOVE_TG_SURFACE"
+              ? "SURFACE"
+              : "FURNITURE",
+        id: input.targetId,
+      });
+    if (inventoryCreation) {
+      if (at !== ids.length)
+        throw Error(
+          "Les identités de cette proposition ne correspondent pas à son inventaire.",
+        );
+      created = layoutInventoryCreatedIdsSchema.parse({ ids });
+    }
     const report = checkStoreLayoutGeometry(after),
       changes = layoutChanges(before, after);
     return {

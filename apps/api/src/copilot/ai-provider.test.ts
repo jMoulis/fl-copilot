@@ -6529,6 +6529,9 @@ it.each([
 it.each([
   "EDIT",
   "ADD_MOBILE",
+  "ADD_FIXED",
+  "COPY_ASSEMBLY",
+  "REMOVE_ASSEMBLY",
   "FOREIGN",
   "STALE",
   "BYTE_BUDGET",
@@ -6546,8 +6549,30 @@ it.each([
       for (const f of head.content.furniture)
         f.label = "Un élément du rayon avec un nom long ".repeat(3);
     }
-    const input =
-      mode === "BYTE_BUDGET"
+    const inventory = [
+      "ADD_FIXED",
+      "COPY_ASSEMBLY",
+      "REMOVE_ASSEMBLY",
+    ].includes(mode);
+    const input = inventory
+      ? mode === "ADD_FIXED"
+        ? {
+            action: mode,
+            expectedRevisionId: head.revisionId,
+            label: "Élément ajouté",
+            assemblyId: head.content.assemblies[0]!.id,
+            face: "A",
+            order: 5,
+          }
+        : {
+            action: mode,
+            expectedRevisionId: head.revisionId,
+            targetId: head.content.assemblies[0]!.id,
+            ...(mode === "COPY_ASSEMBLY"
+              ? { label: "Îlot copie", copyDimensions: false }
+              : {}),
+          }
+      : mode === "BYTE_BUDGET"
         ? {
             action: "EDIT",
             expectedRevisionId: head.revisionId,
@@ -6582,6 +6607,13 @@ it.each([
         expect(definition).toBeUndefined();
         return response();
       }
+      expect(JSON.stringify(definition.parameters)).toContain(
+        inventory ? "COPY_ASSEMBLY" : "ADD_MOBILE",
+      );
+      if (!inventory)
+        expect(JSON.stringify(definition.parameters)).not.toContain(
+          "COPY_ASSEMBLY",
+        );
       expect(definition.parameters.type).toBe("object");
       expect(definition.parameters.additionalProperties).toBe(false);
       expect(JSON.stringify(definition.parameters)).not.toMatch(
@@ -6629,10 +6661,11 @@ it.each([
       daily: vi.fn(),
       storeLayout,
       layoutEdits: mode !== "DISABLED",
+      layoutInventory: inventory,
     }).generate(f.request, schema, undefined, undefined, (e) =>
       activities.push(e),
     );
-    const ready = mode === "EDIT" || mode === "ADD_MOBILE";
+    const ready = mode === "EDIT" || mode === "ADD_MOBILE" || inventory;
     expect(output.layoutEditPreviews).toHaveLength(
       ready || mode === "STALE" ? 1 : 0,
     );

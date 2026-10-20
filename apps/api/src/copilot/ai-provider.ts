@@ -15,6 +15,7 @@ import {
 import { presentStoreLayoutScenario } from "./store-layout-scenario-tool";
 import {
   copilotLayoutEditInputSchema,
+  legacyCopilotLayoutEditInputSchema,
   copilotLayoutEditPreviewSchema,
 } from "@fl-copilot/domain";
 import { presentStoreLayoutEdit } from "./store-layout-edit-tool";
@@ -612,6 +613,7 @@ export function createCopilotAiProvider(
       input: z.infer<typeof layoutScenarioInputSchema>,
     ): Promise<z.infer<typeof layoutScenarioSourcesSchema>>;
     layoutEdits?: boolean;
+    layoutInventory?: boolean;
     storeLayout?(
       input: z.infer<typeof copilotStoreLayoutInputSchema>,
     ): Promise<z.infer<typeof storeLayoutReadSnapshotSchema>>;
@@ -1845,9 +1847,15 @@ export function createCopilotAiProvider(
                 ? {
                     store_layout_edit_preview: tool({
                       description:
-                        "Prepare one explicitly requested physical store-plan change (modifier le plan magasin, dimensions du mobilier, déplacer un îlot/TG, ajouter/associer/retirer un mobile), never save directly. First use store_layout to identify exact targets and current head.revisionId, including a newer draft. EDIT targetId null edits room width/depth; an exact island/furniture/surface ID edits only its supported fields. Centimetres, one decimal; omitted fields preserved, explicit null clears to unknown. Enter only user-provided dimensions; repeated unconfirmed reference values become DECLARED, never surveyed. x/y are absolute top-left from department origin; rotations are clockwise 0/90/180/270. Parent moves also transform recorded descendants; ambiguous geometry is refused atomically. ADD_MOBILE needs explicit inventory intent and label/optional exact fixed or TG host; its optional patch records only user-provided initial dimensions/placement. Host association does not imply coordinates, fit or capacity. REMOVE_MOBILE removes its selling surface from the draft, preserving history. No other furniture deletion/creation supported. Preview only the requested change, not routine weekly product allocation; missing identity/measurements needs a targeted question. READY creates one before/after card requiring native confirmation to SAVE A DRAFT, never adopt the reference. Known geometry incompatibilities remain visible and block later adoption; draft save is allowed. STALE reread, BLOCKED explain the stated issue, UNCHANGED no-op. No actor, rights, identities of new records, measured flags or Mongo queries may be supplied. At most one physical proposal per turn.",
+                        "Prepare one explicitly requested physical plan change, never save directly. Read store_layout for exact targets and current head.revisionId, preserving a newer draft. EDIT null target edits room width/depth; otherwise use the exact island/furniture/surface ID. Centimetres with one decimal: omitted fields preserved, null unknown, only user-provided measures, never surveyed. Absolute x/y and clockwise rotation transform descendants once; ambiguous geometry is refused. ADD_MOBILE creates an optional mobile and its own surface; host association never proves placement/fit. ASSOCIATE_MOBILE or REMOVE_MOBILE preserves unrelated inventory/history. " +
+                        (reads.layoutInventory
+                          ? "ADD_ASSEMBLY creates an empty island, ADD_FIXED requires an existing assemblyId, explicit face and vacant order 1–64 and creates its own bac/shelf. ADD_TG changes physical TG count (not PDF ideas), with no assumed surface; ADD_TG_SURFACE declares its composition. COPY_ASSEMBLY/COPY_FURNITURE creates independent identities, no coordinates/orientation/load or associated-mobile duplication. copyDimensions must be explicit: false leaves unknown; true copies dimensions as declared, never measured. A fixed copy needs a vacant slot; TG/mobile slot must be null. REMOVE_ASSEMBLY/REMOVE_FURNITURE retains hosted mobiles detached; REMOVE_TG_SURFACE never removes mandatory fixed/mobile surfaces. "
+                          : "Fixed/TG creation/copy/removal requires a newer native client. ") +
+                        "READY creates one native before/after review to SAVE A DRAFT, not adopt or execute it. Missing identity/intent needs a targeted question. Geometry incompatibilities remain visible and block adoption, not draft save. STALE reread; BLOCKED explain the issue; UNCHANGED no-op. No new-record IDs, authority, measured flags or Mongo arguments. Routine weekly allocations keep furniture fixed.",
                       inputSchema: objectUnionToolSchema(
-                        copilotLayoutEditInputSchema,
+                        reads.layoutInventory
+                          ? copilotLayoutEditInputSchema
+                          : legacyCopilotLayoutEditInputSchema,
                       ),
                       execute: (input) =>
                         executeRead(

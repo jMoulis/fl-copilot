@@ -19,6 +19,7 @@ export function presentStoreLayoutEdit(
     input.action === "ADD_MOBILE"
       ? { furnitureId: uuid(), surfaceId: uuid() }
       : null,
+    uuid,
   );
   const { before, after, ...visible } = result;
   void before;

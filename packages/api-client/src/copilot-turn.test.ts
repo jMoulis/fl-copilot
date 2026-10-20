@@ -302,6 +302,7 @@ it("opts into optional proposal and source tools only when the client supports t
         layoutScenarios: enabled,
         layoutPreparation: enabled,
         layoutEdits: enabled,
+        layoutInventory: enabled,
         storeOperations: enabled,
         needProposals: enabled,
         storeConflicts: enabled,
@@ -392,6 +393,9 @@ it("opts into optional proposal and source tools only when the client supports t
     else expect(headers).not.toHaveProperty("x-copilot-layout-scenarios");
     if (enabled) expect(headers).toHaveProperty("x-copilot-layout-edits", "1");
     else expect(headers).not.toHaveProperty("x-copilot-layout-edits");
+    if (enabled)
+      expect(headers).toHaveProperty("x-copilot-layout-inventory", "1");
+    else expect(headers).not.toHaveProperty("x-copilot-layout-inventory");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-store-operations", "1");
     else expect(headers).not.toHaveProperty("x-copilot-store-operations");
@@ -588,4 +592,29 @@ it("negotiates photo viewing explicitly without changing the stable turn body", 
   });
   const options = transport.mock.calls.at(-1)?.[1] as RequestInit;
   expect(options.headers).not.toHaveProperty("x-copilot-store-photos");
+});
+
+it("does not advertise inventory support without the physical review capability", async () => {
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          type: "result",
+          result: { message, alreadyApplied: false },
+        }) + "\n",
+        { headers: { "content-type": "application/x-ndjson" } },
+      ),
+  );
+  vi.stubGlobal("fetch", transport);
+  await new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { onProgress: vi.fn(), layoutInventory: true, layoutEdits: false },
+  );
+  expect(transport.mock.calls[0]![1]!.headers).not.toHaveProperty(
+    "x-copilot-layout-inventory",
+  );
 });
