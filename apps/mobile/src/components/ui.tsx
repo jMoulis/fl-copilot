@@ -8,6 +8,7 @@ import {
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   PanResponder,
@@ -414,6 +415,7 @@ export function BottomSheet({
   onClose,
   onDismiss,
   swipeToClose = false,
+  avoidKeyboard = false,
   children,
 }: PropsWithChildren<{
   visible: boolean;
@@ -421,6 +423,7 @@ export function BottomSheet({
   onClose: () => void;
   onDismiss?: () => void;
   swipeToClose?: boolean;
+  avoidKeyboard?: boolean;
 }>) {
   const heading = useRef<Text>(null);
   const closeRef = useRef(onClose);
@@ -452,7 +455,9 @@ export function BottomSheet({
       onRequestClose={onClose}
       onDismiss={onDismiss}
     >
-      <View
+      <KeyboardAvoidingView
+        enabled={avoidKeyboard && Platform.OS !== "web"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{
           flex: 1,
           justifyContent: "flex-end",
@@ -502,7 +507,7 @@ export function BottomSheet({
             <SecondaryButton label="Fermer" onPress={onClose} />
           </ScrollView>
         </SafeAreaView>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

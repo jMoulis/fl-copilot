@@ -6,7 +6,7 @@ Mis à jour le 20 octobre 2026. Ce suivi reprend les sept chantiers convenus ave
 
 ## Synthèse courante — 20 octobre 2026
 
-**1 Actions/conflits en cours ; 2 Contre-promotion code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours.** La réception email jusqu’à la PR 300 est fusionnée, sans activation ni livraison ; le lot courant reprend la fiche produit et la continuité avec Analyses, sans nouveau moteur métier. Les preuves des incréments ci-dessous priment sur les anciennes introductions de lots. Aucun pourcentage global ni fermeture de V1 n’est déduit des CI.
+**1 Actions/conflits en cours ; 2 Contre-promotion code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours.** La livraison groupée PR 291–301 est disponible sur API et iOS build 4, sans acceptation native encore consignée. La réception email reste non activée. Le lot courant reprend la liste et la déclaration des tâches d’Actions, sans nouveau moteur métier. Les preuves des incréments ci-dessous priment sur les anciennes introductions de lots. Aucun pourcentage global ni fermeture de V1 n’est déduit des CI.
 
 La matrice suivante conserve les critères de sortie et la base du suivi ; le journal daté précise les évolutions réellement vérifiées.
 
@@ -22,9 +22,9 @@ La matrice suivante conserve les critères de sortie et la base du suivi ; le jo
 
 ## Livraison observée à cette mise à jour
 
-- API : livraison groupée `8ec75c6` (PR 289/290), `dpl_7DUEQBoYCrBeVJek8GPo361NRRtL`. Lecture Vercel du 20 octobre : l’alias public résout toujours vers ce déploiement Ready en production, sur le projet/équipe attendus. La santé publique a été contrôlée avec Mongo connecté. Aucun nouveau déploiement pour la fiche produit.
-- Dernier binaire fourni par ce thread : EAS `b65cfe4f-f65a-4c67-bcd9-f9357de212c8`, staging **0.1.0 / build 3**, source `8ec75c6`. Julien confirme la stabilité après le correctif chat/images ; cela ne valide ni toute la fidélité UX ni les nouveaux lots.
-- Correctif des tableaux PR 291 et réception email PR 292–300 : fusionnés, non livrés. Le lot fiche produit est en vérification sur branche. Réception fournisseur, tests natifs complets et autres critères V1/M8 restent ouverts.
+- API : livraison groupée `9c2f66b` (jusqu’à PR 301), `dpl_6Kb25ogrAZubQJc29Ka5EMEN5wTa`, Ready sur `https://fl-copilot.vercel.app`. Promotion du même artefact après santé/Mongo et refus applicatif des accès privés sans connexion ; alias public et métadonnées du commit vérifiés. Prédécesseur conservé : `dpl_7DUEQBoYCrBeVJek8GPo361NRRtL`.
+- Dernier binaire fourni : EAS `f4ddb763-335e-4e2c-a5ff-1ca485b31305`, staging **0.1.0 / build 4**, source `9c2f66b`, terminé le 20 octobre 13:50:45 UTC. Il contient les tableaux du chat PR 291 et la fiche produit PR 301. La stabilité confirmée précédemment concernait le build 3 ; aucun retour sur le build 4 n’est présumé.
+- Réception email PR 292–300 livrée dans ce lot, sans activation fournisseur ni réception réelle validée. Le nouveau lot Actions reste sur branche. Tests natifs complets, autres critères V1 et M8 ouverts.
 - Aucun build EAS payant ni déploiement Vercel automatique par PR. Une fusion n’est jamais annoncée comme une mise à disposition sur le téléphone.
 
 ## Ordre de poursuite
@@ -628,4 +628,10 @@ Voir `../qa/CHAT_IMAGE_STABILITY_2026_10_20.md`. Codé/testé, fusionné, déplo
 
 **Chantier 7 en cours**, lots UX L5/L6 : visuel en tête et placeholder compact, résumé de l’identité/synchronisation, chiffres réels et graphique commun avec l’Explorer, référentiel dépliable et actions préservées. Une sélection issue d’Analyses conserve sa période/comparaison ; les préférences par produit survivent à une réouverture hors ligne sans modifier la sélection globale. Les sommes, moyennes, jours manquants et écarts sur référence nulle gardent les mêmes règles déterministes. **1 537 tests passent / 7 ignorés** sur le mobile et le moteur analytique ; revue des composants réels à 320/390 px avec ports simulés, dont défilement horizontal et refus d’image obsolète sans perte du contexte. Le sélecteur photo, les gestes et la fidélité complète restent à accepter sur appareil. Vérifications finales et limites dans `../qa/PRODUCT_DETAIL_OVERVIEW_2026_10_20.md`.
 
-Code en vérification sur branche, ni fusionné ni livré. Chantiers **1/3/4/5/6 en cours ; 2 code prêt ; 7 en cours**. Aucun nouveau build EAS payant, déploiement API, traitement IA, fichier `.env` ou réglage système. Le reste des onze lots et de M8 est conservé.
+PR 301 fusionnée en `9c2f66b` après réussite des deux CI finales sur `970ee32` (3 344 tests passés / 6 ignorés), branches supprimées. Livraison groupée API puis iOS build 4 terminée ; recette native encore ouverte. Chantiers **1/3/4/5/6 en cours ; 2 code prêt ; 7 en cours**. Aucun traitement IA payant, accès `.env` ou réglage système dans cette livraison. Le reste des onze lots et de M8 est conservé.
+
+## Lot courant — liste Actions et déclaration progressive (20 octobre)
+
+**7 — UX/validation : en cours.** Les tâches du plan deviennent une liste compacte avec progression calculée par le moteur existant. Statut et synchronisation restent distincts. Une feuille native ouvre la déclaration ; détails réels facultatifs dépliables, conservation des saisies, erreurs au bon endroit et refus d’enregistrement visible dans la feuille. Les gardes de version, transactions/Outbox, conflits et compteurs métier ne changent pas. Préparation/plan/document restent accessibles ; les entrées de gestion sont progressives.
+
+Revue des composants réels avec ports simulés à 320/390 px et tests existants ; limites et recette native dans `../qa/ACTION_TASK_OVERVIEW_2026_10_20.md`. Le dialogue de confirmation JS a bloqué l’automatisation : annulation/poignée/clavier et accessibilité restent à accepter sur appareil. Ce lot n’est pas inclus dans le build 4 déjà fourni et ne déclenche aucun nouveau build ou déploiement. **1/3/4/5/6 restent en cours ; 2 code prêt ; 7 en cours.** Le suivi complet des recommandations, le CRUD restant, réception réelle, implantation, fidélité et M8 restent ouverts.

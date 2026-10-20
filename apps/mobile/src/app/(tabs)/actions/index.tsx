@@ -11,6 +11,7 @@ import { useLocalDatabase } from "@/providers/database-provider";
 import { useSync } from "@/sync/sync-provider";
 import { CommercialPlanRepository } from "@/commercial/week-plan-repository";
 import { CommercialExecutionView } from "@/commercial/execution-view";
+import { DetailsDisclosure } from "@/components/dashboard";
 import { DateSelector } from "@/components/date-selector";
 import {
   AppScreen,
@@ -19,6 +20,7 @@ import {
   InlineAlert,
   SectionCard,
   EmptyState,
+  MenuRow,
 } from "@/components/ui";
 export default function ActionsScreen() {
   const { session } = useAuth(),
@@ -147,9 +149,11 @@ function StoreActions({ storeId }: { storeId: string }) {
           message="Préparez cette semaine depuis vos documents ou avec le copilote. Une recommandation acceptée ne constitue pas une réalisation."
         />
       )}
-      <SectionCard title="Préparer et consulter">
-        <SecondaryButton
-          label="Préparer la semaine sélectionnée"
+      <SectionCard title="Préparer la semaine">
+        <MenuRow
+          title="Préparation"
+          description="Offres, affiches et mises en avant de la semaine sélectionnée."
+          icon="calendar-outline"
           onPress={() =>
             router.push({
               pathname: "/week-preparation",
@@ -157,8 +161,10 @@ function StoreActions({ storeId }: { storeId: string }) {
             })
           }
         />
-        <SecondaryButton
-          label="Plan validé et historique de cette semaine"
+        <MenuRow
+          title="Plan et historique"
+          description="Retrouver les choix validés et leurs versions."
+          icon="checkmark-done-outline"
           onPress={() =>
             router.push({
               pathname: "/commercial-plan",
@@ -166,25 +172,33 @@ function StoreActions({ storeId }: { storeId: string }) {
             })
           }
         />
-        <SecondaryButton
-          label="Documents commerciaux"
+        <MenuRow
+          title="Documents commerciaux"
+          description="Consulter les originaux et leurs analyses."
+          icon="document-text-outline"
           onPress={() => router.push("/week")}
         />
       </SectionCard>
-      <SectionCard title="Sur le terrain">
-        <SecondaryButton
-          label="Casse : tickets et imports"
+      <DetailsDisclosure title="Casse, imports et gestion du magasin">
+        <MenuRow
+          title="Casse"
+          description="Tickets, photos et imports de casse."
+          icon="camera-outline"
           onPress={() => router.push("/waste")}
         />
-        <SecondaryButton
-          label="Imports Mercalys"
+        <MenuRow
+          title="Imports Mercalys"
+          description="Retrouver les ventes et les fichiers importés."
+          icon="cloud-upload-outline"
           onPress={() => router.push("/imports")}
         />
-        <SecondaryButton
-          label="Magasin, synchronisation et réglages"
+        <MenuRow
+          title="Magasin et synchronisation"
+          description="Plan du rayon, réglages et modifications en attente."
+          icon="settings-outline"
           onPress={() => router.push("/more")}
         />
-      </SectionCard>
+      </DetailsDisclosure>
     </AppScreen>
   );
 }
