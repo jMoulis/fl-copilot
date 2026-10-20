@@ -1,7 +1,13 @@
 import { LayoutComparison } from "./layout-comparison";
 import { Stack, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { BackHandler, Text, View, type ScrollView } from "react-native";
+import {
+  BackHandler,
+  Platform,
+  Text,
+  View,
+  type ScrollView,
+} from "react-native";
 import { checkStoreLayoutGeometry } from "@fl-copilot/commercial-core";
 import {
   storeLayoutSchema,
@@ -93,6 +99,7 @@ export function StoreLayoutPanel({
     [showElement, setShowElement] = useState(false),
     [viewport, setViewport] = useState(initialLayoutViewport),
     [showList, setShowList] = useState(false),
+    [placing, setPlacing] = useState(false),
     [adding, setAdding] = useState(false),
     [additionKey, setAdditionKey] = useState(0),
     [additionDirty, setAdditionDirty] = useState(false),
@@ -120,6 +127,7 @@ export function StoreLayoutPanel({
       snapshot.head?.syncState === "ERROR",
     canEdit = allowed && !blocked && !busy;
   const editing = !!edit;
+  const placementActive = editing && placing;
   const geometry = useMemo(
     () => (content ? checkStoreLayoutGeometry(content) : null),
     [content],
@@ -134,7 +142,7 @@ export function StoreLayoutPanel({
   );
   useFocusEffect(
     useCallback(() => {
-      if (!editing) return;
+      if (!editing || Platform.OS === "web") return;
       const subscription = BackHandler.addEventListener(
         "hardwareBackPress",
         () => {
@@ -334,12 +342,57 @@ export function StoreLayoutPanel({
               Largeur du rayon : {layoutMeasurementLabel(content.room.width)}
               {`\n`}Profondeur : {layoutMeasurementLabel(content.room.depth)}
             </Text>
+            {edit ? (
+              <SecondaryButton
+                label={
+                  placementActive
+                    ? "Terminer le placement et explorer"
+                    : "Déplacer un élément sur le plan"
+                }
+                disabled={!placementActive && (!canEdit || stale)}
+                onPress={() => {
+                  setPlacing((v) => !v);
+                  setShowElement(false);
+                }}
+              />
+            ) : null}
+            {placementActive ? (
+              <Text className="text-muted">
+                {selectedId
+                  ? `Élément choisi : ${[...content.assemblies, ...content.furniture].find((v) => v.id === selectedId)?.label ?? "choisissez un meuble ou un îlot"}.`
+                  : "Choisissez un meuble sur le plan ou dans la liste."}{" "}
+                Pour une position encore inconnue, ouvrez sa fiche et renseignez
+                X et Y avant de glisser. Les dimensions ne sont pas déduites du
+                dessin.
+              </Text>
+            ) : null}
             <StoreLayoutMap
               content={content}
               selectedId={selectedId}
               viewport={viewport}
               onViewport={setViewport}
-              onSelect={select}
+              onSelect={placementActive ? setSelectedId : select}
+              movement={
+                placementActive && canEdit && !stale
+                  ? {
+                      onMove: (before, after) => {
+                        if (
+                          !edit ||
+                          !canEdit ||
+                          stale ||
+                          edit.content !== before
+                        )
+                          return false;
+                        setEdit((current) =>
+                          current?.content === before
+                            ? patchLayoutEdit(current, after)
+                            : current,
+                        );
+                        return true;
+                      },
+                    }
+                  : undefined
+              }
             />
             <Text className="text-sm text-muted">
               A et B repèrent les faces de chaque îlot. Leur orientation et les
@@ -349,11 +402,23 @@ export function StoreLayoutPanel({
               label="Dimensions du rayon"
               onPress={() => select("room")}
             />
+            {placementActive &&
+            selectedId &&
+            [...content.assemblies, ...content.furniture].some(
+              (v) => v.id === selectedId,
+            ) ? (
+              <SecondaryButton
+                label="Ouvrir les mesures de l’élément choisi"
+                onPress={() => select(selectedId)}
+              />
+            ) : null}
             {content.assemblies.map((a) => (
               <SecondaryButton
                 key={a.id}
-                label={`Ouvrir ${a.label}`}
-                onPress={() => select(a.id)}
+                label={`${placementActive ? "Sélectionner" : "Ouvrir"} ${a.label}`}
+                onPress={() =>
+                  placementActive ? setSelectedId(a.id) : select(a.id)
+                }
               />
             ))}
           </SectionCard>
@@ -371,9 +436,9 @@ export function StoreLayoutPanel({
               <Text className="text-muted">
                 Ouvrez un îlot, un meuble ou une surface pour préciser ses
                 mesures et son emplacement. Les positions sont saisies en
-                centimètres ; les gestes sur le plan servent à explorer. Les
-                changements restent dans ce brouillon jusqu’à son
-                enregistrement.
+                centimètres ; le mode de placement explicite permet aussi de
+                glisser un élément déjà positionné. Les changements restent dans
+                ce brouillon jusqu’à son enregistrement.
               </Text>
               <SecondaryButton
                 label="Ajouter au plan : îlot, élément, TG ou mobile"
@@ -422,12 +487,14 @@ export function StoreLayoutPanel({
                   label="Modifier le plan"
                   disabled={!canEdit || !head}
                   onPress={() => {
-                    if (head)
+                    if (head) {
+                      setPlacing(false);
                       setEdit({
                         baseRevisionId: head.revisionId,
                         content,
                         undo: [],
                       });
+                    }
                   }}
                 />
               ) : null}
@@ -474,8 +541,10 @@ export function StoreLayoutPanel({
               {content.furniture.map((f) => (
                 <SecondaryButton
                   key={f.id}
-                  label={f.label}
-                  onPress={() => select(f.id)}
+                  label={`${placementActive && selectedId === f.id ? "✓ " : ""}${f.label}`}
+                  onPress={() =>
+                    placementActive ? setSelectedId(f.id) : select(f.id)
+                  }
                 />
               ))}
             </SectionCard>
