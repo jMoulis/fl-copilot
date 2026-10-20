@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { TextInput, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import {
   mercalysProductTargetBlocker,
   searchMercalysProductTargets,
@@ -71,6 +72,9 @@ export function MercalysImportProductPicker({
           <TextInput
             accessibilityLabel="Rechercher un produit par nom, EAN, ITM8 ou PLU"
             placeholder="Nom ou code du produit"
+            placeholderTextColor={colors.muted}
+            selectionColor={colors.forest}
+            keyboardAppearance="dark"
             value={query}
             onChangeText={(value) => {
               setQuery(value);

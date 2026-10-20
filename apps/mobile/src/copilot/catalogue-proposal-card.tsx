@@ -1,6 +1,7 @@
 import { catalogueSnapshotDraft } from "@fl-copilot/domain";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotCatalogueProposalController } from "./catalogue-proposal-controller";
 import { colors } from "../design/tokens";
@@ -164,7 +165,7 @@ export function CatalogueProposalCard({
             >
               <Text
                 style={{
-                  color: "white",
+                  color: colors.onAccent,
                   textAlign: "center",
                   fontWeight: "600",
                 }}

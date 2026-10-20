@@ -1,12 +1,7 @@
 import { todayCalendarDate } from "../dates/calendar";
 import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import type {
   CopilotMessage,
   RecommendationChoice,
@@ -267,8 +262,14 @@ export function RecommendationDecisionCard({
                     <Pressable
                       key={v}
                       accessibilityRole="radio"
+                      accessibilityLabel={
+                        v === "LOCAL"
+                          ? "Conserver mon choix"
+                          : "Reprendre le choix synchronisé"
+                      }
+                      aria-checked={side === v}
                       accessibilityState={{
-                        selected: side === v,
+                        checked: side === v,
                         disabled:
                           busy || (v === "LOCAL" && !state.canRetainLocal),
                       }}
@@ -285,6 +286,7 @@ export function RecommendationDecisionCard({
                       }}
                     >
                       <Text>
+                        {side === v ? "✓ " : ""}
                         {v === "LOCAL"
                           ? "Conserver mon choix"
                           : "Reprendre le choix synchronisé"}
@@ -315,8 +317,10 @@ export function RecommendationDecisionCard({
                   <Pressable
                     key={v}
                     accessibilityRole="radio"
+                    accessibilityLabel={labels[v]}
+                    aria-checked={selected === v}
                     accessibilityState={{
-                      selected: selected === v,
+                      checked: selected === v,
                       disabled: busy,
                     }}
                     disabled={busy}
@@ -329,7 +333,10 @@ export function RecommendationDecisionCard({
                       borderRadius: 12,
                     }}
                   >
-                    <Text>{labels[v]}</Text>
+                    <Text>
+                      {selected === v ? "✓ " : ""}
+                      {labels[v]}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
@@ -337,12 +344,16 @@ export function RecommendationDecisionCard({
                 <TextInput
                   accessibilityLabel="Action modifiée"
                   placeholder="L’action que vous retenez"
+                  placeholderTextColor={colors.muted}
+                  selectionColor={colors.forest}
+                  keyboardAppearance="dark"
                   multiline
                   maxLength={1200}
                   value={action}
                   editable={!busy}
                   onChangeText={setAction}
                   style={{
+                    color: colors.ink,
                     borderWidth: 1,
                     borderColor: colors.line,
                     borderRadius: 12,
@@ -370,12 +381,16 @@ export function RecommendationDecisionCard({
                   <TextInput
                     accessibilityLabel="Note de décision, facultative"
                     placeholder="Note facultative"
+                    placeholderTextColor={colors.muted}
+                    selectionColor={colors.forest}
+                    keyboardAppearance="dark"
                     value={reason}
                     editable={!busy}
                     maxLength={600}
                     multiline
                     onChangeText={setReason}
                     style={{
+                      color: colors.ink,
                       borderWidth: 1,
                       borderColor: colors.line,
                       borderRadius: 12,

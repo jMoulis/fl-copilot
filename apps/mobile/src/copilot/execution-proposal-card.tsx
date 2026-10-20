@@ -3,7 +3,8 @@ import {
   executionActualsUpdate,
 } from "@fl-copilot/domain";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotExecutionProposalController } from "./execution-proposal-controller";
 import { colors } from "../design/tokens";
@@ -162,7 +163,7 @@ export function ExecutionProposalCard({
             >
               <Text
                 style={{
-                  color: "white",
+                  color: colors.onAccent,
                   textAlign: "center",
                   fontWeight: "600",
                 }}

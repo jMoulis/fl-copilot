@@ -32,6 +32,8 @@ type PanelProps = {
   scopeKey: string;
   delivery?: CopilotTurnDelivery;
   onConversations(): void;
+  onNewConversation?(): void;
+  creatingConversation?: boolean;
   onRemember?(message: CopilotMessage): void;
   renderToolMessage?(
     message: CopilotMessage,
@@ -74,6 +76,8 @@ function LocalChatPanel({
   controller,
   conversationId,
   onConversations,
+  onNewConversation,
+  creatingConversation,
   onRemember,
   delivery,
   onAttachPdf,
@@ -531,6 +535,8 @@ function LocalChatPanel({
             : undefined
         }
         onConversations={onConversations}
+        onNewConversation={onNewConversation}
+        creatingConversation={creatingConversation}
         onRemember={onRemember}
         onDeleteMessage={(message) => {
           if (sending || locked.current) return;
@@ -654,7 +660,7 @@ function LocalChatPanel({
           />
         ) : null}
         {onOpenMercalys ? (
-          <Text style={{ padding: 12 }}>
+          <Text style={{ padding: 12, color: colors.muted, lineHeight: 22 }}>
             Les références uniques sont créées et les lignes sans ambiguïté sont
             publiées automatiquement, sans attendre les autres produits. Les
             doutes et les remplacements vous seront demandés ici.

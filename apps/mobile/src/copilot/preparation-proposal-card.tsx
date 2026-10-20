@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotPreparationProposalController } from "./preparation-proposal-controller";
 import { commercialMechanismDescription } from "@fl-copilot/commercial-core";
@@ -336,7 +337,7 @@ export function PreparationProposalCard({
             >
               <Text
                 style={{
-                  color: "white",
+                  color: colors.onAccent,
                   textAlign: "center",
                   fontWeight: "600",
                 }}

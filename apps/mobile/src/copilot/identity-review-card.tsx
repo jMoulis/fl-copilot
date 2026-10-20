@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Switch, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import {
   identityReviewDesiredStatus,
   ProductClassificationError,
@@ -165,7 +166,7 @@ export function IdentityReviewCard({
             >
               <Text
                 style={{
-                  color: "white",
+                  color: colors.onAccent,
                   textAlign: "center",
                   fontWeight: "600",
                 }}

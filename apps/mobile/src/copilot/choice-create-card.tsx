@@ -6,7 +6,8 @@ import { useRouter } from "expo-router";
 import { commercialMechanismDescription } from "@fl-copilot/commercial-core";
 import { formatFrenchCalendarDate } from "../dates/calendar";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Switch, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Switch, View } from "react-native";
+import { ChatText as Text } from "./chat-text";
 import type { CopilotMessage, CommercialMechanism } from "@fl-copilot/domain";
 import type { CopilotChoiceCreateController } from "./choice-create-controller";
 import { colors } from "../design/tokens";
@@ -232,7 +233,7 @@ export function ChoiceCreateCard({
             >
               <Text
                 style={{
-                  color: "white",
+                  color: colors.onAccent,
                   textAlign: "center",
                   fontWeight: "600",
                 }}
