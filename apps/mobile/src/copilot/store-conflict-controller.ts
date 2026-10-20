@@ -225,6 +225,7 @@ export class CopilotStoreConflictRuntime {
             reactivateRejected: request.reactivateRejected,
             activateProduct: request.activateProduct,
             acceptRemoteDeletion: request.acceptRemoteDeletion,
+            confirmLocalDeletionChoice: request.confirmLocalDeletionChoice,
             canResolve: () => allowed(authority, request.kind),
             signal,
           });
@@ -370,6 +371,12 @@ export class CopilotStoreConflictController {
               ...(result.activateProduct !== undefined
                 ? { activateProduct: result.activateProduct }
                 : {}),
+              ...(result.confirmLocalDeletionChoice !== undefined
+                ? {
+                    confirmLocalDeletionChoice:
+                      result.confirmLocalDeletionChoice,
+                  }
+                : {}),
               ...(result.acceptRemoteDeletion !== undefined
                 ? { acceptRemoteDeletion: result.acceptRemoteDeletion }
                 : {}),
@@ -399,11 +406,21 @@ export class CopilotStoreConflictController {
     rawDecision: unknown,
     reviewed: boolean,
     signal?: AbortSignal,
-    reactivateRejected = false,
-    retainWithdrawn = false,
-    activateProduct = false,
-    acceptRemoteDeletion = false,
+    consent: {
+      reactivateRejected?: boolean;
+      retainWithdrawn?: boolean;
+      activateProduct?: boolean;
+      acceptRemoteDeletion?: boolean;
+      confirmLocalDeletionChoice?: boolean;
+    } = {},
   ) {
+    const {
+      reactivateRejected = false,
+      retainWithdrawn = false,
+      activateProduct = false,
+      acceptRemoteDeletion = false,
+      confirmLocalDeletionChoice = false,
+    } = consent;
     const decision = storeConflictDecisionSchema.parse(rawDecision),
       state = await this.open(message);
     if (!reviewed) throw Error("STORE_CONFLICT_REVIEW_REQUIRED");
@@ -424,6 +441,12 @@ export class CopilotStoreConflictController {
       !acceptRemoteDeletion
     )
       throw Error("STORE_CONFLICT_DELETION_CONFIRMATION_REQUIRED");
+    if (
+      state.review.cataloguePolicy?.localDeleted &&
+      !state.review.cataloguePolicy.remoteDeleted &&
+      !confirmLocalDeletionChoice
+    )
+      throw Error("STORE_CONFLICT_LOCAL_DELETION_CONFIRMATION_REQUIRED");
     const request = storeConflictRequestSchema.parse({
       operationId: message.id,
       conflictId: state.review.conflict.id,
@@ -431,6 +454,10 @@ export class CopilotStoreConflictController {
       kind: state.content.input.kind,
       basisHash,
       decision,
+      ...(state.review.cataloguePolicy?.localDeleted &&
+      !state.review.cataloguePolicy.remoteDeleted
+        ? { confirmLocalDeletionChoice }
+        : {}),
       ...(isCatalogueConflictKind(state.content.input.kind) &&
       state.review.cataloguePolicy?.remoteDeleted
         ? { acceptRemoteDeletion }

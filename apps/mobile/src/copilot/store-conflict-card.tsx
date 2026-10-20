@@ -47,6 +47,7 @@ export function StoreConflictCard({
     ),
     [reviewed, setReviewed] = useState(false),
     [reactivateRejected, setReactivateRejected] = useState(false),
+    [localDeletionConfirmed, setLocalDeletionConfirmed] = useState(false),
     [saving, setSaving] = useState(false),
     [error, setError] = useState<string>();
   const revision = useRef(0),
@@ -59,6 +60,7 @@ export function StoreConflictCard({
       setDecision(null);
       setReviewed(false);
       setReactivateRejected(false);
+      setLocalDeletionConfirmed(false);
       setSaving(false);
       setError(undefined);
       void controller
@@ -84,7 +86,8 @@ export function StoreConflictCard({
       state?.status !== "READY" ||
       !decision ||
       !reviewed ||
-      (reactivationRequired && !reactivateRejected)
+      (reactivationRequired && !reactivateRejected) ||
+      (localDeletionRequired && !localDeletionConfirmed)
     )
       return;
     const v = revision.current,
@@ -100,20 +103,26 @@ export function StoreConflictCard({
         decision,
         true,
         cancel.signal,
-        !!reactivationRequired &&
-          !retentionRequired &&
-          !activationRequired &&
-          !deletionRequired &&
-          reactivateRejected,
-        !!retentionRequired && reactivateRejected,
-        !!activationRequired && reactivateRejected,
-        !!deletionRequired && reactivateRejected,
+        {
+          reactivateRejected:
+            !!reactivationRequired &&
+            !retentionRequired &&
+            !activationRequired &&
+            !deletionRequired &&
+            reactivateRejected,
+          retainWithdrawn: !!retentionRequired && reactivateRejected,
+          activateProduct: !!activationRequired && reactivateRejected,
+          acceptRemoteDeletion: !!deletionRequired && reactivateRejected,
+          confirmLocalDeletionChoice:
+            !!localDeletionRequired && localDeletionConfirmed,
+        },
       );
       if (revision.current === v) setState(next);
     } catch {
       if (revision.current === v) {
         setReviewed(false);
         setReactivateRejected(false);
+        setLocalDeletionConfirmed(false);
         setDecision(null);
         setError(
           "L’état a changé ou la résolution n’a pas été enregistrée. Relisez la comparaison avant de confirmer.",
@@ -128,6 +137,14 @@ export function StoreConflictCard({
     }
   };
   const review = state?.review;
+  const localDeletionRequired =
+    !!decision &&
+    !!review?.cataloguePolicy?.localDeleted &&
+    !review.cataloguePolicy.remoteDeleted;
+  const localDeletionLabel =
+    decision === "KEEP_LOCAL"
+      ? "Je confirme le maintien de ma suppression malgré la modification synchronisée."
+      : "Je confirme l’annulation de ma suppression et le rétablissement de la version synchronisée.";
   const retentionRequired =
     decision === "KEEP_LOCAL"
       ? review?.commercialPolicy?.retainLocal
@@ -221,6 +238,7 @@ export function StoreConflictCard({
         setDecision(value);
         setReviewed(false);
         setReactivateRejected(false);
+        setLocalDeletionConfirmed(false);
       }}
       style={{
         minHeight: 44,
@@ -374,14 +392,19 @@ export function StoreConflictCard({
               ? "Conserver mon heure de fin"
               : state.content.input.kind === "SETTINGS"
                 ? "Conserver mes réglages locaux"
-                : "Conserver ma version locale",
+                : review.cataloguePolicy?.localDeleted &&
+                    !review.cataloguePolicy.remoteDeleted
+                  ? "Maintenir ma suppression locale"
+                  : "Conserver ma version locale",
             review.canKeepLocal,
           )}
           {choice(
             "ADOPT_REMOTE",
             review.cataloguePolicy?.remoteDeleted
               ? "Accepter la suppression synchronisée"
-              : "Adopter la version synchronisée",
+              : review.cataloguePolicy?.localDeleted
+                ? "Annuler ma suppression et rétablir la version synchronisée"
+                : "Adopter la version synchronisée",
             review.canAdoptRemote,
           )}
           {review.cataloguePolicy && !review.canKeepLocal ? (
@@ -404,6 +427,21 @@ export function StoreConflictCard({
               La version locale ne peut pas être renvoyée : vérifiez les
               identités et l’état des produits ou du besoin.
             </Text>
+          ) : null}
+          {localDeletionRequired ? (
+            <View
+              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
+            >
+              <Switch
+                accessibilityLabel={localDeletionLabel}
+                disabled={saving}
+                value={localDeletionConfirmed}
+                onValueChange={setLocalDeletionConfirmed}
+              />
+              <Text style={{ color: colors.ink, flex: 1 }}>
+                {localDeletionLabel}
+              </Text>
+            </View>
           ) : null}
           {reactivationRequired ? (
             <View
@@ -452,14 +490,16 @@ export function StoreConflictCard({
                 saving ||
                 !reviewed ||
                 !decision ||
-                (!!reactivationRequired && !reactivateRejected),
+                (!!reactivationRequired && !reactivateRejected) ||
+                (localDeletionRequired && !localDeletionConfirmed),
               busy: saving,
             }}
             disabled={
               saving ||
               !reviewed ||
               !decision ||
-              (!!reactivationRequired && !reactivateRejected)
+              (!!reactivationRequired && !reactivateRejected) ||
+              (localDeletionRequired && !localDeletionConfirmed)
             }
             onPress={() => void confirm()}
             style={{
@@ -471,7 +511,8 @@ export function StoreConflictCard({
                 saving ||
                 !reviewed ||
                 !decision ||
-                (!!reactivationRequired && !reactivateRejected)
+                (!!reactivationRequired && !reactivateRejected) ||
+                (localDeletionRequired && !localDeletionConfirmed)
                   ? 0.45
                   : 1,
             }}

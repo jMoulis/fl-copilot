@@ -205,8 +205,7 @@ it.each(["LOCAL", "REMOTE"] as const)(
             decision,
             true,
             undefined,
-            false,
-            true,
+            { reactivateRejected: false, retainWithdrawn: true },
           )
         ).status,
       ).toBe("COMPLETED");
@@ -218,8 +217,7 @@ it.each(["LOCAL", "REMOTE"] as const)(
             decision,
             true,
             undefined,
-            false,
-            true,
+            { reactivateRejected: false, retainWithdrawn: true },
           )
         ).status,
       ).toBe("COMPLETED");

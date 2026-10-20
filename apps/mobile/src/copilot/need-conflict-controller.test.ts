@@ -247,7 +247,7 @@ it.each(["MEMBERSHIP", "SUBSTITUTION"] as const)(
               decision,
               true,
               undefined,
-              true,
+              { reactivateRejected: true },
             )
           ).status,
         ).toBe("COMPLETED");

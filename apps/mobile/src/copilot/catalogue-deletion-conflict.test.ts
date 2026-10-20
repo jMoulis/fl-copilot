@@ -65,10 +65,12 @@ it.each(kinds)(
         "ADOPT_REMOTE",
         true,
         undefined,
-        false,
-        false,
-        false,
-        true,
+        {
+          reactivateRejected: false,
+          retainWithdrawn: false,
+          activateProduct: false,
+          acceptRemoteDeletion: true,
+        },
       );
       expect(result).toMatchObject({
         status: "COMPLETED",
