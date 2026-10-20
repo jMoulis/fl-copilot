@@ -518,3 +518,11 @@ L8/M7 3 et 7 : actions natives communes PDF/XLSX/photos/tickets multivues, feuil
 Preuves locales du nouvel état : **136 tests ciblés réussis / 2 ignorés**, incluant les courses de lecture, l’annulation, l’arrivée tardive des sources et les limites de photos. La suite complète précédente avec Mongo reste une preuve du socle, pas de cette nouvelle tête. Contrôle visuel à largeur téléphone avec états synthétiques : feuille, vues ordonnées, retours, scroll et focus conservés ; partage OS et geste natif non revendiqués. Voir `../qa/M7_SOURCE_ORIGINAL_RECOVERY.md`. Le lot est encore sur branche ; aucun déploiement, appel fournisseur ni build EAS.
 
 Sept chantiers : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours**. Réception Resend, autres lots V1 et recette M8 demeurent ouverts.
+
+### 20 octobre — retour iPhone et reprise de la fidélité visuelle
+
+Le build staging **0.1.0 / 2** (`dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `c8a1698`) est installé et examiné par Julien : l’application lui convient mais le design est jugé insuffisamment fidèle aux maquettes. La recette UX reste ouverte. Ce retour devient la priorité du chantier 7 ; le travail Resend reste conservé sur sa branche, sans activation.
+
+Premier lot de correction : hiérarchie compacte Aujourd’hui/Analyses/Produits, surfaces et navigation, montants et graphique réunis, explications dépliables avec couverture toujours visible, listes et accès secondaires plus discrets, sélecteur de semaine Actions compact. Les composants réels sont examinés localement à 390 et 320 points, avec jeux de test identifiés et sans publication. **1 371 tests réussis / 7 ignorés** sur le mobile et le moteur analytique. Le détail des preuves et des manques visuels restants est dans `../qa/NATIVE_DESIGN_FIDELITY_2026_10_20.md` ; aucune nouvelle validation iPhone ni livraison de ces corrections n’est revendiquée.
+
+Sept chantiers : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours**. Ce lot avance le chantier 7, sans crédit supplémentaire sur les six autres ni fermeture de V1/M8.

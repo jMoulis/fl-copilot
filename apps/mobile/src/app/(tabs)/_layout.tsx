@@ -17,7 +17,7 @@ export default function TabLayout() {
         tabBarShowLabel: true,
         tabBarLabelPosition: "below-icon",
         tabBarStyle: {
-          backgroundColor: colors.surface,
+          backgroundColor: colors.canvas,
           borderTopColor: colors.line,
           minHeight: 64 + Math.max(0, fontScale - 1) * 32,
         },
@@ -73,7 +73,7 @@ export default function TabLayout() {
           tabBarAccessibilityLabel: "Copilote",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? "chatbubble" : "chatbubble-outline"}
+              name={focused ? "sparkles" : "sparkles-outline"}
               color={color}
               size={size}
             />

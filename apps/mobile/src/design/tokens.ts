@@ -1,14 +1,14 @@
 /** Shared native visual tokens. Keep Tailwind color names aligned with tailwind.config.cjs. */
 export const colors = {
   canvas: "#07120F",
-  surface: "#13231D",
-  surfaceMuted: "#1D3429",
+  surface: "#101E19",
+  surfaceMuted: "#192B24",
   ink: "#F0FFF6",
   muted: "#B4C9BE",
   forest: "#4DDC91",
   forestStrong: "#3CBF7C",
   forestSoft: "#163A2A",
-  line: "#2B493A",
+  line: "#263C32",
   positive: "#69E7A0",
   positiveSoft: "#173C2B",
   warning: "#E6B16D",

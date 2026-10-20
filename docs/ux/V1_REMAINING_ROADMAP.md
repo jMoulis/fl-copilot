@@ -132,3 +132,9 @@ Le contrôle utilise les mêmes validateurs et confirme que les lacunes du réf�
 ## Avancement — catalogue depuis un ticket de casse (20 octobre)
 
 L5 ferme l’accès manuel à tout le catalogue depuis une ligne de ticket, avec recherche locale, aperçu explicite, choix canonique protégé contre les changements concurrents et retour au ticket. La création réutilise le formulaire produit/Outbox et revient à la sélection sans publication ni alias implicite. Les autres saisies restent dans le ticket monté ; un produit incomplet n’impose pas de compléter le référentiel pour la casse. QA : `../qa/M7_UX_RECEIPT_CATALOGUE.md`. La recette native et les autres portes L1–L11/V1/M8 restent ouvertes. PR 282 fusionnée après ses deux CI exactes réussies, merge `dec03803d24e11b75bdbd444adef7f682feec3be`, branches supprimées.
+
+## Retour de recette — fidélité au pack UX (20 octobre)
+
+Le build 0.1.0 / 2 est installé, mais Julien juge la fidélité aux maquettes insuffisante. Les lots L1–L6 et la recette L11 restent ouverts malgré leur socle fonctionnel fusionné. Le chantier 7 reprend en priorité l’aspect natif : composition, densité, hiérarchie des chiffres, cartes, listes, navigation et médias. Les arbitrages d’`AUDIT.md` sont conservés, dont le chat principal conversationnel et l’absence de chiffres inventés.
+
+Un premier lot corrige Aujourd’hui, Analyses, Produits, les surfaces communes et le sélecteur de semaine Actions. La revue utilise les composants réels à largeur téléphone, puis les vérifications automatiques et l’export natif. Voir `../qa/NATIVE_DESIGN_FIDELITY_2026_10_20.md` pour les captures, les interactions contrôlées et les écarts restants. Le binaire installé n’intègre pas encore ce lot ; aucune nouvelle construction EAS ni livraison API n’est lancée pour une seule retouche.
