@@ -178,3 +178,7 @@ Le chat et la comparaison manuelle du référentiel distinguent une suppression 
 ## L7/L5 — choix après suppression locale du référentiel (20 octobre)
 
 Les deux parcours existants proposent de maintenir ou d’annuler une suppression locale face à une version distante complète et de même identité. Deux consentements distincts : comparaison et conséquence de ce choix ; réactivation éventuelle séparée. Un seul DELETE canonique ou adoption sans envoi, versions conservées sans cascade ni changement des chiffres. QA : `../qa/M7_CATALOGUE_LOCAL_DELETION_CONFLICTS_2026_10_20.md`. Les cibles absentes/réaffectées, refus génériques, recette native et autres critères V1/M8 restent ouverts ; aucun lot entier n’est fermé.
+
+## L11 — preuves de mise à niveau locale (20 octobre)
+
+M8-T03 progresse avec les mises à niveau sur disque depuis les 60 versions, les reprises après erreur et sept SIGKILL avant validation de transaction, en conservant commandes, fichiers, conflits et identité d’appareil. Aucune nouvelle migration ni modification du runtime ; les preuves automatisées ne remplacent pas la mise à jour sur les appareils réels. Corruption/backup/restauration, réseau, performances, accessibilité et autres critères V1 restent ouverts. QA : `../qa/M8_SQLITE_UPGRADE_PRESERVATION_2026_10_20.md`. Aucun lot complet ni chantier M7 n’est déclaré terminé.
