@@ -188,15 +188,18 @@ export function MercalysImportCard({
                 ) : item.status === "ERROR" ? (
                   <Text>
                     {continuationErrors[item.code] ??
-                      (item.code === "IMPORT_REVIEW_LIMIT"
-                        ? "Ce fichier dépasse la taille de revue automatique. Son original est conservé."
-                        : item.code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
-                          ? "Ce fichier contient une période agrégée sans dates quotidiennes. Il faut un export détaillé ; aucune journée ne sera inventée."
-                          : item.code === "MERCALYS_BATCH_FILE_CHANGED"
-                            ? "L’original conservé a changé. Sélectionnez de nouveau le fichier."
-                            : item.code === "FORMAT_UNRECOGNIZED"
-                              ? "Ce fichier n’est pas reconnu comme un export Mercalys de ventes ou de casse."
-                              : "Ce fichier reste à reprendre. Aucun remplacement automatique.")}
+                      (item.code === "MERCALYS_BATCH_MEMBER_COPY_REQUIRED"
+                        ? "La copie de ce fichier reste à reprendre. L’archive originale est conservée et les autres fichiers peuvent être traités."
+                        : item.code === "IMPORT_REVIEW_LIMIT"
+                          ? "Ce fichier dépasse la taille de revue automatique. Son original est conservé."
+                          : item.code ===
+                              "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
+                            ? "Ce fichier contient une période agrégée sans dates quotidiennes. Il faut un export détaillé ; aucune journée ne sera inventée."
+                            : item.code === "MERCALYS_BATCH_FILE_CHANGED"
+                              ? "L’original conservé a changé. Sélectionnez de nouveau le fichier."
+                              : item.code === "FORMAT_UNRECOGNIZED"
+                                ? "Ce fichier n’est pas reconnu comme un export Mercalys de ventes ou de casse."
+                                : "Ce fichier reste à reprendre. Aucun remplacement automatique.")}
                   </Text>
                 ) : (
                   <>

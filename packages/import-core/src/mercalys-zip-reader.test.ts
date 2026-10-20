@@ -83,3 +83,40 @@ it("refuses a corrupt Deflate payload and never returns partially decoded bytes"
     createMercalysZipReader(archive).extract("a.xlsx"),
   ).rejects.toThrow("MERCALYS_ZIP_CORRUPT");
 });
+
+it.each([0, 6] as const)(
+  "verifies an empty ZIP member with compression level %i without hiding a valid sibling",
+  async (level) => {
+    const good = new Uint8Array([1, 2, 3]),
+      reader = createMercalysZipReader(
+        zipSync(
+          { "empty.xlsx": new Uint8Array(), "good.xlsx": good },
+          { level },
+        ),
+      );
+    expect(reader.files.map((file) => file.path)).toEqual([
+      "empty.xlsx",
+      "good.xlsx",
+    ]);
+    expect(await reader.extract("empty.xlsx")).toEqual(new Uint8Array());
+    expect(await reader.extract("good.xlsx")).toEqual(good);
+  },
+);
+
+it("still verifies CRC for empty members instead of treating zero bytes as trusted", async () => {
+  const raw = zipSync(
+      {
+        "empty.xlsx": new Uint8Array(),
+        "good.xlsx": new Uint8Array([1, 2, 3]),
+      },
+      { level: 0 },
+    ),
+    view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  view.setUint32(14, 1, true);
+  view.setUint32(central(raw) + 16, 1, true);
+  const reader = createMercalysZipReader(raw);
+  await expect(reader.extract("empty.xlsx")).rejects.toThrow(
+    "MERCALYS_ZIP_CORRUPT",
+  );
+  expect(await reader.extract("good.xlsx")).toEqual(new Uint8Array([1, 2, 3]));
+});

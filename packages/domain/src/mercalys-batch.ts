@@ -11,6 +11,11 @@ export const retainedMercalysBatchFileSchema = z.strictObject({
   sizeBytes: z.number().int().positive().max(MAX_MERCALYS_BATCH_FILE_BYTES),
   checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
 });
+/** A decoded archive member has a proven identity even while its device copy is pending.
+ * null is never a claim that a physical XLSX has been retained. */
+export const mercalysBatchFileSchema = retainedMercalysBatchFileSchema.extend({
+  localUri: retainedMercalysBatchFileSchema.shape.localUri.nullable(),
+});
 /** Trusted native intake metadata, never a model-granted publication request. */
 export const mercalysBatchInputSchema = z
   .strictObject({
@@ -21,11 +26,17 @@ export const mercalysBatchInputSchema = z
     archiveId: uuid.optional(),
     createdAt: z.string().datetime({ offset: true }),
     files: z
-      .array(retainedMercalysBatchFileSchema)
+      .array(mercalysBatchFileSchema)
       .min(1)
       .max(MAX_MERCALYS_BATCH_FILES),
   })
   .superRefine((batch, ctx) => {
+    if (!batch.archiveId && batch.files.some((file) => file.localUri === null))
+      ctx.addIssue({
+        code: "custom",
+        message: "A pending member requires its retained archive",
+        path: ["files"],
+      });
     if (new Set(batch.files.map((f) => f.id)).size !== batch.files.length)
       ctx.addIssue({
         code: "custom",
@@ -65,7 +76,7 @@ export const mercalysBatchResultSchema = z.discriminatedUnion("status", [
     overlap: z.boolean(),
   }),
 ]);
-export const mercalysBatchItemSchema = retainedMercalysBatchFileSchema.extend({
+export const mercalysBatchItemSchema = mercalysBatchFileSchema.extend({
   batchId: uuid,
   assistance: z
     .strictObject({

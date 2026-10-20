@@ -68,6 +68,10 @@ function createReader(
       };
       const decoder =
         entry.compression === 8 ? new Inflate(receive) : undefined;
+      // An empty stored member is a valid ZIP entry, but not a valid workbook.
+      // Preserve it for per-file diagnosis without rejecting its valid siblings.
+      if (entry.compression === 0 && entry.compressedSize === 0)
+        receive(new Uint8Array(), true);
       try {
         for (
           let offset = 0, tick = 0;

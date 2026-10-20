@@ -38,6 +38,7 @@ import {
 } from "./email-intake-processing";
 import { SourceOriginalJobs } from "../documents/source-original-jobs";
 import type { OutboxDatabase } from "../sync/outbox-repository";
+import { MercalysBatchRepository } from "../documents/mercalys-batch-repository";
 import { serializeLocalWrites } from "../db/serialized-writes";
 import type { MercalysZipStorage } from "../documents/mercalys-zip-capture";
 const cleanups: Array<() => void> = [];
@@ -47,6 +48,8 @@ afterEach(() => {
 async function fixture(
   options: {
     zip?: boolean;
+    invalidMember?: boolean;
+    emptyMember?: boolean;
     synced?: boolean;
     flow?: "MERCALYS_SALES" | "MERCALYS_WASTE";
     filename?: string;
@@ -80,7 +83,11 @@ async function fixture(
     ? zipSync(
         {
           "Exports/ventes.xlsx": workbook(),
-          "Exports/suite.xlsx": workbook("2026-10-08"),
+          "Exports/suite.xlsx": options.emptyMember
+            ? new Uint8Array()
+            : options.invalidMember
+              ? new Uint8Array([1, 2, 3])
+              : workbook("2026-10-08"),
         },
         { level: 0 },
       )
@@ -330,19 +337,36 @@ it("restores the same handoff after a physical SQLite close/reopen without a net
     ).messages,
   ).toHaveLength(1);
 });
-it("reuses the retained archive, resumes partial members and exposes both real imports only when the batch is stable", async () => {
+it("processes good members immediately and retains the same ordered manifest/card after a missing copy resumes", async () => {
   const f = await fixture({ zip: true });
   f.failNextMember();
   const partial = await f.handoff.attach(f.ref);
   expect(partial).toMatchObject({
-    status: "RETRY",
-    retainedCount: 1,
+    status: "ATTACHED",
     failures: [expect.objectContaining({ path: "Exports/ventes.xlsx" })],
   });
-  expect(count(f, "copilot_messages")).toBe(0);
+  if (partial.status !== "ATTACHED")
+    throw Error("expected partial import card");
+  const first = await f.engine().run(partial.message);
+  expect(first.items.map((item) => item.status)).toEqual([
+    "ERROR",
+    "PUBLISHED",
+  ]);
+  expect(count(f, "sales_observations")).toBe(1);
+  const before = await new MercalysBatchRepository(f.a, f.scope).header(
+    partial.batchId,
+  );
+  expect(
+    before.files.map((file) => [file.filename, file.localUri === null]),
+  ).toEqual([
+    ["Exports/ventes.xlsx", true],
+    ["Exports/suite.xlsx", false],
+  ]);
+  expect(count(f, "copilot_messages")).toBe(2);
   const resumed = await f.handoff.attach(f.ref);
   if (resumed.status !== "ATTACHED")
     throw Error("expected completed extraction");
+  expect(resumed.message).toEqual(partial.message);
   expect(
     (await f.engine().run(resumed.message)).items.map((item) => item.status),
   ).toEqual(["PUBLISHED", "PUBLISHED"]);
@@ -376,6 +400,7 @@ it("reconstructs a missing extracted workbook from the retained ZIP without repu
     await import("../documents/mercalys-batch-repository")
   ).MercalysBatchRepository(f.a, f.scope).header(first.batchId);
   const lost = batch.files[0]!.localUri;
+  if (!lost) throw Error("expected retained member location");
   rmSync(fileURLToPath(lost));
   expect(existsSync(fileURLToPath(lost))).toBe(false);
   const restored = await f.handoff.attach(f.ref);
@@ -506,6 +531,51 @@ it("checks current ownership again after byte reads and rolls back a role loss d
   expect(existsSync(fileURLToPath(f.uri))).toBe(true);
 });
 
+function durableEmailRuntime(f: Awaited<ReturnType<typeof fixture>>) {
+  const scope = () => ({
+    storeId: f.scope.storeId,
+    userId: f.scope.ownerId,
+    canWrite: true,
+  });
+  const make = (db = f.a, now?: () => Date) => {
+    const cache = f.makeCache(db),
+      originals = f.originals(cache),
+      runtime = new EmailIntakeProcessing(cache, originals, {
+        session: scope,
+        receipt: async () => {
+          throw Error("UNEXPECTED_NETWORK");
+        },
+        format: async (proof) =>
+          emailProcessingFormat(await f.deps.read(proof.localUri)),
+        mercalys: f.makeHandoff(cache),
+        media: {
+          capture: async () => {
+            throw Error("WRONG_PIPELINE");
+          },
+        },
+        runMercalys: (message, authorize, signal) =>
+          f.engine(db, authorize).run(message, signal),
+      }),
+      jobs = new SourceOriginalJobs(
+        db,
+        {
+          recover: async () => {
+            throw Error("UNEXPECTED_TRANSFER");
+          },
+        },
+        scope,
+        randomUUID,
+        now,
+        originals,
+        {
+          process: (input, authorize, signal) =>
+            runtime.process(input, authorize, signal),
+        },
+      );
+    return { runtime, jobs, db };
+  };
+  return make;
+}
 it.each([
   { zip: false, filename: "ventes.xlsx", expected: 1 },
   { zip: false, filename: "photo-rayon.jpg", expected: 1 },
@@ -515,48 +585,7 @@ it.each([
   async ({ zip, filename, expected }) => {
     const f = await fixture({ zip, filename });
     await f.chat.editText(f.conversation.id, "Mon brouillon est conservé");
-    const scope = () => ({
-      storeId: f.scope.storeId,
-      userId: f.scope.ownerId,
-      canWrite: true,
-    });
-    const make = (db = f.a) => {
-      const cache = f.makeCache(db),
-        originals = f.originals(cache),
-        runtime = new EmailIntakeProcessing(cache, originals, {
-          session: scope,
-          receipt: async () => {
-            throw Error("UNEXPECTED_NETWORK");
-          },
-          format: async (proof) =>
-            emailProcessingFormat(await f.deps.read(proof.localUri)),
-          mercalys: f.makeHandoff(cache),
-          media: {
-            capture: async () => {
-              throw Error("WRONG_PIPELINE");
-            },
-          },
-          runMercalys: (message, authorize, signal) =>
-            f.engine(db, authorize).run(message, signal),
-        }),
-        jobs = new SourceOriginalJobs(
-          db,
-          {
-            recover: async () => {
-              throw Error("UNEXPECTED_TRANSFER");
-            },
-          },
-          scope,
-          randomUUID,
-          undefined,
-          originals,
-          {
-            process: (input, authorize, signal) =>
-              runtime.process(input, authorize, signal),
-          },
-        );
-      return { runtime, jobs, db };
-    };
+    const make = durableEmailRuntime(f);
     const p = make(),
       input = {
         ...f.ref,
@@ -627,4 +656,107 @@ it("keeps one publication when the import card and durable job run the same acce
   expect(a.items[0]?.status).toBe("PUBLISHED");
   expect(b.items[0]?.status).toBe("PUBLISHED");
   expect(count(f, "sales_observations")).toBe(1);
+});
+
+it("publishes a good ZIP sibling before copy retry, then finishes after restart without a new card or double publication", async () => {
+  const f = await fixture({ zip: true }),
+    make = durableEmailRuntime(f);
+  let at = new Date("2026-10-20T18:00:00Z");
+  const p = make(f.a, () => at),
+    input = {
+      ...f.ref,
+      actionId: f.decision.actionId,
+      processingId: f.decision.files[0]!.processingId,
+    };
+  f.failNextMember();
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(input)).toMatchObject({
+    status: "RETRY",
+    attempts: 1,
+    code: "EMAIL_MERCALYS_MEMBERS_RETRY_REQUIRED",
+  });
+  expect(count(f, "sales_observations")).toBe(1);
+  const originalMessage = f.db
+    .prepare(
+      "SELECT id,payload_json FROM copilot_messages WHERE json_extract(payload_json,'$.role')='USER' AND json_extract(json_extract(payload_json,'$.text'),'$.kind')='MERCALYS_CHAT_IMPORT'",
+    )
+    .get();
+  const resumed = make(f.restart(), () => at);
+  at = new Date(at.getTime() + 120000);
+  await resumed.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await resumed.jobs.emailProcessingState(input)).toMatchObject({
+    status: "COMPLETED",
+    attempts: 2,
+  });
+  expect(
+    await resumed.db.getFirstAsync("SELECT COUNT(*) n FROM sales_observations"),
+  ).toEqual({ n: 2 });
+  expect(
+    await resumed.db.getAllAsync(
+      "SELECT id,payload_json FROM copilot_messages WHERE json_extract(payload_json,'$.role')='USER' AND json_extract(json_extract(payload_json,'$.text'),'$.kind')='MERCALYS_CHAT_IMPORT'",
+    ),
+  ).toEqual([originalMessage]);
+  expect(f.zip.retain).not.toHaveBeenCalled();
+  expect(existsSync(fileURLToPath(f.uri))).toBe(true);
+});
+it("keeps a malformed workbook visible for review while publishing its valid sibling", async () => {
+  const f = await fixture({ zip: true, invalidMember: true }),
+    make = durableEmailRuntime(f),
+    p = make();
+  const input = {
+    ...f.ref,
+    actionId: f.decision.actionId,
+    processingId: f.decision.files[0]!.processingId,
+  };
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(input)).toMatchObject({
+    status: "WAITING_INPUT",
+    code: "EMAIL_MERCALYS_PARTIAL_REVIEW_REQUIRED",
+  });
+  expect(count(f, "sales_observations")).toBe(1);
+  const batch = (await new MercalysBatchRepository(f.a, f.scope).recent())
+    .batches[0]!;
+  expect(batch.files.map((file) => file.localUri === null)).toEqual([
+    false,
+    true,
+  ]);
+  const linked = await f.handoff.attach(f.ref);
+  if (linked.status !== "ATTACHED") throw Error("expected partial card");
+  expect(linked.failures).toEqual([
+    { path: "Exports/suite.xlsx", code: "MERCALYS_ZIP_WORKBOOK_INVALID" },
+  ]);
+  expect(
+    (await f.engine().run(linked.message)).items.map((item) => item.status),
+  ).toEqual(["PUBLISHED", "ERROR"]);
+  expect(count(f, "sales_observations")).toBe(1);
+});
+
+it("does not let an empty workbook block its valid sibling or fabricate a retained member URI", async () => {
+  const f = await fixture({ zip: true, emptyMember: true }),
+    p = durableEmailRuntime(f)();
+  const input = {
+    ...f.ref,
+    actionId: f.decision.actionId,
+    processingId: f.decision.files[0]!.processingId,
+  };
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(input)).toMatchObject({
+    status: "WAITING_INPUT",
+    code: "EMAIL_MERCALYS_PARTIAL_REVIEW_REQUIRED",
+  });
+  expect(count(f, "sales_observations")).toBe(1);
+  const batch = (await new MercalysBatchRepository(f.a, f.scope).recent())
+    .batches[0]!;
+  expect(batch.files.map((file) => file.filename)).toEqual([
+    "Exports/ventes.xlsx",
+  ]);
+  const linked = await f.handoff.attach(f.ref);
+  if (linked.status !== "ATTACHED") throw Error("expected good sibling card");
+  expect(linked.failures).toEqual([
+    { path: "Exports/suite.xlsx", code: "MERCALYS_ZIP_INVALID" },
+  ]);
+  expect(existsSync(fileURLToPath(f.uri))).toBe(true);
 });

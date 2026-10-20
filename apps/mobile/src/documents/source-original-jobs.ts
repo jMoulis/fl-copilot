@@ -518,6 +518,7 @@ export class SourceOriginalJobs {
                 "EMAIL_INTAKE_PURPOSE_ALREADY_RECORDED",
                 "EMAIL_INTAKE_FILE_FORMAT_INVALID",
                 "EMAIL_INTAKE_SOURCE_FAILED",
+                "EMAIL_MERCALYS_ARCHIVE_INVALID",
                 "COMMERCIAL_PDF_INVALID",
                 "MERCALYS_ZIP_INVALID",
                 "MERCALYS_ZIP_LIMIT",
