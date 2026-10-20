@@ -337,4 +337,7 @@ it("isolates a genuinely unreadable SQLite file, preserves its bytes/originals, 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
-});
+
+  // This file-backed integration scenario migrates two complete databases and reopens/bootstrap-applies one.
+  // Keep the normal unit-test limit; loaded CI runners need a scoped integration budget.
+}, 30_000);

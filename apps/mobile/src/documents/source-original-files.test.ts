@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
   maximumRead: 0,
   wholeReads: 0,
   dimensions: vi.fn(),
+  beforeMove: undefined as (() => Promise<void>) | undefined,
+  afterMove: undefined as (() => void) | undefined,
+  failMove: false,
 }));
 vi.mock("expo-file-system", () => {
   class File {
@@ -67,10 +70,15 @@ vi.mock("expo-file-system", () => {
         close: () => {},
       };
     }
-    move(to: File) {
+    async move(to: File) {
+      await Promise.resolve();
+      await state.beforeMove?.();
+      if (state.failMove) throw Error("NATIVE_MOVE_FAILED");
+      if (!state.files.has(this.uri)) throw Error("SOURCE_TEMP_MISSING");
       state.files.set(to.uri, state.files.get(this.uri)!);
       state.files.delete(this.uri);
       this.uri = to.uri;
+      state.afterMove?.();
     }
   }
   class Directory extends File {
@@ -124,6 +132,9 @@ beforeEach(() => {
   state.files.clear();
   state.maximumRead = 0;
   state.wholeReads = 0;
+  state.beforeMove = undefined;
+  state.afterMove = undefined;
+  state.failMove = false;
   state.fetch.mockReset();
   state.dimensions.mockReset().mockResolvedValue({ width: 6000, height: 6000 });
   vi.useFakeTimers();
@@ -156,6 +167,123 @@ it("streams the exact original, retains its final file after move/finally and re
     redirect: "error",
     credentials: "omit",
   });
+});
+
+it("does not announce the private original while its native relocation is still pending", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\nretained original"),
+    l = lease(bytes);
+  state.fetch.mockResolvedValue(
+    new Response(bytes, { headers: { "content-type": "application/pdf" } }),
+  );
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    }),
+    gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  state.beforeMove = async () => {
+    entered();
+    await gate;
+  };
+  let settled = false;
+  const receiving = files.receive(l, scope.ownerId, () => {});
+  void receiving.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
+  try {
+    await started;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    expect([...state.files.keys()].some((v) => v.endsWith(".partial"))).toBe(
+      true,
+    );
+    expect([...state.files.keys()].some((v) => /\/original-/.test(v))).toBe(
+      false,
+    );
+  } finally {
+    release();
+  }
+  const result = await receiving;
+  expect(state.files.get(result.localUri)).toEqual(bytes);
+});
+
+it("propagates an asynchronous move failure, keeps unrelated captures and retries without a partial final original", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\nretained original"),
+    l = lease(bytes),
+    prior = "file:///app/unsent-capture.jpg";
+  state.files.set(prior, bytes.slice());
+  state.fetch.mockImplementation(
+    async () =>
+      new Response(bytes, { headers: { "content-type": "application/pdf" } }),
+  );
+  state.failMove = true;
+  await expect(files.receive(l, scope.ownerId, () => {})).rejects.toThrow(
+    "NATIVE_MOVE_FAILED",
+  );
+  expect([...state.files.keys()]).toEqual([prior]);
+  state.failMove = false;
+  const proof = await files.receive(l, scope.ownerId, () => {});
+  expect(state.files.get(proof.localUri)).toEqual(bytes);
+  expect(state.files.get(prior)).toEqual(bytes);
+});
+
+it.each(["owner", "cancel"])(
+  "does not deliver a completed original after %s changes during native relocation; retains verified bytes",
+  async (mode) => {
+    const bytes = new TextEncoder().encode("%PDF-1.7\nretained original"),
+      l = lease(bytes),
+      cancel = new AbortController();
+    state.fetch.mockResolvedValue(
+      new Response(bytes, { headers: { "content-type": "application/pdf" } }),
+    );
+    let allowed = true;
+    state.afterMove = () => {
+      if (mode === "owner") allowed = false;
+      else cancel.abort();
+    };
+    await expect(
+      files.receive(
+        l,
+        scope.ownerId,
+        () => {
+          if (!allowed) throw Error("SCOPE_CHANGED");
+        },
+        cancel.signal,
+      ),
+    ).rejects.toThrow();
+    const entries = [...state.files.entries()];
+    expect(entries).toHaveLength(1);
+    expect(entries[0]![0]).toMatch(/\/original-.*\.pdf$/);
+    expect(entries[0]![1]).toEqual(bytes);
+  },
+);
+
+it("keeps an installed original when native move acknowledgement is lost, then reuses it without another download", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\nretained original"),
+    l = lease(bytes);
+  state.fetch.mockResolvedValue(
+    new Response(bytes, { headers: { "content-type": "application/pdf" } }),
+  );
+  state.afterMove = () => {
+    throw Error("MOVE_ACK_LOST");
+  };
+  await expect(files.receive(l, scope.ownerId, () => {})).rejects.toThrow(
+    "MOVE_ACK_LOST",
+  );
+  const paths = [...state.files.keys()];
+  expect(paths).toHaveLength(1);
+  expect(paths[0]).toMatch(/\/original-.*\.pdf$/);
+  expect(state.files.get(paths[0]!)).toEqual(bytes);
+  state.afterMove = undefined;
+  const restored = await files.receive(l, scope.ownerId, () => {});
+  expect(restored.localUri).toBe(paths[0]);
+  expect(state.fetch).toHaveBeenCalledOnce();
 });
 it.each(["oversize", "short", "mime", "checksum", "expired", "scope"])(
   "rejects %s transfer and cleans only its disposable partial file",

@@ -253,7 +253,7 @@ export const nativeMercalysZipStorage: MercalysZipStorage = {
             (await this.checksum(await copy.bytes())) !== checksum
           )
             throw Error("MERCALYS_ZIP_MEMBER_CHANGED");
-        } else temporary.move(copy);
+        } else await temporary.move(copy);
       } finally {
         // move changes the File handle URI; never delete the retained final file.
         if (temporary.uri !== copy.uri && temporary.exists) temporary.delete();

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { mkdtemp, rm, readFile, writeFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,9 @@ import { nativeLayoutIllustrationFiles as files } from "./layout-illustration-na
 const native = vi.hoisted(() => ({
   root: "",
   dimensions: { width: 1536, height: 1024 },
+  beforeMove: undefined as (() => Promise<void>) | undefined,
+  afterMove: undefined as (() => void) | undefined,
+  failMove: false,
 }));
 vi.mock("react-native", () => ({
   Image: { getSize: async () => native.dimensions },
@@ -72,9 +75,13 @@ vi.mock("expo-file-system", async () => {
     write(bytes: Uint8Array) {
       fs.writeFileSync(url.fileURLToPath(this.uri), bytes);
     }
-    move(to: File) {
+    async move(to: File) {
+      await Promise.resolve();
+      await native.beforeMove?.();
+      if (native.failMove) throw Error("NATIVE_MOVE_FAILED");
       fs.renameSync(url.fileURLToPath(this.uri), url.fileURLToPath(to.uri));
       this.uri = to.uri;
+      native.afterMove?.();
     }
     delete() {
       fs.unlinkSync(url.fileURLToPath(this.uri));
@@ -112,6 +119,12 @@ vi.mock("expo-file-system", async () => {
 beforeAll(async () => {
   native.root = await mkdtemp(join(tmpdir(), "fl-layout-native-files-"));
 });
+beforeEach(() => {
+  native.beforeMove = undefined;
+  native.afterMove = undefined;
+  native.failMove = false;
+  native.dimensions = { width: 1536, height: 1024 };
+});
 afterAll(async () => {
   await rm(native.root, { recursive: true, force: true });
 });
@@ -134,6 +147,130 @@ it("installs verified pixels at an owner-specific immutable path, reuses them an
     expect(
       await files.write(f.manifest, "original", f.bytes.original, () => {}),
     ).toBe(uri);
+  } finally {
+    f.db.close();
+  }
+});
+
+it("keeps the illustration write pending until relocation completes, while preserving a prior comparison", async () => {
+  const f = await illustrationAssetsFixture();
+  let release!: () => void, entered!: () => void;
+  const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+    started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+  try {
+    const prior = await files.write(
+      f.manifest,
+      "source",
+      f.bytes.source,
+      () => {},
+    );
+    native.beforeMove = async () => {
+      entered();
+      await gate;
+    };
+    let settled = false;
+    const writing = files.write(f.manifest, "image", f.bytes.image, () => {});
+    void writing.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    await started;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    try {
+      expect(settled).toBe(false);
+      expect(new Uint8Array(await readFile(fileURLToPath(prior)))).toEqual(
+        f.bytes.source,
+      );
+    } finally {
+      release();
+    }
+    const uri = await writing;
+    expect(new Uint8Array(await readFile(fileURLToPath(uri)))).toEqual(
+      f.bytes.image,
+    );
+  } finally {
+    release();
+    f.db.close();
+  }
+});
+
+it("rejects a late move failure without removing the previous comparison and resumes from the same bytes", async () => {
+  const f = await illustrationAssetsFixture();
+  try {
+    const prior = await files.write(
+      f.manifest,
+      "source",
+      f.bytes.source,
+      () => {},
+    );
+    native.failMove = true;
+    await expect(
+      files.write(f.manifest, "image", f.bytes.image, () => {}),
+    ).rejects.toThrow("NATIVE_MOVE_FAILED");
+    expect(
+      await files.usage({ storeId: f.scope.storeId, userId: f.scope.ownerId }),
+    ).toBe(f.bytes.source.length);
+    expect(new Uint8Array(await readFile(fileURLToPath(prior)))).toEqual(
+      f.bytes.source,
+    );
+    native.failMove = false;
+    const uri = await files.write(f.manifest, "image", f.bytes.image, () => {});
+    expect(new Uint8Array(await readFile(fileURLToPath(uri)))).toEqual(
+      f.bytes.image,
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+it("does not return a newly installed illustration after owner authority changes during relocation", async () => {
+  const f = await illustrationAssetsFixture();
+  try {
+    let allowed = true;
+    native.afterMove = () => {
+      allowed = false;
+    };
+    await expect(
+      files.write(f.manifest, "image", f.bytes.image, () => {
+        if (!allowed) throw Error("SCOPE_CHANGED");
+      }),
+    ).rejects.toThrow("SCOPE_CHANGED");
+    const retained = await files.existing(f.manifest, "image");
+    expect(retained).toBeTruthy();
+    expect(new Uint8Array(await readFile(fileURLToPath(retained!)))).toEqual(
+      f.bytes.image,
+    );
+  } finally {
+    f.db.close();
+  }
+});
+
+it("does not delete the complete original copy after lost native acknowledgement and reuses it on retry", async () => {
+  const f = await illustrationAssetsFixture();
+  try {
+    native.afterMove = () => {
+      throw Error("MOVE_ACK_LOST");
+    };
+    await expect(
+      files.write(f.manifest, "original", f.bytes.original, () => {}),
+    ).rejects.toThrow("MOVE_ACK_LOST");
+    const retained = await files.existing(f.manifest, "original");
+    expect(retained).toBeTruthy();
+    expect(new Uint8Array(await readFile(fileURLToPath(retained!)))).toEqual(
+      f.bytes.original,
+    );
+    native.afterMove = undefined;
+    expect(
+      await files.write(f.manifest, "original", f.bytes.original, () => {}),
+    ).toBe(retained);
   } finally {
     f.db.close();
   }

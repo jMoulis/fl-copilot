@@ -186,3 +186,7 @@ M8-T03 progresse avec les mises à niveau sur disque depuis les 60 versions, les
 ## 20 octobre — L11 / conservation avant reprise locale
 
 L’incrément M8-T04 ajoute une reprise explicite de démarrage après corruption SQLite avérée : snapshots DB/WAL/SHM vérifiés avant fermeture, ancienne copie isolée, nouvelle base migrée, sélection durable par installation et reconnexion/bootstrap canonique. Les fichiers et actions non envoyés restent conservés sans replay ni faux compteur de réussite. Les essais automatisés et la revue du composant web ne remplacent pas la restitution des métadonnées récupérables pour le même propriétaire, les tests de corruption native ni la restauration Mongo/Blob. L11, les sept chantiers M7 et le périmètre complet V1 restent ouverts. Voir `../qa/M8_LOCAL_DATABASE_RECOVERY_2026_10_20.md`. Aucun déploiement ni build EAS supplémentaire.
+
+## 20 octobre — L8/L10/L11, attendre les fichiers natifs conservés
+
+Correction des déplacements asynchrones non attendus pour ZIP, tickets multiphotos, originaux privés et copies d’illustration. La restitution attend l’installation, puis recontrôle l’autorité quand elle est fournie ; les sources et résultats déjà conservés ne sont pas effacés par un échec ou une annulation. Quatre reproductions avant correction et 76 scénarios ciblés corrigés constituent des preuves de régression, pas une recette iOS/Android. Voir `../qa/M8_NATIVE_FILE_RELOCATION_2026_10_20.md`. Chantiers 3/6/7 en cours, autres états inchangés, périmètre V1 complet conservé ; aucun build EAS ni déploiement supplémentaire.

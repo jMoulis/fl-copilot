@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   root: "",
   failWrite: false,
   failMove: false,
+  failMoveAcknowledgement: false,
   writes: 0,
 }));
 vi.mock("expo-file-system", async () => {
@@ -47,10 +48,12 @@ vi.mock("expo-file-system", async () => {
     async bytes() {
       return new Uint8Array(fs.readFileSync(this.path));
     }
-    move(target: File) {
+    async move(target: File) {
+      await Promise.resolve();
       if (state.failMove) throw Error("interrupted move");
       fs.renameSync(this.path, target.path);
       this.uri = target.uri;
+      if (state.failMoveAcknowledgement) throw Error("MOVE_ACK_LOST");
     }
     delete() {
       fs.unlinkSync(this.path);
@@ -87,6 +90,7 @@ beforeEach(() => {
   state.root = mkdtempSync(join(tmpdir(), "fl-native-zip-"));
   state.failWrite = false;
   state.failMove = false;
+  state.failMoveAcknowledgement = false;
   state.writes = 0;
 });
 afterEach(() => rmSync(state.root, { recursive: true, force: true }));
@@ -134,4 +138,18 @@ it("does not replace or delete a contradictory final member", async () => {
   expect(readFileSync(fileURLToPath(file.localUri), "utf8")).toBe(
     "contradictory original",
   );
+});
+
+it("keeps a fully installed ZIP member after lost acknowledgement and reuses its stable identity", async () => {
+  const id = randomUUID();
+  state.failMoveAcknowledgement = true;
+  await expect(nativeMercalysZipStorage.member(bytes, id)).rejects.toThrow(
+    "MOVE_ACK_LOST",
+  );
+  const path = join(state.root, "mercalys-batches", `${id}.xlsx`);
+  expect(readFileSync(path)).toEqual(Buffer.from(bytes));
+  state.failMoveAcknowledgement = false;
+  const retained = await nativeMercalysZipStorage.member(bytes, id);
+  expect(fileURLToPath(retained.localUri)).toBe(path);
+  expect(state.writes).toBe(1);
 });

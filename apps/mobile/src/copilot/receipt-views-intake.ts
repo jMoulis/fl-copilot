@@ -224,7 +224,7 @@ export const nativeReceiptViewsIntakeStorage: ReceiptViewsIntakeStorage = {
           (await checksumOf(await partial.bytes())) !== expected
         )
           throw Error("COPILOT_RECEIPT_PHOTO_NOT_SAVED");
-        partial.move(file);
+        await partial.move(file);
       } finally {
         if (partial.exists && partial.uri !== file.uri) partial.delete();
       }

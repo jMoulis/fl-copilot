@@ -134,19 +134,25 @@ export const nativeLayoutIllustrationFiles: LayoutIllustrationFilePort = {
         await inspect(temp, m, v);
         check();
         if (file.exists) {
+          let existing: string | undefined;
           try {
-            return await inspect(file, m, v);
+            existing = await inspect(file, m, v);
           } catch {
             check();
             file.delete();
           }
+          if (existing) {
+            check();
+            return existing;
+          }
         }
         check();
-        temp.move(file);
+        await temp.move(file);
         moved = true;
+        check();
         return file.uri;
       } finally {
-        if (!moved && temp.exists) temp.delete();
+        if (!moved && temp.uri !== file.uri && temp.exists) temp.delete();
       }
     });
   },
