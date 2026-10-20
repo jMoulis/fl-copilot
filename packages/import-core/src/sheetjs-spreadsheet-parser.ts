@@ -10,6 +10,9 @@ import type {
 export const XLSX_ADAPTER_VERSION = "sheetjs-ce-0.20.3-spike-1";
 export const MAX_XLSX_ROWS_PER_SHEET = 100_000;
 export const MAX_XLSX_COLUMNS_PER_SHEET = 512;
+// Row and column bounds alone still permit 51.2 million allocated cell objects.
+// Keep ordinary annual Mercalys exports (100k rows × 11 columns) within the budget.
+export const MAX_XLSX_CELLS_PER_WORKBOOK = 2_000_000;
 
 export class SheetJsSpreadsheetParser implements LocalSpreadsheetParser {
   parse(data: ArrayBuffer | Uint8Array): SpreadsheetWorkbook {
@@ -23,12 +26,52 @@ export class SheetJsSpreadsheetParser implements LocalSpreadsheetParser {
       WTF: false,
     });
 
+    const shapes = workbook.SheetNames.map((name) =>
+      sheetShape(name, workbook.Sheets[name]),
+    );
+    let cells = 0;
+    for (const shape of shapes) {
+      cells += shape.rowCount * shape.columnCount;
+      if (cells > MAX_XLSX_CELLS_PER_WORKBOOK)
+        throw Error("XLSX_CELL_LIMIT_EXCEEDED");
+    }
     return {
       sheets: workbook.SheetNames.map((name) =>
         mapSheet(name, workbook.Sheets[name]),
       ),
     };
   }
+}
+
+function sheetShape(
+  name: string,
+  worksheet: XLSX.WorkSheet | XLSX.DenseWorkSheet | undefined,
+) {
+  const reference = worksheet?.["!ref"];
+  if (!worksheet || typeof reference !== "string")
+    return { rowCount: 0, columnCount: 0 };
+  const range = XLSX.utils.decode_range(reference);
+  const rowCount = range.e.r - range.s.r + 1;
+  const columnCount = range.e.c - range.s.c + 1;
+  if (
+    ![range.s.r, range.s.c, range.e.r, range.e.c, rowCount, columnCount].every(
+      Number.isSafeInteger,
+    ) ||
+    range.s.r < 0 ||
+    range.s.c < 0 ||
+    rowCount < 1 ||
+    columnCount < 1
+  )
+    throw Error("XLSX_RANGE_INVALID");
+  if (rowCount > MAX_XLSX_ROWS_PER_SHEET)
+    throw Error(
+      `XLSX_ROW_LIMIT_EXCEEDED:${name}:${rowCount}:${MAX_XLSX_ROWS_PER_SHEET}`,
+    );
+  if (columnCount > MAX_XLSX_COLUMNS_PER_SHEET)
+    throw Error(
+      `XLSX_COLUMN_LIMIT_EXCEEDED:${name}:${columnCount}:${MAX_XLSX_COLUMNS_PER_SHEET}`,
+    );
+  return { rowCount, columnCount };
 }
 
 function mapSheet(
@@ -47,18 +90,7 @@ function mapSheet(
   }
 
   const range = XLSX.utils.decode_range(reference);
-  const rowCount = range.e.r - range.s.r + 1;
-  const columnCount = range.e.c - range.s.c + 1;
-  if (rowCount > MAX_XLSX_ROWS_PER_SHEET) {
-    throw new Error(
-      `XLSX_ROW_LIMIT_EXCEEDED:${name}:${rowCount}:${MAX_XLSX_ROWS_PER_SHEET}`,
-    );
-  }
-  if (columnCount > MAX_XLSX_COLUMNS_PER_SHEET) {
-    throw new Error(
-      `XLSX_COLUMN_LIMIT_EXCEEDED:${name}:${columnCount}:${MAX_XLSX_COLUMNS_PER_SHEET}`,
-    );
-  }
+  const { rowCount, columnCount } = sheetShape(name, worksheet);
 
   const denseData = (worksheet as XLSX.DenseWorkSheet)["!data"];
   const rows = Array.from({ length: rowCount }, (_, rowOffset) =>

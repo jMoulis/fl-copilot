@@ -37,6 +37,9 @@ import { SourceDocumentRepository } from "../documents/source-document-repositor
 import { registerCommercialPdf } from "../documents/commercial-pdf-capture";
 import { readReceiptPhotoViews } from "../documents/receipt-photo-views";
 import { EmailSourceHandoff } from "./email-source-handoff";
+import { EmailIntakeProcessing } from "./email-intake-processing";
+import { SourceOriginalJobs } from "../documents/source-original-jobs";
+import { readPendingWork } from "../sync/pending-work";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 const dirs: string[] = [],
   databases: Array<() => void> = [];
@@ -256,6 +259,7 @@ async function fixture(
     receipt,
     decision,
     cache,
+    transfer,
     path,
     dir,
     read,
@@ -567,5 +571,371 @@ it("does not resurrect a deleted canonical source or reinterpret its stored purp
   await expect(f.handoff.capture(f.ref())).rejects.toThrow(
     "EMAIL_INTAKE_CANONICAL_SOURCE_CHANGED",
   );
+  expect(count(f, "source_documents")).toBe(1);
+});
+
+function processingRuntime(f: Awaited<ReturnType<typeof fixture>>, db = f.a) {
+  const cache = f.makeCache(db),
+    session = () => ({
+      storeId: f.scope.storeId,
+      userId: f.scope.ownerId,
+      canWrite: true,
+    }),
+    receipt = vi.fn(async () => f.receipt),
+    runMercalys = vi.fn(async () => {
+      throw Error("UNEXPECTED_MERCALYS");
+    }),
+    runtime = new EmailIntakeProcessing(cache, f.transfer(cache), {
+      session,
+      receipt,
+      format: async () => "MEDIA",
+      mercalys: {
+        attach: vi.fn(async () => {
+          throw Error("UNEXPECTED_MERCALYS");
+        }),
+      },
+      media: f.makeHandoff(cache),
+      runMercalys,
+    });
+  let at = new Date("2026-10-20T18:00:00Z");
+  const jobs = new SourceOriginalJobs(
+    db,
+    {
+      recover: async () => {
+        throw Error("UNEXPECTED_SOURCE_READ");
+      },
+    },
+    session,
+    randomUUID,
+    () => at,
+    f.transfer(cache),
+    {
+      process: (input, lease, signal) => runtime.process(input, lease, signal),
+    },
+  );
+  const input = (index = 0) => ({
+    ...f.ref(index),
+    actionId: f.decision.actionId,
+    processingId: f.decision.files[index]!.processingId,
+  });
+  return {
+    db,
+    runtime,
+    jobs,
+    receipt,
+    runMercalys,
+    input,
+    advance: () => {
+      at = new Date(at.getTime() + 3_600_000);
+    },
+  };
+}
+it("seeds only acknowledged admissions and hands a PDF to canonical upload exactly once across restart", async () => {
+  const f = await fixture({ synced: false }),
+    p = processingRuntime(f);
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    0,
+  );
+  await applyEmailDecisionRecord(f.a, f.scope, f.decision, 1);
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    1,
+  );
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    0,
+  );
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "COMPLETED",
+    attempts: 1,
+  });
+  expect(count(f, "source_documents")).toBe(1);
+  expect(count(f, "waste_observations")).toBe(0);
+  expect(p.receipt).not.toHaveBeenCalled();
+  const resumed = processingRuntime(f, f.reopen());
+  expect(
+    await resumed.runtime.seed(f.scope.storeId, f.scope.ownerId, resumed.jobs),
+  ).toBe(0);
+  await resumed.jobs.requestEmailProcessing(resumed.input());
+  await resumed.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(
+    await resumed.jobs.emailProcessingState(resumed.input()),
+  ).toMatchObject({ status: "COMPLETED", attempts: 1 });
+  expect(
+    await resumed.db.getFirstAsync("SELECT COUNT(*) n FROM source_documents"),
+  ).toEqual({ n: 1 });
+});
+it("asks the photo purpose inline, retains it across restart, and never turns waiting input into network failure", async () => {
+  const f = await fixture({ photo: true }),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "WAITING_INPUT",
+    code: "EMAIL_INTAKE_PURPOSE_REQUIRED",
+  });
+  expect(count(f, "source_documents")).toBe(0);
+  expect(await readPendingWork(f.a, f.scope.storeId, randomUUID())).toEqual([]);
+  expect(await readPendingWork(f.a, f.scope.storeId, f.scope.ownerId)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ state: "Information à confirmer" }),
+    ]),
+  );
+  await p.jobs.provideEmailPurpose(p.input(), "STORE_PHOTO");
+  await p.jobs.provideEmailPurpose(p.input(), "STORE_PHOTO");
+  await expect(
+    p.jobs.provideEmailPurpose(p.input(), "WASTE_TICKET"),
+  ).rejects.toThrow("EMAIL_INTAKE_PURPOSE_ALREADY_RECORDED");
+  const resumed = processingRuntime(f, f.reopen());
+  await resumed.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(
+    await resumed.jobs.emailProcessingState(resumed.input()),
+  ).toMatchObject({ status: "COMPLETED", attempts: 2 });
+  expect(
+    await resumed.db.getAllAsync("SELECT source_type FROM source_documents"),
+  ).toEqual([{ source_type: "STORE_PHOTO" }]);
+});
+it("uses one durable job for explicitly grouped ticket views, preserving all views in canonical order", async () => {
+  const f = await fixture({
+      photo: true,
+      count: 3,
+      mode: "WASTE_TICKET",
+      grouped: true,
+    }),
+    p = processingRuntime(f);
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    1,
+  );
+  await p.jobs.requestEmailProcessing(p.input(2));
+  expect(
+    f.db
+      .prepare(
+        "SELECT COUNT(*) n FROM local_jobs WHERE type='EMAIL_INTAKE_PROCESS'",
+      )
+      .get(),
+  ).toEqual({ n: 1 });
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input(2))).toMatchObject({
+    status: "COMPLETED",
+  });
+  expect(count(f, "waste_receipts")).toBe(1);
+  expect(count(f, "source_documents")).toBe(1);
+  expect(count(f, "waste_observations")).toBe(0);
+  expect(f.bundle).toHaveBeenCalledOnce();
+});
+it("does not rearm cancelled work on seed and rejects stale leases before media writes", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  await p.jobs.cancelEmailProcessing(p.input());
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    0,
+  );
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(count(f, "source_documents")).toBe(0);
+  await p.jobs.requestEmailProcessing(p.input(), true);
+  const read = f.read.getMockImplementation()!;
+  f.read.mockImplementationOnce(async (uri) => {
+    await p.jobs.cancelEmailProcessing(p.input());
+    return read(uri);
+  });
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "CANCELLED",
+  });
+  expect(count(f, "source_documents")).toBe(0);
+  expect(existsSync(fileURLToPath(f.originals[0]!.localUri))).toBe(true);
+});
+it("bounds retry attempts, retains the raw original, and explicit retry never resets lease attempt identities", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  f.read.mockRejectedValue(
+    Error("network secret https://private?token=never-store"),
+  );
+  for (let i = 0; i < 6; i++) {
+    await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+    p.advance();
+  }
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "FAILED",
+    attempts: 6,
+    code: "SOURCE_ORIGINAL_TRANSFER_INTERRUPTED",
+  });
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    0,
+  );
+  await p.jobs.requestEmailProcessing(p.input(), true);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "RETRY",
+    attempts: 7,
+  });
+  expect(
+    JSON.stringify(f.db.prepare("SELECT * FROM local_jobs").all()),
+  ).not.toContain("never-store");
+  expect(existsSync(fileURLToPath(f.originals[0]!.localUri))).toBe(true);
+});
+it("refreshes an old missing receipt by exact identity before processing, without depending on receiving activation", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  await f.a.runAsync(
+    "DELETE FROM email_intake_receipts WHERE id=?",
+    f.receipt.id,
+  );
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(p.receipt).toHaveBeenCalledWith(f.scope, {
+    conversationId: f.scope.conversationId,
+    receiptId: f.receipt.id,
+  });
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "COMPLETED",
+  });
+  expect(count(f, "source_documents")).toBe(1);
+});
+it("refuses a revoked owner between original inspection and the canonical transaction", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  const read = f.read.getMockImplementation()!;
+  f.read.mockImplementationOnce(async (uri) => {
+    f.setSession({ ...f.scope, userId: randomUUID(), canWrite: true });
+    return read(uri);
+  });
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(count(f, "source_documents")).toBe(0);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "RETRY",
+  });
+});
+
+it("retains processing when the actor becomes read-only and still permits ordinary source recovery", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  let canWrite = false;
+  const canonical = {
+    recover: vi.fn(async () => ({
+      localUri: "file:///canonical.bin",
+      views: null,
+    })),
+  };
+  const jobs = new SourceOriginalJobs(
+    f.a,
+    canonical,
+    () => ({ storeId: f.scope.storeId, userId: f.scope.ownerId }),
+    randomUUID,
+    undefined,
+    f.transfer(),
+    {
+      allowed: () => canWrite,
+      process: (input, authorize, signal) =>
+        p.runtime.process(input, authorize, signal),
+    },
+  );
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, jobs);
+  await jobs.request(randomUUID());
+  await jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(canonical.recover).toHaveBeenCalledOnce();
+  expect(await jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "PENDING",
+    attempts: 0,
+  });
+  expect(count(f, "source_documents")).toBe(0);
+  canWrite = true;
+  await jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "COMPLETED",
+    attempts: 1,
+  });
+});
+it("does not create work for archived discussions or seed work under a reader identity", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  const reader = new EmailIntakeProcessing(f.cache, f.transfer(), {
+    session: () => ({
+      storeId: f.scope.storeId,
+      userId: f.scope.ownerId,
+      canWrite: false,
+    }),
+    receipt: p.receipt,
+    format: async () => "MEDIA",
+    mercalys: {
+      attach: async () => {
+        throw Error("UNEXPECTED");
+      },
+    },
+    media: f.handoff,
+    runMercalys: p.runMercalys,
+  });
+  expect(await reader.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(0);
+  await f.a.runAsync(
+    "UPDATE copilot_conversations SET payload_json=json_set(payload_json,'$.status','ARCHIVED') WHERE id=?",
+    f.scope.conversationId,
+  );
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    0,
+  );
+  expect(count(f, "source_documents")).toBe(0);
+});
+
+it("drains more than the ten composer attachments in bounded batches without omitting admitted files", async () => {
+  const f = await fixture({ photo: true, count: 25, mode: "STORE_PHOTO" }),
+    p = processingRuntime(f);
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    20,
+  );
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId, 20);
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    5,
+  );
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId, 20);
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    0,
+  );
+  expect(count(f, "source_documents")).toBe(25);
+  expect(
+    f.db
+      .prepare(
+        "SELECT COUNT(*) n FROM local_jobs WHERE type='EMAIL_INTAKE_PROCESS' AND status='COMPLETED'",
+      )
+      .get(),
+  ).toEqual({ n: 25 });
+  expect(count(f, "copilot_messages")).toBe(0);
+  expect(count(f, "waste_receipts")).toBe(0);
+});
+it("waits for retained source readiness and refreshes the exact receipt before retrying", async () => {
+  const f = await fixture(),
+    p = processingRuntime(f);
+  await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs);
+  const waiting = {
+    ...f.receipt,
+    files: f.receipt.files.map((file) => ({
+      ...file,
+      status: "PENDING" as const,
+    })),
+  };
+  await f.a.runAsync(
+    "UPDATE email_intake_receipts SET payload_json=? WHERE id=?",
+    JSON.stringify(waiting),
+    f.receipt.id,
+  );
+  p.receipt.mockResolvedValueOnce(waiting);
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "RETRY",
+    code: "EMAIL_INTAKE_SOURCE_WAITING",
+  });
+  expect(count(f, "source_documents")).toBe(0);
+  p.receipt.mockResolvedValueOnce({
+    ...f.receipt,
+    version: 3,
+    updatedAt: new Date(Date.parse(f.receipt.updatedAt) + 1000).toISOString(),
+  });
+  p.advance();
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(await p.jobs.emailProcessingState(p.input())).toMatchObject({
+    status: "COMPLETED",
+    attempts: 2,
+  });
   expect(count(f, "source_documents")).toBe(1);
 });

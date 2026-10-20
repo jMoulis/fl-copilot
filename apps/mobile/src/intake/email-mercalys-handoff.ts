@@ -66,6 +66,7 @@ export class EmailMercalysHandoff {
     raw: Input,
     signal?: AbortSignal,
     authorize?: (tx?: OutboxDatabase) => Promise<void>,
+    format?: "XLSX" | "ZIP",
   ) {
     const ref = emailIntakeOriginalRequestSchema.parse(raw),
       scope = this.cache.scope(ref.conversationId);
@@ -78,7 +79,7 @@ export class EmailMercalysHandoff {
     ].join(":");
     const prior = this.active.get(key);
     if (prior) return prior;
-    const task = this.run(ref, signal, authorize);
+    const task = this.run(ref, signal, authorize, format);
     this.active.set(key, task);
     void task
       .finally(() => {
@@ -91,6 +92,7 @@ export class EmailMercalysHandoff {
     ref: Input,
     signal?: AbortSignal,
     authorize?: (tx?: OutboxDatabase) => Promise<void>,
+    format?: "XLSX" | "ZIP",
   ): Promise<EmailMercalysHandoffResult> {
     const basis = await emailProcessingBasis(
       this.cache,
@@ -115,8 +117,8 @@ export class EmailMercalysHandoff {
     };
     await allowed();
     const filename = basis.file.filename ?? "";
-    const zip = /\.zip$/i.test(filename),
-      xlsx = /\.xlsx$/i.test(filename);
+    const zip = format ? format === "ZIP" : /\.zip$/i.test(filename),
+      xlsx = format ? format === "XLSX" : /\.xlsx$/i.test(filename);
     if (!zip && !xlsx) throw Error("EMAIL_MERCALYS_FORMAT_REQUIRED");
     const { bytes, manifest, ...proof } = await verifiedEmailProcessingOriginal(
       basis,

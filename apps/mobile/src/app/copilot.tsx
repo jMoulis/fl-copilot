@@ -584,6 +584,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     if (Platform.OS === "ios") emailNavigation.current = after;
     setEmailConversation(undefined);
     setEmailConfigurationRevision((value) => value + 1);
+    setImportMessageRevision((value) => value + 1);
     if (Platform.OS !== "ios") after?.();
   }
 
@@ -1676,7 +1677,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         onOpenMercalys={() => {
           void importFiles();
         }}
-        externalMessageRevision={importMessageRevision}
+        externalMessageRevision={`${importMessageRevision}/${lastSyncedAt ?? ""}`}
         externalDraftRevision={draftRefresh}
         intakeSummary={
           <>

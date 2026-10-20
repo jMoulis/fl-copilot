@@ -17,7 +17,7 @@ export type EmailProcessingOrigin = {
   actionId: string;
   processingId: string;
 };
-export async function readEmailProcessingAuthority(
+export async function readEmailAdmissionAuthority(
   db: OutboxDatabase,
   scope: EmailIntakeScope,
   origin: EmailProcessingOrigin,
@@ -58,6 +58,18 @@ export async function readEmailProcessingAuthority(
     selection.processingId !== origin.processingId
   )
     throw Error("EMAIL_INTAKE_PROCESSING_FORBIDDEN");
+  return { decision, selection };
+}
+export async function readEmailProcessingAuthority(
+  db: OutboxDatabase,
+  scope: EmailIntakeScope,
+  origin: EmailProcessingOrigin,
+) {
+  const { decision, selection } = await readEmailAdmissionAuthority(
+    db,
+    scope,
+    origin,
+  );
   const cached = await db.getFirstAsync<{ payload_json: string }>(
     "SELECT payload_json FROM email_intake_receipts WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
     origin.receiptId,

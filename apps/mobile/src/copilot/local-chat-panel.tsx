@@ -45,7 +45,7 @@ type PanelProps = {
   onOpenMercalys?(): void;
   onOpenEmailIntake?(): void;
   externalDraftRevision?: number;
-  externalMessageRevision?: number;
+  externalMessageRevision?: number | string;
   onPhotographReceipt?(
     conversationId: string,
     signal: AbortSignal,
@@ -209,7 +209,34 @@ function LocalChatPanel({
       attachmentAbort.current?.abort();
       current.current = { controller: undefined, conversationId: "" };
     };
-  }, [controller, conversationId, delivery, externalMessageRevision]);
+  }, [controller, conversationId, delivery]);
+  const seenMessageRevision = useRef(externalMessageRevision);
+  useEffect(() => {
+    if (seenMessageRevision.current === externalMessageRevision) return;
+    seenMessageRevision.current = externalMessageRevision;
+    let alive = true;
+    // Background imports/sync update history without cancelling a streamed reply
+    // or replacing the text being typed in the composer.
+    void controller
+      .open(conversationId)
+      .then((value) => {
+        if (alive)
+          setSnapshot((previous) =>
+            previous
+              ? { ...value, ...mergeCopilotHistory(previous, value) }
+              : value,
+          );
+      })
+      .catch(() => {
+        if (alive)
+          setHistoryError(
+            "Les nouveaux documents ne peuvent pas être relus. Rouvrez la conversation pour réessayer.",
+          );
+      });
+    return () => {
+      alive = false;
+    };
+  }, [controller, conversationId, externalMessageRevision]);
   useEffect(() => {
     if (!externalDraftRevision) return;
     let alive = true;

@@ -880,6 +880,11 @@ CREATE INDEX email_intake_decision_scope ON email_intake_decisions(store_id,owne
     // Device-local derived working state; business persistence uses the existing source jobs.
     sql: `CREATE TABLE email_source_handoffs(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,receipt_id TEXT NOT NULL,processing_id TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id,receipt_id,processing_id));`,
   },
+  {
+    version: 55,
+    name: "email-processing-job-identity",
+    sql: `CREATE UNIQUE INDEX email_processing_job_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.conversationId'),json_extract(payload_json,'$.receiptId'),json_extract(payload_json,'$.actionId'),json_extract(payload_json,'$.processingId')) WHERE type='EMAIL_INTAKE_PROCESS';`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

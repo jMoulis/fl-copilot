@@ -32,6 +32,13 @@ import {
 } from "./email-decision-repository";
 import { EmailOriginalTransfer } from "./email-original-transfer";
 import { EmailMercalysHandoff } from "./email-mercalys-handoff";
+import {
+  EmailIntakeProcessing,
+  emailProcessingFormat,
+} from "./email-intake-processing";
+import { SourceOriginalJobs } from "../documents/source-original-jobs";
+import type { OutboxDatabase } from "../sync/outbox-repository";
+import { serializeLocalWrites } from "../db/serialized-writes";
 import type { MercalysZipStorage } from "../documents/mercalys-zip-capture";
 const cleanups: Array<() => void> = [];
 afterEach(() => {
@@ -227,9 +234,10 @@ async function fixture(
   const deps = { read: vi.fn(read), zip };
   const makeHandoff = (c = cache) =>
     new EmailMercalysHandoff(c, originals(c), scope.deviceId, deps);
-  const engine = (a = s.a) =>
+  const engine = (a = s.a, authorize?: (db: OutboxDatabase) => Promise<void>) =>
     new CopilotMercalysImportController(a, scope, {
       ...s.deps,
+      authorize,
       read: async (local) => s.bytes.get(local) ?? read(local),
     });
   return {
@@ -238,6 +246,7 @@ async function fixture(
     path,
     scope,
     cache,
+    originals,
     ref,
     receipt,
     decision,
@@ -495,4 +504,127 @@ it("checks current ownership again after byte reads and rolls back a role loss d
   expect(count(f, "copilot_messages")).toBe(0);
   expect(count(f, "source_documents")).toBe(0);
   expect(existsSync(fileURLToPath(f.uri))).toBe(true);
+});
+
+it.each([
+  { zip: false, filename: "ventes.xlsx", expected: 1 },
+  { zip: false, filename: "photo-rayon.jpg", expected: 1 },
+  { zip: true, filename: "archive.pdf", expected: 2 },
+])(
+  "durably runs admitted bytes through the ordinary import engine despite filename $filename",
+  async ({ zip, filename, expected }) => {
+    const f = await fixture({ zip, filename });
+    await f.chat.editText(f.conversation.id, "Mon brouillon est conservé");
+    const scope = () => ({
+      storeId: f.scope.storeId,
+      userId: f.scope.ownerId,
+      canWrite: true,
+    });
+    const make = (db = f.a) => {
+      const cache = f.makeCache(db),
+        originals = f.originals(cache),
+        runtime = new EmailIntakeProcessing(cache, originals, {
+          session: scope,
+          receipt: async () => {
+            throw Error("UNEXPECTED_NETWORK");
+          },
+          format: async (proof) =>
+            emailProcessingFormat(await f.deps.read(proof.localUri)),
+          mercalys: f.makeHandoff(cache),
+          media: {
+            capture: async () => {
+              throw Error("WRONG_PIPELINE");
+            },
+          },
+          runMercalys: (message, authorize, signal) =>
+            f.engine(db, authorize).run(message, signal),
+        }),
+        jobs = new SourceOriginalJobs(
+          db,
+          {
+            recover: async () => {
+              throw Error("UNEXPECTED_TRANSFER");
+            },
+          },
+          scope,
+          randomUUID,
+          undefined,
+          originals,
+          {
+            process: (input, authorize, signal) =>
+              runtime.process(input, authorize, signal),
+          },
+        );
+      return { runtime, jobs, db };
+    };
+    const p = make(),
+      input = {
+        ...f.ref,
+        actionId: f.decision.actionId,
+        processingId: f.decision.files[0]!.processingId,
+      };
+    expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+      1,
+    );
+    await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+    expect(await p.jobs.emailProcessingState(input)).toMatchObject({
+      status: "COMPLETED",
+      attempts: 1,
+    });
+    expect(count(f, "sales_observations")).toBe(expected);
+    expect((await f.repo.draft(f.conversation.id))?.text).toBe(
+      "Mon brouillon est conservé",
+    );
+    expect(f.calls()).toBe(0);
+    const before = count(f, "sync_outbox"),
+      resumed = make(f.restart());
+    expect(
+      await resumed.runtime.seed(
+        f.scope.storeId,
+        f.scope.ownerId,
+        resumed.jobs,
+      ),
+    ).toBe(0);
+    await resumed.jobs.requestEmailProcessing(input, true);
+    await resumed.jobs.process(f.scope.storeId, f.scope.ownerId);
+    expect(await resumed.jobs.emailProcessingState(input)).toMatchObject({
+      status: "COMPLETED",
+      attempts: 2,
+    });
+    expect(
+      await resumed.db.getFirstAsync(
+        "SELECT COUNT(*) n FROM sales_observations",
+      ),
+    ).toEqual({ n: expected });
+    expect(
+      await resumed.db.getFirstAsync("SELECT COUNT(*) n FROM sync_outbox"),
+    ).toEqual({ n: before });
+    expect(existsSync(fileURLToPath(f.uri))).toBe(true);
+  },
+);
+
+it("keeps one publication when the import card and durable job run the same accepted file together", async () => {
+  const f = await fixture(),
+    handoff = await f.handoff.attach(f.ref);
+  if (handoff.status !== "ATTACHED") throw Error("expected handoff");
+  // Expo gives the callback a transaction handle distinct from the queued facade.
+  const facade = {
+    ...f.a,
+    execAsync: f.a.execAsync.bind(f.a),
+    runAsync: f.a.runAsync.bind(f.a),
+    getFirstAsync: f.a.getFirstAsync.bind(f.a),
+    getAllAsync: f.a.getAllAsync.bind(f.a),
+    withExclusiveTransactionAsync: f.a.withExclusiveTransactionAsync.bind(f.a),
+  };
+  // Test adapter implements the variadic SQL subset used by this production path.
+  const db = serializeLocalWrites(
+    facade as unknown as Parameters<typeof serializeLocalWrites>[0],
+  ) as unknown as typeof facade;
+  const [a, b] = await Promise.all([
+    f.engine(db).run(handoff.message),
+    f.engine(db).run(handoff.message),
+  ]);
+  expect(a.items[0]?.status).toBe("PUBLISHED");
+  expect(b.items[0]?.status).toBe("PUBLISHED");
+  expect(count(f, "sales_observations")).toBe(1);
 });

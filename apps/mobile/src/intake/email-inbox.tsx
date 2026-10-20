@@ -8,6 +8,10 @@ import type { EmailIntakeReceipt } from "@fl-copilot/sync-contracts";
 import type { SyncContextValue } from "../sync/sync-provider";
 import { InlineAlert, PrimaryButton, SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
+import {
+  EmailProcessingControls,
+  type EmailProcessingControlsPort,
+} from "./email-processing-controls";
 type Inbox = Pick<
   NonNullable<SyncContextValue["emailIntake"]>,
   | "status"
@@ -17,7 +21,8 @@ type Inbox = Pick<
   | "revokeBinding"
   | "decision"
   | "decide"
->;
+> &
+  EmailProcessingControlsPort;
 type Cached = Awaited<ReturnType<Inbox["list"]>>;
 /** Refresh on focus/ordinary sync only; never add a second inbox polling loop. */
 export function EmailInboxIndicator({
@@ -491,17 +496,20 @@ function EmailReceivedCard({
           : decision?.decision.choice === "DISMISS" ||
               receipt.status === "DISMISSED"
             ? "Email écarté"
-            : receipt.status === "AWAITING_CONFIRMATION"
-              ? "À confirmer"
-              : receipt.status === "QUARANTINED"
-                ? "Email à examiner"
-                : receipt.status === "COMPLETE"
-                  ? "Traitement terminé"
-                  : receipt.status === "PARTIAL"
-                    ? "Traitement partiel"
-                    : receipt.status === "PROCESSING"
-                      ? "Traitement en cours"
-                      : "Fichiers confirmés";
+            : decision?.state === "SYNCED" &&
+                decision.decision.choice === "ADMIT"
+              ? "Fichiers confirmés"
+              : receipt.status === "AWAITING_CONFIRMATION"
+                ? "À confirmer"
+                : receipt.status === "QUARANTINED"
+                  ? "Email à examiner"
+                  : receipt.status === "COMPLETE"
+                    ? "Traitement terminé"
+                    : receipt.status === "PARTIAL"
+                      ? "Traitement partiel"
+                      : receipt.status === "PROCESSING"
+                        ? "Traitement en cours"
+                        : "Fichiers confirmés";
   return (
     <View
       style={{
@@ -545,49 +553,65 @@ function EmailReceivedCard({
               !file.sourceDocumentId;
             const checked = !draft!.excluded.has(file.id);
             return (
-              <Pressable
-                key={file.id}
-                accessibilityRole={eligible ? "checkbox" : undefined}
-                aria-checked={eligible ? checked : undefined}
-                accessibilityState={
-                  eligible ? { checked, disabled: busy } : undefined
-                }
-                accessibilityLabel={file.filename ?? "Fichier sans nom"}
-                disabled={!eligible || busy}
-                onPress={() => {
-                  if (checked) draft!.excluded.add(file.id);
-                  else draft!.excluded.delete(file.id);
-                  changed((value) => value + 1);
-                }}
-                style={{
-                  gap: 6,
-                  paddingVertical: 12,
-                  borderTopColor: colors.line,
-                  borderTopWidth: 1,
-                }}
-              >
-                <Text style={{ color: colors.ink }}>
-                  {eligible ? (checked ? "✓ " : "○ ") : ""}
-                  {file.filename ?? "Fichier sans nom"}
-                </Text>
-                <Text style={{ color: colors.muted, fontSize: 13 }}>
-                  {decision?.decision.choice === "ADMIT" &&
-                  !decision.decision.files.some(
-                    (selected) => selected.fileId === file.id,
-                  )
-                    ? "Non sélectionné · "
-                    : ""}
-                  {file.status === "READY"
-                    ? "Original conservé"
-                    : file.status === "PENDING"
-                      ? "Réception en cours"
-                      : file.status === "FAILED"
-                        ? "Réception à reprendre"
-                        : file.status === "APPLIED"
-                          ? "Document enregistré"
-                          : "Format non pris en charge"}
-                </Text>
-              </Pressable>
+              <View key={file.id}>
+                <Pressable
+                  accessibilityRole={eligible ? "checkbox" : undefined}
+                  aria-checked={eligible ? checked : undefined}
+                  accessibilityState={
+                    eligible ? { checked, disabled: busy } : undefined
+                  }
+                  accessibilityLabel={file.filename ?? "Fichier sans nom"}
+                  disabled={!eligible || busy}
+                  onPress={() => {
+                    if (checked) draft!.excluded.add(file.id);
+                    else draft!.excluded.delete(file.id);
+                    changed((value) => value + 1);
+                  }}
+                  style={{
+                    gap: 6,
+                    paddingVertical: 12,
+                    borderTopColor: colors.line,
+                    borderTopWidth: 1,
+                  }}
+                >
+                  <Text style={{ color: colors.ink }}>
+                    {eligible ? (checked ? "✓ " : "○ ") : ""}
+                    {file.filename ?? "Fichier sans nom"}
+                  </Text>
+                  <Text style={{ color: colors.muted, fontSize: 13 }}>
+                    {decision?.decision.choice === "ADMIT" &&
+                    !decision.decision.files.some(
+                      (selected) => selected.fileId === file.id,
+                    )
+                      ? "Non sélectionné · "
+                      : ""}
+                    {file.status === "READY"
+                      ? "Original conservé"
+                      : file.status === "PENDING"
+                        ? "Réception en cours"
+                        : file.status === "FAILED"
+                          ? "Réception à reprendre"
+                          : file.status === "APPLIED"
+                            ? "Document enregistré"
+                            : "Format non pris en charge"}
+                  </Text>
+                </Pressable>
+                {decision?.state === "SYNCED" &&
+                decision.decision.choice === "ADMIT" &&
+                decision.decision.files.some(
+                  (selected) => selected.fileId === file.id,
+                ) ? (
+                  <EmailProcessingControls
+                    inbox={inbox}
+                    original={{
+                      conversationId,
+                      receiptId: receipt.id,
+                      fileId: file.id,
+                    }}
+                    revision={revision}
+                  />
+                ) : null}
+              </View>
             );
           })
         : null}
