@@ -155,6 +155,7 @@ export * from "./copilot-store-layout";
 export * from "./copilot-store-layout-proposal";
 
 export * from "./store-layout-scenario";
+export * from "./layout-illustration";
 export * from "./physical-allocation-compatibility";
 export * from "./analytics-explorer";
 export * from "./analytics-destination-table";

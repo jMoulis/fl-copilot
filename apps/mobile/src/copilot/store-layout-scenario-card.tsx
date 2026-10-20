@@ -1,3 +1,6 @@
+import { LayoutIllustrationPanel } from "./layout-illustration-panel";
+import { router } from "expo-router";
+import type { LayoutIllustrationRepository } from "./layout-illustration-repository";
 import { LayoutPreparationPanel } from "./layout-preparation-panel";
 import type { LayoutPreparationController } from "./layout-preparation-controller";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -21,7 +24,7 @@ export function StoreLayoutScenarioView({
 }: {
   state: Omit<State, "message">;
   saved?: boolean;
-  renderPreparation?: () => ReactNode;
+  renderPreparation?: (onClose: () => void) => ReactNode;
   onRefresh: () => void;
   refreshing: boolean;
   error?: string;
@@ -178,7 +181,9 @@ export function StoreLayoutScenarioView({
           Quantités et capacité restent à confirmer. Ce schéma n’est pas une
           image générée.
         </Text>
-        {visible && renderPreparation ? renderPreparation() : null}
+        {visible && renderPreparation
+          ? renderPreparation(() => setVisible(false))
+          : null}
         <Text className="text-muted">
           {freshness}. La vérification utilise les données locales ;
           synchronisez pour récupérer les dernières modifications.
@@ -203,10 +208,16 @@ export function StoreLayoutScenarioCard({
   message,
   reader,
   preparation,
+  illustration,
 }: {
   message: CopilotMessage;
   reader: CopilotStoreLayoutScenarioReader;
   preparation?: LayoutPreparationController;
+  illustration?: {
+    repository: LayoutIllustrationRepository;
+    deviceId: string;
+    canPrepare: boolean;
+  };
 }) {
   const [state, setState] = useState<State>(),
     [error, setError] = useState<string>(),
@@ -264,12 +275,27 @@ export function StoreLayoutScenarioCard({
           state={state}
           error={error}
           renderPreparation={
-            preparation
-              ? () => (
-                  <LayoutPreparationPanel
-                    controller={preparation}
-                    message={message}
-                  />
+            preparation || illustration
+              ? (close) => (
+                  <View className="gap-4">
+                    {preparation ? (
+                      <LayoutPreparationPanel
+                        controller={preparation}
+                        message={message}
+                      />
+                    ) : null}
+                    {illustration ? (
+                      <LayoutIllustrationPanel
+                        {...illustration}
+                        message={message}
+                        state={state}
+                        onOpenPlan={() => {
+                          close();
+                          router.push("/store-layout");
+                        }}
+                      />
+                    ) : null}
+                  </View>
                 )
               : undefined
           }

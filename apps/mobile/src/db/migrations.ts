@@ -891,6 +891,12 @@ CREATE INDEX email_intake_decision_scope ON email_intake_decisions(store_id,owne
     sql: `CREATE UNIQUE INDEX email_original_retry_action ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.actionId')) WHERE type='EMAIL_ORIGINAL_RETRY';
 CREATE UNIQUE INDEX email_original_retry_active ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.conversationId'),json_extract(payload_json,'$.receiptId'),json_extract(payload_json,'$.fileId')) WHERE type='EMAIL_ORIGINAL_RETRY' AND status IN ('PENDING','RETRY','RUNNING');`,
   },
+  {
+    version: 57,
+    name: "private-layout-illustration-preparations",
+    sql: `CREATE TABLE copilot_layout_illustrations(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX copilot_layout_illustration_scope ON copilot_layout_illustrations(store_id,owner_id,conversation_id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

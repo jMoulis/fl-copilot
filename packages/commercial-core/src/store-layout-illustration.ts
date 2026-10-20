@@ -3,6 +3,9 @@ import {
   storeLayoutSchema,
   type StoreLayout,
   type StoreLayoutScenario,
+  type CopilotMessage,
+  readStoreLayoutScenarioCard,
+  LAYOUT_ILLUSTRATION_RENDERER,
 } from "@fl-copilot/domain";
 import { checkStoreLayoutGeometry } from "./store-layout-geometry";
 import { layoutAllocationTargetLabel } from "./store-layout-scenario";
@@ -101,3 +104,40 @@ export function prepareStoreLayoutIllustration(
 export type StoreLayoutIllustrationSource = ReturnType<
   typeof prepareStoreLayoutIllustration
 >;
+
+/** Shared mobile/server material; no binary, key, guessed geometry or model-owned field. */
+export async function bindLayoutIllustrationSource(
+  scope: { storeId: string; ownerId: string; conversationId: string },
+  rawCard: CopilotMessage,
+  layout: StoreLayout,
+  digest: (text: string) => Promise<string>,
+) {
+  const { message, content } = readStoreLayoutScenarioCard(rawCard);
+  if (
+    message.storeId !== scope.storeId ||
+    message.ownerId !== scope.ownerId ||
+    message.conversationId !== scope.conversationId
+  )
+    throw Error("LAYOUT_ILLUSTRATION_SCOPE_INVALID");
+  const source = prepareStoreLayoutIllustration(
+    scope.storeId,
+    content.scenario,
+    layout,
+  );
+  const scenarioHash = await digest(JSON.stringify(source.scenario)),
+    physicalHash = await digest(JSON.stringify(source.layout));
+  return {
+    source,
+    binding: {
+      schemaVersion: 1 as const,
+      renderer: LAYOUT_ILLUSTRATION_RENDERER,
+      ...scope,
+      scenarioMessageId: message.id,
+      assistantMessageId: content.assistantMessageId,
+      scenarioHash,
+      physicalRevisionId: source.layout.revisionId,
+      physicalVersion: source.layout.version,
+      physicalHash,
+    },
+  };
+}

@@ -1,4 +1,8 @@
 import {
+  serializeLayoutIllustration,
+  type LayoutIllustrationDocument,
+} from "../copilot/layout-illustration-store";
+import {
   visualCollections,
   serializeVisualEntity,
 } from "../products/visual-library-sync";
@@ -213,6 +217,21 @@ export function createMongoSyncBootstrapService(
                 : null;
             if (links && links.length > 500)
               throw Error("COPILOT_EXECUTION_LINK_LIMIT");
+            const illustrations =
+              query.layoutIllustrations === "true" &&
+              query.copilotHistory === "true"
+                ? await mongoDatabase
+                    .collection<LayoutIllustrationDocument>(
+                      "copilotLayoutIllustrations",
+                    )
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .sort({ createdAt: -1, _id: -1 })
+                    .limit(51)
+                    .toArray()
+                : null;
             const decisions =
               query.copilotDecisions === "true" &&
               query.copilotHistory === "true"
@@ -492,6 +511,17 @@ export function createMongoSyncBootstrapService(
                   ? {
                       copilotExecutionLinks: links.map(serializeExecutionLink),
                       copilotExecutionLinkOwnerId: store.userId,
+                    }
+                  : {}),
+                ...(illustrations
+                  ? {
+                      layoutIllustrations: illustrations
+                        .slice(0, 50)
+                        .map(serializeLayoutIllustration),
+                      layoutIllustrationOwnerId: store.userId,
+                      ...(illustrations.length > 50
+                        ? { layoutIllustrationHistoryRequired: true as const }
+                        : {}),
                     }
                   : {}),
                 ...(decisions

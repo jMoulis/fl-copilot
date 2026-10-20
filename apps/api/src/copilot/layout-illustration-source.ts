@@ -1,16 +1,12 @@
 import { createHash } from "node:crypto";
 import sharp from "sharp";
+import { type CopilotMessage, type StoreLayout } from "@fl-copilot/domain";
 import {
-  readStoreLayoutScenarioCard,
-  type CopilotMessage,
-  type StoreLayout,
-} from "@fl-copilot/domain";
-import {
-  prepareStoreLayoutIllustration,
+  bindLayoutIllustrationSource,
   type StoreLayoutIllustrationSource,
 } from "@fl-copilot/commercial-core";
 
-export const LAYOUT_ILLUSTRATION_RENDERER = "layout-topdown-v1";
+export { LAYOUT_ILLUSTRATION_RENDERER } from "@fl-copilot/domain";
 export const layoutIllustrationHash = (bytes: Uint8Array | string) =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const xml = (text: string) =>
@@ -60,31 +56,12 @@ export async function compileLayoutIllustrationSource(
   rawCard: CopilotMessage,
   layout: StoreLayout,
 ) {
-  const { message, content } = readStoreLayoutScenarioCard(rawCard);
-  if (
-    message.storeId !== scope.storeId ||
-    message.ownerId !== scope.ownerId ||
-    message.conversationId !== scope.conversationId
-  )
-    throw Error("LAYOUT_ILLUSTRATION_SCOPE_INVALID");
-  const source = prepareStoreLayoutIllustration(
-    scope.storeId,
-    content.scenario,
+  const { source, binding } = await bindLayoutIllustrationSource(
+    scope,
+    rawCard,
     layout,
+    async (text) => layoutIllustrationHash(text),
   );
-  // Zod-parsed snapshots have fixed field order; identities, versions, labels, qualifications,
-  // source checksums and assumptions all take part. No volatile current-plan substitution.
-  const binding = {
-    schemaVersion: 1 as const,
-    renderer: LAYOUT_ILLUSTRATION_RENDERER,
-    ...scope,
-    scenarioMessageId: message.id,
-    assistantMessageId: content.assistantMessageId,
-    scenarioHash: layoutIllustrationHash(JSON.stringify(source.scenario)),
-    physicalRevisionId: source.layout.revisionId,
-    physicalVersion: source.layout.version,
-    physicalHash: layoutIllustrationHash(JSON.stringify(source.layout)),
-  };
   if (source.status !== "READY") return { source, binding, frame: null };
   const svg = layoutIllustrationSvg(source),
     bytes = new Uint8Array(

@@ -5,6 +5,12 @@ import {
   type EmailDecisionDocument,
 } from "../intake/email-decision-sync";
 import {
+  applyLayoutIllustration,
+  canAccessLayoutIllustration,
+  serializeLayoutIllustration,
+  type LayoutIllustrationDocument,
+} from "./layout-illustration-store";
+import {
   canAccessDecision,
   applyDecision,
   serializeDecision,
@@ -36,6 +42,7 @@ import {
   type ActionExecutionDocument,
 } from "./action-execution-store";
 export const chatCollections = {
+  copilot_layout_illustration: "copilotLayoutIllustrations",
   email_intake_decision: "emailIntakeDecisions",
   copilot_action_execution: "actionExecutions",
   copilot_conversation: "copilotConversations",
@@ -47,6 +54,7 @@ export const chatCollections = {
 export const isChatType = (type: string) =>
   Object.hasOwn(chatCollections, type);
 export type ChatRecordDocument = (
+  | LayoutIllustrationDocument
   | EmailDecisionDocument
   | CopilotConversation
   | CopilotMessage
@@ -58,6 +66,8 @@ export type ChatRecordDocument = (
   _id: string;
 };
 export function serializeChat(type: string, row: ChatRecordDocument) {
+  if (type === "copilot_layout_illustration")
+    return serializeLayoutIllustration(row as LayoutIllustrationDocument);
   if (type === "email_intake_decision")
     return serializeEmailDecision(row as EmailDecisionDocument);
   if (type === "copilot_action_execution")
@@ -105,6 +115,8 @@ export async function canAccessChatCommand(
   ownerId: string | undefined,
   c: SyncCommand,
 ) {
+  if (c.entityType === "copilot_layout_illustration")
+    return canAccessLayoutIllustration(db, storeId, ownerId, c);
   if (c.entityType === "email_intake_decision")
     return canAccessEmailDecision(db, storeId, ownerId, c);
   if (c.entityType === "copilot_action_execution")
@@ -162,6 +174,15 @@ export async function applyChatCommand(
   changes: ReturnType<typeof createMongoSyncChangeService>,
   now: () => Date = () => new Date(),
 ): Promise<CommandMutationResult> {
+  if (c.entityType === "copilot_layout_illustration")
+    return applyLayoutIllustration(
+      ctx,
+      storeId,
+      ownerId,
+      c,
+      requestId,
+      changes,
+    );
   if (c.entityType === "email_intake_decision")
     return applyEmailDecision(
       ctx,

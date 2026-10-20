@@ -7,6 +7,7 @@ const labels: Record<string, string> = {
   copilot_conversation: "Conversation privée",
   copilot_message: "Message privé",
   copilot_decision: "Décision du copilote",
+  copilot_layout_illustration: "Préparation d’illustration",
   email_intake_decision: "Confirmation des documents reçus par email",
   copilot_execution_link: "Association de mise en place",
   copilot_action_execution: "Réalisation déclarée",

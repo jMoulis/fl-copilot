@@ -1,3 +1,4 @@
+import { applyLayoutIllustrationRecord } from "../copilot/layout-illustration-repository";
 import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
 import { applyVisualEntity } from "../products/visual-library-repository";
 import {
@@ -61,6 +62,31 @@ export async function applyBootstrap(
   });
 
   await database.withExclusiveTransactionAsync(async (transaction) => {
+    if (bootstrap.entities.layoutIllustrations) {
+      if (!ownerId || ownerId !== bootstrap.entities.layoutIllustrationOwnerId)
+        throw Error("LAYOUT_ILLUSTRATION_SCOPE_INVALID");
+      for (const e of bootstrap.entities.layoutIllustrations)
+        await applyLayoutIllustrationRecord(
+          transaction,
+          { storeId, ownerId },
+          e,
+        );
+      if (!bootstrap.entities.layoutIllustrationHistoryRequired)
+        await transaction.runAsync(
+          "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+          `layout-illustrations:${storeId}:${ownerId}`,
+          "1",
+          bootstrap.serverTime,
+        );
+    }
+    if (bootstrap.entities.layoutIllustrationHistoryRequired) {
+      if (!ownerId || ownerId !== bootstrap.entities.layoutIllustrationOwnerId)
+        throw Error("LAYOUT_ILLUSTRATION_SCOPE_INVALID");
+      await transaction.runAsync(
+        "DELETE FROM app_metadata WHERE key=?",
+        `layout-illustrations:${storeId}:${ownerId}`,
+      );
+    }
     if (bootstrap.entities.copilotActionExecutions) {
       if (
         !ownerId ||
@@ -456,6 +482,9 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "copilotActionExecutions",
     "copilotActionExecutionOwnerId",
     "copilotExecutionLinkOwnerId",
+    "layoutIllustrations",
+    "layoutIllustrationOwnerId",
+    "layoutIllustrationHistoryRequired",
     "copilotDecisions",
     "emailIntakeDecisions",
     "emailIntakeHistoryRequired",

@@ -184,6 +184,18 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
+            ),
+          ),
+        illustrationHistoryPage: (storeId, before) =>
+          withAccessToken((token) =>
+            api.copilotHistory(
+              token,
+              storeId,
+              undefined,
+              before,
+              50,
+              "LAYOUT_ILLUSTRATIONS",
             ),
           ),
         emailDecisionPage: (storeId, cursor) =>
@@ -199,6 +211,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -252,6 +265,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         substitutionEvidence: true,
         substitutionScores: true,
         copilotDecisions: true,
+        layoutIllustrations: true,
         emailIntake: true,
         emailIntakeAllowed: (storeId) =>
           emailReadSession.current?.user.id === session?.user.id &&
@@ -1068,7 +1082,7 @@ async function readLocalSyncSnapshot(
         SELECT COUNT(*) AS conflict_count
         FROM sync_conflicts
         WHERE store_id = ? AND status = 'OPEN'
-          AND (entity_type!='email_intake_decision' OR
+          AND ((entity_type NOT GLOB 'copilot_*' AND entity_type!='email_intake_decision') OR
             (json_extract(local_payload_json,'$.ownerId')=? AND
              (remote_payload_json='null' OR json_extract(remote_payload_json,'$.ownerId')=?)))
       `,

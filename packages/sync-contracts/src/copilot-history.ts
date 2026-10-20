@@ -2,9 +2,11 @@ import { z } from "zod";
 import {
   copilotConversationSchema,
   copilotMessageSchema,
+  layoutIllustrationPreparationSchema,
 } from "@fl-copilot/domain";
 export const copilotHistoryQuerySchema = z
   .object({
+    recordType: z.literal("LAYOUT_ILLUSTRATIONS").optional(),
     conversationId: z.string().uuid().optional(),
     beforeCreatedAt: z
       .string()
@@ -17,6 +19,10 @@ export const copilotHistoryQuerySchema = z
   .refine(
     (q) => Boolean(q.beforeCreatedAt) === Boolean(q.beforeId),
     "Both cursor fields required",
+  )
+  .refine(
+    (q) => !q.recordType || !q.conversationId,
+    "Illustration restoration is owner-scoped",
   );
 export const copilotHistoryPageSchema = z.object({
   storeId: z.string().uuid(),
@@ -24,6 +30,10 @@ export const copilotHistoryPageSchema = z.object({
   conversationId: z.string().uuid().nullable(),
   conversations: z.array(copilotConversationSchema),
   messages: z.array(copilotMessageSchema),
+  layoutIllustrations: z
+    .array(layoutIllustrationPreparationSchema)
+    .max(50)
+    .optional(),
   hasMore: z.boolean(),
   before: z
     .object({ createdAt: z.string().datetime(), id: z.string().uuid() })

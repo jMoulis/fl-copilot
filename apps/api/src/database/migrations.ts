@@ -968,6 +968,15 @@ export const mongoMigrations: readonly MongoMigration[] = [
         );
     },
   },
+  {
+    version: 49,
+    name: "private_layout_illustration_preparations",
+    async up(db) {
+      await db
+        .collection("copilotLayoutIllustrations")
+        .createIndex({ storeId: 1, ownerId: 1, createdAt: -1, _id: -1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

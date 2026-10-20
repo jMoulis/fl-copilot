@@ -440,6 +440,7 @@ export class ApiClient {
     physicalAllocations = false,
     visualLibrary = false,
     emailIntake = false,
+    layoutIllustrations = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -466,6 +467,8 @@ export class ApiClient {
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
     if (emailIntake) query.set("emailIntake", "true");
+    if (layoutIllustrations && copilotHistory)
+      query.set("layoutIllustrations", "true");
     if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
@@ -512,6 +515,7 @@ export class ApiClient {
     physicalAllocations = false,
     visualLibrary = false,
     emailIntake = false,
+    layoutIllustrations = false,
   ) {
     const query = new URLSearchParams();
     if (rawObservationDays !== undefined)
@@ -540,6 +544,8 @@ export class ApiClient {
     if (copilotKnowledge) query.set("copilotKnowledge", "true");
     if (copilotDecisions) query.set("copilotDecisions", "true");
     if (emailIntake) query.set("emailIntake", "true");
+    if (layoutIllustrations && copilotHistory)
+      query.set("layoutIllustrations", "true");
     if (copilotExecutionLinks) query.set("copilotExecutionLinks", "true");
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
@@ -558,8 +564,10 @@ export class ApiClient {
     conversationId?: string,
     before?: { createdAt: string; id: string },
     limit = 50,
+    recordType?: "LAYOUT_ILLUSTRATIONS",
   ): Promise<CopilotHistoryPage> {
     const query = new URLSearchParams({ limit: String(limit) });
+    if (recordType) query.set("recordType", recordType);
     if (conversationId) query.set("conversationId", conversationId);
     if (before) {
       query.set("beforeCreatedAt", before.createdAt);
