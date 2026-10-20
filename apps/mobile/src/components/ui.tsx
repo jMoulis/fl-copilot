@@ -416,6 +416,7 @@ export function BottomSheet({
   onDismiss,
   swipeToClose = false,
   avoidKeyboard = false,
+  scrollRef,
   children,
 }: PropsWithChildren<{
   visible: boolean;
@@ -424,6 +425,7 @@ export function BottomSheet({
   onDismiss?: () => void;
   swipeToClose?: boolean;
   avoidKeyboard?: boolean;
+  scrollRef?: Ref<ScrollView>;
 }>) {
   const heading = useRef<Text>(null);
   const closeRef = useRef(onClose);
@@ -492,6 +494,7 @@ export function BottomSheet({
             </View>
           ) : null}
           <ScrollView
+            ref={scrollRef}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={{ padding: 24, gap: 20 }}
           >

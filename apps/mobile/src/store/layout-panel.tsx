@@ -1,7 +1,7 @@
 import { LayoutComparison } from "./layout-comparison";
 import { Stack, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { BackHandler, Text, View } from "react-native";
+import { BackHandler, Text, View, type ScrollView } from "react-native";
 import { checkStoreLayoutGeometry } from "@fl-copilot/commercial-core";
 import {
   storeLayoutSchema,
@@ -109,6 +109,7 @@ export function StoreLayoutPanel({
     } | null>(null),
     [panelError, setPanelError] = useState<string>();
   const lock = useRef(false),
+    additionScroll = useRef<ScrollView>(null),
     historyRequest = useRef(0);
   const head = snapshot.head?.entity ?? null,
     visible = visibleLayout(head, snapshot.reference),
@@ -515,11 +516,14 @@ export function StoreLayoutPanel({
           visible
           title="Ajouter au plan"
           avoidKeyboard
+          scrollRef={additionScroll}
           swipeToClose
           onClose={() => {
             if (busy) return;
-            if (additionDirty) setAdditionClose(true);
-            else setAdding(false);
+            if (additionDirty) {
+              setAdditionClose(true);
+              additionScroll.current?.scrollTo({ y: 0, animated: false });
+            } else setAdding(false);
           }}
         >
           {additionClose ? (

@@ -12,7 +12,7 @@ Le retrait d’un îlot supprime ses éléments et leurs surfaces dans le brouil
 
 Appliquer un ajout ou une copie ne sauvegarde pas encore le plan. L’enregistrement du brouillon crée ensuite la transaction SQLite, l’historique et l’Outbox habituels. La référence adoptée n’est pas remplacée par une modification de brouillon. Les contrôles de rang, d’identité, de structure et les limites du contrat existant sont réutilisés ; un dépassement est refusé, jamais tronqué.
 
-Les formulaires d’inventaire sont dans les feuilles existantes ; aucune modale native n’est présentée au-dessus d’une autre. Après l’ajout, l’objet est sélectionné sur le plan, sans ouverture automatique d’une seconde feuille. Les champs non appliqués demandent une confirmation de fermeture dans l’écran, sans dialogue JavaScript du navigateur. Perte de droits ou conflit : les nouvelles écritures sont refusées, mais la fiche reste fermable. Pan/zoom restent consultatifs ; ce lot ne transforme pas un geste d’exploration en déplacement du mobilier.
+Les formulaires d’inventaire sont dans les feuilles existantes ; aucune modale native n’est présentée au-dessus d’une autre. Après l’ajout, l’objet est sélectionné sur le plan, sans ouverture automatique d’une seconde feuille. Les champs non appliqués demandent une confirmation de fermeture dans l’écran, sans dialogue JavaScript du navigateur ; la feuille revient en haut pour que cette confirmation reste visible même après un long défilement. Perte de droits ou conflit : les nouvelles écritures sont refusées, mais la fiche reste fermable. Pan/zoom restent consultatifs ; ce lot ne transforme pas un geste d’exploration en déplacement du mobilier.
 
 ## Vérifications
 

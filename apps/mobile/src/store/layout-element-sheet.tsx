@@ -1,5 +1,12 @@
-import { useState } from "react";
-import { Pressable, Switch, Text, TextInput, View } from "react-native";
+import { useState, useRef } from "react";
+import {
+  Pressable,
+  Switch,
+  Text,
+  TextInput,
+  View,
+  type ScrollView,
+} from "react-native";
 import type { StoreLayoutContent } from "@fl-copilot/domain";
 import { LayoutInventoryControls } from "./layout-inventory-editor";
 import {
@@ -123,6 +130,7 @@ export function StoreLayoutElementSheet({
   onApply: (content: StoreLayoutContent) => boolean;
   blockedReason?: string;
 }) {
+  const scroll = useRef<ScrollView>(null);
   const [surfaceId, setSurfaceId] = useState<string | null>(null),
     [applied, setApplied] = useState(false),
     [inventoryDirty, setInventoryDirty] = useState(false),
@@ -137,11 +145,14 @@ export function StoreLayoutElementSheet({
     setApplied(false);
     setInventoryDirty(false);
     setCloseRequested(false);
+    scroll.current?.scrollTo({ y: 0, animated: false });
     onSelect(nextId);
   }
   function requestClose() {
-    if (inventoryDirty) setCloseRequested(true);
-    else onClose();
+    if (inventoryDirty) {
+      setCloseRequested(true);
+      scroll.current?.scrollTo({ y: 0, animated: false });
+    } else onClose();
   }
   const closeNotice = closeRequested ? (
     <View className="gap-3">
@@ -180,6 +191,7 @@ export function StoreLayoutElementSheet({
         onClose={requestClose}
         swipeToClose
         avoidKeyboard
+        scrollRef={scroll}
       >
         {closeNotice}
         <Text className="text-muted">
@@ -260,7 +272,7 @@ export function StoreLayoutElementSheet({
       accessibilityState={{ selected: surfaceId === s.id }}
       onPress={() => {
         if (inventoryDirty) {
-          setCloseRequested(true);
+          requestClose();
           return;
         }
         setSurfaceId(s.id);
@@ -290,6 +302,7 @@ export function StoreLayoutElementSheet({
       onClose={requestClose}
       swipeToClose
       avoidKeyboard
+      scrollRef={scroll}
     >
       {closeNotice}
       <Text className="text-sm text-muted">
@@ -322,10 +335,8 @@ export function StoreLayoutElementSheet({
                 accessibilityRole="button"
                 accessibilityLabel={`Ouvrir ${m.label}`}
                 onPress={() => {
-                  setSurfaceId(null);
-                  setApplied(false);
                   if (inventoryDirty) {
-                    setCloseRequested(true);
+                    requestClose();
                     return;
                   }
                   selectApplied(m.id);
