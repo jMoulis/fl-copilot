@@ -40,6 +40,12 @@ import { EmailSourceHandoff } from "./email-source-handoff";
 import { EmailIntakeProcessing } from "./email-intake-processing";
 import { SourceOriginalJobs } from "../documents/source-original-jobs";
 import { readPendingWork } from "../sync/pending-work";
+import {
+  newEmailAdmissionSelection,
+  groupEmailTicketViews,
+  setEmailFilePurpose,
+  emailAdmissionFiles,
+} from "./email-admission-selection";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 const dirs: string[] = [],
   databases: Array<() => void> = [];
@@ -63,6 +69,9 @@ async function fixture(
     grouped?: boolean;
     synced?: boolean;
     identical?: boolean;
+    selection?(
+      receipt: EmailIntakeReceipt,
+    ): Parameters<EmailDecisionRepository["decide"]>[0]["files"];
   } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), "fl-email-media-"));
@@ -148,11 +157,13 @@ async function fixture(
       conversationId: scope.conversationId,
       receiptId: receipt.id,
       choice: "ADMIT",
-      files: originals.map((original) => ({
-        fileId: original.id,
-        mode: options.mode ?? "AUTO",
-        processingId: options.grouped ? groupId : randomUUID(),
-      })),
+      files:
+        options.selection?.(receipt) ??
+        originals.map((original) => ({
+          fileId: original.id,
+          mode: options.mode ?? "AUTO",
+          processingId: options.grouped ? groupId : randomUUID(),
+        })),
     },
     { actionId: randomUUID(), deviceId: chat.deviceId },
   );
@@ -938,4 +949,46 @@ it("waits for retained source readiness and refreshes the exact receipt before r
     attempts: 2,
   });
   expect(count(f, "source_documents")).toBe(1);
+});
+
+it("processes the actual selection's reversed-tap ticket group plus an independent store photo through one acknowledged decision", async () => {
+  const f = await fixture({
+      photo: true,
+      count: 4,
+      selection: (receipt) => {
+        const draft = newEmailAdmissionSelection();
+        groupEmailTicketViews(
+          receipt,
+          draft,
+          [receipt.files[2]!.id, receipt.files[0]!.id, receipt.files[1]!.id],
+          randomUUID,
+        );
+        setEmailFilePurpose(
+          receipt,
+          draft,
+          receipt.files[3]!.id,
+          "STORE_PHOTO",
+        );
+        return emailAdmissionFiles(receipt, draft, randomUUID);
+      },
+    }),
+    p = processingRuntime(f);
+  expect(await p.runtime.seed(f.scope.storeId, f.scope.ownerId, p.jobs)).toBe(
+    2,
+  );
+  await p.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(count(f, "source_documents")).toBe(2);
+  expect(count(f, "waste_receipts")).toBe(1);
+  expect(count(f, "waste_observations")).toBe(0);
+  expect(f.bundle).toHaveBeenCalledOnce();
+  const bundle = receiptPhotoBundleSchema.parse(
+    JSON.parse(f.bundle.mock.calls[0]![0]),
+  );
+  expect(bundle.views.map((view) => view.dataBase64)).toEqual(
+    f.originals
+      .slice(0, 3)
+      .map((original) => Buffer.from(original.bytes).toString("base64")),
+  );
+  for (const file of f.originals)
+    expect(existsSync(fileURLToPath(file.localUri))).toBe(true);
 });
