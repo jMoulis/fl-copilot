@@ -1,3 +1,4 @@
+import { COPILOT_READ_EVIDENCE_LIMIT } from "./generation-limits";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import { z } from "zod";
@@ -71,7 +72,7 @@ export const analyticsQueryResultSchema = z.strictObject({
       }),
     )
     .max(20),
-  evidence: z.array(copilotEvidenceSchema).max(241),
+  evidence: z.array(copilotEvidenceSchema).max(COPILOT_READ_EVIDENCE_LIMIT),
 });
 /** Server-owned Mongo plan: scoped canonical snapshots only, no raw model query/code. */
 export async function readAnalyticsQuery(

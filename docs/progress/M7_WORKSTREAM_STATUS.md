@@ -526,3 +526,15 @@ Le build staging **0.1.0 / 2** (`dd32fb48-c423-4ab7-a444-fe0fb4e0de0e`, source `
 Premier lot de correction : hiérarchie compacte Aujourd’hui/Analyses/Produits, surfaces et navigation, montants et graphique réunis, explications dépliables avec couverture toujours visible, listes et accès secondaires plus discrets, sélecteur de semaine Actions compact. Les composants réels sont examinés localement à 390 et 320 points, avec jeux de test identifiés et sans publication. **1 371 tests réussis / 7 ignorés** sur le mobile et le moteur analytique. Le détail des preuves et des manques visuels restants est dans `../qa/NATIVE_DESIGN_FIDELITY_2026_10_20.md` ; aucune nouvelle validation iPhone ni livraison de ces corrections n’est revendiquée.
 
 Sept chantiers : **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours**. Ce lot avance le chantier 7, sans crédit supplémentaire sur les six autres ni fermeture de V1/M8.
+
+## Lot prioritaire — stabilité du chat et des images (20 octobre 2026)
+
+- **1 — Actions/conflits : en cours**, inchangé.
+- **2 — Contre-promo : code prêt**, dialogue réel encore à valider.
+- **3 — Documents : en cours.** Le pont natif partagé évite aussi le chargement des modules obsolètes à la lecture d’une photo de rayon ou d’un original. Réception email et restauration complète restent ouvertes.
+- **4 — Expertise/dialogue : en cours.** Une analyse valide de 241 références peut aller de la lecture déterministe à l’enregistrement de la réponse ; le plafond du contexte initial reste distinct du résultat des outils. Test Mongo de persistance/rejeu et contrôles des faits conservés. La dernière question utilisateur n’a pas pu être lue via le connecteur Mongo, et la recette du dialogue réel reste nécessaire.
+- **5 — Recommandations : en cours**, inchangé.
+- **6 — Implantation : en cours**, inchangé.
+- **7 — UX/validation : en cours.** Correction du crash Sentry lors du changement d’image produit, test de régression et règle de lint. Ce lot doit être livré avec la fidélité visuelle PR 289 dans un build groupé, puis accepté sur appareil. Les autres écarts UX/M8 restent ouverts.
+
+Voir `../qa/CHAT_IMAGE_STABILITY_2026_10_20.md`. Codé/testé, fusionné, déployé et validé sur iPhone restent des états distincts ; aucun chantier entier n’est déclaré terminé par ce correctif.
