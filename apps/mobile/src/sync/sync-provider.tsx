@@ -1,5 +1,8 @@
 import { EmailDecisionRepository } from "../intake/email-decision-repository";
-import type { EmailIntakeDecision } from "@fl-copilot/sync-contracts";
+import type {
+  EmailIntakeDecision,
+  EmailIntakeBinding,
+} from "@fl-copilot/sync-contracts";
 import { EmailIntakeCache } from "../intake/email-intake-cache";
 import { EmailOriginalTransfer } from "../intake/email-original-transfer";
 import { nativeEmailOriginalFiles } from "../intake/email-original-files";
@@ -62,6 +65,13 @@ interface LocalSyncSnapshot {
 export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
   emailIntake?: {
+    status(conversationId: string): Promise<boolean>;
+    createBinding(
+      conversationId: string,
+      id: string,
+      allowedSender: string,
+    ): Promise<EmailIntakeBinding>;
+    revokeBinding(conversationId: string, id: string): Promise<void>;
     decision(
       conversationId: string,
       receiptId: string,
@@ -617,6 +627,65 @@ export function SyncProvider({ children }: PropsWithChildren) {
     };
     const api = new ApiClient(getApiBaseUrl());
     return {
+      status: async (conversationId: string) => {
+        const scope = scopeFor(conversationId);
+        await emailCache.authorize(scope);
+        const result = await withAccessToken(
+          (token) => api.emailIntakeStatus(token, scope.storeId),
+          owner,
+        );
+        await emailCache.authorize(scope);
+        return result.enabled;
+      },
+      createBinding: async (
+        conversationId: string,
+        id: string,
+        allowedSender: string,
+      ) => {
+        const scope = scopeFor(conversationId);
+        await emailCache.authorize(scope);
+        const binding = await withAccessToken(
+          (token) =>
+            api.createEmailIntakeBinding(token, scope.storeId, {
+              conversationId,
+              id,
+              allowedSender,
+            }),
+          owner,
+        );
+        await emailCache.storePage(scope, {
+          bindings: [binding],
+          receipts: [],
+          nextCursor: null,
+        });
+        return binding;
+      },
+      revokeBinding: async (conversationId: string, id: string) => {
+        const scope = scopeFor(conversationId);
+        await emailCache.authorize(scope);
+        await withAccessToken(
+          (token) =>
+            api.revokeEmailIntakeBinding(
+              token,
+              scope.storeId,
+              conversationId,
+              id,
+            ),
+          owner,
+        );
+        emailCache.check(scope);
+        const page = await withAccessToken(
+          (token) => api.emailIntakeList(token, scope.storeId, conversationId),
+          owner,
+        );
+        if (
+          !page.bindings.some(
+            (binding) => binding.id === id && !!binding.revokedAt,
+          )
+        )
+          throw Error("EMAIL_INTAKE_BINDING_REFRESH_REQUIRED");
+        await emailCache.storePage(scope, page);
+      },
       decision: async (conversationId: string, receiptId: string) => {
         const scope = scopeFor(conversationId);
         const decision = await emailDecisions.get(conversationId, receiptId);

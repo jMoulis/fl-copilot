@@ -1,3 +1,4 @@
+import { EmailInbox, EmailInboxIndicator } from "@/intake/email-inbox";
 import { z } from "zod";
 import { CopilotStorePhotoIntake } from "@/copilot/store-photo-intake";
 import { LayoutPreparationController } from "@/copilot/layout-preparation-controller";
@@ -567,7 +568,32 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId],
   );
-  const { syncNow } = useSync();
+  const { syncNow, emailIntake, lastSyncedAt } = useSync();
+  const [emailConversation, setEmailConversation] = useState<string>();
+  const [emailConfigurationRevision, setEmailConfigurationRevision] =
+    useState(0);
+  const emailNavigation = useRef<(() => void) | undefined>(undefined),
+    emailMounted = useRef(true);
+  useEffect(() => {
+    emailMounted.current = true;
+    return () => {
+      emailMounted.current = false;
+    };
+  }, []);
+  function closeEmail(after?: () => void) {
+    if (Platform.OS === "ios") emailNavigation.current = after;
+    setEmailConversation(undefined);
+    setEmailConfigurationRevision((value) => value + 1);
+    if (Platform.OS !== "ios") after?.();
+  }
+
+  useEffect(() => {
+    if (!canManageProducts) {
+      emailNavigation.current = undefined;
+      setEmailConversation(undefined);
+    }
+  }, [canManageProducts]);
+
   const importAutomation = useMemo(
     () =>
       new CopilotMercalysImportController(
@@ -1642,6 +1668,11 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 attachReceipts(conversationId, signal, capacity, true)
             : undefined
         }
+        onOpenEmailIntake={
+          canManageProducts && emailIntake
+            ? () => setEmailConversation(active)
+            : undefined
+        }
         onOpenMercalys={() => {
           void importFiles();
         }}
@@ -1663,6 +1694,16 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 />
               </View>
             ) : null}
+            {canManageProducts && emailIntake ? (
+              <EmailInboxIndicator
+                key={`${storeId}/${ownerId}/${active}`}
+                inbox={emailIntake}
+                conversationId={active}
+                revision={lastSyncedAt}
+                configurationRevision={emailConfigurationRevision}
+                onOpen={() => setEmailConversation(active)}
+              />
+            ) : null}
             <CopilotIntakeSummary
               key={active}
               db={sqlite}
@@ -1676,6 +1717,38 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         }
         renderToolMessage={renderProposal}
       />
+      <Modal
+        visible={!!emailConversation}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => closeEmail()}
+        onDismiss={() => {
+          const navigate = emailNavigation.current;
+          emailNavigation.current = undefined;
+          if (emailMounted.current) navigate?.();
+        }}
+      >
+        {emailConversation && emailIntake ? (
+          <EmailInbox
+            key={`${storeId}/${ownerId}/${emailConversation}`}
+            inbox={emailIntake}
+            conversationId={emailConversation}
+            initialSender={session?.user.email ?? ""}
+            revision={lastSyncedAt}
+            onClose={() => closeEmail()}
+            onOpenSync={(id) =>
+              closeEmail(() => {
+                if (id)
+                  router.push({
+                    pathname: "/sync-conflict/[id]",
+                    params: { id },
+                  });
+                else router.push("/sync-status");
+              })
+            }
+          />
+        ) : null}
+      </Modal>
       <Modal
         visible={!!intakeConversation}
         animationType="slide"

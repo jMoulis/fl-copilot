@@ -43,6 +43,7 @@ type PanelProps = {
   ): ReactNode;
   intakeSummary?: ReactNode;
   onOpenMercalys?(): void;
+  onOpenEmailIntake?(): void;
   externalDraftRevision?: number;
   externalMessageRevision?: number;
   onPhotographReceipt?(
@@ -94,6 +95,7 @@ function LocalChatPanel({
   onAttachReceiptViews,
   renderToolMessage,
   onOpenMercalys,
+  onOpenEmailIntake,
   intakeSummary,
   externalDraftRevision = 0,
   externalMessageRevision = 0,
@@ -125,6 +127,7 @@ function LocalChatPanel({
     | "RECEIPT_VIEWS"
     | "CAMERA"
     | "STORE_PHOTOS"
+    | "EMAIL"
     | undefined
   >(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
@@ -370,10 +373,12 @@ function LocalChatPanel({
       | "RECEIPTS"
       | "RECEIPT_VIEWS"
       | "CAMERA"
-      | "STORE_PHOTOS",
+      | "STORE_PHOTOS"
+      | "EMAIL",
   ) {
     if (!isCurrent()) return;
-    if (kind === "PDF") void attach();
+    if (kind === "EMAIL") onOpenEmailIntake?.();
+    else if (kind === "PDF") void attach();
     else if (
       kind === "STORE_PHOTOS" ||
       kind === "RECEIPTS" ||
@@ -390,7 +395,8 @@ function LocalChatPanel({
       | "RECEIPTS"
       | "RECEIPT_VIEWS"
       | "CAMERA"
-      | "STORE_PHOTOS",
+      | "STORE_PHOTOS"
+      | "EMAIL",
   ) {
     setFileMenu(false);
     // UIKit must finish dismissing this sheet before another modal/picker opens.
@@ -515,7 +521,9 @@ function LocalChatPanel({
         activities={activities}
         streamingText={streamingText}
         intakeSummary={intakeSummary}
-        allowIntakeWithoutAttachmentCapacity={!!onOpenMercalys}
+        allowIntakeWithoutAttachmentCapacity={
+          !!(onOpenMercalys || onOpenEmailIntake)
+        }
         title={snapshot.conversation.title}
         messages={snapshot.messages
           .map((message) => message.entity)
@@ -540,12 +548,14 @@ function LocalChatPanel({
           onAttachStorePhotos ||
           onAttachPdf ||
           onOpenMercalys ||
+          onOpenEmailIntake ||
           onAttachReceipts ||
           onAttachReceiptViews ||
           onPhotographReceipt
             ? () => {
                 if (
                   onOpenMercalys ||
+                  onOpenEmailIntake ||
                   onAttachStorePhotos ||
                   onAttachReceipts ||
                   onAttachReceiptViews ||
@@ -661,6 +671,14 @@ function LocalChatPanel({
           if (kind) performFileAction(kind);
         }}
       >
+        {onOpenEmailIntake ? (
+          <MenuRow
+            title="Recevoir par email"
+            description="Adresse de réception et documents de cette conversation"
+            icon="mail-outline"
+            onPress={() => selectFileAction("EMAIL")}
+          />
+        ) : null}
         {onPhotographReceipt ? (
           <MenuRow
             title="Photographier un ticket"
