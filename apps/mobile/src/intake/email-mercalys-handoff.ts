@@ -1,3 +1,4 @@
+import { readNativeEmailProcessingBytes } from "./email-original-files";
 import { z } from "zod";
 import { assertSafeXlsxContainer } from "@fl-copilot/import-core";
 import {
@@ -6,12 +7,7 @@ import {
   copilotImportReferenceSchema,
   type CopilotMessage,
 } from "@fl-copilot/domain";
-import {
-  emailIntakeDecisionSchema,
-  emailIntakeOriginalManifestSchema,
-  emailIntakeOriginalRequestSchema,
-  serializeEmailIntakeOriginalMetadata,
-} from "@fl-copilot/sync-contracts";
+import { emailIntakeOriginalRequestSchema } from "@fl-copilot/sync-contracts";
 import { CopilotConversationRepository } from "../copilot/conversation-repository";
 import { importManifestHash } from "../copilot/mercalys-import-controller";
 import { MercalysBatchRepository } from "../documents/mercalys-batch-repository";
@@ -24,6 +20,11 @@ import {
 import { SheetJsSpreadsheetParser } from "../documents/sheetjs-spreadsheet-parser";
 import { sourceOriginalHash } from "../documents/source-original-hash";
 import { joinedMutationDatabase } from "../sync/atomic-local-mutation";
+import {
+  emailProcessingBasis,
+  verifiedEmailProcessingOriginal,
+  emailSourceFilename,
+} from "./email-processing-basis";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { EmailIntakeCache } from "./email-intake-cache";
 import type { EmailOriginalTransfer } from "./email-original-transfer";
@@ -36,13 +37,7 @@ type Dependencies = {
   zip: MercalysZipStorage;
 };
 const nativeDependencies: Dependencies = {
-  async read(uri, limit) {
-    const { File } = await import("expo-file-system");
-    const file = new File(uri);
-    if (!file.exists || file.size <= 0 || file.size > limit)
-      throw Error("EMAIL_MERCALYS_SIZE_INVALID");
-    return file.bytes();
-  },
+  read: readNativeEmailProcessingBytes,
   zip: nativeMercalysZipStorage,
 };
 export type EmailMercalysHandoffResult =
@@ -67,7 +62,11 @@ export class EmailMercalysHandoff {
   ) {
     z.uuid().parse(deviceId);
   }
-  async attach(raw: Input, signal?: AbortSignal) {
+  async attach(
+    raw: Input,
+    signal?: AbortSignal,
+    authorize?: (tx?: OutboxDatabase) => Promise<void>,
+  ) {
     const ref = emailIntakeOriginalRequestSchema.parse(raw),
       scope = this.cache.scope(ref.conversationId);
     const key = [
@@ -79,7 +78,7 @@ export class EmailMercalysHandoff {
     ].join(":");
     const prior = this.active.get(key);
     if (prior) return prior;
-    const task = this.run(ref, signal);
+    const task = this.run(ref, signal, authorize);
     this.active.set(key, task);
     void task
       .finally(() => {
@@ -91,35 +90,16 @@ export class EmailMercalysHandoff {
   private async run(
     ref: Input,
     signal?: AbortSignal,
+    authorize?: (tx?: OutboxDatabase) => Promise<void>,
   ): Promise<EmailMercalysHandoffResult> {
-    const scope = this.cache.scope(ref.conversationId);
-    const cancelled = () => {
-      this.cache.check(scope);
-      if (signal?.aborted) throw Error("EMAIL_INTAKE_PROCESSING_INTERRUPTED");
-    };
-    cancelled();
-    await this.cache.authorize(scope);
-    const row = await this.cache.db.getFirstAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM email_intake_decisions WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-      ref.receiptId,
-      scope.storeId,
-      scope.ownerId,
-      scope.conversationId,
+    const basis = await emailProcessingBasis(
+      this.cache,
+      ref,
+      signal,
+      authorize,
     );
-    if (!row) throw Error("EMAIL_INTAKE_DECISION_SYNC_REQUIRED");
-    const decision = emailIntakeDecisionSchema.parse(
-      JSON.parse(row.payload_json),
-    );
-    const selection = decision.files.find((f) => f.fileId === ref.fileId);
-    if (!selection) throw Error("EMAIL_INTAKE_PROCESSING_FORBIDDEN");
-    const origin = {
-      receiptId: ref.receiptId,
-      fileId: ref.fileId,
-      actionId: decision.actionId,
-      processingId: selection.processingId,
-    };
+    const { scope, origin, decision, database } = basis;
     const batchId = emailProcessingIdentity(scope, origin, "BATCH");
-    // The temporary reference is used only for authority checks, never persisted.
     const authority = copilotImportReferenceSchema.parse({
       kind: "MERCALYS_CHAT_IMPORT",
       schemaVersion: 1,
@@ -130,95 +110,30 @@ export class EmailMercalysHandoff {
       emailOrigin: origin,
     });
     const allowed = async (tx: OutboxDatabase = this.cache.db) => {
-      cancelled();
-      await this.cache.authorize(scope, tx);
+      await basis.authorize(tx);
       await assertEmailMercalysAuthority(tx, scope, authority);
-      cancelled();
     };
     await allowed();
-    const basis = await this.cache.originalBasis(scope, ref);
     const filename = basis.file.filename ?? "";
     const zip = /\.zip$/i.test(filename),
       xlsx = /\.xlsx$/i.test(filename);
     if (!zip && !xlsx) throw Error("EMAIL_MERCALYS_FORMAT_REQUIRED");
-    const proof = await this.originals.local(ref);
-    await allowed();
-    if (!proof) throw Error("EMAIL_ORIGINAL_RECOVERY_REQUIRED");
-    const retained = await this.cache.db.getFirstAsync<{
-      manifest_json: string;
-      local_uri: string;
-    }>(
-      "SELECT manifest_json,local_uri FROM email_original_manifests WHERE store_id=? AND owner_id=? AND conversation_id=? AND receipt_id=? AND file_id=?",
-      scope.storeId,
-      scope.ownerId,
-      scope.conversationId,
-      ref.receiptId,
-      ref.fileId,
+    const { bytes, manifest, ...proof } = await verifiedEmailProcessingOriginal(
+      basis,
+      this.originals,
+      this.dependencies.read,
+      zip ? MAX_MERCALYS_BATCH_BYTES : MAX_MERCALYS_BATCH_FILE_BYTES,
     );
-    if (!retained || retained.local_uri !== proof.localUri)
-      throw Error("EMAIL_INTAKE_ORIGINAL_CHANGED");
-    const manifest = emailIntakeOriginalManifestSchema.parse(
-      JSON.parse(retained.manifest_json),
-    );
-    const { manifestHash, ...metadata } = manifest;
-    if (
-      manifest.storeId !== scope.storeId ||
-      manifest.ownerId !== scope.ownerId ||
-      manifest.conversationId !== scope.conversationId ||
-      manifest.receiptId !== ref.receiptId ||
-      manifest.fileId !== ref.fileId ||
-      manifest.filename !== basis.file.filename ||
-      manifest.providerEmailId !== basis.receipt.providerEmailId ||
-      manifest.providerAttachmentId !== basis.file.providerAttachmentId ||
-      manifest.declaredMimeType !== basis.file.mediaType ||
-      sourceOriginalHash(serializeEmailIntakeOriginalMetadata(metadata)) !==
-        manifestHash
-    )
-      throw Error("EMAIL_INTAKE_ORIGINAL_CHANGED");
-    if (
-      (selection.manifestHash &&
-        selection.manifestHash !== manifest.manifestHash) ||
-      (selection.checksum && selection.checksum !== manifest.checksum)
-    )
-      throw Error("EMAIL_INTAKE_ORIGINAL_CHANGED");
-    const limit = zip
-      ? MAX_MERCALYS_BATCH_BYTES
-      : MAX_MERCALYS_BATCH_FILE_BYTES;
-    if (manifest.sizeBytes > limit) throw Error("EMAIL_MERCALYS_SIZE_INVALID");
-    const bytes = await this.dependencies.read(proof.localUri, limit);
-    await allowed();
-    if (
-      !bytes.length ||
-      bytes.length > limit ||
-      bytes.length !== manifest.sizeBytes ||
-      sourceOriginalHash(bytes) !== manifest.checksum
-    )
-      throw Error("EMAIL_INTAKE_ORIGINAL_CHANGED");
     if (!zip) {
       await assertSafeXlsxContainer(bytes, signal);
       new SheetJsSpreadsheetParser().parse(bytes);
     }
     await allowed();
-    // Every repository commit rechecks the live owner/conversation and accepted choice.
-    const database = {
-      ...joinedMutationDatabase(this.cache.db),
-      withExclusiveTransactionAsync: (
-        work: (tx: OutboxDatabase) => Promise<void>,
-      ) =>
-        this.cache.db.withExclusiveTransactionAsync(async (tx) => {
-          await allowed(tx);
-          await work(tx);
-          await allowed(tx);
-        }),
-    };
     const batches = new MercalysBatchRepository(database, scope);
-    const label =
-      Array.from(filename, (char) =>
-        char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127 ? " " : char,
-      )
-        .join("")
-        .trim()
-        .slice(0, 240) || (zip ? "Exports.zip" : "Export.xlsx");
+    const label = emailSourceFilename(
+      filename,
+      zip ? "Exports.zip" : "Export.xlsx",
+    );
     if (zip) {
       const archiveId = emailProcessingIdentity(scope, origin, "ARCHIVE"),
         archives = new MercalysArchiveRepository(database, scope);

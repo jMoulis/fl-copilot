@@ -58,6 +58,7 @@ type Scope = {
   canImport: boolean;
 };
 type Dependencies = {
+  authorize?(db: OutboxDatabase): Promise<void>;
   id(): string;
   digest(s: string): Promise<string>;
   read(uri: string): Promise<Uint8Array<ArrayBuffer>>;
@@ -98,6 +99,7 @@ export class CopilotMercalysImportController {
   }
   private async proof(db: OutboxDatabase, raw: CopilotMessage) {
     if (!this.scope.canImport) throw Error("IMPORT_FORBIDDEN");
+    await this.deps.authorize?.(db);
     const { message, reference } = readCopilotImportReference(raw);
     if (
       message.storeId !== this.scope.storeId ||

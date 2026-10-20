@@ -83,6 +83,10 @@ export interface SyncContextValue extends LocalSyncSnapshot {
     adoptDecision(conversationId: string, conflictId: string): Promise<void>;
     list(conversationId: string): ReturnType<EmailIntakeCache["list"]>;
     refresh(conversationId: string, cursor?: string): Promise<string | null>;
+    refreshReceipt(ref: {
+      conversationId: string;
+      receiptId: string;
+    }): Promise<void>;
     localOriginal(
       ref: EmailIntakeOriginalRequest,
     ): Promise<EmailOriginalProof | null>;
@@ -728,6 +732,28 @@ export function SyncProvider({ children }: PropsWithChildren) {
         );
         emailCache.check(scope);
         return emailCache.storePage(scope, page);
+      },
+      refreshReceipt: async (ref: {
+        conversationId: string;
+        receiptId: string;
+      }) => {
+        const scope = scopeFor(ref.conversationId);
+        await emailCache.authorize(scope);
+        const receipt = await withAccessToken(
+          (token) =>
+            api.emailIntakeReceipt(token, scope.storeId, {
+              conversationId: ref.conversationId,
+              receiptId: ref.receiptId,
+            }),
+          owner,
+        );
+        if (receipt.id !== ref.receiptId)
+          throw Error("EMAIL_INTAKE_IDENTITY_INVALID");
+        await emailCache.storePage(scope, {
+          bindings: [],
+          receipts: [receipt],
+          nextCursor: null,
+        });
       },
       localOriginal: async (ref: EmailIntakeOriginalRequest) => {
         const scope = scopeFor(ref.conversationId);

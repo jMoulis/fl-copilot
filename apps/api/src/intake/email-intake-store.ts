@@ -456,4 +456,8 @@ export type {
   Receipt as EmailIntakeReceiptRecord,
   Binding as EmailIntakeBindingRecord,
 };
-export { authorized as emailIntakeAuthorized, atomic as emailIntakeAtomic };
+export {
+  authorized as emailIntakeAuthorized,
+  atomic as emailIntakeAtomic,
+  receiptDto as serializeEmailIntakeReceipt,
+};

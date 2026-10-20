@@ -72,3 +72,14 @@ export const nativeEmailOriginalFiles: EmailOriginalFiles = {
     });
   },
 };
+
+export async function readNativeEmailProcessingBytes(
+  uri: string,
+  limit: number,
+) {
+  const { File } = await import("expo-file-system");
+  const file = new File(uri);
+  if (!file.exists || file.size <= 0 || file.size > limit)
+    throw Error("EMAIL_INTAKE_FILE_SIZE_INVALID");
+  return file.bytes();
+}

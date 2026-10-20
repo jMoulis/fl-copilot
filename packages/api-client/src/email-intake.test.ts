@@ -4,6 +4,55 @@ const randomUUID = () =>
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiClient } from "./index";
 afterEach(() => vi.unstubAllGlobals());
+it("reads one typed receipt by authenticated identity without listing or downloading other emails", async () => {
+  const storeId = randomUUID(),
+    ownerId = randomUUID(),
+    conversationId = randomUUID(),
+    receiptId = randomUUID();
+  const receipt = {
+    id: receiptId,
+    storeId,
+    ownerId,
+    conversationId,
+    bindingId: randomUUID(),
+    providerEmailId: randomUUID(),
+    sender: "manager@example.test",
+    subject: "Sources",
+    receivedAt: "2026-10-20T12:00:00Z",
+    updatedAt: "2026-10-20T12:00:00Z",
+    version: 1,
+    status: "AWAITING_CONFIRMATION",
+    files: [],
+  };
+  const fetch = vi.fn(
+    async () => new Response(JSON.stringify(receipt), { status: 200 }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  const api = new ApiClient("https://api.test.invalid");
+  expect(
+    await api.emailIntakeReceipt("unit-token", storeId, {
+      conversationId,
+      receiptId,
+    }),
+  ).toEqual(receipt);
+  expect(fetch).toHaveBeenCalledWith(
+    `https://api.test.invalid/api/v1/intake/email/receipts/${receiptId}?conversationId=${conversationId}`,
+    expect.objectContaining({
+      method: "GET",
+      headers: expect.objectContaining({
+        authorization: "Bearer unit-token",
+        "x-store-id": storeId,
+      }),
+    }),
+  );
+  expect(() =>
+    api.emailIntakeReceipt("unit-token", storeId, {
+      conversationId,
+      receiptId: "../../other",
+    }),
+  ).toThrow();
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
 it("uses authenticated store headers, typed private DTOs and scoped intake URLs", async () => {
   const storeId = randomUUID(),
     ownerId = randomUUID(),

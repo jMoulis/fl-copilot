@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   emailIntakeOriginalRequestSchema,
+  emailIntakeReceiptRequestSchema,
   emailIntakeOriginalDownloadSchema,
 } from "@fl-copilot/sync-contracts";
 import { AuthError } from "../auth/service.js";
@@ -14,6 +15,7 @@ import {
   emailIntakeAuthorized,
   type EmailIntakeScope,
   type EmailIntakeReceiptRecord,
+  serializeEmailIntakeReceipt,
 } from "./email-intake-store.js";
 import {
   emailOriginalObjectKey,
@@ -105,6 +107,26 @@ export function createEmailOriginalAccess(
     return current;
   }
   return {
+    /** Bounded metadata recovery is independent of provider activation and file readiness. */
+    async receipt(
+      raw: z.infer<typeof emailIntakeReceiptRequestSchema> & {
+        storeId: string;
+        ownerId: string;
+      },
+    ) {
+      const input = emailIntakeReceiptRequestSchema
+        .extend({ storeId: z.uuid(), ownerId: z.uuid() })
+        .parse(raw);
+      const { receiptId, ...scope } = input,
+        db = await database.getDb();
+      if (!(await emailIntakeAuthorized(db, scope))) throw unavailable();
+      const receipt = await db
+        .collection<EmailIntakeReceiptRecord>("emailIntakeReceipts")
+        .findOne({ _id: receiptId, ...scope }, { maxTimeMS: 2000 });
+      if (!receipt || !(await emailIntakeAuthorized(db, scope)))
+        throw unavailable();
+      return serializeEmailIntakeReceipt(receipt);
+    },
     async manifest(
       input: EmailOriginalTarget,
       authorize?: () => Promise<void>,

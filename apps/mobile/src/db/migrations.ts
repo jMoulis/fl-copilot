@@ -874,6 +874,12 @@ CREATE UNIQUE INDEX email_original_transfer_identity ON local_jobs(json_extract(
     sql: `CREATE TABLE email_intake_decisions(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX email_intake_decision_scope ON email_intake_decisions(store_id,owner_id,conversation_id);`,
   },
+  {
+    version: 54,
+    name: "email-canonical-source-handoffs",
+    // Device-local derived working state; business persistence uses the existing source jobs.
+    sql: `CREATE TABLE email_source_handoffs(store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,receipt_id TEXT NOT NULL,processing_id TEXT NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(store_id,owner_id,conversation_id,receipt_id,processing_id));`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

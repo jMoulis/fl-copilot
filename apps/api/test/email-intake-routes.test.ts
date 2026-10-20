@@ -76,6 +76,30 @@ function fixture(enabled = true, webhook = false) {
     expiresAt: "2026-10-20T12:02:00Z",
   };
   const originals = {
+    receipt: vi.fn(async () => ({
+      id: target.receiptId,
+      storeId,
+      ownerId,
+      conversationId,
+      bindingId,
+      providerEmailId: manifest.providerEmailId,
+      sender: binding.allowedSender,
+      subject: "Sources",
+      receivedAt: binding.createdAt,
+      updatedAt: binding.createdAt,
+      version: 2,
+      status: "AWAITING_CONFIRMATION" as const,
+      files: [
+        {
+          id: target.fileId,
+          providerAttachmentId: manifest.providerAttachmentId,
+          filename: manifest.filename,
+          mediaType: manifest.declaredMimeType,
+          status: "PENDING" as const,
+          sourceDocumentId: null,
+        },
+      ],
+    })),
     manifest: vi.fn(async (_input: unknown, check?: () => Promise<void>) => {
       await check?.();
       return manifest;
@@ -126,6 +150,36 @@ function fixture(enabled = true, webhook = false) {
     },
   };
 }
+it("reads an old receipt directly with no-store even while receiving is disabled, and rechecks the session", async () => {
+  const f = fixture(false);
+  const url = `/api/v1/intake/email/receipts/${f.target.receiptId}?conversationId=${f.scope.conversationId}`;
+  try {
+    expect((await f.app.inject({ url })).statusCode).toBe(401);
+    const response = await f.app.inject({ url, headers: f.headers });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(response.json()).toMatchObject({
+      id: f.target.receiptId,
+      files: [{ status: "PENDING" }],
+    });
+    f.role("USER");
+    expect((await f.app.inject({ url, headers: f.headers })).statusCode).toBe(
+      403,
+    );
+    f.role("MANAGER");
+    const normal = f.originals.receipt.getMockImplementation()!;
+    f.originals.receipt.mockImplementationOnce(async () => {
+      const receipt = await normal();
+      f.revoke();
+      return receipt;
+    });
+    expect((await f.app.inject({ url, headers: f.headers })).statusCode).toBe(
+      403,
+    );
+  } finally {
+    await f.app.close();
+  }
+});
 it("keeps receiving disabled by default and authenticates private configuration", async () => {
   const f = fixture(false);
   try {

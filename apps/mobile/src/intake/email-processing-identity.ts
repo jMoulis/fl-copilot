@@ -9,7 +9,16 @@ export function emailProcessingIdentity(
     actionId: string;
     processingId: string;
   },
-  target: "BATCH" | "ARCHIVE" | "ITEM" | "MESSAGE" | "COMMAND",
+  target:
+    | "BATCH"
+    | "ARCHIVE"
+    | "ITEM"
+    | "MESSAGE"
+    | "COMMAND"
+    | "SOURCE"
+    | "LOCAL_FILE"
+    | "RECEIPT"
+    | "UPLOAD",
 ) {
   const values = [
     scope.storeId,
