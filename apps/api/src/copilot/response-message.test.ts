@@ -310,3 +310,47 @@ it("persists compact destinations only when negotiated, retaining canonical fact
   ).toBeUndefined();
   expect(modern.ownerId).toBe(f.parent.ownerId);
 });
+
+it("keeps the initial request limit and rejects conflicting or oversized completed evidence", () => {
+  const f = fixture();
+  const evidence = Array.from({ length: 100 }, (_, index) => ({
+    id: `completed-${index}`,
+    sourceType: "KPI" as const,
+    sourceId: "daily",
+    sourceVersion: 1,
+    label: "Ventes",
+    value: index,
+    factKind: "OBSERVED" as const,
+  }));
+  expect(() =>
+    buildCopilotResponseMessage({
+      ...f,
+      request: {
+        ...f.request,
+        evidence: [...evidence, { ...evidence[0]!, id: "overflow" }],
+      },
+    }),
+  ).toThrow();
+  expect(() =>
+    buildCopilotResponseMessage({
+      ...f,
+      request: { ...f.request, evidence },
+      generation: {
+        ...f.generation,
+        evidence: [{ ...evidence[0]!, value: -1 }],
+      },
+    }),
+  ).toThrow("AMBIGUOUS_EVIDENCE");
+  expect(() =>
+    buildCopilotResponseMessage({
+      ...f,
+      generation: {
+        ...f.generation,
+        evidence: Array.from({ length: 1306 }, (_, index) => ({
+          ...evidence[0]!,
+          id: `overflow-${index}`,
+        })),
+      },
+    }),
+  ).toThrow("COPILOT_AI_INPUT_INVALID");
+});

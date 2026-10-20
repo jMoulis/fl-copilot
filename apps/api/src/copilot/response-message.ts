@@ -11,6 +11,7 @@ import {
 } from "./ai-provider.js";
 import {
   validateCopilotResponse,
+  mergeCopilotCompletedEvidence,
   copilotRequestEvidence,
   copilotResponseFallback,
   type generateCopilotResponse,
@@ -27,12 +28,12 @@ export function buildCopilotResponseMessage(input: {
   supportsAnalyticsDestinations?: boolean;
 }): CopilotMessage {
   const parent = copilotMessageSchema.parse(input.parent);
-  const request = copilotGenerationRequestSchema.parse({
-    ...input.request,
-    ...(input.generation.evidence
-      ? { evidence: input.generation.evidence }
-      : {}),
-  });
+  const request = copilotGenerationRequestSchema.parse(input.request);
+  if (input.generation.evidence)
+    request.evidence = mergeCopilotCompletedEvidence(
+      request,
+      input.generation.evidence,
+    );
   if (
     parent.role !== "USER" ||
     parent.storeId !== request.storeId ||

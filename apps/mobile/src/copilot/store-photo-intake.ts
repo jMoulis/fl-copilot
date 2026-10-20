@@ -231,8 +231,8 @@ const nativeStorage: StorePhotoIntakeStorage = {
       asset.mimeType
     )
       throw Error("STORE_PHOTO_INVALID");
-    const { Image } = await import("react-native");
-    const { width, height } = await Image.getSize(saved.localUri);
+    const { readNativeImageSize } = await import("../media/image-size");
+    const { width, height } = await readNativeImageSize(saved.localUri);
     if (
       !Number.isSafeInteger(width) ||
       !Number.isSafeInteger(height) ||

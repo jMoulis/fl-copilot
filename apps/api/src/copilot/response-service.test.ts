@@ -630,3 +630,103 @@ it("does not present the latest daily snapshot for an attachment-only request", 
   expect(result.response.facts).toEqual([]);
   expect(failures).toHaveLength(1);
 });
+
+it("keeps a valid analytical answer when a tool returns its supported 241 facts", async () => {
+  const r = request();
+  const facts = Array.from({ length: 241 }, (_, index) => ({
+    id: `query-fact-${index}`,
+    sourceType: "KPI" as const,
+    sourceId: "analytical-query",
+    sourceVersion: 1,
+    label: "Montant renseigné",
+    value: index,
+    factKind: "OBSERVED" as const,
+  }));
+  const provider = {
+    model: "fixture",
+    generate: vi.fn().mockResolvedValue({
+      output: {
+        ...answer,
+        facts: [{ evidenceId: facts[0]!.id }, { evidenceId: facts[240]!.id }],
+      },
+      toolEvidence: facts,
+      metadata: {
+        requestedModel: "fixture",
+        resolvedModel: "fixture",
+        responseId: "fixture",
+      },
+    }),
+  } as CopilotAiProvider;
+  const result = await generateCopilotResponse(provider, r);
+  expect(result.mode).toBe("AI");
+  expect(result.response.facts).toEqual([
+    { evidenceId: facts[0]!.id },
+    { evidenceId: facts[240]!.id },
+  ]);
+  expect(result.evidence).toHaveLength(241);
+});
+
+it("deduplicates overlapping initial and tool facts without relaxing initial input limits", async () => {
+  const r = request();
+  const fact = r.context.batch.candidates[0]!.evidence[0]!;
+  r.evidence = Array.from({ length: 100 }, (_, i) => ({
+    ...fact,
+    id: `initial-${i}`,
+  }));
+  const provider = {
+    model: "fixture",
+    generate: vi.fn().mockResolvedValue({
+      output: { ...answer, facts: [{ evidenceId: "initial-0" }] },
+      toolEvidence: [r.evidence[0]!],
+      metadata: null,
+    }),
+  } as CopilotAiProvider;
+  const result = await generateCopilotResponse(provider, r);
+  expect(result.mode).toBe("AI");
+  expect(result.evidence).toHaveLength(100);
+  provider.generate = vi.fn();
+  await expect(
+    generateCopilotResponse(provider, {
+      ...r,
+      evidence: [...r.evidence, { ...fact, id: "extra" }],
+    }),
+  ).rejects.toThrow();
+  expect(provider.generate).not.toHaveBeenCalled();
+});
+
+it("refuses invalid, oversized or conflicting completed facts instead of trusting the model", async () => {
+  const { COPILOT_TOOL_EVIDENCE_LIMIT } = await import("./generation-limits");
+  const r = request(),
+    fact = r.context.batch.candidates[0]!.evidence[0]!;
+  r.evidence = [fact];
+  for (const [toolEvidence, code] of [
+    [[{ ...fact, value: 99 }], "AMBIGUOUS_EVIDENCE"],
+    [[{ ...fact, sourceVersion: -1 }], "COPILOT_AI_INPUT_INVALID"],
+    [
+      Array.from({ length: COPILOT_TOOL_EVIDENCE_LIMIT + 1 }, (_, i) => ({
+        ...fact,
+        id: `excess-${i}`,
+      })),
+      "COPILOT_AI_INPUT_INVALID",
+    ],
+  ] as const) {
+    const failures: CopilotGenerationFailure[] = [];
+    const provider = {
+      model: "fixture",
+      generate: vi
+        .fn()
+        .mockResolvedValue({ output: answer, toolEvidence, metadata: null }),
+    } as CopilotAiProvider;
+    const result = await generateCopilotResponse(
+      provider,
+      r,
+      undefined,
+      undefined,
+      undefined,
+      (f) => failures.push(f),
+    );
+    expect(result.mode).toBe("FALLBACK");
+    expect(result.evidence).toEqual([fact]);
+    expect(failures[0]?.code).toBe(code);
+  }
+});

@@ -1,3 +1,9 @@
+import { z } from "zod";
+import { copilotEvidenceSchema } from "@fl-copilot/domain";
+import {
+  COPILOT_TOOL_EVIDENCE_LIMIT,
+  COPILOT_COMPLETED_EVIDENCE_LIMIT,
+} from "./generation-limits";
 import {
   sameCopilotEvidence,
   preferEvidenceNavigation,
@@ -16,6 +22,13 @@ import {
   type CopilotGenerationMetadata,
   type CopilotAiErrorCode,
 } from "./ai-provider.js";
+
+const completedToolEvidenceSchema = z
+  .array(copilotEvidenceSchema)
+  .max(COPILOT_TOOL_EVIDENCE_LIMIT);
+const completedEvidenceSchema = z
+  .array(copilotEvidenceSchema)
+  .max(COPILOT_COMPLETED_EVIDENCE_LIMIT);
 
 export class CopilotGroundingError extends Error {
   constructor(
@@ -45,6 +58,26 @@ export function copilotRequestEvidence(request: CopilotGenerationRequest) {
     ...(request.evidence ?? []),
     ...request.context.batch.candidates.flatMap((c) => c.evidence),
   ];
+}
+/** Completed server reads retain their own bound through rendering/persistence.
+ * Keep the initial request's smaller limit and reject conflicting source facts. */
+export function mergeCopilotCompletedEvidence(
+  request: CopilotGenerationRequest,
+  raw: unknown,
+) {
+  const parsed = completedEvidenceSchema.safeParse(raw);
+  if (!parsed.success)
+    throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
+  const merged = new Map<string, z.infer<typeof copilotEvidenceSchema>>();
+  for (const item of [...(request.evidence ?? []), ...parsed.data]) {
+    const previous = merged.get(item.id);
+    if (previous && !sameCopilotEvidence(previous, item))
+      throw new CopilotGroundingError("AMBIGUOUS_EVIDENCE");
+    merged.set(item.id, preferEvidenceNavigation(previous, item));
+  }
+  if (merged.size > COPILOT_COMPLETED_EVIDENCE_LIMIT)
+    throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
+  return [...merged.values()];
 }
 /** Strict first-stage grounding: figures stay in application-rendered evidence. */
 export function validateCopilotResponse(
@@ -368,14 +401,16 @@ export async function generateCopilotResponse(
     );
     completed = generated;
     if (generated.toolEvidence) {
-      const updated = copilotGenerationRequestSchema.safeParse({
-        ...request,
-        evidence: [...(request.evidence ?? []), ...generated.toolEvidence],
-      });
-      if (!updated.success)
+      // The initial input's 100-fact ceiling does not apply to completed reads.
+      // Validate the bounded server tool pool, then merge stable facts by identity.
+      const parsed = completedToolEvidenceSchema.safeParse(
+        generated.toolEvidence,
+      );
+      if (!parsed.success)
         throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
-      request.evidence = updated.data.evidence;
+      request.evidence = mergeCopilotCompletedEvidence(request, parsed.data);
     }
+
     if (signal?.aborted)
       throw new CopilotAiError("COPILOT_AI_CANCELLED", false);
     return {

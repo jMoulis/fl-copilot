@@ -124,10 +124,10 @@ async function inspect(
 ): Promise<SourceOriginalProof> {
   await verifyFile(file, manifest);
   if (manifest.sourceType === "STORE_PHOTO") {
-    const { Image } = await import("react-native");
+    const { readNativeImageSize } = await import("../media/image-size");
     let dimensions;
     try {
-      dimensions = await Image.getSize(file.uri);
+      dimensions = await readNativeImageSize(file.uri);
     } catch {
       throw invalid();
     }

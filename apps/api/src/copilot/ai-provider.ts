@@ -1,4 +1,9 @@
 import {
+  COPILOT_INITIAL_EVIDENCE_LIMIT,
+  COPILOT_TOOL_READ_LIMIT,
+  COPILOT_READ_EVIDENCE_LIMIT,
+} from "./generation-limits";
+import {
   sameCopilotEvidence,
   preferEvidenceNavigation,
 } from "./evidence-identity";
@@ -271,7 +276,10 @@ export const copilotGenerationRequestSchema = z
         entries: z.array(copilotKnowledgeSchema).max(20),
       })
       .optional(),
-    evidence: z.array(copilotEvidenceSchema).max(100).optional(),
+    evidence: z
+      .array(copilotEvidenceSchema)
+      .max(COPILOT_INITIAL_EVIDENCE_LIMIT)
+      .optional(),
     answeredInformation: z
       .strictObject({
         formId: z.string().uuid(),
@@ -855,7 +863,7 @@ export function createCopilotAiProvider(
             message:
               "Les données demandées ne peuvent pas être consultées maintenant. Ne les inventez pas.",
           };
-          if (++readCalls > 5 || abortSignal.aborted) {
+          if (++readCalls > COPILOT_TOOL_READ_LIMIT || abortSignal.aborted) {
             completeFactTrace = false;
             return unavailable;
           }
@@ -909,7 +917,11 @@ export function createCopilotAiProvider(
             pending.set(key, work);
           }
           const value = await work;
-          if (!("evidence" in value) || abortSignal.aborted) {
+          if (
+            !("evidence" in value) ||
+            value.evidence.length > COPILOT_READ_EVIDENCE_LIMIT ||
+            abortSignal.aborted
+          ) {
             completeFactTrace = false;
             return unavailable;
           }

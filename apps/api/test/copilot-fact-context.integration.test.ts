@@ -1,3 +1,4 @@
+import { readAnalyticsQuery } from "../src/copilot/analytics-query-tool";
 import { commercialExecutionFixture } from "../../../scripts/test-commercial-execution-fixtures";
 import { readDailyAnalysis } from "../src/copilot/daily-analysis-tool";
 import { readProductAnalysis } from "../src/copilot/product-analysis-tool";
@@ -82,25 +83,27 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         complete: mode !== "INCOMPLETE",
       };
       if (mode === "INVALID") trace.reads[0]!.digest = "invalid";
-      const generate = vi.fn(async () => ({
-        output: {
-          language: "fr-FR",
-          summary: f.source.text,
-          facts: [],
-          interpretation: [],
-          recommendations: [],
-          questions: [],
-        },
-        metadata: {
-          requestedModel: "test",
-          resolvedModel: "test",
-          responseId: "fact-test",
-          inputTokens: null,
-          outputTokens: null,
-        },
-        toolEvidence: result.evidence,
-        ...(mode === "LEGACY" ? {} : { factTrace: trace }),
-      }));
+      const generate = vi.fn<() => ReturnType<CopilotAiProvider["generate"]>>(
+        async () => ({
+          output: {
+            language: "fr-FR",
+            summary: f.source.text,
+            facts: [],
+            interpretation: [],
+            recommendations: [],
+            questions: [],
+          },
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: "fact-test",
+            inputTokens: null,
+            outputTokens: null,
+          },
+          toolEvidence: result.evidence,
+          ...(mode === "LEGACY" ? {} : { factTrace: trace }),
+        }),
+      );
       const deps = {
         db,
         provider: { model: "test", generate } as CopilotAiProvider,
@@ -465,6 +468,92 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .collection("productDailyPerformance")
           .findOne({ _id: f.performance._id as never }),
       ).toEqual(f.performance);
+    }, 60000);
+    it("persists and replays a real 20-product three-metric analytical answer with 241 source facts", async () => {
+      const f = await fixture();
+      const ids = Array.from({ length: 20 }, () => randomUUID());
+      await db.collection<Document & { _id: string }>("products").insertMany(
+        ids.map((id, index) => ({
+          _id: id,
+          storeId: f.storeId,
+          label: `Produit analytique ${index}`,
+          category: "FRUIT",
+          nature: "BULK",
+        })),
+      );
+      await db
+        .collection<Document & { _id: string }>("productDailyPerformance")
+        .insertMany(
+          ids.flatMap((id) => [
+            actionReviewPerformance(f.storeId, id, "2026-10-15", "100", "3"),
+            actionReviewPerformance(f.storeId, id, "2026-10-14", "50", "1"),
+          ]),
+        );
+      const query = {
+        currentPeriod: { start: "2026-10-15", end: "2026-10-15" },
+        referencePeriod: { start: "2026-10-14", end: "2026-10-14" },
+        groupBy: "PRODUCT",
+        metrics: ["sales", "margin", "waste"],
+        aggregation: "SUM",
+        filters: {
+          productIds: ids,
+          labelContains: null,
+          category: null,
+          nature: null,
+        },
+        having: null,
+        sort: { metric: "sales", value: "CURRENT", direction: "DESC" },
+        offset: 0,
+        limit: 20,
+      };
+      const result = await readAnalyticsQuery(db, f.storeId, query);
+      expect(result.rows).toHaveLength(20);
+      expect(result.evidence).toHaveLength(241);
+      const before = await db
+        .collection("productDailyPerformance")
+        .find({ storeId: f.storeId })
+        .sort({ _id: 1 })
+        .toArray();
+      const outputFacts = [result.evidence[0]!, result.evidence[240]!];
+      f.generate.mockResolvedValueOnce({
+        output: {
+          language: "fr-FR",
+          summary: "Le classement analytique est prêt.",
+          facts: outputFacts.map((e) => ({ evidenceId: e.id })),
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "fixture",
+          resolvedModel: "fixture",
+          responseId: "analytical-fixture",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        toolEvidence: result.evidence,
+        factTrace: { reads: [], complete: false },
+      });
+      const first = await runCopilotTurn(f.deps, f.turn);
+      expect(first.message.text).toContain(
+        "Le classement analytique est prêt.",
+      );
+      for (const fact of outputFacts)
+        expect(first.message.text).toContain(fact.label);
+      expect((await runCopilotTurn(f.deps, f.turn)).alreadyApplied).toBe(true);
+      expect(f.generate).toHaveBeenCalledTimes(1);
+      expect(
+        await db
+          .collection("copilotMessages")
+          .countDocuments({ _id: f.turn.replyId as never }),
+      ).toBe(1);
+      expect(
+        await db
+          .collection("productDailyPerformance")
+          .find({ storeId: f.storeId })
+          .sort({ _id: 1 })
+          .toArray(),
+      ).toEqual(before);
     }, 60000);
   },
 );
