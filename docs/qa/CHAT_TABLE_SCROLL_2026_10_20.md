@@ -21,3 +21,7 @@ Screenshots and the disposable harness are in the task artifact directory `artif
 ## Delivery and remaining acceptance
 
 This is a native-only correction for M7 workstream 7. Keep the grouped-release policy: no API deployment or paid EAS build for this isolated UI change. The already issued native build 3 does not include this correction. Deliver it in the next coherent native batch. Device acceptance must confirm horizontal drags starting on a table cell, continued vertical conversation scrolling, stationary long-press Copy/Delete, and source taps, with the keyboard open and closed. Native iOS and Android gesture acceptance remains open; a browser check is not a substitute.
+
+## Owner feedback — 20 October 2026
+
+Julien reports “Le slide fonctionne 👍”, accepting horizontal table scrolling on the owner iPhone. The installed build number is not explicitly identified in this feedback. Do not infer source/copy/keyboard/other-gesture or Android acceptance, or full grouped-release acceptance. The local artifact records the precise feedback separately from broader native gates.

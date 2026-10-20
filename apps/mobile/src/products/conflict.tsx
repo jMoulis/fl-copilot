@@ -87,7 +87,8 @@ export function ProductMasterConflict({
         : decision === "ADOPT_REMOTE"
           ? review?.policy.activateRemote
           : false,
-    needsExtra = reactivate || activate;
+    deletion = decision === "ADOPT_REMOTE" && !!review?.policy.remoteDeleted,
+    needsExtra = reactivate || activate || deletion;
   async function confirm() {
     if (
       locked.current ||
@@ -116,6 +117,7 @@ export function ProductMasterConflict({
           reviewHash: review.hash,
           reactivateRejected: !!reactivate && extra,
           activateProduct: !!activate && extra,
+          acceptRemoteDeletion: deletion && extra,
           canResolve: () => authority.current,
           signal: cancel.signal,
         },
@@ -145,7 +147,7 @@ export function ProductMasterConflict({
   }
   if (!allowed)
     return (
-      <Text>
+      <Text style={{ color: colors.ink }}>
         La résolution du référentiel nécessite les droits de responsable du
         magasin.
       </Text>
@@ -174,10 +176,11 @@ export function ProductMasterConflict({
         borderRadius: 12,
         borderColor: colors.forest,
         opacity: enabled ? 1 : 0.45,
-        backgroundColor: decision === value ? colors.positiveSoft : "white",
+        backgroundColor:
+          decision === value ? colors.positiveSoft : colors.surface,
       }}
     >
-      <Text>{label}</Text>
+      <Text style={{ color: colors.ink }}>{label}</Text>
     </Pressable>
   );
   return (
@@ -195,32 +198,40 @@ export function ProductMasterConflict({
       ) : null}
       {review ? (
         <>
-          <Text style={{ fontWeight: "700" }}>Votre version actuelle</Text>
-          <Text>
+          <Text style={{ color: colors.ink, fontWeight: "700" }}>
+            Votre version actuelle
+          </Text>
+          <Text style={{ color: colors.ink }}>
             {catalogueConflictSummary(
               review.kind,
               review.current.entity,
               review.policy.products,
             )}
           </Text>
-          <Text style={{ fontWeight: "700" }}>Version synchronisée</Text>
-          <Text>
+          <Text style={{ color: colors.ink, fontWeight: "700" }}>
+            Version synchronisée
+          </Text>
+          <Text style={{ color: colors.ink }}>
             {catalogueConflictSummary(
               review.kind,
               review.remote,
               review.policy.products,
             )}
           </Text>
-          <Text>
+          <Text style={{ color: colors.ink }}>
             Les autres fiches, codes, associations et données historiques
             restent conservés. Pour un alias, la confiance synchronisée est
             préservée.
           </Text>
-          {review.reason ? <Text>{review.reason}</Text> : null}
+          {review.reason ? (
+            <Text style={{ color: colors.ink }}>{review.reason}</Text>
+          ) : null}
           {choice("KEEP_LOCAL", "Conserver ma version locale", review.canKeep)}
           {choice(
             "ADOPT_REMOTE",
-            "Adopter la version synchronisée",
+            review.policy.remoteDeleted
+              ? "Accepter la suppression synchronisée"
+              : "Adopter la version synchronisée",
             review.canAdopt,
           )}
           {needsExtra ? (
@@ -230,17 +241,21 @@ export function ProductMasterConflict({
               <Switch
                 disabled={busy}
                 accessibilityLabel={
-                  activate
-                    ? "Je confirme la remise en activité du produit"
-                    : "Je confirme la réactivation de l’alias refusé"
+                  deletion
+                    ? "Je confirme l’acceptation de la suppression synchronisée"
+                    : activate
+                      ? "Je confirme la remise en activité du produit"
+                      : "Je confirme la réactivation de l’alias refusé"
                 }
                 value={extra}
                 onValueChange={setExtra}
               />
-              <Text style={{ flex: 1 }}>
-                {activate
-                  ? "Je confirme la remise en activité du produit."
-                  : "Je confirme la réactivation de l’alias refusé."}
+              <Text style={{ color: colors.ink, flex: 1 }}>
+                {deletion
+                  ? "Je confirme cette suppression. Ma saisie locale reste conservée sur cet appareil pour traçabilité."
+                  : activate
+                    ? "Je confirme la remise en activité du produit."
+                    : "Je confirme la réactivation de l’alias refusé."}
               </Text>
             </View>
           ) : null}
@@ -251,7 +266,7 @@ export function ProductMasterConflict({
               value={compared}
               onValueChange={setCompared}
             />
-            <Text style={{ flex: 1 }}>
+            <Text style={{ color: colors.ink, flex: 1 }}>
               J’ai comparé les deux versions et je confirme mon choix.
             </Text>
           </View>
@@ -277,7 +292,7 @@ export function ProductMasterConflict({
                   : 1,
             }}
           >
-            <Text style={{ color: "white", textAlign: "center" }}>
+            <Text style={{ color: colors.onAccent, textAlign: "center" }}>
               {busy ? "Enregistrement…" : "Confirmer cette résolution"}
             </Text>
           </Pressable>

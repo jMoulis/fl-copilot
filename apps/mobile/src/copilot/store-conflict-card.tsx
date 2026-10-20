@@ -103,9 +103,11 @@ export function StoreConflictCard({
         !!reactivationRequired &&
           !retentionRequired &&
           !activationRequired &&
+          !deletionRequired &&
           reactivateRejected,
         !!retentionRequired && reactivateRejected,
         !!activationRequired && reactivateRejected,
+        !!deletionRequired && reactivateRejected,
       );
       if (revision.current === v) setState(next);
     } catch {
@@ -138,7 +140,10 @@ export function StoreConflictCard({
       : decision === "ADOPT_REMOTE"
         ? review?.cataloguePolicy?.activateRemote
         : false;
+  const deletionRequired =
+    decision === "ADOPT_REMOTE" && !!review?.cataloguePolicy?.remoteDeleted;
   const reactivationRequired =
+    deletionRequired ||
     activationRequired ||
     retentionRequired ||
     (decision === "KEEP_LOCAL"
@@ -224,7 +229,8 @@ export function StoreConflictCard({
         borderColor: colors.forest,
         borderRadius: 12,
         opacity: enabled ? 1 : 0.45,
-        backgroundColor: decision === value ? colors.positiveSoft : "white",
+        backgroundColor:
+          decision === value ? colors.positiveSoft : colors.surface,
       }}
     >
       <Text style={{ color: colors.forest, fontWeight: "600" }}>{label}</Text>
@@ -265,9 +271,11 @@ export function StoreConflictCard({
       {review ? (
         <>
           <Text style={{ fontWeight: "600" }}>Votre version actuelle</Text>
-          <Text>{summary(review.current.entity)}</Text>
+          <Text style={{ color: colors.ink }}>
+            {summary(review.current.entity)}
+          </Text>
           <Text style={{ fontWeight: "600" }}>Version synchronisée</Text>
-          <Text>
+          <Text style={{ color: colors.ink }}>
             {review.remote ? summary(review.remote) : "Version indisponible."}
           </Text>
         </>
@@ -301,7 +309,7 @@ export function StoreConflictCard({
             state.content.basis.reference.after,
           ].map((source) => (
             <View key={source.documentId} style={{ gap: 6 }}>
-              <Text>
+              <Text style={{ color: colors.ink }}>
                 {review?.commercialDecisionPolicy?.documents[
                   source.documentId
                 ] ?? `PDF ${source.checksum.slice(-8)}`}
@@ -325,37 +333,36 @@ export function StoreConflictCard({
       {state?.status === "READY" && review ? (
         <>
           {state.content.input.kind === "FIELD_EVENT" ? (
-            <Text>
+            <Text style={{ color: colors.ink }}>
               La capture initiale reste immuable. Seule votre heure de fin peut
               être conservée si les captures correspondent.
             </Text>
           ) : state.content.input.kind === "SETTINGS" ? (
-            <Text>
+            <Text style={{ color: colors.ink }}>
               Ce choix retient un réglage déjà enregistré. Il ne demande pas de
               nouvelle position au téléphone.
             </Text>
           ) : review.cataloguePolicy ? (
-            <Text>
-              Seule la version choisie de cette fiche ou identité est retenue.
-              Les autres codes et associations restent conservés. Pour un alias,
-              la confiance synchronisée est préservée ; une réactivation exige
-              une confirmation distincte.
+            <Text style={{ color: colors.ink }}>
+              {review.cataloguePolicy.remoteDeleted
+                ? "La suppression concerne uniquement cette fiche ou identité. Les ventes, la casse et les sources restent inchangées."
+                : "Seule la version choisie de cette fiche ou identité est retenue. Les autres codes et associations restent conservés. Pour un alias, la confiance synchronisée est préservée ; une réactivation exige une confirmation distincte."}
             </Text>
           ) : review.commercialDecisionPolicy ? (
-            <Text>
+            <Text style={{ color: colors.ink }}>
               {state.content.input.kind === "COMMERCIAL_REFERENCE"
                 ? "Votre choix porte sur le fichier désigné, même si l’ordre des deux PDF diffère. Les originaux et les plans déjà enregistrés restent conservés."
                 : "Vous retenez une déclaration déjà enregistrée, avec sa date d’origine. Elle reste liée à la version exacte du plan ; ce choix ne constate pas une nouvelle exécution en rayon."}
             </Text>
           ) : review.commercialPolicy ? (
-            <Text>
+            <Text style={{ color: colors.ink }}>
               Les sources restent conservées. Conserver un plan reconstruit ses
               offres et opérations après vérification ; aucune exécution en
               rayon n’est déclarée. Les validations antérieures peuvent
               nécessiter une nouvelle revue.
             </Text>
           ) : (
-            <Text>
+            <Text style={{ color: colors.ink }}>
               {state.content.input.kind === "SUBSTITUTION"
                 ? "La relation garde son sens. Conserver votre version retient vos déclarations ; les scores appris synchronisés sont préservés."
                 : "Les identités et l’historique restent conservés. Réactiver une association rejetée nécessite une confirmation distincte."}
@@ -372,20 +379,28 @@ export function StoreConflictCard({
           )}
           {choice(
             "ADOPT_REMOTE",
-            "Adopter la version synchronisée",
+            review.cataloguePolicy?.remoteDeleted
+              ? "Accepter la suppression synchronisée"
+              : "Adopter la version synchronisée",
             review.canAdoptRemote,
           )}
           {review.cataloguePolicy && !review.canKeepLocal ? (
-            <Text>{review.cataloguePolicy.reason}</Text>
+            <Text style={{ color: colors.ink }}>
+              {review.cataloguePolicy.reason}
+            </Text>
           ) : null}
           {review.commercialDecisionPolicy && !review.canKeepLocal ? (
-            <Text>{review.commercialDecisionPolicy.reason}</Text>
+            <Text style={{ color: colors.ink }}>
+              {review.commercialDecisionPolicy.reason}
+            </Text>
           ) : null}
           {review.commercialPolicy && !review.canKeepLocal ? (
-            <Text>{review.commercialPolicy.reason}</Text>
+            <Text style={{ color: colors.ink }}>
+              {review.commercialPolicy.reason}
+            </Text>
           ) : null}
           {review.needPolicy && !review.canKeepLocal ? (
-            <Text>
+            <Text style={{ color: colors.ink }}>
               La version locale ne peut pas être renvoyée : vérifiez les
               identités et l’état des produits ou du besoin.
             </Text>
@@ -396,22 +411,26 @@ export function StoreConflictCard({
             >
               <Switch
                 accessibilityLabel={
-                  activationRequired
-                    ? "Je confirme explicitement la remise en activité du produit"
-                    : retentionRequired
-                      ? "Je confirme explicitement de retenir cette offre retirée"
-                      : "Je confirme explicitement la réactivation de cette association rejetée"
+                  deletionRequired
+                    ? "Je confirme l’acceptation de la suppression synchronisée"
+                    : activationRequired
+                      ? "Je confirme explicitement la remise en activité du produit"
+                      : retentionRequired
+                        ? "Je confirme explicitement de retenir cette offre retirée"
+                        : "Je confirme explicitement la réactivation de cette association rejetée"
                 }
                 disabled={saving}
                 value={reactivateRejected}
                 onValueChange={setReactivateRejected}
               />
-              <Text style={{ flex: 1 }}>
-                {activationRequired
-                  ? "Je confirme explicitement la remise en activité du produit."
-                  : retentionRequired
-                    ? "Cette offre a été retirée. Je confirme explicitement de la retenir à nouveau."
-                    : "Cette association a été rejetée. Je confirme explicitement sa réactivation."}
+              <Text style={{ color: colors.ink, flex: 1 }}>
+                {deletionRequired
+                  ? "Je confirme cette suppression. Ma saisie locale reste conservée sur cet appareil pour traçabilité."
+                  : activationRequired
+                    ? "Je confirme explicitement la remise en activité du produit."
+                    : retentionRequired
+                      ? "Cette offre a été retirée. Je confirme explicitement de la retenir à nouveau."
+                      : "Cette association a été rejetée. Je confirme explicitement sa réactivation."}
               </Text>
             </View>
           ) : null}
@@ -422,7 +441,7 @@ export function StoreConflictCard({
               disabled={saving || !decision}
               onValueChange={setReviewed}
             />
-            <Text style={{ flex: 1 }}>
+            <Text style={{ color: colors.ink, flex: 1 }}>
               J’ai comparé les deux versions et je confirme mon choix.
             </Text>
           </View>

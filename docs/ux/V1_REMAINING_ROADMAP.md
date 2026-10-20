@@ -170,3 +170,7 @@ L10/M8 continuation — illustration copies: private preparations and bundles fr
 ## Illustration — confirmation et suivi durables (20 octobre)
 
 L10 progresse avec le devis privé signé, la confirmation locale explicite et les réservations d’estimation limitées par jour, puis un seul appel par décision et la récupération du même original. Suivi et restauration utilisent les mécanismes existants ; l’ancienne comparaison reste disponible si le nouveau téléchargement échoue. Le prix affiché est une estimation configurée et non un plafond de facture. Aucun modèle réel, fournisseur ou paiement n’est activé. Voir `../qa/STORE_LAYOUT_ILLUSTRATION_GENERATION_2026_10_20.md`. Qualité réelle, activation/budget, recette native et pilote mesuré restent requis ; aucun lot V1/M8 n’est déclaré terminé.
+
+## L7/L5 — suppression distante connue dans une comparaison (20 octobre)
+
+Le chat et la comparaison manuelle du référentiel distinguent une suppression prouvée d’une donnée indisponible. Acceptation explicite, conservation locale des versions/anciennes commandes, pas de réactivation ni nouvel envoi ; reprise idempotente et refus des versions plus récentes. Le résumé indique « Supprimé du référentiel » et réutilise le thème sombre. QA : `../qa/M7_CATALOGUE_DELETION_CONFLICTS_2026_10_20.md`. Les autres absences/refus et la recette native restent ouverts ; aucun lot complet V1/M8 n’est déclaré clos.
