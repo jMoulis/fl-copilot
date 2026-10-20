@@ -83,33 +83,42 @@ function mimeTypeForExtension(extension: string) {
   return `image/${extension}`;
 }
 
-const nativeWasteReceiptCaptureStorage: WasteReceiptCaptureStorage = {
-  async persist({ temporaryUri, filename, mimeType, removeSourceAfterCopy }) {
-    const { Directory, File, Paths } = await import("expo-file-system");
-    const { CryptoDigestAlgorithm, digest } = await import("expo-crypto");
-    const directory = new Directory(
-      Paths.document,
-      WASTE_RECEIPT_CAPTURE_DIRECTORY,
-    );
-    directory.create({ idempotent: true, intermediates: true });
+export function nativeImageCaptureStorage(
+  directoryName: "waste-receipts" | "store-photos",
+  maximumBytes = Number.MAX_SAFE_INTEGER,
+): WasteReceiptCaptureStorage {
+  return {
+    async persist({ temporaryUri, filename, mimeType, removeSourceAfterCopy }) {
+      const { Directory, File, Paths } = await import("expo-file-system");
+      const { CryptoDigestAlgorithm, digest } = await import("expo-crypto");
+      const directory = new Directory(Paths.document, directoryName);
+      directory.create({ idempotent: true, intermediates: true });
 
-    const source = new File(temporaryUri);
-    if (!source.exists) throw new Error("WASTE_CAPTURE_TEMPORARY_FILE_MISSING");
+      const source = new File(temporaryUri);
+      if (!source.exists)
+        throw new Error("WASTE_CAPTURE_TEMPORARY_FILE_MISSING");
 
-    const destination = new File(directory, filename);
-    await source.copy(destination);
-    if (!destination.exists) throw new Error("WASTE_CAPTURE_COPY_FAILED");
-    const bytes = await destination.bytes();
-    const hash = await digest(CryptoDigestAlgorithm.SHA256, bytes);
-    const checksum = `sha256:${Array.from(new Uint8Array(hash), (byte) =>
-      byte.toString(16).padStart(2, "0"),
-    ).join("")}`;
-    if (removeSourceAfterCopy && source.exists) source.delete();
-    return {
-      localUri: destination.uri,
-      mimeType,
-      sizeBytes: destination.size,
-      checksum,
-    };
-  },
-};
+      const destination = new File(directory, filename);
+      await source.copy(destination);
+      if (!destination.exists) throw new Error("WASTE_CAPTURE_COPY_FAILED");
+      if (destination.size <= 0 || destination.size > maximumBytes)
+        throw Error("SOURCE_IMAGE_SIZE_LIMIT");
+      const bytes = await destination.bytes();
+      if (bytes.length > maximumBytes) throw Error("SOURCE_IMAGE_SIZE_LIMIT");
+      const hash = await digest(CryptoDigestAlgorithm.SHA256, bytes);
+      const checksum = `sha256:${Array.from(new Uint8Array(hash), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("")}`;
+      if (removeSourceAfterCopy && source.exists) source.delete();
+      return {
+        localUri: destination.uri,
+        mimeType,
+        sizeBytes: destination.size,
+        checksum,
+      };
+    },
+  };
+}
+const nativeWasteReceiptCaptureStorage = nativeImageCaptureStorage(
+  WASTE_RECEIPT_CAPTURE_DIRECTORY,
+);

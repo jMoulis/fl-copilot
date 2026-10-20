@@ -27,11 +27,13 @@ export interface SourceUploadTransport {
   init(
     storeId: string,
     input: InitSourceUploadRequest,
+    expectedOwnerId?: string,
   ): Promise<InitSourceUploadResponse>;
   complete(
     storeId: string,
     uploadId: string,
     input: CompleteSourceUploadRequest,
+    expectedOwnerId?: string,
   ): Promise<CompleteSourceUploadResponse>;
   verify(
     storeId: string,
@@ -60,6 +62,7 @@ type UploadJobPayload = {
   storeId: string;
   sourceDocumentId: string;
   localFileId: string;
+  ownerId?: string;
 };
 
 type PendingUploadRow = {
@@ -89,7 +92,7 @@ export class SourceUploadQueue {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  process(storeId: string) {
+  process(storeId: string, ownerId?: string) {
     let cycles = activeUploadCycles.get(this.database);
     if (!cycles) {
       cycles = new Map();
@@ -97,22 +100,23 @@ export class SourceUploadQueue {
     }
     const active = cycles.get(storeId);
     if (active) return active;
-    const run = this.processPending(storeId).finally(() => {
+    const run = this.processPending(storeId, ownerId).finally(() => {
       if (cycles.get(storeId) === run) cycles.delete(storeId);
     });
     cycles.set(storeId, run);
     return run;
   }
 
-  private async processPending(storeId: string) {
+  private async processPending(storeId: string, ownerId?: string) {
     await new SourceDocumentRepository(
       this.database,
     ).ensureCommercialPdfUploads(storeId);
     // No cycle is running for this database/store. Recover a claim left by app termination.
     await this.database.runAsync(
-      `UPDATE local_jobs SET status = 'RETRY', next_attempt_at = NULL, last_error = 'SOURCE_UPLOAD_INTERRUPTED', updated_at = ? WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND status = 'RUNNING' AND json_extract(payload_json, '$.storeId') = ?`,
+      `UPDATE local_jobs SET status = 'RETRY', next_attempt_at = NULL, last_error = 'SOURCE_UPLOAD_INTERRUPTED', updated_at = ? WHERE type = 'SOURCE_UPLOAD_AND_REGISTER' AND status = 'RUNNING' AND json_extract(payload_json, '$.storeId') = ? AND (json_extract(payload_json,'$.ownerId') IS NULL OR json_extract(payload_json,'$.ownerId')=?)`,
       this.now().toISOString(),
       storeId,
+      ownerId ?? null,
     );
     const rows = await this.database.getAllAsync<PendingUploadRow>(
       `
@@ -133,10 +137,12 @@ export class SourceUploadQueue {
           AND d.deleted_at IS NULL AND f.store_id = d.store_id
           AND f.source_document_id = d.id AND f.checksum = d.checksum
           AND f.retention_status = 'RETAINED'
+          AND (d.source_type!='STORE_PHOTO' OR json_extract(j.payload_json,'$.ownerId')=?)
         ORDER BY j.created_at, j.id
       `,
       this.now().toISOString(),
       storeId,
+      ownerId ?? null,
     );
 
     let confirmed = 0;
@@ -175,14 +181,18 @@ export class SourceUploadQueue {
     );
 
     try {
-      const init = await this.transport.init(storeId, {
+      const initInput = {
         sourceDocumentId: payload.sourceDocumentId,
         sourceType: row.source_type,
         filename: row.original_filename,
         mimeType: row.mime_type,
         sizeBytes: row.size_bytes,
         checksum: row.checksum,
-      });
+      };
+      const init =
+        row.source_type === "STORE_PHOTO"
+          ? await this.transport.init(storeId, initInput, payload.ownerId)
+          : await this.transport.init(storeId, initInput);
       if (init.status === "UPLOAD_REQUIRED") {
         if (!init.uploadUrl) throw new Error("SOURCE_UPLOAD_URL_MISSING");
         const uploadedFile = await this.uploader.upload({
@@ -207,10 +217,23 @@ export class SourceUploadQueue {
           storeId,
         );
       }
-      const result = await this.transport.complete(storeId, init.uploadId, {
+      const completeInput = {
         checksum: row.checksum,
         sizeBytes: row.size_bytes,
-      });
+      };
+      const result =
+        row.source_type === "STORE_PHOTO"
+          ? await this.transport.complete(
+              storeId,
+              init.uploadId,
+              completeInput,
+              payload.ownerId,
+            )
+          : await this.transport.complete(
+              storeId,
+              init.uploadId,
+              completeInput,
+            );
       if (result.remoteUploadStatus !== "CONFIRMED") {
         await this.markInvalid(row.job_id, payload, storeId);
         return false;
@@ -665,9 +688,11 @@ const nativeBinaryUploader: SourceBinaryUploader = {
           input.localUri,
           input.sourceType === "WASTE_RECEIPT"
             ? "waste-receipts"
-            : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
-              ? "commercial-pdfs"
-              : "mercalys-imports",
+            : input.sourceType === "STORE_PHOTO"
+              ? "store-photos"
+              : input.sourceType === "WEEKLY_COMMERCIAL_PDF"
+                ? "commercial-pdfs"
+                : "mercalys-imports",
         ),
         filename,
       );

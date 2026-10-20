@@ -18,7 +18,7 @@ export async function readPendingWork(
   }>(
     `SELECT type,status,COUNT(*) AS count,MAX(last_error) AS last_error FROM local_jobs
  WHERE json_extract(payload_json,'$.storeId')=? AND status IN ('PENDING','RETRY','RUNNING','FAILED')
- AND (type NOT IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER') OR json_extract(payload_json,'$.ownerId')=?)
+ AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
  GROUP BY type,status ORDER BY type,status LIMIT 20`,
     storeId,
     ownerId ?? null,

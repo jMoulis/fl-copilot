@@ -161,3 +161,4 @@ export * from "./analytics-destination-table";
 
 export * from "./visual-id";
 export * from "./visual-conflict";
+export * from "./store-photo";

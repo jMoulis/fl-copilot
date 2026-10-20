@@ -113,9 +113,14 @@ describe("source upload routes", () => {
           headers: { "content-type": input.mimeType },
         };
       },
-      complete: async (authorizedStoreId, authorizedUploadId, input) => {
+      complete: async (
+        authorizedStoreId,
+        authorizedUploadId,
+        input,
+        actorId,
+      ) => {
         calls.push(
-          `complete:${authorizedStoreId}:${authorizedUploadId}:${input.sizeBytes}`,
+          `complete:${authorizedStoreId}:${authorizedUploadId}:${input.sizeBytes}:${actorId}`,
         );
         return {
           sourceDocumentId,
@@ -170,7 +175,7 @@ describe("source upload routes", () => {
     });
     expect(calls).toEqual([
       `init:${storeId}:77777777-7777-4777-8777-777777777777:${sourceDocumentId}`,
-      `complete:${storeId}:${uploadId}:27700`,
+      `complete:${storeId}:${uploadId}:27700:77777777-7777-4777-8777-777777777777`,
     ]);
   });
 

@@ -12,6 +12,7 @@ export const sourceTypeSchema = z.enum([
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
   "WASTE_RECEIPT",
+  "STORE_PHOTO",
   "WEEKLY_COMMERCIAL_PDF",
   "WEATHER",
   "PUBLIC_HOLIDAY",

@@ -3,12 +3,15 @@ import {
   sourceTypeSchema,
   RECEIPT_PHOTO_BUNDLE_MIME,
   MAX_RECEIPT_BUNDLE_BYTES,
+  MAX_STORE_PHOTO_BYTES,
+  storePhotoMimeSchema,
 } from "@fl-copilot/domain";
 
 const uploadSourceTypeSchema = sourceTypeSchema.extract([
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
   "WASTE_RECEIPT",
+  "STORE_PHOTO",
   "WEEKLY_COMMERCIAL_PDF",
 ]);
 
@@ -40,6 +43,18 @@ export const initSourceUploadRequestSchema = z
     checksum: sourceUploadChecksumSchema,
   })
   .superRefine((input, context) => {
+    if (
+      input.sourceType === "STORE_PHOTO" &&
+      (!storePhotoMimeSchema.safeParse(input.mimeType).success ||
+        input.sizeBytes > MAX_STORE_PHOTO_BYTES ||
+        input.filename.length > 240)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["mimeType"],
+        message: "Invalid store photo upload",
+      });
+    }
     if (
       input.mimeType === RECEIPT_PHOTO_BUNDLE_MIME &&
       (input.sourceType !== "WASTE_RECEIPT" ||

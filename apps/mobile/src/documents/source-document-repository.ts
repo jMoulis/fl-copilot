@@ -1,6 +1,9 @@
+import { z } from "zod";
 import { SourceUploadRecoveryRepository } from "./source-upload-recovery";
 import {
   localFileMetadataSchema,
+  storePhotoMimeSchema,
+  MAX_STORE_PHOTO_BYTES,
   localSourceDocumentSchema,
   sourceRecordSchema,
   type LocalFileMetadata,
@@ -31,6 +34,37 @@ export class SourceDocumentRepository {
       await insertFile(transaction, file);
     });
 
+    return { document, file };
+  }
+
+  async createStorePhoto(input: LocalSourceAggregate, ownerId: string) {
+    z.uuid().parse(ownerId);
+    const document = localSourceDocumentSchema.parse(input.document),
+      file = localFileMetadataSchema.parse(input.file);
+    assertAggregateConsistency(document, file);
+    if (
+      document.sourceType !== "STORE_PHOTO" ||
+      !storePhotoMimeSchema.safeParse(file.mimeType).success ||
+      !Number.isSafeInteger(file.sizeBytes) ||
+      file.sizeBytes <= 0 ||
+      file.sizeBytes > MAX_STORE_PHOTO_BYTES ||
+      !/^sha256:[a-f0-9]{64}$/.test(file.checksum) ||
+      !document.originalFilename ||
+      document.originalFilename.length > 240
+    )
+      throw Error("STORE_PHOTO_INVALID");
+    await this.database.withExclusiveTransactionAsync(async (tx) => {
+      await insertDocument(tx, document);
+      await insertFile(tx, file);
+      await enqueueSourceUpload(
+        tx,
+        document.id,
+        document.storeId,
+        file.id,
+        document.createdAt,
+        ownerId,
+      );
+    });
     return { document, file };
   }
 
@@ -66,7 +100,7 @@ export class SourceDocumentRepository {
       }
       await insertDocument(transaction, document);
       await insertFile(transaction, file);
-      await enqueueCommercialPdfUpload(
+      await enqueueSourceUpload(
         transaction,
         document.id,
         document.storeId,
@@ -90,7 +124,7 @@ export class SourceDocumentRepository {
         storeId,
       );
       for (const row of rows)
-        await enqueueCommercialPdfUpload(
+        await enqueueSourceUpload(
           transaction,
           row.id,
           storeId,
@@ -444,18 +478,24 @@ interface SourceRecordRow {
   deleted_at: string | null;
 }
 
-async function enqueueCommercialPdfUpload(
+async function enqueueSourceUpload(
   database: OutboxDatabase,
   sourceDocumentId: string,
   storeId: string,
   localFileId: string,
   timestamp: string,
+  ownerId?: string,
 ) {
   await database.runAsync(
     `INSERT INTO local_jobs (id, type, payload_json, status, attempt_count, created_at, updated_at)
     VALUES (?, 'SOURCE_UPLOAD_AND_REGISTER', ?, 'PENDING', 0, ?, ?)`,
     sourceDocumentId,
-    JSON.stringify({ storeId, sourceDocumentId, localFileId }),
+    JSON.stringify({
+      storeId,
+      sourceDocumentId,
+      localFileId,
+      ...(ownerId ? { ownerId } : {}),
+    }),
     timestamp,
     timestamp,
   );

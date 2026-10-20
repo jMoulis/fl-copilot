@@ -1,3 +1,4 @@
+import { MAX_STORE_PHOTOS_PER_TURN } from "@fl-copilot/domain";
 import { applyActionExecutionRecord } from "./action-execution-repository";
 import { applyExecutionLinkRecord } from "./execution-link-repository";
 import { applyDecisionRecord } from "./decision-repository";
@@ -660,12 +661,26 @@ export class CopilotConversationRepository {
       "WASTE_RECEIPT",
     );
   }
+  attachStorePhotos(
+    conversationId: string,
+    sourceDocumentIds: string[],
+    updatedAt: string,
+    signal?: AbortSignal,
+  ) {
+    return this.attachSources(
+      conversationId,
+      sourceDocumentIds,
+      updatedAt,
+      signal,
+      "STORE_PHOTO",
+    );
+  }
   private async attachSources(
     conversationId: string,
     sourceDocumentIds: string[],
     updatedAt: string,
     signal: AbortSignal | undefined,
-    kind: "WEEKLY_COMMERCIAL_PDF" | "WASTE_RECEIPT",
+    kind: "WEEKLY_COMMERCIAL_PDF" | "WASTE_RECEIPT" | "STORE_PHOTO",
   ) {
     const ids = [...new Set(sourceDocumentIds)];
     if (!ids.length || ids.length > 10) throw Error("COPILOT_ATTACHMENT_LIMIT");
@@ -728,11 +743,18 @@ export class CopilotConversationRepository {
                 sourceDocumentId,
                 this.scope.storeId,
               )
-            : await tx.getAllAsync<{ id: string; mime_type: string }>(
-                "SELECT id,mime_type FROM local_files WHERE source_document_id=? AND store_id=? AND mime_type='application/pdf' AND retention_status='RETAINED' LIMIT 2",
-                sourceDocumentId,
-                this.scope.storeId,
-              );
+            : kind === "STORE_PHOTO"
+              ? await tx.getAllAsync<{ id: string; mime_type: string }>(
+                  "SELECT f.id,f.mime_type FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum WHERE d.id=? AND d.store_id=? AND d.source_type='STORE_PHOTO' AND d.deleted_at IS NULL AND f.retention_status='RETAINED' AND f.local_uri=d.local_file_uri AND f.mime_type IN ('image/jpeg','image/png','image/heic','image/heif') AND EXISTS (SELECT 1 FROM local_jobs j WHERE j.type='SOURCE_UPLOAD_AND_REGISTER' AND json_extract(j.payload_json,'$.sourceDocumentId')=d.id AND json_extract(j.payload_json,'$.ownerId')=?) LIMIT 2",
+                  sourceDocumentId,
+                  this.scope.storeId,
+                  this.scope.ownerId,
+                )
+              : await tx.getAllAsync<{ id: string; mime_type: string }>(
+                  "SELECT id,mime_type FROM local_files WHERE source_document_id=? AND store_id=? AND mime_type='application/pdf' AND retention_status='RETAINED' LIMIT 2",
+                  sourceDocumentId,
+                  this.scope.storeId,
+                );
         const file = files.length === 1 ? files[0] : null;
         if (!source || !file)
           throw Error("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
@@ -751,6 +773,19 @@ export class CopilotConversationRepository {
             filename: source.original_filename,
             mediaType: file.mime_type,
           });
+      }
+      if (kind === "STORE_PHOTO") {
+        let photos = 0;
+        for (const a of attachments) {
+          const photo = await tx.getFirstAsync(
+            "SELECT id FROM source_documents WHERE id=? AND store_id=? AND source_type='STORE_PHOTO' AND deleted_at IS NULL",
+            a.sourceDocumentId,
+            this.scope.storeId,
+          );
+          if (photo) photos++;
+        }
+        if (photos > MAX_STORE_PHOTOS_PER_TURN)
+          throw Error("STORE_PHOTO_TURN_LIMIT");
       }
       result = copilotDraftSchema.parse({ ...draft, updatedAt, attachments });
       cancelled();

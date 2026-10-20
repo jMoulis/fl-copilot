@@ -212,3 +212,56 @@ describe("Native session renewal", () => {
     expect(f.manager.getSnapshot().status).toBe("anonymous");
   });
 });
+
+it("never runs a private queued operation with another owner's token", async () => {
+  const f = fixture(),
+    operation = vi.fn(async (token: string) => token);
+  await f.manager.establish({
+    ...session("other-token"),
+    user: { ...session("other-token").user, id: "other-owner" },
+  });
+  await expect(
+    f.manager.request(operation, "original-owner"),
+  ).rejects.toBeInstanceOf(SessionChangedError);
+  expect(operation).not.toHaveBeenCalled();
+  expect(f.refresh).not.toHaveBeenCalled();
+  expect(await f.manager.request(operation, "other-owner")).toBe("other-token");
+});
+it("rechecks private ownership after renewing credentials before sending any bytes", async () => {
+  const f = fixture(
+    vi.fn(async () => ({
+      ...session("renewed"),
+      user: { ...session("renewed").user, id: "other-owner" },
+    })),
+  );
+  await f.manager.establish(session("old", epoch + 1000));
+  const operation = vi.fn(async () => "never");
+  await expect(f.manager.request(operation, "user")).rejects.toBeInstanceOf(
+    SessionChangedError,
+  );
+  expect(operation).not.toHaveBeenCalled();
+});
+
+it("discards a private upload authorization received after the account changed", async () => {
+  const f = fixture();
+  await f.manager.establish(session("owner-token"));
+  let release!: (s: string) => void, started!: () => void;
+  const entered = new Promise<void>((r) => {
+    started = r;
+  });
+  const response = new Promise<string>((r) => {
+    release = r;
+  });
+  const pending = f.manager.request(async () => {
+    started();
+    return response;
+  }, "user");
+  await entered;
+  await f.manager.establish({
+    ...session("other-token"),
+    user: { ...session("other-token").user, id: "other-owner" },
+  });
+  release("private-upload-url");
+  await expect(pending).rejects.toBeInstanceOf(SessionChangedError);
+  expect(f.manager.getSnapshot().session?.user.id).toBe("other-owner");
+});

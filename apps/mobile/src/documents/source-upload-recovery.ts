@@ -14,11 +14,13 @@ const payloadSchema = z.strictObject({
   storeId: z.uuid(),
   sourceDocumentId: z.uuid(),
   localFileId: z.uuid(),
+  ownerId: z.uuid().optional(),
 });
 const supportedSources = [
   "MERCALYS_SALES",
   "MERCALYS_WASTE",
   "WEEKLY_COMMERCIAL_PDF",
+  "STORE_PHOTO",
 ];
 interface DocumentRow {
   id: string;
@@ -194,6 +196,7 @@ export class SourceUploadRecoveryRepository {
     return {
       sourceDocumentId: id,
       sourceType: document.source_type,
+      ownerId: payload.success ? (payload.data.ownerId ?? null) : null,
       canRestore,
       original: file
         ? {

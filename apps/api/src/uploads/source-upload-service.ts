@@ -55,6 +55,7 @@ export interface SourceUploadService {
     storeId: string,
     uploadId: string,
     input: CompleteSourceUploadRequest,
+    userId?: string,
   ): Promise<CompleteSourceUploadResponse>;
 }
 
@@ -158,6 +159,7 @@ export function createMongoSourceUploadService(
       });
 
       if (upload) {
+        assertPrivatePhotoOwner(upload, userId);
         assertSameUpload(upload, input);
       } else {
         const timestamp = now();
@@ -207,10 +209,12 @@ export function createMongoSourceUploadService(
             sourceDocumentId: input.sourceDocumentId,
           });
           if (!upload) throw error;
+          assertPrivatePhotoOwner(upload, userId);
           assertSameUpload(upload, input);
         }
       }
 
+      assertPrivatePhotoOwner(upload, userId);
       if (upload.status === "CONFIRMED") return alreadyUploaded(upload);
 
       const existingBlob = await storage.head(upload.objectKey);
@@ -237,7 +241,7 @@ export function createMongoSourceUploadService(
       };
     },
 
-    async complete(storeId, uploadId, input) {
+    async complete(storeId, uploadId, input, userId) {
       const db = await database.getDb();
       const upload = await db
         .collection<UploadRecord>("sourceUploads")
@@ -249,6 +253,7 @@ export function createMongoSourceUploadService(
           "Cet envoi de fichier est introuvable.",
         );
       }
+      assertPrivatePhotoOwner(upload, userId);
       if (
         upload.checksum !== input.checksum ||
         upload.sizeBytes !== input.sizeBytes
@@ -363,6 +368,18 @@ async function processReceiptIfNeeded(
   });
 }
 
+function assertPrivatePhotoOwner(upload: UploadRecord, userId?: string) {
+  if (
+    upload.sourceType === "STORE_PHOTO" &&
+    (!userId || upload.userId !== userId)
+  )
+    throw new AuthError(
+      404,
+      "SOURCE_UPLOAD_NOT_FOUND",
+      "Cet envoi de fichier est introuvable.",
+    );
+}
+
 function assertSameUpload(
   upload: UploadRecord,
   input: InitSourceUploadRequest,
@@ -429,7 +446,10 @@ async function confirmUpload(
   ]);
 }
 
-function sourceObjectKey(storeId: string, input: InitSourceUploadRequest) {
+export function sourceObjectKey(
+  storeId: string,
+  input: InitSourceUploadRequest,
+) {
   const safeFilename =
     input.filename
       .normalize("NFKD")

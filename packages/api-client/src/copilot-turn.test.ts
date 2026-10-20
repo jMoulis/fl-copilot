@@ -562,3 +562,30 @@ it("advertises analytical destinations on turn, history, bootstrap and increment
   ).rejects.toBeInstanceOf(ApiClientError);
   expect(paths).toHaveLength(4);
 });
+
+it("negotiates photo viewing explicitly without changing the stable turn body", async () => {
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(JSON.stringify({ message, alreadyApplied: false }), {
+        status: 200,
+      }),
+  );
+  vi.stubGlobal("fetch", transport);
+  const api = new ApiClient("https://test.invalid");
+  await api.copilotTurn("test-token", id(4), id(5), input, undefined, {
+    onProgress: () => undefined,
+    storePhotos: true,
+  });
+  expect(transport).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      headers: expect.objectContaining({ "x-copilot-store-photos": "1" }),
+      body: JSON.stringify(input),
+    }),
+  );
+  await api.copilotTurn("test-token", id(4), id(5), input, undefined, {
+    onProgress: () => undefined,
+  });
+  const options = transport.mock.calls.at(-1)?.[1] as RequestInit;
+  expect(options.headers).not.toHaveProperty("x-copilot-store-photos");
+});

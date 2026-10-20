@@ -14,6 +14,8 @@ import {
 } from "@fl-copilot/domain";
 import { presentStoreLayoutEdit } from "./store-layout-edit-tool";
 import { factReadFromTool } from "./fact-context";
+import { createStorePhotoTool } from "./store-photo-tool";
+import type { StorePhotoRead } from "./store-photo-reader";
 import { implantationScenarioInputSchema } from "@fl-copilot/domain";
 import { readImplantationScenario } from "./implantation-tool";
 import { copilotStoreLayoutInputSchema } from "@fl-copilot/domain";
@@ -463,6 +465,10 @@ export function createCopilotAiProvider(
   >,
   transport?: typeof fetch,
   reads?: {
+    storePhoto?(
+      input: { sourceDocumentId: string },
+      signal: AbortSignal,
+    ): Promise<StorePhotoRead>;
     planReadiness?(
       input: z.infer<typeof copilotPlanReadinessInputSchema>,
     ): Promise<z.infer<typeof copilotPlanReadinessResultSchema>>;
@@ -958,6 +964,19 @@ export function createCopilotAiProvider(
           : timeout;
         const businessTools = reads
           ? {
+              ...(reads.storePhoto
+                ? {
+                    store_photo: createStorePhotoTool({
+                      references: [
+                        ...(request.attachedSources ?? []),
+                        ...(request.recentSources ?? []),
+                      ],
+                      signal: abortSignal,
+                      read: reads.storePhoto,
+                      run: executeRead,
+                    }),
+                  }
+                : {}),
               ...(reads.preparationPreview
                 ? {
                     commercial_preparation_preview: tool({

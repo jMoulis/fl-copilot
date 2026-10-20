@@ -25,7 +25,10 @@ type AuthContextValue = {
   status: "loading" | "anonymous" | "authenticated";
   session: SessionSnapshot["session"];
   sessionExpired: boolean;
-  withAccessToken<T>(operation: (token: string) => Promise<T>): Promise<T>;
+  withAccessToken<T>(
+    operation: (token: string) => Promise<T>,
+    expectedOwnerId?: string,
+  ): Promise<T>;
   pendingChallenge: PendingChallenge | null;
   requestCode(email: string): Promise<void>;
   verifyCode(code: string): Promise<void>;
@@ -68,8 +71,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return unsubscribe;
   }, [manager]);
   const withAccessToken = useCallback(
-    <T,>(operation: (token: string) => Promise<T>) =>
-      manager.request(operation),
+    <T,>(operation: (token: string) => Promise<T>, expectedOwnerId?: string) =>
+      manager.request(operation, expectedOwnerId),
     [manager],
   );
 

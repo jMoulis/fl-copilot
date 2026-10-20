@@ -1,3 +1,4 @@
+import { CopilotStorePhotoIntake } from "@/copilot/store-photo-intake";
 import { LayoutPreparationController } from "@/copilot/layout-preparation-controller";
 import { readStoreLayoutScenarioCard } from "@fl-copilot/domain";
 import { CopilotStoreLayoutScenarioReader } from "@/copilot/store-layout-scenario-reader";
@@ -200,8 +201,8 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     session?.stores.some(
       (store) => store.storeId === storeId && store.role === "MANAGER",
     ) ?? false;
-  const receiptCaptureAllowed = useRef(canManageProducts);
-  receiptCaptureAllowed.current = canManageProducts;
+  const photoCaptureAllowed = useRef(canManageProducts);
+  photoCaptureAllowed.current = canManageProducts;
   const [receiptViewsReview, setReceiptViewsReview] = useState<{
     assets: CopilotReceiptViewsSelection["assets"];
     finish(assets: CopilotReceiptViewsSelection["assets"] | null): void;
@@ -215,13 +216,13 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   const cancelReceiptCamera = useRef<(() => void) | undefined>(undefined);
 
   useEffect(() => {
-    receiptCaptureAllowed.current = canManageProducts;
+    photoCaptureAllowed.current = canManageProducts;
     if (!canManageProducts) {
       cancelReceiptViewsReview.current?.();
       cancelReceiptCamera.current?.();
     }
     return () => {
-      receiptCaptureAllowed.current = false;
+      photoCaptureAllowed.current = false;
       cancelReceiptViewsReview.current?.();
       cancelReceiptCamera.current?.();
     };
@@ -985,6 +986,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               actionExecutions: true,
               executionActuals: true,
               retailExpertise: true,
+              storePhotos: true,
               choiceUpdate: canManageProducts,
               choiceRetention: canManageProducts,
               choiceCreate: canManageProducts,
@@ -1073,7 +1075,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     capacity: number,
   ) => {
     if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
-    if (!receiptCaptureAllowed.current)
+    if (!photoCaptureAllowed.current)
       throw Error("COPILOT_RECEIPT_CAPTURE_FORBIDDEN");
     if (capacity < 1) throw Error("COPILOT_ATTACHMENT_LIMIT");
     if (Platform.OS === "web" || !requireOptionalNativeModule("ExpoCamera"))
@@ -1085,12 +1087,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       throw Error("COPILOT_RECEIPT_CAMERA_UNAVAILABLE");
     }
     if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
-    if (!receiptCaptureAllowed.current)
+    if (!photoCaptureAllowed.current)
       throw Error("COPILOT_RECEIPT_CAPTURE_FORBIDDEN");
     return new Promise<ReceiptPhotoSelection | undefined>((resolve) => {
       let done = false;
       const authority = {
-        canCapture: () => receiptCaptureAllowed.current,
+        canCapture: () => photoCaptureAllowed.current,
         signal,
       };
       const intake = new CopilotReceiptCameraIntake(
@@ -1116,13 +1118,67 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       setReceiptCamera({ session: cameraSession, Sheet, finish });
     });
   };
+  const attachStorePhotos = async (
+    conversationId: string,
+    signal: AbortSignal,
+    capacity: number,
+  ) => {
+    if (!photoCaptureAllowed.current)
+      throw Error("STORE_PHOTO_CAPTURE_FORBIDDEN");
+    if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
+    const intake = new CopilotStorePhotoIntake(
+      sqlite,
+      { storeId, ownerId },
+      randomUUID,
+    );
+    const remaining = Math.min(capacity, await intake.capacity(conversationId));
+    if (remaining < 1) throw Error("STORE_PHOTO_TURN_LIMIT");
+    if (!requireOptionalNativeModule("ExponentImagePicker"))
+      throw Error("COPILOT_RECEIPT_PICKER_UNAVAILABLE");
+    const picker = await import("expo-image-picker");
+    const selected = await picker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: false,
+      allowsMultipleSelection: true,
+      selectionLimit: remaining,
+      quality: 1,
+      exif: false,
+    });
+    if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
+    if (selected.canceled) return undefined;
+    const assets = selected.assets.map((asset, index) => {
+      const extension = resolveWasteReceiptImageExtension({
+        temporaryUri: asset.uri,
+        mimeType: asset.mimeType,
+        originalFilename: asset.fileName,
+      });
+      return {
+        uri: asset.uri,
+        filename: asset.fileName ?? `Photo du rayon ${index + 1}.${extension}`,
+        mimeType: (
+          {
+            jpg: "image/jpeg",
+            png: "image/png",
+            heic: "image/heic",
+            heif: "image/heif",
+          } as const
+        )[extension],
+      };
+    });
+    return intake.capture(
+      conversationId,
+      { assets },
+      { signal, canCapture: () => photoCaptureAllowed.current },
+      remaining,
+    );
+  };
   const attachReceipts = async (
     conversationId: string,
     signal: AbortSignal,
     capacity: number,
     grouped = false,
   ) => {
-    if (!receiptCaptureAllowed.current)
+    if (!photoCaptureAllowed.current)
       throw Error("COPILOT_RECEIPT_CAPTURE_FORBIDDEN");
     if (signal.aborted) throw Error("COPILOT_ATTACHMENT_CANCELLED");
     if (capacity < 1) throw Error("COPILOT_ATTACHMENT_LIMIT");
@@ -1162,7 +1218,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     if (grouped) {
       if (assets.length < 2 || assets.length > MAX_RECEIPT_VIEWS)
         throw Error("COPILOT_RECEIPT_VIEW_COUNT_INVALID");
-      if (signal.aborted || !receiptCaptureAllowed.current)
+      if (signal.aborted || !photoCaptureAllowed.current)
         throw Error("COPILOT_ATTACHMENT_CANCELLED");
       const ordered = await new Promise<
         CopilotReceiptViewsSelection["assets"] | null
@@ -1191,7 +1247,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ).capture(
         conversationId,
         { mode: "ONE_RECEIPT_MULTIPLE_PHOTOS", assets: ordered },
-        { canCapture: () => receiptCaptureAllowed.current, signal },
+        { canCapture: () => photoCaptureAllowed.current, signal },
         capacity,
       );
     }
@@ -1202,7 +1258,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     ).capture(
       conversationId,
       { mode: "ONE_PHOTO_PER_RECEIPT", assets },
-      { canCapture: () => receiptCaptureAllowed.current, signal },
+      { canCapture: () => photoCaptureAllowed.current, signal },
       capacity,
     );
   };
@@ -1528,6 +1584,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           })
         }
         onAttachPdf={attachPdf}
+        onAttachStorePhotos={canManageProducts ? attachStorePhotos : undefined}
         onAttachReceipts={canManageProducts ? attachReceipts : undefined}
         onPhotographReceipt={
           canManageProducts && Platform.OS !== "web"

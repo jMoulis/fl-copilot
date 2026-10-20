@@ -22,6 +22,7 @@ it("maps real tool keys without disclosing private arguments", () => {
     "pdf",
     "offers",
     "waste-receipt",
+    "store-photo",
     "commercial-preparation",
     "document-comparison",
     "reference-inspection",

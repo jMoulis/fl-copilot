@@ -1,3 +1,4 @@
+import { readStorePhoto } from "./copilot/store-photo-reader";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
   createVisualFileService,
@@ -604,6 +605,25 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           {
             db,
             provider: createCopilotAiProvider(config, undefined, {
+              ...(request.headers["x-copilot-store-photos"] === "1"
+                ? {
+                    storePhoto: async (input, signal) => {
+                      const principal = await authorize();
+                      const result = await readStorePhoto(
+                        db,
+                        {
+                          storeId: principal.storeId,
+                          ownerId: principal.ownerId,
+                        },
+                        input,
+                        undefined,
+                        signal,
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
               prepareContextCheckpoint: async (input) => {
                 const principal = await authorize();
                 const parent = await db
@@ -1834,11 +1854,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "Le magasin doit être indiqué pour confirmer le fichier.",
         );
       }
-      await auth.authorizeStore(authorization.slice("Bearer ".length), storeId);
+      const context = await auth.authorizeStore(
+        authorization.slice("Bearer ".length),
+        storeId,
+      );
       return sourceUploads.complete(
         storeId,
         request.params.uploadId,
         request.body,
+        context.userId,
       );
     },
   );
