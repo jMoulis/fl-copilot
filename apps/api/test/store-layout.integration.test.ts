@@ -23,7 +23,11 @@ import {
   presentCopilotStoreLayout,
   readCopilotStoreLayoutSnapshot,
 } from "../src/copilot/store-layout-tool";
-import { addStoreLayoutMobile } from "@fl-copilot/commercial-core";
+import {
+  addStoreLayoutMobile,
+  duplicateStoreLayoutInventory,
+  removeStoreLayoutInventory,
+} from "@fl-copilot/commercial-core";
 class Adapter implements OutboxDatabase {
   fail = false;
   constructor(readonly db: DatabaseSync) {}
@@ -98,6 +102,37 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         },
       ],
     });
+    const service = (db: Adapter, deviceId: string, actorId: string) => {
+      const push = createMongoSyncPushService(database),
+        pull = createMongoSyncPullService(database),
+        bootstrap = createMongoSyncBootstrapService(database);
+      return new MobileSyncService(
+        db,
+        {
+          push: (r) => push.push(r, "devices", actorId),
+          pull: (storeId, cursor) =>
+            pull.pull(storeId, {
+              cursor,
+              limit: 500,
+              storeLayouts: "true",
+            }),
+          bootstrap: (storeId) =>
+            bootstrap.bootstrap(
+              {
+                storeId,
+                storeName: "Test",
+                role: "MANAGER",
+                deviceId,
+                userId: actorId,
+                sessionId: randomUUID(),
+              },
+              { rawObservationDays: 90, storeLayouts: "true" },
+            ),
+        },
+        { appVersion: "test", deviceId, storeLayouts: true },
+      );
+    };
+
     it("keeps each revision once across retry, draft/reference/discard/restore and never touches business observations", async () => {
       const p = layoutFixture(),
         push = createMongoSyncPushService(database),
@@ -465,6 +500,125 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       ).toBe(2);
     }, 60000);
 
+    it("synchronizes explicit fixed inventory edits and restores every old surface and detached mobile on a fresh device", async () => {
+      const p = layoutFixture(),
+        a = new Adapter(new DatabaseSync(":memory:")),
+        b = new Adapter(new DatabaseSync(":memory:")),
+        fresh = new Adapter(new DatabaseSync(":memory:"));
+      try {
+        for (const db of [a, b, fresh]) await runLocalMigrations(db);
+        const repoA = new StoreLayoutRepository(
+            a,
+            randomUUID,
+            () => p.updatedAt,
+          ),
+          repoB = new StoreLayoutRepository(b, randomUUID, () => p.updatedAt),
+          repoFresh = new StoreLayoutRepository(
+            fresh,
+            randomUUID,
+            () => p.updatedAt,
+          );
+        const ctx = {
+          commandId: randomUUID(),
+          deviceId: randomUUID(),
+          actorId: p.updatedBy,
+          canWrite: true as const,
+        };
+        const syncA = service(a, ctx.deviceId, p.updatedBy),
+          syncB = service(b, randomUUID(), p.updatedBy),
+          syncFresh = service(fresh, randomUUID(), p.updatedBy);
+        const content = addStoreLayoutMobile(
+          p.content,
+          randomUUID,
+          "Mobile conservé",
+          p.content.furniture[0]!.id,
+        );
+        const first = await repoA.save(
+          {
+            storeId: p.storeId,
+            expectedRevisionId: null,
+            action: "SAVE_DRAFT",
+            content,
+          },
+          ctx,
+        );
+        await syncA.sync(p.storeId);
+        await syncB.sync(p.storeId);
+        expect((await repoB.get(p.storeId))?.entity).toEqual(first);
+        const island = first.content.assemblies[0]!;
+        const copy = duplicateStoreLayoutInventory(
+          first.content,
+          { kind: "ASSEMBLY", id: island.id },
+          { label: "Copie déclarée", copyDimensions: false },
+          randomUUID,
+        );
+        const copied = await repoA.save(
+          {
+            storeId: p.storeId,
+            expectedRevisionId: first.revisionId,
+            action: "SAVE_DRAFT",
+            content: copy.content,
+          },
+          { ...ctx, commandId: randomUUID() },
+        );
+        await syncA.sync(p.storeId);
+        await syncA.sync(p.storeId);
+        await syncB.sync(p.storeId);
+        expect((await repoB.get(p.storeId))?.entity).toEqual(copied);
+        const removed = await repoA.save(
+          {
+            storeId: p.storeId,
+            expectedRevisionId: copied.revisionId,
+            action: "SAVE_DRAFT",
+            content: removeStoreLayoutInventory(copied.content, {
+              kind: "ASSEMBLY",
+              id: island.id,
+            }),
+          },
+          { ...ctx, commandId: randomUUID() },
+        );
+        await syncA.sync(p.storeId);
+        await syncB.sync(p.storeId);
+        await syncFresh.sync(p.storeId);
+        for (const repo of [repoB, repoFresh]) {
+          expect((await repo.get(p.storeId))?.entity).toEqual(removed);
+          expect(
+            (await repo.getRevision(p.storeId, first.revisionId))?.content,
+          ).toEqual(first.content);
+          expect(
+            (await repo.getRevision(p.storeId, copied.revisionId))?.content
+              .surfaces,
+          ).toEqual(copied.content.surfaces);
+          expect(
+            (await repo.get(p.storeId))?.entity.content.furniture.find(
+              (f) => f.kind === "MOBILE",
+            )?.hostId,
+          ).toBeNull();
+        }
+        const db = await database.getDb();
+        expect(
+          await db
+            .collection("storeLayoutRevisions")
+            .countDocuments({ storeId: p.storeId }),
+        ).toBe(3);
+        for (const collection of [
+          "salesObservations",
+          "wasteObservations",
+          "products",
+          "commercialWeekPlans",
+        ])
+          expect(
+            await db
+              .collection(collection)
+              .countDocuments({ storeId: p.storeId }),
+          ).toBe(0);
+      } finally {
+        a.db.close();
+        b.db.close();
+        fresh.db.close();
+      }
+    }, 60000);
+
     it("recovers two SQLite devices through Mongo, retains the rejected intention and synchronizes its explicit rebased draft", async () => {
       const p = layoutFixture(),
         a = new Adapter(new DatabaseSync(":memory:")),
@@ -485,37 +639,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             canWrite: true as const,
           },
           ctxB = { ...ctxA, commandId: randomUUID(), deviceId: randomUUID() };
-        const push = createMongoSyncPushService(database),
-          pull = createMongoSyncPullService(database),
-          bootstrap = createMongoSyncBootstrapService(database);
-        const service = (db: Adapter, deviceId: string) =>
-          new MobileSyncService(
-            db,
-            {
-              push: (r) => push.push(r, "devices", p.updatedBy),
-              pull: (storeId, cursor) =>
-                pull.pull(storeId, {
-                  cursor,
-                  limit: 500,
-                  storeLayouts: "true",
-                }),
-              bootstrap: (storeId) =>
-                bootstrap.bootstrap(
-                  {
-                    storeId,
-                    storeName: "Test",
-                    role: "MANAGER",
-                    deviceId,
-                    userId: p.updatedBy,
-                    sessionId: randomUUID(),
-                  },
-                  { rawObservationDays: 90, storeLayouts: "true" },
-                ),
-            },
-            { appVersion: "test", deviceId, storeLayouts: true },
-          );
-        const syncA = service(a, ctxA.deviceId),
-          syncB = service(b, ctxB.deviceId),
+        const syncA = service(a, ctxA.deviceId, p.updatedBy),
+          syncB = service(b, ctxB.deviceId, p.updatedBy),
           first = await repoA.save(
             {
               storeId: p.storeId,

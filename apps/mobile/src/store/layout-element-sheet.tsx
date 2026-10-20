@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Pressable, Switch, Text, TextInput, View } from "react-native";
 import type { StoreLayoutContent } from "@fl-copilot/domain";
-import { removeStoreLayoutMobile } from "@fl-copilot/commercial-core";
+import { LayoutInventoryControls } from "./layout-inventory-editor";
 import {
   BottomSheet,
   PrimaryButton,
@@ -120,17 +120,52 @@ export function StoreLayoutElementSheet({
   busy: boolean;
   onClose: () => void;
   onSelect: (id: string) => void;
-  onApply: (content: StoreLayoutContent) => void;
+  onApply: (content: StoreLayoutContent) => boolean;
   blockedReason?: string;
 }) {
   const [surfaceId, setSurfaceId] = useState<string | null>(null),
     [applied, setApplied] = useState(false),
-    [remove, setRemove] = useState<string | null>(null);
+    [inventoryDirty, setInventoryDirty] = useState(false),
+    [closeRequested, setCloseRequested] = useState(false);
   const f = content.furniture.find((x) => x.id === id),
     assembly = content.assemblies.find((a) => a.id === id),
     surface = content.surfaces.find(
       (s) => s.id === surfaceId && s.furnitureId === id,
     );
+  function selectApplied(nextId: string) {
+    setSurfaceId(null);
+    setApplied(false);
+    setInventoryDirty(false);
+    setCloseRequested(false);
+    onSelect(nextId);
+  }
+  function requestClose() {
+    if (inventoryDirty) setCloseRequested(true);
+    else onClose();
+  }
+  const closeNotice = closeRequested ? (
+    <View className="gap-3">
+      <InlineAlert
+        title="Champs non appliqués"
+        message="Les champs d’inventaire saisis n’ont pas encore été appliqués au brouillon. Les autres modifications du plan restent conservées."
+      />
+      <SecondaryButton
+        label="Continuer la saisie d’inventaire"
+        onPress={() => setCloseRequested(false)}
+      />
+      <SecondaryButton
+        label="Fermer sans appliquer ces champs"
+        onPress={onClose}
+      />
+    </View>
+  ) : null;
+  const inventoryCallbacks = {
+    onDirty: () => setInventoryDirty(true),
+    onApplied: () => {
+      setInventoryDirty(false);
+      setCloseRequested(false);
+    },
+  };
   if (!f) {
     if (!assembly && id !== "room") return null;
     const label = assembly?.label ?? "Rayon",
@@ -139,7 +174,14 @@ export function StoreLayoutElementSheet({
         height: { mm: null, quality: "UNKNOWN" as const },
       };
     return (
-      <BottomSheet visible title={label} onClose={onClose} swipeToClose>
+      <BottomSheet
+        visible
+        title={label}
+        onClose={requestClose}
+        swipeToClose
+        avoidKeyboard
+      >
+        {closeNotice}
         <Text className="text-muted">
           {assembly
             ? "Enveloppe de l’îlot, distincte des dimensions de ses éléments et surfaces de vente."
@@ -177,6 +219,18 @@ export function StoreLayoutElementSheet({
               }
             />
             {assembly ? (
+              <LayoutInventoryControls
+                key={`inventory:${assembly.id}`}
+                content={content}
+                target={{ kind: "ASSEMBLY", id: assembly.id }}
+                busy={busy}
+                onApply={onApply}
+                onSelect={selectApplied}
+                onRemoved={onClose}
+                {...inventoryCallbacks}
+              />
+            ) : null}
+            {assembly ? (
               <LayoutPhysicalFields
                 key={`position:${id}`}
                 content={content}
@@ -205,6 +259,10 @@ export function StoreLayoutElementSheet({
       accessibilityLabel={`Consulter ${s.label} de ${f.label}`}
       accessibilityState={{ selected: surfaceId === s.id }}
       onPress={() => {
+        if (inventoryDirty) {
+          setCloseRequested(true);
+          return;
+        }
         setSurfaceId(s.id);
         setApplied(false);
       }}
@@ -226,7 +284,14 @@ export function StoreLayoutElementSheet({
     </Pressable>
   );
   return (
-    <BottomSheet visible title={f.label} onClose={onClose} swipeToClose>
+    <BottomSheet
+      visible
+      title={f.label}
+      onClose={requestClose}
+      swipeToClose
+      avoidKeyboard
+    >
+      {closeNotice}
       <Text className="text-sm text-muted">
         Vue de face schématique · les proportions ne sont pas des mesures.
       </Text>
@@ -259,7 +324,11 @@ export function StoreLayoutElementSheet({
                 onPress={() => {
                   setSurfaceId(null);
                   setApplied(false);
-                  onSelect(m.id);
+                  if (inventoryDirty) {
+                    setCloseRequested(true);
+                    return;
+                  }
+                  selectApplied(m.id);
                 }}
                 style={{
                   minHeight: 56,
@@ -373,36 +442,20 @@ export function StoreLayoutElementSheet({
           onApply={onApply}
         />
       ) : null}
-      {editing && f.kind === "MOBILE" ? (
-        <View style={{ gap: 12 }}>
-          <SecondaryButton
-            label="Retirer ce mobile du brouillon"
-            disabled={busy}
-            onPress={() => setRemove(f.id)}
-          />
-          {remove === f.id ? (
-            <>
-              <Text className="text-muted">
-                Le mobile et sa surface seront retirés de cette version du plan.
-                Les anciennes versions les conserveront. Vous pouvez annuler
-                cette modification depuis le plan.
-              </Text>
-              <PrimaryButton
-                label="Confirmer le retrait de ce mobile"
-                disabled={busy}
-                onPress={() => {
-                  onApply(removeStoreLayoutMobile(content, f.id));
-                  setRemove(null);
-                  onClose();
-                }}
-              />
-              <SecondaryButton
-                label="Conserver ce mobile"
-                onPress={() => setRemove(null)}
-              />
-            </>
-          ) : null}
-        </View>
+      {editing ? (
+        <LayoutInventoryControls
+          key={`inventory:${surface?.id ?? f.id}`}
+          content={content}
+          target={{
+            kind: surface ? "SURFACE" : "FURNITURE",
+            id: surface?.id ?? f.id,
+          }}
+          busy={busy}
+          onApply={onApply}
+          onSelect={selectApplied}
+          onRemoved={surface ? () => setSurfaceId(null) : onClose}
+          {...inventoryCallbacks}
+        />
       ) : null}
     </BottomSheet>
   );

@@ -3,6 +3,8 @@ import { it, expect } from "vitest";
 import {
   addStoreLayoutMobile,
   createPilotStoreLayout,
+  duplicateStoreLayoutInventory,
+  removeStoreLayoutInventory,
 } from "@fl-copilot/commercial-core";
 import {
   layoutFixture,
@@ -19,6 +21,32 @@ import {
   undoLayoutEdit,
   visibleLayout,
 } from "./layout-view-model";
+it("undoes an inventory copy and removal without regenerating element or surface identities", () => {
+  const content = createPilotStoreLayout(randomUUID),
+    base = { baseRevisionId: randomUUID(), content, undo: [] },
+    island = content.assemblies[0]!;
+  const copy = duplicateStoreLayoutInventory(
+    content,
+    { kind: "ASSEMBLY", id: island.id },
+    { label: "Copie", copyDimensions: false },
+    randomUUID,
+  );
+  const copied = patchLayoutEdit(base, copy.content);
+  const removed = patchLayoutEdit(
+    copied,
+    removeStoreLayoutInventory(copied.content, {
+      kind: "ASSEMBLY",
+      id: island.id,
+    }),
+  );
+  expect(undoLayoutEdit(removed)).toEqual(copied);
+  expect(undoLayoutEdit(undoLayoutEdit(removed))).toEqual(base);
+  expect(
+    layoutChanges(content, copy.content).some(
+      (change) => change.key === copy.id,
+    ),
+  ).toBe(true);
+});
 it("accepts the room origin and zero clearance without accepting zero-sized furniture or promoting unchanged reference coordinates", () => {
   const previous = { mm: 0, quality: "REFERENCE" as const };
   expect(parseLayoutMeasure("0", previous, false, true)).toEqual(previous);

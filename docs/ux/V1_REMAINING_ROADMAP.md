@@ -146,3 +146,7 @@ La branche courante replace visuel et lecture métier avant les informations du 
 ## Actions — complément du lot L5 (20 octobre)
 
 Liste compacte des tâches du plan, statuts/synchronisation, progression et filtres utilisant le moteur existant ; déclaration dans une feuille, détails facultatifs progressifs, saisie conservée et erreurs visibles dans le formulaire. Les accès semaine/plan/documents restent contextualisés et la gestion reste accessible. Aucune réalisation implicite ni nouvelle action métier. QA : `../qa/ACTION_TASK_OVERVIEW_2026_10_20.md`. Ce complément est postérieur au build 4 (`9c2f66b`, PR 291–301), terminé et disponible ; sa propre recette native reste groupée. Il ne clôt ni L5, ni le cycle de recommandation complet, ni L10/L11/M8.
+
+## Inventaire physique — complément de L10 (20 octobre)
+
+Le mode d’édition complète l’ajout/copie/retrait des îlots et éléments fixes, la composition des TG et les noms de surfaces, avec nouvelles identités, inconnus conservés, mobiles désassociés sans suppression, annulation et historique restaurable. Les dépôts et la synchronisation restent canoniques. QA : `../qa/STORE_LAYOUT_INVENTORY_2026_10_20.md`. La parité de ces nouvelles opérations dans les outils du copilote reste à faire ; manipulation directe, illustration, mesures réelles et recette native/M8 restent ouvertes. Aucun retrait de L1–L11 ni livraison supplémentaire n’est déduit du contrôle local.
