@@ -2,18 +2,19 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { colors } from "../design/tokens";
-import { initializeLocalDatabase, type LocalDatabase } from "../db/client";
+import {
+  initializeLocalDatabase,
+  recoverLocalDatabase,
+  type LocalDatabase,
+} from "../db/client";
+import { DatabaseStartupError } from "../db/database-recovery";
+import { DatabaseStartupScreen } from "../db/database-startup-screen";
 
 const DatabaseContext = createContext<LocalDatabase | null>(null);
 
@@ -21,11 +22,22 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
   const [attempt, setAttempt] = useState(0);
   const [database, setDatabase] = useState<LocalDatabase>();
   const [error, setError] = useState<Error>();
+  const [confirmRecovery, setConfirmRecovery] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [showRecoveryCompletion, setShowRecoveryCompletion] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let mounted = true;
     setDatabase(undefined);
     setError(undefined);
+    setConfirmRecovery(false);
 
     void initializeLocalDatabase()
       .then((nextDatabase) => {
@@ -41,19 +53,48 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
     };
   }, [attempt]);
 
-  if (error) {
+  const recover = async () => {
+    setRecovering(true);
+    try {
+      const next = await recoverLocalDatabase();
+      if (alive.current) {
+        setDatabase(next);
+        setError(undefined);
+        setShowRecoveryCompletion(true);
+      }
+    } catch {
+      if (alive.current) {
+        setError(new DatabaseStartupError("UNAVAILABLE"));
+        setConfirmRecovery(false);
+      }
+    } finally {
+      if (alive.current) setRecovering(false);
+    }
+  };
+
+  if (error || showRecoveryCompletion) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.title}>Base locale indisponible</Text>
-        <Text style={styles.message}>{error.message}</Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setAttempt((value) => value + 1)}
-          style={styles.button}
-        >
-          <Text style={styles.buttonLabel}>Réessayer</Text>
-        </Pressable>
-      </View>
+      <DatabaseStartupScreen
+        state={
+          showRecoveryCompletion
+            ? "recovered"
+            : recovering
+              ? "recovering"
+              : confirmRecovery
+                ? "confirm"
+                : error instanceof DatabaseStartupError &&
+                    error.kind === "CORRUPTION"
+                  ? "corruption"
+                  : "unavailable"
+        }
+        onRetry={() => setAttempt((value) => value + 1)}
+        onPrepare={() => setConfirmRecovery(true)}
+        onCancel={() => setConfirmRecovery(false)}
+        onRecover={() => {
+          void recover();
+        }}
+        onContinue={() => setShowRecoveryCompletion(false)}
+      />
     );
   }
 
@@ -105,16 +146,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     textAlign: "center",
-  },
-  button: {
-    backgroundColor: colors.forest,
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  buttonLabel: {
-    color: colors.onAccent,
-    fontSize: 15,
-    fontWeight: "700",
   },
 });
