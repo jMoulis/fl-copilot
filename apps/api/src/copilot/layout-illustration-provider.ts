@@ -32,8 +32,8 @@ export type LayoutIllustrationProviderConfiguration = {
   textModel: string;
   imageModel: string;
 };
-/** Not wired into runtime/tools: activation, durable reservation/attempts and private result
- * storage are separate gates. There is no implicit model, environment lookup or paid fallback. */
+/** Runtime activation requires the explicit generation policy and durable confirmed attempt.
+ * There is no implicit model, environment lookup or paid fallback in this adapter. */
 export function createLayoutIllustrationProvider(
   config: LayoutIllustrationProviderConfiguration,
   fetchImplementation?: typeof fetch,

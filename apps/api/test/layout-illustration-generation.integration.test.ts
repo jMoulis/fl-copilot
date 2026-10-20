@@ -212,7 +212,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         const req = await f.request(q),
           id = req.commands[0]!.entityId,
           ack = await f.push.push(req, "gen", f.scope.userId);
-        expect(ack.results[0]?.status).toBe("ACK");
+        expect(ack.results[0]?.status).toBe("APPLIED");
         expect((await f.service.read(f.scope, id)).status).toBe("QUEUED");
         const beforeProcessing = await createMongoSyncBootstrapService(
           database,
@@ -235,7 +235,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         expect((await f.service.process(id)).status).toBe("SUCCEEDED");
         expect(
           (await f.push.push(req, "retry", f.scope.userId)).results[0]?.status,
-        ).toBe("ACK");
+        ).toBe("ALREADY_APPLIED");
         expect(f.provider.generate).toHaveBeenCalledTimes(1);
         const manifest = await f.files.manifest(f.scope, f.preparation.id);
         expect(manifest.state).toBe("READY");
@@ -343,7 +343,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         expect(
           (await f.push.push(req, "manager", f.scope.userId)).results[0]
             ?.status,
-        ).toBe("ACK");
+        ).toBe("APPLIED");
         await f.dbMongo
           .collection("storeMemberships")
           .updateOne(
@@ -353,7 +353,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         expect(
           (await f.push.push(req, "staff-ack", f.scope.userId)).results[0]
             ?.status,
-        ).toBe("ACK");
+        ).toBe("ALREADY_APPLIED");
         expect(
           (await f.push.push(fresh, "staff-new", f.scope.userId)).results[0]
             ?.status,
@@ -414,7 +414,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           id = req.commands[0]!.entityId;
         expect(
           (await f.push.push(req, "first", f.scope.userId)).results[0]?.status,
-        ).toBe("ACK");
+        ).toBe("APPLIED");
         const other = await f.request();
         expect(
           (await f.push.push(other, "active", f.scope.userId)).results[0]
@@ -618,7 +618,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           other.push.push(two, "global-two", other.scope.userId),
         ]);
         expect(results.map((r) => r.results[0]?.status).sort()).toEqual([
-          "ACK",
+          "APPLIED",
           "REJECTED",
         ]);
         expect(
