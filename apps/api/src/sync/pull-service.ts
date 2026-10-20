@@ -1,3 +1,7 @@
+import {
+  readableEmailDecisions,
+  type EmailDecisionDocument,
+} from "../intake/email-decision-sync";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
   visualCollections,
@@ -191,7 +195,16 @@ export function createMongoSyncPullService(
               >(collection)
               .find({ _id: { $in: ids }, storeId, ownerId })
               .toArray();
-            for (const row of rows)
+            const readable =
+              type === "email_intake_decision"
+                ? await readableEmailDecisions(
+                    mongoDatabase,
+                    storeId,
+                    ownerId,
+                    rows as EmailDecisionDocument[],
+                  )
+                : rows;
+            for (const row of readable)
               privateEntities.set(`${type}:${row._id}`, row);
           }),
         );

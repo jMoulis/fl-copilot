@@ -438,6 +438,71 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         }
       },
     );
+    it.each(["role", "membership", "archive", "delete"] as const)(
+      "withholds private email decisions from bootstrap and incremental reads after %s changes",
+      async (mode) => {
+        const f = await fixture();
+        try {
+          const phone = await f.phone();
+          await phone.decide("ADMIT");
+          expect(await phone.service.push(f.scope.storeId)).toMatchObject({
+            pushed: 1,
+          });
+          const changedAt = new Date().toISOString();
+          if (mode === "role" || mode === "membership")
+            await f.db.collection("storeMemberships").updateOne(
+              { storeId: f.scope.storeId, userId: f.scope.ownerId },
+              {
+                $set: mode === "role" ? { role: "READER" } : { active: false },
+              },
+            );
+          else
+            await f.db
+              .collection<Document & { _id: string }>("copilotConversations")
+              .updateOne(
+                { _id: f.scope.conversationId },
+                {
+                  $set:
+                    mode === "archive"
+                      ? { status: "ARCHIVED" }
+                      : {
+                          status: "ARCHIVED",
+                          deletedAt: changedAt,
+                          updatedAt: changedAt,
+                        },
+                },
+              );
+          const result = await f.bootstrap.bootstrap(
+            phone.principal,
+            bootstrapQuerySchema.parse({
+              copilotHistory: "true",
+              emailIntake: "true",
+            }),
+          );
+          expect(result.entities.emailIntakeDecisions).toEqual([]);
+          const page = await f.pull.pull(
+            f.scope.storeId,
+            syncPullQuerySchema.parse({
+              copilotHistory: "true",
+              emailIntake: "true",
+            }),
+            f.scope.ownerId,
+          );
+          expect(
+            page.changes.filter(
+              (change) => change.entityType === "email_intake_decision",
+            ),
+          ).toEqual([]);
+          expect(
+            await f.db
+              .collection("emailIntakeDecisions")
+              .countDocuments({ storeId: f.scope.storeId }),
+          ).toBe(1);
+        } finally {
+          await f.cleanup();
+        }
+      },
+    );
     it.each(["PENDING", "READY"] as const)(
       "admits a %s selected attachment without a local copy and recovers its verified original later without a second approval",
       async (initialStatus) => {

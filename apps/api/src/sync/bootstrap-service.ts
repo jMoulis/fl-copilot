@@ -1,5 +1,6 @@
 import {
   serializeEmailDecision,
+  readableEmailDecisions,
   type EmailDecisionDocument,
 } from "../intake/email-decision-sync";
 import {
@@ -230,6 +231,15 @@ export function createMongoSyncBootstrapService(
                 : null;
             if (emailDecisions && emailDecisions.length > 500)
               throw Error("EMAIL_INTAKE_DECISION_LIMIT");
+            const allowedEmailDecisions = emailDecisions
+              ? await readableEmailDecisions(
+                  mongoDatabase,
+                  store.storeId,
+                  store.userId,
+                  emailDecisions,
+                  session,
+                )
+              : null;
             const decisions =
               query.copilotDecisions === "true" &&
               query.copilotHistory === "true"
@@ -490,9 +500,9 @@ export function createMongoSyncBootstrapService(
               },
               entities: {
                 ...copilotHistory,
-                ...(emailDecisions
+                ...(allowedEmailDecisions
                   ? {
-                      emailIntakeDecisions: emailDecisions.map(
+                      emailIntakeDecisions: allowedEmailDecisions.map(
                         serializeEmailDecision,
                       ),
                       emailIntakeOwnerId: store.userId,

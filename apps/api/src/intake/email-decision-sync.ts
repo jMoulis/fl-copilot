@@ -25,6 +25,49 @@ export function serializeEmailDecision(row: EmailDecisionDocument) {
     throw Error("EMAIL_INTAKE_DECISION_IDENTITY_INVALID");
   return decision;
 }
+/** Batched private reads retain the same current permission as the email routes. */
+export async function readableEmailDecisions(
+  db: Db,
+  storeId: string,
+  ownerId: string,
+  rows: EmailDecisionDocument[],
+  session?: ClientSession,
+) {
+  const membership = await db
+    .collection("storeMemberships")
+    .findOne(
+      { storeId, userId: ownerId, active: true, role: "MANAGER" },
+      { session, projection: { _id: 1 }, maxTimeMS: 2000 },
+    );
+  if (!membership || !rows.length) return [];
+  const ids = [...new Set(rows.map((row) => row.conversationId))];
+  const conversations = await db
+    .collection<{
+      _id: string;
+      storeId: string;
+      ownerId: string;
+      status: string;
+      deletedAt: unknown;
+    }>("copilotConversations")
+    .find(
+      {
+        _id: { $in: ids },
+        storeId,
+        ownerId,
+        status: "ACTIVE",
+        deletedAt: null,
+      },
+      { session, projection: { _id: 1 }, maxTimeMS: 2000 },
+    )
+    .toArray();
+  const allowed = new Set(conversations.map((row) => row._id));
+  return rows.filter(
+    (row) =>
+      row.storeId === storeId &&
+      row.ownerId === ownerId &&
+      allowed.has(row.conversationId),
+  );
+}
 /** Runs before processed-command replay, and again inside its transaction. */
 export async function canAccessEmailDecision(
   db: Db,
