@@ -188,3 +188,32 @@ it("serializes capacity/touch/pin across controller instances and releases the g
   await b;
   expect(order).toEqual(["download", "installed", "pin"]);
 });
+it("can reclaim older unpinned versions of the same preparation while retaining the actually displayed comparison", async () => {
+  const f = await illustrationAssetsFixture(),
+    p = physical();
+  try {
+    const old = another(f.manifest, { id: f.preparation.id }),
+      shown = another(f.manifest, { id: f.preparation.id });
+    await remember(f, old, "2026-10-19T12:00:00Z");
+    await remember(f, shown, "2026-10-20T12:00:00Z");
+    p.put(old, "original", 20);
+    p.put(shown, "original", 20);
+    await reserveIllustrationCache(
+      f.a,
+      p.port,
+      f.manifest,
+      20,
+      () => {},
+      50,
+      shown.id,
+    );
+    expect(p.removed).toEqual([
+      `${f.scope.storeId}/${f.scope.ownerId}/${old.id}/original`,
+    ]);
+    expect(
+      await p.port.usage({ storeId: f.scope.storeId, userId: f.scope.ownerId }),
+    ).toBe(20);
+  } finally {
+    f.db.close();
+  }
+});

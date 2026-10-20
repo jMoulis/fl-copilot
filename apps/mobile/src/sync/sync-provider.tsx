@@ -185,6 +185,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
         illustrationHistoryPage: (storeId, before) =>
@@ -196,6 +197,17 @@ export function SyncProvider({ children }: PropsWithChildren) {
               before,
               50,
               "LAYOUT_ILLUSTRATIONS",
+            ),
+          ),
+        illustrationGenerationHistoryPage: (storeId, before) =>
+          withAccessToken((token) =>
+            api.copilotHistory(
+              token,
+              storeId,
+              undefined,
+              before,
+              50,
+              "LAYOUT_ILLUSTRATION_GENERATIONS",
             ),
           ),
         emailDecisionPage: (storeId, cursor) =>
@@ -211,6 +223,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               storeId,
               cursor,
               undefined,
+              true,
               true,
               true,
               true,
@@ -266,6 +279,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         substitutionScores: true,
         copilotDecisions: true,
         layoutIllustrations: true,
+        layoutIllustrationGenerations: true,
         emailIntake: true,
         emailIntakeAllowed: (storeId) =>
           emailReadSession.current?.user.id === session?.user.id &&

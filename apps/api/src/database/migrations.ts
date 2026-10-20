@@ -990,6 +990,40 @@ export const mongoMigrations: readonly MongoMigration[] = [
       });
     },
   },
+  {
+    version: 51,
+    name: "private-layout-illustration-generation-attempts",
+    async up(db) {
+      await db
+        .collection("copilotLayoutIllustrationGenerations")
+        .createIndex({ storeId: 1, ownerId: 1, createdAt: -1, _id: -1 });
+      await db
+        .collection("copilotLayoutIllustrationGenerations")
+        .createIndex({ "decision.quote.body.id": 1 }, { unique: true });
+      await db
+        .collection("copilotLayoutIllustrationGenerations")
+        .createIndex({ status: 1, recoverAt: 1, createdAt: 1 });
+      await db.collection("copilotLayoutIllustrationGenerations").createIndex(
+        { storeId: 1, ownerId: 1, preparationId: 1 },
+        {
+          unique: true,
+          partialFilterExpression: {
+            status: { $in: ["QUEUED", "SUBMITTED"] },
+          },
+        },
+      );
+      await db
+        .collection<{ _id: string; revision: number }>(
+          "layoutIllustrationAdmissionGate",
+        )
+        .updateOne(
+          { _id: "global" },
+          { $setOnInsert: { revision: 0 } },
+          { upsert: true },
+        );
+      // Budget documents use their stable global/store/owner UTC-day identity as _id.
+    },
+  },
 ];
 
 export async function runMongoMigrations(

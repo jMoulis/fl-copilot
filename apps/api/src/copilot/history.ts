@@ -1,4 +1,8 @@
 import {
+  serializeIllustrationGeneration,
+  type IllustrationGenerationDocument,
+} from "./layout-illustration-generation";
+import {
   copilotMessageIsDeleted,
   type CopilotConversation,
   type CopilotMessage,
@@ -61,6 +65,45 @@ export async function readCopilotHistory(
       conversations: [],
       messages: [],
       layoutIllustrations: selected.map(serializeLayoutIllustration),
+      hasMore: rows.length > query.limit,
+      before: last ? { createdAt: last.createdAt, id: last.id } : null,
+    });
+  }
+  if (query.recordType === "LAYOUT_ILLUSTRATION_GENERATIONS") {
+    const rows = await db
+      .collection<IllustrationGenerationDocument>(
+        "copilotLayoutIllustrationGenerations",
+      )
+      .find(
+        {
+          ...scope,
+          ...(query.beforeId
+            ? {
+                $or: [
+                  { createdAt: { $lt: query.beforeCreatedAt } },
+                  {
+                    createdAt: query.beforeCreatedAt,
+                    _id: { $lt: query.beforeId },
+                  },
+                ],
+              }
+            : {}),
+        },
+        { maxTimeMS: 2000 },
+      )
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(query.limit + 1)
+      .toArray();
+    const selected = rows.slice(0, query.limit),
+      last = selected.at(-1);
+    return historyPageSchema.parse({
+      ...scope,
+      conversationId: null,
+      conversations: [],
+      messages: [],
+      layoutIllustrationGenerations: selected.map(
+        serializeIllustrationGeneration,
+      ),
       hasMore: rows.length > query.limit,
       before: last ? { createdAt: last.createdAt, id: last.id } : null,
     });

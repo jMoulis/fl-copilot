@@ -183,6 +183,8 @@ export function createMongoSyncPullService(
                 query.copilotActionExecutions !== "true") ||
               (type === "copilot_execution_link" &&
                 query.copilotExecutionLinks !== "true") ||
+              (type === "copilot_layout_illustration_generation" &&
+                query.layoutIllustrationGenerations !== "true") ||
               (type === "copilot_layout_illustration" &&
                 query.layoutIllustrations !== "true") ||
               (type === "copilot_decision" &&
@@ -241,6 +243,8 @@ export function createMongoSyncPullService(
                 query.copilotExecutionLinks === "true") &&
               (change.entityType !== "email_intake_decision" ||
                 query.emailIntake === "true") &&
+              (change.entityType !== "copilot_layout_illustration_generation" ||
+                query.layoutIllustrationGenerations === "true") &&
               (change.entityType !== "copilot_layout_illustration" ||
                 query.layoutIllustrations === "true") &&
               (change.entityType !== "copilot_decision" ||

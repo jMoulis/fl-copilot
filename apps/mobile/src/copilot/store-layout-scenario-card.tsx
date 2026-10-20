@@ -216,6 +216,9 @@ export function StoreLayoutScenarioCard({
   preparation?: LayoutPreparationController;
   illustration?: {
     repository: LayoutIllustrationRepository;
+    generation?: React.ComponentProps<
+      typeof LayoutIllustrationPanel
+    >["generation"];
     files?: Pick<
       LayoutIllustrationTransfer,
       "load" | "refresh" | "setOfflineRequired"

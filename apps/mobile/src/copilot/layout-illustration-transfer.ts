@@ -48,6 +48,7 @@ export interface LayoutIllustrationFileTransport {
 /** Derived private file cache only. It cannot prepare, generate, adopt, publish or enqueue a provider job. */
 export class LayoutIllustrationTransfer {
   private flights = new Map<string, Promise<LayoutIllustrationView | null>>();
+  private displayed = new Map<string, string>();
   constructor(
     private db: OutboxDatabase & AtomicMutationDatabase,
     private repository: Pick<LayoutIllustrationRepository, "find">,
@@ -109,25 +110,49 @@ export class LayoutIllustrationTransfer {
       record = await this.repository.find(message);
     this.check(scope);
     if (!record) return null;
-    const row = await this.db.getFirstAsync<{ manifest_json: string }>(
-      "SELECT manifest_json FROM copilot_layout_illustration_files WHERE store_id=? AND owner_id=? AND preparation_id=? ORDER BY created_at DESC,id DESC LIMIT 1",
-      scope.storeId,
-      scope.userId,
-      record.entity.id,
-    );
-    if (!row) return null;
-    const manifest = await this.bound(message, JSON.parse(row.manifest_json)),
-      view = await this.view(message, manifest);
+    let before: { created_at: string; id: string } | undefined;
+    let partial: LayoutIllustrationView | null = null;
+    do {
+      const rows = await this.db.getAllAsync<{
+        id: string;
+        created_at: string;
+        manifest_json: string;
+      }>(
+        `SELECT id,created_at,manifest_json FROM copilot_layout_illustration_files WHERE store_id=? AND owner_id=? AND preparation_id=? ${before ? "AND (created_at<? OR (created_at=? AND id<?))" : ""} ORDER BY created_at DESC,id DESC LIMIT 20`,
+        scope.storeId,
+        scope.userId,
+        record.entity.id,
+        ...(before ? [before.created_at, before.created_at, before.id] : []),
+      );
+      for (const row of rows) {
+        const manifest = await this.bound(
+          message,
+          JSON.parse(row.manifest_json),
+        );
+        if (manifest.id !== row.id || manifest.createdAt !== row.created_at)
+          throw Error("LAYOUT_ILLUSTRATION_MANIFEST_INVALID");
+        const view = await this.view(message, manifest);
+        this.check(scope);
+        partial ??= view;
+        if (view.sourceUri && view.imageUri) {
+          await this.db.runAsync(
+            "UPDATE copilot_layout_illustration_files SET last_accessed_at=? WHERE id=? AND store_id=? AND owner_id=?",
+            this.now(),
+            manifest.id,
+            scope.storeId,
+            scope.userId,
+          );
+          this.check(scope);
+          this.displayed.set(message.id, manifest.id);
+          return view;
+        }
+      }
+      if (rows.length < 20) break;
+      before = rows.at(-1)!;
+    } while (before);
     this.check(scope);
-    await this.db.runAsync(
-      "UPDATE copilot_layout_illustration_files SET last_accessed_at=? WHERE id=? AND store_id=? AND owner_id=?",
-      this.now(),
-      manifest.id,
-      scope.storeId,
-      scope.userId,
-    );
-    this.check(scope);
-    return view;
+    if (partial) this.displayed.set(message.id, partial.manifest.id);
+    return partial;
   }
   private now() {
     return this.policy.now?.() ?? new Date().toISOString();
@@ -217,6 +242,7 @@ export class LayoutIllustrationTransfer {
       additional,
       check,
       this.policy.budgetBytes ?? LAYOUT_ILLUSTRATION_CACHE_BYTES,
+      this.displayed.get(message.id),
     );
     for (const variant of variants) {
       if (await this.files.existing(manifest, variant).catch(() => null)) {
@@ -241,6 +267,7 @@ export class LayoutIllustrationTransfer {
     await this.register(message, manifest, scope);
     const view = await this.view(message, manifest);
     check();
+    this.displayed.set(message.id, manifest.id);
     return view;
   }
   private async register(

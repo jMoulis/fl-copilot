@@ -118,3 +118,4 @@ export * from "./store-layout";
 export * from "./source-original";
 export * from "./email-intake";
 export * from "./layout-illustration-files";
+export * from "./layout-illustration-generation";

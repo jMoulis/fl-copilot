@@ -199,7 +199,7 @@ export class OutboxRepository {
       `
         SELECT * FROM sync_outbox
         WHERE store_id = ? AND status = 'PENDING'
-          AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link','mercalys_publication','copilot_knowledge','copilot_decision','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','store_layout','need_unit','need_membership','product_substitution','store_product_event','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
+          AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link','mercalys_publication','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','store_layout','need_unit','need_membership','product_substitution','store_product_event','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
             SELECT 1 FROM sync_outbox prior
             WHERE prior.store_id = sync_outbox.store_id
               AND prior.entity_type = sync_outbox.entity_type
@@ -230,7 +230,7 @@ export class OutboxRepository {
     }>(
       `SELECT command_id,entity_type,entity_id,local_sequence,last_error_code FROM sync_outbox
        WHERE store_id=? AND ${ACTIVE_FAILED_OUTBOX_SQL} AND local_sequence>?
-       AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge','copilot_decision','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution') OR
+       AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution') OR
          (? IS NOT NULL AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.ownerId')=?
           AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.storeId')=?))
        AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link') OR

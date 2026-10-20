@@ -1,4 +1,8 @@
 import {
+  serializeIllustrationGeneration,
+  type IllustrationGenerationDocument,
+} from "../copilot/layout-illustration-generation";
+import {
   serializeLayoutIllustration,
   type LayoutIllustrationDocument,
 } from "../copilot/layout-illustration-store";
@@ -223,6 +227,21 @@ export function createMongoSyncBootstrapService(
                 ? await mongoDatabase
                     .collection<LayoutIllustrationDocument>(
                       "copilotLayoutIllustrations",
+                    )
+                    .find(
+                      { storeId: store.storeId, ownerId: store.userId },
+                      { session },
+                    )
+                    .sort({ createdAt: -1, _id: -1 })
+                    .limit(51)
+                    .toArray()
+                : null;
+            const illustrationGenerations =
+              query.layoutIllustrationGenerations === "true" &&
+              query.copilotHistory === "true"
+                ? await mongoDatabase
+                    .collection<IllustrationGenerationDocument>(
+                      "copilotLayoutIllustrationGenerations",
                     )
                     .find(
                       { storeId: store.storeId, ownerId: store.userId },
@@ -521,6 +540,20 @@ export function createMongoSyncBootstrapService(
                       layoutIllustrationOwnerId: store.userId,
                       ...(illustrations.length > 50
                         ? { layoutIllustrationHistoryRequired: true as const }
+                        : {}),
+                    }
+                  : {}),
+                ...(illustrationGenerations
+                  ? {
+                      layoutIllustrationGenerations: illustrationGenerations
+                        .slice(0, 50)
+                        .map(serializeIllustrationGeneration),
+                      layoutIllustrationGenerationOwnerId: store.userId,
+                      ...(illustrationGenerations.length > 50
+                        ? {
+                            layoutIllustrationGenerationHistoryRequired:
+                              true as const,
+                          }
                         : {}),
                     }
                   : {}),

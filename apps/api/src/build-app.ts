@@ -1,3 +1,10 @@
+import { layoutIllustrationGenerationPolicySchema } from "@fl-copilot/domain";
+import {
+  createLayoutIllustrationGeneration,
+  type LayoutIllustrationGenerationService,
+} from "./copilot/layout-illustration-generation";
+import { createLayoutIllustrationProvider } from "./copilot/layout-illustration-provider";
+import { registerIllustrationGenerationRoutes } from "./copilot/layout-illustration-generation-routes";
 import {
   createLayoutIllustrationFiles,
   type LayoutIllustrationFiles,
@@ -254,6 +261,7 @@ type AppDependencies = {
   >[1]["retryOriginal"];
   visualFiles?: VisualFileService;
   layoutIllustrationFiles?: LayoutIllustrationFiles;
+  layoutIllustrationGeneration?: LayoutIllustrationGenerationService;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
 };
@@ -266,8 +274,41 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       config,
       dependencies.sendAuthCode,
     );
+  const illustrationPolicy = config.LAYOUT_ILLUSTRATION_GENERATION_ENABLED
+    ? layoutIllustrationGenerationPolicySchema.parse(
+        JSON.parse(config.LAYOUT_ILLUSTRATION_GENERATION_POLICY!),
+      )
+    : undefined;
+  const illustrationFiles =
+    dependencies.layoutIllustrationFiles ??
+    createLayoutIllustrationFiles(dependencies.database);
+  const illustrationGeneration =
+    dependencies.layoutIllustrationGeneration ??
+    createLayoutIllustrationGeneration(
+      dependencies.database,
+      {
+        enabled: config.LAYOUT_ILLUSTRATION_GENERATION_ENABLED,
+        policy: illustrationPolicy,
+        signingSecret: config.AUTH_TOKEN_SECRET,
+      },
+      illustrationFiles,
+      illustrationPolicy
+        ? createLayoutIllustrationProvider({
+            enabled: true,
+            apiKey: config.OPENAI_API_KEY,
+            textModel: illustrationPolicy.textModel,
+            imageModel: illustrationPolicy.imageModel,
+          })
+        : undefined,
+    );
   const syncPush =
-    dependencies.syncPush ?? createMongoSyncPushService(dependencies.database);
+    dependencies.syncPush ??
+    createMongoSyncPushService(
+      dependencies.database,
+      undefined,
+      undefined,
+      illustrationGeneration,
+    );
   const syncPull =
     dependencies.syncPull ?? createMongoSyncPullService(dependencies.database);
   const syncBootstrap =
@@ -301,6 +342,10 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     .attachments,
                 ),
               )
+            : undefined,
+          config.LAYOUT_ILLUSTRATION_GENERATION_ENABLED ||
+            config.LAYOUT_ILLUSTRATION_GENERATION_POLICY
+            ? illustrationGeneration
             : undefined,
         )
       : undefined;
@@ -574,14 +619,24 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "STORE_ROLE_FORBIDDEN",
           "Seul le responsable du magasin peut modifier le plan physique.",
         );
-      return request.body.commands.some(
+      const result = await (request.body.commands.some(
         (c) =>
           c.entityType.startsWith("copilot_") || c.type.startsWith("COPILOT_"),
       ) ||
-        hasLayoutWrite ||
-        hasVisualWrite
+      hasLayoutWrite ||
+      hasVisualWrite
         ? syncPush.push(request.body, request.id, principal.userId)
-        : syncPush.push(request.body, request.id);
+        : syncPush.push(request.body, request.id));
+      if (
+        commercialWorkflows &&
+        request.body.commands.some(
+          (c) => c.type === "COPILOT_LAYOUT_ILLUSTRATION_GENERATE",
+        )
+      )
+        await commercialWorkflows
+          .dispatchIllustrations(principal.storeId)
+          .catch(() => undefined);
+      return result;
     },
   );
   app.post(
@@ -1896,12 +1951,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         : syncBootstrap.bootstrap(store, request.query);
     },
   );
-  registerLayoutIllustrationFileRoutes(
-    app,
-    auth,
-    dependencies.layoutIllustrationFiles ??
-      createLayoutIllustrationFiles(dependencies.database),
-  );
+  registerIllustrationGenerationRoutes(app, auth, illustrationGeneration);
+  registerLayoutIllustrationFileRoutes(app, auth, illustrationFiles);
   registerVisualFileRoutes(
     app,
     auth,

@@ -3,10 +3,13 @@ import {
   copilotConversationSchema,
   copilotMessageSchema,
   layoutIllustrationPreparationSchema,
+  layoutIllustrationGenerationRecordSchema,
 } from "@fl-copilot/domain";
 export const copilotHistoryQuerySchema = z
   .object({
-    recordType: z.literal("LAYOUT_ILLUSTRATIONS").optional(),
+    recordType: z
+      .enum(["LAYOUT_ILLUSTRATIONS", "LAYOUT_ILLUSTRATION_GENERATIONS"])
+      .optional(),
     conversationId: z.string().uuid().optional(),
     beforeCreatedAt: z
       .string()
@@ -30,6 +33,10 @@ export const copilotHistoryPageSchema = z.object({
   conversationId: z.string().uuid().nullable(),
   conversations: z.array(copilotConversationSchema),
   messages: z.array(copilotMessageSchema),
+  layoutIllustrationGenerations: z
+    .array(layoutIllustrationGenerationRecordSchema)
+    .max(50)
+    .optional(),
   layoutIllustrations: z
     .array(layoutIllustrationPreparationSchema)
     .max(50)

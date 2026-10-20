@@ -349,3 +349,39 @@ it("rechecks private parent visibility after asynchronous file reads before retu
     f.db.close();
   }
 });
+it("keeps a complete older comparison after a new result download is interrupted, then resumes the same new result", async () => {
+  const { serializeLayoutIllustrationMetadata } =
+      await import("@fl-copilot/sync-contracts"),
+    f = await illustrationAssetsFixture();
+  try {
+    const p = ports(f),
+      first = await p.transfer.refresh(f.card),
+      { manifestHash: hash, ...metadata } = f.manifest;
+    void hash;
+    const data = {
+        ...metadata,
+        id: randomUUID(),
+        createdAt: "2026-10-20T18:00:00.000Z",
+      },
+      next = {
+        ...data,
+        manifestHash: sourceOriginalHash(
+          serializeLayoutIllustrationMetadata(data),
+        ),
+      };
+    p.api.manifest = async () => ({ state: "READY", manifest: next });
+    p.api.download = async (_s, _m, v) => {
+      if (v === "image") throw Error("OFFLINE");
+      return f.bytes[v];
+    };
+    await expect(p.transfer.refresh(f.card)).rejects.toThrow("OFFLINE");
+    expect((await p.transfer.load(f.card))?.manifest.id).toBe(
+      first?.manifest.id,
+    );
+    p.api.download = async (_s, _m, v) => f.bytes[v];
+    expect((await p.transfer.refresh(f.card))?.manifest.id).toBe(next.id);
+    expect((await p.transfer.load(f.card))?.manifest.id).toBe(next.id);
+  } finally {
+    f.db.close();
+  }
+});

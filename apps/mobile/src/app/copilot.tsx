@@ -1,3 +1,4 @@
+import { LayoutIllustrationGenerationRepository } from "../copilot/layout-illustration-generation-repository";
 import { LayoutIllustrationTransfer } from "../copilot/layout-illustration-transfer";
 import { nativeLayoutIllustrationFiles } from "../copilot/layout-illustration-native-files";
 import { LayoutIllustrationRepository } from "@/copilot/layout-illustration-repository";
@@ -320,6 +321,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       () => illustrationFileSession.current,
     );
   }, [sqlite, layoutIllustrations, ownerId, withAccessToken]);
+  const illustrationGeneration = useMemo(() => {
+    const api = new ApiClient(getApiBaseUrl());
+    return {
+      repository: new LayoutIllustrationGenerationRepository(
+        sqlite,
+        { storeId, ownerId, canPrepare: canManageProducts },
+        async (text) => `sha256:${await executionDigest(text)}`,
+      ),
+      quote: (id: string) =>
+        withAccessToken(
+          (token) => api.layoutIllustrationQuote(token, storeId, id),
+          ownerId,
+        ),
+    };
+  }, [sqlite, storeId, ownerId, canManageProducts, withAccessToken]);
   const layoutScenarios = useMemo(
     () => new CopilotStoreLayoutScenarioReader(sqlite, { storeId, ownerId }),
     [sqlite, storeId, ownerId],
@@ -847,6 +863,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           illustration={{
             repository: layoutIllustrations,
             files: illustrationFiles,
+            generation: illustrationGeneration,
             deviceId,
             canPrepare: canManageProducts,
           }}

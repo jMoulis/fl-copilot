@@ -1,3 +1,4 @@
+import type { LayoutIllustrationGenerationService } from "../copilot/layout-illustration-generation";
 import { createCommercialProcessingRecovery } from "./processing-recovery.js";
 import type { EmailOriginalProcessor } from "../intake/email-originals.js";
 import { createSubstitutionEvidenceProcessor } from "../substitution/processor.js";
@@ -13,6 +14,14 @@ const sourceIdentity = z.object({
   storeId: z.string().uuid(),
   sourceDocumentId: z.string().uuid(),
 });
+/** Workflow storage receives only progress identity, never quote signatures, prompts or image bytes. */
+export async function illustrationGenerationStage(
+  service: Pick<LayoutIllustrationGenerationService, "process">,
+  id: string,
+) {
+  const r = await service.process(id);
+  return { id: r.id, status: r.status, recoverAt: r.recoverAt };
+}
 export function createCommercialInngestWorkflows(
   database: DatabaseService,
   eventKey: string,
@@ -20,6 +29,10 @@ export function createCommercialInngestWorkflows(
   aiProvider?: CommercialAiProvider,
   visualProvider?: CommercialVisualProvider,
   emailOriginals?: EmailOriginalProcessor,
+  illustrations?: Pick<
+    LayoutIllustrationGenerationService,
+    "process" | "pending"
+  >,
 ) {
   const client = new Inngest({
     id: "fl-copilot-api",
@@ -27,6 +40,42 @@ export function createCommercialInngestWorkflows(
     signingKey,
     isDev: false,
   });
+  const illustration = illustrations
+    ? client.createFunction(
+        {
+          id: "layout-illustration-one-v1",
+          concurrency: 1,
+          retries: 3,
+          triggers: [{ event: "copilot/layout-illustration.generate" }],
+        },
+        async ({ event, step }) => {
+          const { id } = z.strictObject({ id: z.uuid() }).parse(event.data);
+          const first = await step.run(
+            "generate-once-and-conserve-original",
+            () => illustrationGenerationStage(illustrations, id),
+          );
+          if (first.status !== "SUBMITTED")
+            return { id: first.id, status: first.status };
+          await step.sleepUntil("wait-for-submitted-attempt", first.recoverAt!);
+          const recovered = await step.run("recover-same-original-only", () =>
+            illustrationGenerationStage(illustrations, id),
+          );
+          return { id: recovered.id, status: recovered.status };
+        },
+      )
+    : undefined;
+  async function dispatchIllustrations(storeId?: string) {
+    const pending = illustrations ? await illustrations.pending(storeId) : [];
+    if (pending.length)
+      await client.send(
+        pending.map((job) => ({
+          id: `layout-illustration.v1:${job.id}:${job.version}`,
+          name: "copilot/layout-illustration.generate",
+          data: { id: job.id },
+        })),
+      );
+    return pending.length;
+  }
   const emailOriginal = emailOriginals
     ? client.createFunction(
         {
@@ -302,7 +351,13 @@ export function createCommercialInngestWorkflows(
               }),
             ),
           );
+      const illustrationScheduled = illustrations
+        ? await step.run("recover-illustration-jobs", () =>
+            dispatchIllustrations(),
+          )
+        : 0;
       return {
+        illustrationScheduled,
         scheduled: pending.length,
         aiScheduled: aiPending.length,
         visualScheduled: visualPending.length,
@@ -335,12 +390,14 @@ export function createCommercialInngestWorkflows(
     client,
     recovery,
     dispatchEmailOriginals,
+    dispatchIllustrations,
     functions: [
       resume,
       extract,
       recover,
       evidence,
       ...(emailOriginal ? [emailOriginal] : []),
+      ...(illustration ? [illustration] : []),
       ...(aiDocument && aiPage ? [aiDocument, aiPage] : []),
       ...(visualPage ? [visualPage] : []),
     ],
