@@ -1,3 +1,9 @@
+import { isVisualEntityType } from "@fl-copilot/domain";
+import {
+  createVisualFileService,
+  type VisualFileService,
+} from "./products/visual-file-service";
+import { registerVisualFileRoutes } from "./products/visual-file-routes";
 import { serializeChatForClient } from "./copilot/conversation-store";
 import { readStoreLayoutScenarioSources } from "./copilot/store-layout-scenario-tool";
 import {
@@ -211,6 +217,7 @@ type AppDependencies = {
   syncPull?: SyncPullService;
   syncPush?: SyncPushService;
   sourceUploads?: SourceUploadService;
+  visualFiles?: VisualFileService;
   commercialRecovery?: CommercialProcessingRecoveryService;
   importVerification?: ImportVerificationService;
 };
@@ -498,6 +505,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.body.storeId,
         request.body.deviceId,
       );
+      const hasVisualWrite = request.body.commands.some((c) =>
+        isVisualEntityType(c.entityType),
+      );
+      if (hasVisualWrite && principal.role !== "MANAGER")
+        throw new AuthError(
+          403,
+          "STORE_ROLE_FORBIDDEN",
+          "Seul le responsable peut approuver les visuels du magasin.",
+        );
       const hasLayoutWrite = request.body.commands.some(
         (c) =>
           c.entityType === "store_layout" || c.type === "STORE_LAYOUT_UPSERT",
@@ -511,7 +527,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       return request.body.commands.some(
         (c) =>
           c.entityType.startsWith("copilot_") || c.type.startsWith("COPILOT_"),
-      ) || hasLayoutWrite
+      ) ||
+        hasLayoutWrite ||
+        hasVisualWrite
         ? syncPush.push(request.body, request.id, principal.userId)
         : syncPush.push(request.body, request.id);
     },
@@ -1760,6 +1778,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         ? syncBootstrap.bootstrap(store, request.query, true)
         : syncBootstrap.bootstrap(store, request.query);
     },
+  );
+  registerVisualFileRoutes(
+    app,
+    auth,
+    dependencies.visualFiles ?? createVisualFileService(dependencies.database),
   );
   app.post(
     "/api/v1/uploads/init",

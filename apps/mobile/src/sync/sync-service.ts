@@ -1,3 +1,8 @@
+import { isVisualEntityType, visualEntitySchemas } from "@fl-copilot/domain";
+import {
+  applyVisualEntity,
+  visualTables,
+} from "../products/visual-library-repository";
 import { storeLayoutSchema } from "@fl-copilot/domain";
 import { applyStoreLayout } from "../store/layout-repository";
 import { applyMercalysPublication } from "../documents/mercalys-publication-sync";
@@ -68,6 +73,7 @@ export interface MobileSyncServiceOptions {
   commercialExecutionActuals?: boolean;
   storeContext?: boolean;
   storeLayouts?: boolean;
+  visualLibrary?: boolean;
   physicalAllocations?: boolean;
   needUnits?: boolean;
   needMemberships?: boolean;
@@ -185,6 +191,12 @@ export class MobileSyncService {
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
           `physical-allocations:${storeId}`,
+        )
+      : true;
+    const visualsAdopted = this.options.visualLibrary
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `visual-library:${storeId}`,
         )
       : true;
     const layoutsAdopted = this.options.storeLayouts
@@ -325,6 +337,7 @@ export class MobileSyncService {
       !validationAdopted ||
       !versionsAdopted ||
       !storeContextAdopted ||
+      !visualsAdopted ||
       !layoutsAdopted ||
       !physicalAllocationsAdopted ||
       !needUnitsAdopted ||
@@ -377,13 +390,17 @@ export class MobileSyncService {
         this.database,
         this.now,
       ).listPending(storeId);
-      const ownedCommands = commands.filter(
-        (c) =>
-          !c.entityType.startsWith("copilot_") ||
-          (typeof c.payload === "object" &&
+      const ownedCommands = commands.filter((c) =>
+        isVisualEntityType(c.entityType)
+          ? typeof c.payload === "object" &&
             c.payload !== null &&
-            "ownerId" in c.payload &&
-            c.payload.ownerId === this.options.copilotOwnerId),
+            "updatedBy" in c.payload &&
+            c.payload.updatedBy === this.options.copilotOwnerId
+          : !c.entityType.startsWith("copilot_") ||
+            (typeof c.payload === "object" &&
+              c.payload !== null &&
+              "ownerId" in c.payload &&
+              c.payload.ownerId === this.options.copilotOwnerId),
       );
       if (ownedCommands.length === 0) return summary;
       const ready = ownedCommands.filter((c) => !deferred.has(c.commandId));
@@ -456,6 +473,9 @@ export class MobileSyncService {
                 "commercial_execution_task",
                 "store_context_settings",
                 "store_layout",
+                "visual_asset",
+                "visual_identity",
+                "product_visual_link",
                 "need_unit",
                 "need_membership",
                 "product_substitution",
@@ -608,6 +628,26 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (isVisualEntityType(command.entityType)) {
+            const expected = visualEntitySchemas[command.entityType].parse(
+                command.payload,
+              ),
+              received = visualEntitySchemas[command.entityType].parse(
+                result.remoteEntity,
+              );
+            if (
+              result.remoteVersion !== expected.version ||
+              JSON.stringify(expected) !== JSON.stringify(received)
+            )
+              throw Error("VISUAL_ACK_INVALID");
+            await applyVisualEntity(
+              transaction,
+              storeId,
+              command.entityType,
+              received,
+              expected.version,
+            );
+          }
           if (command.entityType === "store_layout") {
             const expected = storeLayoutSchema.parse(command.payload),
               received = storeLayoutSchema.parse(result.remoteEntity);
@@ -745,6 +785,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (isVisualEntityType(command.entityType))
+            await transaction.runAsync(
+              `UPDATE ${visualTables[command.entityType]} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "store_layout")
             await transaction.runAsync(
               "UPDATE store_layouts SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -853,6 +899,12 @@ export class MobileSyncService {
           if (command.entityType === "commercial_week_plan")
             await transaction.runAsync(
               "UPDATE commercial_week_plans SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (isVisualEntityType(command.entityType))
+            await transaction.runAsync(
+              `UPDATE ${visualTables[command.entityType]} SET sync_state='ERROR' WHERE id=? AND store_id=?`,
               command.entityId,
               storeId,
             );

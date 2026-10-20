@@ -4,6 +4,7 @@ export * from "./copilot-source-offers";
 export * from "./copilot-choice-retention";
 export * from "./copilot-choice-reassociation";
 export * from "./products";
+export * from "./visual-library";
 export * from "./product-matching";
 export * from "./source-documents";
 export * from "./observations";
@@ -157,3 +158,6 @@ export * from "./store-layout-scenario";
 export * from "./physical-allocation-compatibility";
 export * from "./analytics-explorer";
 export * from "./analytics-destination-table";
+
+export * from "./visual-id";
+export * from "./visual-conflict";

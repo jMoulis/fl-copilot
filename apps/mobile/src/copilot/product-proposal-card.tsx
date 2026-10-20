@@ -3,6 +3,10 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotProductProposalController } from "./product-proposal-controller";
 import { colors } from "../design/tokens";
+import {
+  LinkedProductVisual,
+  type SharedProductVisuals,
+} from "../products/linked-product-visual";
 const labels = {
   category: "Catégorie",
   nature: "Nature",
@@ -23,10 +27,12 @@ export function ProductProposalCard({
   message,
   controller,
   canConfirm,
+  visuals,
 }: {
   message: CopilotMessage;
   controller: CopilotProductProposalController;
   canConfirm: boolean;
+  visuals?: SharedProductVisuals;
 }) {
   const [state, setState] =
     useState<Awaited<ReturnType<CopilotProductProposalController["open"]>>>();
@@ -96,16 +102,29 @@ export function ProductProposalCard({
         <>
           {state.items.map((item) => (
             <View key={item.before.id} style={{ gap: 6 }}>
-              <Text style={{ fontWeight: "600" }}>{item.before.label}</Text>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
+              >
+                {visuals ? (
+                  <LinkedProductVisual
+                    productId={item.before.id}
+                    storeId={item.before.storeId}
+                    visuals={visuals}
+                  />
+                ) : null}
+                <Text style={{ color: colors.ink, fontWeight: "600", flex: 1 }}>
+                  {item.before.label}
+                </Text>
+              </View>
               {item.preview.changedFields.map((key) => (
-                <Text key={key}>
+                <Text key={key} style={{ color: colors.ink }}>
                   {labels[key]} : {values[item.preview.before[key]]} →{" "}
                   {values[item.preview.proposed[key]]}
                 </Text>
               ))}
             </View>
           ))}
-          <Text>
+          <Text style={{ color: colors.muted }}>
             {state.status === "COMPLETED"
               ? "Correction enregistrée localement. La synchronisation peut rester en attente."
               : state.status === "STALE"
@@ -119,6 +138,7 @@ export function ProductProposalCard({
           {state.status === "READY" && canConfirm ? (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ disabled: saving, busy: saving }}
               disabled={saving}
               onPress={() => {
                 void confirm();
@@ -132,7 +152,7 @@ export function ProductProposalCard({
             >
               <Text
                 style={{
-                  color: "white",
+                  color: colors.onAccent,
                   textAlign: "center",
                   fontWeight: "600",
                 }}

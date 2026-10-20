@@ -1,3 +1,4 @@
+import { useVisualLibrary } from "@/products/use-visual-library";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
 import { router, useFocusEffect, type Href } from "expo-router";
@@ -40,6 +41,11 @@ function StoreCatalogue({
   ownerId: string;
 }) {
   const state = useProductList();
+  const gallery = useVisualLibrary();
+  const visuals = useMemo(
+    () => ({ state: gallery.state, readUri: gallery.readUri }),
+    [gallery.state, gallery.readUri],
+  );
   const { sqlite } = useLocalDatabase();
   const cache = useMemo(
     () => new CatalogueViewRepository(sqlite, { storeId, ownerId }),
@@ -122,6 +128,7 @@ function StoreCatalogue({
     );
   return (
     <CatalogueList
+      visuals={visuals}
       items={state.products}
       view={view}
       onChange={update}

@@ -1,3 +1,4 @@
+import { applyVisualEntity } from "../products/visual-library-repository";
 import {
   applyStoreLayout,
   applyStoreLayoutRevision,
@@ -179,6 +180,24 @@ export async function applyBootstrap(
       );
     for (const revision of bootstrap.entities.storeLayoutRevisions ?? [])
       await applyStoreLayoutRevision(transaction, storeId, revision);
+    for (const value of bootstrap.entities.visualAssets ?? [])
+      await applyVisualEntity(transaction, storeId, "visual_asset", value);
+    for (const value of bootstrap.entities.visualIdentities ?? [])
+      await applyVisualEntity(transaction, storeId, "visual_identity", value);
+    for (const value of bootstrap.entities.productVisualLinks ?? [])
+      await applyVisualEntity(
+        transaction,
+        storeId,
+        "product_visual_link",
+        value,
+      );
+    if (bootstrap.entities.visualLibrary === true)
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `visual-library:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
     for (const plan of bootstrap.entities.storeLayouts ?? [])
       await applyStoreLayout(transaction, storeId, plan);
     if (
@@ -390,6 +409,10 @@ export async function applyBootstrap(
 
 function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
   const supported = new Set([
+    "visualLibrary",
+    "visualAssets",
+    "visualIdentities",
+    "productVisualLinks",
     "commercialOfferChoices",
     "commercialWeekPreparations",
     "commercialExecutionTasks",

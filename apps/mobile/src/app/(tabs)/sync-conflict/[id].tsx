@@ -1,5 +1,7 @@
 import { RecommendationDecisionConflict } from "@/copilot/recommendation-decision-conflict";
 import { ProductMasterConflict } from "@/products/conflict";
+import { VisualLibraryConflict } from "@/products/visual-conflict";
+import { isVisualEntityType } from "@fl-copilot/domain";
 import { StoreEventConflict } from "@/needs/store-event-conflict";
 import { ProductSubstitutionConflict } from "@/needs/substitution-conflict";
 import { NeedMembershipConflict } from "@/needs/membership-conflict";
@@ -64,9 +66,11 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          {["product", "product_identifier", "product_alias"].includes(
-            conflict.entityType,
-          ) ? (
+          {isVisualEntityType(conflict.entityType) ? (
+            <VisualLibraryConflict conflict={conflict} />
+          ) : ["product", "product_identifier", "product_alias"].includes(
+              conflict.entityType,
+            ) ? (
             <ProductMasterConflict conflict={conflict} />
           ) : conflict.entityType === "store_product_event" ? (
             <StoreEventConflict conflict={conflict} />

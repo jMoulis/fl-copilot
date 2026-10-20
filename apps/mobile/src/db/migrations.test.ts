@@ -138,6 +138,7 @@ describe("local SQLite migrations", () => {
       "product_master_remote_snapshots",
       "product_substitution_history",
       "product_substitutions",
+      "product_visual_links",
       "products",
       "sales_observations",
       "source_documents",
@@ -157,6 +158,10 @@ describe("local SQLite migrations", () => {
       "sync_inbox_state",
       "sync_outbox",
       "sync_test_entities",
+      "visual_asset_files",
+      "visual_assets",
+      "visual_conflict_history",
+      "visual_identities",
       "waste_lines",
       "waste_observations",
       "waste_receipt_photo_groups",
@@ -538,6 +543,55 @@ INSERT INTO sync_outbox(command_id,store_id,device_id,local_sequence,command_typ
         .get()!.n,
     ).toBe(0);
     expect(await getLocalSchemaVersion(adapter)).toBe(localMigrations.length);
+  } finally {
+    database.close();
+  }
+});
+
+it("adds the v50 visual cache without changing the v49 layout, catalogue or pending source work", async () => {
+  const { adapter, database } = openTemporaryDatabase();
+  try {
+    await runLocalMigrations(adapter, localMigrations.slice(0, 49));
+    database.exec(`INSERT INTO store_layouts(id,store_id,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES('plan','store','{"local":"kept"}','{"remote":"kept"}',2,'PENDING',1);
+INSERT INTO store_layout_revisions(id,store_id,plan_version,payload_json,synced) VALUES('revision','store',3,'{"geometry":"kept"}',0);
+INSERT INTO store_layout_operations(command_id,store_id,intent_json,payload_json) VALUES('layout-command','store','{"action":"kept"}','{"plan":"kept"}');
+INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at,sync_state,dirty) VALUES('product','store','Poire','FRUIT','BULK','KG','ACTIVE',2,'2026-10-01T00:00:00Z','2026-10-02T00:00:00Z','PENDING',1);
+INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,last_error,created_at,updated_at) VALUES('source-job','SOURCE_UPLOAD_AND_REGISTER','{}','RETRY',2,'NETWORK_UNAVAILABLE','2026-10-18T12:00:00Z','2026-10-18T12:00:00Z');`);
+    const tables = [
+      "store_layouts",
+      "store_layout_revisions",
+      "store_layout_operations",
+      "products",
+      "local_jobs",
+    ];
+    const before = tables.map((table) =>
+      database.prepare(`SELECT * FROM ${table}`).all(),
+    );
+    await runLocalMigrations(adapter);
+    await runLocalMigrations(adapter);
+    expect(
+      tables.map((table) => database.prepare(`SELECT * FROM ${table}`).all()),
+    ).toEqual(before);
+    expect(
+      database
+        .prepare("PRAGMA table_info(visual_asset_files)")
+        .all()
+        .map((r) => r.name),
+    ).toEqual([
+      "asset_id",
+      "store_id",
+      "variant",
+      "relative_path",
+      "verified_hash",
+      "size_bytes",
+      "last_accessed_at",
+      "pinned",
+      "uploaded",
+      "manifest_json",
+    ]);
+    expect(
+      database.prepare("SELECT COUNT(*) n FROM visual_asset_files").get()!.n,
+    ).toBe(0);
   } finally {
     database.close();
   }

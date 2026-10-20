@@ -36,6 +36,7 @@ import {
 } from "./explorer-state";
 import { ExplorerContent, ExplorerPeriodPicker } from "./explorer-view";
 import { colors } from "../design/tokens";
+import { useVisualLibrary } from "../products/use-visual-library";
 function tradingToday() {
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Europe/Paris",
@@ -77,6 +78,7 @@ function StoreExplorer({
   ownerId: string;
   selection?: string | string[];
 }) {
+  const visuals = useVisualLibrary();
   const { sqlite } = useLocalDatabase(),
     sync = useSync(),
     repo = useMemo(() => new ExplorerRepository(sqlite), [sqlite]),
@@ -390,6 +392,8 @@ function StoreExplorer({
             {data ? (
               <ExplorerBreakdown
                 data={data}
+                visuals={visuals}
+                storeId={storeId}
                 onCategory={(category) =>
                   change(
                     drillExplorerScope(current.current!, {

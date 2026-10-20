@@ -15,6 +15,9 @@ const labels: Record<string, string> = {
   product_substitution: "Substitution",
   store_product_event: "Signalement magasin",
   store_layout: "Plan physique du magasin",
+  visual_asset: "Image produit",
+  visual_identity: "Identité visuelle",
+  product_visual_link: "Image associée au produit",
   store_context_settings: "Réglages du magasin",
   commercial_offer_choice: "Choix d’offre",
   commercial_week_preparation: "Préparation commerciale",
@@ -35,6 +38,7 @@ export function syncFailurePresentation(
       "STORE_ACCESS_DENIED",
       "STORE_ROLE_FORBIDDEN",
       "ROLE_FORBIDDEN",
+      "VISUAL_ACCESS_INVALID",
     ].includes(code ?? "")
   )
     message =
@@ -49,6 +53,18 @@ export function syncFailurePresentation(
   )
     message =
       "Ce code semble déjà associé à un produit. Examinez le référentiel avant de corriger l’association.";
+  if (code === "VISUAL_TARGET_UNAVAILABLE")
+    message =
+      "Un produit, une identité visuelle ou une image liée a été retiré ou doit être corrigé. La photo et le choix sont conservés ; reprenez d’abord la cible concernée.";
+  if (
+    code === "VISUAL_RIGHTS_CONFIRMATION_INVALID" ||
+    code === "VISUAL_REVIEW_REQUIRED"
+  )
+    message =
+      "Les droits ou la validation de cette image doivent être confirmés à nouveau par le responsable. La photo originale est conservée.";
+  if (code === "VISUAL_ID_INVALID" || code === "VISUAL_COMMAND_INVALID")
+    message =
+      "Le format de ce choix n’est pas compatible avec le service. Mettez l’application à jour puis relisez la modification ; la source reste conservée.";
   if (
     entityType === "copilot_action_execution" &&
     code?.startsWith("COPILOT_ACTION_EXECUTION_")

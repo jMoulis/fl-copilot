@@ -1,3 +1,13 @@
+import { ProductVisual } from "./product-visual";
+import {
+  resolveLibraryState,
+  type VisualLibraryState,
+} from "./visual-library-state";
+import type { VisualAsset } from "@fl-copilot/domain";
+type CatalogueVisuals = {
+  state: VisualLibraryState | null;
+  readUri(asset: VisualAsset): Promise<string | null>;
+};
 import { memo, useMemo, useRef, useState, useEffect } from "react";
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -34,6 +44,7 @@ export function CatalogueList({
   notice,
   onRefresh,
   storeMissing = false,
+  visuals,
 }: {
   items: ProductListItem[];
   view: CatalogueView;
@@ -45,6 +56,7 @@ export function CatalogueList({
   notice?: string;
   onRefresh(): void;
   storeMissing?: boolean;
+  visuals?: CatalogueVisuals;
 }) {
   const [filters, setFilters] = useState(false);
   const list = useRef<FlatList<ProductListItem>>(null);
@@ -206,7 +218,9 @@ export function CatalogueList({
             </View>
           ) : null
         }
-        renderItem={({ item }) => <CatalogueRow item={item} onOpen={onOpen} />}
+        renderItem={({ item }) => (
+          <CatalogueRow item={item} onOpen={onOpen} visuals={visuals} />
+        )}
       />
       <BottomSheet
         visible={filters}
@@ -304,7 +318,9 @@ export function CatalogueChoices({
 const CatalogueRow = memo(function CatalogueRow({
   item: { record, conflictId },
   onOpen,
+  visuals,
 }: {
+  visuals?: CatalogueVisuals;
   item: ProductListItem;
   onOpen(id: string): void;
 }) {
@@ -317,6 +333,11 @@ const CatalogueRow = memo(function CatalogueRow({
       className="flex-row items-center gap-3 rounded-2xl border border-line bg-surface p-4"
       style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
     >
+      <ProductVisual
+        category={p.category}
+        resolution={resolveLibraryState(visuals?.state ?? null, p)}
+        readUri={visuals?.readUri}
+      />
       <View className="flex-1 gap-2">
         <Text className="text-base font-semibold text-ink">{p.label}</Text>
         <Text className="text-sm text-muted">

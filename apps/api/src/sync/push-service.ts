@@ -1,3 +1,8 @@
+import { isVisualEntityType } from "@fl-copilot/domain";
+import {
+  applyVisualCommand,
+  VisualParentPendingError,
+} from "../products/visual-library-sync";
 import { legacyPhysicalEntity } from "@fl-copilot/domain";
 import { applyStoreLayoutCommand } from "../store-layout-sync";
 import {
@@ -127,7 +132,8 @@ export function createMongoSyncPushService(
               entityType: command.entityType,
               entityId: command.entityId,
               ...(isChatType(command.entityType) ||
-              command.entityType === "store_layout"
+              command.entityType === "store_layout" ||
+              isVisualEntityType(command.entityType)
                 ? { ownerId }
                 : {}),
             },
@@ -180,7 +186,8 @@ export function createMongoSyncPushService(
           results.push(
             error instanceof ProcessedCommandIdentityError
               ? rejectedIdentityResult(command, requestId)
-              : error instanceof KnowledgeParentPendingError ||
+              : error instanceof VisualParentPendingError ||
+                  error instanceof KnowledgeParentPendingError ||
                   error instanceof ChatParentPendingError ||
                   error instanceof NeedMembershipParentPendingError ||
                   error instanceof ProductSubstitutionParentPendingError ||
@@ -241,6 +248,16 @@ async function applyCommand(
   ownerId?: string,
   mercalysReader?: PrivateSourceReader,
 ) {
+  if (isVisualEntityType(command.entityType))
+    return applyVisualCommand(
+      context,
+      storeId,
+      command.entityType,
+      command,
+      requestId,
+      syncChanges,
+      ownerId,
+    );
   if (isChatType(command.entityType))
     return applyChatCommand(
       context,

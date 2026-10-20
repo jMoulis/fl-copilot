@@ -8,6 +8,8 @@ import { SourceUploadRecoveryPanel } from "../documents/source-upload-recovery-p
 import { OutboxRepository, type OutboxDatabase } from "./outbox-repository";
 import { syncFailurePresentation } from "./failure-presentation";
 import { useSync } from "./sync-provider";
+import { isVisualEntityType } from "@fl-copilot/domain";
+import { z } from "zod";
 export function SyncRecoveryPanel() {
   const { sqlite } = useLocalDatabase(),
     { session } = useAuth(),
@@ -115,7 +117,7 @@ function FailedCommands({
           item.entityType,
           item.code,
         );
-        const target = examinationTarget(item.entityType);
+        const target = examinationTarget(item.entityType, item.entityId);
         return (
           <View
             key={item.commandId}
@@ -155,7 +157,12 @@ function FailedCommands({
     </SectionCard>
   );
 }
-function examinationTarget(type: string) {
+function examinationTarget(type: string, id: string) {
+  if (isVisualEntityType(type) && z.uuid().safeParse(id).success)
+    return {
+      label: "Reprendre ce visuel",
+      path: `/(tabs)/visual-recovery/${type}/${id}`,
+    };
   if (["product", "product_identifier", "product_alias"].includes(type))
     return { label: "Examiner le référentiel", path: "/(tabs)/products" };
   if (type === "mercalys_publication")

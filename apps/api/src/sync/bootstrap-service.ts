@@ -1,4 +1,8 @@
 import {
+  visualCollections,
+  serializeVisualEntity,
+} from "../products/visual-library-sync";
+import {
   legacyPhysicalPreparation,
   legacyPhysicalPlan,
   legacyPhysicalEntity,
@@ -155,6 +159,32 @@ export function createMongoSyncBootstrapService(
                 { _id: store.storeId },
                 { session, promoteLongs: false },
               );
+            const visualEntities =
+              query.visualLibrary === "true"
+                ? {
+                    visualLibrary: true,
+                    visualAssets: (
+                      await mongoDatabase
+                        .collection(visualCollections.visual_asset)
+                        .find({ storeId: store.storeId }, { session })
+                        .toArray()
+                    ).map((r) => serializeVisualEntity("visual_asset", r)),
+                    visualIdentities: (
+                      await mongoDatabase
+                        .collection(visualCollections.visual_identity)
+                        .find({ storeId: store.storeId }, { session })
+                        .toArray()
+                    ).map((r) => serializeVisualEntity("visual_identity", r)),
+                    productVisualLinks: (
+                      await mongoDatabase
+                        .collection(visualCollections.product_visual_link)
+                        .find({ storeId: store.storeId }, { session })
+                        .toArray()
+                    ).map((r) =>
+                      serializeVisualEntity("product_visual_link", r),
+                    ),
+                  }
+                : {};
             const actions =
               query.copilotActionExecutions === "true" &&
               query.copilotHistory === "true"
@@ -550,6 +580,7 @@ export function createMongoSyncBootstrapService(
                       ),
                     }
                   : {}),
+                ...visualEntities,
                 ...(query.physicalAllocations === "true"
                   ? { physicalAllocations: true }
                   : {}),
