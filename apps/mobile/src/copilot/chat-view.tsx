@@ -241,26 +241,35 @@ export function CopilotChatView({
               </View>
             ) : null
           }
-          renderItem={({ item }) =>
-            item.role === "TOOL" ? (
+          renderItem={({ item }) => {
+            const onLongPress =
+              status !== "GENERATING" && onDeleteMessage
+                ? () => showMessageMenu(item, () => onDeleteMessage(item))
+                : undefined;
+            // A whole-message press responder must not surround a native table scroller.
+            const MessageContainer =
+              item.role === "ASSISTANT" ? View : Pressable;
+            return item.role === "TOOL" ? (
               <View style={styles.assistantMessage}>
                 {renderToolMessage?.(item)}
               </View>
             ) : (
-              <Pressable
-                onLongPress={
-                  status !== "GENERATING" && onDeleteMessage
-                    ? () => showMessageMenu(item, () => onDeleteMessage(item))
-                    : undefined
-                }
-                delayLongPress={450}
+              <MessageContainer
+                {...(item.role === "USER"
+                  ? { onLongPress, delayLongPress: 450 }
+                  : {})}
                 style={
                   item.role === "USER"
                     ? styles.userMessage
                     : styles.assistantMessage
                 }
               >
-                <Text style={styles.author}>
+                <Text
+                  style={styles.author}
+                  onLongPress={
+                    item.role === "ASSISTANT" ? onLongPress : undefined
+                  }
+                >
                   {item.role === "USER" ? "Vous" : "Copilote"}
                 </Text>
                 {item.role === "ASSISTANT" ? (
@@ -268,6 +277,7 @@ export function CopilotChatView({
                     text={item.text}
                     analyticsDestinations={item.analyticsDestinations}
                     selectable={false}
+                    onLongPress={onLongPress}
                     renderSource={(id) => {
                       const a = item.attachments.find(
                         (a) => a.sourceDocumentId === id,
@@ -326,9 +336,9 @@ export function CopilotChatView({
                     {renderAttachment?.(attachment, item)}
                   </View>
                 ))}
-              </Pressable>
-            )
-          }
+              </MessageContainer>
+            );
+          }}
         />
         {showLatest ? (
           <Pressable
