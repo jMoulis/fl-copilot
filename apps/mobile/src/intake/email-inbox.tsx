@@ -8,6 +8,17 @@ import type { EmailIntakeReceipt } from "@fl-copilot/sync-contracts";
 import type { SyncContextValue } from "../sync/sync-provider";
 import { InlineAlert, PrimaryButton, SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
+import { MAX_RECEIPT_VIEWS } from "@fl-copilot/domain";
+import {
+  newEmailAdmissionSelection,
+  selectedEmailFiles,
+  groupEmailTicketViews,
+  setEmailFilePurpose,
+  separateEmailTickets,
+  emailAdmissionFiles,
+  type EmailAdmissionSelection,
+  type EmailFilePurpose,
+} from "./email-admission-selection";
 import {
   EmailProcessingControls,
   type EmailProcessingControlsPort,
@@ -123,9 +134,7 @@ export function EmailInbox({
       undefined,
     );
   const loadEpoch = useRef(0);
-  const selections = useRef(
-    new Map<string, { excluded: Set<string>; ids: Map<string, string> }>(),
-  );
+  const selections = useRef(new Map<string, EmailAdmissionSelection>());
   useEffect(() => {
     alive.current = true;
     return () => {
@@ -388,7 +397,7 @@ function EmailReceivedCard({
   revision?: string;
   expanded: boolean;
   onExpand(): void;
-  selection: Map<string, { excluded: Set<string>; ids: Map<string, string> }>;
+  selection: Map<string, EmailAdmissionSelection>;
   onChanged(): Promise<void>;
   onOpenSync(conflictId?: string): void;
 }) {
@@ -397,6 +406,9 @@ function EmailReceivedCard({
     [busy, setBusy] = useState(false),
     [loaded, setLoaded] = useState(false),
     [discarding, setDiscarding] = useState(false),
+    [grouping, setGrouping] = useState(false),
+    [views, setViews] = useState<Set<string>>(new Set()),
+    [purposeFile, setPurposeFile] = useState<string>(),
     [error, setError] = useState<string>(),
     [, changed] = useState(0);
   const alive = useRef(true),
@@ -430,21 +442,49 @@ function EmailReceivedCard({
   }, [inbox, conversationId, receipt.id, receipt.version, revision]);
   let draft = selection.get(receipt.id);
   if (!draft) {
-    draft = { excluded: new Set(), ids: new Map() };
+    draft = newEmailAdmissionSelection();
     selection.set(receipt.id, draft);
   }
-  const selected = receipt.files.filter(
-    (file) =>
-      ["READY", "PENDING", "FAILED"].includes(file.status) &&
-      !file.sourceDocumentId &&
-      !draft.excluded.has(file.id),
-  );
+  const selected = selectedEmailFiles(receipt, draft);
+  const groups = new Map<string, string[]>();
+  for (const file of selected) {
+    const group = draft.tickets.get(file.id);
+    if (group) groups.set(group, [...(groups.get(group) ?? []), file.id]);
+  }
+  function choosePurpose(fileId: string, purpose: EmailFilePurpose) {
+    if (busy || !canChoose) return;
+    try {
+      setEmailFilePurpose(receipt, draft!, fileId, purpose);
+      changed((value) => value + 1);
+      setPurposeFile(undefined);
+      setError(undefined);
+    } catch {
+      setError(
+        "La sélection a changé. Vérifiez les fichiers avant de confirmer.",
+      );
+    }
+  }
+  function groupViews() {
+    if (busy || !canChoose) return;
+    try {
+      groupEmailTicketViews(receipt, draft!, [...views], randomUUID);
+      setViews(new Set());
+      setGrouping(false);
+      changed((value) => value + 1);
+      setError(undefined);
+    } catch {
+      setError(
+        `Choisissez entre 2 et ${MAX_RECEIPT_VIEWS} photos sélectionnées du même ticket.`,
+      );
+    }
+  }
   const canChoose =
     loaded && !decision && receipt.status === "AWAITING_CONFIRMATION";
   async function decide(choice: "ADMIT" | "DISMISS") {
     if (
       pending.current ||
       !canChoose ||
+      grouping ||
       (choice === "ADMIT" && !selected.length)
     )
       return;
@@ -455,18 +495,7 @@ function EmailReceivedCard({
     try {
       const files =
         choice === "ADMIT"
-          ? selected.map((file) => {
-              let id = draft!.ids.get(file.id);
-              if (!id) {
-                id = randomUUID();
-                draft!.ids.set(file.id, id);
-              }
-              return {
-                fileId: file.id,
-                processingId: id,
-                mode: "AUTO" as const,
-              };
-            })
+          ? emailAdmissionFiles(receipt, draft!, randomUUID)
           : [];
       const value = await inbox.decide({
         conversationId,
@@ -545,24 +574,130 @@ function EmailReceivedCard({
         label={expanded ? "Masquer les fichiers" : "Voir les fichiers"}
         onPress={onExpand}
       />
+      {canChoose && expanded ? (
+        <View style={{ gap: 10 }}>
+          {grouping ? (
+            <>
+              <InlineAlert
+                title="Vues d’un même ticket"
+                message={`Cochez de 2 à ${MAX_RECEIPT_VIEWS} photos du même ticket. Les autres fichiers garderont leur traitement indépendant.`}
+              />
+              <PrimaryButton
+                label={`Regrouper ces ${views.size} vues`}
+                disabled={
+                  busy || views.size < 2 || views.size > MAX_RECEIPT_VIEWS
+                }
+                onPress={groupViews}
+              />
+              <SecondaryButton
+                label="Annuler le regroupement"
+                disabled={busy}
+                onPress={() => {
+                  setGrouping(false);
+                  setViews(new Set());
+                  setError(undefined);
+                }}
+              />
+            </>
+          ) : selected.length >= 2 ? (
+            <SecondaryButton
+              label="Regrouper les vues d’un même ticket"
+              disabled={busy}
+              onPress={() => {
+                setGrouping(true);
+                setViews(new Set());
+                setPurposeFile(undefined);
+                setError(undefined);
+              }}
+            />
+          ) : null}
+          {!grouping
+            ? [...groups].map(([group, files], index) => (
+                <View key={group} style={{ gap: 6 }}>
+                  <Text style={{ color: colors.muted }}>
+                    Ticket {index + 1} · {files.length} vue
+                    {files.length > 1 ? "s" : ""} sélectionnée
+                    {files.length > 1 ? "s" : ""}
+                  </Text>
+                  <SecondaryButton
+                    label={`Traiter le ticket ${index + 1} comme des tickets séparés`}
+                    disabled={busy}
+                    onPress={() => {
+                      separateEmailTickets(draft!, group);
+                      changed((value) => value + 1);
+                    }}
+                  />
+                </View>
+              ))
+            : null}
+        </View>
+      ) : null}
       {expanded
         ? receipt.files.map((file) => {
             const eligible =
               canChoose &&
               ["READY", "PENDING", "FAILED"].includes(file.status) &&
               !file.sourceDocumentId;
-            const checked = !draft!.excluded.has(file.id);
+            const included = !draft!.excluded.has(file.id);
+            const checked = grouping ? views.has(file.id) : included;
+            const accepted = decision?.decision.files.find(
+              (selected) => selected.fileId === file.id,
+            );
+            const groupViews = accepted
+              ? receipt.files.filter((member) =>
+                  decision?.decision.files.some(
+                    (selected) =>
+                      selected.fileId === member.id &&
+                      selected.processingId === accepted.processingId,
+                  ),
+                )
+              : [];
+            const leader = groupViews[0]?.id === file.id;
+            const purpose = draft!.tickets.has(file.id)
+              ? "Vues d’un même ticket"
+              : draft!.purposes.get(file.id) === "WASTE_TICKET"
+                ? "Ticket de casse"
+                : draft!.purposes.get(file.id) === "STORE_PHOTO"
+                  ? "Photo du rayon"
+                  : "Détection automatique";
+            // Hints only expose a choice; they never select an intent or bypass byte checks.
+            const showPurpose =
+              /^image\//i.test(file.mediaType ?? "") ||
+              /\.(jpe?g|png|heic|heif|webp)$/i.test(file.filename ?? "") ||
+              draft!.purposes.has(file.id) ||
+              draft!.tickets.has(file.id);
             return (
               <View key={file.id}>
                 <Pressable
                   accessibilityRole={eligible ? "checkbox" : undefined}
                   aria-checked={eligible ? checked : undefined}
                   accessibilityState={
-                    eligible ? { checked, disabled: busy } : undefined
+                    eligible
+                      ? { checked, disabled: busy || (grouping && !included) }
+                      : undefined
                   }
-                  accessibilityLabel={file.filename ?? "Fichier sans nom"}
-                  disabled={!eligible || busy}
+                  accessibilityLabel={`${grouping ? "Vue du ticket : " : ""}${file.filename ?? "Fichier sans nom"}`}
+                  disabled={!eligible || busy || (grouping && !included)}
                   onPress={() => {
+                    if (grouping) {
+                      if (
+                        !views.has(file.id) &&
+                        views.size >= MAX_RECEIPT_VIEWS
+                      ) {
+                        setError(
+                          `Un même ticket accepte ${MAX_RECEIPT_VIEWS} vues au maximum.`,
+                        );
+                        return;
+                      }
+                      setViews((previous) => {
+                        const next = new Set(previous);
+                        if (next.has(file.id)) next.delete(file.id);
+                        else next.add(file.id);
+                        return next;
+                      });
+                      setError(undefined);
+                      return;
+                    }
                     if (checked) draft!.excluded.add(file.id);
                     else draft!.excluded.delete(file.id);
                     changed((value) => value + 1);
@@ -596,11 +731,65 @@ function EmailReceivedCard({
                             : "Format non pris en charge"}
                   </Text>
                 </Pressable>
+                {eligible && included && !grouping && showPurpose ? (
+                  <View style={{ gap: 8, paddingBottom: 12 }}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Usage : ${purpose}`}
+                      accessibilityState={{ disabled: busy }}
+                      disabled={busy}
+                      style={{ minHeight: 44, justifyContent: "center" }}
+                      onPress={() =>
+                        setPurposeFile(
+                          purposeFile === file.id ? undefined : file.id,
+                        )
+                      }
+                    >
+                      <Text style={{ color: colors.forest, fontSize: 14 }}>
+                        {purpose} · Modifier
+                      </Text>
+                    </Pressable>
+                    {purposeFile === file.id ? (
+                      <>
+                        <SecondaryButton
+                          label="Déterminer l’usage pendant le traitement"
+                          disabled={busy}
+                          onPress={() => choosePurpose(file.id, "AUTO")}
+                        />
+                        <SecondaryButton
+                          label="Un ticket de casse indépendant"
+                          disabled={busy}
+                          onPress={() => choosePurpose(file.id, "WASTE_TICKET")}
+                        />
+                        <SecondaryButton
+                          label="Une photo du rayon"
+                          disabled={busy}
+                          onPress={() => choosePurpose(file.id, "STORE_PHOTO")}
+                        />
+                      </>
+                    ) : null}
+                  </View>
+                ) : null}
+                {accepted && groupViews.length > 1 ? (
+                  <Text style={{ color: colors.muted, paddingBottom: 8 }}>
+                    Vue{" "}
+                    {groupViews.findIndex((view) => view.id === file.id) + 1}/
+                    {groupViews.length} d’un même ticket de casse.
+                  </Text>
+                ) : null}
+                {accepted &&
+                groupViews.length === 1 &&
+                accepted.mode !== "AUTO" ? (
+                  <Text style={{ color: colors.muted, paddingBottom: 8 }}>
+                    {accepted.mode === "STORE_PHOTO"
+                      ? "Photo du rayon"
+                      : "Ticket de casse indépendant"}
+                  </Text>
+                ) : null}
                 {decision?.state === "SYNCED" &&
                 decision.decision.choice === "ADMIT" &&
-                decision.decision.files.some(
-                  (selected) => selected.fileId === file.id,
-                ) ? (
+                accepted &&
+                leader ? (
                   <EmailProcessingControls
                     inbox={inbox}
                     original={{
@@ -615,10 +804,8 @@ function EmailReceivedCard({
             );
           })
         : null}
-      {error ? (
-        <InlineAlert title="Confirmation indisponible" message={error} />
-      ) : null}
-      {canChoose && expanded ? (
+      {error ? <InlineAlert title="À vérifier" message={error} /> : null}
+      {canChoose && expanded && !grouping ? (
         discarding ? (
           <View style={{ gap: 12 }}>
             <InlineAlert
