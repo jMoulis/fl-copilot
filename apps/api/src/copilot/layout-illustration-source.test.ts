@@ -188,3 +188,24 @@ it("pins history and binds qualifiers, assignments, assumptions and labels indep
   const d = await compileLayoutIllustrationSource(f.scope, f.card, historical);
   expect(d.binding.physicalHash).not.toBe(a.binding.physicalHash);
 });
+
+it("retains only private identity fields from a wider caller context in the immutable source binding", async () => {
+  const f = await illustrationFixture(),
+    wide = {
+      ...f.scope,
+      canPrepare: true,
+      apiKey: "synthetic-do-not-retain",
+      extra: "unrelated-context",
+    };
+  const expected = await compileLayoutIllustrationSource(
+      f.scope,
+      f.card,
+      f.reference,
+    ),
+    actual = await compileLayoutIllustrationSource(wide, f.card, f.reference);
+  expect(actual.binding).toEqual(expected.binding);
+  expect(JSON.stringify(actual.binding)).not.toContain(
+    "synthetic-do-not-retain",
+  );
+  expect(actual.frame?.contentHash).toBe(expected.frame?.contentHash);
+});
