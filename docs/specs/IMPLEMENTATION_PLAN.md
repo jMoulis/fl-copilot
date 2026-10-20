@@ -2075,6 +2075,8 @@ Simulate corruption/rebootstrap recovery.
 
 Preserve recoverable unsynchronized source files.
 
+20 October increment: confirmed startup isolation, verified DB/WAL/SHM snapshots before close, installation-bound durable location routing, fresh migrated DB/re-authentication and canonical bootstrap exercised automatically. Originals/old unsent changes are retained without replay; same-owner metadata salvage and requeue plus native acceptance remain open. See `../qa/M8_LOCAL_DATABASE_RECOVERY_2026_10_20.md`; this does not close T04.
+
 ---
 
 # 133. M8-T05 — Storage cleanup

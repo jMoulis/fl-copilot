@@ -1,4 +1,5 @@
 import { SyncRecoveryPanel } from "@/sync/recovery-panel";
+import { LocalDatabaseRecoveryNotice } from "@/db/recovery-notice";
 import { Text, View } from "react-native";
 import { router, type Href } from "expo-router";
 import {
@@ -45,6 +46,7 @@ export default function SynchronizationScreen() {
         }
       />
 
+      <LocalDatabaseRecoveryNotice />
       <SectionCard title="État actuel">
         <View accessibilityLiveRegion="polite">
           <StatusBadge status={status} />

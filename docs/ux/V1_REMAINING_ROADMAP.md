@@ -182,3 +182,7 @@ Les deux parcours existants proposent de maintenir ou d’annuler une suppressio
 ## L11 — preuves de mise à niveau locale (20 octobre)
 
 M8-T03 progresse avec les mises à niveau sur disque depuis les 60 versions, les reprises après erreur et sept SIGKILL avant validation de transaction, en conservant commandes, fichiers, conflits et identité d’appareil. Aucune nouvelle migration ni modification du runtime ; les preuves automatisées ne remplacent pas la mise à jour sur les appareils réels. Corruption/backup/restauration, réseau, performances, accessibilité et autres critères V1 restent ouverts. QA : `../qa/M8_SQLITE_UPGRADE_PRESERVATION_2026_10_20.md`. Aucun lot complet ni chantier M7 n’est déclaré terminé.
+
+## 20 octobre — L11 / conservation avant reprise locale
+
+L’incrément M8-T04 ajoute une reprise explicite de démarrage après corruption SQLite avérée : snapshots DB/WAL/SHM vérifiés avant fermeture, ancienne copie isolée, nouvelle base migrée, sélection durable par installation et reconnexion/bootstrap canonique. Les fichiers et actions non envoyés restent conservés sans replay ni faux compteur de réussite. Les essais automatisés et la revue du composant web ne remplacent pas la restitution des métadonnées récupérables pour le même propriétaire, les tests de corruption native ni la restauration Mongo/Blob. L11, les sept chantiers M7 et le périmètre complet V1 restent ouverts. Voir `../qa/M8_LOCAL_DATABASE_RECOVERY_2026_10_20.md`. Aucun déploiement ni build EAS supplémentaire.
