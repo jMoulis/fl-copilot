@@ -32,7 +32,7 @@ async function installation() {
     const pending = new File(root, `${randomUUID()}.installation-part`);
     pending.create();
     pending.write(JSON.stringify({ version: 1, id: randomUUID() }));
-    pending.move(marker);
+    await pending.move(marker);
   }
   const value = z
     .object({ version: z.literal(1), id: z.uuid() })
@@ -121,7 +121,7 @@ export async function preserveCorruptDatabase(location: DatabaseLocation) {
   for (const file of present) {
     const expected = await fingerprint(file),
       copy = new File(directory, file.name);
-    file.copy(copy);
+    await file.copy(copy);
     const actual = await fingerprint(copy),
       after = await fingerprint(file);
     if (

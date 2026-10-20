@@ -139,12 +139,14 @@ vi.mock("expo-file-system", async () => {
     text() {
       return fs.promises.readFile(url.fileURLToPath(this.uri), "utf8");
     }
-    move(to: File) {
+    async move(to: File) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
       if (to.exists) throw new Error("FILE_EXISTS");
       fs.renameSync(url.fileURLToPath(this.uri), url.fileURLToPath(to.uri));
       this.uri = to.uri;
     }
-    copy(to: File) {
+    async copy(to: File) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
       if (native.failCopy) throw new Error("DISK_FULL");
       native.events.push(`copy:${this.name}`);
       fs.copyFileSync(
