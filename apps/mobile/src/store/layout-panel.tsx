@@ -1,12 +1,8 @@
 import { LayoutComparison } from "./layout-comparison";
 import { Stack, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { BackHandler, Text, View } from "react-native";
-import { randomUUID } from "expo-crypto";
-import {
-  addStoreLayoutMobile,
-  checkStoreLayoutGeometry,
-} from "@fl-copilot/commercial-core";
+import { BackHandler, Text, View, type ScrollView } from "react-native";
+import { checkStoreLayoutGeometry } from "@fl-copilot/commercial-core";
 import {
   storeLayoutSchema,
   type StoreLayoutContent,
@@ -26,6 +22,7 @@ import {
 import type { SyncConflict } from "../sync/conflict-repository";
 import type { StoreLayoutRepository } from "./layout-repository";
 import { StoreLayoutMap } from "./layout-map";
+import { LayoutInventoryForm } from "./layout-inventory-editor";
 import { StoreLayoutElementSheet } from "./layout-element-sheet";
 import { LayoutGeometryReport } from "./layout-geometry-report";
 import {
@@ -96,6 +93,10 @@ export function StoreLayoutPanel({
     [showElement, setShowElement] = useState(false),
     [viewport, setViewport] = useState(initialLayoutViewport),
     [showList, setShowList] = useState(false),
+    [adding, setAdding] = useState(false),
+    [additionKey, setAdditionKey] = useState(0),
+    [additionDirty, setAdditionDirty] = useState(false),
+    [additionClose, setAdditionClose] = useState(false),
     [edit, setEdit] = useState<LayoutEdit | null>(null),
     [review, setReview] = useState<Review | null>(null),
     [history, setHistory] = useState<RevisionPage | null>(null),
@@ -108,6 +109,7 @@ export function StoreLayoutPanel({
     } | null>(null),
     [panelError, setPanelError] = useState<string>();
   const lock = useRef(false),
+    additionScroll = useRef<ScrollView>(null),
     historyRequest = useRef(0);
   const head = snapshot.head?.entity ?? null,
     visible = visibleLayout(head, snapshot.reference),
@@ -374,23 +376,13 @@ export function StoreLayoutPanel({
                 enregistrement.
               </Text>
               <SecondaryButton
-                label="Ajouter un mobile de vente"
+                label="Ajouter au plan : îlot, élément, TG ou mobile"
                 disabled={!canEdit}
                 onPress={() => {
-                  try {
-                    const next = addStoreLayoutMobile(
-                      edit.content,
-                      randomUUID,
-                      `Mobile ${edit.content.furniture.filter((f) => f.kind === "MOBILE").length + 1}`,
-                      null,
-                    );
-                    setEdit(patchLayoutEdit(edit, next));
-                    select(next.furniture.at(-1)!.id);
-                  } catch {
-                    setPanelError(
-                      "Le mobile n’a pas pu être ajouté. Vérifiez la capacité du plan ; vos modifications sont conservées.",
-                    );
-                  }
+                  setAdding(true);
+                  setAdditionKey((v) => v + 1);
+                  setAdditionDirty(false);
+                  setAdditionClose(false);
                 }}
               />
               <PrimaryButton
@@ -497,7 +489,7 @@ export function StoreLayoutPanel({
           onPress={() => void openHistory()}
         />
       ) : null}
-      {content && showElement && selectedId ? (
+      {content && !adding && showElement && selectedId ? (
         <StoreLayoutElementSheet
           content={content}
           id={selectedId}
@@ -513,9 +505,68 @@ export function StoreLayoutPanel({
           onClose={() => setShowElement(false)}
           onSelect={select}
           onApply={(next) => {
-            if (edit && canEdit) setEdit(patchLayoutEdit(edit, next));
+            if (!edit || !canEdit) return false;
+            setEdit(patchLayoutEdit(edit, next));
+            return true;
           }}
         />
+      ) : null}
+      {adding && edit ? (
+        <BottomSheet
+          visible
+          title="Ajouter au plan"
+          avoidKeyboard
+          scrollRef={additionScroll}
+          swipeToClose
+          onClose={() => {
+            if (busy) return;
+            if (additionDirty) {
+              setAdditionClose(true);
+              additionScroll.current?.scrollTo({ y: 0, animated: false });
+            } else setAdding(false);
+          }}
+        >
+          {additionClose ? (
+            <View className="gap-3">
+              <InlineAlert
+                title="Abandonner cet ajout ?"
+                message="Les champs de cet ajout ne sont pas encore appliqués au brouillon. Les autres modifications du plan restent conservées."
+              />
+              <SecondaryButton
+                label="Continuer cet ajout"
+                onPress={() => setAdditionClose(false)}
+              />
+              <SecondaryButton
+                label="Abandonner les champs de cet ajout"
+                onPress={() => {
+                  setAdding(false);
+                  setAdditionDirty(false);
+                  setAdditionClose(false);
+                }}
+              />
+            </View>
+          ) : null}
+          <LayoutInventoryForm
+            key={additionKey}
+            content={edit.content}
+            busy={!canEdit}
+            onDirty={() => setAdditionDirty(true)}
+            onCancel={() => {
+              setAdding(false);
+              setAdditionDirty(false);
+              setAdditionClose(false);
+            }}
+            onApply={(next, id) => {
+              if (!edit || !canEdit) return false;
+              setEdit(patchLayoutEdit(edit, next));
+              setAdding(false);
+              setAdditionDirty(false);
+              setAdditionClose(false);
+              setSelectedId(id);
+              return true;
+            }}
+          />
+        </BottomSheet>
       ) : null}
       <BottomSheet
         visible={!!review || history !== null || !!comparison}

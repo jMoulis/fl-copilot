@@ -8,6 +8,8 @@ import {
   addStoreLayoutMobile,
   placeStoreLayoutObject,
   removeStoreLayoutMobile,
+  duplicateStoreLayoutInventory,
+  removeStoreLayoutInventory,
 } from "@fl-copilot/commercial-core";
 import {
   layoutFixture,
@@ -567,6 +569,89 @@ it("persists physical edits and optional mobiles offline, then restores their ex
     (await new OutboxRepository(tx).countActive(first.storeId)).pending_count,
   ).toBe(5);
   expect(await repo.history(first.storeId)).toHaveLength(5);
+});
+
+it("retains fixed inventory copies, detached mobiles and original surface identities through offline restart and historical restore", async () => {
+  const x = await setup();
+  const originalContent = addStoreLayoutMobile(
+    x.p.content,
+    randomUUID,
+    "Mobile conservé",
+    x.p.content.furniture[0]!.id,
+  );
+  const original = await x.repo.save(
+    { ...input(x), content: originalContent },
+    x.ctx,
+  );
+  const island = original.content.assemblies[0]!;
+  const copied = duplicateStoreLayoutInventory(
+    original.content,
+    { kind: "ASSEMBLY", id: island.id },
+    { label: "Îlot copié", copyDimensions: false },
+    randomUUID,
+  );
+  const copyRevision = await x.repo.save(
+    {
+      storeId: original.storeId,
+      expectedRevisionId: original.revisionId,
+      action: "SAVE_DRAFT",
+      content: copied.content,
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  const removed = await x.repo.save(
+    {
+      storeId: original.storeId,
+      expectedRevisionId: copyRevision.revisionId,
+      action: "SAVE_DRAFT",
+      content: removeStoreLayoutInventory(copyRevision.content, {
+        kind: "ASSEMBLY",
+        id: island.id,
+      }),
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  const mobile = original.content.furniture.find((f) => f.kind === "MOBILE")!;
+  expect(
+    removed.content.furniture.find((f) => f.id === mobile.id)?.hostId,
+  ).toBeNull();
+  const copiedMembers = copyRevision.content.furniture
+    .filter((f) => f.assemblyId === copied.id)
+    .map((f) => f.id);
+  const copiedSurfaces = copyRevision.content.surfaces.filter((s) =>
+    copiedMembers.includes(s.furnitureId),
+  );
+  expect(copiedSurfaces).toHaveLength(16);
+  x.db.close();
+  const db = new DatabaseSync(x.path);
+  dbs.push(db);
+  const tx = new Adapter(db),
+    repo = new StoreLayoutRepository(tx, randomUUID, () => original.updatedAt);
+  expect((await repo.get(original.storeId))?.entity).toEqual(removed);
+  expect(
+    (await repo.get(original.storeId))?.entity.content.surfaces.filter((s) =>
+      copiedMembers.includes(s.furnitureId),
+    ),
+  ).toEqual(copiedSurfaces);
+  expect(
+    (await repo.getRevision(original.storeId, original.revisionId))?.content,
+  ).toEqual(original.content);
+  const restored = await repo.save(
+    {
+      storeId: original.storeId,
+      expectedRevisionId: removed.revisionId,
+      action: "RESTORE_AS_DRAFT",
+      restoredFromRevisionId: original.revisionId,
+    },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  expect(restored.content).toEqual(original.content);
+  expect(restored.revisionId).not.toBe(original.revisionId);
+  expect(
+    (await new OutboxRepository(tx).countActive(original.storeId))
+      .pending_count,
+  ).toBe(4);
+  expect(await repo.history(original.storeId)).toHaveLength(4);
 });
 
 it("saves an impossible draft but refuses reference adoption atomically before history or Outbox changes", async () => {

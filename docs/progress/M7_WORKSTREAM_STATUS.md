@@ -6,7 +6,7 @@ Mis à jour le 20 octobre 2026. Ce suivi reprend les sept chantiers convenus ave
 
 ## Synthèse courante — 20 octobre 2026
 
-**1 Actions/conflits en cours ; 2 Contre-promotion code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours.** La livraison groupée PR 291–301 est disponible sur API et iOS build 4, sans acceptation native encore consignée. La réception email reste non activée. Le lot courant reprend la liste et la déclaration des tâches d’Actions, sans nouveau moteur métier. Les preuves des incréments ci-dessous priment sur les anciennes introductions de lots. Aucun pourcentage global ni fermeture de V1 n’est déduit des CI.
+**1 Actions/conflits en cours ; 2 Contre-promotion code prêt ; 3 Documents en cours ; 4 Expertise en cours ; 5 Recommandations en cours ; 6 Implantation en cours ; 7 UX/validation en cours.** La livraison groupée PR 291–301 est disponible sur API et iOS build 4, sans acceptation native encore consignée. La réception email reste non activée. PR 302 (liste Actions et déclaration progressive) est fusionnée, non livrée. Le lot courant complète l’inventaire physique des îlots, fixes, TG et surfaces dans les moteurs et dépôts existants. Les preuves des incréments ci-dessous priment sur les anciennes introductions de lots. Aucun pourcentage global ni fermeture de V1 n’est déduit des CI.
 
 La matrice suivante conserve les critères de sortie et la base du suivi ; le journal daté précise les évolutions réellement vérifiées.
 
@@ -24,7 +24,7 @@ La matrice suivante conserve les critères de sortie et la base du suivi ; le jo
 
 - API : livraison groupée `9c2f66b` (jusqu’à PR 301), `dpl_6Kb25ogrAZubQJc29Ka5EMEN5wTa`, Ready sur `https://fl-copilot.vercel.app`. Promotion du même artefact après santé/Mongo et refus applicatif des accès privés sans connexion ; alias public et métadonnées du commit vérifiés. Prédécesseur conservé : `dpl_7DUEQBoYCrBeVJek8GPo361NRRtL`.
 - Dernier binaire fourni : EAS `f4ddb763-335e-4e2c-a5ff-1ca485b31305`, staging **0.1.0 / build 4**, source `9c2f66b`, terminé le 20 octobre 13:50:45 UTC. Il contient les tableaux du chat PR 291 et la fiche produit PR 301. La stabilité confirmée précédemment concernait le build 3 ; aucun retour sur le build 4 n’est présumé.
-- Réception email PR 292–300 livrée dans ce lot, sans activation fournisseur ni réception réelle validée. Le nouveau lot Actions reste sur branche. Tests natifs complets, autres critères V1 et M8 ouverts.
+- Réception email PR 292–300 livrée dans ce lot, sans activation fournisseur ni réception réelle validée. PR 302 est fusionnée en `91769f5`, après ses deux CI finales réussies sur `bb21aad` (3 344 tests / 6 ignorés) et suppression des branches ; elle reste non livrée. Le nouveau lot d’inventaire reste sur branche. Tests natifs complets, autres critères V1 et M8 ouverts.
 - Aucun build EAS payant ni déploiement Vercel automatique par PR. Une fusion n’est jamais annoncée comme une mise à disposition sur le téléphone.
 
 ## Ordre de poursuite
@@ -635,3 +635,9 @@ PR 301 fusionnée en `9c2f66b` après réussite des deux CI finales sur `970ee32
 **7 — UX/validation : en cours.** Les tâches du plan deviennent une liste compacte avec progression calculée par le moteur existant. Statut et synchronisation restent distincts. Une feuille native ouvre la déclaration ; détails réels facultatifs dépliables, conservation des saisies, erreurs au bon endroit et refus d’enregistrement visible dans la feuille. Les gardes de version, transactions/Outbox, conflits et compteurs métier ne changent pas. Préparation/plan/document restent accessibles ; les entrées de gestion sont progressives.
 
 Revue des composants réels avec ports simulés à 320/390 px et tests existants ; limites et recette native dans `../qa/ACTION_TASK_OVERVIEW_2026_10_20.md`. Le dialogue de confirmation JS a bloqué l’automatisation : annulation/poignée/clavier et accessibilité restent à accepter sur appareil. Ce lot n’est pas inclus dans le build 4 déjà fourni et ne déclenche aucun nouveau build ou déploiement. **1/3/4/5/6 restent en cours ; 2 code prêt ; 7 en cours.** Le suivi complet des recommandations, le CRUD restant, réception réelle, implantation, fidélité et M8 restent ouverts.
+
+## Lot courant — inventaire fixe, copies et surfaces du plan (20 octobre)
+
+**6 — Implantation et 7 — UX/validation : en cours.** Ajout explicite d’îlot/fixe/TG/mobile, copie avec identités neuves et mesures inconnues ou reprises comme déclarées, composition volontaire des TG, retrait réversible et conservation des mobiles/historiques. Les formulaires restent dans le brouillon ; enregistrement/adoption, Outbox, géométrie et conflits réutilisent le flux existant. Tests SQLite de redémarrage/annulation et synchronisation transactionnelle jusqu’à une base vierge passent. Revue du rendu à 320/390 px ; la recette interactive est encore ouverte, l’outil n’ayant pas activé même un bouton QA indépendant lorsque le Mac était signalé verrouillé.
+
+La création/copie/retrait d’inventaire depuis le copilote reste à relier à son outil existant avant clôture du CRUD. Manipulation directe, illustration ancrée à la référence, budget/mesures et recette native restent ouverts ; aucun nouveau modèle d’agent ou moteur de KPI. Voir `../qa/STORE_LAYOUT_INVENTORY_2026_10_20.md`. **1/3/4/5 en cours ; 2 code prêt ; 6/7 en cours.** Ce lot n’est pas dans le build 4 et ne lance aucun nouveau build payant ni livraison API.
