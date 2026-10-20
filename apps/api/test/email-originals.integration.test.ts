@@ -1,3 +1,4 @@
+import { createEmailOriginalRetry } from "../src/intake/email-original-retry.js";
 import { EMAIL_DOWNLOAD_DAILY_LIMITS } from "../src/intake/email-daily-budget.js";
 import { createHash, createHmac, randomUUID } from "node:crypto";
 import type { Document } from "mongodb";
@@ -278,6 +279,166 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         status: "DONE",
       });
     });
+    it("restarts an exhausted recoverable preservation exactly once, retaining monotone claims and immutable source identity", async () => {
+      const f = await fixture(),
+        initial = f.read.getMockImplementation()!;
+      f.read.mockRejectedValue(Error("EMAIL_ATTACHMENT_READ_FAILED"));
+      for (let i = 0; i < 6; i++) {
+        await f.processor.preserve(f.first);
+        f.advance();
+      }
+      expect(await f.jobs().findOne({ _id: f.first })).toMatchObject({
+        attempts: 6,
+        status: "DONE",
+      });
+      const service = createEmailOriginalRetry(database, f.now),
+        actor = {
+          storeId: f.scope.storeId,
+          ownerId: f.scope.ownerId,
+          deviceId: randomUUID(),
+        };
+      const request = {
+        actionId: randomUUID(),
+        conversationId: f.scope.conversationId,
+        receiptId: f.receiptId,
+        fileId: f.first,
+      };
+      expect(await service.request(request, actor)).toEqual({
+        actionId: request.actionId,
+      });
+      expect(await f.jobs().findOne({ _id: f.first })).toMatchObject({
+        attempts: 6,
+        retryAttemptBase: 6,
+        status: "PENDING",
+      });
+      f.read.mockImplementation(initial);
+      expect(await f.processor.preserve(f.first)).toEqual({ status: "READY" });
+      const stored = await f.jobs().findOne({ _id: f.first });
+      expect(stored).toMatchObject({
+        attempts: 7,
+        retryAttemptBase: 6,
+        status: "DONE",
+      });
+      expect(await service.request(request, actor)).toEqual({
+        actionId: request.actionId,
+      });
+      expect(await f.jobs().findOne({ _id: f.first })).toEqual(stored);
+      expect(f.objects.size).toBe(1);
+      expect(
+        await f.db
+          .collection("sourceDocuments")
+          .countDocuments({ storeId: f.scope.storeId }),
+      ).toBe(0);
+      await f.revoke();
+      await expect(service.request(request, actor)).rejects.toMatchObject({
+        statusCode: 403,
+      });
+    });
+    it("replays concurrent explicit retry requests once and never erases quota history or an active retry's schedule", async () => {
+      const f = await fixture();
+      await f
+        .jobs()
+        .updateOne(
+          { _id: f.first },
+          { $set: { status: "DONE", attempts: 14, budgetDeferrals: 8 } },
+        );
+      await f.db
+        .collection<Document & { _id: string }>("emailIntakeReceipts")
+        .updateOne(
+          { _id: f.receiptId },
+          {
+            $set: {
+              "files.0.status": "FAILED",
+              "files.0.errorCode": "PROVIDER_UNAVAILABLE",
+            },
+          },
+        );
+      const service = createEmailOriginalRetry(database, f.now),
+        actor = {
+          storeId: f.scope.storeId,
+          ownerId: f.scope.ownerId,
+          deviceId: randomUUID(),
+        };
+      const request = {
+        actionId: randomUUID(),
+        conversationId: f.scope.conversationId,
+        receiptId: f.receiptId,
+        fileId: f.first,
+      };
+      const initialVersion = (await f.receipt()).version;
+      await Promise.all(
+        Array.from({ length: 5 }, () => service.request(request, actor)),
+      );
+      expect(await f.jobs().findOne({ _id: f.first })).toMatchObject({
+        status: "PENDING",
+        attempts: 14,
+        budgetDeferrals: 8,
+        retryAttemptBase: 6,
+      });
+      expect(
+        await f.db
+          .collection("processedCommands")
+          .countDocuments({ _id: request.actionId as never }),
+      ).toBe(1);
+      expect((await f.receipt()).version).toBe(initialVersion + 1);
+      const before = await f.jobs().findOne({ _id: f.first });
+      await service.request({ ...request, actionId: randomUUID() }, actor);
+      expect(await f.jobs().findOne({ _id: f.first })).toEqual(before);
+      await expect(
+        service.request(request, { ...actor, deviceId: randomUUID() }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+    });
+    it.each([
+      "IDENTITY_CHANGED",
+      "TOO_LARGE",
+      "UNSUPPORTED",
+      "SCOPE_CHANGED",
+    ] as const)(
+      "never reinterprets a permanent %s file failure as permission to download different bytes",
+      async (errorCode) => {
+        const f = await fixture();
+        await f
+          .jobs()
+          .updateOne(
+            { _id: f.first },
+            { $set: { status: "DONE", attempts: 6 } },
+          );
+        await f.db
+          .collection<Document & { _id: string }>("emailIntakeReceipts")
+          .updateOne(
+            { _id: f.receiptId },
+            {
+              $set: {
+                "files.0.status": "FAILED",
+                "files.0.errorCode": errorCode,
+              },
+            },
+          );
+        const service = createEmailOriginalRetry(database, f.now),
+          actor = {
+            storeId: f.scope.storeId,
+            ownerId: f.scope.ownerId,
+            deviceId: randomUUID(),
+          };
+        const request = {
+          actionId: randomUUID(),
+          conversationId: f.scope.conversationId,
+          receiptId: f.receiptId,
+          fileId: f.first,
+        };
+        await expect(service.request(request, actor)).rejects.toMatchObject({
+          statusCode: 409,
+        });
+        await expect(
+          service.request(request, { ...actor, ownerId: randomUUID() }),
+        ).rejects.toMatchObject({ statusCode: 404 });
+        expect(await f.jobs().findOne({ _id: f.first })).toMatchObject({
+          status: "DONE",
+          attempts: 6,
+        });
+        expect(f.read).not.toHaveBeenCalled();
+      },
+    );
     it("retains exact private bytes and exposes no capability/proof or official business observation", async () => {
       const f = await fixture();
       expect(await f.processor.preserve(f.first)).toEqual({ status: "READY" });

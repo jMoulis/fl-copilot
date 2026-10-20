@@ -4,6 +4,9 @@ import {
 } from "@fl-copilot/sync-contracts";
 import {
   emailIntakeStatusSchema,
+  emailIntakeOriginalRetrySchema,
+  emailIntakeOriginalRetryResultSchema,
+  type EmailIntakeOriginalRetry,
   emailIntakeBindingRequestSchema,
   emailIntakeBindingSchema,
   emailIntakeListSchema,
@@ -639,6 +642,31 @@ export class ApiClient {
       },
       emailIntakeBindingSchema,
     );
+  }
+  async retryEmailIntakeOriginal(
+    accessToken: string,
+    storeId: string,
+    raw: EmailIntakeOriginalRetry,
+  ) {
+    const input = emailIntakeOriginalRetrySchema.parse(raw);
+    const result = await this.request(
+      "/api/v1/intake/email/original-retries",
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      emailIntakeOriginalRetryResultSchema,
+    );
+    if (
+      result.actionId !== input.actionId ||
+      result.receipt.id !== input.receiptId ||
+      result.receipt.storeId !== storeId ||
+      result.receipt.conversationId !== input.conversationId ||
+      !result.receipt.files.some((file) => file.id === input.fileId)
+    )
+      throw Error("EMAIL_ORIGINAL_RETRY_IDENTITY_INVALID");
+    return result;
   }
   emailIntakeReceipt(
     accessToken: string,

@@ -124,6 +124,15 @@ export const emailIntakeOriginalRequestSchema = z.strictObject({
   receiptId: id,
   fileId: id,
 });
+export const emailIntakeOriginalRetrySchema =
+  emailIntakeOriginalRequestSchema.extend({ actionId: id });
+export const emailIntakeOriginalRetryResultSchema = z.strictObject({
+  actionId: id,
+  receipt: emailIntakeReceiptSchema,
+});
+export type EmailIntakeOriginalRetry = z.infer<
+  typeof emailIntakeOriginalRetrySchema
+>;
 export const emailIntakeReceiptRequestSchema =
   emailIntakeOriginalRequestSchema.omit({ fileId: true });
 export type EmailIntakeReceiptRequest = z.infer<

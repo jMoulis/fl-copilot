@@ -885,6 +885,12 @@ CREATE INDEX email_intake_decision_scope ON email_intake_decisions(store_id,owne
     name: "email-processing-job-identity",
     sql: `CREATE UNIQUE INDEX email_processing_job_identity ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.conversationId'),json_extract(payload_json,'$.receiptId'),json_extract(payload_json,'$.actionId'),json_extract(payload_json,'$.processingId')) WHERE type='EMAIL_INTAKE_PROCESS';`,
   },
+  {
+    version: 56,
+    name: "email-original-retry-identity",
+    sql: `CREATE UNIQUE INDEX email_original_retry_action ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.actionId')) WHERE type='EMAIL_ORIGINAL_RETRY';
+CREATE UNIQUE INDEX email_original_retry_active ON local_jobs(json_extract(payload_json,'$.storeId'),json_extract(payload_json,'$.ownerId'),json_extract(payload_json,'$.conversationId'),json_extract(payload_json,'$.receiptId'),json_extract(payload_json,'$.fileId')) WHERE type='EMAIL_ORIGINAL_RETRY' AND status IN ('PENDING','RETRY','RUNNING');`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

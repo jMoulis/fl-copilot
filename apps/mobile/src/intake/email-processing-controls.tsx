@@ -69,21 +69,23 @@ export function EmailProcessingControls({
     ? "Traitement à démarrer"
     : state.code === "EMAIL_INTAKE_SOURCE_DAILY_LIMIT"
       ? "Réception en attente de la limite quotidienne · reprise prévue"
-      : state.status === "COMPLETED"
-        ? "Transmis au traitement métier"
-        : state.status === "WAITING_INPUT"
-          ? purpose
-            ? "Que représente cette photo ?"
-            : "Certains fichiers du ZIP restent à examiner"
-          : state.status === "FAILED"
-            ? "Traitement à reprendre"
-            : state.status === "CANCELLED"
-              ? "Traitement arrêté"
-              : state.status === "RUNNING"
-                ? "Préparation du document…"
-                : state.status === "RETRY"
-                  ? "Nouvelle tentative en attente"
-                  : "Traitement en attente";
+      : state.code === "EMAIL_INTAKE_SOURCE_WAITING"
+        ? "Réception de l’original en cours · reprise prévue"
+        : state.status === "COMPLETED"
+          ? "Transmis au traitement métier"
+          : state.status === "WAITING_INPUT"
+            ? purpose
+              ? "Que représente cette photo ?"
+              : "Certains fichiers du ZIP restent à examiner"
+            : state.status === "FAILED"
+              ? "Traitement à reprendre"
+              : state.status === "CANCELLED"
+                ? "Traitement arrêté"
+                : state.status === "RUNNING"
+                  ? "Préparation du document…"
+                  : state.status === "RETRY"
+                    ? "Nouvelle tentative en attente"
+                    : "Traitement en attente";
   return (
     <View style={{ gap: 10 }}>
       <Text accessibilityLiveRegion="polite" style={{ color: colors.ink }}>

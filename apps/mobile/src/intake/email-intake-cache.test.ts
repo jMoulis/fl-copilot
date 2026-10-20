@@ -977,3 +977,165 @@ it("retains a conflicting local decision, hides it from another actor and adopts
     f.db.raw.close();
   }
 });
+
+it("queues a retention retry offline, deduplicates taps, replays the same action after restart and caches only the current receipt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-email-retry-")),
+    path = join(dir, "cache.db");
+  const f = await fixture(path);
+  let db = f.db,
+    online = false;
+  const actionId = randomUUID(),
+    input = { ...f.ref, actionId };
+  const failed = {
+    ...f.receipt,
+    version: 3,
+    files: [
+      {
+        ...f.receipt.files[0]!,
+        status: "FAILED" as const,
+        errorCode: "PROVIDER_UNAVAILABLE" as const,
+      },
+    ],
+  };
+  const pending = {
+    ...failed,
+    version: 4,
+    files: [{ ...f.receipt.files[0]!, status: "PENDING" as const }],
+  };
+  const retry = vi.fn(async () => {
+    if (!online) throw Error("OFFLINE");
+    return { actionId, receipt: pending };
+  });
+  let at = new Date("2026-10-20T15:00:00Z");
+  const jobs = () =>
+    new SourceOriginalJobs(
+      db,
+      { recover: vi.fn() },
+      () => ({ storeId: f.scope.storeId, userId: f.scope.ownerId }),
+      randomUUID,
+      () => at,
+      new EmailOriginalTransfer(f.makeCache(db), { ...f.api, retry }, f.files),
+    );
+  try {
+    await f.cache.storePage(f.scope, { ...f.page, receipts: [failed] });
+    let work = jobs();
+    await work.requestEmailRetry(input);
+    await work.requestEmailRetry({ ...input, actionId: randomUUID() });
+    expect(
+      await db.getFirstAsync(
+        "SELECT COUNT(*) n FROM local_jobs WHERE type='EMAIL_ORIGINAL_RETRY'",
+      ),
+    ).toEqual({ n: 1 });
+    expect(retry).not.toHaveBeenCalled();
+    await work.process(f.scope.storeId, f.scope.ownerId);
+    expect(
+      await db.getFirstAsync(
+        "SELECT status,attempt_count FROM local_jobs WHERE type='EMAIL_ORIGINAL_RETRY'",
+      ),
+    ).toEqual({ status: "RETRY", attempt_count: 1 });
+    expect(
+      (await f.makeCache(db).receipt(f.ref.conversationId, f.ref.receiptId))
+        ?.files[0]?.status,
+    ).toBe("FAILED");
+    db.raw.close();
+    db = new VisualTestDatabase(new DatabaseSync(path));
+    work = jobs();
+    online = true;
+    at = new Date(at.getTime() + 3600_000);
+    await work.process(f.scope.storeId, f.scope.ownerId);
+    expect(retry.mock.calls).toEqual([
+      [f.scope.storeId, f.scope.ownerId, input],
+      [f.scope.storeId, f.scope.ownerId, input],
+    ]);
+    expect(
+      await db.getFirstAsync(
+        "SELECT status,attempt_count FROM local_jobs WHERE type='EMAIL_ORIGINAL_RETRY'",
+      ),
+    ).toEqual({ status: "COMPLETED", attempt_count: 2 });
+    expect(
+      (await f.makeCache(db).receipt(f.ref.conversationId, f.ref.receiptId))
+        ?.files[0]?.status,
+    ).toBe("PENDING");
+    expect(f.files.receive).not.toHaveBeenCalled();
+    expect(
+      await db.getFirstAsync("SELECT COUNT(*) n FROM sync_outbox"),
+    ).toEqual({ n: 0 });
+    expect(await readPendingWork(db, f.scope.storeId, randomUUID())).toEqual(
+      [],
+    );
+  } finally {
+    db.raw.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it.each(["owner", "role", "abort", "lease", "foreign", "commit", "rollback"])(
+  "does not commit a retention retry response after %s changes",
+  async (mode) => {
+    const f = await fixture();
+    const actionId = randomUUID(),
+      signal = new AbortController();
+    let lease = true;
+    try {
+      await f.cache.storePage(f.scope, f.page);
+      const retry = vi.fn(async () => {
+        if (mode === "owner")
+          f.changeSession({
+            storeId: f.scope.storeId,
+            userId: randomUUID(),
+            canWrite: true,
+          });
+        if (mode === "role")
+          f.changeSession({
+            storeId: f.scope.storeId,
+            userId: f.scope.ownerId,
+            canWrite: false,
+          });
+        if (mode === "abort") signal.abort();
+        if (mode === "lease") lease = false;
+        if (mode === "rollback")
+          f.db.raw.exec(
+            "CREATE TRIGGER retry_cache_failure BEFORE UPDATE ON email_intake_receipts BEGIN SELECT RAISE(ABORT,'test rollback'); END",
+          );
+        return {
+          actionId,
+          receipt: {
+            ...f.receipt,
+            version: 3,
+            ...(mode === "foreign" ? { ownerId: randomUUID() } : {}),
+            files: [{ ...f.receipt.files[0]!, status: "PENDING" }],
+          },
+        };
+      });
+      const transfer = new EmailOriginalTransfer(
+        f.cache,
+        { ...f.api, retry },
+        f.files,
+      );
+      await expect(
+        transfer.requestRetry(
+          { ...f.ref, actionId },
+          async (tx) => {
+            if (!lease) throw Error("LOST_LEASE");
+            if (mode === "commit" && tx) {
+              const row = await tx.getFirstAsync<{ version: number }>(
+                "SELECT version FROM email_intake_receipts",
+              );
+              if (row?.version === 3) throw Error("LOST_LEASE");
+            }
+          },
+          signal.signal,
+        ),
+      ).rejects.toThrow();
+      expect(
+        JSON.parse(
+          (await f.db.getFirstAsync<{ payload_json: string }>(
+            "SELECT payload_json FROM email_intake_receipts",
+          ))!.payload_json,
+        ).version,
+      ).toBe(2);
+      expect(f.files.receive).not.toHaveBeenCalled();
+    } finally {
+      f.db.raw.close();
+    }
+  },
+);

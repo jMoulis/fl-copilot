@@ -79,6 +79,7 @@ export class EmailIntakeProcessing {
     private cache: EmailIntakeCache,
     private originals: Pick<EmailOriginalTransfer, "recover">,
     private dependencies: Dependencies,
+    private now: () => Date = () => new Date(),
   ) {}
   private check(storeId: string, ownerId: string) {
     const s = this.dependencies.session();
@@ -252,7 +253,8 @@ export class EmailIntakeProcessing {
             file.id === selection.fileId &&
             file.status === "PENDING" &&
             file.errorCode === "DAILY_LIMIT" &&
-            file.retryAt,
+            file.retryAt &&
+            Date.parse(file.retryAt) > this.now().getTime(),
         ),
       );
       if (deferred.length)
@@ -263,7 +265,17 @@ export class EmailIntakeProcessing {
             Math.max(...deferred.map((file) => Date.parse(file.retryAt!))),
           ).toISOString(),
         };
-      throw Error("EMAIL_INTAKE_SOURCE_WAITING");
+      return {
+        status: "DEFERRED",
+        code: "EMAIL_INTAKE_SOURCE_WAITING",
+        nextAttemptAt: new Date(
+          this.now().getTime() +
+            Math.min(
+              3600_000,
+              60_000 * 2 ** Math.min(input.availabilityDeferrals ?? 0, 6),
+            ),
+        ).toISOString(),
+      };
     }
     let first: EmailOriginalProof | undefined;
     for (const file of selections) {

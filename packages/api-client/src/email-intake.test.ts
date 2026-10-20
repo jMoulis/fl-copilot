@@ -219,3 +219,69 @@ it("uses scoped original endpoints and validates private capabilities before ret
   ).toThrow();
   expect(fetch).toHaveBeenCalledTimes(3);
 });
+
+it("sends a stable original retry action with authenticated scope and rejects mismatched responses", async () => {
+  const storeId = randomUUID(),
+    ownerId = randomUUID(),
+    conversationId = randomUUID(),
+    receiptId = randomUUID(),
+    fileId = randomUUID(),
+    actionId = randomUUID();
+  const input = { conversationId, receiptId, fileId, actionId };
+  const receipt = {
+    id: receiptId,
+    storeId,
+    ownerId,
+    conversationId,
+    bindingId: randomUUID(),
+    providerEmailId: randomUUID(),
+    sender: "manager@example.test",
+    subject: "Sources",
+    receivedAt: "2026-10-20T12:00:00Z",
+    updatedAt: "2026-10-20T12:00:00Z",
+    version: 2,
+    status: "AWAITING_CONFIRMATION",
+    files: [
+      {
+        id: fileId,
+        providerAttachmentId: randomUUID(),
+        filename: "source.xlsx",
+        mediaType: "application/octet-stream",
+        status: "PENDING",
+        sourceDocumentId: null,
+      },
+    ],
+  };
+  let result: unknown = { actionId, receipt };
+  const fetch = vi.fn(
+    async () => new Response(JSON.stringify(result), { status: 200 }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  const api = new ApiClient("https://api.test.invalid");
+  expect(
+    await api.retryEmailIntakeOriginal("unit-token", storeId, input),
+  ).toEqual(result);
+  expect(fetch).toHaveBeenCalledWith(
+    "https://api.test.invalid/api/v1/intake/email/original-retries",
+    expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify(input),
+      headers: expect.objectContaining({
+        authorization: "Bearer unit-token",
+        "x-store-id": storeId,
+      }),
+    }),
+  );
+  for (const mismatch of [
+    { actionId: randomUUID(), receipt },
+    { actionId, receipt: { ...receipt, id: randomUUID() } },
+    { actionId, receipt: { ...receipt, storeId: randomUUID() } },
+    { actionId, receipt: { ...receipt, conversationId: randomUUID() } },
+    { actionId, receipt: { ...receipt, files: [] } },
+  ]) {
+    result = mismatch;
+    await expect(
+      api.retryEmailIntakeOriginal("unit-token", storeId, input),
+    ).rejects.toThrow("EMAIL_ORIGINAL_RETRY_IDENTITY_INVALID");
+  }
+});

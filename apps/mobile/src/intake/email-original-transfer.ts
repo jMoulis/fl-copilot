@@ -1,6 +1,9 @@
 import { z } from "zod";
 import {
   emailIntakeOriginalRequestSchema,
+  emailIntakeOriginalRetrySchema,
+  emailIntakeOriginalRetryResultSchema,
+  type EmailIntakeOriginalRetry,
   emailIntakeOriginalManifestSchema,
   emailIntakeOriginalDownloadSchema,
   serializeEmailIntakeOriginalMetadata,
@@ -26,6 +29,11 @@ export interface EmailOriginalFiles {
 }
 
 export interface EmailOriginalTransport {
+  retry?(
+    storeId: string,
+    ownerId: string,
+    input: EmailIntakeOriginalRetry,
+  ): Promise<unknown>;
   manifest(
     storeId: string,
     ownerId: string,
@@ -126,6 +134,53 @@ export class EmailOriginalTransfer {
     )
       throw Error("EMAIL_ORIGINAL_CHANGED");
     return result ? proofSchema.parse(result) : null;
+  }
+  async requestRetry(
+    raw: EmailIntakeOriginalRetry,
+    authorize?: (tx?: OutboxDatabase) => Promise<void>,
+    signal?: AbortSignal,
+  ) {
+    const input = emailIntakeOriginalRetrySchema.parse(raw);
+    const scope = this.cache.scope(input.conversationId);
+    const allowed = async (tx?: OutboxDatabase) => {
+      this.cache.check(scope);
+      if (signal?.aborted) throw Error("EMAIL_ORIGINAL_INTERRUPTED");
+      await authorize?.(tx);
+      await this.cache.authorize(scope, tx);
+      this.cache.check(scope);
+      if (signal?.aborted) throw Error("EMAIL_ORIGINAL_INTERRUPTED");
+    };
+    await allowed();
+    const basis = await this.cache.receipt(
+      input.conversationId,
+      input.receiptId,
+    );
+    if (
+      !basis ||
+      ["DISMISSED", "QUARANTINED"].includes(basis.status) ||
+      !basis.files.some((file) => file.id === input.fileId)
+    )
+      throw Error("EMAIL_ORIGINAL_UNAVAILABLE");
+    if (!this.api.retry) throw Error("EMAIL_ORIGINAL_RETRY_UNAVAILABLE");
+    const result = emailIntakeOriginalRetryResultSchema.parse(
+      await this.api.retry(scope.storeId, scope.ownerId, input),
+    );
+    await allowed();
+    if (
+      result.actionId !== input.actionId ||
+      result.receipt.id !== input.receiptId ||
+      result.receipt.ownerId !== scope.ownerId ||
+      result.receipt.storeId !== scope.storeId ||
+      result.receipt.conversationId !== input.conversationId ||
+      !result.receipt.files.some((file) => file.id === input.fileId)
+    )
+      throw Error("EMAIL_ORIGINAL_BINDING_INVALID");
+    await this.cache.storePage(
+      scope,
+      { bindings: [], receipts: [result.receipt], nextCursor: null },
+      allowed,
+    );
+    await allowed();
   }
   async local(raw: EmailIntakeOriginalRequest) {
     const ref = emailIntakeOriginalRequestSchema.parse(raw);
