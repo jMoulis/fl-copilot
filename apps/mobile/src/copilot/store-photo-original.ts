@@ -21,6 +21,7 @@ export async function readStorePhotoOriginal(
   db: OutboxDatabase,
   storeId: string,
   id: string,
+  ownerId: string,
   storage: StorePhotoOriginalStorage = nativeStorage,
 ) {
   const lookup = () =>
@@ -30,9 +31,10 @@ export async function readStorePhotoOriginal(
       mime_type: string;
       size_bytes: number;
     }>(
-      "SELECT f.local_uri,f.checksum,f.mime_type,f.size_bytes FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum AND d.local_file_uri=f.local_uri WHERE d.id=? AND d.store_id=? AND d.source_type='STORE_PHOTO' AND d.deleted_at IS NULL AND f.retention_status='RETAINED' LIMIT 2",
+      "SELECT f.local_uri,f.checksum,f.mime_type,f.size_bytes FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum AND d.local_file_uri=f.local_uri WHERE d.id=? AND d.store_id=? AND d.source_type='STORE_PHOTO' AND d.deleted_at IS NULL AND f.retention_status='RETAINED' AND EXISTS (SELECT 1 FROM local_jobs j WHERE j.type='SOURCE_UPLOAD_AND_REGISTER' AND json_extract(j.payload_json,'$.sourceDocumentId')=d.id AND json_extract(j.payload_json,'$.ownerId')=?) LIMIT 2",
       id,
       storeId,
+      ownerId,
     );
   const rows = await lookup(),
     file = rows.length === 1 ? rows[0] : undefined;

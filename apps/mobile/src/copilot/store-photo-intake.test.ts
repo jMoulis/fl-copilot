@@ -276,14 +276,15 @@ it("uploads each immutable source once through the shared queue without extracti
       { upload },
       () => new Date("2026-10-20T12:01:00.000Z"),
     );
-  await queue.process(f.scope.storeId);
-  await queue.process(f.scope.storeId);
+  await queue.process(f.scope.storeId, f.scope.ownerId);
+  await queue.process(f.scope.storeId, f.scope.ownerId);
   expect(init).toHaveBeenCalledTimes(1);
   expect(complete).toHaveBeenCalledTimes(1);
   expect(upload).toHaveBeenCalledTimes(1);
   expect(init.mock.calls[0]).toMatchObject([
     f.scope.storeId,
     { sourceType: "STORE_PHOTO", sourceDocumentId },
+    f.scope.ownerId,
   ]);
   expect(
     f.db
@@ -296,4 +297,155 @@ it("uploads each immutable source once through the shared queue without extracti
   expect(f.db.prepare("SELECT COUNT(*) n FROM waste_receipts").get()).toEqual({
     n: 0,
   });
+});
+
+it("keeps private photo jobs, filenames and originals with their capturing owner after an account switch", async () => {
+  const f = await fixture(),
+    result = await f.intake.capture(
+      f.conversation.id,
+      { assets: [f.assets[0]!] },
+      f.authority,
+      3,
+    );
+  const other = { ...f.scope, ownerId: randomUUID() },
+    init = vi.fn(),
+    complete = vi.fn(),
+    verify = vi.fn(),
+    upload = vi.fn();
+  const queue = new SourceUploadQueue(
+    f.a,
+    { init, complete, verify },
+    { upload },
+  );
+  expect(await queue.process(f.scope.storeId, other.ownerId)).toEqual({
+    attempted: 0,
+    confirmed: 0,
+  });
+  expect(await queue.process(f.scope.storeId)).toEqual({
+    attempted: 0,
+    confirmed: 0,
+  });
+  expect(init).not.toHaveBeenCalled();
+  expect(upload).not.toHaveBeenCalled();
+  expect(complete).not.toHaveBeenCalled();
+  expect(f.db.prepare("SELECT status FROM local_jobs").all()).toEqual([
+    { status: "PENDING" },
+  ]);
+  const { readPendingWork } = await import("../sync/pending-work");
+  expect(
+    (await readPendingWork(f.a, f.scope.storeId, other.ownerId)).filter(
+      (g) => g.label === "Envoi et vérification des fichiers",
+    ),
+  ).toEqual([]);
+  expect(
+    (await readPendingWork(f.a, f.scope.storeId, f.scope.ownerId)).filter(
+      (g) => g.label === "Envoi et vérification des fichiers",
+    ),
+  ).toMatchObject([{ count: 1, state: "En attente" }]);
+  const { SourceUploadRecoveryRepository } =
+    await import("../documents/source-upload-recovery");
+  expect(
+    (
+      await new SourceUploadRecoveryRepository(f.a, async (t) => t).list(
+        f.scope.storeId,
+      )
+    ).items,
+  ).toEqual([]);
+  const otherRepo = new CopilotConversationRepository(f.a, other),
+    otherController = new CopilotLocalChatController(
+      otherRepo,
+      other,
+      randomUUID,
+      () => f.at,
+    ),
+    otherConversation = await otherController.create();
+  await expect(
+    otherRepo.attachStorePhotos(
+      otherConversation.id,
+      [result.draft!.attachments[0]!.sourceDocumentId],
+      f.at,
+    ),
+  ).rejects.toThrow("COPILOT_ATTACHMENT_SOURCE_UNAVAILABLE");
+  expect(
+    (await otherRepo.draft(otherConversation.id))?.attachments ?? [],
+  ).toEqual([]);
+});
+
+it("stops before uploading private pixels when the account changes during upload authorization", async () => {
+  const f = await fixture();
+  await f.intake.capture(
+    f.conversation.id,
+    { assets: [f.assets[0]!] },
+    f.authority,
+    3,
+  );
+  const { NativeSessionManager } = await import("../auth/session-manager");
+  const session = (ownerId: string) => ({
+    user: { id: ownerId, email: "test@example.test", displayName: "Test" },
+    stores: [
+      { storeId: f.scope.storeId, name: "Test", role: "MANAGER" as const },
+    ],
+    accessToken: `test-${ownerId}`,
+    refreshToken: "test-refresh",
+    accessTokenExpiresAt: "2099-01-01T00:00:00.000Z",
+  });
+  const manager = new NativeSessionManager(
+    {
+      load: async () => null,
+      save: async () => undefined,
+      clear: async () => undefined,
+    },
+    async () => {
+      throw Error("No refresh expected");
+    },
+  );
+  await manager.establish(session(f.scope.ownerId));
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>((r) => {
+      entered = r;
+    }),
+    ready = new Promise<void>((r) => {
+      release = r;
+    });
+  const upload = vi.fn(async () => undefined),
+    complete = vi.fn(),
+    queue = new SourceUploadQueue(
+      f.a,
+      {
+        init: (_store, _input, owner) =>
+          manager.request(async () => {
+            entered();
+            await ready;
+            return {
+              uploadId: randomUUID(),
+              objectKey: "private-photo",
+              status: "UPLOAD_REQUIRED",
+              uploadUrl: "https://upload.invalid/private",
+              expiresAt: "2099-01-01T00:00:00Z",
+              headers: {},
+            };
+          }, owner),
+        complete,
+        verify: vi.fn(),
+      },
+      { upload },
+    );
+  const work = queue.process(f.scope.storeId, f.scope.ownerId);
+  await started;
+  await manager.establish(session(randomUUID()));
+  release();
+  expect(await work).toEqual({ attempted: 1, confirmed: 0 });
+  expect(upload).not.toHaveBeenCalled();
+  expect(complete).not.toHaveBeenCalled();
+  expect(f.db.prepare("SELECT status FROM local_jobs").all()).toEqual([
+    { status: "RETRY" },
+  ]);
+  expect(f.copies.every(existsSync)).toBe(true);
+  expect(
+    JSON.parse(
+      String(
+        f.db.prepare("SELECT payload_json FROM local_jobs").get()!.payload_json,
+      ),
+    ).ownerId,
+  ).toBe(f.scope.ownerId);
 });

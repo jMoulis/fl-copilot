@@ -14,43 +14,47 @@ async function fixture() {
     adapter = new ReceiptTestDatabase(db);
   await runLocalMigrations(adapter);
   const storeId = randomUUID(),
+    ownerId = randomUUID(),
     id = randomUUID(),
     at = "2026-10-20T12:00:00.000Z",
     bytes = new Uint8Array([255, 216, 255, 16, 255, 217]);
   const checksum = async (bytes: Uint8Array) =>
       `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
     hash = await checksum(bytes);
-  await new SourceDocumentRepository(adapter).createStorePhoto({
-    document: {
-      id,
-      storeId,
-      sourceType: "STORE_PHOTO",
-      originalFilename: "rayon.jpg",
-      checksum: hash,
-      localFileUri: "file:///old-container/store-photos/rayon.jpg",
-      localProcessingStatus: "VALIDATED",
-      remoteUploadStatus: "LOCAL_ONLY",
-      version: 1,
-      createdAt: at,
-      updatedAt: at,
-      syncState: "LOCAL_ONLY",
-      remoteVersion: null,
-      dirty: true,
+  await new SourceDocumentRepository(adapter).createStorePhoto(
+    {
+      document: {
+        id,
+        storeId,
+        sourceType: "STORE_PHOTO",
+        originalFilename: "rayon.jpg",
+        checksum: hash,
+        localFileUri: "file:///old-container/store-photos/rayon.jpg",
+        localProcessingStatus: "VALIDATED",
+        remoteUploadStatus: "LOCAL_ONLY",
+        version: 1,
+        createdAt: at,
+        updatedAt: at,
+        syncState: "LOCAL_ONLY",
+        remoteVersion: null,
+        dirty: true,
+      },
+      file: {
+        id: randomUUID(),
+        storeId,
+        sourceDocumentId: id,
+        localUri: "file:///old-container/store-photos/rayon.jpg",
+        mimeType: "image/jpeg",
+        sizeBytes: bytes.length,
+        checksum: hash,
+        retentionStatus: "RETAINED",
+        uploadStatus: "LOCAL_ONLY",
+        createdAt: at,
+        updatedAt: at,
+      },
     },
-    file: {
-      id: randomUUID(),
-      storeId,
-      sourceDocumentId: id,
-      localUri: "file:///old-container/store-photos/rayon.jpg",
-      mimeType: "image/jpeg",
-      sizeBytes: bytes.length,
-      checksum: hash,
-      retentionStatus: "RETAINED",
-      uploadStatus: "LOCAL_ONLY",
-      createdAt: at,
-      updatedAt: at,
-    },
-  });
+    ownerId,
+  );
   const file = {
     uri: "file:///new-container/store-photos/rayon.jpg",
     bytes,
@@ -61,13 +65,19 @@ async function fixture() {
     read: vi.fn(async () => file),
     checksum,
   };
-  return { db, adapter, storeId, id, file, storage };
+  return { db, adapter, storeId, ownerId, id, file, storage };
 }
 it("verifies the retained original even after an iOS container relocation without rewriting source metadata", async () => {
   const f = await fixture();
   try {
     expect(
-      await readStorePhotoOriginal(f.adapter, f.storeId, f.id, f.storage),
+      await readStorePhotoOriginal(
+        f.adapter,
+        f.storeId,
+        f.id,
+        f.ownerId,
+        f.storage,
+      ),
     ).toBe(f.file.uri);
     expect(
       f.db.prepare("SELECT local_file_uri FROM source_documents").get(),
@@ -84,6 +94,7 @@ it("verifies the retained original even after an iOS container relocation withou
 });
 it.each([
   "foreign",
+  "foreign-owner",
   "retired",
   "receipt",
   "removed",
@@ -109,6 +120,7 @@ it.each([
         f.adapter,
         mode === "foreign" ? randomUUID() : f.storeId,
         f.id,
+        mode === "foreign-owner" ? randomUUID() : f.ownerId,
         f.storage,
       ),
     ).rejects.toThrow("STORE_PHOTO_ORIGINAL_UNAVAILABLE");
@@ -135,7 +147,13 @@ it.each(["missing", "tampered", "wrong-mime", "pixels", "withdrawn"])(
           return f.file;
         });
       await expect(
-        readStorePhotoOriginal(f.adapter, f.storeId, f.id, f.storage),
+        readStorePhotoOriginal(
+          f.adapter,
+          f.storeId,
+          f.id,
+          f.ownerId,
+          f.storage,
+        ),
       ).rejects.toThrow(/STORE_PHOTO_ORIGINAL/);
     } finally {
       f.db.close();

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { SourceUploadRecoveryRepository } from "./source-upload-recovery";
 import {
   localFileMetadataSchema,
@@ -36,7 +37,8 @@ export class SourceDocumentRepository {
     return { document, file };
   }
 
-  async createStorePhoto(input: LocalSourceAggregate) {
+  async createStorePhoto(input: LocalSourceAggregate, ownerId: string) {
+    z.uuid().parse(ownerId);
     const document = localSourceDocumentSchema.parse(input.document),
       file = localFileMetadataSchema.parse(input.file);
     assertAggregateConsistency(document, file);
@@ -60,6 +62,7 @@ export class SourceDocumentRepository {
         document.storeId,
         file.id,
         document.createdAt,
+        ownerId,
       );
     });
     return { document, file };
@@ -481,12 +484,18 @@ async function enqueueSourceUpload(
   storeId: string,
   localFileId: string,
   timestamp: string,
+  ownerId?: string,
 ) {
   await database.runAsync(
     `INSERT INTO local_jobs (id, type, payload_json, status, attempt_count, created_at, updated_at)
     VALUES (?, 'SOURCE_UPLOAD_AND_REGISTER', ?, 'PENDING', 0, ?, ?)`,
     sourceDocumentId,
-    JSON.stringify({ storeId, sourceDocumentId, localFileId }),
+    JSON.stringify({
+      storeId,
+      sourceDocumentId,
+      localFileId,
+      ...(ownerId ? { ownerId } : {}),
+    }),
     timestamp,
     timestamp,
   );

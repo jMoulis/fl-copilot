@@ -187,11 +187,15 @@ export function SyncProvider({ children }: PropsWithChildren) {
     if (!hasLocalSession) return undefined;
     const api = new ApiClient(getApiBaseUrl());
     return new SourceUploadQueue(database.sqlite, {
-      init: (storeId, input) =>
-        withAccessToken((token) => api.initSourceUpload(token, storeId, input)),
-      complete: (storeId, uploadId, input) =>
-        withAccessToken((token) =>
-          api.completeSourceUpload(token, storeId, uploadId, input),
+      init: (storeId, input, expectedOwnerId) =>
+        withAccessToken(
+          (token) => api.initSourceUpload(token, storeId, input),
+          expectedOwnerId,
+        ),
+      complete: (storeId, uploadId, input, expectedOwnerId) =>
+        withAccessToken(
+          (token) => api.completeSourceUpload(token, storeId, uploadId, input),
+          expectedOwnerId,
         ),
       verify: (storeId, sourceDocumentId, input) =>
         withAccessToken((token) =>
@@ -299,7 +303,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       setState((current) => ({ ...current, status: "syncing" }));
       try {
         await repairMercalysPublications(database.sqlite, storeId, randomUUID);
-        await uploadQueue?.process(storeId);
+        await uploadQueue?.process(storeId, session?.user.id);
         if (session?.user.id)
           await analysisRecovery?.process(storeId, session.user.id);
         const summary = await service.sync(storeId);
@@ -490,7 +494,7 @@ async function readLocalSyncSnapshot(
           AS failed_count
       FROM local_jobs
       WHERE json_extract(payload_json, '$.storeId') = ?
-        AND (type NOT IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER') OR json_extract(payload_json,'$.ownerId')=?)
+        AND (CASE WHEN type IN ('COMMERCIAL_ANALYSIS_RESUME','VISUAL_FILE_TRANSFER') OR (type='SOURCE_UPLOAD_AND_REGISTER' AND EXISTS (SELECT 1 FROM source_documents d WHERE d.id=json_extract(local_jobs.payload_json,'$.sourceDocumentId') AND d.source_type='STORE_PHOTO')) THEN json_extract(payload_json,'$.ownerId')=? ELSE 1 END)
     `,
     storeId,
     ownerId ?? null,

@@ -43,9 +43,10 @@ export function SourceImageAttachment({
       original_filename: string | null;
       remote_upload_status: string;
     }>(
-      "SELECT source_type,original_filename,remote_upload_status FROM source_documents WHERE id=? AND store_id=? AND deleted_at IS NULL",
+      "SELECT source_type,original_filename,remote_upload_status FROM source_documents WHERE id=? AND store_id=? AND deleted_at IS NULL AND (source_type!='STORE_PHOTO' OR EXISTS (SELECT 1 FROM local_jobs j WHERE j.type='SOURCE_UPLOAD_AND_REGISTER' AND json_extract(j.payload_json,'$.sourceDocumentId')=source_documents.id AND json_extract(j.payload_json,'$.ownerId')=?))",
       sourceDocumentId,
       storeId,
+      ownerId,
     );
     if (revision.current !== v) return;
     setKind(row?.source_type);
@@ -92,6 +93,7 @@ export function SourceImageAttachment({
         sqlite,
         storeId,
         sourceDocumentId,
+        ownerId!,
       );
       if (v === revision.current) {
         setImageUri(uri);
@@ -125,6 +127,8 @@ export function SourceImageAttachment({
           async (text) => text,
         ),
         review = await repo.review(storeId, sourceDocumentId);
+      if (review.sourceType !== "STORE_PHOTO" || review.ownerId !== ownerId)
+        throw Error("STORE_PHOTO_UNAVAILABLE");
       if (review.canRetry)
         await repo.retry(storeId, sourceDocumentId, review.basisHash, {
           canRetry: allowed,

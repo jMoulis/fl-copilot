@@ -745,9 +745,10 @@ export class CopilotConversationRepository {
               )
             : kind === "STORE_PHOTO"
               ? await tx.getAllAsync<{ id: string; mime_type: string }>(
-                  "SELECT f.id,f.mime_type FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum WHERE d.id=? AND d.store_id=? AND d.source_type='STORE_PHOTO' AND d.deleted_at IS NULL AND f.retention_status='RETAINED' AND f.local_uri=d.local_file_uri AND f.mime_type IN ('image/jpeg','image/png','image/heic','image/heif') LIMIT 2",
+                  "SELECT f.id,f.mime_type FROM local_files f JOIN source_documents d ON d.id=f.source_document_id AND d.store_id=f.store_id AND d.checksum=f.checksum WHERE d.id=? AND d.store_id=? AND d.source_type='STORE_PHOTO' AND d.deleted_at IS NULL AND f.retention_status='RETAINED' AND f.local_uri=d.local_file_uri AND f.mime_type IN ('image/jpeg','image/png','image/heic','image/heif') AND EXISTS (SELECT 1 FROM local_jobs j WHERE j.type='SOURCE_UPLOAD_AND_REGISTER' AND json_extract(j.payload_json,'$.sourceDocumentId')=d.id AND json_extract(j.payload_json,'$.ownerId')=?) LIMIT 2",
                   sourceDocumentId,
                   this.scope.storeId,
+                  this.scope.ownerId,
                 )
               : await tx.getAllAsync<{ id: string; mime_type: string }>(
                   "SELECT id,mime_type FROM local_files WHERE source_document_id=? AND store_id=? AND mime_type='application/pdf' AND retention_status='RETAINED' LIMIT 2",

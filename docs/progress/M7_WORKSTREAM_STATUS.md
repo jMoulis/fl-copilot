@@ -485,7 +485,7 @@ L5/M7 7 : contraste des cartes et saisies du chat, raccourci de nouvelle convers
 
 La PR 285 du chat est fusionnée en `7f8a8112c152d720f1e714f27299db5853b91e18`, après succès des contrôles exacts push `39350715994` et PR `39350742786` sur `0bee3ef` : **2 861 tests réussis / 6 ignorés**. Branches supprimées ; aucune livraison native n’est déduite de cette fusion.
 
-L7 : entrée explicite « Photos du rayon », copies originales locales et brouillon/tâche d’envoi atomiques, consultation de l’original et suivi distinct des tickets. L’agent existant reçoit les pixels vérifiés par un outil multimodal borné, sans seconde analyse IA à l’import et sans nouvelle autorité d’écriture. Les chiffres officiels restent canoniques ; les constats visuels sont des interprétations à confirmer. Voir `../specs/STORE_PHOTO_SPEC.md` et `../qa/M7_STORE_PHOTOS.md`.
+L7 : entrée explicite « Photos du rayon », copies originales locales et brouillon/tâche d’envoi atomiques liés au propriétaire, contrôles de changement de compte avant/après autorisation réseau, consultation de l’original et suivi distinct des tickets. L’agent existant reçoit les pixels vérifiés par un outil multimodal borné, sans seconde analyse IA à l’import et sans nouvelle autorité d’écriture. Les chiffres officiels restent canoniques ; les constats visuels sont des interprétations à confirmer. Voir `../specs/STORE_PHOTO_SPEC.md` et `../qa/M7_STORE_PHOTOS.md`.
 
 1. **Actions/conflits : en cours.** Aucun nouveau droit d’exécution ; exceptions CRUD et recette multi-appareils ouvertes.
 2. **Contre-promo : code prêt**, livraison/acceptation groupées restantes.

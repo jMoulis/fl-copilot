@@ -97,19 +97,37 @@ export class NativeSessionManager {
     return this.renew();
   }
 
-  async request<T>(operation: (accessToken: string) => Promise<T>): Promise<T> {
+  async request<T>(
+    operation: (accessToken: string) => Promise<T>,
+    expectedOwnerId?: string,
+  ): Promise<T> {
     const generation = this.generation;
+    const assertOwner = () => {
+      if (
+        expectedOwnerId &&
+        (this.snapshot.session?.user.id !== expectedOwnerId ||
+          this.generation !== generation)
+      )
+        throw new SessionChangedError();
+    };
+    assertOwner();
     const token = await this.getAccessToken();
     if (generation !== this.generation) throw new SessionChangedError();
+    assertOwner();
     try {
-      return await operation(token);
+      const result = await operation(token);
+      assertOwner();
+      return result;
     } catch (error) {
       if (!isUnauthorized(error)) throw error;
       if (generation !== this.generation) throw new SessionChangedError();
       const renewed = await this.renew(token);
       if (generation !== this.generation) throw new SessionChangedError();
       try {
-        return await operation(renewed);
+        assertOwner();
+        const result = await operation(renewed);
+        assertOwner();
+        return result;
       } catch (retryError) {
         if (isUnauthorized(retryError)) await this.invalidate(generation, true);
         throw retryError;
