@@ -18,6 +18,7 @@ import { useUnsavedForm } from "../components/use-unsaved-form";
 import { useAuth } from "../auth/auth-provider";
 import type { ProductEditorDraft } from "./product-editor-service";
 import type { ProductEditorState } from "./product-editor-hooks.types";
+import { returnToProduct, returnToProducts } from "./product-navigation";
 interface ProductEditScreenProps {
   id: string;
   newDraft?: ProductEditorDraft;
@@ -59,7 +60,7 @@ function OwnedProductEditScreen({
         />
         <SecondaryButton
           label="Retour aux produits"
-          onPress={() => router.navigate("/(tabs)/products")}
+          onPress={() => returnToProducts(router)}
         />
         {state.loading ? (
           <Text className="text-muted">Chargement de la fiche…</Text>
@@ -126,7 +127,7 @@ function LoadedProductEditor({
   useEffect(() => {
     if (savedId && !form.dirty && !form.saving) {
       if (onSaved) onSaved(savedId);
-      else router.replace(`/(tabs)/products/${savedId}` as Href);
+      else returnToProduct(router, savedId);
     }
   }, [savedId, form.dirty, form.saving, onSaved]);
   function reload() {
@@ -165,11 +166,9 @@ function LoadedProductEditor({
             ? onBack()
             : router.canGoBack()
               ? router.back()
-              : router.replace(
-                  id === "new"
-                    ? "/(tabs)/products"
-                    : (`/(tabs)/products/${id}` as Href),
-                )
+              : id === "new"
+                ? returnToProducts(router)
+                : returnToProduct(router, id)
         }
       />
       {state.error ? (

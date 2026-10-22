@@ -1,9 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
-import { useAuth } from "@/auth/auth-provider";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
+import { useAuth } from "../auth/auth-provider";
+import { useLocalDatabase } from "../providers/database-provider";
+import { useSync } from "../sync/sync-provider";
 import { ProductMasterRepository } from "./product-master-repository";
 import {
   loadProductEditorSnapshot,

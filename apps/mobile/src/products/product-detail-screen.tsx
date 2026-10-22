@@ -17,6 +17,7 @@ import {
   StatusBadge,
 } from "../components/ui";
 import { useProductEditor } from "./use-product-editor";
+import { returnToProducts } from "./product-navigation";
 import { categoryLabels, natureLabels, unitLabels } from "./catalogue-view";
 
 export function ProductDetailScreen({
@@ -54,7 +55,7 @@ function ScopedProductDetailScreen({
         <IconButton
           label="Retour aux produits"
           icon="chevron-back"
-          onPress={() => router.navigate("/(tabs)/products")}
+          onPress={() => returnToProducts(router)}
         />
         <Text className="flex-1 text-center text-sm text-muted">
           Fiche produit
