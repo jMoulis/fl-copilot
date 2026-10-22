@@ -160,8 +160,10 @@ export async function receivePrivateOriginalFile<
       check();
       return result;
     }
-    temporary.move(final);
+    await temporary.move(final);
     moved = true;
+    check();
+    if (abort.signal.aborted) throw fault("UNAVAILABLE");
     return { ...verified, localUri: final.uri };
   } finally {
     signal?.removeEventListener("abort", interrupted);
@@ -171,7 +173,8 @@ export async function receivePrivateOriginalFile<
       writer?.close();
     } finally {
       await reader?.cancel().catch(() => undefined);
-      if (created && !moved && temporary.exists) temporary.delete();
+      if (created && !moved && temporary.uri !== final.uri && temporary.exists)
+        temporary.delete();
     }
   }
 }

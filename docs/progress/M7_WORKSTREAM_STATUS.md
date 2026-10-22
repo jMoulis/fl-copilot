@@ -697,3 +697,11 @@ Retour utilisateur consigné : « Le slide fonctionne 👍 » valide le défilem
 ### 20 octobre — reprise de démarrage après corruption locale
 
 **7 UX/validation : en cours.** Conservation vérifiée du triplet SQLite avant fermeture, isolation privée de l’ancienne copie, nouvelle base migrée après confirmation, reconnexion et bootstrap canonique. Les erreurs de verrouillage/IO/disque/migration ne déclenchent pas de remplacement. Les modifications non envoyées restent conservées et explicitement hors des compteurs de la nouvelle base ; récupération de leurs métadonnées et ré-enregistrement propriétaire restent ouverts, tout comme la recette native/M8. Tests sur vrais fichiers SQLite et vrais octets, ports Expo/SecureStore simulés et composant réel revu à 320/390 px. QA : `../qa/M8_LOCAL_DATABASE_RECOVERY_2026_10_20.md`. Code en vérification, non livré ; API/binaire inchangés, aucune consommation fournisseur/EAS. Les sept états restent **1/3/4/5/6/7 en cours ; 2 code prêt**.
+
+### 20 octobre — conservation native des fichiers avant restitution
+
+**3 Documents, 6 Implantation et 7 UX/validation : en cours.** Les membres ZIP, bundles de tickets multiphotos, originaux téléchargés et copies d’illustration attendent leur déplacement natif avant de fournir une URI finale ou de nettoyer leur temporaire. Les originaux et illustrations revérifient l’autorité après installation. Quatre reproductions échouent sur le runtime précédent ; 76 tests ciblés passent avec le correctif, dont quatorze nouveaux cas. Aucun contrat, migration, prompt IA, envoi ou publication ajouté. QA : `../qa/M8_NATIVE_FILE_RELOCATION_2026_10_20.md`. Code en vérification, non livré sur téléphone ; recette native et autres portes M7/M8 ouvertes. Les états restent **1/3/4/5/6/7 en cours ; 2 code prêt**.
+
+PR 314 précédente fusionnée : deux CI finales vertes sur `5914566` (3 687 tests / 6 ignorés chacune), branches supprimées, API et binaire inchangés. L’isolation au démarrage ne clôture pas la récupération des données non envoyées.
+
+Le contrôle ultérieur de `master` pour PR 314 a échoué sur le délai unitaire de 5 s du scénario d’intégration de reconstruction de deux bases. Le lot courant porte ce seul délai à 30 s, assertions inchangées, et le soumet aux contrôles complets du commit final. Aucun délai de l’application n’est allongé.
