@@ -1,14 +1,14 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFocusEffect, router } from "expo-router";
-import { useAuth } from "@/auth/auth-provider";
-import { AppHeader, AppScreen, InlineAlert } from "@/components/ui";
+import { useAuth } from "../../auth/auth-provider";
+import { AppHeader, AppScreen, InlineAlert } from "../../components/ui";
 import {
   WasteReceiptRepository,
   type LocalWasteReceiptSummary,
-} from "@/documents/waste-receipt-repository";
-import { ReceiptList } from "@/documents/receipt-list";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
+} from "../../documents/waste-receipt-repository";
+import { ReceiptList } from "../../documents/receipt-list";
+import { useLocalDatabase } from "../../providers/database-provider";
+import { useSync } from "../../sync/sync-provider";
 export default function WasteScreen() {
   const { session } = useAuth(),
     storeId = session?.stores[0]?.storeId,
@@ -37,22 +37,32 @@ function StoreWaste({ storeId }: { storeId: string }) {
     [refreshing, setRefreshing] = useState(false),
     [error, setError] = useState<string>();
   const generation = useRef(0);
-  const load = useCallback(async () => {
-    const ticket = ++generation.current;
-    try {
-      const rows = await repository.listReceipts(storeId);
-      if (ticket === generation.current) {
-        setReceipts(rows);
-        setError(undefined);
+  const reading = useRef<
+    { generation: number; promise: Promise<void> } | undefined
+  >(undefined);
+  const load = useCallback(() => {
+    const ticket = generation.current;
+    if (reading.current?.generation === ticket) return reading.current.promise;
+    const promise = (async () => {
+      try {
+        const rows = await repository.listReceipts(storeId);
+        if (ticket === generation.current) {
+          setReceipts(rows);
+          setError(undefined);
+        }
+      } catch {
+        if (ticket === generation.current)
+          setError(
+            "Les tickets n’ont pas pu être relus. Les données déjà affichées restent conservées.",
+          );
+      } finally {
+        if (ticket === generation.current) setLoading(false);
       }
-    } catch {
-      if (ticket === generation.current)
-        setError(
-          "Les tickets n’ont pas pu être relus. Les données déjà affichées restent conservées.",
-        );
-    } finally {
-      if (ticket === generation.current) setLoading(false);
-    }
+    })().finally(() => {
+      if (reading.current?.promise === promise) reading.current = undefined;
+    });
+    reading.current = { generation: ticket, promise };
+    return promise;
   }, [repository, storeId]);
   const needsRefresh = receipts.some(
     (r) =>
@@ -61,7 +71,10 @@ function StoreWaste({ storeId }: { storeId: string }) {
   );
   useFocusEffect(
     useCallback(() => {
-      if (sync.status === "syncing") return;
+      // Existing local tickets do not depend on network/upload completion.
+      // A completed pull refreshes them without restarting reads on every status change.
+      void sync.lastSyncedAt;
+      generation.current++;
       void load();
       const timer = needsRefresh
         ? setInterval(() => void load(), 2000)
@@ -70,7 +83,7 @@ function StoreWaste({ storeId }: { storeId: string }) {
         generation.current++;
         if (timer) clearInterval(timer);
       };
-    }, [load, needsRefresh, sync.status]),
+    }, [load, needsRefresh, sync.lastSyncedAt]),
   );
   const refresh = async () => {
     if (refreshing) return;

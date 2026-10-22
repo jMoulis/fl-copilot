@@ -4401,3 +4401,7 @@ Only proven SQLite corruption offers « Préparer une reprise sécurisée ». Bu
 ## Product navigation retention — 22 October 2026 correction
 
 Explicit return from product detail to the catalogue and successful manual editing must dismiss to the existing destination (or replace an isolated deep link if absent), preserving the list/detail route key and retained presentation state. Do not implement a return with a new PUSH/NAVIGATE/REPLACE that appends another retained caller. Product returns from store observations/substitutions follow the same intent. Unsaved-form and saving guards still apply. Visual-library metadata reads/subscriptions are screen-focus scoped; revalidate the existing shared local cache on focus so edits are current without discarding content. See `../qa/M8_PRODUCT_NAVIGATION_STRESS_2026_10_22.md` for measured retention, tests and native acceptance limits.
+
+### Waste local read during sync — 22 October 2026
+
+Opening Casse reads retained SQLite tickets even while uploads/synchronization remain active. Background status transitions must not cancel the initial local read or leave an indefinite initial loader. Polling/manual refresh share a pending read in the current focus context; blur/account/store changes invalidate its result. A successful sync refreshes existing content without clearing it. Pending synchronization items remain separately visible and are not counted as successfully processed by merely displaying the ticket list.
