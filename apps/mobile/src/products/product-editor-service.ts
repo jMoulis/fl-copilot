@@ -95,12 +95,17 @@ export async function saveProductEditor(
     updatedAt: timestamp,
     deletedAt: null,
   };
-  await repository.upsertProduct(product, {
-    commandId: options.generateId(),
-    deviceId: options.deviceId,
-    expectedRemoteVersion:
-      productMutationExpectedRemoteVersion(existingProduct),
-  });
+  if (
+    !existingProduct ||
+    productContentChanged(existingProduct.entity, product)
+  ) {
+    await repository.upsertProduct(product, {
+      commandId: options.generateId(),
+      deviceId: options.deviceId,
+      expectedRemoteVersion:
+        productMutationExpectedRemoteVersion(existingProduct),
+    });
+  }
 
   const existingIdentifiers = new Map(
     options.existing?.identifiers.map((record) => [record.entity.id, record]) ??
@@ -113,6 +118,12 @@ export async function saveProductEditor(
     const existing = input.id ? existingIdentifiers.get(input.id) : undefined;
     const id = existing?.entity.id ?? options.generateId();
     retainedIdentifierIds.add(id);
+    if (
+      existing &&
+      existing.entity.type === input.type &&
+      existing.entity.value === value
+    )
+      continue;
     await repository.upsertIdentifier(
       {
         id,
@@ -160,6 +171,12 @@ export async function saveProductEditor(
     const existing = input.id ? existingAliases.get(input.id) : undefined;
     const id = existing?.entity.id ?? options.generateId();
     retainedAliasIds.add(id);
+    if (
+      existing &&
+      existing.entity.alias === alias &&
+      existing.entity.normalizedAlias === normalizeProductLabel(alias)
+    )
+      continue;
     await repository.upsertAlias(
       {
         id,
@@ -230,6 +247,16 @@ function normalizeDecimal(value: string) {
   return value.trim().replace(",", ".");
 }
 
+function productContentChanged(before: Product, after: Product) {
+  return (
+    before.label !== after.label ||
+    before.category !== after.category ||
+    before.nature !== after.nature ||
+    before.salesUnit !== after.salesUnit ||
+    JSON.stringify(before.packaging) !== JSON.stringify(after.packaging)
+  );
+}
+
 /** Manual editor: reread, compare, save the aggregate and queue recomputation atomically. */
 export async function saveProductEditorLocally(
   db: OutboxDatabase & AtomicMutationDatabase,
@@ -292,13 +319,15 @@ export async function saveProductEditorLocally(
       ...options,
       existing: current ?? undefined,
     });
-    await queueProductRecomputation(
-      tx,
-      options.storeId,
-      savedId,
-      options.generateId(),
-      options.now(),
-    );
+    const saved = await repo.getProduct(savedId);
+    if (!current || saved?.entity.version !== current.product.entity.version)
+      await queueProductRecomputation(
+        tx,
+        options.storeId,
+        savedId,
+        options.generateId(),
+        options.now(),
+      );
   });
   if (!savedId) throw Error("PRODUCT_EDITOR_UNAVAILABLE");
   return savedId;

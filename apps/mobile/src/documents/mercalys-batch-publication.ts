@@ -10,6 +10,7 @@ import {
   type MercalysImportPublicationRepository,
 } from "./mercalys-import-publication";
 import { MercalysImportValidationError } from "./mercalys-import-validation";
+import { localOperationFailureCode } from "../observability/local-operation-failure";
 type Outcome = {
   itemId: string;
   filename: string;
@@ -32,6 +33,7 @@ export class MercalysBatchPublication {
       "findExactDuplicate" | "analyzeOverlap" | "publish"
     >,
     private fingerprint: (text: string) => Promise<string>,
+    private reportFailure?: (reason: unknown) => void,
   ) {}
   /** User-enabled native import automation; no model-controlled authority. Whole files must be unambiguous. */
   async publishUnambiguous(batchId: string, signal?: AbortSignal) {
@@ -165,6 +167,7 @@ export class MercalysBatchPublication {
           items.push({ ...base, ...count, status: "READY" });
         } catch (reason) {
           this.cancel(signal);
+          this.report(reason);
           items.push({ ...base, status: "FAILED", code: safeCode(reason) });
         }
       }
@@ -265,6 +268,7 @@ export class MercalysBatchPublication {
         });
       } catch (reason) {
         this.cancel(signal);
+        this.report(reason);
         results.push({
           ...base,
           status:
@@ -279,6 +283,19 @@ export class MercalysBatchPublication {
     }
     return results;
   }
+  private report(reason: unknown) {
+    if (
+      reason instanceof MercalysImportValidationError ||
+      reason instanceof MercalysExactDuplicateError ||
+      reason instanceof MercalysOverlapReconciliationError
+    )
+      return;
+    try {
+      this.reportFailure?.(reason);
+    } catch {
+      /* Diagnostics cannot change publication. */
+    }
+  }
 }
 function safeCode(reason: unknown) {
   if (reason instanceof MercalysImportValidationError) return reason.code;
@@ -291,5 +308,7 @@ function safeCode(reason: unknown) {
     reason.message === "MERCALYS_BATCH_FILE_CHANGED"
   )
     return reason.message;
-  return "MERCALYS_BATCH_PUBLICATION_FAILED";
+  return (
+    localOperationFailureCode(reason) ?? "MERCALYS_BATCH_PUBLICATION_FAILED"
+  );
 }

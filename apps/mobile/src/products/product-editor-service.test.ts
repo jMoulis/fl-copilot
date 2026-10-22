@@ -57,6 +57,72 @@ afterEach(() => {
 });
 
 describe("product editor service", () => {
+  it("does not multiply pending commands or change codes and aliases when only a product field changes", async () => {
+    const { adapter, database } = await temporaryDatabase();
+    try {
+      const repository = new ProductMasterRepository(adapter);
+      const options = {
+        storeId: "11111111-1111-4111-8111-111111111111",
+        deviceId: "22222222-2222-4222-8222-222222222222",
+        now: () => "2026-10-22T12:00:00.000Z",
+        generateId: idSequence(),
+      };
+      const productId = await saveProductEditorLocally(
+        adapter,
+        {
+          ...emptyProductDraft,
+          label: "Butternut",
+          identifiers: [{ type: "EAN", value: "00001234" }],
+          aliases: Array.from({ length: 20 }, (_, i) => ({
+            alias: `Butternut ${i}`,
+          })),
+        },
+        options,
+      );
+      const base = (await loadProductEditorSnapshot(repository, productId))!;
+      database
+        .prepare(
+          "INSERT INTO product_daily_performance(id,store_id,product_id,business_date,payload_json,origin,formula_version,input_revision,computed_at) VALUES('existing-day',?,?,'2026-10-20','{}','LOCAL','test','test',?)",
+        )
+        .run(options.storeId, productId, options.now());
+      const before = database
+        .prepare("SELECT COUNT(*) n FROM sync_outbox")
+        .get() as { n: number };
+      await saveProductEditorLocally(
+        adapter,
+        { ...productSnapshotToDraft(base), category: "VEGETABLE" },
+        { ...options, productId },
+        base,
+      );
+      const after = (await loadProductEditorSnapshot(repository, productId))!;
+      expect(
+        database.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+      ).toEqual({ n: before.n + 1 });
+      expect(after.identifiers).toEqual(base.identifiers);
+      expect(after.aliases).toEqual(base.aliases);
+      await saveProductEditorLocally(
+        adapter,
+        productSnapshotToDraft(after),
+        { ...options, productId },
+        after,
+      );
+      expect(await loadProductEditorSnapshot(repository, productId)).toEqual(
+        after,
+      );
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) n FROM local_jobs WHERE type='ANALYTICS_RECOMPUTE_PRODUCT_DATES'",
+          )
+          .get(),
+      ).toEqual({ n: 1 });
+      expect(
+        database.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+      ).toEqual({ n: before.n + 1 });
+    } finally {
+      database.close();
+    }
+  });
   it("creates the aggregate offline and queues every mutation", async () => {
     const { adapter, database } = await temporaryDatabase();
     const ids = idSequence();

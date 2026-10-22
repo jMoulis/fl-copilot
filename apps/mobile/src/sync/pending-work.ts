@@ -49,15 +49,17 @@ export async function readPendingWork(
               ? "Pièces jointes reçues par email"
               : j.type === "SOURCE_ORIGINAL_TRANSFER"
                 ? "Récupération des originaux"
-                : j.type === "ANALYTICS_RECOMPUTE_PRODUCT_DATES"
-                  ? "Calcul des indicateurs locaux"
-                  : j.type === "SOURCE_UPLOAD_AND_REGISTER"
-                    ? "Envoi et vérification des fichiers"
-                    : j.type === "VISUAL_FILE_TRANSFER"
-                      ? "Images des produits"
-                      : j.type === "COMMERCIAL_ANALYSIS_RESUME"
-                        ? "Demandes de reprise d’analyse commerciale"
-                        : "Traitement local",
+                : j.type === "MERCALYS_PUBLICATION_REPAIR"
+                  ? "Publication Mercalys à examiner"
+                  : j.type === "ANALYTICS_RECOMPUTE_PRODUCT_DATES"
+                    ? "Calcul des indicateurs locaux"
+                    : j.type === "SOURCE_UPLOAD_AND_REGISTER"
+                      ? "Envoi et vérification des fichiers"
+                      : j.type === "VISUAL_FILE_TRANSFER"
+                        ? "Images des produits"
+                        : j.type === "COMMERCIAL_ANALYSIS_RESUME"
+                          ? "Demandes de reprise d’analyse commerciale"
+                          : "Traitement local",
       count: Number(j.count),
       state:
         j.type === "EMAIL_INTAKE_PROCESS" &&

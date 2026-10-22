@@ -10,6 +10,7 @@ import {
   MercalysImportValidationError,
 } from "./mercalys-import-validation";
 import type { MercalysImportPublicationRepository } from "./mercalys-import-publication";
+import { localOperationFailureCode } from "../observability/local-operation-failure";
 /** One retained file at a time. Prepare/review does not publish or confirm product identities. */
 export class MercalysBatchPreparation {
   constructor(
@@ -18,6 +19,7 @@ export class MercalysBatchPreparation {
       read(uri: string): Promise<Uint8Array<ArrayBuffer>>;
       checksum(bytes: Uint8Array<ArrayBuffer>): Promise<string>;
       catalog(): Promise<ProductMatchCatalog>;
+      reportFailure?(reason: unknown): void;
       publication: Pick<
         MercalysImportPublicationRepository,
         "findExactDuplicate" | "analyzeOverlap"
@@ -93,6 +95,11 @@ export class MercalysBatchPreparation {
       }
     } catch (reason) {
       cancel();
+      try {
+        this.dependencies.reportFailure?.(reason);
+      } catch {
+        /* Diagnostics cannot discard an intake result. */
+      }
       // Never persist arbitrary library exceptions, local paths or credential-bearing messages.
       result = {
         status: "FAILED",
@@ -105,7 +112,8 @@ export class MercalysBatchPreparation {
                   "MERCALYS_BATCH_MEMBER_COPY_REQUIRED",
                 ].includes(reason.message)
               ? reason.message
-              : "MERCALYS_BATCH_PREPARATION_FAILED",
+              : (localOperationFailureCode(reason) ??
+                "MERCALYS_BATCH_PREPARATION_FAILED"),
       };
     }
     cancel();

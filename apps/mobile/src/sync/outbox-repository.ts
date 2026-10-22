@@ -2,6 +2,7 @@ export const OUTBOX_LOCAL_SEQUENCE_KEY = "outbox_local_sequence";
 export const MAX_PENDING_COMMANDS = 100;
 
 const outboxChangeListeners = new Set<() => void>();
+let notificationScheduled = false;
 
 export function subscribeOutboxChanges(listener: () => void) {
   outboxChangeListeners.add(listener);
@@ -11,9 +12,12 @@ export function subscribeOutboxChanges(listener: () => void) {
 }
 
 export function notifyOutboxChanged() {
+  if (notificationScheduled) return;
+  notificationScheduled = true;
   setTimeout(() => {
+    notificationScheduled = false;
     for (const listener of outboxChangeListeners) listener();
-  }, 0);
+  }, 50);
 }
 
 export const outboxStatuses = [

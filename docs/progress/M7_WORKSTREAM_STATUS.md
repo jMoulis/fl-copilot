@@ -705,3 +705,9 @@ Retour utilisateur consigné : « Le slide fonctionne 👍 » valide le défilem
 PR 314 précédente fusionnée : deux CI finales vertes sur `5914566` (3 687 tests / 6 ignorés chacune), branches supprimées, API et binaire inchangés. L’isolation au démarrage ne clôture pas la récupération des données non envoyées.
 
 Le contrôle ultérieur de `master` pour PR 314 a échoué sur le délai unitaire de 5 s du scénario d’intégration de reconstruction de deux bases. Le lot courant porte ce seul délai à 30 s, assertions inchangées, et le soumet aux contrôles complets du commit final. Aucun délai de l’application n’est allongé.
+
+## Priorité incident — 22 octobre 2026 : imports, sauvegardes et synchronisation
+
+Le retour utilisateur (ralentissements après photos/modifications, 93 éléments en attente, imports Mercalys en échec et chiffres absents) suspend les ajouts fonctionnels au profit de la stabilisation. Le lot réduit les écritures catalogue inchangées, limite la publication aux sources concernées, isole la réparation historique et empêche le chevauchement de cycles complets de synchronisation. Il ajoute des diagnostics locaux/Sentry sans données métier et un test de conservation exacte après échec d’une correction d’import. Voir [preuves et limites](../qa/M8_IMPORT_STABILITY_2026_10_22.md).
+
+Chantiers **3 Documents** et **7 UX/validation**, avec M8 : progression de fiabilité, sans clôture. Les sept états restent 1 en cours / 2 code prêt / 3 en cours / 4 en cours / 5 en cours / 6 en cours / 7 en cours. La capture comporte également un filtre produit et une période en 2025 ; la disparition réelle des observations et l’hypothèse de quota Inngest ne sont pas démontrées. Recette native, contrôle de l’historique local/distant et résolution complète de l’incident restent nécessaires. Aucun effacement/rejeu de données utilisateur n’est effectué. Code et livraison/acceptation restent à distinguer.

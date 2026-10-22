@@ -10,6 +10,7 @@ import {
 } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import { enqueueAnalyticsRecomputationJob } from "../analytics/local-recomputation";
+import { localOperationFailureCode } from "../observability/local-operation-failure";
 
 type Row = Record<string, string | number | null>;
 function camel(row: Row) {
@@ -63,14 +64,17 @@ export async function enqueueMercalysPublications(
   storeId: string,
   generateId: () => string,
   now: string,
+  sourceIds?: readonly string[],
 ) {
+  if (sourceIds?.length === 0) return;
   const device = await tx.getFirstAsync<{ value: string }>(
     "SELECT value FROM app_metadata WHERE key='device_id'",
   );
   if (!device) throw Error("MERCALYS_DEVICE_ID_REQUIRED");
   const sources = await tx.getAllAsync<{ id: string }>(
-    "SELECT id FROM source_documents WHERE store_id=? AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE') AND local_processing_status='PUBLISHED' AND deleted_at IS NULL ORDER BY created_at,id",
+    `SELECT id FROM source_documents WHERE store_id=? AND source_type IN ('MERCALYS_SALES','MERCALYS_WASTE') AND local_processing_status='PUBLISHED' AND deleted_at IS NULL ${sourceIds ? `AND id IN (${sourceIds.map(() => "?").join(",")})` : ""} ORDER BY created_at,id`,
     storeId,
+    ...(sourceIds ?? []),
   );
   for (const { id } of sources) {
     const pending = await tx.getFirstAsync(
@@ -116,18 +120,65 @@ export async function enqueueMercalysPublications(
   }
 }
 export async function repairMercalysPublications(
-  db: AtomicMutationDatabase,
+  db: AtomicMutationDatabase & OutboxDatabase,
   storeId: string,
   generateId: () => string,
+  reportFailure?: (reason: unknown) => void,
 ) {
-  await db.withExclusiveTransactionAsync((tx) =>
-    enqueueMercalysPublications(
-      tx,
-      storeId,
-      generateId,
-      new Date().toISOString(),
-    ),
+  // Do not hold the SQLite writer while rereading the complete historical catalogue.
+  // Clean acknowledged sources need no repair. A damaged source must not block
+  // independently valid publications, product commands, or the subsequent sync.
+  const sources = await db.getAllAsync<{ id: string }>(
+    `SELECT d.id FROM source_documents d WHERE d.store_id=?
+     AND d.source_type IN ('MERCALYS_SALES','MERCALYS_WASTE')
+     AND d.local_processing_status='PUBLISHED' AND d.deleted_at IS NULL
+     AND (d.dirty=1 OR NOT EXISTS (SELECT 1 FROM mercalys_publication_sync s
+       WHERE s.store_id=d.store_id AND s.source_document_id=d.id AND s.remote_version IS NOT NULL)
+       OR EXISTS (SELECT 1 FROM local_jobs j WHERE j.type='MERCALYS_PUBLICATION_REPAIR'
+         AND j.status='FAILED' AND json_extract(j.payload_json,'$.storeId')=d.store_id
+         AND json_extract(j.payload_json,'$.sourceDocumentId')=d.id))
+     AND NOT EXISTS (SELECT 1 FROM sync_outbox o WHERE o.store_id=d.store_id
+       AND o.entity_type='mercalys_publication' AND o.entity_id=d.id
+       AND o.status IN ('PENDING','SYNCING','CONFLICT','FAILED'))
+     ORDER BY d.created_at,d.id`,
+    storeId,
   );
+  for (const { id } of sources) {
+    const timestamp = new Date().toISOString(),
+      jobId = `mercalys-repair:${storeId}:${id}`;
+    try {
+      await db.withExclusiveTransactionAsync(async (tx) => {
+        await enqueueMercalysPublications(tx, storeId, generateId, timestamp, [
+          id,
+        ]);
+        await tx.runAsync(
+          "UPDATE local_jobs SET status='COMPLETED',last_error=NULL,updated_at=? WHERE id=? AND type='MERCALYS_PUBLICATION_REPAIR'",
+          timestamp,
+          jobId,
+        );
+      });
+    } catch (reason) {
+      try {
+        reportFailure?.(reason);
+      } catch {
+        /* Diagnostics cannot block unrelated commands. */
+      }
+      // A durable, source-scoped diagnostic stays visible in Synchronisation;
+      // neither the source nor its observations or existing commands are removed.
+      await db.runAsync(
+        `INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,last_error,created_at,updated_at)
+        VALUES(?,'MERCALYS_PUBLICATION_REPAIR',?,'FAILED',1,?,?,?)
+        ON CONFLICT(id) DO UPDATE SET status='FAILED',attempt_count=attempt_count+1,last_error=excluded.last_error,updated_at=excluded.updated_at`,
+        jobId,
+        JSON.stringify({ storeId, sourceDocumentId: id }),
+        localOperationFailureCode(reason) ??
+          "MERCALYS_PUBLICATION_REPAIR_FAILED",
+        timestamp,
+        timestamp,
+      );
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
 }
 /** Frozen snapshots queue in source order, including an initial packet not yet acknowledged. */
 export async function enqueueMercalysContinuation(

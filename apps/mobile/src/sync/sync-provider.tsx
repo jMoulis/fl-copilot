@@ -62,6 +62,8 @@ import {
 import { SourceUploadQueue } from "@/documents/source-upload-queue";
 import { MobileSyncService, type SyncSummary } from "./sync-service";
 import { subscribeOutboxChanges } from "./outbox-repository";
+import { runSyncPipeline } from "./sync-pipeline";
+import { captureLocalOperationFailure } from "../observability/sentry";
 
 export type SyncRuntimeStatus =
   "synced" | "offline" | "pending" | "syncing" | "conflict" | "error";
@@ -519,7 +521,9 @@ export function SyncProvider({ children }: PropsWithChildren) {
     );
   }, [database.sqlite, hasLocalSession, withAccessToken]);
 
+  const snapshotRequest = useRef(0);
   const refreshLocalState = useCallback(async () => {
+    const ticket = ++snapshotRequest.current;
     if (!defaultStoreId) return undefined;
     const scope = visualSession.current;
     if (
@@ -534,6 +538,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       session?.user.id,
     );
     if (
+      ticket !== snapshotRequest.current ||
       !scope ||
       scope.storeId !== visualSession.current?.storeId ||
       scope.userId !== visualSession.current?.userId
@@ -566,60 +571,84 @@ export function SyncProvider({ children }: PropsWithChildren) {
         scope?.storeId !== defaultStoreId
       )
         return undefined;
-      setState((current) => ({ ...current, status: "syncing" }));
-      try {
-        // Previously accepted local work can advance even if the next network sync fails.
-        if (scope && originalJobs) {
-          await emailProcessing?.seed(storeId, scope.userId, originalJobs);
-          await originalJobs.process(storeId, scope.userId, 10);
-        }
-        await repairMercalysPublications(database.sqlite, storeId, randomUUID);
-        await uploadQueue?.process(storeId, session?.user.id);
-        if (session?.user.id)
-          await analysisRecovery?.process(storeId, session.user.id);
-        const summary = await service.sync(storeId);
-        if (scope && originalJobs) {
-          await emailProcessing?.seed(storeId, scope.userId, originalJobs);
-          await originalJobs.process(storeId, scope.userId, 10);
-        }
-        if (session?.user.id)
-          await visualJobs?.process(storeId, session.user.id);
-        if (currentScope())
-          await new VisualFileCache(database.sqlite).clean(
-            storeId,
-            (file) => nativeVisualFileStorage.removeCached(storeId, file),
-            currentScope,
-          );
-        await repairMercalysPublications(database.sqlite, storeId, randomUUID);
-        await new LocalAnalyticsRecomputationScheduler(
-          database.sqlite,
-          new SQLiteProductDateRecomputer(database.sqlite),
-        ).process(storeId);
-        const snapshot = await readLocalSyncSnapshot(
-          database.sqlite,
-          storeId,
-          session?.user.id,
-        );
-        if (!currentScope()) return undefined;
-        setState({ ...snapshot, status: deriveStatus(snapshot) });
-        return summary;
-      } catch (error) {
-        if (!currentScope()) return undefined;
-        const snapshot = await readLocalSyncSnapshot(
-          database.sqlite,
-          storeId,
-          session?.user.id,
-        );
-        if (!currentScope()) return undefined;
-        setState({
-          ...snapshot,
-          status:
-            error instanceof ApiClientError && error.status === 0
-              ? "offline"
-              : "error",
-        });
-        return undefined;
-      }
+      return runSyncPipeline(
+        database.sqlite,
+        scope!.userId,
+        storeId,
+        async () => {
+          if (!currentScope()) return undefined;
+          snapshotRequest.current++;
+          setState((current) => ({ ...current, status: "syncing" }));
+          try {
+            // Previously accepted local work can advance even if the next network sync fails.
+            if (scope && originalJobs) {
+              await emailProcessing?.seed(storeId, scope.userId, originalJobs);
+              await originalJobs.process(storeId, scope.userId, 10);
+            }
+            await repairMercalysPublications(
+              database.sqlite,
+              storeId,
+              randomUUID,
+              (reason) =>
+                captureLocalOperationFailure(reason, "mercalys-repair"),
+            );
+            await uploadQueue?.process(storeId, session?.user.id);
+            if (session?.user.id)
+              await analysisRecovery?.process(storeId, session.user.id);
+            const summary = await service.sync(storeId);
+            if (scope && originalJobs) {
+              await emailProcessing?.seed(storeId, scope.userId, originalJobs);
+              await originalJobs.process(storeId, scope.userId, 10);
+            }
+            if (session?.user.id)
+              await visualJobs?.process(storeId, session.user.id);
+            if (currentScope())
+              await new VisualFileCache(database.sqlite).clean(
+                storeId,
+                (file) => nativeVisualFileStorage.removeCached(storeId, file),
+                currentScope,
+              );
+            await repairMercalysPublications(
+              database.sqlite,
+              storeId,
+              randomUUID,
+              (reason) =>
+                captureLocalOperationFailure(reason, "mercalys-repair"),
+            );
+            await new LocalAnalyticsRecomputationScheduler(
+              database.sqlite,
+              new SQLiteProductDateRecomputer(database.sqlite),
+            ).process(storeId);
+            snapshotRequest.current++;
+            const snapshot = await readLocalSyncSnapshot(
+              database.sqlite,
+              storeId,
+              session?.user.id,
+            );
+            if (!currentScope()) return undefined;
+            setState({ ...snapshot, status: deriveStatus(snapshot) });
+            return summary;
+          } catch (error) {
+            captureLocalOperationFailure(error, "synchronization");
+            if (!currentScope()) return undefined;
+            snapshotRequest.current++;
+            const snapshot = await readLocalSyncSnapshot(
+              database.sqlite,
+              storeId,
+              session?.user.id,
+            );
+            if (!currentScope()) return undefined;
+            setState({
+              ...snapshot,
+              status:
+                error instanceof ApiClientError && error.status === 0
+                  ? "offline"
+                  : "error",
+            });
+            return undefined;
+          }
+        },
+      );
     },
     [
       database.sqlite,

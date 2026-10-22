@@ -1,4 +1,6 @@
 import { colors } from "../design/tokens";
+import { captureLocalOperationFailure } from "../observability/sentry";
+import { localOperationFailureMessage } from "../observability/local-operation-failure";
 import {
   batchPublicationLabel as publicationStatus,
   filterBatchItems,
@@ -80,6 +82,8 @@ export function MercalysBatchPanel({
   const service = useMemo(
     () =>
       new MercalysBatchPreparation(repo, {
+        reportFailure: (reason) =>
+          captureLocalOperationFailure(reason, "mercalys-prepare"),
         read: (uri) => new File(uri).bytes(),
         checksum: async (bytes) => {
           const hash = await digest(CryptoDigestAlgorithm.SHA256, bytes);
@@ -110,6 +114,7 @@ export function MercalysBatchPanel({
         new MercalysImportPublicationRepository(db, randomUUID),
         async (text) =>
           `sha256:${await digestStringAsync(CryptoDigestAlgorithm.SHA256, text)}`,
+        (reason) => captureLocalOperationFailure(reason, "mercalys-publish"),
       ),
     [repo, service, db],
   );
@@ -627,7 +632,7 @@ export function MercalysBatchPanel({
             className={
               publicationStatus(item, publications)
                 ? "rounded-xl bg-surface p-2 font-semibold text-forest"
-                : undefined
+                : "text-ink"
             }
           >
             {publicationStatus(item, publications) ?? status(item)}
@@ -686,11 +691,14 @@ function status(item: MercalysBatchItem) {
   if (r.status === "DUPLICATE")
     return "Déjà importé — aucune nouvelle publication";
   if (r.status === "FAILED")
-    return r.code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
-      ? "Export agrégé : aucune journée ne sera inventée. Ce format reste à traiter séparément."
-      : r.code === "MERCALYS_BATCH_FILE_CHANGED"
-        ? "Le fichier conservé a changé. Sélectionnez de nouveau l’original."
-        : "Lecture impossible — reprendre ce fichier";
+    return (
+      localOperationFailureMessage(r.code) ??
+      (r.code === "AGGREGATED_PERIOD_WITHOUT_DAILY_DATES"
+        ? "Export agrégé : aucune journée ne sera inventée. Ce format reste à traiter séparément."
+        : r.code === "MERCALYS_BATCH_FILE_CHANGED"
+          ? "Le fichier conservé a changé. Sélectionnez de nouveau l’original."
+          : "Lecture impossible — reprendre ce fichier")
+    );
   return `${r.sourceType === "MERCALYS_SALES" ? "Ventes" : "Casse"} · ${r.businessPeriodStart.split("-").reverse().join("/")} → ${r.businessPeriodEnd.split("-").reverse().join("/")}\n${r.readyCount} lignes prêtes · ${r.productReviewCount} produits à confirmer · ${r.errorCount} erreurs${r.overlap ? " · rapprochement nécessaire" : ""}`;
 }
 
@@ -710,6 +718,8 @@ function archiveError(code: string) {
 }
 
 function publicationIssue(code?: string) {
+  const localIssue = localOperationFailureMessage(code);
+  if (localIssue) return localIssue;
   if (code === "MERCALYS_PRODUCT_REVIEW_REQUIRED")
     return "Des produits restent à confirmer. Aucune publication automatique pour ce fichier.";
   if (
