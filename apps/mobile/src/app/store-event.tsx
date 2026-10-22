@@ -1,3 +1,4 @@
+import { returnToProduct } from "../products/product-navigation";
 import { EvidenceView } from "@/needs/evidence-view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Switch } from "react-native";
@@ -207,10 +208,10 @@ export default function StoreEventEditor() {
         });
       }
       void syncNow(storeId).catch(() => undefined);
-      if (currentScope.current === scope)
-        router.replace(
-          source ? (`/(tabs)/products/${source.id}` as Href) : "/store-events",
-        );
+      if (currentScope.current === scope) {
+        if (source) returnToProduct(router, source.id);
+        else router.replace("/store-events");
+      }
     } catch (e) {
       if (currentScope.current === scope)
         setError(
@@ -241,9 +242,7 @@ export default function StoreEventEditor() {
         label={source ? "Retour à la fiche produit" : "Retour"}
         disabled={busy}
         onPress={() =>
-          source
-            ? router.replace(`/(tabs)/products/${source.id}` as Href)
-            : router.back()
+          source ? returnToProduct(router, source.id) : router.back()
         }
       />
       {!current || formScope !== scope ? (

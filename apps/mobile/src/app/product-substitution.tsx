@@ -1,3 +1,4 @@
+import { returnToProduct } from "../products/product-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Switch, Alert } from "react-native";
 import {
@@ -266,7 +267,7 @@ export default function SubstitutionEditor() {
           ? "Relation enregistrée sur cet appareil. Synchronisation en arrière-plan."
           : "La relation est déjà identique.",
       );
-      if (saved) router.replace(`/(tabs)/products/${source.id}` as Href);
+      if (saved) returnToProduct(router, source.id);
       else {
         const d = await read();
         if (d) setData(d);
@@ -301,7 +302,7 @@ export default function SubstitutionEditor() {
         disabled={busy}
         onPress={() =>
           params.productId
-            ? router.replace(`/(tabs)/products/${params.productId}` as Href)
+            ? returnToProduct(router, params.productId)
             : router.back()
         }
       />

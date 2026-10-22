@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useIsFocused } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { randomUUID } from "expo-crypto";
 import { useAuth } from "../auth/auth-provider";
@@ -16,6 +17,7 @@ import { VisualLibraryRepository } from "./visual-library-repository";
 import type { VisualActionContext } from "./visual-library-actions";
 import type { VisualAsset } from "@fl-copilot/domain";
 export function useVisualLibrary() {
+  const focused = useIsFocused();
   const { sqlite, deviceId } = useLocalDatabase(),
     { session } = useAuth(),
     sync = useSync(),
@@ -31,7 +33,7 @@ export function useVisualLibrary() {
   );
   const query = useQuery({
     queryKey: key,
-    enabled: !!storeId && !!ownerId,
+    enabled: focused && !!storeId && !!ownerId,
     queryFn: () => loadVisualLibraryState(sqlite, storeId!, ownerId!),
     staleTime: Infinity,
     structuralSharing: (previous, next) =>
@@ -47,6 +49,7 @@ export function useVisualLibrary() {
     );
   }, [client, key]);
   useEffect(() => {
+    if (!focused) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = subscribeOutboxChanges(() => {
       clearTimeout(timer);
@@ -58,10 +61,12 @@ export function useVisualLibrary() {
       clearTimeout(timer);
       unsubscribe();
     };
-  }, [refresh]);
+  }, [refresh, focused]);
   useEffect(() => {
-    if (sync.lastSyncedAt) void refresh().catch(() => undefined);
-  }, [sync.lastSyncedAt, refresh]);
+    // A retained hidden screen misses mutations intentionally. Revalidate the
+    // shared local cache on focus; never replace its existing data with empty state.
+    if (focused && storeId && ownerId) void refresh().catch(() => undefined);
+  }, [focused, storeId, ownerId, sync.lastSyncedAt, refresh]);
   const checked = useCallback(() => {
     if (
       !storeId ||
