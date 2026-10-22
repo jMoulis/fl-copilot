@@ -2,11 +2,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runLocalMigrations } from "../db/migrations";
 import {
   OutboxRepository,
   subscribeOutboxChanges,
+  notifyOutboxChanged,
   type EnqueueOutboxCommand,
   type OutboxDatabase,
 } from "./outbox-repository";
@@ -160,6 +161,27 @@ describe("OutboxRepository", () => {
       failed_count: 27,
     });
     database.close();
+  });
+
+  it("coalesces a burst of mutations into one bounded refresh and keeps the next burst observable", async () => {
+    // Flush any earlier integration notifications before controlling the clock.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    vi.useFakeTimers();
+    const listener = vi.fn(),
+      unsubscribe = subscribeOutboxChanges(listener);
+    try {
+      for (let i = 0; i < 93; i++) notifyOutboxChanged();
+      await vi.advanceTimersByTimeAsync(49);
+      expect(listener).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      notifyOutboxChanged();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+      vi.useRealTimers();
+    }
   });
 
   it("notifies subscribers when the pending command count changes", async () => {

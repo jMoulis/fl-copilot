@@ -11,12 +11,199 @@ import {
 import { MercalysImportPublicationRepository } from "./mercalys-import-publication";
 import {
   enqueueMercalysPublications,
+  repairMercalysPublications,
   readMercalysPublication,
   applyMercalysPublication,
 } from "./mercalys-publication-sync";
 import { OutboxRepository } from "../sync/outbox-repository";
+import { SQLiteProductDateRecomputer } from "../analytics/local-recomputation";
 
 describe("durable Mercalys canonical synchronization", () => {
+  it("isolates historical repair errors, retains a visible diagnostic and retries the same source without discarding valid commands", async () => {
+    const db = new MercalysTestDatabase(),
+      storeId = randomUUID(),
+      productId = randomUUID();
+    try {
+      await mercalysLocalFixture(db, storeId, productId);
+      const repository = new MercalysImportPublicationRepository(
+        db,
+        randomUUID,
+      );
+      const old = await repository.publish(
+        mercalysWorkbook(storeId, productId).input,
+      );
+      const records = await db.getAllAsync<{
+        id: string;
+        raw_payload_json: string;
+      }>(
+        "SELECT id,raw_payload_json FROM source_records WHERE source_document_id=?",
+        old.sourceDocumentId,
+      );
+      await db.runAsync("UPDATE sync_outbox SET status='ACKNOWLEDGED'");
+      await db.runAsync(
+        "UPDATE source_records SET raw_payload_json='not-json' WHERE source_document_id=?",
+        old.sourceDocumentId,
+      );
+      await repository.publish(
+        mercalysWorkbook(storeId, productId, "MERCALYS_SALES", "2026-10-08")
+          .input,
+      );
+      const pending = await new OutboxRepository(db).listPending(storeId);
+      await repairMercalysPublications(db, storeId, randomUUID, () => {
+        throw Error("monitor unavailable");
+      });
+      expect(await new OutboxRepository(db).listPending(storeId)).toEqual(
+        pending,
+      );
+      expect(
+        await db.getFirstAsync(
+          "SELECT status,last_error,attempt_count FROM local_jobs WHERE type='MERCALYS_PUBLICATION_REPAIR'",
+        ),
+      ).toEqual({
+        status: "FAILED",
+        last_error: "LOCAL_DATA_INVALID",
+        attempt_count: 1,
+      });
+      expect(
+        await db.getFirstAsync(
+          "SELECT COUNT(*) n FROM sales_observations WHERE deleted_at IS NULL",
+        ),
+      ).toEqual({ n: 2 });
+      for (const r of records)
+        await db.runAsync(
+          "UPDATE source_records SET raw_payload_json=? WHERE id=?",
+          r.raw_payload_json,
+          r.id,
+        );
+      await repairMercalysPublications(db, storeId, randomUUID);
+      expect(
+        await db.getFirstAsync(
+          "SELECT status,last_error FROM local_jobs WHERE type='MERCALYS_PUBLICATION_REPAIR'",
+        ),
+      ).toEqual({ status: "COMPLETED", last_error: null });
+      expect(await new OutboxRepository(db).listPending(storeId)).toHaveLength(
+        2,
+      );
+      await repairMercalysPublications(db, storeId, randomUUID);
+      expect(await new OutboxRepository(db).listPending(storeId)).toHaveLength(
+        2,
+      );
+    } finally {
+      db.db.close();
+    }
+  });
+
+  it("rolls back a failed corrected import after supersession and preserves the previous figures and immutable pending commands", async () => {
+    const db = new MercalysTestDatabase(),
+      storeId = randomUUID(),
+      productId = randomUUID();
+    try {
+      await mercalysLocalFixture(db, storeId, productId);
+      const repository = new MercalysImportPublicationRepository(
+        db,
+        randomUUID,
+      );
+      await repository.publish(
+        mercalysWorkbook(
+          storeId,
+          productId,
+          "MERCALYS_SALES",
+          "2026-10-07",
+          12.4,
+          false,
+        ).input,
+      );
+      const recomputer = new SQLiteProductDateRecomputer(db);
+      await recomputer.recomputeProduct(storeId, {
+        productId,
+        businessDate: "2026-10-07",
+      });
+      await recomputer.recomputeDepartment(storeId, "2026-10-07");
+      const before = await Promise.all([
+        db.getAllAsync("SELECT * FROM sales_observations"),
+        db.getAllAsync("SELECT * FROM product_daily_performance"),
+        db.getAllAsync("SELECT * FROM department_daily_performance"),
+        db.getAllAsync("SELECT * FROM sync_outbox"),
+      ]);
+      const correction = mercalysWorkbook(
+        storeId,
+        productId,
+        "MERCALYS_SALES",
+        "2026-10-07",
+        15,
+        false,
+      ).input;
+      const overlap = (await repository.analyzeOverlap(
+        storeId,
+        correction.summary,
+      ))!;
+      db.db.exec(
+        "CREATE TRIGGER fail_new_source BEFORE INSERT ON source_records BEGIN SELECT RAISE(ABORT, 'test_insert_failure'); END",
+      );
+      await expect(
+        repository.publish({
+          ...correction,
+          reconciliationApproval: {
+            fingerprint: overlap.fingerprint,
+            actorUserId: randomUUID(),
+          },
+        }),
+      ).rejects.toThrow("test_insert_failure");
+      expect(
+        await Promise.all([
+          db.getAllAsync("SELECT * FROM sales_observations"),
+          db.getAllAsync("SELECT * FROM product_daily_performance"),
+          db.getAllAsync("SELECT * FROM department_daily_performance"),
+          db.getAllAsync("SELECT * FROM sync_outbox"),
+        ]),
+      ).toEqual(before);
+      expect(
+        await db.getFirstAsync("SELECT COUNT(*) n FROM source_documents"),
+      ).toEqual({ n: 1 });
+    } finally {
+      db.db.close();
+    }
+  });
+  it("publishes an unrelated new file without reparsing a damaged historical source or deleting its observations", async () => {
+    const db = new MercalysTestDatabase(),
+      storeId = randomUUID(),
+      productId = randomUUID();
+    try {
+      await mercalysLocalFixture(db, storeId, productId);
+      const repository = new MercalysImportPublicationRepository(
+        db,
+        randomUUID,
+      );
+      const old = await repository.publish(
+        mercalysWorkbook(storeId, productId).input,
+      );
+      await db.runAsync("UPDATE sync_outbox SET status='ACKNOWLEDGED'");
+      await db.runAsync(
+        "UPDATE source_records SET raw_payload_json='not-json' WHERE source_document_id=?",
+        old.sourceDocumentId,
+      );
+      const before = await db.getAllAsync(
+        "SELECT * FROM sales_observations WHERE source_document_id=?",
+        old.sourceDocumentId,
+      );
+      const next = await repository.publish(
+        mercalysWorkbook(storeId, productId, "MERCALYS_SALES", "2026-10-08")
+          .input,
+      );
+      expect(next.publishedCount).toBe(1);
+      expect(
+        await db.getAllAsync(
+          "SELECT * FROM sales_observations WHERE source_document_id=?",
+          old.sourceDocumentId,
+        ),
+      ).toEqual(before);
+      expect(await new OutboxRepository(db).listPending(storeId)).toHaveLength(
+        1,
+      );
+    } finally {
+      db.db.close();
+    }
+  });
   it("rolls back a publication when its durable command cannot be created", async () => {
     const db = new MercalysTestDatabase(),
       storeId = randomUUID(),

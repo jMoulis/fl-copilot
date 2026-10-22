@@ -511,6 +511,7 @@ export class MercalysImportPublicationRepository {
         input.storeId,
         this.generateId,
         createdAt,
+        [sourceDocumentId, ...(reconciliation?.priorSourceDocumentIds ?? [])],
       );
     });
 
