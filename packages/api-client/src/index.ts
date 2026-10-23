@@ -167,7 +167,7 @@ export class ApiClient {
                 ...authorizedStoreHeaders(accessToken, storeId),
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
-                "x-copilot-analytics-destinations": "1",
+                "x-copilot-analytics-destinations": "2",
                 ...(streaming.choiceUpdate
                   ? { "x-copilot-choice-update": "1" }
                   : {}),
@@ -1131,7 +1131,7 @@ export class ApiClient {
             ? { "x-copilot-history-deletion": "1" }
             : {}),
           ...(/\/sync\/(bootstrap|pull)|\/copilot\/(history|turn)/.test(path)
-            ? { "x-copilot-analytics-destinations": "1" }
+            ? { "x-copilot-analytics-destinations": "2" }
             : {}),
           ...(init.body ? { "content-type": "application/json" } : {}),
           ...init.headers,

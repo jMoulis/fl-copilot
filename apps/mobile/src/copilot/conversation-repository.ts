@@ -94,12 +94,24 @@ export async function applyCopilotRecord(
     : null;
   let sameMessage = false;
   if (type === "copilot_message" && previous) {
-    const { analyticsDestinations: before, ...previousBody } =
-      previous as CopilotMessage;
-    const { analyticsDestinations: after, ...nextBody } = e as CopilotMessage;
+    const {
+      analyticsDestinations: before,
+      answerSources: previousSources,
+      ...previousBody
+    } = previous as CopilotMessage;
+    const {
+      analyticsDestinations: after,
+      answerSources: nextSources,
+      ...nextBody
+    } = e as CopilotMessage;
     sameMessage =
       JSON.stringify(previousBody) === JSON.stringify(nextBody) &&
-      (!before || !after || JSON.stringify(before) === JSON.stringify(after));
+      (!before || !after || JSON.stringify(before) === JSON.stringify(after)) &&
+      (!previousSources ||
+        !nextSources ||
+        JSON.stringify(previousSources) === JSON.stringify(nextSources));
+    if (sameMessage && previousSources && !nextSources)
+      e = { ...e, answerSources: previousSources } as CopilotMessage;
     // An older projected response cannot erase an already-restored destination.
     if (sameMessage && before && !after)
       e = { ...e, analyticsDestinations: before } as CopilotMessage;

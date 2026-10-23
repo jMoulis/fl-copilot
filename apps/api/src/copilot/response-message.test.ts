@@ -301,13 +301,12 @@ it("persists compact destinations only when negotiated, retaining canonical fact
   };
   const modern = buildCopilotResponseMessage({
     ...input,
-    supportsAnalyticsDestinations: true,
   });
   expect(modern.analyticsDestinations!.targets).toHaveLength(1);
   expect(modern.text).toContain("25,50 €");
-  expect(
-    buildCopilotResponseMessage(input).analyticsDestinations,
-  ).toBeUndefined();
+  expect(buildCopilotResponseMessage(input).analyticsDestinations).toEqual(
+    modern.analyticsDestinations,
+  );
   expect(modern.ownerId).toBe(f.parent.ownerId);
 });
 

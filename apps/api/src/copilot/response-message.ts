@@ -25,7 +25,6 @@ export function buildCopilotResponseMessage(input: {
   parent: CopilotMessage;
   request: CopilotGenerationRequest;
   generation: Generation;
-  supportsAnalyticsDestinations?: boolean;
 }): CopilotMessage {
   const parent = copilotMessageSchema.parse(input.parent);
   const request = copilotGenerationRequestSchema.parse(input.request);
@@ -89,12 +88,11 @@ export function buildCopilotResponseMessage(input: {
     if (!item) throw new Error("COPILOT_REPLY_EVIDENCE_INVALID");
     return `${item.label} : ${item.value === null ? "indisponible" : String(item.value)}`;
   });
-  const richContent =
-    response.narrative && input.supportsAnalyticsDestinations
-      ? renderAnswerContent(response.narrative, response.facts, [
-          ...evidence.values(),
-        ])
-      : undefined;
+  const richContent = response.narrative
+    ? renderAnswerContent(response.narrative, response.facts, [
+        ...evidence.values(),
+      ])
+    : undefined;
   const text =
     richContent?.text ??
     (response.narrative
@@ -130,6 +128,9 @@ export function buildCopilotResponseMessage(input: {
     text,
     ...(richContent?.analyticsDestinations
       ? { analyticsDestinations: richContent.analyticsDestinations }
+      : {}),
+    ...(richContent?.answerSources
+      ? { answerSources: richContent.answerSources }
       : {}),
     attachments: [...originals.values()],
     replyToMessageId: parent.id,

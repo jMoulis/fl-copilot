@@ -138,3 +138,59 @@ it("keeps every destination of a long comparative answer without increasing read
     "ANSWER_TEXT_TOO_LARGE",
   );
 });
+
+it("keeps a long sourced table readable without losing any source snapshot or raising the text limit", async () => {
+  const { longCopilotAnswerFixture } =
+    await import("../../../../scripts/test-copilot-long-answer-fixtures");
+  const { renderAnswerContent } = await import("./answer-text");
+  const { readAnswerSource } =
+    await import("../../../mobile/src/copilot/answer-source");
+  const f = longCopilotAnswerFixture();
+  expect(
+    renderAnswerText(f.narrative, f.facts, f.evidence).length,
+  ).toBeGreaterThan(16000);
+  const rich = renderAnswerContent(f.narrative, f.facts, f.evidence);
+  expect(rich.text.length).toBeLessThan(16000);
+  expect(rich.answerSources).toHaveLength(f.evidence.length);
+  const links = [...rich.text.matchAll(/copilot-source:([^)]*)/g)];
+  expect(links).toHaveLength(f.evidence.length);
+  links.forEach((link, i) => {
+    expect(
+      readAnswerSource(
+        link[1]!,
+        rich.analyticsDestinations,
+        rich.answerSources,
+      ),
+    ).toMatchObject({
+      label: f.evidence[i]!.label,
+      sourceId: f.evidence[i]!.sourceId,
+      value: f.evidence[i]!.detail,
+    });
+    expect(rich.text).toContain(`${i},25 €`);
+  });
+});
+it("interns repeated source snapshots and retains analytical destinations when compacting citations", async () => {
+  const { renderAnswerContent } = await import("./answer-text");
+  const { largeAnalyticalContext } =
+    await import("../../../../scripts/test-analytics-destination-fixtures");
+  const { readAnswerSource } =
+    await import("../../../mobile/src/copilot/answer-source");
+  const evidence = [
+    {
+      ...e[0]!,
+      detail: "Qualification conservée. ".repeat(200),
+      analyticsContext: largeAnalyticalContext(),
+    },
+  ];
+  const rich = renderAnswerContent(
+    "{{value:0}} {{source:0}}\n".repeat(8),
+    facts,
+    evidence,
+  );
+  expect(rich.answerSources).toHaveLength(1);
+  expect(rich.text.match(/copilot-source:ref:0/g)).toHaveLength(8);
+  expect(
+    readAnswerSource("ref:0", rich.analyticsDestinations, rich.answerSources)
+      .analyticsContext,
+  ).toEqual(evidence[0]!.analyticsContext);
+});

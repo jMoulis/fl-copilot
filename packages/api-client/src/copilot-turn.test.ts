@@ -35,7 +35,7 @@ it("sends only IDs with authenticated store headers and validates reply scope", 
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-copilot-analytics-destinations": "1",
+        "x-copilot-analytics-destinations": "2",
         authorization: "Bearer test-token",
         "x-store-id": id(4),
       },
@@ -569,7 +569,7 @@ it("advertises analytical destinations on turn, history, bootstrap and increment
       paths.push(new URL(url).pathname);
       expect(
         new Headers(init?.headers).get("x-copilot-analytics-destinations"),
-      ).toBe("1");
+      ).toBe("2");
       return new Response(
         JSON.stringify({
           code: "UNAVAILABLE",
@@ -782,4 +782,64 @@ it("still cancels instead of accepting a final frame after the conversation is l
     ),
   ).rejects.toThrow();
   expect(abort.signal.aborted).toBe(true);
+});
+
+it("receives coalesced text and a large final source table without mistaking metadata for conversational text", async () => {
+  const answerSources = Array.from({ length: 45 }, (_, i) => ({
+    label: `Source ${i}`,
+    value: "x".repeat(6000),
+    sourceId: `canonical/${i}`,
+    sourceType: "KPI",
+  }));
+  const final = {
+    message: {
+      ...message,
+      text: "Voici le tableau. [Source](copilot-source:ref:0)",
+      answerSources,
+    },
+    alreadyApplied: false,
+  };
+  const bytes = new TextEncoder().encode(
+    JSON.stringify({ type: "text", ...input, text: "Voici le tableau." }) +
+      "\n" +
+      JSON.stringify({ type: "result", result: final }) +
+      "\n",
+  );
+  expect(bytes.byteLength).toBeGreaterThan(256000);
+  const transport = vi.fn(
+    async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(c) {
+            c.enqueue(bytes);
+            c.close();
+          },
+        }),
+        { headers: { "content-type": "application/x-ndjson" } },
+      ),
+  );
+  const onProgress = vi.fn();
+  const result = await new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { onProgress, fetch: transport },
+  );
+  expect(result).toEqual(final);
+  expect(onProgress).toHaveBeenCalledWith("Voici le tableau.");
+  expect(transport).toHaveBeenCalledTimes(1);
+});
+it("bounds both unfinished and completed oversized frames before accepting any durable reply", async () => {
+  const { readCopilotStream } = await import("./copilot-stream");
+  for (const suffix of ["", "\n"]) {
+    const raw = " ".repeat(1024 * 1024 + 1) + suffix;
+    const response = new Response(raw, {
+      headers: { "content-type": "application/x-ndjson" },
+    });
+    await expect(readCopilotStream(response, input, vi.fn())).rejects.toThrow(
+      "COPILOT_STREAM_LIMIT",
+    );
+  }
 });

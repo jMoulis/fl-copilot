@@ -4,6 +4,8 @@ import {
 } from "./evidence-identity";
 import {
   packAnalyticsDestinations,
+  copilotAnswerSourcesSchema,
+  type CopilotAnswerSource,
   type AnalyticsExplorerContext,
 } from "@fl-copilot/domain";
 import type { CopilotResponse } from "@fl-copilot/domain";
@@ -23,6 +25,7 @@ function render(
   partial = false,
   includeAnalytics = true,
   destinations?: AnalyticsExplorerContext[],
+  sources?: CopilotAnswerSource[],
 ) {
   let text = partial ? narrative.replace(/\{(?:\{[^}]*\}?)?$/, "") : narrative;
   if (
@@ -68,29 +71,42 @@ function render(
         destinations.push(item.analyticsContext);
       }
     }
-    const source = encodeURIComponent(
-      JSON.stringify({
-        label: item.label,
-        value: item.retailExpertise
-          ? (item.detail ?? item.value)
-          : item.externalResearch
-            ? "Informations publiques externes, distinctes des chiffres du magasin."
-            : (item.detail ?? item.value),
-        ...(item.externalResearch
-          ? { externalResearch: item.externalResearch }
+    const metadata: CopilotAnswerSource = {
+      label: item.label,
+      value: item.retailExpertise
+        ? (item.detail ?? item.value)
+        : item.externalResearch
+          ? "Informations publiques externes, distinctes des chiffres du magasin."
+          : (item.detail ?? item.value),
+      ...(item.externalResearch
+        ? { externalResearch: item.externalResearch }
+        : {}),
+      ...(item.retailExpertise
+        ? { retailExpertise: item.retailExpertise }
+        : {}),
+      ...(analyticsIndex !== undefined
+        ? { analyticsIndex }
+        : includeAnalytics && item.analyticsContext
+          ? { analyticsContext: item.analyticsContext }
           : {}),
-        ...(item.retailExpertise
-          ? { retailExpertise: item.retailExpertise }
-          : {}),
-        ...(analyticsIndex !== undefined
-          ? { analyticsIndex }
-          : includeAnalytics && item.analyticsContext
-            ? { analyticsContext: item.analyticsContext }
-            : {}),
-        sourceType: item.sourceType,
-        sourceId: item.sourceId,
-      }),
-    ).replace(/[()]/g, (c) => (c === "(" ? "%28" : "%29"));
+      sourceType: item.sourceType,
+      sourceId: item.sourceId,
+    };
+    if (sources) {
+      const identity = JSON.stringify(metadata);
+      let at = sources.findIndex(
+        (source) => JSON.stringify(source) === identity,
+      );
+      if (at < 0) {
+        at = sources.length;
+        sources.push(metadata);
+      }
+      return `[Source](copilot-source:ref:${at})`;
+    }
+    const source = encodeURIComponent(JSON.stringify(metadata)).replace(
+      /[()]/g,
+      (c) => (c === "(" ? "%28" : "%29"),
+    );
     return `[Source](copilot-source:${source})`;
   });
   if (!partial && /\{\{|\}\}/.test(text))
@@ -118,8 +134,28 @@ export function renderAnswerContent(
   partial = false,
 ) {
   const targets: AnalyticsExplorerContext[] = [];
-  const text = render(narrative, facts, evidence, partial, false, targets);
+  let text = render(narrative, facts, evidence, partial, false, targets);
+  let answerSources: CopilotAnswerSource[] | undefined;
+  if (text.length > 16000) {
+    answerSources = [];
+    text = render(
+      narrative,
+      facts,
+      evidence,
+      partial,
+      false,
+      targets,
+      answerSources,
+    );
+    if (answerSources.length)
+      answerSources = copilotAnswerSourcesSchema.parse(answerSources);
+    else answerSources = undefined;
+  }
   if (text.length > 16000) throw Error("ANSWER_TEXT_TOO_LARGE");
   const analyticsDestinations = packAnalyticsDestinations(targets);
-  return { text, ...(analyticsDestinations ? { analyticsDestinations } : {}) };
+  return {
+    text,
+    ...(analyticsDestinations ? { analyticsDestinations } : {}),
+    ...(answerSources ? { answerSources } : {}),
+  };
 }

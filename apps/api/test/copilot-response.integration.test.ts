@@ -2723,7 +2723,6 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         provider: { model: "test", generate } as CopilotAiProvider,
         authorize: async () => f.authority,
         loadContext: async () => context,
-        supportsAnalyticsDestinations: true,
       };
       const turn = {
         replyId: f.response.id,
@@ -3240,6 +3239,73 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       const omitted = await readAnsweredInformationContext(db, answer);
       expect(omitted?.originalQuestion).toBeNull();
       expect(omitted?.originalQuestionOmitted).toBe(true);
+    });
+    it("commits and replays the long streamed answer, then exposes the same text through legacy and current history", async () => {
+      const { longCopilotAnswerFixture } =
+        await import("../../../scripts/test-copilot-long-answer-fixtures");
+      const { readCopilotHistory } = await import("../src/copilot/history");
+      const f = await fixture(),
+        source = longCopilotAnswerFixture(),
+        progress = vi.fn();
+      const generate = vi.fn(async (_r, _schema, _signal, onProgress) => {
+        onProgress?.(source.output, source.evidence);
+        return {
+          output: source.output,
+          toolEvidence: source.evidence,
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: "test-long-answer",
+            inputTokens: 0,
+            outputTokens: 0,
+          },
+        };
+      });
+      const dependencies = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => f.authority,
+        loadContext: async () =>
+          detectCopilotConflicts({
+            batch: scoreCopilotPriorities({
+              storeId: f.storeId,
+              evaluatedAt: f.message.createdAt,
+              candidates: [],
+            }),
+            intents: [],
+          }),
+        onProgress: progress,
+      };
+      const turn = {
+        replyId: f.response.id,
+        conversationId: f.conversation.id,
+        userMessageId: f.message.id,
+      };
+      const result = await runCopilotTurn(dependencies, turn);
+      expect(result.message.text).toContain("23,25 €");
+      expect(result.message.answerSources).toHaveLength(24);
+      expect(progress.mock.calls.every(([text]) => text.length <= 16000)).toBe(
+        true,
+      );
+      expect((await runCopilotTurn(dependencies, turn)).message).toEqual(
+        result.message,
+      );
+      expect(generate).toHaveBeenCalledTimes(1);
+      for (const version of [false, true, 2] as const) {
+        const page = await readCopilotHistory(
+          db,
+          f.storeId,
+          f.ownerId,
+          { conversationId: f.conversation.id, limit: 50 },
+          true,
+          version,
+        );
+        const reply = page.messages.find((m) => m.id === turn.replyId)!;
+        expect(reply.text).toBe(result.message.text);
+        expect(reply.answerSources).toEqual(
+          version === 2 ? result.message.answerSources : undefined,
+        );
+      }
     });
     it("runs generation outside transaction and restores persisted reply without a second provider call", async () => {
       const f = await fixture();

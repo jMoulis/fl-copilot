@@ -164,3 +164,5 @@ export * from "./visual-id";
 export * from "./visual-conflict";
 export * from "./store-photo";
 export * from "./layout-illustration-generation";
+
+export * from "./copilot-answer-source";

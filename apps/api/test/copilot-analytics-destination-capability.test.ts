@@ -30,6 +30,14 @@ it.each([undefined, "1", "2", "1,2"])(
       id: input.replyId,
       role: "ASSISTANT",
       replyToMessageId: input.userMessageId,
+      answerSources: [
+        {
+          label: "Ventes",
+          value: "12.30",
+          sourceId: "canonical",
+          sourceType: "KPI",
+        },
+      ],
       analyticsDestinations: packAnalyticsDestinations([
         largeAnalyticalContext(),
       ]),
@@ -70,10 +78,6 @@ it.each([undefined, "1", "2", "1,2"])(
           payload: input,
         });
         expect(result.statusCode).toBe(200);
-        expect(
-          vi.mocked(runCopilotTurn).mock.lastCall![0]
-            .supportsAnalyticsDestinations,
-        ).toBe(version === "1");
         const body = stream
           ? result.body
               .trim()
@@ -83,7 +87,12 @@ it.each([undefined, "1", "2", "1,2"])(
           : result.json();
         expect(body.alreadyApplied).toBe(true);
         expect(body.message.analyticsDestinations).toEqual(
-          version === "1" ? message.analyticsDestinations : undefined,
+          version === "1" || version === "2"
+            ? message.analyticsDestinations
+            : undefined,
+        );
+        expect(body.message.answerSources).toEqual(
+          version === "2" ? message.answerSources : undefined,
         );
         expect(body.message.text).toBe(message.text);
       }
