@@ -1,0 +1,25 @@
+# Progressive product editing — 23 October 2026
+
+## Product behavior
+
+Product identity stays visible: label, category, nature and sales unit. Optional packaging, product codes and aliases now have compact collapsible sections with counts/current packaging values. Folding does not clear or unregister the draft. Leading-zero codes, stable existing code/alias IDs, deliberately blank values, source labels and unrelated product properties are retained by the existing React Hook Form and canonical writer. Packaging remains distinct from the sales unit; no nature/unit inference, conversion or automatic business change is introduced.
+
+A blocking optional-field error opens its section, shows a textual correction marker and focuses the first invalid text field after its Controller has mounted. The same behavior covers packaging, codes and aliases. Section accessibility includes its expanded/disabled state and a summary hint. A previously saved acknowledgement is hidden while there are unsaved changes.
+
+One explicit save is admitted while validation/storage is pending. Native inputs, choices, code/alias additions/removals, section controls and the screen's return control are disabled during that save. The existing exit protection, snapshot/concurrent-version checks and conflict handling remain in place. A local write failure retains the draft and existing targeted error. Stale/conflicted forms preserve input but cannot invoke the writer, including through their handler. No new mutation service, migration, Outbox logic, remote fetch or AI instruction is added.
+
+`AppScreen` gains an opt-in keyboard setting used by the loaded product editor only. It requests iOS keyboard insets/interactive dismissal and on-drag dismissal on Android/web; other screens keep their prior behavior. This reuses the [documented native ScrollView options](https://reactnative.dev/docs/scrollview), not a new keyboard dependency. Physical keyboard avoidance and native focus remain device acceptance work.
+
+## Evidence and limits
+
+- Six tests mount the actual product form with React Hook Form/resolver/field arrays. They verify essential-only initial rendering; ten fold/reopen cycles; exact drafts, IDs and leading zeros on explicit save; reopening all blocked sections; focus after mounting each hidden field kind; one pending writer despite repeat taps; all edit/structure controls locked; local failure retaining input and allowing retry; and stale/conflicted handler refusal. UI/native host elements and the writer are isolated test ports.
+- These six tests plus seven existing product editor persistence cases and four receipt-route tests pass together: **17 tests in three files**. The persistence cases use actual SQLite/Outbox; the form tests do not claim a device write or network acknowledgement.
+- The actual production form and screen components were compiled and inspected in a temporary local route at 390×844 and 320×740. The route explicitly labels simulation and has no API or database writer. At both widths page width equals viewport width. A code changed from `000000123` to `000000456` survives folding/reopening. A hidden zero packaging quantity is refused, reopens and receives actual browser focus; clearing it permits the simulated save with the retained code. Browser error logs are empty. Screenshots were inspected in the conversation; no saved image or physical-device keyboard proof is claimed.
+- The temporary route is archived outside Git under `artifacts/product-form-2026-10-23`, removed before final checks; the owned Metro server is stopped and its automatic tsconfig rewrite restored. Viewport and temporary tab are cleaned up. No provider/model call, paid EAS build, production fixture or API deployment is used.
+- React review: section component type is stable outside the form; canonical drafts stay in the existing form owner; no repeated repository subscriptions are introduced; hidden Controllers are unmounted without unregistering their values; only the explicit single-flight submit reaches the writer. Validation focus uses existing field refs after mounting rather than timers or a second navigation controller.
+
+## Delivery and seven M7 workstreams
+
+Local structure, lint, strict types in all ten projects, formatting and fresh Hermes iOS/Android exports pass. The complete local suite passes **3,296 tests / 635 environment-gated skips** across 374 passing and 70 skipped files. These skips are not counted as proof of their unavailable environments. Exact final-head push/PR CI with transactional Mongo, API build/import and native exports still precede merge. This native-only change awaits a coherent grouped binary and owner acceptance; it is absent from iOS build 12. API PR 334 is merged but its receiving credential/deployment still await explicit approval. PR 331–333 native UX also await their grouped build.
+
+**1 Actions/conflicts, 3 Documents, 4 Expertise, 5 Recommendations, 6 Layout and 7 UX/validation remain in progress; 2 Counter-promotion remains code ready.** This advances UX/form safety without closing product CRUD exceptions, real email, cross-device restoration or full V1/M8 acceptance.
