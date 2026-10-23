@@ -618,3 +618,139 @@ it("does not advertise inventory support without the physical review capability"
     "x-copilot-layout-inventory",
   );
 });
+
+it("accepts a complete final reply if the transport fails only while closing the stream", async () => {
+  let reads = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (reads++ === 0)
+        controller.enqueue(
+          new TextEncoder().encode(
+            JSON.stringify({
+              type: "result",
+              result: { message, alreadyApplied: false },
+            }) + "\n",
+          ),
+        );
+      else controller.error(Error("NATIVE_STREAM_CLOSE_FAILED"));
+    },
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(body, {
+          headers: { "content-type": "application/x-ndjson" },
+        }),
+    ),
+  );
+  const result = await new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { onProgress: vi.fn() },
+  );
+  expect(result.message).toEqual(message);
+});
+
+it.each(["partial", "foreign-result", "trailing-data", "trailing-utf8"])(
+  "does not accept %s when a stream fails while closing",
+  async (kind) => {
+    let reads = 0;
+    const event =
+      kind === "partial"
+        ? {
+            type: "text",
+            replyId: input.replyId,
+            conversationId: input.conversationId,
+            text: "Provisoire",
+          }
+        : {
+            type: "result",
+            result: {
+              message:
+                kind === "foreign-result"
+                  ? { ...message, ownerId: id(9) }
+                  : message,
+              alreadyApplied: false,
+            },
+          };
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (reads++ === 0) {
+          const bytes = new TextEncoder().encode(
+            JSON.stringify(event) +
+              "\n" +
+              (kind === "trailing-data" ? "{unfinished" : ""),
+          );
+          controller.enqueue(
+            kind === "trailing-utf8" ? new Uint8Array([...bytes, 0xc3]) : bytes,
+          );
+        } else controller.error(Error("NATIVE_STREAM_CLOSE_FAILED"));
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(body, {
+            headers: { "content-type": "application/x-ndjson" },
+          }),
+      ),
+    );
+    await expect(
+      new ApiClient("https://test.invalid").copilotTurn(
+        "test",
+        id(4),
+        id(5),
+        input,
+        undefined,
+        { onProgress: vi.fn() },
+      ),
+    ).rejects.toThrow();
+  },
+);
+
+it("still cancels instead of accepting a final frame after the conversation is left", async () => {
+  const abort = new AbortController();
+  let reads = 0;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (reads++ === 0)
+        controller.enqueue(
+          new TextEncoder().encode(
+            JSON.stringify({
+              type: "result",
+              result: { message, alreadyApplied: false },
+            }) + "\n",
+          ),
+        );
+      else {
+        abort.abort();
+        controller.error(Error("NATIVE_STREAM_CLOSE_FAILED"));
+      }
+    },
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(body, {
+          headers: { "content-type": "application/x-ndjson" },
+        }),
+    ),
+  );
+  await expect(
+    new ApiClient("https://test.invalid").copilotTurn(
+      "test",
+      id(4),
+      id(5),
+      input,
+      abort.signal,
+      { onProgress: vi.fn() },
+    ),
+  ).rejects.toThrow();
+  expect(abort.signal.aborted).toBe(true);
+});
