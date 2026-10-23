@@ -3,6 +3,7 @@
     "name": "Fruits & Légumes",
     "slug": "fruits-vegetables-copilot",
     "version": "0.1.0",
+    "icon": "./assets/branding/icon.png",
     "scheme": "flcopilot",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -16,7 +17,12 @@
       }
     },
     "android": {
-      "package": "com.flcopilot.mobile"
+      "package": "com.flcopilot.mobile",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/branding/adaptive-icon.png",
+        "backgroundColor": "#06251C",
+        "monochromeImage": "./assets/branding/monochrome-icon.png"
+      }
     },
     "plugins": [
       "expo-router",
@@ -24,7 +30,14 @@
       "expo-dev-client",
       "expo-system-ui",
       "expo-secure-store",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/branding/splash-icon.png",
+          "backgroundColor": "#06251C",
+          "imageWidth": 200
+        }
+      ],
       "expo-sqlite",
       "expo-status-bar",
       [

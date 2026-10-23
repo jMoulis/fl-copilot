@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs>
+<linearGradient id="leaf1" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#1FCDA1"/><stop offset=".57" stop-color="#65ECA0"/><stop offset="1" stop-color="#B9F58C"/></linearGradient>
+<linearGradient id="leaf2" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#0DBB94"/><stop offset="1" stop-color="#58E5A8"/></linearGradient>
+<linearGradient id="dot" x1="0" y1="1" x2=".8" y2="0"><stop stop-color="#F65D43"/><stop offset="1" stop-color="#FFB65A"/></linearGradient>
+<linearGradient id="fruit" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#F04450"/><stop offset=".55" stop-color="#FF8550"/><stop offset="1" stop-color="#FFD16C"/></linearGradient>
+<radialGradient id="bg" cx=".3" cy=".12" r="1"><stop stop-color="#074534"/><stop offset=".52" stop-color="#06251C"/><stop offset="1" stop-color="#03130F"/></radialGradient>
+</defs><g transform="translate(154 154) scale(.70)">
+<path d="M240 451 C241 301 345 195 505 192 C604 192 700 189 790 151 C773 285 660 369 528 369 C401 367 313 401 240 451Z" fill="url(#leaf1)"/>
+<path d="M240 775 C233 617 282 494 404 456 C462 437 516 438 567 417 C557 519 480 573 404 609 C326 647 276 706 240 775Z" fill="url(#leaf2)"/>
+<circle cx="699" cy="461" r="49" fill="url(#dot)"/>
+<path d="M575 777 C569 665 625 587 723 555 C767 541 807 527 842 495 C847 616 773 701 684 740 C645 757 606 766 575 777Z" fill="url(#fruit)"/>
+</g></svg>

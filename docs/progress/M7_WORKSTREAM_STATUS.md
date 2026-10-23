@@ -1,5 +1,13 @@
 # M7 — suivi des sept chantiers V1
 
+## Point de livraison — 23 octobre 2026 : identité de l’application et alerte Mercalys
+
+La PR 320 est fusionnée en `e454fc6` : CI push/PR et master vertes, build iOS staging 8 disponible depuis ce même SHA. Julien constate une amélioration de l’import et reporte sa finition ; cela ne clôture pas la recette des corrections ambiguës. Le pack d’icônes fourni le 23 octobre est intégré à la configuration Expo : icône iOS opaque, premier plan et monochrome Android, écran de lancement. Les identifiants restent inchangés. Cette identité nécessite un prochain binaire natif groupé ; aucun build payant supplémentaire n’est lancé pour ces seuls assets.
+
+L’alerte Sentry `FRUITS-ET-LEGUMES-8` du 23 octobre à 06:39 UTC concerne une préparation Mercalys locale sur le build 8, interceptée par le service du lot. Un seul événement porte le code générique `LOCAL_OPERATION_FAILED` : la cause native ou le motif de validation précis n’est pas enregistré. Aucun lien avec Inngest, perte de données ou crash n’est démontré. Le fichier et l’action déclenchante sont demandés ; la cause n’est pas annoncée corrigée sur la base de cette seule alerte.
+
+Chantier **7 UX/validation**, avec M8 : identité native en vérification, incident Mercalys ouvert dans le chantier **3 Documents**. Les sept états restent **1/3/4/5/6/7 en cours, 2 code prêt**. Priorité proposée après cet ajout : qualifier cette erreur et confirmer synchronisation/calculs/tickets sur le binaire installé, puis exercer le parcours complet fichiers → analyse → échange → action ; les autres critères de la roadmap complète restent conservés.
+
 Mis à jour le 20 octobre 2026. Ce suivi reprend les sept chantiers convenus avec Julien. Leur périmètre reste stable ; les améliorations hors critère de sortie vont dans la roadmap suivante. Chaque PR doit préciser le chantier concerné, le résultat concret, le reste à faire et l’état de livraison. Le nombre de PR et les pourcentages ne sont pas des preuves d’avancement.
 
 **Vocabulaire :** « à démarrer », « en cours », « code prêt », « livré », « validé ». Un code fusionné et testé reste « code prêt » tant qu’il n’est pas livré. La validation utilisateur sur iPhone est distincte des tests automatisés. Un chantier entier ne devient « code prêt » que lorsque son critère de sortie est couvert.
