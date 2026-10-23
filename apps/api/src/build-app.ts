@@ -212,7 +212,11 @@ import {
   createMongoImportVerificationService,
   type ImportVerificationService,
 } from "./imports/import-verification-service.js";
-import { captureApiError, logRemoteEvent } from "./observability.js";
+import {
+  captureApiError,
+  copilotStreamFailureReason,
+  logRemoteEvent,
+} from "./observability.js";
 import {
   createMongoSyncBootstrapService,
   type SyncBootstrapService,
@@ -1554,9 +1558,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             !(error instanceof CopilotTurnError) &&
             !(error instanceof CopilotTurnLeaseError)
           ) {
+            const reason = copilotStreamFailureReason(error);
             app.log.error(
               {
                 code: "COPILOT_STREAM_FAILED",
+                reason,
                 httpRequestId: request.id,
                 deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown",
               },
@@ -1566,6 +1572,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               code: "COPILOT_STREAM_FAILED",
               method: request.method,
               requestId: request.id,
+              reason,
             });
           }
           if (!abort.signal.aborted) emit({ type: "error" });
