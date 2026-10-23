@@ -100,6 +100,13 @@ async function setup(
     | "AUTH"
     | "SCOPE"
     | "SERVER_ERROR" = "LOST",
+  configure?: (context: {
+    ask: ReturnType<typeof vi.fn>;
+    sync: ReturnType<typeof vi.fn>;
+    wait: ReturnType<typeof vi.fn>;
+    reply: unknown;
+    publish(): Promise<void>;
+  }) => void,
 ) {
   db = new DatabaseSync(":memory:");
   const a = new Adapter(db),
@@ -159,7 +166,23 @@ async function setup(
     if (mode === "RECOVER" && ask.mock.calls.length)
       await applyCopilotRecord(a, f, "copilot_message", reply);
   });
-  const delivery = new CopilotTurnDelivery(a, f, { sync, ask });
+  const wait = vi.fn<
+    (milliseconds: number, signal: AbortSignal) => Promise<void>
+  >(async () => {});
+  configure?.({
+    ask,
+    sync,
+    wait,
+    reply,
+    publish: async () => {
+      await applyCopilotRecord(a, f, "copilot_message", reply);
+    },
+  });
+  const delivery = new CopilotTurnDelivery(a, f, {
+    sync,
+    ask,
+    waitForRetry: wait,
+  });
   const props = {
     controller,
     delivery,
@@ -188,6 +211,7 @@ async function setup(
     reply,
     ask,
     sync,
+    wait,
     refresh,
   };
 }
@@ -201,7 +225,7 @@ it("removes only the matching delivery warning when the durable reply arrives th
   );
   expect(view().error).toBeUndefined();
   expect(view().status).toBe("IDLE");
-  expect(x.ask).toHaveBeenCalledTimes(1);
+  expect(x.ask).toHaveBeenCalledTimes(2);
 });
 it("keeps the warning for its pending question when an unrelated answer arrives", async () => {
   const x = await setup();
@@ -242,6 +266,185 @@ it("recovers a durably synchronized reply before reporting transport failure, wi
     view().messages.filter((m: { id: string }) => m.id === x.reply.id),
   ).toHaveLength(1);
 });
+
+it("automatically receives the answer arriving after the first recovery pull, without retrying the AI request", async () => {
+  const x = await setup("LOST", ({ wait, publish }) => {
+    wait.mockImplementationOnce(publish);
+  });
+  expect(view().status).toBe("IDLE");
+  expect(view().error).toBeUndefined();
+  expect(x.ask).toHaveBeenCalledTimes(1);
+  expect(x.wait.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
+    1000,
+  ]);
+  expect(
+    view().messages.filter((m: { id: string }) => m.id === x.reply.id),
+  ).toHaveLength(1);
+});
+
+it("automatically resumes an interrupted request once with the same IDs, without a user click", async () => {
+  const x = await setup("LOST", ({ ask, reply }) => {
+    ask
+      .mockRejectedValueOnce(TypeError("Network request failed"))
+      .mockResolvedValueOnce({ message: reply, alreadyApplied: true });
+  });
+  expect(view().status).toBe("IDLE");
+  expect(view().error).toBeUndefined();
+  expect(x.ask.mock.calls.map(([request]) => request)).toEqual([
+    x.request,
+    x.request,
+  ]);
+  expect(
+    view().messages.filter((m: { id: string }) => m.id === x.reply.id),
+  ).toHaveLength(1);
+});
+
+it("waits for a running server response through bounded pulls and ends without a manual retry", async () => {
+  const x = await setup("PENDING", ({ wait, publish }) => {
+    wait.mockImplementationOnce(async () => {}).mockImplementationOnce(publish);
+  });
+  expect(view().status).toBe("IDLE");
+  expect(view().error).toBeUndefined();
+  expect(x.ask).toHaveBeenCalledTimes(2);
+  expect(x.wait.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
+    1000, 3000,
+  ]);
+});
+
+it("bounds automatic recovery when no response becomes available and preserves the original pending request", async () => {
+  const x = await setup();
+  expect(x.ask).toHaveBeenCalledTimes(2);
+  expect(x.sync).toHaveBeenCalledTimes(7);
+  expect(x.wait.mock.calls.map(([milliseconds]) => milliseconds)).toEqual([
+    1000, 3000, 8000, 18000,
+  ]);
+  expect((await x.controller.open(x.f.conversation.id)).pendingTurns).toEqual([
+    x.request,
+  ]);
+});
+
+it("cancels a real retry timer on leaving the conversation and makes no further request", async () => {
+  const x = await setup();
+  vi.useFakeTimers();
+  try {
+    const delivery = new CopilotTurnDelivery(x.a, x.f, {
+      sync: x.sync,
+      ask: x.ask,
+    });
+    const pending = delivery.deliver(x.f.conversation.id);
+    const rejection = expect(pending).rejects.toThrow(
+      "COPILOT_DELIVERY_CANCELLED",
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(x.ask).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(1);
+    delivery.cancel(x.f.conversation.id);
+    await rejection;
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(x.ask).toHaveBeenCalledTimes(3);
+    expect((await x.controller.open(x.f.conversation.id)).pendingTurns).toEqual(
+      [x.request],
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does not resume a question removed during the recovery wait", async () => {
+  const x = await setup();
+  const ask = vi.fn(async () => {
+    throw Error("NETWORK_DOWN");
+  });
+  const delivery = new CopilotTurnDelivery(x.a, x.f, {
+    sync: x.sync,
+    ask,
+    waitForRetry: async () => {
+      await x.a.runAsync(
+        "UPDATE copilot_pending_turns SET status='APPLIED' WHERE reply_id=?",
+        x.request.replyId,
+      );
+    },
+  });
+  await expect(delivery.deliver(x.f.conversation.id)).rejects.toThrow(
+    "COPILOT_REPLY_PARENT_INVALID",
+  );
+  expect(ask).toHaveBeenCalledTimes(1);
+});
+
+it("reads the existing private reply without replaying the full upload/sync pipeline while waiting", async () => {
+  const x = await setup();
+  const sync = vi.fn(async () => {});
+  const ask = vi.fn(async () => {
+    throw TypeError("Network request failed");
+  });
+  const readReply = vi.fn(async () => x.reply);
+  const delivery = new CopilotTurnDelivery(x.a, x.f, { sync, ask, readReply });
+  expect(await delivery.deliver(x.f.conversation.id)).toBe("RECEIVED");
+  expect(sync).toHaveBeenCalledTimes(1);
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(readReply).toHaveBeenCalledWith(x.request, expect.any(AbortSignal));
+  expect((await x.controller.open(x.f.conversation.id)).pendingTurns).toEqual(
+    [],
+  );
+});
+
+it("rejects a private-history reply for another owner instead of retrying generation or acknowledging it", async () => {
+  const x = await setup();
+  const ask = vi.fn(async () => {
+    throw TypeError("Network request failed");
+  });
+  const delivery = new CopilotTurnDelivery(x.a, x.f, {
+    sync: async () => {},
+    ask,
+    readReply: async () => ({ ...x.reply, ownerId: randomUUID() }),
+  });
+  await expect(delivery.deliver(x.f.conversation.id)).rejects.toThrow(
+    "COPILOT_REPLY_SCOPE_INVALID",
+  );
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect((await x.controller.open(x.f.conversation.id)).pendingTurns).toEqual([
+    x.request,
+  ]);
+});
+
+it.each([429, 500])(
+  "does not automatically repeat a retryable provider/HTTP %s failure",
+  async (status) => {
+    const x = await setup("LOST", ({ ask }) => {
+      ask.mockRejectedValue(
+        new ApiClientError(status, {
+          code: "COPILOT_UNAVAILABLE",
+          messageFr: "Le service est indisponible.",
+          retryable: true,
+        }),
+      );
+    });
+    expect(x.ask).toHaveBeenCalledTimes(1);
+    expect(x.sync).toHaveBeenCalledTimes(2);
+    expect(x.wait).not.toHaveBeenCalled();
+    expect(view().error).toBe("Le service est indisponible.");
+  },
+);
+
+it("shows a quota failure on the resumed request even if the interrupted request had progress", async () => {
+  const x = await setup("PROGRESS", ({ ask }) => {
+    ask
+      .mockImplementationOnce(async (...args) => {
+        args[2]("Texte provisoire");
+        throw TypeError("Network request failed");
+      })
+      .mockRejectedValueOnce(
+        new ApiClientError(429, {
+          code: "RATE_LIMITED",
+          messageFr: "La limite du service est atteinte.",
+          retryable: true,
+        }),
+      );
+  });
+  expect(x.ask).toHaveBeenCalledTimes(2);
+  expect(view().error).toBe("La limite du service est atteinte.");
+});
 it.each(["PENDING", "PROGRESS"] as const)(
   "keeps %s recoverable delivery queued without a false failure or storing partial text",
   async (mode) => {
@@ -261,6 +464,7 @@ it.each(["PENDING", "PROGRESS"] as const)(
     expect(view().status).toBe("IDLE");
     expect(view().error).toBeUndefined();
     expect(x.ask.mock.calls.map((args) => args[0])).toEqual([
+      x.request,
       x.request,
       x.request,
     ]);
@@ -318,7 +522,7 @@ it("correlates a newly sent question separately from an older successful answer"
   await x.refresh();
   expect(view().error).toBeUndefined();
   expect(view().status).toBe("IDLE");
-  expect(x.ask).toHaveBeenCalledTimes(2);
+  expect(x.ask).toHaveBeenCalledTimes(3);
 });
 
 it("retains an explicit server stream failure even after provisional progress", async () => {

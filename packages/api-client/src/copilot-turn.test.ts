@@ -482,6 +482,35 @@ it("advertises deletion-aware private history to avoid legacy projections on the
     "1",
   );
 });
+it("cancels a scoped private-history recovery read when its conversation is left", async () => {
+  const abort = new AbortController();
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    expect(init?.headers).toHaveProperty("x-store-id", id(4));
+    return new Promise<Response>((_resolve, reject) => {
+      init!.signal!.addEventListener("abort", () => reject(Error("ABORTED")), {
+        once: true,
+      });
+    });
+  });
+  vi.stubGlobal("fetch", transport);
+  const result = new ApiClient("https://test.invalid").copilotHistory(
+    "test",
+    id(4),
+    input.conversationId,
+    undefined,
+    50,
+    undefined,
+    abort.signal,
+  );
+  const rejected = expect(result).rejects.toBeInstanceOf(ApiClientError);
+  abort.abort();
+  await rejected;
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(transport.mock.calls[0]![0]).toBe(
+    `https://test.invalid/api/v1/copilot/history?limit=50&conversationId=${input.conversationId}`,
+  );
+  expect(transport.mock.calls[0]![1]!.signal!.aborted).toBe(true);
+});
 it("sends only bounded labels to authenticated import classification with cancellation", async () => {
   const transport = vi.fn(
     async () =>
