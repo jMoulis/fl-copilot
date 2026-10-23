@@ -126,10 +126,23 @@ export async function readAnalyticsQuery(
       label: string;
       category?: unknown;
       nature?: unknown;
+      salesUnit?: unknown;
+      analyticsRefresh?: { generation?: unknown };
     }>("products")
     .find(
       { storeId },
-      { projection: { _id: 1, storeId: 1, label: 1, category: 1, nature: 1 } },
+      {
+        projection: {
+          _id: 1,
+          storeId: 1,
+          label: 1,
+          category: 1,
+          nature: 1,
+          ...(query.includeSalesMeasures
+            ? { salesUnit: 1, "analyticsRefresh.generation": 1 }
+            : {}),
+        },
+      },
     )
     .maxTimeMS(3000)
     .limit(ANALYTICS_QUERY_LIMITS.maxProducts + 1)
@@ -150,6 +163,11 @@ export async function readAnalyticsQuery(
       evidence: [],
     });
   if (catalogue.length > ANALYTICS_QUERY_LIMITS.maxProducts) return limited();
+  const unitsBeingRefreshed = new Map(
+    catalogue
+      .filter((p) => p.analyticsRefresh?.generation)
+      .map((p) => [p._id, p.salesUnit]),
+  );
   const products = catalogue.map((p) => {
     if (p.storeId !== storeId) throw Error("ANALYTICS_QUERY_SCOPE_INVALID");
     return analyticsQueryProductSchema.parse({
@@ -229,7 +247,19 @@ export async function readAnalyticsQuery(
       p.date !== row.date
     )
       throw Error("ANALYTICS_QUERY_SCOPE_INVALID");
-    revisions.push(JSON.stringify([row._id, p.inputRevision]));
+    const currentUnit = unitsBeingRefreshed.get(p.productId);
+    const quantityRefreshPending =
+      unitsBeingRefreshed.has(p.productId) &&
+      (p.sales.quantityUnit ?? "UNKNOWN") !== currentUnit;
+    revisions.push(
+      JSON.stringify([
+        row._id,
+        p.inputRevision,
+        ...(query.includeSalesMeasures && quantityRefreshPending
+          ? ["UNIT_REFRESH_PENDING", currentUnit]
+          : []),
+      ]),
+    );
     return {
       storeId,
       productId: p.productId,
@@ -249,15 +279,25 @@ export async function readAnalyticsQuery(
       ...(query.includeSalesMeasures
         ? {
             soldQuantity: {
-              value: p.sales.quantity ?? null,
-              status:
-                p.availability.salesQuantity?.status ??
-                ("UNAVAILABLE" as const),
-              ...(p.availability.salesQuantity?.reason
-                ? { reason: p.availability.salesQuantity.reason }
-                : {}),
+              value: quantityRefreshPending ? null : (p.sales.quantity ?? null),
+              status: quantityRefreshPending
+                ? ("UNAVAILABLE" as const)
+                : (p.availability.salesQuantity?.status ??
+                  ("UNAVAILABLE" as const)),
+              ...(quantityRefreshPending
+                ? { reason: "MISSING_INPUT" as const }
+                : p.availability.salesQuantity?.reason
+                  ? { reason: p.availability.salesQuantity.reason }
+                  : {}),
             },
-            quantityUnit: p.sales.quantityUnit ?? null,
+            quantityUnit: quantityRefreshPending
+              ? currentUnit === "KG" ||
+                currentUnit === "PIECE" ||
+                currentUnit === "PACK"
+                ? currentUnit
+                : ("UNKNOWN" as const)
+              : (p.sales.quantityUnit ?? null),
+            ...(quantityRefreshPending ? { quantityRefreshPending: true } : {}),
           }
         : {}),
     };
@@ -442,7 +482,10 @@ export async function readAnalyticsQuery(
       ? `€/${units[price.unit]}`
       : "unité non exploitable";
     const dates = `${measure.period.start} au ${measure.period.end}`;
-    const detail = `${label} · ${dates}. Quantités cumulées de la période, même si le CA demandé est une moyenne journalière. ${quantity.availableDays} jours de quantité complets, ${quantity.partialDays} partiels, ${quantity.missingDays} sans quantité exploitable. Prix moyen réalisé : somme des valeurs de vente Mercalys / somme des quantités des mêmes journées complètes et compatibles ; ${price.pairedDays} journées appariées, ${price.pairedSalesValue ?? "indisponible"} € / ${price.pairedQuantity ?? "indisponible"} ${price.unit ? units[price.unit] : "unité inconnue"}. Les autres journées ne sont pas estimées. Valeurs partielles utilisables sur ce périmètre. Base HT/TTC non confirmée : ne pas présenter ce prix comme un PV TTC ni comme le prix affiché en rayon. Unités historiques des indicateurs conservées ; aucune conversion kg/pièces/conditionné.`;
+    const pendingDetail = measure.refreshPendingDays
+      ? `${measure.refreshPendingDays} journées sont en cours d’actualisation après une correction d’unité ; leurs anciennes quantités sont exclues, sans demander de réimport. `
+      : "";
+    const detail = `${label} · ${dates}. ${pendingDetail} Quantités cumulées de la période, même si le CA demandé est une moyenne journalière. ${quantity.availableDays} jours de quantité complets, ${quantity.partialDays} partiels, ${quantity.missingDays} sans quantité exploitable. Prix moyen réalisé : somme des valeurs de vente Mercalys / somme des quantités des mêmes journées complètes et compatibles ; ${price.pairedDays} journées appariées, ${price.pairedSalesValue ?? "indisponible"} € / ${price.pairedQuantity ?? "indisponible"} ${price.unit ? units[price.unit] : "unité inconnue"}. Les autres journées ne sont pas estimées. Valeurs partielles utilisables sur ce périmètre. Base HT/TTC non confirmée : ne pas présenter ce prix comme un PV TTC ni comme le prix affiché en rayon. Unités historiques des indicateurs conservées ; aucune conversion kg/pièces/conditionné.`;
     return {
       ...measure,
       evidenceIds: {

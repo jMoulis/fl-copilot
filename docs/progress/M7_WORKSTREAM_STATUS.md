@@ -1,5 +1,13 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot en validation — 23 octobre : actualisation durable après correction d’unité
+
+La modification d’une unité produit enregistre désormais son travail dérivé dans la transaction canonique du produit. Le moteur partagé relit les observations originales par pages bornées, avec curseur durable, bail et reprise ; ni les quantités source ni les montants ne sont convertis. Les cycles de synchronisation et la récupération périodique existante font avancer le même traitement, y compris lorsque le fournisseur de workflows est indisponible. Un échec de calcul ne transforme pas une modification métier déjà enregistrée en refus.
+
+Les instantanés produit conservent leurs références de contexte et refusent l’écrasement par un calcul concurrent fondé sur un ancien instantané. Pendant l’actualisation, l’outil du copilote exclut les anciennes quantités incompatibles avec l’unité corrigée, garde les montants connus et explique l’attente sans demander de réimport. Les prix moyens restent calculés sur les seules journées appariées ; base HT/TTC toujours non confirmée.
+
+Chantiers **1 Actions/conflits, 4 Expertise et 7 UX-validation + M8** : **1/3/4/5/6/7 en cours ; 2 code prêt**. Les tests ciblés couvrent neuf scénarios MongoDB transactionnels, dont formulaire natif → SQLite/Outbox → commande distante, historique de 80 jours, interruption avec reprise, bail expiré et corrections concurrentes. Les autres contrôles, la fusion et la livraison API restent à consigner. Aucun build EAS n’est lancé pour ce seul correctif ; la recette native groupée inclura le réimport de la PR 328, déjà fusionnée mais non livré sur appareil.
+
 ## Correction en validation — 23 octobre : réimport Mercalys et associations déjà automatiques
 
 La comparaison distingue désormais les lignes par date métier et code source (ITM8, sinon EAN), avec repli conservateur produit/date pour les anciens enregistrements sans code. Deux codes validés d’un même produit restent deux observations séparées ; les doublons de code et les rapprochements historiques indécidables restent bloquants. Une association corrigée suit la même ligne source et remplace son ancienne observation, avec recalcul des deux produits concernés.

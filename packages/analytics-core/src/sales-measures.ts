@@ -21,6 +21,7 @@ const reason = z
 export const salesMeasuresSchema = z.object({
   period: z.object({ start: z.string().date(), end: z.string().date() }),
   taxBasis: z.literal("UNCONFIRMED"),
+  refreshPendingDays: z.number().int().nonnegative().optional(),
   quantity: metric.extend({
     reason,
     unit,
@@ -48,11 +49,25 @@ export function calculateSalesMeasures(
       reason?: "MISSING_INPUT" | "UNKNOWN_UNIT" | "INCOMPATIBLE_UNITS";
     };
     quantityUnit?: z.infer<typeof unit>;
+    quantityRefreshPending?: boolean;
   }[],
 ) {
-  const rows = points.filter(
-    (p) => p.businessDate >= period.start && p.businessDate <= period.end,
-  );
+  const rows = points
+    .filter(
+      (p) => p.businessDate >= period.start && p.businessDate <= period.end,
+    )
+    .map((p) =>
+      p.quantityRefreshPending
+        ? {
+            ...p,
+            soldQuantity: {
+              value: null,
+              status: "UNAVAILABLE" as const,
+              reason: "MISSING_INPUT" as const,
+            },
+          }
+        : p,
+    );
   const expectedDays =
     (Date.parse(period.end) - Date.parse(period.start)) / 86400000 + 1;
   const quantity = sumCompatibleQuantities(
@@ -101,8 +116,16 @@ export function calculateSalesMeasures(
   return salesMeasuresSchema.parse({
     period,
     taxBasis: "UNCONFIRMED",
+    ...(rows.some((p) => p.quantityRefreshPending)
+      ? {
+          refreshPendingDays: rows.filter((p) => p.quantityRefreshPending)
+            .length,
+        }
+      : {}),
     quantity: {
-      reason: quantityReason ?? null,
+      reason:
+        quantityReason ??
+        (rows.some((p) => p.quantityRefreshPending) ? "MISSING_INPUT" : null),
       value: quantity.value,
       unit: quantity.unit,
       status:
