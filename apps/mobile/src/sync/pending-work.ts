@@ -23,8 +23,11 @@ export async function readPendingWork(
     storeId,
     ownerId ?? null,
   );
-  const commands = await db.getFirstAsync<{ count: number }>(
-    `SELECT COUNT(*) AS count FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING') AND ((entity_type NOT GLOB 'copilot_*' AND entity_type!='email_intake_decision') OR json_extract(payload_json,'$.ownerId')=?)`,
+  const commands = await db.getFirstAsync<{
+    count: number;
+    last_error_code: string | null;
+  }>(
+    `SELECT COUNT(*) AS count,MAX(last_error_code) AS last_error_code FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING') AND ((entity_type NOT GLOB 'copilot_*' AND entity_type!='email_intake_decision') OR json_extract(payload_json,'$.ownerId')=?)`,
     storeId,
     ownerId ?? null,
   );
@@ -35,7 +38,11 @@ export async function readPendingWork(
             label: "Modifications à envoyer",
             count: Number(commands!.count),
             state: "En attente d’envoi",
-            code: null,
+            code:
+              commands?.last_error_code &&
+              /^[A-Z][A-Z0-9_]{2,90}$/.test(commands.last_error_code)
+                ? commands.last_error_code
+                : null,
           },
         ]
       : []),

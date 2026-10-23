@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runLocalMigrations } from "../db/migrations";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
@@ -173,7 +173,7 @@ describe("local analytics recomputation", () => {
       { now: () => now },
     );
     expect((await scheduler.process("store-1")).completedJobs).toBe(6);
-    expect(recomputed).toBe(6);
+    expect(recomputed).toBe(1);
     expect(await readPendingWork(adapter, "store-1")).toEqual([]);
     expect(
       database
@@ -218,6 +218,220 @@ describe("local analytics recomputation", () => {
       attempt_count: 2,
       last_error: "temporary calculation failure",
     });
+    database.close();
+  });
+
+  it("drains 17 overlapping jobs once per product/day without touching the remaining send", async () => {
+    const { adapter, database } = await openDatabase();
+    const scopes = Array.from({ length: 600 }, (_, i) => ({
+      productId: `product-${i}`,
+      businessDate: "2026-10-03",
+    }));
+    for (let i = 0; i < 17; i++)
+      await enqueueAnalyticsRecomputationJob(adapter, {
+        jobId: `overlap-${i}`,
+        storeId: "store-1",
+        scopes,
+        createdAt: now,
+      });
+    const { OutboxRepository } = await import("../sync/outbox-repository");
+    await new OutboxRepository(adapter).enqueue({
+      commandId: "retained-command",
+      storeId: "store-1",
+      deviceId: "device",
+      commandType: "PRODUCT_UPSERT",
+      entityType: "product",
+      entityId: "p",
+      payload: { retained: true },
+    });
+    let products = 0,
+      departments = 0;
+    const result = await new LocalAnalyticsRecomputationScheduler(
+      adapter,
+      {
+        async recomputeProduct() {
+          products++;
+        },
+        async recomputeDepartment() {
+          departments++;
+        },
+      },
+      { yieldToInterface: async () => undefined },
+    ).process("store-1");
+    expect(result).toMatchObject({
+      completedJobs: 17,
+      completedScopes: 600,
+      failedJobs: 0,
+    });
+    expect(products).toBe(600);
+    expect(departments).toBe(1);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM local_jobs WHERE status='COMPLETED'")
+        .get(),
+    ).toEqual({ n: 17 });
+    expect(
+      database
+        .prepare(
+          "SELECT status,payload_json FROM sync_outbox WHERE command_id='retained-command'",
+        )
+        .get(),
+    ).toEqual({
+      status: "PENDING",
+      payload_json: JSON.stringify({ retained: true }),
+    });
+    database.close();
+  });
+
+  it("recomputes 17 overlapping 600-product SQLite jobs in bounded transactions with unchanged canonical projections", async () => {
+    const { adapter, database } = await openDatabase();
+    const insert = database.prepare(
+      "INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at,sync_state,dirty) VALUES(?,'store-1','Tomate','VEGETABLE','BULK','KG','ACTIVE',1,?,?,'SYNCED',0)",
+    );
+    const scopes = Array.from({ length: 600 }, (_, i) => ({
+      productId: `product-${i}`,
+      businessDate: "2026-10-03",
+    }));
+    for (const scope of scopes) insert.run(scope.productId, now, now);
+    for (let i = 0; i < 17; i++)
+      await enqueueAnalyticsRecomputationJob(adapter, {
+        jobId: `real-${i}`,
+        storeId: "store-1",
+        scopes,
+        createdAt: now,
+      });
+    const transactions = vi.spyOn(adapter, "withExclusiveTransactionAsync");
+    const result = await new LocalAnalyticsRecomputationScheduler(
+      adapter,
+      new SQLiteProductDateRecomputer(adapter, () => now),
+      { now: () => now, yieldToInterface: async () => undefined },
+    ).process("store-1");
+    expect(result).toMatchObject({
+      completedJobs: 17,
+      failedJobs: 0,
+      completedScopes: 600,
+    });
+    expect(transactions.mock.calls.length).toBeLessThan(100);
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM product_daily_performance")
+        .get(),
+    ).toEqual({ n: 600 });
+    expect(
+      cachedPayload(database, "department_daily_performance"),
+    ).toMatchObject({ productCount: 600 });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM local_jobs WHERE status='COMPLETED'")
+        .get(),
+    ).toEqual({ n: 17 });
+    console.log(
+      "analytics-backlog-stress",
+      JSON.stringify({
+        jobs: 17,
+        uniqueProductDays: 600,
+        completed: result.completedJobs,
+        projectionTransactions: transactions.mock.calls.length,
+      }),
+    );
+    database.close();
+  });
+
+  it("does not cache a failed scope or forget work added while a cycle is running", async () => {
+    const { adapter, database } = await openDatabase();
+    const scope = { productId: "p", businessDate: "2026-10-03" };
+    for (const jobId of ["a", "b"])
+      await enqueueAnalyticsRecomputationJob(adapter, {
+        jobId,
+        storeId: "store-1",
+        scopes: [scope],
+        createdAt: now,
+      });
+    let calls = 0;
+    const scheduler = new LocalAnalyticsRecomputationScheduler(adapter, {
+      async recomputeProduct() {
+        calls++;
+        if (calls === 1) throw Error("temporary");
+        if (calls === 2)
+          await enqueueAnalyticsRecomputationJob(adapter, {
+            jobId: "new-work",
+            storeId: "store-1",
+            scopes: [scope],
+            createdAt: now,
+          });
+      },
+      async recomputeDepartment() {},
+    });
+    expect(await scheduler.process("store-1")).toMatchObject({
+      completedJobs: 1,
+      failedJobs: 1,
+      completedScopes: 1,
+    });
+    expect(jobState(database, "a")?.status).toBe("RETRY");
+    expect(jobState(database, "new-work")?.status).toBe("PENDING");
+    expect(await scheduler.process("store-1")).toMatchObject({
+      completedJobs: 2,
+      failedJobs: 0,
+      completedScopes: 1,
+    });
+    expect(calls).toBe(3);
+    database.close();
+  });
+
+  it("refreshes the department again if another job adds a different product on the same day", async () => {
+    const { adapter, database } = await openDatabase();
+    for (const productId of ["a", "b"])
+      await enqueueAnalyticsRecomputationJob(adapter, {
+        jobId: productId,
+        storeId: "store-1",
+        scopes: [{ productId, businessDate: "2026-10-03" }],
+        createdAt: now,
+      });
+    const seen: string[] = [];
+    await new LocalAnalyticsRecomputationScheduler(adapter, {
+      async recomputeProduct(_store, scope) {
+        seen.push(scope.productId);
+      },
+      async recomputeDepartment() {
+        seen.push("department");
+      },
+    }).process("store-1");
+    expect(seen).toEqual(["a", "department", "b", "department"]);
+    database.close();
+  });
+
+  it("batches real SQLite projections with identical values and rolls back a failing batch", async () => {
+    const { adapter, database } = await openDatabase();
+    insertAnalyticsFixture(database);
+    const recomputer = new SQLiteProductDateRecomputer(adapter, () => now);
+    const scopes = [
+      { productId: "product-1", businessDate: "2026-10-03" },
+      { productId: "product-1", businessDate: "2026-10-04" },
+    ];
+    for (const scope of scopes)
+      await recomputer.recomputeProduct("store-1", scope);
+    const before = database
+      .prepare("SELECT * FROM product_daily_performance ORDER BY id")
+      .all();
+    database.exec("DELETE FROM product_daily_performance");
+    await recomputer.recomputeProducts("store-1", scopes);
+    expect(
+      database
+        .prepare("SELECT * FROM product_daily_performance ORDER BY id")
+        .all(),
+    ).toEqual(before);
+    database.exec("DELETE FROM product_daily_performance");
+    await expect(
+      recomputer.recomputeProducts("store-1", [
+        ...scopes,
+        { productId: "missing", businessDate: "2026-10-03" },
+      ]),
+    ).rejects.toThrow("unavailable");
+    expect(
+      database
+        .prepare("SELECT COUNT(*) n FROM product_daily_performance")
+        .get(),
+    ).toEqual({ n: 0 });
     database.close();
   });
 

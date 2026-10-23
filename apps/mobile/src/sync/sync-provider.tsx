@@ -52,14 +52,14 @@ import {
 import { AppState } from "react-native";
 import Constants from "expo-constants";
 import { ApiClient, ApiClientError } from "@fl-copilot/api-client";
-import { useAuth } from "@/auth/auth-provider";
-import { getApiBaseUrl } from "@/config/environment";
-import { useLocalDatabase } from "@/providers/database-provider";
+import { useAuth } from "../auth/auth-provider";
+import { getApiBaseUrl } from "../config/environment";
+import { useLocalDatabase } from "../providers/database-provider";
 import {
   LocalAnalyticsRecomputationScheduler,
   SQLiteProductDateRecomputer,
-} from "@/analytics/local-recomputation";
-import { SourceUploadQueue } from "@/documents/source-upload-queue";
+} from "../analytics/local-recomputation";
+import { SourceUploadQueue } from "../documents/source-upload-queue";
 import { MobileSyncService, type SyncSummary } from "./sync-service";
 import { subscribeOutboxChanges } from "./outbox-repository";
 import { runSyncPipeline } from "./sync-pipeline";
@@ -71,6 +71,7 @@ export type SyncRuntimeStatus =
 interface LocalSyncSnapshot {
   pendingDetails?: PendingWorkGroup[];
   pendingCount: number;
+  pendingLocalCalculationCount?: number;
   conflictCount: number;
   failedCount: number;
   lastSyncedAt?: string;
@@ -147,6 +148,14 @@ export function SyncProvider({ children }: PropsWithChildren) {
     conflictCount: 0,
     failedCount: 0,
   });
+  const localAnalytics = useMemo(
+    () =>
+      new LocalAnalyticsRecomputationScheduler(
+        database.sqlite,
+        new SQLiteProductDateRecomputer(database.sqlite),
+      ),
+    [database.sqlite],
+  );
   const service = useMemo(() => {
     if (!hasLocalSession) return undefined;
     const api = new ApiClient(getApiBaseUrl());
@@ -579,7 +588,11 @@ export function SyncProvider({ children }: PropsWithChildren) {
           if (!currentScope()) return undefined;
           snapshotRequest.current++;
           setState((current) => ({ ...current, status: "syncing" }));
+          const recompute = () => localAnalytics.process(storeId);
           try {
+            // Accepted local calculations never wait for an upload or network response.
+            await recompute();
+            if (!currentScope()) return undefined;
             // Previously accepted local work can advance even if the next network sync fails.
             if (scope && originalJobs) {
               await emailProcessing?.seed(storeId, scope.userId, originalJobs);
@@ -615,10 +628,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
               (reason) =>
                 captureLocalOperationFailure(reason, "mercalys-repair"),
             );
-            await new LocalAnalyticsRecomputationScheduler(
-              database.sqlite,
-              new SQLiteProductDateRecomputer(database.sqlite),
-            ).process(storeId);
+            await recompute();
             snapshotRequest.current++;
             const snapshot = await readLocalSyncSnapshot(
               database.sqlite,
@@ -641,7 +651,9 @@ export function SyncProvider({ children }: PropsWithChildren) {
             setState({
               ...snapshot,
               status:
-                error instanceof ApiClientError && error.status === 0
+                error instanceof ApiClientError &&
+                error.status === 0 &&
+                error.response.code !== "SYNC_REQUEST_TIMEOUT"
                   ? "offline"
                   : "error",
             });
@@ -654,6 +666,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       database.sqlite,
       defaultStoreId,
       service,
+      localAnalytics,
       uploadQueue,
       analysisRecovery,
       originalJobs,
@@ -662,6 +675,24 @@ export function SyncProvider({ children }: PropsWithChildren) {
       session?.user.id,
     ],
   );
+
+  useEffect(() => {
+    if (
+      !defaultStoreId ||
+      !hasLocalSession ||
+      !state.pendingLocalCalculationCount
+    )
+      return;
+    void localAnalytics.process(defaultStoreId).catch((error) => {
+      captureLocalOperationFailure(error, "synchronization");
+    });
+  }, [
+    localAnalytics,
+    defaultStoreId,
+    hasLocalSession,
+    state.pendingLocalCalculationCount,
+    state.pendingDetails,
+  ]);
 
   useEffect(() => {
     void refreshLocalState();
@@ -1152,10 +1183,12 @@ async function readLocalSyncSnapshot(
   );
   const jobCounts = await database.getFirstAsync<{
     pending_count: number;
+    pending_analytics_count: number;
     failed_count: number;
   }>(
     `
       SELECT
+        SUM(CASE WHEN type='ANALYTICS_RECOMPUTE_PRODUCT_DATES' AND status='PENDING' THEN 1 ELSE 0 END) AS pending_analytics_count,
         SUM(CASE WHEN status IN ('PENDING', 'RETRY', 'RUNNING') THEN 1 ELSE 0 END)
           AS pending_count,
         SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END)
@@ -1179,6 +1212,9 @@ async function readLocalSyncSnapshot(
   );
   return {
     pendingDetails: await readPendingWork(database, storeId, ownerId),
+    pendingLocalCalculationCount: Number(
+      jobCounts?.pending_analytics_count ?? 0,
+    ),
     pendingCount:
       Number(outboxCounts?.pending_count ?? 0) +
       Number(jobCounts?.pending_count ?? 0),

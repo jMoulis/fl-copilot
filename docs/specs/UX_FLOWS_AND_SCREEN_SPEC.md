@@ -4405,3 +4405,7 @@ Explicit return from product detail to the catalogue and successful manual editi
 ### Waste local read during sync — 22 October 2026
 
 Opening Casse reads retained SQLite tickets even while uploads/synchronization remain active. Background status transitions must not cancel the initial local read or leave an indefinite initial loader. Polling/manual refresh share a pending read in the current focus context; blur/account/store changes invalidate its result. A successful sync refreshes existing content without clearing it. Pending synchronization items remain separately visible and are not counted as successfully processed by merely displaying the ticket list.
+
+### Local calculation progress independent of network — 23 October 2026
+
+Accepted local indicator jobs must advance through the existing serialized scheduler even while an upload/network request remains pending. Refresh the existing grouped counts when jobs start, finish or fail; do not equate local calculations with remote commands. Bounded sync JSON requests retain uncertain commands and their stable IDs for idempotent retry. A service timeout is not evidence that the device is offline; show the existing safe retry code in pending details when available. Neither a completed local calculation nor a displayed ticket implies successful remote persistence. See `../qa/M8_LOCAL_ANALYTICS_BACKLOG_2026_10_23.md`; grouped native acceptance remains required.
