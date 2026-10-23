@@ -2,7 +2,9 @@
 
 Objectif de Julien : V1 testable pour la présentation du **28 octobre**, avec l’UX intégrée et sans contourner la logique métier. Base examinée : PR 273 / `824cf4c`. Cet ordre est une proposition d’exécution issue de l’audit ; il ne supprime aucun engagement V1 et ne déclare aucun lot livré. Voir `AUDIT.md` pour les arbitrages.
 
-## Point courant — 23 octobre : données et email livrés, finition UX en validation
+## Point courant — 23 octobre : données livrées, réception email à activer, finition UX en validation
+
+Le lot Documents commerciaux en validation complète L5 : recherche/filtres, dix cartes par page, sources de revue synchronisées conservées, action d’import compacte et préparation montée à la demande avec état retenu après repli. Le lecteur de snapshot n’utilise plus de timer ; les états d’envoi sont lus en groupe (une requête pour 200 PDF), avec actualisation au focus/pull et conservation des contenus en erreur. QA : `../qa/M7_UX_COMMERCIAL_DOCUMENTS_2026_10_23.md`. La PR 337 est fusionnée après les deux CI exactes vertes (3 944 tests / 6 ignorés), sans nouveau binaire. Ni elle ni ce lot ne sont dans le build 13 ; la recette native et tout le périmètre V1 restent ouverts.
 
 Actualisation : le binaire groupé iOS **0.1.0/build 13**, source `5838bd8`, est disponible (PR 331–333 et 335–336 incluses). Installation sur l’app existante et recette humaine restent ouvertes ; aucun résultat d’appareil n’est présumé. Le lot M8 suivant protège l’enregistrement produit contre les callbacks d’un contexte compte/magasin/fiche périmé, avec rollback de l’agrégat, Outbox et calculs ; il est en validation, non inclus dans ce binaire. Les droits et le fonctionnement hors connexion restent inchangés. Voir `../qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md`. La réception complète Resend demeure bloquée par la permission de la clé actuelle, indépendamment de la disponibilité du binaire.
 

@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CommercialReviewRepository } from "../commercial/review-repository";
 import type {
   LocalFileMetadata,
   LocalSourceDocument,
@@ -137,6 +138,99 @@ afterEach(() => {
 });
 
 describe("SourceDocumentRepository", () => {
+  it("reads upload states for 200 PDFs in one store-scoped query, preserving earliest-job selection and excluding foreign/deleted/non-PDF sources", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "fl-commercial-list-"));
+    directories.push(directory);
+    const database = new DatabaseSync(join(directory, "local.db")),
+      adapter = new NodeDatabase(database);
+    try {
+      await runLocalMigrations(adapter);
+      const repo = new SourceDocumentRepository(adapter),
+        reviews = new CommercialReviewRepository(adapter);
+      const ids = Array.from(
+        { length: 200 },
+        (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+      );
+      for (const [index, id] of ids.entries()) {
+        await repo.createWithFile({
+          document: sourceDocument({ id, sourceType: "WEEKLY_COMMERCIAL_PDF" }),
+          file: localFile({
+            id: `00000000-0000-4000-9000-${String(index + 1).padStart(12, "0")}`,
+            sourceDocumentId: id,
+          }),
+        });
+        database
+          .prepare(
+            `INSERT INTO local_jobs(id,type,status,payload_json,attempt_count,created_at,updated_at)
+          VALUES(?,'SOURCE_UPLOAD_AND_REGISTER','PENDING',?,0,?,?)`,
+          )
+          .run(
+            `job-${index}`,
+            JSON.stringify({ storeId, sourceDocumentId: id }),
+            timestamp,
+            timestamp,
+          );
+      }
+      database
+        .prepare(
+          `INSERT INTO local_jobs(id,type,status,payload_json,attempt_count,created_at,updated_at)
+        VALUES('job-later','SOURCE_UPLOAD_AND_REGISTER','RETRY',?,0,'2026-10-01T12:00:00Z','2026-10-01T12:00:00Z')`,
+        )
+        .run(JSON.stringify({ storeId, sourceDocumentId: ids[0] }));
+      const first = vi.spyOn(adapter, "getFirstAsync"),
+        all = vi.spyOn(adapter, "getAllAsync");
+      const old = await Promise.all(
+        ids.map((id) => repo.commercialPdfUploadJob(id, storeId)),
+      );
+      expect(first).toHaveBeenCalledTimes(200);
+      first.mockClear();
+      all.mockClear();
+      const [documents, jobs] = await Promise.all([
+        repo.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
+        repo.listCommercialPdfUploadJobs(storeId),
+        reviews.pages(storeId),
+        reviews.decisions(storeId),
+      ]);
+      expect(all).toHaveBeenCalledTimes(4);
+      expect(first).not.toHaveBeenCalled();
+      expect(documents).toHaveLength(200);
+      expect(Object.keys(jobs)).toHaveLength(200);
+      for (const [index, id] of ids.entries())
+        expect(jobs[id]).toEqual(old[index]);
+      // A job cannot borrow an accessible source ID for a different store.
+      database
+        .prepare("UPDATE local_jobs SET payload_json=? WHERE id='job-0'")
+        .run(JSON.stringify({ storeId: fileId, sourceDocumentId: ids[0] }));
+      database
+        .prepare("UPDATE local_jobs SET payload_json=? WHERE id='job-later'")
+        .run(JSON.stringify({ storeId: fileId, sourceDocumentId: ids[0] }));
+      database
+        .prepare("UPDATE source_documents SET deleted_at=? WHERE id=?")
+        .run(timestamp, ids[1]);
+      database
+        .prepare(
+          "UPDATE source_documents SET source_type='MERCALYS_SALES' WHERE id=?",
+        )
+        .run(ids[2]);
+      database
+        .prepare("UPDATE source_documents SET store_id=? WHERE id=?")
+        .run(fileId, ids[3]);
+      const scoped = await repo.listCommercialPdfUploadJobs(storeId);
+      expect(Object.keys(scoped)).toHaveLength(196);
+      for (const id of ids.slice(0, 4)) expect(scoped[id]).toBeUndefined();
+      console.log(
+        "commercial-documents-sql",
+        JSON.stringify({
+          documents: 200,
+          oldUploadQueries: 200,
+          newUploadQueries: 1,
+          completeReadQueries: 4,
+        }),
+      );
+    } finally {
+      database.close();
+    }
+  });
   it("preserves file metadata, checksum, and raw records across restart", async () => {
     const directory = mkdtempSync(join(tmpdir(), "fl-copilot-sources-"));
     directories.push(directory);

@@ -2,6 +2,8 @@
 
 Date: 2026-10-09.
 
+Commercial-document UX increment (23 October, in validation): searchable/filterable ten-card pages retain original/review-only sources and preparation state; focused/pull/manual reads replace the two-second screen poll. A store-scoped grouped upload-job reader preserves recovery selection while reducing 200 individual job queries to one. See `qa/M7_UX_COMMERCIAL_DOCUMENTS_2026_10_23.md`; later grouped native delivery and owner acceptance remain distinct from PR 337/build 13 and from the complete V1/M8 gates.
+
 Current V1 delivery note (23 October): grouped iOS build 13 from `5838bd8` is available, with owner acceptance still pending. The following M8 increment fences manual product saves against stale owner/store/editor contexts within the existing SQLite aggregate/Outbox transaction, without changing permissions or requiring connectivity. See `qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md` and the seven-workstream ledger; no complete V1/M8 acceptance is implied.
 
 ## Product objective

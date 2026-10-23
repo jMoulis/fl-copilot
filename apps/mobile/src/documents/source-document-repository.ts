@@ -203,6 +203,34 @@ export class SourceDocumentRepository {
     );
   }
 
+  async listCommercialPdfUploadJobs(storeId: string) {
+    const rows = await this.database.getAllAsync<{
+      source_document_id: string;
+      status: string;
+      last_error: string | null;
+    }>(
+      `SELECT d.id AS source_document_id, j.status, j.last_error
+       FROM local_jobs j JOIN source_documents d
+         ON d.id=json_extract(j.payload_json, '$.sourceDocumentId')
+       WHERE j.type='SOURCE_UPLOAD_AND_REGISTER'
+         AND json_extract(j.payload_json, '$.storeId')=?
+         AND d.store_id=? AND d.source_type='WEEKLY_COMMERCIAL_PDF'
+         AND d.deleted_at IS NULL
+       ORDER BY j.created_at, j.id`,
+      storeId,
+      storeId,
+    );
+    const jobs: Record<string, { status: string; last_error: string | null }> =
+      {};
+    // Keep the same earliest-job identity as the individual recovery reader.
+    for (const row of rows)
+      jobs[row.source_document_id] ??= {
+        status: row.status,
+        last_error: row.last_error,
+      };
+    return jobs;
+  }
+
   async retryCommercialPdfUpload(
     sourceDocumentId: string,
     storeId: string,

@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+### M7 UX / M8 performance — commercial document browsing (23 October 2026)
+
+Reuse canonical PDF/original/review/recovery services in a compact searchable/status-filtered list with ten mounted cards per page, preserved route context and synchronized review-only sources. Delay preparation mounting until requested, retain its state after folding, and replace screen polling/N+1 upload-state reads with focus/pull/manual snapshot reads and one store-scoped grouped job read. Preserve earliest-job identity, source bytes, exact recovery authority and late/error content. No network loop, schema or business command. See `../qa/M7_UX_COMMERCIAL_DOCUMENTS_2026_10_23.md`; final CI, grouped native/device acceptance and all full V1/M8 requirements remain open.
+
 ### Current M8 validation increment — manual editor session scope (23 October 2026)
 
 Fence retained manual product-save callbacks by current owner/store/product/database/device and mount lifetime, rechecking around the existing exclusive SQLite aggregate mutation. A scope change must roll back catalogue, Outbox and recomputation together; a replacement session object with identical scope must remain usable offline. No new permission hierarchy, API/schema/migration or network requirement. Reproduce cancelled create/edit before acquisition, while queued and after writes on real SQLite; verify mounted stale-handler and delayed-writer behavior. See `../qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md`. This follows build 13, remains unreleased, and does not replace any full V1 or seven-workstream exit criterion.
