@@ -155,6 +155,33 @@ it.each(["code", "alias"])(
   },
 );
 
+it("focuses the first invalid mounted field on every submission without a delayed callback", async () => {
+  vi.useFakeTimers();
+  try {
+    const initial = draft();
+    initial.label = "";
+    initial.identifiers[0]!.value = "";
+    initial.identifiers.push({ type: "EAN", value: "" });
+    await mount(initial);
+    await press("Enregistrer le produit");
+    expect(focused).toHaveBeenLastCalledWith("Libellé du produit");
+    await change("Libellé du produit", "PERSIL");
+    await press("Enregistrer le produit");
+    expect(focused).toHaveBeenLastCalledWith("Valeur de l’identifiant 1");
+    await change("Valeur de l’identifiant 1", "000000123");
+    await press("Enregistrer le produit");
+    expect(focused).toHaveBeenLastCalledWith("Valeur de l’identifiant 2");
+    const count = focused.mock.calls.length;
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(focused).toHaveBeenCalledTimes(count);
+    expect(save).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("admits one save, locks edits and structural controls until it settles, and retains input after a local failure", async () => {
   let fail!: (reason: Error) => void;
   save.mockImplementationOnce(
@@ -211,4 +238,31 @@ it("refuses a stale/conflicted form's save handler while preserving editable dra
   await press("Enregistrer le produit");
   expect(save).not.toHaveBeenCalled();
   expect(input("Libellé du produit").props.value).toBe("SAISIE CONSERVÉE");
+});
+
+it("does not focus a previous form after its unmount when another invalid draft is opened", async () => {
+  vi.useFakeTimers();
+  try {
+    const codeDraft = draft();
+    codeDraft.identifiers[0]!.value = "";
+    await mount(codeDraft);
+    await press("Enregistrer le produit");
+    await act(async () => rendered!.unmount());
+    rendered = undefined;
+    focused.mockClear();
+    const aliasDraft = draft();
+    aliasDraft.aliases[0]!.alias = "";
+    await mount(aliasDraft);
+    await press("Enregistrer le produit");
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync();
+    });
+    expect(focused).toHaveBeenCalled();
+    expect(focused.mock.calls.every(([label]) => label === "Alias 1")).toBe(
+      true,
+    );
+    expect(save).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

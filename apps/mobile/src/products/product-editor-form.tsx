@@ -121,6 +121,9 @@ export function ProductEditorForm({
   const focusAfterValidation = useRef<
     FieldPath<ProductEditorDraft> | undefined
   >(undefined);
+  const inputRefs = useRef<
+    Partial<Record<FieldPath<ProductEditorDraft>, TextInput | null>>
+  >({});
   const [expanded, setExpanded] = useState({
     packaging: false,
     identifiers: false,
@@ -130,12 +133,13 @@ export function ProductEditorForm({
     control,
     handleSubmit,
     reset,
-    setFocus,
     formState: { errors, isSubmitting, isDirty },
   } = useForm<ProductEditorDraft>({
     resolver: zodResolver(editorSchema),
     defaultValues: initialValue ?? emptyProductDraft,
     shouldUnregister: false,
+    // Focus the mounted native input without the library's uncancelled delayed focus.
+    shouldFocusError: false,
   });
   const identifiers = useFieldArray({ control, name: "identifiers" });
   const aliases = useFieldArray({ control, name: "aliases" });
@@ -151,9 +155,9 @@ export function ProductEditorForm({
     const field = focusAfterValidation.current;
     if (field) {
       focusAfterValidation.current = undefined;
-      setFocus(field);
+      inputRefs.current[field]?.focus();
     }
-  }, [expanded, setFocus]);
+  }, [expanded]);
 
   const validateAndSave = handleSubmit(
     async (draft) => {
@@ -236,7 +240,10 @@ export function ProductEditorForm({
           name="label"
           render={({ field: { onBlur, onChange, value, ref } }) => (
             <TextInput
-              ref={ref}
+              ref={(input) => {
+                ref(input);
+                inputRefs.current.label = input;
+              }}
               editable={!isSubmitting}
               value={value}
               onBlur={onBlur}
@@ -289,7 +296,10 @@ export function ProductEditorForm({
           name="packagingQuantity"
           render={({ field: { onBlur, onChange, value, ref } }) => (
             <TextInput
-              ref={ref}
+              ref={(input) => {
+                ref(input);
+                inputRefs.current.packagingQuantity = input;
+              }}
               editable={!isSubmitting}
               value={value}
               onBlur={onBlur}
@@ -357,7 +367,10 @@ export function ProductEditorForm({
               name={`identifiers.${index}.value`}
               render={({ field: input }) => (
                 <TextInput
-                  ref={input.ref}
+                  ref={(element) => {
+                    input.ref(element);
+                    inputRefs.current[`identifiers.${index}.value`] = element;
+                  }}
                   editable={!isSubmitting}
                   value={input.value}
                   onBlur={input.onBlur}
@@ -402,7 +415,10 @@ export function ProductEditorForm({
               name={`aliases.${index}.alias`}
               render={({ field: input }) => (
                 <TextInput
-                  ref={input.ref}
+                  ref={(element) => {
+                    input.ref(element);
+                    inputRefs.current[`aliases.${index}.alias`] = element;
+                  }}
                   editable={!isSubmitting}
                   value={input.value}
                   onBlur={input.onBlur}
