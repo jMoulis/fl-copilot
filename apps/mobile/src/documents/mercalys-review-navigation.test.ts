@@ -459,3 +459,40 @@ it("does not mutate a batch after its owner-scoped review is unmounted", async (
   renderer = undefined;
   expect(ports.refresh).not.toHaveBeenCalled();
 });
+
+it("retains extraction failures under batch actions and the archive timestamp when older batch headers are not loaded", async () => {
+  batchFixture();
+  ports.recent.mockResolvedValue({ batches: [], hasMore: true });
+  ports.archives.mockResolvedValue({
+    archives: [
+      {
+        id: "archive",
+        filename: "21102026.zip",
+        createdAt: at,
+        batchId: "batch",
+        outcome: {
+          status: "PROCESSED",
+          retainedCount: 40,
+          failures: [
+            { path: "Ventes/fichier-absent.xlsx", code: "EXTRACTION_FAILED" },
+          ],
+          ignored: ["__MACOSX/system"],
+        },
+      },
+    ],
+    hasMore: false,
+  });
+  await act(async () => {
+    renderer = create(panel());
+  });
+  expect(text(renderer!.root)).not.toContain("Ventes/fichier-absent.xlsx");
+  await openBatch();
+  const header = renderer!.root.findAll(
+    (n) => n.type === ("UI" as ElementType) && n.props.title === "21102026.zip",
+  )[0]!;
+  expect(header.props.subtitle).toContain("40 fichiers");
+  expect(header.props.subtitle).toContain("23/10/2026");
+  await press("Actions du lot");
+  expect(text(renderer!.root)).toContain("Ventes/fichier-absent.xlsx");
+  expect(text(renderer!.root)).toContain("fichiers système ignorés");
+});

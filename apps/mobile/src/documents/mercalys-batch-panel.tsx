@@ -324,6 +324,12 @@ export function MercalysBatchPanel({
     (activeBatch?.files.length === 1
       ? activeBatch.files[0]!.filename
       : "Fichiers du lot");
+  const importedAt = activeBatch?.createdAt ?? activeArchive?.createdAt;
+  const fileCount =
+    activeBatch?.files.length ??
+    (activeArchive?.outcome.status === "PROCESSED"
+      ? activeArchive.outcome.retainedCount
+      : undefined);
   const historyTerm = historyQuery.trim().toLocaleLowerCase("fr-FR");
   const visibleArchives = archives.filter((a) =>
     `${a.filename} ${new Date(a.createdAt).toLocaleString("fr-FR")}`
@@ -439,7 +445,7 @@ export function MercalysBatchPanel({
             </Text>
             <Text className="text-sm text-muted">
               {a.outcome.status === "PROCESSED"
-                ? `${a.outcome.retainedCount} fichiers · ${a.outcome.failures.length} erreurs d’extraction`
+                ? `${a.outcome.retainedCount} fichiers · ${a.outcome.failures.length} erreurs d’extraction${a.outcome.ignored.length ? ` · ${a.outcome.ignored.length} ignorés` : ""}`
                 : a.outcome.status === "FAILED"
                   ? archiveError(a.outcome.code)
                   : "Archive conservée · lecture à reprendre"}
@@ -503,8 +509,8 @@ export function MercalysBatchPanel({
           <AppHeader
             title={batchTitle}
             subtitle={
-              activeBatch
-                ? `${activeBatch.files.length} fichiers · importé le ${new Date(activeBatch.createdAt).toLocaleString("fr-FR")}`
+              importedAt
+                ? `${fileCount === undefined ? "Lot" : `${fileCount} fichiers`} · importé le ${new Date(importedAt).toLocaleString("fr-FR")}`
                 : "Les originaux et les publications restent conservés."
             }
           />
@@ -553,6 +559,25 @@ export function MercalysBatchPanel({
           />
           {toolsOpen ? (
             <View className="gap-3">
+              {activeArchive?.outcome.status === "PROCESSED" &&
+              activeArchive.outcome.failures.length ? (
+                <InlineAlert
+                  title="Fichiers non extraits"
+                  message={activeArchive.outcome.failures
+                    .map(
+                      (f) =>
+                        `${f.path} : extraction impossible. Reprenez l’archive ou sélectionnez ce fichier original.`,
+                    )
+                    .join("\n")}
+                />
+              ) : null}
+              {activeArchive?.outcome.status === "PROCESSED" &&
+              activeArchive.outcome.ignored.length ? (
+                <Text className="text-sm text-muted">
+                  {activeArchive.outcome.ignored.length} fichiers système
+                  ignorés.
+                </Text>
+              ) : null}
               {active ? (
                 <SecondaryButton
                   label="Reprendre les fichiers en attente"
