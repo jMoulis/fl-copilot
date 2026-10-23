@@ -1,0 +1,25 @@
+# Local analytics backlog and bounded synchronization — 23 October 2026
+
+## Report and evidence
+
+The owner's build 6 screenshot distinguishes 18 pending items: **17 local analytics calculations and one command to send**, no conflicts/errors, with synchronization still running. This supersedes the earlier request for a breakdown. These are not 18 remote uploads. The phone's private SQLite database is not accessible from this workspace; the pending command's identity and exact remote stage remain unknown. A bounded recent Vercel log window shows Inngest callbacks, not a demonstrated Inngest quota failure or the phone's sync attempt.
+
+## Reproduced causes and changes
+
+The actual SyncProvider previously awaited the whole upload/network pipeline before starting accepted local calculations. A mounted-provider regression with real file-backed SQLite reproduces zero of 17 jobs completed while the controlled remote request remains pending. The corrected provider processes accepted work before network synchronization and starts the same serialized scheduler independently when new PENDING calculation work arrives during a blocked request. Post-pull calculation remains in place. RETRY jobs do not trigger an immediate notification/retry loop. Claim/completion/failure notifications refresh existing pending details.
+
+Overlapping jobs also repeated successful product/day calculations and transactions. On the same real SQLite fixture, 17 jobs covering 600 identical product/day scopes previously produced 10,200 product recomputations and 10,217 projection transactions. The corrected scheduler performs 600 product/day computations and fewer than 100 projection transactions. It keeps all 17 job/source identities and independently completes their states. Reuse is limited to successful scopes within the captured run: failures are not cached, jobs arriving during processing remain available to the next run, and additional products invalidate the department/date result. Batches use ten scopes by default, at most 100, with a UI yield between chunks and atomic rollback on failure.
+
+The canonical analytics functions, SQL observation selection, missing-versus-zero behavior and official formulas are unchanged. A real SQLite test compares all batched projection rows to scalar calls and verifies rollback when a product is absent. Existing store-scoped writer serialization and scheduler exclusivity remain the authority.
+
+Sync JSON requests (refresh, push, pull, bootstrap and restoration pagination used by synchronization) now have a 60-second per-request deadline covering both response headers and the body. Abort is requested, but a definite retryable outcome is produced even when the native transport ignores it. This is not a 60-second deadline for the complete multi-page, retrying synchronization. Existing bounded retries retain the command ID, payload and sequence; a late acknowledgment cannot complete an exited attempt, and ALREADY_APPLIED on retry acknowledges the same command once. A timed-out service response is shown as an error rather than falsely asserting the phone is offline. The pending-send detail can show the existing safe retry code, including SYNC_REQUEST_TIMEOUT, without exposing payloads or raw exceptions.
+
+## Verification and limits
+
+Targeted regression suite: 47 tests across four files passed, including the actual mounted provider, real scheduler/SQLite, a separately exercised actual MobileSyncService plus API client, unknown acknowledgment retry and real overlapping projection stress. The provider test confirms a newly accepted local job also finishes while the remote request remains blocked, and that the pending command is retained byte for byte. Full checks, formatting, native exports and both exact-head GitHub workflows must pass before merge.
+
+These harnesses use controlled native/network ports and Node SQLite; they do not measure physical iPhone bridge latency or establish the identity/outcome of the owner's pending send. No production data, source file, pending command, queue or migration is deleted or reset. No AI instruction/provider change, API deployment or Inngest reconfiguration is needed. Native release and owner acceptance remain separate gates.
+
+Group this fix with PR 318 (Casse local reads independent of synchronization) in one staging/internal iOS build. Install over the existing application without uninstalling. Acceptance: the 17 local calculations decrease to completion, the remaining command is sent or exposes a recoverable code instead of an endless spinner, and Casse displays retained tickets during synchronization. Reopen after processing and check existing product/analysis figures. Report the pending detail if any work remains; do not clear local storage to make the counter disappear.
+
+Local final checks: `pnpm check` passed (3,125 tests passed, 623 environment-gated skips; structure/lint/strict TypeScript passed), `pnpm format:check` passed and the combined iOS/Android Expo export passed. Remote exact-head workflows and native acceptance remain separate gates.

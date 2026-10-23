@@ -6,8 +6,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
-import { ApiClientError } from "@fl-copilot/api-client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiClient, ApiClientError } from "@fl-copilot/api-client";
 import type {
   BootstrapResponse,
   SyncPullResponse,
@@ -129,6 +129,111 @@ afterEach(() => {
 });
 
 describe("mobile sync service", () => {
+  it("retains the same command after a timed-out push, ignores late acknowledgement and safely replays it", async () => {
+    const { adapter, database } = temporaryDatabase();
+    await runLocalMigrations(adapter);
+    await createSyncTestEntity(adapter, {
+      id: entityId,
+      commandId,
+      storeId,
+      deviceId,
+      label: "Kept offline",
+    });
+    const payload = database
+      .prepare("SELECT payload_json FROM sync_outbox WHERE command_id=?")
+      .get(commandId);
+    vi.useFakeTimers();
+    const requests: unknown[] = [];
+    let late!: (response: Response) => void;
+    const ack = () =>
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              commandId,
+              status: "ALREADY_APPLIED",
+              entityType: "sync_test_entity",
+              entityId,
+              remoteVersion: 1,
+            },
+          ],
+          serverTime: "2026-10-23T00:00:00Z",
+        }),
+      );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        requests.push(JSON.parse(String(init.body)));
+        return requests.length === 1
+          ? new Promise<Response>((resolve) => {
+              late = resolve;
+            })
+          : Promise.resolve(ack());
+      }),
+    );
+    const api = new ApiClient("https://fixture.invalid");
+    const service = new MobileSyncService(
+      adapter,
+      {
+        bootstrap: async () => bootstrapResponse(),
+        pull: async () => emptyPull("cursor"),
+        push: (request) => api.pushSync("fixture-token", request),
+      },
+      { appVersion: "0.1.0", deviceId, maxRetries: 0 },
+    );
+    try {
+      const checked = expect(service.push(storeId)).rejects.toMatchObject({
+        response: { code: "SYNC_REQUEST_TIMEOUT" },
+      });
+      await vi.advanceTimersByTimeAsync(60_000);
+      await checked;
+      expect(
+        database
+          .prepare(
+            "SELECT status,last_error_code FROM sync_outbox WHERE command_id=?",
+          )
+          .get(commandId),
+      ).toEqual({ status: "PENDING", last_error_code: "SYNC_REQUEST_TIMEOUT" });
+      const { readPendingWork } = await import("./pending-work");
+      expect(await readPendingWork(adapter, storeId)).toEqual([
+        {
+          label: "Modifications à envoyer",
+          count: 1,
+          state: "En attente d’envoi",
+          code: "SYNC_REQUEST_TIMEOUT",
+        },
+      ]);
+      late(ack());
+      await vi.advanceTimersByTimeAsync(1);
+      expect(
+        database
+          .prepare("SELECT status FROM sync_outbox WHERE command_id=?")
+          .get(commandId),
+      ).toEqual({ status: "PENDING" });
+      expect(await service.push(storeId)).toMatchObject({
+        pushed: 1,
+        conflicts: 0,
+        failed: 0,
+      });
+      expect(requests).toHaveLength(2);
+      expect(requests[0]).toEqual(requests[1]);
+      expect(
+        database
+          .prepare("SELECT status FROM sync_outbox WHERE command_id=?")
+          .get(commandId),
+      ).toEqual({ status: "ACKNOWLEDGED" });
+      expect(
+        database
+          .prepare("SELECT payload_json FROM sync_outbox WHERE command_id=?")
+          .get(commandId),
+      ).toEqual(payload);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      database.close();
+    }
+  });
+
   it("shares one active cycle for concurrent triggers", async () => {
     const { adapter, database } = temporaryDatabase();
     await runLocalMigrations(adapter);

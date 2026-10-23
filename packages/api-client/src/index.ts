@@ -395,6 +395,7 @@ export class ApiClient {
       "/api/v1/auth/refresh",
       { method: "POST", body: JSON.stringify({ deviceId, refreshToken }) },
       authSessionResponseSchema,
+      60_000,
     ) as Promise<AuthSessionResponse>;
   }
 
@@ -415,6 +416,7 @@ export class ApiClient {
         body: JSON.stringify(input),
       },
       syncPushResponseSchema,
+      60_000,
     ) as Promise<SyncPushResponse>;
   }
 
@@ -494,6 +496,7 @@ export class ApiClient {
       `/api/v1/sync/pull${suffix}`,
       { method: "GET", headers: syncHeaders(accessToken, storeId) },
       syncPullResponseSchema,
+      60_000,
     ) as Promise<SyncPullResponse>;
   }
 
@@ -571,6 +574,7 @@ export class ApiClient {
       `/api/v1/sync/bootstrap${suffix}`,
       { method: "GET", headers: syncHeaders(accessToken, storeId) },
       bootstrapResponseSchema,
+      60_000,
     ) as Promise<BootstrapResponse>;
   }
 
@@ -593,6 +597,7 @@ export class ApiClient {
       `/api/v1/copilot/history?${query}`,
       { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
       copilotHistoryPageSchema,
+      60_000,
     ) as Promise<CopilotHistoryPage>;
   }
   commercialProcessing(
@@ -646,6 +651,7 @@ export class ApiClient {
       `/api/v1/intake/email/decisions${query}`,
       { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
       emailIntakeDecisionPageSchema,
+      60_000,
     );
   }
   emailIntakeStatus(accessToken: string, storeId: string) {
@@ -1070,7 +1076,43 @@ export class ApiClient {
     }
   }
 
-  private async request<T extends z.ZodType>(
+  private request<T extends z.ZodType>(
+    path: string,
+    init: RequestInit,
+    schema: T,
+    deadlineMs?: number,
+  ): Promise<z.infer<T>> {
+    if (deadlineMs === undefined)
+      return this.performRequest(path, init, schema);
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    if (init.signal?.aborted) cancel();
+    else init.signal?.addEventListener("abort", cancel, { once: true });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new ApiClientError(0, {
+            code: "SYNC_REQUEST_TIMEOUT",
+            messageFr:
+              "Le service n’a pas répondu dans le délai prévu. Vos modifications sont conservées et la synchronisation pourra être réessayée.",
+            retryable: true,
+          }),
+        );
+        controller.abort();
+      }, deadlineMs);
+    });
+    // Cover headers AND body; retain an outcome even if a native fetch ignores abort.
+    return Promise.race([
+      this.performRequest(path, { ...init, signal: controller.signal }, schema),
+      deadline,
+    ]).finally(() => {
+      clearTimeout(timer);
+      init.signal?.removeEventListener("abort", cancel);
+    });
+  }
+
+  private async performRequest<T extends z.ZodType>(
     path: string,
     init: RequestInit,
     schema: T,

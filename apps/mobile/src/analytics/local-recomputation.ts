@@ -9,7 +9,10 @@ import {
 } from "@fl-copilot/analytics-core";
 import type { Product, WasteObservation } from "@fl-copilot/domain";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
-import type { OutboxDatabase } from "../sync/outbox-repository";
+import {
+  notifyOutboxChanged,
+  type OutboxDatabase,
+} from "../sync/outbox-repository";
 
 export const ANALYTICS_RECOMPUTE_JOB_TYPE = "ANALYTICS_RECOMPUTE_PRODUCT_DATES";
 
@@ -20,6 +23,11 @@ export interface ProductDateScope {
 
 export interface ProductDateRecomputer {
   recomputeProduct(storeId: string, scope: ProductDateScope): Promise<void>;
+  /** Optional bounded atomic batch; uses the same canonical per-product formula. */
+  recomputeProducts?(
+    storeId: string,
+    scopes: readonly ProductDateScope[],
+  ): Promise<void>;
   recomputeDepartment(storeId: string, businessDate: string): Promise<void>;
 }
 
@@ -206,6 +214,10 @@ export class LocalAnalyticsRecomputationScheduler {
       storeId,
     );
 
+    // Cache only work completed in this captured job set, never across cycles.
+    // Mutations queued while processing remain pending for the next cycle.
+    const completed = new Set<string>(),
+      departments = new Set<string>();
     let completedJobs = 0;
     let failedJobs = 0;
     let completedScopes = 0;
@@ -222,27 +234,40 @@ export class LocalAnalyticsRecomputationScheduler {
         row.id,
       );
       if (Number(claim.changes) !== 1) continue;
+      notifyOutboxChanged();
 
       try {
         const payload = parsePayload(row.payload_json, storeId);
-        for (let index = 0; index < payload.scopes.length; index += 1) {
-          await this.recomputer.recomputeProduct(
-            storeId,
-            payload.scopes[index]!,
-          );
-          completedScopes += 1;
-          if (
-            (index + 1) % chunkSize === 0 &&
-            index + 1 < payload.scopes.length
-          ) {
-            await yieldToInterface();
+        const scopes = payload.scopes.filter(
+          (scope) => !completed.has(scopeKey(scope)),
+        );
+        for (let index = 0; index < scopes.length; index += chunkSize) {
+          const chunk = scopes.slice(index, index + chunkSize);
+          if (this.recomputer.recomputeProducts) {
+            await this.recomputer.recomputeProducts(storeId, chunk);
+            for (const scope of chunk) {
+              completed.add(scopeKey(scope));
+              departments.delete(scope.businessDate);
+              completedScopes++;
+            }
+          } else {
+            for (const scope of chunk) {
+              await this.recomputer.recomputeProduct(storeId, scope);
+              completed.add(scopeKey(scope));
+              departments.delete(scope.businessDate);
+              completedScopes++;
+            }
           }
+          if (index + chunkSize < scopes.length) await yieldToInterface();
         }
         const businessDates = [
           ...new Set(payload.scopes.map((scope) => scope.businessDate)),
         ].sort();
         for (const businessDate of businessDates) {
-          await this.recomputer.recomputeDepartment(storeId, businessDate);
+          if (!departments.has(businessDate)) {
+            await this.recomputer.recomputeDepartment(storeId, businessDate);
+            departments.add(businessDate);
+          }
         }
         await this.database.runAsync(
           `
@@ -255,6 +280,7 @@ export class LocalAnalyticsRecomputationScheduler {
           row.id,
         );
         completedJobs += 1;
+        notifyOutboxChanged();
       } catch (error) {
         const attempt = row.attempt_count + 1;
         const status = attempt >= maximumAttempts ? "FAILED" : "RETRY";
@@ -271,6 +297,7 @@ export class LocalAnalyticsRecomputationScheduler {
           row.id,
         );
         failedJobs += 1;
+        notifyOutboxChanged();
       }
     }
 
@@ -297,50 +324,67 @@ export class SQLiteProductDateRecomputer implements ProductDateRecomputer {
   ) {}
 
   async recomputeProduct(storeId: string, scope: ProductDateScope) {
-    validateScope(scope);
+    await this.recomputeProducts(storeId, [scope]);
+  }
+
+  async recomputeProducts(
+    storeId: string,
+    scopes: readonly ProductDateScope[],
+  ) {
+    boundedInteger(scopes.length, "batchSize", 1, 100);
+    for (const scope of scopes) validateScope(scope);
     await this.database.withExclusiveTransactionAsync(async (transaction) => {
-      const productRow = await transaction.getFirstAsync<ProductRow>(
-        `SELECT * FROM products WHERE id = ? AND store_id = ?`,
-        scope.productId,
-        storeId,
-      );
-      if (!productRow) {
-        throw new Error(
-          `Product ${scope.productId} is unavailable for local recomputation.`,
-        );
-      }
-      const salesRows = await transaction.getAllAsync<SalesObservationRow>(
-        `
-          SELECT * FROM sales_observations
-          WHERE store_id = ? AND product_id = ? AND business_date = ?
-            AND validation_status = 'VALIDATED'
-          ORDER BY id
-        `,
-        storeId,
-        scope.productId,
-        scope.businessDate,
-      );
-      const wasteRows = await transaction.getAllAsync<WasteObservationRow>(
-        `
-          SELECT * FROM waste_observations
-          WHERE store_id = ? AND product_id = ? AND business_date = ?
-            AND validation_status = 'VALIDATED'
-          ORDER BY id
-        `,
-        storeId,
-        scope.productId,
-        scope.businessDate,
-      );
-      const computedAt = this.now();
-      const performance = buildProductDailyPerformance({
-        product: mapProduct(productRow),
-        businessDate: scope.businessDate,
-        salesObservations: salesRows.map(mapSalesObservation),
-        wasteObservations: wasteRows.map(mapWasteObservation),
-        computedAt,
-      });
-      await upsertProductPerformance(transaction, performance);
+      for (const scope of scopes)
+        await this.recomputeInTransaction(transaction, storeId, scope);
     });
+  }
+
+  private async recomputeInTransaction(
+    transaction: OutboxDatabase,
+    storeId: string,
+    scope: ProductDateScope,
+  ) {
+    const productRow = await transaction.getFirstAsync<ProductRow>(
+      `SELECT * FROM products WHERE id = ? AND store_id = ?`,
+      scope.productId,
+      storeId,
+    );
+    if (!productRow) {
+      throw new Error(
+        `Product ${scope.productId} is unavailable for local recomputation.`,
+      );
+    }
+    const salesRows = await transaction.getAllAsync<SalesObservationRow>(
+      `
+        SELECT * FROM sales_observations
+        WHERE store_id = ? AND product_id = ? AND business_date = ?
+          AND validation_status = 'VALIDATED'
+        ORDER BY id
+      `,
+      storeId,
+      scope.productId,
+      scope.businessDate,
+    );
+    const wasteRows = await transaction.getAllAsync<WasteObservationRow>(
+      `
+        SELECT * FROM waste_observations
+        WHERE store_id = ? AND product_id = ? AND business_date = ?
+          AND validation_status = 'VALIDATED'
+        ORDER BY id
+      `,
+      storeId,
+      scope.productId,
+      scope.businessDate,
+    );
+    const computedAt = this.now();
+    const performance = buildProductDailyPerformance({
+      product: mapProduct(productRow),
+      businessDate: scope.businessDate,
+      salesObservations: salesRows.map(mapSalesObservation),
+      wasteObservations: wasteRows.map(mapWasteObservation),
+      computedAt,
+    });
+    await upsertProductPerformance(transaction, performance);
   }
 
   async recomputeDepartment(storeId: string, businessDate: string) {
@@ -554,6 +598,10 @@ function parsePayload(
       ? { sourceDocumentId: parsed.sourceDocumentId }
       : {}),
   };
+}
+
+function scopeKey(scope: ProductDateScope) {
+  return JSON.stringify([scope.businessDate, scope.productId]);
 }
 
 function normalizeScopes(
