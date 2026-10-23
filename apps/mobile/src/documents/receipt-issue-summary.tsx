@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -6,17 +6,21 @@ import {
   Text,
   View,
 } from "react-native";
-import { SectionCard } from "../components/ui";
+import { SectionCard, SecondaryButton } from "../components/ui";
 import type { WastePublicationIssue } from "./waste-publication-validation";
 export function ReceiptIssueSummary({
   issues,
   onLocate,
   published = false,
+  disabled = false,
 }: {
   published?: boolean;
+  disabled?: boolean;
   issues: readonly WastePublicationIssue[];
   onLocate(issue: WastePublicationIssue): void;
 }) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = showAll ? issues : issues.slice(0, 5);
   return (
     <SectionCard
       title="Champs à corriger"
@@ -26,17 +30,22 @@ export function ReceiptIssueSummary({
           : "Appuyez sur une correction pour rejoindre la section concernée. Aucune ligne n’a été publiée."
       }
     >
-      {issues.map((issue, index) => (
+      <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
+        {issues.length} correction{issues.length > 1 ? "s" : ""} à examiner
+      </Text>
+      {visible.map((issue, index) => (
         <Pressable
           key={`${issue.lineId ?? issue.field}:${index}`}
           accessibilityRole="button"
+          disabled={disabled}
+          accessibilityState={{ disabled }}
           accessibilityLabel={`${issue.lineIndex !== undefined ? `Ligne ${issue.lineIndex + 1}. ` : ""}${issue.message} Voir le champ à corriger`}
           onPress={() => onLocate(issue)}
           className="min-h-12 justify-center rounded-xl border border-critical bg-critical-soft p-3"
         >
           <Text className="text-sm leading-5 text-critical">
             {issue.lineIndex !== undefined
-              ? `Ligne ${issue.lineIndex + 1} · ${issue.label ?? ""} : `
+              ? `Ligne ${issue.lineIndex + 1}${issue.label ? ` · ${issue.label}` : ""} : `
               : ""}
             {issue.message}
           </Text>
@@ -45,6 +54,18 @@ export function ReceiptIssueSummary({
           </Text>
         </Pressable>
       ))}
+      {issues.length > 5 ? (
+        <SecondaryButton
+          label={
+            showAll
+              ? "Réduire la liste des corrections"
+              : `Afficher les ${issues.length - 5} autres corrections`
+          }
+          expanded={showAll}
+          disabled={disabled}
+          onPress={() => setShowAll((v) => !v)}
+        />
+      ) : null}
     </SectionCard>
   );
 }
@@ -100,7 +121,14 @@ export function useReceiptIssueNavigation() {
       for (const id of ids) groupTop.current[id] = e.nativeEvent.layout.y;
       scrollPending();
     },
-    locate: (issue: WastePublicationIssue) => {
+    locate: (
+      issue: WastePublicationIssue,
+      options?: { waitForGroupLayout?: boolean },
+    ) => {
+      // Opening another editor changes the preceding card heights. Do not scroll
+      // using the former collapsed/expanded coordinates; the next layout resumes it.
+      if (issue.lineId && options?.waitForGroupLayout)
+        delete groupTop.current[issue.lineId];
       pendingIssue.current = issue;
       scrollPending();
     },
@@ -110,14 +138,21 @@ export function useReceiptIssueNavigation() {
 /** Source measurements stay separate: no sum of kg/pieces and no missing value turned into zero. */
 export function ReceiptLinePreview({
   draft,
+  compact = false,
 }: {
   draft: import("./waste-receipt-repository").LocalWasteLineDraft;
+  compact?: boolean;
 }) {
   const l = draft.line,
     decimal = (s: string) => s.replace(".", ",");
+  const quantity =
+    l.quantity != null
+      ? `Quantité : ${decimal(l.quantity)} (${l.quantityUnit === "PIECE" ? "pièces" : l.quantityUnit === "PACK" ? "unités conditionnées" : l.quantityUnit === "KG" ? "kg" : "unité à préciser"})`
+      : null;
   return (
     <View className="gap-1 rounded-xl border border-line bg-canvas p-3">
       <Text className="font-semibold text-ink">
+        {compact ? `Ligne ${l.sourceLineIndex + 1} · ` : ""}
         {draft.matchedProductLabel ?? "Produit à associer"}
       </Text>
       <Text className="text-sm text-muted">
@@ -129,18 +164,29 @@ export function ReceiptLinePreview({
         {l.validationStatus === "EXCLUDED" ? " · Ligne exclue" : ""}
       </Text>
       <Text className="text-sm text-muted">
-        {l.weight != null
-          ? `Poids : ${decimal(l.weight)} kg`
-          : "Poids non renseigné"}
-        {l.quantity != null
-          ? ` · Quantité : ${decimal(l.quantity)} (${l.quantityUnit === "PIECE" ? "pièces" : l.quantityUnit === "PACK" ? "unités conditionnées" : l.quantityUnit === "KG" ? "kg" : "unité à préciser"})`
-          : ""}
+        {compact ? (
+          [
+            l.weight != null ? `Poids : ${decimal(l.weight)} kg` : null,
+            quantity,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "Quantité non renseignée"
+        ) : (
+          <>
+            {l.weight != null
+              ? `Poids : ${decimal(l.weight)} kg`
+              : "Poids non renseigné"}
+            {quantity ? ` · ${quantity}` : ""}
+          </>
+        )}
       </Text>
-      <Text className="text-sm text-ink">
-        {l.unitPrice != null
-          ? `Prix unitaire : ${decimal(l.unitPrice)} €`
-          : "Prix unitaire non renseigné"}
-      </Text>
+      {!compact ? (
+        <Text className="text-sm text-ink">
+          {l.unitPrice != null
+            ? `Prix unitaire : ${decimal(l.unitPrice)} €`
+            : "Prix unitaire non renseigné"}
+        </Text>
+      ) : null}
       <Text className="font-semibold text-ink">
         {l.totalPrice != null
           ? `Montant : ${decimal(l.totalPrice)} €`
