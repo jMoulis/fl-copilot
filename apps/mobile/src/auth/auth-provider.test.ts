@@ -16,6 +16,12 @@ const runtime = vi.hoisted(() => ({
   remoteLogout: vi.fn(),
 }));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("../components/ui", () => ({
+  AppScreen: "Screen",
+  AppHeader: "Header",
+  InlineAlert: "Alert",
+  PrimaryButton: "Button",
+}));
 vi.mock("expo-constants", () => ({
   default: { expoConfig: { version: "0.1.0" } },
 }));
@@ -48,7 +54,7 @@ vi.mock("@fl-copilot/api-client", async (original) => ({
 let tree: ReactTestRenderer | undefined, auth: ReturnType<typeof useAuth>;
 function Probe() {
   auth = useAuth();
-  return null;
+  return createElement("PrivateContent");
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -159,4 +165,122 @@ it("drains canonical logout and prevents an in-flight refresh from writing back 
   await expect(auth.withAccessToken(async () => "unreachable")).rejects.toThrow(
     "session a changé",
   );
+});
+it("keeps credentials and shows a retry instead of logging out when cold SecureStore reading is temporarily unavailable", async () => {
+  runtime.load.mockRejectedValueOnce(Error("KEYCHAIN_TEMPORARILY_UNAVAILABLE"));
+  await mount();
+  expect(runtime.clear).not.toHaveBeenCalled();
+  expect(runtime.remoteLogout).not.toHaveBeenCalled();
+  expect(runtime.save).not.toHaveBeenCalled();
+  expect(
+    tree!.root.find((node) => String(node.type) === "Button").props.label,
+  ).toBe("Réessayer");
+});
+it("does not erase a stored session when the restored-copy ownership trace is temporarily unreadable", async () => {
+  runtime.expectedOwner = "owner";
+  runtime.load.mockResolvedValue({
+    refreshToken: "retained",
+    marker: session(),
+  });
+  runtime.assertOwner.mockRejectedValueOnce(Error("KEYCHAIN_UNAVAILABLE"));
+  await mount();
+  expect(runtime.clear).not.toHaveBeenCalled();
+  expect(runtime.refresh).not.toHaveBeenCalled();
+});
+it("retries a failed cold read explicitly, keeps private children absent while waiting and restores offline access without logging out", async () => {
+  runtime.load.mockRejectedValueOnce(Error("KEYCHAIN_UNAVAILABLE"));
+  await mount();
+  const retry = () => tree!.root.find((n) => String(n.type) === "Button");
+  const stored = deferred<{
+    refreshToken: string;
+    marker: AuthSessionResponse;
+  }>();
+  runtime.load.mockReturnValueOnce(stored.promise);
+  runtime.refresh.mockRejectedValueOnce(Error("NETWORK_OFFLINE"));
+  await act(async () => retry().props.onPress());
+  expect(retry().props.disabled).toBe(true);
+  expect(
+    tree!.root.findAll((node) => String(node.type) === "PrivateContent"),
+  ).toHaveLength(0);
+  expect(runtime.load).toHaveBeenCalledTimes(2);
+  expect(runtime.refresh).not.toHaveBeenCalled();
+  await act(async () =>
+    stored.resolve({ refreshToken: "retained", marker: session() }),
+  );
+  expect(tree!.root.findAll((n) => String(n.type) === "Button")).toHaveLength(
+    0,
+  );
+  expect(auth.status).toBe("authenticated");
+  expect(auth.session?.user.id).toBe("owner");
+  expect(
+    tree!.root.findAll((node) => String(node.type) === "PrivateContent"),
+  ).toHaveLength(1);
+  expect(runtime.clear).not.toHaveBeenCalled();
+});
+it("does not replace a newer authenticated session when an older startup read fails late", async () => {
+  let fail!: (reason: Error) => void;
+  runtime.load.mockReturnValue(
+    new Promise((_, reject) => {
+      fail = reject;
+    }),
+  );
+  await mount();
+  await act(async () => auth.requestCode("owner@example.test"));
+  await act(async () => auth.verifyCode("123456"));
+  await act(async () => fail(Error("OLD_READ_FAILED")));
+  expect(auth.status).toBe("authenticated");
+  expect(runtime.clear).not.toHaveBeenCalled();
+  expect(tree!.root.findAll((n) => String(n.type) === "Button")).toHaveLength(
+    0,
+  );
+});
+it("retains a safely blocked startup after repeated errors and never prints credentials or native diagnostics", async () => {
+  runtime.load.mockRejectedValue(
+    Error("private-refresh-secret /private/native/path"),
+  );
+  await mount();
+  for (let i = 0; i < 3; i++)
+    await act(async () =>
+      tree!.root.find((n) => String(n.type) === "Button").props.onPress(),
+    );
+  expect(runtime.load).toHaveBeenCalledTimes(4);
+  expect(runtime.clear).not.toHaveBeenCalled();
+  expect(JSON.stringify(tree!.toJSON())).not.toContain(
+    "private-refresh-secret",
+  );
+  expect(
+    tree!.root.find((n) => String(n.type) === "Alert").props.message,
+  ).toContain("sans supprimer l’application");
+});
+it("opens valid cached content immediately after a retry even while network token renewal remains unresolved", async () => {
+  runtime.load.mockRejectedValueOnce(Error("KEYCHAIN_UNAVAILABLE"));
+  await mount();
+  runtime.load.mockResolvedValue({
+    refreshToken: "retained",
+    marker: session(),
+  });
+  const network = deferred<AuthSessionResponse>();
+  runtime.refresh.mockReturnValue(network.promise);
+  await act(async () =>
+    tree!.root.find((n) => String(n.type) === "Button").props.onPress(),
+  );
+  expect(auth.status).toBe("authenticated");
+  expect(tree!.root.findAll((n) => String(n.type) === "Button")).toHaveLength(
+    0,
+  );
+  expect(runtime.clear).not.toHaveBeenCalled();
+  await act(async () => network.resolve(session()));
+});
+it("ignores a failed startup read after the provider closes without clearing a later stored session", async () => {
+  let fail!: (reason: Error) => void;
+  runtime.load.mockReturnValue(
+    new Promise((_, reject) => {
+      fail = reject;
+    }),
+  );
+  await mount();
+  await act(async () => tree!.unmount());
+  await act(async () => fail(Error("LATE_KEYCHAIN_FAILURE")));
+  expect(runtime.clear).not.toHaveBeenCalled();
+  expect(runtime.remoteLogout).not.toHaveBeenCalled();
 });

@@ -17,6 +17,8 @@ import {
   SessionChangedError,
   type SessionSnapshot,
 } from "./session-manager";
+import { LocalCopyError } from "../db/local-copy-contracts";
+import { SessionStartupScreen } from "./session-startup-screen";
 import { getApiBaseUrl } from "@/config/environment";
 import {
   useDatabaseAccessBinding,
@@ -74,7 +76,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
                   accessOwnerId,
                   stored.marker.user.id,
                 );
-              } catch {
+              } catch (error) {
+                // Only a proven foreign owner clears a marker. Unreadable Keychain state grants no access and is retryable.
+                if (
+                  !(error instanceof LocalCopyError) ||
+                  error.code !== "OWNER"
+                )
+                  throw error;
                 await clearStoredSession();
                 return null;
               }
@@ -118,14 +126,29 @@ export function AuthProvider({ children }: PropsWithChildren) {
     manager.getSnapshot(),
   );
   const { status, session, sessionExpired } = snapshot;
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [restoreState, setRestoreState] = useState<"failed" | "retrying">();
   useEffect(() => {
     setSnapshot(manager.getSnapshot());
-    const unsubscribe = manager.subscribe(setSnapshot);
-    void manager.restore().catch(() => {
-      if (active.current === manager) void manager.logout();
+    const unsubscribe = manager.subscribe((next) => {
+      setSnapshot(next);
+      // A verified local marker opens offline content immediately; token renewal may remain pending.
+      if (next.status !== "loading") setRestoreState(undefined);
     });
+    void manager
+      .restore()
+      .then(() => {
+        if (active.current === manager) setRestoreState(undefined);
+      })
+      .catch(() => {
+        if (
+          active.current === manager &&
+          manager.getSnapshot().status === "loading"
+        )
+          setRestoreState("failed");
+      });
     return unsubscribe;
-  }, [manager]);
+  }, [manager, restoreAttempt]);
   const withAccessToken = useCallback(
     async <T,>(
       operation: (token: string) => Promise<T>,
@@ -202,6 +225,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
     },
     [api, manager, assertActive],
   );
+
+  if (restoreState)
+    return (
+      <SessionStartupScreen
+        busy={restoreState === "retrying"}
+        onRetry={() => {
+          setRestoreState("retrying");
+          setRestoreAttempt((attempt) => attempt + 1);
+        }}
+      />
+    );
 
   return (
     <AuthContext.Provider

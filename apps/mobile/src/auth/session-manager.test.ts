@@ -265,3 +265,22 @@ it("discards a private upload authorization received after the account changed",
   await expect(pending).rejects.toBeInstanceOf(SessionChangedError);
   expect(f.manager.getSnapshot().session?.user.id).toBe("other-owner");
 });
+it("coalesces one failed startup read, preserves stored credentials and permits an explicit retry", async () => {
+  const f = fixture();
+  f.storage.load.mockRejectedValueOnce(Error("KEYCHAIN_UNAVAILABLE"));
+  const first = f.manager.restore(),
+    same = f.manager.restore();
+  expect(same).toBe(first);
+  await expect(first).rejects.toThrow("KEYCHAIN_UNAVAILABLE");
+  expect(f.manager.getSnapshot().status).toBe("loading");
+  expect(f.storage.clear).not.toHaveBeenCalled();
+  f.storage.load.mockResolvedValue({
+    refreshToken: "retained",
+    marker: session("offline"),
+  });
+  f.refresh.mockRejectedValueOnce(error(503));
+  await f.manager.restore();
+  expect(f.storage.load).toHaveBeenCalledTimes(2);
+  expect(f.manager.getSnapshot().status).toBe("authenticated");
+  expect(f.storage.clear).not.toHaveBeenCalled();
+});

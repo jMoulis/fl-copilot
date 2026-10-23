@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+### M8 continuation — retry unreadable local session startup (24 October 2026)
+
+A transient SecureStore read failure is not logout or proof of foreign ownership. Preserve stored credentials, keep unverified private content blocked and offer explicit French retry using the canonical session manager. Release only failed cached restore attempts; retain coalescing and open validated offline content before network renewal completes. Proven foreign/malformed markers remain protected, and late errors cannot clear newer sessions. See `../qa/M8_AUTH_STARTUP_STORAGE_2026_10_24.md` for the reproduced unwanted-clear defects, targeted/full local evidence and physical acceptance limits. No business writer, timer, migration, remote contract or credential/provider change; full V1/M8 remains open.
+
 ### M8-T04 continuation — private local copies and owner-verified resumption (24 October 2026)
 
 Reuse Expo SQLite online backup and the existing writer queue for explicit private copies. Verify inactive/isolated triplets on a clone, preserving originals, stable device/Outbox identities and all local drafts. Prepare a new generation; after explicit confirmation drain canonical logout, unmount operational providers, activate the existing installation-bound pointer and require full restart before reopening. Original-owner authentication precedes restored access; no credential copies, generic writer, arbitrary table merge or fabricated acknowledgement. Prior live locations remain separately resumable, including late writes. See `../qa/M8_LOCAL_DATABASE_COPIES_2026_10_24.md` for real SQLite/mounted-provider evidence and native/cloud-backup limitations. Corrupt/unverified copies remain retained without replay; full M8 and V1 acceptance stays open.

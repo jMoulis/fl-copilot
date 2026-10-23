@@ -1,5 +1,7 @@
 # Roadmap V1 restante — bilan au 19 octobre 2026
 
+L11/M8 : la connexion locale propose une reprise après erreur de lecture du stockage sécurisé, sans déconnexion ni effacement non justifié. Le contenu local vérifié reste accessible avant un renouvellement réseau en attente. Voir `../qa/M8_AUTH_STARTUP_STORAGE_2026_10_24.md`. PR 342 fusionnée après les deux CI exactes ; PR 337–342 et ce lot restent hors build 13, recette physique et périmètre V1 complet ouverts.
+
 L11/M8 : les copies SQLite privées, l’examen des anciennes bases conservées et la reprise explicite avancent, avec vérification du propriétaire, conservation des commandes et de la base courante, puis redémarrage complet. Ce n’est pas une sauvegarde cloud ni une réparation de corruption. Voir `../qa/M8_LOCAL_DATABASE_COPIES_2026_10_24.md`. La PR 341 est fusionnée après ses deux CI exactes ; PR 337–341 et ce lot restent hors build 13. Recette iOS/Android, autres portes M8 et V1 complète restent ouvertes.
 
 ## Avancement courant — rappels et contextes natifs

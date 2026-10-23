@@ -25,7 +25,12 @@ export async function loadStoredSession(): Promise<StoredSession | null> {
   ]);
   if (!refreshToken || !marker) return null;
   try {
-    return { refreshToken, marker: JSON.parse(marker) as StoredSessionMarker };
+    return {
+      refreshToken,
+      marker: authSessionResponseSchema
+        .pick({ user: true, stores: true })
+        .parse(JSON.parse(marker)),
+    };
   } catch {
     await clearStoredSession();
     return null;
@@ -130,13 +135,14 @@ export async function assertRestoredSessionOwner(
   actualOwnerId: string,
 ) {
   const owner = await readDatabaseRecoveryOwner(generation);
-  if (owner?.ownerId !== expectedOwnerId) throw new LocalCopyError("OWNER");
+  if (!owner?.ownerId) throw new LocalCopyError("UNAVAILABLE");
+  if (owner.ownerId !== expectedOwnerId) throw new LocalCopyError("OWNER");
   const verified = await SecureStore.getItemAsync(
     `auth.local-restore-verified.${generation}`,
   );
   if (verified === expectedOwnerId) return;
-  if (verified !== null || actualOwnerId !== expectedOwnerId)
-    throw new LocalCopyError("OWNER");
+  if (verified !== null) throw new LocalCopyError("UNAVAILABLE");
+  if (actualOwnerId !== expectedOwnerId) throw new LocalCopyError("OWNER");
 }
 export async function markRestoredSessionVerified(
   generation: string,
