@@ -166,15 +166,17 @@ export function ProductEditorForm({
       } catch (error) {
         const code = error instanceof Error ? error.message : "";
         setSaveError(
-          code === "PRODUCT_EDITOR_CHANGED"
-            ? "Cette fiche a changé pendant votre saisie. Vos modifications restent visibles. Relisez la version actuelle avant de réessayer."
-            : code === "PRODUCT_EDITOR_CONFLICT"
-              ? "Un conflit doit être résolu avant de modifier cette fiche. Votre saisie est conservée."
-              : code === "PRODUCT_EDITOR_IDENTIFIER_CONFLICT"
-                ? "Ce code est déjà associé à un autre produit. Vérifiez l’identifiant sans déplacer l’association existante."
-                : code === "PRODUCT_EDITOR_UNAVAILABLE"
-                  ? "Ce produit n’est plus disponible dans ce magasin. Votre saisie est conservée."
-                  : "La modification n’a pas pu être enregistrée dans la base locale. Votre saisie est conservée.",
+          code === "PRODUCT_EDITOR_SCOPE_CHANGED"
+            ? "Le compte ou le magasin actif a changé. Aucun nouvel enregistrement n’a été confirmé. Rouvrez la fiche depuis le magasin souhaité."
+            : code === "PRODUCT_EDITOR_CHANGED"
+              ? "Cette fiche a changé pendant votre saisie. Vos modifications restent visibles. Relisez la version actuelle avant de réessayer."
+              : code === "PRODUCT_EDITOR_CONFLICT"
+                ? "Un conflit doit être résolu avant de modifier cette fiche. Votre saisie est conservée."
+                : code === "PRODUCT_EDITOR_IDENTIFIER_CONFLICT"
+                  ? "Ce code est déjà associé à un autre produit. Vérifiez l’identifiant sans déplacer l’association existante."
+                  : code === "PRODUCT_EDITOR_UNAVAILABLE"
+                    ? "Ce produit n’est plus disponible dans ce magasin. Votre saisie est conservée."
+                    : "La modification n’a pas pu être enregistrée dans la base locale. Votre saisie est conservée.",
         );
       }
     },

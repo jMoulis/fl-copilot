@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { useAuth } from "../auth/auth-provider";
@@ -124,6 +124,35 @@ export function useProductEditor(productId?: string): ProductEditorState {
   const syncing = useRef(sync.status === "syncing");
   syncing.current = sync.status === "syncing";
   const storeId = session?.stores[0]?.storeId;
+  const ownerId = session?.user.id;
+  const scope = useMemo(
+    () => ({
+      ownerId,
+      storeId,
+      productId,
+      sqlite: database.sqlite,
+      deviceId: database.deviceId,
+    }),
+    [ownerId, storeId, productId, database.sqlite, database.deviceId],
+  );
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const assertCurrentScope = useCallback(() => {
+    if (
+      !mounted.current ||
+      currentScope.current !== scope ||
+      !scope.ownerId ||
+      !scope.storeId
+    )
+      throw Error("PRODUCT_EDITOR_SCOPE_CHANGED");
+  }, [scope]);
   const repository = useMemo(
     () => new ProductMasterRepository(database.sqlite),
     [database.sqlite],
@@ -195,6 +224,7 @@ export function useProductEditor(productId?: string): ProductEditorState {
   const save = useCallback(
     async (draft: ProductEditorDraft, expected?: ProductEditorSnapshot) => {
       if (!storeId) throw new Error("Aucun magasin actif.");
+      assertCurrentScope();
       try {
         const saved = await saveProductEditorLocally(
           database.sqlite,
@@ -205,21 +235,23 @@ export function useProductEditor(productId?: string): ProductEditorState {
             productId,
             now: () => new Date().toISOString(),
             generateId: randomUUID,
+            assertCurrentScope,
           },
           expected,
         );
         // An explicit local save still refreshes immediately during a long sync.
         // Outside sync the ordinary pending-command invalidation already does so.
+        assertCurrentScope();
         if (syncing.current) void refresh();
         return saved;
       } catch (error) {
         // Reveal the current version/conflict even if a rejected save added no
         // Outbox command and the network pipeline has not settled yet.
-        void refresh();
+        if (mounted.current && currentScope.current === scope) void refresh();
         throw error;
       }
     },
-    [database, productId, storeId, refresh],
+    [database, productId, storeId, refresh, assertCurrentScope, scope],
   );
 
   return {
