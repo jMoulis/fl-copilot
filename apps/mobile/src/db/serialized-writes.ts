@@ -8,7 +8,17 @@ type WritableDatabase = Pick<
   | "getAllAsync"
   | "withExclusiveTransactionAsync"
 >;
-const configured = new WeakSet<object>();
+type Enqueue = <R>(work: () => Promise<R>) => Promise<R>;
+const configured = new WeakMap<object, Enqueue>();
+/** Also serialize native SQLite backups with the existing application writers. */
+export function withSerializedDatabaseTask<R>(
+  database: object,
+  work: () => Promise<R>,
+) {
+  const enqueue = configured.get(database);
+  if (!enqueue) throw new Error("LOCAL_DATABASE_NOT_SERIALIZED");
+  return enqueue(work);
+}
 /** Expo exclusive transactions open independent connections. Queue app writers
  * together so imports, sync and recomputation cannot compete for SQLite's writer.
  * Reads stay concurrent under WAL; work inside a transaction must use its txn.
@@ -17,7 +27,6 @@ export function serializeLocalWrites<T extends WritableDatabase>(
   database: T,
 ): T {
   if (configured.has(database)) return database;
-  configured.add(database);
   let tail: Promise<unknown> = Promise.resolve();
   const enqueue = <R>(work: () => Promise<R>): Promise<R> => {
     const result = tail.then(work);
@@ -28,6 +37,7 @@ export function serializeLocalWrites<T extends WritableDatabase>(
     );
     return result;
   };
+  configured.set(database, enqueue);
   for (const name of [
     "execAsync",
     "runAsync",

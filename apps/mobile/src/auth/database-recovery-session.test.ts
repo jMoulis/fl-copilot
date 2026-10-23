@@ -94,3 +94,71 @@ it("does not clear credentials when ownership preservation fails or would overwr
   ).rejects.toThrow("LOCAL_RECOVERY_OWNER_CHANGED");
   expect(state.values.has("auth.session-marker")).toBe(true);
 });
+it("retries an already completed logout without replacing its known owner by unknown", async () => {
+  const f = fixture();
+  await clearStoredSessionForDatabaseRecovery(f.generation);
+  await clearStoredSessionForDatabaseRecovery(f.generation);
+  expect(JSON.parse(state.values.get(f.key)!)).toEqual({
+    version: 1,
+    ownerId: f.ownerId,
+    storeIds: [f.storeId],
+  });
+});
+it("creates a copy owner trace without copying tokens or logging out", async () => {
+  const f = fixture();
+  const {
+    currentDatabaseOwner,
+    preserveDatabaseRecoveryOwner,
+    readDatabaseRecoveryOwner,
+    assertDatabaseCopyOwner,
+  } = await import("./auth-storage");
+  await preserveDatabaseRecoveryOwner(
+    f.generation,
+    await currentDatabaseOwner(),
+  );
+  expect(await readDatabaseRecoveryOwner(f.generation)).toEqual({
+    version: 1,
+    ownerId: f.ownerId,
+    storeIds: [f.storeId],
+  });
+  await expect(
+    assertDatabaseCopyOwner(f.ownerId, f.storeId),
+  ).resolves.toBeDefined();
+  await expect(
+    assertDatabaseCopyOwner(randomUUID(), f.storeId),
+  ).rejects.toThrow("compte d’origine");
+  expect(state.values.get("auth.refresh-token")).toBe(
+    "private-refresh-token-not-for-archive",
+  );
+  expect(state.reads).not.toContain("auth.refresh-token");
+});
+it("requires original-owner authentication once before normal account switching, with the grant retained across restart", async () => {
+  const f = fixture(),
+    {
+      currentDatabaseOwner,
+      preserveDatabaseRecoveryOwner,
+      assertRestoredSessionOwner,
+      markRestoredSessionVerified,
+    } = await import("./auth-storage");
+  await preserveDatabaseRecoveryOwner(
+    f.generation,
+    await currentDatabaseOwner(),
+  );
+  const other = randomUUID();
+  await expect(
+    assertRestoredSessionOwner(f.generation, f.ownerId, other),
+  ).rejects.toThrow("compte d’origine");
+  await expect(
+    markRestoredSessionVerified(f.generation, f.ownerId, other),
+  ).rejects.toThrow("compte d’origine");
+  await assertRestoredSessionOwner(f.generation, f.ownerId, f.ownerId);
+  await markRestoredSessionVerified(f.generation, f.ownerId, f.ownerId);
+  await clearStoredSessionForDatabaseRecovery(f.generation);
+  await expect(
+    assertRestoredSessionOwner(f.generation, f.ownerId, other),
+  ).resolves.toBeUndefined();
+  expect(state.values.get(`auth.local-restore-verified.${f.generation}`)).toBe(
+    f.ownerId,
+  );
+  expect(state.reads).not.toContain("auth.refresh-token");
+});

@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot M8 en validation — 24 octobre : copies locales et reprise explicite
+
+Synchronisation donne accès à des copies SQLite privées vérifiées et à l’examen des anciennes copies conservées. Reprise dans une génération séparée après confirmation, fermeture de session et redémarrage complet ; UUID des commandes/device, tentatives, brouillons et base précédente conservés. Aucun merge arbitraire, nouvel envoi métier ou export de données privées. Le compte d’origine est vérifié avant l’accès, puis les changements de compte normaux restent possibles. Voir `../qa/M8_LOCAL_DATABASE_COPIES_2026_10_24.md`. **51 tests ciblés passent ; suite locale : 3 389 passés / 636 ignorés**, typage/lint/structure/formatage verts. Les deux CI exactes restent nécessaires ; recette physique et sauvegardes distantes restent ouvertes.
+
+La PR 341 est fusionnée en `37b4b90` après les deux CI exactes vertes (**3 997 tests / 6 ignorés**) ; sa branche est supprimée. L’API groupée est livrée sur `4941513`, les PR 337–341 attendent leur livraison native groupée et ne sont pas dans le build 13. **Sept chantiers : 1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours.** Aucune clôture V1/M8 ni build payant propre à ce lot.
+
 ## Lot M8 en validation — 24 octobre : durée de vie des rappels
 
 Les lectures et notifications des anciens contextes ne survivent plus à leur fermeture ou au changement de magasin/propriétaire. Le premier plan vérifie le rappel et la session ; une erreur de lecture ne coupe pas l’écoute suivante et une synchronisation défaillante ne bloque pas l’ouverture locale. **18 tests ciblés passent**, dont 200 remplacements de contexte avec comptage des abonnements ; les sept régressions reproduites avant correction passent. Voir `../qa/M8_REMINDER_LIFETIME_2026_10_24.md`. Contrôles finaux en cours, recette physique des notifications toujours ouverte.

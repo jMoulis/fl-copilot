@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -13,12 +14,31 @@ import {
   recoverLocalDatabase,
   type LocalDatabase,
 } from "../db/client";
+import { activatePreparedLocalCopy } from "../db/local-copies-native";
+import type { PreparedLocalCopy } from "../db/local-copy-contracts";
 import { DatabaseStartupError } from "../db/database-recovery";
 import { DatabaseStartupScreen } from "../db/database-startup-screen";
 
+const RestoreContext = createContext<
+  ((copy: PreparedLocalCopy, logout: Promise<void>) => void) | null
+>(null);
 const DatabaseContext = createContext<LocalDatabase | null>(null);
 
 export function DatabaseProvider({ children }: PropsWithChildren) {
+  const [restore, setRestore] = useState<{
+    copy: PreparedLocalCopy;
+    logout: Promise<void>;
+  }>();
+  const [restoreState, setRestoreState] = useState<
+    "switching" | "restart" | "failed"
+  >("switching");
+  const requestRestore = useCallback(
+    (copy: PreparedLocalCopy, logout: Promise<void>) => {
+      void logout.catch(() => {});
+      setRestore({ copy, logout });
+    },
+    [],
+  );
   const [attempt, setAttempt] = useState(0);
   const [database, setDatabase] = useState<LocalDatabase>();
   const [error, setError] = useState<Error>();
@@ -72,6 +92,40 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
     }
   };
 
+  useEffect(() => {
+    if (!restore) return;
+    // Children are already unmounted at commit. Do not hot-swap SQLite under old callbacks.
+    void restore.logout
+      .then(() => activatePreparedLocalCopy(restore.copy))
+      .then(() => {
+        if (alive.current) setRestoreState("restart");
+      })
+      .catch(() => {
+        if (alive.current) setRestoreState("failed");
+      });
+  }, [restore]);
+
+  if (restore)
+    return (
+      <View style={styles.centered}>
+        {restoreState === "switching" ? (
+          <ActivityIndicator size="large" color={colors.forest} />
+        ) : null}
+        <Text style={styles.title}>
+          {restoreState === "switching"
+            ? "Préparation de la reprise…"
+            : "Fermez puis rouvrez l’application"}
+        </Text>
+        <Text style={styles.message} accessibilityLiveRegion="polite">
+          {restoreState === "failed"
+            ? "La reprise n’a pas pu être confirmée. Toutes les copies restent conservées. Au redémarrage, reconnectez-vous puis vérifiez les données, sans supprimer l’application."
+            : restoreState === "restart"
+              ? "La copie vérifiée est prête. Reconnectez-vous avec le même compte après le redémarrage. Votre base précédente et les fichiers restent sur cet appareil ; aucune fusion automatique n’a été faite."
+              : "Les accès sont fermés avant le changement de copie. Vos données restent conservées."}
+        </Text>
+      </View>
+    );
+
   if (error || showRecoveryCompletion) {
     return (
       <DatabaseStartupScreen
@@ -109,7 +163,9 @@ export function DatabaseProvider({ children }: PropsWithChildren) {
 
   return (
     <DatabaseContext.Provider value={database}>
-      {children}
+      <RestoreContext.Provider value={requestRestore}>
+        {children}
+      </RestoreContext.Provider>
     </DatabaseContext.Provider>
   );
 }
@@ -120,6 +176,15 @@ export function useLocalDatabase() {
     throw new Error("useLocalDatabase must be used within DatabaseProvider.");
   }
   return database;
+}
+
+export function useDatabaseRestore() {
+  const request = useContext(RestoreContext);
+  if (!request) throw new Error("Database restore is unavailable.");
+  return request;
+}
+export function useDatabaseAccessBinding() {
+  return useLocalDatabase().accessBinding;
 }
 
 export function useDeviceIdentity() {

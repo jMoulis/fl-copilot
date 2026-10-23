@@ -29,7 +29,18 @@ const native = vi.hoisted(() => ({
 vi.mock("expo-crypto", async () => ({
   randomUUID: (await import("node:crypto")).randomUUID,
 }));
+vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("expo-sqlite", () => ({
+  backupDatabaseAsync: async ({
+    sourceDatabase,
+    destDatabase,
+  }: {
+    sourceDatabase: { db: import("node:sqlite").DatabaseSync };
+    destDatabase: { db: import("node:sqlite").DatabaseSync };
+  }) => {
+    const { backup } = await import("node:sqlite");
+    await backup(sourceDatabase.db, destDatabase.db.location("main")!);
+  },
   get defaultDatabaseDirectory() {
     return `file://${native.root}/SQLite`;
   },
@@ -61,7 +72,8 @@ vi.mock("expo-sqlite", () => ({
   },
 }));
 vi.mock("drizzle-orm/expo-sqlite", () => ({ drizzle: () => ({}) }));
-vi.mock("../auth/auth-storage", () => ({
+vi.mock("../auth/auth-storage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../auth/auth-storage")>()),
   clearStoredSessionForDatabaseRecovery: async () => {
     native.cleared++;
   },
@@ -455,4 +467,427 @@ it("retains a corrupt live handle when its snapshot fails; retry preserves befor
   native.sqliteFault = 0;
   const db = await client.recoverLocalDatabase();
   await db.sqlite.closeAsync();
+});
+
+// These use real file-backed SQLite (including its online backup), with only native FS/Keychain ports replaced.
+async function copyFixture() {
+  const location = await fixture(),
+    { randomUUID } = await import("node:crypto");
+  const { nativeReceiptPublicationFixture } =
+    await import("../../../../scripts/test-receipt-publication-sqlite");
+  const target = await databaseTarget(location, true);
+  await mkdir(fileURLToPath(target.directory), { recursive: true });
+  const f = await nativeReceiptPublicationFixture(
+    join(fileURLToPath(target.directory), target.name),
+  );
+  await f.a.runAsync(
+    "INSERT INTO app_metadata(key,value,updated_at) VALUES('device_id',?,?)",
+    f.f.chat.deviceId,
+    new Date().toISOString(),
+  );
+  const ownerId = f.f.chat.ownerId,
+    storeId = f.f.chat.storeId,
+    deviceId = f.f.chat.deviceId;
+  native.secure.set(
+    "auth.session-marker",
+    JSON.stringify({
+      user: {
+        id: ownerId,
+        email: "private@example.test",
+        displayName: "Private",
+      },
+      stores: [{ storeId, name: "Private store", role: "MANAGER" }],
+    }),
+  );
+  const { serializeLocalWrites } = await import("./serialized-writes");
+  const exclusive = f.a.withExclusiveTransactionAsync.bind(f.a);
+  const { ReceiptTestDatabase } =
+    await import("../../../../scripts/test-receipt-publication-sqlite");
+  f.a.withExclusiveTransactionAsync = (action) =>
+    exclusive(() => action(new ReceiptTestDatabase(f.db)));
+  serializeLocalWrites(f.a as unknown as import("expo-sqlite").SQLiteDatabase);
+  return { ...f, location, ownerId, storeId, deviceId, randomUUID };
+}
+async function copies() {
+  return import("./local-copies-native");
+}
+it("backs up WAL-committed observations, drafts and exact Outbox UUID/order/attempts; restores after restart without overwriting the current generation", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  try {
+    await f.a.runAsync(
+      "UPDATE sync_outbox SET status='SYNCING',attempt_count=7,last_error_code='NETWORK_UNAVAILABLE' WHERE local_sequence=1",
+    );
+    const before = await f.a.getAllAsync(
+      "SELECT * FROM sync_outbox ORDER BY local_sequence",
+    );
+    const saved = await api.createLocalCopy(
+      f.a as never,
+      f.deviceId,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    // Later writes are kept in the retained old generation, never silently discarded.
+    await f.a.runAsync(
+      "INSERT INTO app_metadata(key,value,updated_at) VALUES('later_draft','keep me',?)",
+      new Date().toISOString(),
+    );
+    const ready = await api.prepareLocalCopy(
+      saved,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    expect(await storage.readLocation()).toEqual(f.location);
+    expect(
+      await f.a.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key='later_draft'",
+      ),
+    ).toEqual({ value: "keep me" });
+    await api.activatePreparedLocalCopy(ready);
+    await api.activatePreparedLocalCopy(ready); // Lost ACK, same candidate.
+    const { openDatabaseAsync } = await import("expo-sqlite"),
+      target = await databaseTarget(await storage.readLocation(), false);
+    const reopened = await openDatabaseAsync(
+      target.name,
+      { useNewConnection: true },
+      target.directory,
+    );
+    try {
+      expect(
+        await reopened.getAllAsync(
+          "SELECT * FROM sync_outbox ORDER BY local_sequence",
+        ),
+      ).toEqual(before);
+      expect(
+        await reopened.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key='device_id'",
+        ),
+      ).toEqual({ value: f.deviceId });
+      expect(
+        await reopened.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key='later_draft'",
+        ),
+      ).toBeNull();
+      expect(
+        await reopened.getFirstAsync(
+          "SELECT COUNT(*) AS n FROM waste_receipts",
+        ),
+      ).toEqual({ n: 1 });
+      expect(await api.restoredDatabaseOwner(ready.next)).toBe(f.ownerId);
+    } finally {
+      await reopened.closeAsync();
+    }
+    const refs = await api.listLocalCopies(f.ownerId, f.storeId);
+    const old = refs.find((v) => v.kind === "previous")!;
+    expect(old.location).toEqual(f.location);
+    const back = await api.prepareLocalCopy(
+      old,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    expect(back.deviceId).toBe(f.deviceId);
+    const oldTarget = await databaseTarget(back.next, false);
+    const prior = await openDatabaseAsync(
+      oldTarget.name,
+      { useNewConnection: true },
+      oldTarget.directory,
+    );
+    try {
+      expect(
+        await prior.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key='later_draft'",
+        ),
+      ).toEqual({ value: "keep me" });
+    } finally {
+      await prior.closeAsync();
+    }
+  } finally {
+    f.db.close();
+  }
+});
+it("queues the snapshot behind the existing writer, so no half-committed aggregate or Outbox is copied", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  let release!: () => void;
+  const gate = new Promise<void>((r) => {
+    release = r;
+  });
+  const writing = f.a.withExclusiveTransactionAsync(async (tx) => {
+    await tx.runAsync(
+      "UPDATE products SET label='Committed product' WHERE id=?",
+      f.f.p.observations[0]!.productId,
+    );
+    await gate;
+    await tx.runAsync(
+      "UPDATE sync_outbox SET attempt_count=17 WHERE local_sequence=1",
+    );
+  });
+  const creating = api.createLocalCopy(
+    f.a as never,
+    f.deviceId,
+    f.ownerId,
+    f.storeId,
+    () => {},
+  );
+  await new Promise<void>((r) => setTimeout(r, 20));
+  release();
+  try {
+    await writing;
+    const ref = await creating;
+    const ready = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    const target = await databaseTarget(ready.next, false),
+      { openDatabaseAsync } = await import("expo-sqlite");
+    const db = await openDatabaseAsync(
+      target.name,
+      undefined,
+      target.directory,
+    );
+    try {
+      expect(
+        await db.getFirstAsync(
+          "SELECT label FROM products WHERE id=?",
+          f.f.p.observations[0]!.productId,
+        ),
+      ).toEqual({ label: "Committed product" });
+      expect(
+        await db.getFirstAsync(
+          "SELECT attempt_count FROM sync_outbox WHERE local_sequence=1",
+        ),
+      ).toEqual({ attempt_count: 17 });
+    } finally {
+      await db.closeAsync();
+    }
+  } finally {
+    f.db.close();
+  }
+});
+it("refuses a changed copy, foreign account/store, stale screen and future schema without activating or removing originals", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  try {
+    const ref = await api.createLocalCopy(
+      f.a as never,
+      f.deviceId,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    await expect(
+      api.listLocalCopies(f.randomUUID(), f.storeId),
+    ).rejects.toThrow("compte d’origine");
+    await expect(
+      api.prepareLocalCopy(ref, f.ownerId, f.randomUUID(), () => {}),
+    ).rejects.toThrow("compte d’origine");
+    await expect(
+      api.prepareLocalCopy(ref, f.ownerId, f.storeId, () => {
+        throw Error("STALE");
+      }),
+    ).rejects.toThrow("STALE");
+    const { databaseInstallation } = await import("./database-recovery-native"),
+      installation = await databaseInstallation();
+    const snapshot = join(
+      fileURLToPath(installation.root.uri),
+      installation.id,
+      ref.id,
+      "fl-copilot.db",
+    );
+    await writeFile(snapshot, "modified");
+    await expect(
+      api.prepareLocalCopy(ref, f.ownerId, f.storeId, () => {}),
+    ).rejects.toThrow("copie ou la session a changé");
+    await f.a.execAsync("PRAGMA user_version=99999");
+    await expect(
+      api.createLocalCopy(
+        f.a as never,
+        f.deviceId,
+        f.ownerId,
+        f.storeId,
+        () => {},
+      ),
+    ).rejects.toThrow("ne peut pas être reprise en sécurité");
+    expect(await storage.readLocation()).toEqual(f.location);
+    expect(await readFile(snapshot, "utf8")).toBe("modified");
+  } finally {
+    f.db.close();
+  }
+});
+it("checks the prepared bytes again at activation and keeps a new candidate after Keychain failure", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  try {
+    const ref = await api.createLocalCopy(
+      f.a as never,
+      f.deviceId,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    const ready = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    native.failWrite = "before";
+    await expect(api.activatePreparedLocalCopy(ready)).rejects.toThrow(
+      "KEYCHAIN_UNAVAILABLE",
+    );
+    expect(await storage.readLocation()).toEqual(f.location);
+    native.failWrite = "";
+    const target = await databaseTarget(ready.next, false);
+    await writeFile(
+      join(fileURLToPath(target.directory), target.name),
+      "tampered",
+    );
+    await expect(api.activatePreparedLocalCopy(ready)).rejects.toThrow(
+      "copie ou la session a changé",
+    );
+    expect(await storage.readLocation()).toEqual(f.location);
+  } finally {
+    f.db.close();
+  }
+});
+it("verifies isolated forensic bytes on a clone, including WAL, and never opens or mutates the isolated original", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  try {
+    await preserveCorruptDatabase(f.location); // Controlled healthy triplet simulates a readable isolated copy.
+    const next = await storage.prepareLocation(f.location),
+      target = await databaseTarget(next, true);
+    await writeFile(
+      join(fileURLToPath(target.directory), target.name),
+      "placeholder",
+    );
+    const { preserveDatabaseRecoveryOwner, currentDatabaseOwner } =
+      await import("../auth/auth-storage");
+    await preserveDatabaseRecoveryOwner(
+      next.generation!,
+      await currentDatabaseOwner(),
+    );
+    await storage.activateLocation(f.location, next);
+    const refs = await api.listLocalCopies(f.ownerId, f.storeId),
+      isolated = refs.find((v) => v.kind === "isolated")!;
+    expect(isolated).toBeDefined();
+    const ready = await api.prepareLocalCopy(
+      isolated,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    expect(ready.deviceId).toBe(f.deviceId);
+    // A second verification sees identical byte hashes on the immutable original triplet.
+    const again = await api.prepareLocalCopy(
+      isolated,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    expect(again.deviceId).toBe(f.deviceId);
+    expect(await storage.readLocation()).toEqual(next);
+  } finally {
+    f.db.close();
+  }
+});
+it("retains a corrupt isolated triplet unchanged and refuses recovery instead of manufacturing a device or replaying damaged data", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  try {
+    const next = await storage.prepareLocation(f.location),
+      target = await databaseTarget(next, true);
+    await writeFile(
+      join(fileURLToPath(target.directory), target.name),
+      "new database placeholder",
+    );
+    const old = await databaseTarget(f.location, false);
+    // Close first: corruption is manufactured only on the test fixture, never production data.
+    f.db.close();
+    const bytes = Buffer.from("corrupt SQLite original");
+    await writeFile(join(fileURLToPath(old.directory), old.name), bytes);
+    await preserveCorruptDatabase(f.location);
+    const { preserveDatabaseRecoveryOwner, currentDatabaseOwner } =
+      await import("../auth/auth-storage");
+    await preserveDatabaseRecoveryOwner(
+      next.generation!,
+      await currentDatabaseOwner(),
+    );
+    await storage.activateLocation(f.location, next);
+    const ref = (await api.listLocalCopies(f.ownerId, f.storeId)).find(
+      (v) => v.kind === "isolated",
+    )!;
+    const installation = await (
+      await import("./database-recovery-native")
+    ).databaseInstallation();
+    const preserved = join(
+      fileURLToPath(installation.root.uri),
+      installation.id,
+      ref.id,
+      old.name,
+    );
+    await expect(
+      api.prepareLocalCopy(ref, f.ownerId, f.storeId, () => {}),
+    ).rejects.toThrow();
+    expect(await readFile(preserved)).toEqual(bytes);
+    expect(await storage.readLocation()).toEqual(next);
+  } finally {
+    try {
+      f.db.close();
+    } catch {
+      /* Test connection already closed before corrupting its file. */
+    }
+  }
+});
+it("keeps an independent owned backup available when an older retained generation manifest becomes unreadable", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  try {
+    const ref = await api.createLocalCopy(
+      f.a as never,
+      f.deviceId,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    const first = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    await api.activatePreparedLocalCopy(first);
+    const olderTarget = await databaseTarget(first.next, false);
+    const second = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    await api.activatePreparedLocalCopy(second);
+    await writeFile(
+      join(fileURLToPath(olderTarget.directory), "manifest.json"),
+      "unreadable old manifest",
+    );
+    expect(
+      (await api.listLocalCopies(f.ownerId, f.storeId)).some(
+        (v) => v.kind === "backup" && v.id === ref.id,
+      ),
+    ).toBe(true);
+    const prepared = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    expect(prepared.deviceId).toBe(f.deviceId);
+    expect(await storage.readLocation()).toEqual(second.next);
+  } finally {
+    f.db.close();
+  }
 });

@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+### M8-T04 continuation — private local copies and owner-verified resumption (24 October 2026)
+
+Reuse Expo SQLite online backup and the existing writer queue for explicit private copies. Verify inactive/isolated triplets on a clone, preserving originals, stable device/Outbox identities and all local drafts. Prepare a new generation; after explicit confirmation drain canonical logout, unmount operational providers, activate the existing installation-bound pointer and require full restart before reopening. Original-owner authentication precedes restored access; no credential copies, generic writer, arbitrary table merge or fabricated acknowledgement. Prior live locations remain separately resumable, including late writes. See `../qa/M8_LOCAL_DATABASE_COPIES_2026_10_24.md` for real SQLite/mounted-provider evidence and native/cloud-backup limitations. Corrupt/unverified copies remain retained without replay; full M8 and V1 acceptance stays open.
+
 ### M8-T11 — local notification context lifetime (24 October 2026)
 
 The existing reminder provider invalidates queued work and native response/display callbacks across owner/store/database/session closure. Recheck context after cold-response reads before listener registration; retain local navigation and contain background-sync rejection. Isolate old job errors inside the existing coalesced runner. Foreground presentation accepts only the current store's supported reminder payload. Eighteen targeted tests include seven before-fix failures and 200 context replacements with bounded subscriptions. No notification delivery policy, remote push service, schema, permission prompt, provider call or business writer is added. See `../qa/M8_REMINDER_LIFETIME_2026_10_24.md`; exact-head CI, grouped native delivery and physical iOS/Android notification acceptance remain required. All seven M7 states and complete V1 gates remain open.

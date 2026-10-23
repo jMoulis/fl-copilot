@@ -3,6 +3,8 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
+  useRef,
   useMemo,
   useState,
   type PropsWithChildren,
@@ -10,13 +12,22 @@ import {
 import { Platform } from "react-native";
 import Constants from "expo-constants";
 import { ApiClient } from "@fl-copilot/api-client";
-import { NativeSessionManager, type SessionSnapshot } from "./session-manager";
+import {
+  NativeSessionManager,
+  SessionChangedError,
+  type SessionSnapshot,
+} from "./session-manager";
 import { getApiBaseUrl } from "@/config/environment";
-import { useDeviceIdentity } from "@/providers/database-provider";
+import {
+  useDatabaseAccessBinding,
+  useDeviceIdentity,
+} from "@/providers/database-provider";
 import {
   clearStoredSession,
   loadStoredSession,
   saveStoredSession,
+  assertRestoredSessionOwner,
+  markRestoredSessionVerified,
 } from "./auth-storage";
 
 type PendingChallenge = { challengeId: string; email: string };
@@ -34,13 +45,16 @@ type AuthContextValue = {
   verifyCode(code: string): Promise<void>;
   resendCode(): Promise<void>;
   changeEmail(): void;
-  logout(): Promise<void>;
+  logout(options?: { localOnly?: boolean }): Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const deviceId = useDeviceIdentity();
+  const binding = useDatabaseAccessBinding();
+  const accessOwnerId = binding?.ownerId,
+    accessGeneration = binding?.generation;
 
   const [pendingChallenge, setPendingChallenge] =
     useState<PendingChallenge | null>(null);
@@ -50,14 +64,56 @@ export function AuthProvider({ children }: PropsWithChildren) {
     () =>
       new NativeSessionManager(
         {
-          load: loadStoredSession,
-          save: saveStoredSession,
+          load: async () => {
+            const stored = await loadStoredSession();
+            if (active.current !== manager) throw new SessionChangedError();
+            if (accessOwnerId && accessGeneration && stored) {
+              try {
+                await assertRestoredSessionOwner(
+                  accessGeneration,
+                  accessOwnerId,
+                  stored.marker.user.id,
+                );
+              } catch {
+                await clearStoredSession();
+                return null;
+              }
+            }
+            return stored;
+          },
+          save: async (session) => {
+            if (active.current !== manager) throw new SessionChangedError();
+            if (accessOwnerId && accessGeneration)
+              await assertRestoredSessionOwner(
+                accessGeneration,
+                accessOwnerId,
+                session.user.id,
+              );
+            await saveStoredSession(session);
+            if (accessOwnerId && accessGeneration)
+              await markRestoredSessionVerified(
+                accessGeneration,
+                accessOwnerId,
+                session.user.id,
+              );
+          },
           clear: clearStoredSession,
         },
         (token) => api.refreshSession(deviceId, token),
       ),
-    [api, deviceId],
+    [api, deviceId, accessOwnerId, accessGeneration],
   );
+  const active = useRef<NativeSessionManager | null>(manager);
+  const challengeEpoch = useRef(0);
+  useLayoutEffect(() => {
+    active.current = manager;
+    return () => {
+      active.current = null;
+    };
+  }, [manager]);
+  const assertActive = useCallback(() => {
+    if (active.current !== manager) throw new SessionChangedError();
+  }, [manager]);
   const [snapshot, setSnapshot] = useState<SessionSnapshot>(() =>
     manager.getSnapshot(),
   );
@@ -66,41 +122,57 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setSnapshot(manager.getSnapshot());
     const unsubscribe = manager.subscribe(setSnapshot);
     void manager.restore().catch(() => {
-      void manager.logout();
+      if (active.current === manager) void manager.logout();
     });
     return unsubscribe;
   }, [manager]);
   const withAccessToken = useCallback(
-    <T,>(operation: (token: string) => Promise<T>, expectedOwnerId?: string) =>
-      manager.request(operation, expectedOwnerId),
-    [manager],
+    async <T,>(
+      operation: (token: string) => Promise<T>,
+      expectedOwnerId?: string,
+    ) => {
+      assertActive();
+      return manager.request(operation, expectedOwnerId);
+    },
+    [manager, assertActive],
   );
 
   const requestCode = useCallback(
     async (email: string) => {
+      assertActive();
+      const epoch = ++challengeEpoch.current;
       const response = await api.requestLoginCode({
         email: email.trim().toLowerCase(),
         deviceId,
         platform: Platform.OS === "ios" ? "IOS" : "ANDROID",
         appVersion: Constants.expoConfig?.version ?? "0.0.0",
       });
+      assertActive();
+      if (epoch !== challengeEpoch.current) throw new SessionChangedError();
       setPendingChallenge({
         challengeId: response.challengeId,
         email: email.trim().toLowerCase(),
       });
     },
-    [api, deviceId],
+    [api, deviceId, assertActive],
   );
 
   const verifyCode = useCallback(
     async (code: string) => {
       if (!pendingChallenge) throw new Error("Aucun code n’a été demandé.");
-      await manager.establish(
-        await api.verifyLoginCode(pendingChallenge.challengeId, code),
+      assertActive();
+      const epoch = challengeEpoch.current;
+      const response = await api.verifyLoginCode(
+        pendingChallenge.challengeId,
+        code,
       );
+      assertActive();
+      if (epoch !== challengeEpoch.current) throw new SessionChangedError();
+      await manager.establish(response);
+      assertActive();
       setPendingChallenge(null);
     },
-    [api, manager, pendingChallenge],
+    [api, manager, pendingChallenge, assertActive],
   );
 
   const resendCode = useCallback(async () => {
@@ -108,20 +180,28 @@ export function AuthProvider({ children }: PropsWithChildren) {
     await requestCode(pendingChallenge.email);
   }, [pendingChallenge, requestCode]);
 
-  const changeEmail = useCallback(() => setPendingChallenge(null), []);
-
-  const logout = useCallback(async () => {
-    const accessToken = manager.getSnapshot().session?.accessToken;
-    await manager.logout();
+  const changeEmail = useCallback(() => {
+    challengeEpoch.current++;
     setPendingChallenge(null);
-    if (accessToken) {
-      try {
-        await api.logout(accessToken);
-      } catch {
-        /* Local access is already cleared. */
+  }, []);
+
+  const logout = useCallback(
+    async (options?: { localOnly?: boolean }) => {
+      assertActive();
+      challengeEpoch.current++;
+      const accessToken = manager.getSnapshot().session?.accessToken;
+      await manager.logout();
+      if (active.current === manager) setPendingChallenge(null);
+      if (accessToken && !options?.localOnly) {
+        try {
+          await api.logout(accessToken);
+        } catch {
+          /* Local access is already cleared. */
+        }
       }
-    }
-  }, [api, manager]);
+    },
+    [api, manager, assertActive],
+  );
 
   return (
     <AuthContext.Provider

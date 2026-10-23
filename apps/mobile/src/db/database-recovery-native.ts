@@ -11,8 +11,8 @@ import {
   type DatabaseRecoveryStorage,
 } from "./database-recovery";
 
-const databaseName = "fl-copilot.db";
-const manifestSchema = z
+export const databaseName = "fl-copilot.db";
+export const manifestSchema = z
   .object({
     version: z.literal(1),
     previous: databaseLocationSchema,
@@ -21,7 +21,7 @@ const manifestSchema = z
   .strict();
 
 /** Installation-local marker prevents retained iOS Keychain entries selecting a removed app container. */
-async function installation() {
+export async function databaseInstallation() {
   const { Directory, File, Paths } = await import("expo-file-system");
   const root = new Directory(Paths.document, "database-recovery");
   root.create({ idempotent: true, intermediates: true });
@@ -42,7 +42,7 @@ async function installation() {
 }
 
 async function readLocation() {
-  const { key, root, id } = await installation();
+  const { key, root, id } = await databaseInstallation();
   const secure = await import("expo-secure-store");
   const saved = await secure.getItemAsync(key);
   if (saved !== null) return databaseLocationSchema.parse(JSON.parse(saved));
@@ -61,7 +61,7 @@ export async function databaseTarget(
   databaseLocationSchema.parse(location);
   if (!location.generation)
     return { name: databaseName, directory: defaultDatabaseDirectory };
-  const { root, id } = await installation();
+  const { root, id } = await databaseInstallation();
   const { Directory, File } = await import("expo-file-system");
   const directory = new Directory(root, id, location.generation);
   const manifest = manifestSchema.parse(
@@ -78,7 +78,7 @@ export async function databaseTarget(
 const same = (a: DatabaseLocation, b: DatabaseLocation) =>
   a.generation === b.generation && a.recoveredAt === b.recoveredAt;
 
-async function fingerprint(file: File) {
+export async function databaseFileFingerprint(file: File) {
   const sizeBytes = file.size;
   if (!Number.isSafeInteger(sizeBytes) || sizeBytes < 0)
     throw new Error("LOCAL_RECOVERY_FILE_UNREADABLE");
@@ -105,31 +105,41 @@ async function fingerprint(file: File) {
   }
 }
 
-/** Snapshot before SQLite close/checkpoint can remove WAL/SHM. This directory is never opened as a database. */
-export async function preserveCorruptDatabase(location: DatabaseLocation) {
-  const target = await databaseTarget(location, true);
-  const { Directory, File } = await import("expo-file-system");
-  const { root, id } = await installation();
-  const directory = new Directory(root, id, `isolated-${randomUUID()}`);
-  directory.create({ intermediates: true });
+/** Copy a stable triplet without ever opening the retained original as SQLite. */
+export async function copyStableDatabaseFiles(
+  sourceDirectory: string,
+  directory: import("expo-file-system").Directory,
+) {
+  const { File } = await import("expo-file-system");
   const originals = ["", "-wal", "-shm"].map(
-    (suffix) => new File(target.directory, `${databaseName}${suffix}`),
+    (suffix) => new File(sourceDirectory, `${databaseName}${suffix}`),
   );
   if (!originals[0]!.exists) throw new Error("LOCAL_RECOVERY_DATABASE_MISSING");
   const present = originals.filter((file) => file.exists),
     files = [];
-  for (const file of present) {
-    const expected = await fingerprint(file),
-      copy = new File(directory, file.name);
-    await file.copy(copy);
-    const actual = await fingerprint(copy),
-      after = await fingerprint(file);
+  for (const file of present)
+    files.push({ name: file.name, ...(await databaseFileFingerprint(file)) });
+  for (const expected of files) {
+    const original = new File(sourceDirectory, expected.name),
+      copy = new File(directory, expected.name);
+    await original.copy(copy);
+    const actual = await databaseFileFingerprint(copy);
     if (
-      JSON.stringify(expected) !== JSON.stringify(actual) ||
-      JSON.stringify(expected) !== JSON.stringify(after)
+      actual.sizeBytes !== expected.sizeBytes ||
+      actual.checksum !== expected.checksum
     )
       throw new Error("LOCAL_RECOVERY_FILE_CHANGED");
-    files.push({ name: file.name, ...expected });
+  }
+  // Recheck the WHOLE original set after copying, not just each file immediately after its copy.
+  for (const expected of files) {
+    const after = await databaseFileFingerprint(
+      new File(sourceDirectory, expected.name),
+    );
+    if (
+      after.sizeBytes !== expected.sizeBytes ||
+      after.checksum !== expected.checksum
+    )
+      throw new Error("LOCAL_RECOVERY_FILE_CHANGED");
   }
   if (
     originals.some(
@@ -138,6 +148,16 @@ export async function preserveCorruptDatabase(location: DatabaseLocation) {
     )
   )
     throw new Error("LOCAL_RECOVERY_FILE_CHANGED");
+  return files;
+}
+/** Snapshot before SQLite close/checkpoint can remove WAL/SHM. This directory is never opened as a database. */
+export async function preserveCorruptDatabase(location: DatabaseLocation) {
+  const target = await databaseTarget(location, true);
+  const { Directory, File } = await import("expo-file-system");
+  const { root, id } = await databaseInstallation();
+  const directory = new Directory(root, id, `isolated-${randomUUID()}`);
+  directory.create({ intermediates: true });
+  const files = await copyStableDatabaseFiles(target.directory, directory);
   const manifest = new File(directory, "snapshot.json");
   manifest.create();
   const value = JSON.stringify({
@@ -180,7 +200,7 @@ export const nativeDatabaseRecoveryStorage: DatabaseRecoveryStorage = {
   async prepareLocation(previous) {
     if (!same(await readLocation(), previous))
       throw new Error("LOCAL_RECOVERY_LOCATION_CHANGED");
-    const { root, id } = await installation();
+    const { root, id } = await databaseInstallation();
     const { Directory, File } = await import("expo-file-system");
     const next: DatabaseLocation = {
       version: 1,
@@ -199,7 +219,7 @@ export const nativeDatabaseRecoveryStorage: DatabaseRecoveryStorage = {
     return next;
   },
   async activateLocation(previous, next) {
-    const { key } = await installation();
+    const { key } = await databaseInstallation();
     const { File } = await import("expo-file-system");
     const target = await databaseTarget(next, false);
     const manifest = manifestSchema.parse(
