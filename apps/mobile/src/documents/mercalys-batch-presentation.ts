@@ -46,6 +46,7 @@ export function filterBatchItems(
     const fullyPublished = p && p.remaining_count === 0;
     const review =
       r.status === "FAILED" ||
+      (p?.remaining_count ?? 0) > 0 ||
       (!fullyPublished &&
         r.status === "REVIEW" &&
         (r.productReviewCount > 0 || r.errorCount > 0 || r.overlap));

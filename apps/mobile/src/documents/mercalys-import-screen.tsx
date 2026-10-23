@@ -1,13 +1,23 @@
 import { SourceOriginalButton } from "./source-original-button";
 import { SourceUploadRecoveryPanel } from "./source-upload-recovery-panel";
-import { MercalysBatchPanel } from "@/documents/mercalys-batch-panel";
+import { MercalysBatchPanel } from "./mercalys-batch-panel";
+import { MercalysReconciliationReview } from "./mercalys-reconciliation-review";
+import { MercalysImportProductPicker } from "../copilot/mercalys-import-product-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Platform, Text, View } from "react-native";
+import {
+  Modal,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+  type ScrollView,
+} from "react-native";
+import { colors } from "../design/tokens";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { CryptoDigestAlgorithm, digest, randomUUID } from "expo-crypto";
 import { Directory, File as ExpoFile, Paths } from "expo-file-system";
 import type { Product, ProductMatchCatalog } from "@fl-copilot/domain";
-import { useAuth } from "@/auth/auth-provider";
+import { useAuth } from "../auth/auth-provider";
 import {
   AppHeader,
   AppScreen,
@@ -15,38 +25,44 @@ import {
   PrimaryButton,
   SecondaryButton,
   SectionCard,
-} from "@/components/ui";
+} from "../components/ui";
 import {
   MercalysImportValidationError,
   rematchMercalysImport,
   validateMercalysImport,
   type MercalysImportValidationSummary,
-} from "@/documents/mercalys-import-validation";
+} from "./mercalys-import-validation";
 import {
   MercalysExactDuplicateError,
   MercalysImportPublicationRepository,
   MercalysOverlapReconciliationError,
   type ExactDuplicateImport,
   type PublishedMercalysImport,
-} from "@/documents/mercalys-import-publication";
-import type {
-  MercalysReconciliation,
-  MercalysReconciliationRow,
-} from "@/documents/mercalys-import-reconciliation";
+} from "./mercalys-import-publication";
+import type { MercalysReconciliation } from "./mercalys-import-reconciliation";
 import {
   buildMercalysProductResolutions,
   confirmMercalysProductMapping,
   createMercalysProducts,
   type MercalysProductResolution,
-} from "@/documents/mercalys-product-resolution";
-import { SheetJsSpreadsheetParser } from "@/documents/sheetjs-spreadsheet-parser";
-import { ProductMasterRepository } from "@/products/product-master-repository";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
+} from "./mercalys-product-resolution";
+import { SheetJsSpreadsheetParser } from "./sheetjs-spreadsheet-parser";
+import { ProductMasterRepository } from "../products/product-master-repository";
+import { useLocalDatabase } from "../providers/database-provider";
+import { useSync } from "../sync/sync-provider";
 import {
   LocalAnalyticsRecomputationScheduler,
   SQLiteProductDateRecomputer,
-} from "@/analytics/local-recomputation";
+} from "../analytics/local-recomputation";
+
+type FilePublication = Pick<
+  PublishedMercalysImport,
+  "sourceDocumentId" | "publishedCount" | "remainingCount" | "replacedCount"
+>;
+
+type ImportProductCatalog = ProductMatchCatalog & {
+  conflictedProductIds: readonly string[];
+};
 
 type ImportStage =
   "IDLE" | "READING" | "MATCHING" | "VALIDATING" | "COMPLETE" | "ERROR";
@@ -94,33 +110,16 @@ export function MercalysImportScreen({
   onDiscuss?(batchId: string): Promise<void>;
   onBusyChange?(busy: boolean): void;
 } = {}) {
+  const fileScroll = useRef<ScrollView>(null);
+  const scrollToStart = () =>
+    fileScroll.current?.scrollTo({ y: 0, animated: true });
   const [batchBusy, setBatchBusy] = useState(false);
   const [uploadRevision, setUploadRevision] = useState(0);
-  const [reviewAsset, setReviewAsset] = useState<
-    NativeDocumentPickerAsset & { expectedChecksum: string }
-  >();
-  const [reviewBusy, setReviewBusy] = useState(false);
-  const reviewDone = useRef<(() => void) | undefined>(undefined);
-  const closeReview = useCallback(() => {
-    if (!reviewBusy) {
-      setReviewAsset(undefined);
-      if (Platform.OS !== "ios") {
-        reviewDone.current?.();
-        reviewDone.current = undefined;
-      }
-    }
-  }, [reviewBusy]);
-  const finishReview = useCallback(() => {
-    reviewDone.current?.();
-    reviewDone.current = undefined;
-  }, []);
-  useEffect(
-    () => () => {
-      reviewDone.current?.();
-    },
-    [],
-  );
-
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [section, setSection] = useState<
+    "SUMMARY" | "PRODUCTS" | "DIFFERENCES"
+  >("SUMMARY");
+  const [resolutionKey, setResolutionKey] = useState<string>();
   const { sqlite, deviceId } = useLocalDatabase();
   const { session } = useAuth();
   const { syncNow } = useSync();
@@ -145,14 +144,18 @@ export function MercalysImportScreen({
   const [stage, setStage] = useState<ImportStage>("IDLE");
   const [filename, setFilename] = useState<string>();
   const [summary, setSummary] = useState<MercalysImportValidationSummary>();
-  const [productCatalog, setProductCatalog] = useState<ProductMatchCatalog>();
+  const [productCatalog, setProductCatalog] = useState<ImportProductCatalog>();
   const [selectedBytes, setSelectedBytes] = useState<Uint8Array<ArrayBuffer>>();
   const [selectedChecksum, setSelectedChecksum] = useState<string>();
   const [duplicate, setDuplicate] = useState<ExactDuplicateImport>();
+  const [continuation, setContinuation] =
+    useState<
+      Awaited<ReturnType<MercalysImportPublicationRepository["continuation"]>>
+    >();
   const [reconciliation, setReconciliation] =
     useState<MercalysReconciliation>();
   const [keptExisting, setKeptExisting] = useState(false);
-  const [publication, setPublication] = useState<PublishedMercalysImport>();
+  const [publication, setPublication] = useState<FilePublication>();
   const [publishing, setPublishing] = useState(false);
   const [resolvingProducts, setResolvingProducts] = useState(false);
   const [resolutionProgress, setResolutionProgress] = useState<{
@@ -175,9 +178,7 @@ export function MercalysImportScreen({
   }, [analyticsScheduler, storeId]);
 
   const chooseWorkbook = useCallback(
-    async (
-      retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string },
-    ) => {
+    async (asset: NativeDocumentPickerAsset & { expectedChecksum: string }) => {
       if (!hasNativeFilePicker || !storeId) return;
       setFilename(undefined);
       setSummary(undefined);
@@ -185,6 +186,7 @@ export function MercalysImportScreen({
       setSelectedBytes(undefined);
       setSelectedChecksum(undefined);
       setDuplicate(undefined);
+      setContinuation(undefined);
       setReconciliation(undefined);
       setKeptExisting(false);
       setPublication(undefined);
@@ -192,25 +194,6 @@ export function MercalysImportScreen({
       setError(undefined);
 
       try {
-        let asset:
-          | (NativeDocumentPickerAsset & { expectedChecksum?: string })
-          | undefined = retainedAsset;
-        if (!asset) {
-          const selection = await nativeDocumentPicker.getDocumentAsync({
-            type: [
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            ],
-            copyToCacheDirectory: true,
-            multiple: false,
-            base64: false,
-          });
-          if (selection.canceled) {
-            setStage("IDLE");
-            return;
-          }
-          asset = selection.assets[0];
-          if (!asset) throw new Error("Aucun fichier sélectionné.");
-        }
         setFilename(asset.name);
 
         setStage("READING");
@@ -241,7 +224,19 @@ export function MercalysImportScreen({
         );
         setSelectedChecksum(checksum);
         if (priorImport) {
-          setDuplicate(priorImport);
+          const pending = await publicationRepository.continuation(
+            storeId,
+            checksum,
+            nextSummary,
+          );
+          if (pending && pending.remainingCount > 0) {
+            setContinuation(pending);
+            setSummary(pending.summary);
+            setSelectedBytes(bytes);
+            setSection(
+              pending.summary.productReviewCount ? "PRODUCTS" : "SUMMARY",
+            );
+          } else setDuplicate(priorImport);
           setStage("COMPLETE");
           return;
         }
@@ -252,6 +247,13 @@ export function MercalysImportScreen({
         setSummary(nextSummary);
         setSelectedBytes(bytes);
         setReconciliation(overlap ?? undefined);
+        setSection(
+          overlap
+            ? "DIFFERENCES"
+            : nextSummary.productReviewCount
+              ? "PRODUCTS"
+              : "SUMMARY",
+        );
         setStage("COMPLETE");
       } catch (caught) {
         setError(importErrorMessage(caught));
@@ -270,13 +272,20 @@ export function MercalysImportScreen({
   }, [retainedAsset, storeId, chooseWorkbook]);
 
   function reset() {
+    if (retainedAsset && onClose) {
+      onClose();
+      return;
+    }
     setStage("IDLE");
+    setSection("SUMMARY");
+    setResolutionKey(undefined);
     setFilename(undefined);
     setSummary(undefined);
     setProductCatalog(undefined);
     setSelectedBytes(undefined);
     setSelectedChecksum(undefined);
     setDuplicate(undefined);
+    setContinuation(undefined);
     setReconciliation(undefined);
     setKeptExisting(false);
     setPublication(undefined);
@@ -289,14 +298,39 @@ export function MercalysImportScreen({
   ) {
     if (!storeId) throw new Error("Aucun magasin actif.");
     const catalog = await loadProductCatalog(repository, storeId);
-    const nextSummary = rematchMercalysImport(currentSummary, storeId, catalog);
-    const overlap = await publicationRepository.analyzeOverlap(
-      storeId,
-      nextSummary,
-    );
+    const rematched = rematchMercalysImport(currentSummary, storeId, catalog);
+    const pending =
+      continuation && selectedChecksum
+        ? await publicationRepository.continuation(
+            storeId,
+            selectedChecksum,
+            rematched,
+          )
+        : null;
+    if (
+      continuation &&
+      (!pending || pending.sourceDocumentId !== continuation.sourceDocumentId)
+    )
+      throw Error("MERCALYS_CONTINUATION_SOURCE_CHANGED");
+    const nextSummary = pending?.summary ?? rematched;
+    const overlap = pending
+      ? null
+      : await publicationRepository.analyzeOverlap(storeId, nextSummary);
     setProductCatalog(catalog);
     setSummary(nextSummary);
+    setContinuation(pending ?? undefined);
     setReconciliation(overlap ?? undefined);
+    if (
+      resolutionKey &&
+      !buildMercalysProductResolutions(nextSummary).some(
+        (r) => r.key === resolutionKey,
+      )
+    )
+      setResolutionKey(undefined);
+    if (!nextSummary.productReviewCount) {
+      setResolutionKey(undefined);
+      setSection(overlap ? "DIFFERENCES" : "SUMMARY");
+    }
   }
 
   async function createMissingProducts(
@@ -395,6 +429,25 @@ export function MercalysImportScreen({
     setError(undefined);
     let durableFile: ExpoFile | undefined;
     try {
+      if (continuation) {
+        const result = await publicationRepository.resume({
+          storeId,
+          sourceDocumentId: continuation.sourceDocumentId,
+          checksum: selectedChecksum,
+          summary,
+        });
+        setPublication({
+          ...result,
+          publishedCount: continuation.publishedCount + result.publishedCount,
+        });
+        const analyticsRun = await analyticsScheduler.process(storeId);
+        if (analyticsRun.failedJobs > 0)
+          setError(
+            "Les lignes sont publiées ; certains indicateurs restent à recalculer.",
+          );
+        void syncNow(storeId);
+        return;
+      }
       const directory = new Directory(Paths.document, "mercalys-imports");
       directory.create({ idempotent: true, intermediates: true });
       durableFile = new ExpoFile(directory, `${randomUUID()}.xlsx`);
@@ -435,11 +488,7 @@ export function MercalysImportScreen({
         setReconciliation(caught.reconciliation);
         return;
       }
-      setError(
-        caught instanceof Error && caught.message
-          ? caught.message
-          : "Les lignes valides n’ont pas pu être publiées localement.",
-      );
+      setError(importErrorMessage(caught));
     } finally {
       setPublishing(false);
     }
@@ -450,6 +499,7 @@ export function MercalysImportScreen({
     selectedBytes,
     selectedChecksum,
     reconciliation,
+    continuation,
     actorUserId,
     publicationRepository,
     analyticsScheduler,
@@ -547,10 +597,20 @@ export function MercalysImportScreen({
   }
 
   return (
-    <AppScreen>
+    <AppScreen scrollRef={fileScroll}>
       <AppHeader
-        title="Imports Mercalys"
-        subtitle="Les lignes sans ambiguïté sont publiées automatiquement. Les points à confirmer restent à examiner."
+        title={
+          retainedAsset
+            ? (filename ?? retainedAsset.name).split("/").at(-1)!
+            : "Imports Mercalys"
+        }
+        subtitle={
+          retainedAsset
+            ? retainedAsset.name.includes("/")
+              ? retainedAsset.name
+              : undefined
+            : "Ajoutez des exports, puis retrouvez chaque lot et ses fichiers."
+        }
       />
 
       {onClose ? (
@@ -558,27 +618,6 @@ export function MercalysImportScreen({
           label={retainedAsset ? "Fermer le fichier" : "Retour au chat"}
           disabled={loading || publishing || resolvingProducts || batchBusy}
           onPress={onClose}
-        />
-      ) : null}
-      {!retainedAsset && storeId && actorUserId ? (
-        <SourceUploadRecoveryPanel
-          key={`${storeId}/${actorUserId}/${conversationId ?? "manual"}`}
-          db={sqlite}
-          storeId={storeId}
-          scope={
-            conversationId
-              ? { ownerId: actorUserId, conversationId }
-              : undefined
-          }
-          canRetry={
-            session?.stores.some(
-              (s) => s.storeId === storeId && s.role === "MANAGER",
-            ) ?? false
-          }
-          sync={() => syncNow(storeId)}
-          disabled={busy}
-          refreshKey={`${stage}/${uploadRevision}`}
-          onBusyChange={setBatchBusy}
         />
       ) : null}
       {!retainedAsset && storeId && actorUserId && hasNativeFilePicker ? (
@@ -622,12 +661,15 @@ export function MercalysImportScreen({
             });
             return result.canceled ? undefined : result.assets[0];
           }}
-          onReview={(asset) =>
-            new Promise<void>((resolve) => {
-              reviewDone.current = resolve;
-              setReviewAsset(asset);
-            })
-          }
+          renderReview={(asset, close, reportBusy) => (
+            <MercalysImportScreen
+              key={asset.uri}
+              retainedAsset={asset}
+              conversationId={conversationId}
+              onClose={close}
+              onBusyChange={reportBusy}
+            />
+          )}
         />
       ) : null}
       <View
@@ -636,39 +678,69 @@ export function MercalysImportScreen({
         accessibilityElementsHidden={batchBusy}
         importantForAccessibility={batchBusy ? "no-hide-descendants" : "auto"}
       >
-        {!conversationId && !retainedAsset ? (
-          <SectionCard title="Nouveau fichier">
-            <Text className="text-base leading-6 text-muted">
-              Le fichier est lu sur cet appareil. Aucune donnée n’est publiée ni
-              envoyée pendant cette vérification.
-            </Text>
-            <PrimaryButton
-              label={
-                summary
-                  ? "Choisir un autre fichier XLSX"
-                  : "Choisir un fichier XLSX"
-              }
-              disabled={!hasNativeFilePicker || !storeId}
-              loading={loading}
-              onPress={() => {
-                void chooseWorkbook();
-              }}
+        {!retainedAsset ? (
+          <>
+            <SecondaryButton
+              label="Envois et synchronisation des fichiers"
+              disabled={busy}
+              onPress={() => setRecoveryOpen(true)}
             />
             {!storeId ? (
               <InlineAlert
                 title="Aucun magasin actif"
-                message="Reconnectez-vous après l’ajout de votre magasin de développement."
+                message="Reconnectez-vous après l’ajout de votre magasin."
               />
             ) : !hasNativeFilePicker ? (
               <InlineAlert
-                title="Module natif absent"
-                message="Installez un build de développement récent pour choisir un fichier XLSX."
+                title="Sélection de fichiers indisponible"
+                message="Utilisez l’application native pour choisir des fichiers XLSX ou ZIP."
               />
             ) : null}
-          </SectionCard>
+          </>
         ) : null}
-
-        {stage !== "IDLE" ? (
+        {continuation && !publication ? (
+          <InlineAlert
+            title="Publication à compléter"
+            message={`${continuation.publishedCount} lignes déjà publiées sont conservées. Seules les lignes restantes seront ajoutées après votre validation.`}
+          />
+        ) : null}
+        {summary && !publication ? (
+          <View className="flex-row flex-wrap gap-2">
+            {(
+              [
+                ["SUMMARY", "Résumé"],
+                ["PRODUCTS", `Produits (${productResolutions.length})`],
+                ["DIFFERENCES", "Comparaison"],
+              ] as const
+            )
+              .filter(([key]) => key !== "DIFFERENCES" || !!reconciliation)
+              .map(([key, label]) => (
+                <Pressable
+                  key={key}
+                  accessibilityRole="radio"
+                  aria-checked={section === key}
+                  accessibilityState={{ checked: section === key }}
+                  onPress={() => {
+                    setSection(key);
+                    setResolutionKey(undefined);
+                    scrollToStart();
+                  }}
+                  className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${section === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+                >
+                  <Text
+                    className={
+                      section === key
+                        ? "font-semibold text-on-accent"
+                        : "text-ink"
+                    }
+                  >
+                    {label}
+                  </Text>
+                </Pressable>
+              ))}
+          </View>
+        ) : null}
+        {stage !== "IDLE" && stage !== "COMPLETE" ? (
           <SectionCard title="Avancement">
             {filename ? <SummaryLine label="Fichier" value={filename} /> : null}
             <ProgressLine
@@ -690,10 +762,18 @@ export function MercalysImportScreen({
           <InlineAlert title="Import impossible" message={error} />
         ) : null}
 
-        {summary && productResolutions.length > 0 ? (
+        {summary && section === "PRODUCTS" && productCatalog && storeId ? (
           <ProductResolutionSummary
-            resolutions={productResolutions}
-            products={productCatalog?.products ?? []}
+            key={resolutionKey ?? "all"}
+            resolutions={
+              resolutionKey
+                ? productResolutions.filter((r) => r.key === resolutionKey)
+                : productResolutions
+            }
+            catalog={productCatalog}
+            storeId={storeId}
+            onShowAll={() => setResolutionKey(undefined)}
+            onNavigate={scrollToStart}
             loading={resolvingProducts}
             progress={resolutionProgress}
             onCreate={(resolutions) => {
@@ -708,9 +788,12 @@ export function MercalysImportScreen({
           />
         ) : null}
 
-        {summary && !reconciliation ? (
+        {summary &&
+        !reconciliation &&
+        (section === "SUMMARY" || publication) ? (
           <ValidationSummary
             summary={summary}
+            previouslyPublishedCount={continuation?.publishedCount ?? 0}
             publication={publication}
             publishing={publishing}
             onPublish={() => {
@@ -720,9 +803,43 @@ export function MercalysImportScreen({
           />
         ) : null}
 
-        {summary && reconciliation ? (
-          <ReconciliationSummary
+        {summary && reconciliation && section === "SUMMARY" ? (
+          <SectionCard title="Nouvelle version à examiner">
+            <Text className="text-base text-ink">
+              {summary.detectedLineCount} lignes ·{" "}
+              {reconciliation.counts.MODIFIED} modifiées ·{" "}
+              {reconciliation.counts.AMBIGUOUS} à résoudre
+            </Text>
+            <SecondaryButton
+              label="Examiner la comparaison"
+              onPress={() => setSection("DIFFERENCES")}
+            />
+            {productResolutions.length ? (
+              <SecondaryButton
+                label="Confirmer les produits"
+                onPress={() => setSection("PRODUCTS")}
+              />
+            ) : null}
+          </SectionCard>
+        ) : null}
+        {summary && reconciliation && section === "DIFFERENCES" ? (
+          <MercalysReconciliationReview
+            key={selectedChecksum}
             reconciliation={reconciliation}
+            validationMessages={summary.issueCodes.map(issueLabel)}
+            incomingLines={summary.lines}
+            onNavigate={scrollToStart}
+            onReviewProducts={(index) => {
+              setResolutionKey(
+                index === undefined
+                  ? undefined
+                  : productResolutions.find((r) =>
+                      r.sourceIndexes.includes(index),
+                    )?.key,
+              );
+              setSection("PRODUCTS");
+              scrollToStart();
+            }}
             keptExisting={keptExisting}
             loading={publishing}
             onApply={() => {
@@ -740,161 +857,45 @@ export function MercalysImportScreen({
         ) : null}
       </View>
       <Modal
-        visible={!!reviewAsset}
+        visible={recoveryOpen}
         animationType="slide"
         presentationStyle="pageSheet"
-        allowSwipeDismissal={!reviewBusy}
-        onRequestClose={closeReview}
-        onDismiss={finishReview}
+        allowSwipeDismissal={!batchBusy}
+        onRequestClose={() => {
+          if (!batchBusy) setRecoveryOpen(false);
+        }}
       >
-        {reviewAsset ? (
-          <MercalysImportScreen
-            key={reviewAsset.uri}
-            retainedAsset={reviewAsset}
-            conversationId={conversationId}
-            onClose={closeReview}
-            onBusyChange={setReviewBusy}
+        <AppScreen>
+          <AppHeader title="Envois des fichiers" />
+          <SecondaryButton
+            label="Retour aux imports"
+            disabled={batchBusy}
+            onPress={() => setRecoveryOpen(false)}
           />
-        ) : null}
+          {recoveryOpen && storeId && actorUserId ? (
+            <SourceUploadRecoveryPanel
+              key={`${storeId}/${actorUserId}/${conversationId ?? "manual"}`}
+              db={sqlite}
+              storeId={storeId}
+              scope={
+                conversationId
+                  ? { ownerId: actorUserId, conversationId }
+                  : undefined
+              }
+              canRetry={
+                session?.stores.some(
+                  (s) => s.storeId === storeId && s.role === "MANAGER",
+                ) ?? false
+              }
+              sync={() => syncNow(storeId)}
+              disabled={busy}
+              refreshKey={`${stage}/${uploadRevision}`}
+              onBusyChange={setBatchBusy}
+            />
+          ) : null}
+        </AppScreen>
       </Modal>
     </AppScreen>
-  );
-}
-
-function ReconciliationSummary({
-  reconciliation,
-  keptExisting,
-  loading,
-  onApply,
-  onKeep,
-  onCancel,
-}: {
-  reconciliation: MercalysReconciliation;
-  keptExisting: boolean;
-  loading: boolean;
-  onApply: () => void;
-  onKeep: () => void;
-  onCancel: () => void;
-}) {
-  const [showDetails, setShowDetails] = useState(false);
-  const differences = reconciliation.rows.filter(
-    (row) => row.category !== "UNCHANGED",
-  );
-  if (keptExisting) {
-    return (
-      <SectionCard title="Réconciliation enregistrée">
-        <InlineAlert
-          title="Données existantes conservées"
-          message="Le nouveau fichier n’a pas modifié les observations locales. Votre décision a été enregistrée."
-        />
-        <PrimaryButton label="Importer un autre fichier" onPress={onCancel} />
-      </SectionCard>
-    );
-  }
-  return (
-    <>
-      <SectionCard title="Réconciliation nécessaire">
-        <CountLine
-          label="Lignes inchangées"
-          value={reconciliation.counts.UNCHANGED}
-          tone="ready"
-        />
-        <CountLine
-          label="Lignes modifiées"
-          value={reconciliation.counts.MODIFIED}
-          tone="review"
-        />
-        <CountLine
-          label="Nouvelles lignes"
-          value={reconciliation.counts.ADDED}
-          tone="ready"
-        />
-        <CountLine
-          label="Lignes absentes"
-          value={reconciliation.counts.REMOVED}
-          tone="review"
-        />
-        {reconciliation.counts.AMBIGUOUS > 0 ? (
-          <CountLine
-            label="Lignes ambiguës"
-            value={reconciliation.counts.AMBIGUOUS}
-            tone="error"
-          />
-        ) : null}
-      </SectionCard>
-
-      {showDetails ? (
-        <SectionCard title="Différences">
-          {differences.slice(0, 20).map((row) => (
-            <ReconciliationRow key={row.key} row={row} />
-          ))}
-          {differences.length > 20 ? (
-            <Text className="text-sm text-muted">
-              Et {differences.length - 20} autre
-              {differences.length - 20 > 1 ? "s" : ""} différence
-              {differences.length - 20 > 1 ? "s" : ""}.
-            </Text>
-          ) : null}
-        </SectionCard>
-      ) : null}
-
-      {!reconciliation.safeToApply ? (
-        <InlineAlert
-          title="Examen nécessaire"
-          message="La nouvelle version ne peut pas être appliquée globalement tant que des produits ou des lignes restent ambigus."
-        />
-      ) : null}
-
-      <SectionCard title="Décision">
-        <SecondaryButton
-          label={
-            showDetails ? "Masquer les différences" : "Examiner les différences"
-          }
-          onPress={() => setShowDetails((value) => !value)}
-        />
-        <PrimaryButton
-          label="Appliquer la nouvelle version"
-          disabled={!reconciliation.safeToApply}
-          loading={loading}
-          onPress={onApply}
-        />
-        <SecondaryButton
-          label="Conserver l’existant"
-          disabled={loading}
-          onPress={onKeep}
-        />
-        <SecondaryButton
-          label="Annuler"
-          disabled={loading}
-          onPress={onCancel}
-        />
-      </SectionCard>
-    </>
-  );
-}
-
-function ReconciliationRow({ row }: { row: MercalysReconciliationRow }) {
-  return (
-    <View className="gap-1 border-b border-line pb-3">
-      <Text className="text-base font-semibold text-ink">
-        {row.productLabel}
-      </Text>
-      <Text className="text-sm text-muted">
-        {formatIsoDate(row.businessDate)} · {reconciliationCategoryLabel(row)}
-      </Text>
-      {row.existingValues ? (
-        <SummaryLine
-          label="Quantité existante"
-          value={row.existingValues.quantity ?? "Indisponible"}
-        />
-      ) : null}
-      {row.incomingValues ? (
-        <SummaryLine
-          label="Nouvelle quantité"
-          value={row.incomingValues.quantity ?? "Indisponible"}
-        />
-      ) : null}
-    </View>
   );
 }
 
@@ -952,13 +953,26 @@ function DuplicateSummary({
 async function loadProductCatalog(
   repository: ProductMasterRepository,
   storeId: string,
-): Promise<ProductMatchCatalog> {
+): Promise<ImportProductCatalog> {
   const [productRecords, identifiers, aliases] = await Promise.all([
     repository.listProducts(storeId),
     repository.listIdentifiersByStore(storeId),
     repository.listAliasesByStore(storeId),
   ]);
   return {
+    conflictedProductIds: [
+      ...new Set([
+        ...productRecords
+          .filter((r) => r.syncState === "ERROR" || r.syncState === "CONFLICT")
+          .map((r) => r.entity.id),
+        ...identifiers
+          .filter((r) => r.syncState === "ERROR" || r.syncState === "CONFLICT")
+          .map((r) => r.entity.productId),
+        ...aliases
+          .filter((r) => r.syncState === "ERROR" || r.syncState === "CONFLICT")
+          .map((r) => r.entity.productId),
+      ]),
+    ],
     products: productRecords.map(({ entity }) => entity),
     identifiers: identifiers.map(({ entity }) => entity),
     aliases: aliases.map(({ entity }) => entity),
@@ -967,13 +981,15 @@ async function loadProductCatalog(
 
 function ValidationSummary({
   summary,
+  previouslyPublishedCount = 0,
   publication,
   publishing,
   onPublish,
   onCancel,
 }: {
   summary: MercalysImportValidationSummary;
-  publication?: PublishedMercalysImport;
+  previouslyPublishedCount?: number;
+  publication?: FilePublication;
   publishing: boolean;
   onPublish: () => void;
   onCancel: () => void;
@@ -1001,7 +1017,11 @@ function ValidationSummary({
           {summary.detectedLineCount > 1 ? "s" : ""} détectée
           {summary.detectedLineCount > 1 ? "s" : ""}
         </Text>
-        <CountLine label="Prêtes" value={summary.readyCount} tone="ready" />
+        <CountLine
+          label="Prêtes à ajouter"
+          value={Math.max(0, summary.readyCount - previouslyPublishedCount)}
+          tone="ready"
+        />
         <CountLine
           label="Produits à confirmer"
           value={summary.productReviewCount}
@@ -1039,15 +1059,28 @@ function ValidationSummary({
             corriger et le fichier sera conservé sur cet appareil.
           </Text>
         )}
-        {!publication && summary.readyCount === 0 ? (
+        {!publication && summary.readyCount <= previouslyPublishedCount ? (
           <InlineAlert
             title="Aucune ligne prête à publier"
-            message="Confirmez ou ajoutez les produits signalés, puis importez de nouveau le fichier."
+            message={
+              summary.productReviewCount
+                ? "Confirmez ou ajoutez les produits dans l’onglet Produits. Les lignes prêtes seront actualisées ici."
+                : "Corrigez les anomalies signalées dans l’export source avant d’ajouter de nouvelles lignes."
+            }
           />
         ) : null}
         <PrimaryButton
-          label={publication ? "Lignes publiées" : "Publier les lignes valides"}
-          disabled={summary.readyCount === 0 || publication !== undefined}
+          label={
+            publication
+              ? "Lignes publiées"
+              : previouslyPublishedCount
+                ? "Publier les lignes restantes"
+                : "Publier les lignes valides"
+          }
+          disabled={
+            summary.readyCount <= previouslyPublishedCount ||
+            publication !== undefined
+          }
           loading={publishing}
           onPress={onPublish}
         />
@@ -1062,7 +1095,10 @@ function ValidationSummary({
 
 function ProductResolutionSummary({
   resolutions,
-  products,
+  catalog,
+  storeId,
+  onShowAll,
+  onNavigate,
   loading,
   progress,
   onCreate,
@@ -1070,19 +1106,59 @@ function ProductResolutionSummary({
   onConfirm,
 }: {
   resolutions: MercalysProductResolution[];
-  products: readonly Product[];
+  catalog: ImportProductCatalog;
+  storeId: string;
+  onShowAll(): void;
+  onNavigate(): void;
   loading: boolean;
   progress?: { completed: number; total: number };
   onCreate(resolutions: readonly MercalysProductResolution[]): void;
   onCreateDistinct(resolution: MercalysProductResolution): void;
   onConfirm(resolution: MercalysProductResolution, productId: string): void;
 }) {
-  const [showAll, setShowAll] = useState(false);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
   const creatable = resolutions.filter(({ canCreate }) => canCreate);
-  const productById = new Map(products.map((product) => [product.id, product]));
-  const visibleResolutions = showAll ? resolutions : resolutions.slice(0, 20);
+  const productById = new Map(
+    catalog.products.map((product) => [product.id, product]),
+  );
+  const filtered = resolutions.filter((r) =>
+    `${r.label} ${r.identifiers.map((i) => i.value).join(" ")}`
+      .toLocaleLowerCase("fr-FR")
+      .includes(query.trim().toLocaleLowerCase("fr-FR")),
+  );
+  const currentPage = Math.min(
+    page,
+    Math.max(0, Math.ceil(filtered.length / 20) - 1),
+  );
+  const visibleResolutions = filtered.slice(
+    currentPage * 20,
+    (currentPage + 1) * 20,
+  );
   return (
     <SectionCard title="Produits à confirmer">
+      <SecondaryButton
+        label="Voir tous les produits à confirmer"
+        onPress={onShowAll}
+        disabled={loading}
+      />
+      <TextInput
+        accessibilityLabel="Rechercher un produit à confirmer"
+        placeholder="Nom ou code article"
+        placeholderTextColor={colors.muted}
+        className="min-h-12 rounded-xl border border-line px-4 py-3 text-base text-ink"
+        value={query}
+        onChangeText={(value) => {
+          setQuery(value);
+          setPage(0);
+        }}
+        maxLength={200}
+      />
+      <Text className="text-sm text-muted">
+        {filtered.length
+          ? `${currentPage * 20 + 1}–${Math.min((currentPage + 1) * 20, filtered.length)} sur ${filtered.length} produits`
+          : "Aucun produit à confirmer dans cette sélection."}
+      </Text>
       <Text className="text-base leading-6 text-muted">
         Les références sont regroupées par ITM8. Les nouveaux produits gardent
         une catégorie, une nature et une unité inconnues jusqu’à leur
@@ -1124,6 +1200,17 @@ function ProductResolutionSummary({
                 onPress={() => onConfirm(resolution, product.id)}
               />
             ))}
+            <MercalysImportProductPicker
+              storeId={storeId}
+              source={{
+                label: resolution.label,
+                identifiers: resolution.identifiers,
+              }}
+              catalog={catalog}
+              conflictedProductIds={catalog.conflictedProductIds}
+              busy={loading}
+              onConfirm={(id) => onConfirm(resolution, id)}
+            />
             {resolution.canCreate ? (
               <SecondaryButton
                 label="Créer ce produit"
@@ -1137,23 +1224,32 @@ function ProductResolutionSummary({
                 onPress={() => onCreateDistinct(resolution)}
               />
             ) : candidates.length === 0 ? (
-              <Text className="text-sm text-red-700">
-                Cette ligne doit être examinée individuellement.
+              <Text className="text-sm text-warning">
+                Recherchez le produit existant à associer à cette ligne.
               </Text>
             ) : null}
           </View>
         );
       })}
-      {resolutions.length > 20 ? (
-        <SecondaryButton
-          label={
-            showAll
-              ? "Afficher seulement les 20 premiers"
-              : `Afficher les ${resolutions.length} produits`
-          }
-          disabled={loading}
-          onPress={() => setShowAll((value) => !value)}
-        />
+      {filtered.length > 20 ? (
+        <View className="gap-2">
+          <SecondaryButton
+            label="Produits précédents"
+            disabled={loading || currentPage === 0}
+            onPress={() => {
+              setPage(currentPage - 1);
+              onNavigate();
+            }}
+          />
+          <SecondaryButton
+            label="Produits suivants"
+            disabled={loading || (currentPage + 1) * 20 >= filtered.length}
+            onPress={() => {
+              setPage(currentPage + 1);
+              onNavigate();
+            }}
+          />
+        </View>
       ) : null}
     </SectionCard>
   );
@@ -1241,6 +1337,14 @@ function importErrorMessage(error: unknown) {
       : "Format Mercalys non reconnu. Vérifiez qu’il s’agit d’un export Ventes nettes ou Casse par article.";
   }
   const message = error instanceof Error ? error.message : "";
+  if (message === "MERCALYS_CONTINUATION_SUPERSEDED")
+    return "Cette version a déjà été remplacée. Retrouvez le fichier corrigé le plus récent dans les imports.";
+  if (message === "MERCALYS_CONTINUATION_CONFLICT")
+    return "La publication de ce fichier présente une erreur ou un conflit de synchronisation. Examinez son détail dans Synchronisation avant de reprendre ces lignes.";
+  if (message === "MERCALYS_CONTINUATION_OVERLAP")
+    return "Une ligne restante recouvre une autre publication. Les lignes déjà publiées sont conservées ; ce rapprochement doit être examiné avant de continuer.";
+  if (message === "MERCALYS_CONTINUATION_SOURCE_CHANGED")
+    return "Le fichier ou sa publication a changé. Fermez puis rouvrez ce fichier pour actualiser la comparaison.";
   if (
     message.includes("ExpoDocumentPicker") ||
     message.includes("ExpoFileSystem")
@@ -1277,15 +1381,6 @@ function duplicateStatusLabel(duplicate: ExactDuplicateImport) {
     return "Publié localement · Synchronisation en attente";
   }
   return "Import déjà enregistré";
-}
-
-function reconciliationCategoryLabel(row: MercalysReconciliationRow) {
-  if (row.category === "UNCHANGED") return "Inchangée";
-  if (row.category === "ADDED") return "Nouvelle ligne";
-  if (row.category === "REMOVED") return "Absente du nouveau fichier";
-  if (row.category === "MODIFIED") return "Modifiée";
-  if (row.reason === "UNRESOLVED_PRODUCT") return "Produit à confirmer";
-  return "Comparaison ambiguë";
 }
 
 function issueLabel(code: string) {
