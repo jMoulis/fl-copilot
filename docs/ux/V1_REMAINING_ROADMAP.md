@@ -1,5 +1,9 @@
 # Roadmap V1 restante — bilan au 19 octobre 2026
 
+## Avancement courant — rappels et contextes natifs
+
+L11/M8 : le fournisseur des rappels locaux est protégé contre les listeners, lectures, erreurs et affichages d’un contexte fermé ou remplacé. Navigation locale conservée en cas d’échec de synchronisation ; 18 tests ciblés passent, dont 200 remplacements de contexte. Voir `../qa/M8_REMINDER_LIFETIME_2026_10_24.md`. La PR 340 est fusionnée sur `4941513` après les deux CI exactes vertes ; PR 337–340 et ce lot hors build 13, recettes humaines et périmètre V1 complets conservés.
+
 ## Avancement courant — suivi du copilote dans Actions
 
 L5/L9 : les décisions et réalisations hors plan deviennent consultables dans Actions, par semaine de dernier changement et sans transformer un conseil retenu en réalisation. Lecture locale bornée, reprise, pagination/filtre, lien vers le chat et préservation des enregistrements malgré une source supprimée sont vérifiés ; lot en validation native, pas dans le build 13. La PR 339 est fusionnée avec ses deux CI exactes vertes ; les PR 337–339 attendent leur livraison groupée. Voir `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md`. La boucle conversationnelle réelle complète et tous les critères V1 restent ouverts.

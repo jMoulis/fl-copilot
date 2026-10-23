@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot M8 en validation — 24 octobre : durée de vie des rappels
+
+Les lectures et notifications des anciens contextes ne survivent plus à leur fermeture ou au changement de magasin/propriétaire. Le premier plan vérifie le rappel et la session ; une erreur de lecture ne coupe pas l’écoute suivante et une synchronisation défaillante ne bloque pas l’ouverture locale. **18 tests ciblés passent**, dont 200 remplacements de contexte avec comptage des abonnements ; les sept régressions reproduites avant correction passent. Voir `../qa/M8_REMINDER_LIFETIME_2026_10_24.md`. Contrôles finaux en cours, recette physique des notifications toujours ouverte.
+
+La PR 340 est fusionnée en `4941513` après les deux CI exactes vertes (**3 985 tests / 6 ignorés**) ; sa branche est supprimée. Les PR 337–340 attendent leur livraison native groupée et ne sont pas dans le build 13. **Sept chantiers : 1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours.** Aucune clôture V1/M8, aucun build payant propre à ce lot.
+
 ## Lot Actions / UX en validation — décisions et réalisations du copilote
 
 Actions donne accès aux choix et réalisations enregistrés dans les conversations, même sans plan commercial : dix éléments par page, filtre mémorisé, retour au chat et historique conservé. Accepter/adapter/reporter/écarter un conseil ne déclare pas sa réalisation. La semaine décrit les derniers changements, avec dates réelles séparées ; sources supprimées ou indisponibles restent qualifiées. Ouverture à la demande, repli/page conservés et lectures coalescées, sans nouvel outil, writer ou instruction modèle. Voir `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md` ; **25 tests ciblés passent**, contrôles finaux en cours.
