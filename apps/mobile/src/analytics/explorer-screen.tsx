@@ -12,7 +12,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { explorerRange, type ExplorerPeriod } from "@fl-copilot/analytics-core";
+import {
+  explorerHasFilters,
+  explorerRange,
+  type ExplorerPeriod,
+} from "@fl-copilot/analytics-core";
+import { emptyExplorerFilters } from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import { useSync } from "../sync/sync-provider";
@@ -317,8 +322,13 @@ function StoreExplorer({
           subtitle="Comprenez les performances de votre rayon."
           action={
             <IconButton
-              label="Affiner : catégorie, nature ou produit"
-              icon="options-outline"
+              label={
+                view && explorerHasFilters(view.frame.filters)
+                  ? "Filtres actifs : modifier la sélection"
+                  : "Affiner : catégorie, nature ou produit"
+              }
+              active={Boolean(view && explorerHasFilters(view.frame.filters))}
+              icon="funnel-outline"
               onPress={() => setFilterSheet(true)}
             />
           }
@@ -349,6 +359,12 @@ function StoreExplorer({
               syncStatus={sync.status}
               loadingError={!!error}
               onMetric={(metric) => change({ ...current.current!, metric })}
+              onFilters={() => setFilterSheet(true)}
+              onClearFilters={() =>
+                change(
+                  drillExplorerScope(current.current!, emptyExplorerFilters()),
+                )
+              }
               onGranularity={(kind) => {
                 try {
                   change(changeExplorerGranularity(current.current!, kind));

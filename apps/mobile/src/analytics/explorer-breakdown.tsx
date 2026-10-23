@@ -21,7 +21,9 @@ const categoryLabels = {
   OTHER: "Autres",
   UNKNOWN: "Catégorie à préciser",
 };
-export function explorerScopeLabel(data: Data) {
+export function explorerScopeLabel(
+  data: Pick<Data, "filters"> & Partial<Pick<Data, "details" | "sourceBasis">>,
+) {
   const f = data.filters;
   return (
     [
@@ -36,7 +38,7 @@ export function explorerScopeLabel(data: Data) {
       f.productIds ? `${f.productIds.length} produits de la sélection` : null,
       f.labelContains ? `Libellé contenant « ${f.labelContains} »` : null,
       f.productId
-        ? (data.details?.selectedProduct?.label ?? "Produit indisponible")
+        ? (data.details?.selectedProduct?.label ?? "Produit sélectionné")
         : null,
     ]
       .filter(Boolean)

@@ -2,6 +2,10 @@
 
 Objectif de Julien : V1 testable pour la présentation du **28 octobre**, avec l’UX intégrée et sans contourner la logique métier. Base examinée : PR 273 / `824cf4c`. Cet ordre est une proposition d’exécution issue de l’audit ; il ne supprime aucun engagement V1 et ne déclare aucun lot livré. Voir `AUDIT.md` pour les arbitrages.
 
+## Point courant — 23 octobre : données livrées, continuité UX en validation
+
+Le recalcul distant après correction d’unité (PR 329) est livré sur l’API `cdd1efd`, avec reprise durable et observations sources conservées. Le correctif natif de réimport (PR 328) reste à installer/valider dans la prochaine livraison groupée. Le lot UX courant améliore Analyses et Produits : filtres visibles et réversibles, choix monétaires avant le graphique, absence de graphique vide et séparation recherche/filtres. Il ne clôt pas les cinq domaines UX, la recette native ou les autres chantiers M7/M8. Les sections L1–L11 ci-dessous décrivent le découpage initial ; leurs statuts du 19 octobre doivent être lus avec le journal des incréments et le suivi M7, et non comme une liste actuelle de fonctions absentes.
+
 ## Ordre des lots et critères de sortie
 
 ### L1 — Socle visuel et navigation native — à construire/adaptations importantes

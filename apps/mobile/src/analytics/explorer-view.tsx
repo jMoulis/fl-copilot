@@ -7,6 +7,7 @@ import {
   explorerRange,
   explorerDays,
   explorerPeriodFromDate,
+  explorerHasFilters,
   parseDecimal,
   type ExplorerPeriod,
 } from "@fl-copilot/analytics-core";
@@ -53,6 +54,8 @@ export function ExplorerContent({
   syncStatus,
   loadingError = false,
   onMetric,
+  onFilters,
+  onClearFilters,
   onGranularity,
   onShift,
   onPick,
@@ -67,6 +70,8 @@ export function ExplorerContent({
   syncStatus: SyncStatus;
   loadingError?: boolean;
   onMetric: (m: AnalyticsExplorerMetric) => void;
+  onFilters: () => void;
+  onClearFilters: () => void;
   onGranularity: (k: AnalyticsExplorerGranularity) => void;
   onShift: (n: number) => void;
   onPick: () => void;
@@ -78,7 +83,12 @@ export function ExplorerContent({
 }) {
   const period = view.frame.period,
     range = explorerRange(period),
-    c = data?.comparison;
+    c = data?.comparison,
+    filtered = explorerHasFilters(view.frame.filters),
+    allScope =
+      period.kind === "range" && period.basis === "OBSERVED_PRODUCTS"
+        ? "Tous les produits"
+        : "Tout le rayon";
   const percent = c?.percentageDifference ?? null,
     sign = percent ? parseDecimal(percent).value.comparedTo(0) : 0,
     color =
@@ -100,7 +110,12 @@ export function ExplorerContent({
       />
       {view.history.length ? (
         <SecondaryButton
-          label={`Retour à ${explorerLabel(view.history.at(-1)!.period)}`}
+          label={
+            JSON.stringify(view.history.at(-1)!.period) ===
+            JSON.stringify(period)
+              ? "Retour à l’analyse précédente"
+              : `Retour à ${explorerLabel(view.history.at(-1)!.period)}`
+          }
           onPress={onBack}
         />
       ) : null}
@@ -181,6 +196,74 @@ export function ExplorerContent({
           <Text style={{ fontSize: 26, color: colors.forest }}>›</Text>
         </Pressable>
       </View>
+      {filtered ? (
+        <View
+          style={{
+            flexDirection: "row",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 8,
+            padding: 10,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: colors.forest,
+            backgroundColor: colors.forestSoft,
+          }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Modifier les filtres actifs"
+            onPress={onFilters}
+            style={{
+              flex: 1,
+              minWidth: 160,
+              minHeight: 48,
+              justifyContent: "center",
+              gap: 4,
+            }}
+          >
+            <Text
+              style={{ color: colors.forest, fontSize: 12, fontWeight: "600" }}
+            >
+              Filtres actifs
+            </Text>
+            <Text style={{ color: colors.ink, fontWeight: "600" }}>
+              {explorerScopeLabel({
+                filters: view.frame.filters,
+                details: data?.details,
+              })}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Afficher ${allScope.toLowerCase()} pour cette période`}
+            onPress={onClearFilters}
+            style={({ pressed }) => ({
+              minHeight: 48,
+              paddingHorizontal: 12,
+              justifyContent: "center",
+              borderRadius: 10,
+              backgroundColor: colors.surface,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Text style={{ color: colors.forest, fontWeight: "600" }}>
+              {allScope}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+      <SegmentedControl
+        label="Indicateur"
+        value={view.metric}
+        options={[
+          { value: "sales" as const, label: "CA" },
+          { value: "margin" as const, label: "Marge €" },
+          { value: "waste" as const, label: "Casse PV" },
+          { value: "wasteCost" as const, label: "Casse PA" },
+        ]}
+        onChange={onMetric}
+      />
       <View
         style={{
           backgroundColor: colors.surface,
@@ -192,7 +275,7 @@ export function ExplorerContent({
         }}
       >
         <Text style={{ color: colors.muted }}>{metrics[view.metric]}</Text>
-        {data ? (
+        {data && !filtered ? (
           <Text style={{ color: colors.muted, fontSize: 12 }}>
             {explorerScopeLabel(data)}
           </Text>
@@ -274,7 +357,9 @@ export function ExplorerContent({
             )}
           </>
         )}
-        {data && period.kind !== "day" ? (
+        {data &&
+        period.kind !== "day" &&
+        data.points.some((point) => point.value !== null) ? (
           <View style={{ gap: 12 }}>
             <Text
               style={{ color: colors.ink, fontSize: 18, fontWeight: "700" }}
@@ -383,20 +468,14 @@ export function ExplorerContent({
           </DetailsDisclosure>
         ) : null}
       </View>
-      <SegmentedControl
-        label="Indicateur"
-        value={view.metric}
-        options={[
-          { value: "sales" as const, label: "CA" },
-          { value: "margin" as const, label: "Marge €" },
-          { value: "waste" as const, label: "Casse €" },
-        ]}
-        onChange={onMetric}
-      />
       {data?.total === null ? (
         <InlineAlert
           title="Aucun montant disponible"
-          message="Cette période ne contient pas encore de données locales pour cet indicateur. Changez de période ou ajoutez les sources depuis le copilote."
+          message={
+            filtered
+              ? `Aucun montant n’est renseigné pour cette sélection. Touchez « ${allScope} » pour élargir la recherche, ou choisissez une autre période.`
+              : "Cette période ne contient pas encore de données locales pour cet indicateur. Changez de période ou ajoutez les sources depuis le copilote."
+          }
         />
       ) : null}
       {period.kind === "month" ? (
