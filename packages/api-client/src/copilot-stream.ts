@@ -24,7 +24,7 @@ export async function readCopilotStream(
   try {
     while (true) {
       if (signal?.aborted) throw Error("COPILOT_STREAM_CANCELLED");
-      let next: ReadableStreamReadResult<Uint8Array>;
+      let next: Awaited<ReturnType<typeof reader.read>>;
       try {
         next = await reader.read();
       } catch (error) {
