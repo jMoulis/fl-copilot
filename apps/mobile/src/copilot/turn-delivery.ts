@@ -56,12 +56,19 @@ export class CopilotTurnDelivery {
     private readonly scope: { storeId: string; ownerId: string },
     private readonly dependencies: {
       sync(): Promise<unknown>;
+      /** Existing private history endpoint; avoids replaying uploads/jobs while waiting. */
+      readReply?(
+        request: CopilotTurnRequest,
+        signal: AbortSignal,
+      ): Promise<unknown | undefined>;
       ask(
         request: CopilotTurnRequest,
         signal: AbortSignal,
         onProgress: (text: string) => void,
         onActivity: (activity: CopilotActivity) => void,
       ): Promise<unknown>;
+      /** Testable, abortable backoff; no unbounded background retry loop. */
+      waitForRetry?(milliseconds: number, signal: AbortSignal): Promise<void>;
     },
   ) {}
   deliver(conversationId: string) {
@@ -157,63 +164,112 @@ export class CopilotTurnDelivery {
       this.activityListeners.get(conversationId)?.(null);
       let result: unknown;
       let remoteStarted = false;
-      try {
-        result = await this.dependencies.ask(
-          request,
-          signal,
-          (text) => {
-            if (text) remoteStarted = true;
-            if (!signal.aborted) this.listeners.get(conversationId)?.(text);
-          },
-          (activity) => {
-            remoteStarted = true;
-            if (!signal.aborted)
-              this.activityListeners.get(conversationId)?.(activity);
-          },
-        );
-      } catch (error) {
-        this.listeners.get(conversationId)?.("");
-        this.activityListeners.get(conversationId)?.(null);
-        cancelled(signal);
-        if (recoverable(error)) {
-          // Reuse canonical pull once; never resubmit this AI turn.
-          try {
-            await this.dependencies.sync();
-          } catch {
-            cancelled(signal);
-          }
-          cancelled(signal);
-          const recovered = await this.db.getFirstAsync<{
-            payload_json: string;
-          }>(
-            "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-            request.replyId,
-            this.scope.storeId,
-            this.scope.ownerId,
-            conversationId,
-          );
-          if (recovered) {
-            await receiveCopilotReply(this.db, this.scope, request, {
-              message: copilotMessageSchema.parse(
-                JSON.parse(recovered.payload_json),
-              ),
-              alreadyApplied: true,
-            });
-            cancelled(signal);
-            return "RECEIVED";
-          }
-          if (
-            (remoteStarted &&
-              !(
-                error instanceof Error &&
-                error.message === "COPILOT_STREAM_FAILED"
-              )) ||
-            (error instanceof ApiClientError &&
-              error.response.code === "COPILOT_TURN_PENDING")
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const current = await repo.get(conversationId);
+        if (
+          !current ||
+          current.status !== "ACTIVE" ||
+          !(await repo.pendingTurns(conversationId)).some(
+            (pending) =>
+              pending.replyId === request.replyId &&
+              pending.userMessageId === request.userMessageId,
           )
-            return "WAITING";
+        )
+          throw Error("COPILOT_REPLY_PARENT_INVALID");
+        cancelled(signal);
+        try {
+          result = await this.dependencies.ask(
+            request,
+            signal,
+            (text) => {
+              if (text) remoteStarted = true;
+              if (!signal.aborted) this.listeners.get(conversationId)?.(text);
+            },
+            (activity) => {
+              remoteStarted = true;
+              if (!signal.aborted)
+                this.activityListeners.get(conversationId)?.(activity);
+            },
+          );
+          break;
+        } catch (error) {
+          this.listeners.get(conversationId)?.("");
+          this.activityListeners.get(conversationId)?.(null);
+          cancelled(signal);
+          if (recoverable(error)) {
+            const automatic = automaticallyResumable(error);
+            // First pull looks for an already committed answer. Further pulls are
+            // bounded and only follow a transport interruption or an active lease.
+            const delays = automatic
+              ? attempt === 0
+                ? [0, 1000]
+                : [0, 3000, 8000, 18000]
+              : [0];
+            for (const milliseconds of delays) {
+              if (milliseconds)
+                await (this.dependencies.waitForRetry ?? waitForRetry)(
+                  milliseconds,
+                  signal,
+                );
+              cancelled(signal);
+              let remoteReply: unknown;
+              try {
+                if (this.dependencies.readReply) {
+                  remoteReply = await this.dependencies.readReply(
+                    request,
+                    signal,
+                  );
+                } else await this.dependencies.sync();
+              } catch (recoveryError) {
+                cancelled(signal);
+                if (!recoverable(recoveryError)) throw recoveryError;
+              }
+              cancelled(signal);
+              if (remoteReply) {
+                await receiveCopilotReply(this.db, this.scope, request, {
+                  message: remoteReply,
+                  alreadyApplied: true,
+                });
+                cancelled(signal);
+                return "RECEIVED";
+              }
+              const recovered = await this.db.getFirstAsync<{
+                payload_json: string;
+              }>(
+                "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+                request.replyId,
+                this.scope.storeId,
+                this.scope.ownerId,
+                conversationId,
+              );
+              if (recovered) {
+                await receiveCopilotReply(this.db, this.scope, request, {
+                  message: copilotMessageSchema.parse(
+                    JSON.parse(recovered.payload_json),
+                  ),
+                  alreadyApplied: true,
+                });
+                cancelled(signal);
+                return "RECEIVED";
+              }
+            }
+            // Reuse the exact durable identity. The API returns its cached answer
+            // or rejects an active lease; it cannot append a second reply.
+            if (automatic && attempt === 0) continue;
+            if (
+              automatic &&
+              ((remoteStarted &&
+                !(
+                  error instanceof Error &&
+                  error.message === "COPILOT_STREAM_FAILED"
+                )) ||
+                (error instanceof ApiClientError &&
+                  error.response.code === "COPILOT_TURN_PENDING"))
+            )
+              return "WAITING";
+          }
+          throw error;
         }
-        throw error;
       }
       cancelled(signal);
       const message = await receiveCopilotReply(
@@ -237,6 +293,37 @@ export class CopilotTurnDelivery {
       throw new CopilotTurnDeliveryError(request, error);
     }
   }
+}
+
+function automaticallyResumable(error: unknown) {
+  if (error instanceof ApiClientError)
+    return (
+      error.response.retryable && error.response.code === "COPILOT_TURN_PENDING"
+    );
+  return (
+    recoverable(error) &&
+    error instanceof Error &&
+    error.message !== "COPILOT_STREAM_FAILED"
+  );
+}
+
+function waitForRetry(
+  milliseconds: number,
+  signal: AbortSignal,
+): Promise<void> {
+  cancelled(signal);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(Error("COPILOT_DELIVERY_CANCELLED"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function cancelled(signal: AbortSignal) {

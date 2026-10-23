@@ -490,6 +490,7 @@ it("delivers only synchronized questions and keeps the same pending identity aft
       fail = true,
       replyReturned = false;
     const dependencies = {
+      waitForRetry: async () => {},
       sync: async () => {
         if (replyReturned) {
           replyReturned = false;
@@ -534,7 +535,7 @@ it("delivers only synchronized questions and keeps the same pending identity aft
     expect(await first).toBe("RECEIVED");
     expect((await controller.open(conversation.id)).pendingTurns).toEqual([]);
     expect(await restored.deliver(conversation.id)).toBe("NONE");
-    expect(count).toBe(2);
+    expect(count).toBe(3);
   } finally {
     db.close();
   }
@@ -639,6 +640,7 @@ it("keeps a received answer when the next call fails, resumes stable IDs after r
     let fail = true;
     const calls: string[] = [];
     const dependencies = {
+      waitForRetry: async () => {},
       sync: async () => {},
       ask: async (request: (typeof requests)[number]) => {
         calls.push(request.replyId);
@@ -678,6 +680,7 @@ it("keeps a received answer when the next call fails, resumes stable IDs after r
     );
     expect(calls).toEqual([
       requests[0]!.replyId,
+      requests[1]!.replyId,
       requests[1]!.replyId,
       requests[1]!.replyId,
     ]);

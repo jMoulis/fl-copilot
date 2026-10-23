@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Correctif en validation — 23 octobre : reprise du chat sans clic
+
+Retour utilisateur après la PR 323 : la réception nécessite encore « Réessayer ». Le service ne faisait qu’une récupération immédiate ; il ajoute une reprise automatique bornée, avec les mêmes identifiants, les contrôles du serveur et l’annulation à la fermeture de la conversation. Les erreurs de droits, de validation, de quota et les erreurs explicites du serveur ne relancent pas automatiquement la génération. Les tests montés couvrent réponse tardive, reprise, attente serveur, limite et annulation ; la validation native reste distincte et attend une livraison groupée.
+
+Chantier **7 UX/validation + M8**, sans élargissement fonctionnel : **1/3/4/5/6/7 en cours ; 2 code prêt**. Le signalement d’un outil manquant dans l’échange du 23/10 à 08:45 reste à examiner : l’accès MCP est désactivé dans l’organisation Atlas, même après reconnexion. Aucun outil supplémentaire ni nouvelle instruction métier n’est ajouté sans consulter cet échange.
+
 ## Point de livraison — 23 octobre 2026 : identité de l’application et alerte Mercalys
 
 La PR 320 est fusionnée en `e454fc6` : CI push/PR et master vertes, build iOS staging 8 disponible depuis ce même SHA. Julien constate une amélioration de l’import et reporte sa finition ; cela ne clôture pas la recette des corrections ambiguës. Le pack d’icônes fourni le 23 octobre est intégré à la configuration Expo : icône iOS opaque, premier plan et monochrome Android, écran de lancement. Les identifiants restent inchangés. Cette identité nécessite un prochain binaire natif groupé ; aucun build payant supplémentaire n’est lancé pour ces seuls assets.

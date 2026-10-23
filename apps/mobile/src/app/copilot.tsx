@@ -1082,6 +1082,26 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       { storeId, ownerId },
       {
         sync: () => syncNow(storeId),
+        readReply: async (input, signal) => {
+          const page = await withAccessToken((token) =>
+            api.copilotHistory(
+              token,
+              storeId,
+              input.conversationId,
+              undefined,
+              50,
+              undefined,
+              signal,
+            ),
+          );
+          if (
+            page.storeId !== storeId ||
+            page.ownerId !== ownerId ||
+            page.conversationId !== input.conversationId
+          )
+            throw Error("COPILOT_REPLY_SCOPE_INVALID");
+          return page.messages.find((message) => message.id === input.replyId);
+        },
         ask: (input, signal, onProgress, onActivity) =>
           withAccessToken((token) =>
             api.copilotTurn(token, storeId, ownerId, input, signal, {

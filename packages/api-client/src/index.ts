@@ -585,6 +585,7 @@ export class ApiClient {
     before?: { createdAt: string; id: string },
     limit = 50,
     recordType?: "LAYOUT_ILLUSTRATIONS" | "LAYOUT_ILLUSTRATION_GENERATIONS",
+    signal?: AbortSignal,
   ): Promise<CopilotHistoryPage> {
     const query = new URLSearchParams({ limit: String(limit) });
     if (recordType) query.set("recordType", recordType);
@@ -595,7 +596,11 @@ export class ApiClient {
     }
     return this.request(
       `/api/v1/copilot/history?${query}`,
-      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      {
+        method: "GET",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        signal,
+      },
       copilotHistoryPageSchema,
       60_000,
     ) as Promise<CopilotHistoryPage>;
