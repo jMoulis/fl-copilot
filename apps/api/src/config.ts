@@ -34,6 +34,12 @@ const environmentSchema = z.object({
     .regex(/^\d{6}$/)
     .optional(),
   RESEND_API_KEY: z.string().trim().startsWith("re_").min(11).optional(),
+  RESEND_RECEIVING_API_KEY: z
+    .string()
+    .trim()
+    .startsWith("re_")
+    .min(11)
+    .optional(),
   RESEND_RECEIVING_DOMAIN: emailIntakeReceivingDomainSchema.optional(),
   RESEND_RECEIVING_WEBHOOK_SECRET: z
     .string()
@@ -123,14 +129,15 @@ export function parseEnvironment(
     );
   }
   if (
-    (result.data.RESEND_RECEIVING_DOMAIN ||
+    (result.data.RESEND_RECEIVING_API_KEY ||
+      result.data.RESEND_RECEIVING_DOMAIN ||
       result.data.RESEND_RECEIVING_WEBHOOK_SECRET) &&
-    (!result.data.RESEND_API_KEY ||
+    (!(result.data.RESEND_RECEIVING_API_KEY || result.data.RESEND_API_KEY) ||
       !result.data.RESEND_RECEIVING_DOMAIN ||
       !result.data.RESEND_RECEIVING_WEBHOOK_SECRET)
   )
     throw new Error(
-      "Invalid environment: RESEND_API_KEY, RESEND_RECEIVING_DOMAIN, RESEND_RECEIVING_WEBHOOK_SECRET",
+      "Invalid environment: RESEND_RECEIVING_API_KEY or RESEND_API_KEY, RESEND_RECEIVING_DOMAIN, RESEND_RECEIVING_WEBHOOK_SECRET",
     );
   if (result.data.LAYOUT_ILLUSTRATION_GENERATION_ENABLED) {
     let validPolicy = false;

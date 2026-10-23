@@ -5,7 +5,7 @@ import {
   resendAttachmentUrl,
 } from "./resend-attachment.js";
 afterEach(() => vi.useRealTimers());
-function fixture() {
+function fixture(format: "legacy" | "receiving" = "legacy") {
   const emailId = randomUUID(),
     attachmentId = randomUUID(),
     bytes = new TextEncoder().encode("%PDF-1.7\noriginal bytes"),
@@ -22,7 +22,10 @@ function fixture() {
     filename: target.filename,
     size: bytes.length,
     content_type: target.mediaType,
-    download_url: `https://inbound-cdn.resend.com/${emailId}/attachments/${attachmentId}?signature=test-only`,
+    download_url:
+      format === "receiving"
+        ? `https://cdn.resend.app/receiving/${emailId}/attachments/${attachmentId}?signature=test-only`
+        : `https://inbound-cdn.resend.com/${emailId}/attachments/${attachmentId}?signature=test-only`,
     expires_at: "2026-10-20T12:02:00Z",
   };
   const sdk = {
@@ -53,43 +56,52 @@ function fixture() {
     reader,
   };
 }
-it("retrieves only the exact authenticated attachment and returns immutable byte proof without a URL or body parsing", async () => {
-  const f = fixture();
-  const result = await f.reader.read(f.target, f.authorize);
-  expect(result).toEqual({
-    bytes: f.bytes,
-    sizeBytes: f.bytes.length,
-    checksum: `sha256:${createHash("sha256").update(f.bytes).digest("hex")}`,
-    declaredMimeType: f.target.mediaType,
-    filename: f.target.filename,
-  });
-  expect(JSON.stringify(result)).not.toContain("signature");
-  expect(f.sdk.get).toHaveBeenCalledExactlyOnceWith({
-    emailId: f.emailId,
-    id: f.attachmentId,
-  });
-  expect(f.fetcher).toHaveBeenCalledExactlyOnceWith(
-    f.metadata.download_url,
-    expect.objectContaining({
-      method: "GET",
-      redirect: "error",
-      credentials: "omit",
-      signal: expect.any(AbortSignal),
-    }),
-  );
-  expect(f.fetcher.mock.calls[0]![1]?.headers).toBeUndefined();
-  expect(f.authorize).toHaveBeenCalledTimes(3);
-});
-it.each([
-  "foreign-host",
-  "http",
-  "port",
-  "credentials",
-  "fragment",
-  "foreign-email",
-  "foreign-attachment",
-])("rejects %s capability before HTTP", async (mode) => {
-  const f = fixture(),
+it.each(["legacy", "receiving"] as const)(
+  "retrieves the exact %s attachment and returns immutable byte proof without a URL or body parsing",
+  async (format) => {
+    const f = fixture(format);
+    const result = await f.reader.read(f.target, f.authorize);
+    expect(result).toEqual({
+      bytes: f.bytes,
+      sizeBytes: f.bytes.length,
+      checksum: `sha256:${createHash("sha256").update(f.bytes).digest("hex")}`,
+      declaredMimeType: f.target.mediaType,
+      filename: f.target.filename,
+    });
+    expect(JSON.stringify(result)).not.toContain("signature");
+    expect(f.sdk.get).toHaveBeenCalledExactlyOnceWith({
+      emailId: f.emailId,
+      id: f.attachmentId,
+    });
+    expect(f.fetcher).toHaveBeenCalledExactlyOnceWith(
+      f.metadata.download_url,
+      expect.objectContaining({
+        method: "GET",
+        redirect: "error",
+        credentials: "omit",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(f.fetcher.mock.calls[0]![1]?.headers).toBeUndefined();
+    expect(f.authorize).toHaveBeenCalledTimes(3);
+  },
+);
+it.each(
+  (["legacy", "receiving"] as const).flatMap((format) =>
+    [
+      "foreign-host",
+      "http",
+      "port",
+      "credentials",
+      "fragment",
+      "foreign-email",
+      "foreign-attachment",
+      "host-suffix",
+      "swapped-path-format",
+    ].map((mode) => ({ format, mode })),
+  ),
+)("rejects $format $mode capability before HTTP", async ({ format, mode }) => {
+  const f = fixture(format),
     url = new URL(f.metadata.download_url);
   if (mode === "foreign-host") url.hostname = "127.0.0.1";
   if (mode === "http") url.protocol = "http:";
@@ -97,13 +109,88 @@ it.each([
   if (mode === "credentials") url.username = "not-allowed";
   if (mode === "fragment") url.hash = "not-allowed";
   if (mode === "foreign-email")
-    url.pathname = `/${randomUUID()}/attachments/${f.attachmentId}`;
+    url.pathname = url.pathname.replace(f.emailId, randomUUID());
   if (mode === "foreign-attachment")
-    url.pathname = `/${f.emailId}/attachments/${randomUUID()}`;
+    url.pathname = url.pathname.replace(f.attachmentId, randomUUID());
+  if (mode === "host-suffix") url.hostname = `${url.hostname}.attacker.example`;
+  if (mode === "swapped-path-format")
+    url.pathname =
+      format === "receiving"
+        ? `/${f.emailId}/attachments/${f.attachmentId}`
+        : `/receiving/${f.emailId}/attachments/${f.attachmentId}`;
   f.metadata.download_url = url.href;
   await expect(f.reader.read(f.target, f.authorize)).rejects.toThrow(
     "EMAIL_ATTACHMENT_CAPABILITY_INVALID",
   );
+  expect(f.fetcher).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["restricted_api_key", 401, "KEY_RESTRICTED"],
+  ["missing_api_key", 401, "KEY_INVALID"],
+  ["invalid_api_key", 401, "KEY_INVALID"],
+  ["invalid_access", 403, "ACCESS_DENIED"],
+  ["security_error", 403, "ACCESS_DENIED"],
+  ["not_found", 404, "NOT_FOUND"],
+  ["rate_limit_exceeded", 429, "RATE_LIMITED"],
+  ["monthly_quota_exceeded", 429, "QUOTA_EXCEEDED"],
+  ["daily_quota_exceeded", 429, "QUOTA_EXCEEDED"],
+  ["internal_server_error", 503, "PROVIDER_ERROR"],
+  ["__proto__", 999, "PROVIDER_ERROR"],
+] as const)(
+  "reports only a closed reason for %s, preserving the existing private retry contract",
+  async (name, statusCode, reason) => {
+    const f = fixture("receiving"),
+      report = vi.fn();
+    f.sdk.get.mockResolvedValue({
+      data: null,
+      error: {
+        name,
+        statusCode,
+        message: `${f.metadata.download_url} re_private-test-key`,
+        headers: { authorization: "private" },
+      },
+    });
+    const reader = createResendAttachmentReader(
+      f.sdk,
+      f.fetcher,
+      undefined,
+      report,
+    );
+    const error = await reader
+      .read(f.target, f.authorize)
+      .catch((e: unknown) => e);
+    expect(String(error)).toBe("Error: EMAIL_ATTACHMENT_PROVIDER_UNAVAILABLE");
+    expect(report).toHaveBeenCalledExactlyOnceWith({
+      reason,
+      httpStatus: statusCode === 999 ? null : statusCode,
+    });
+    expect(JSON.stringify(report.mock.calls)).not.toMatch(
+      /signature|re_private|authorization|semaine.pdf/,
+    );
+    expect(f.fetcher).not.toHaveBeenCalled();
+  },
+);
+
+it("reports an empty SDK response and does not replace the failure when diagnostics themselves fail", async () => {
+  const f = fixture(),
+    report = vi.fn(() => {
+      throw Error("private logger details");
+    });
+  f.sdk.get.mockResolvedValue({ data: null, error: null });
+  const reader = createResendAttachmentReader(
+    f.sdk,
+    f.fetcher,
+    undefined,
+    report,
+  );
+  await expect(reader.read(f.target, f.authorize)).rejects.toThrow(
+    "EMAIL_ATTACHMENT_PROVIDER_UNAVAILABLE",
+  );
+  expect(report).toHaveBeenCalledExactlyOnceWith({
+    reason: "EMPTY_RESPONSE",
+    httpStatus: null,
+  });
   expect(f.fetcher).not.toHaveBeenCalled();
 });
 it.each(["id", "filename", "mime", "expired", "oversize", "provider-error"])(
