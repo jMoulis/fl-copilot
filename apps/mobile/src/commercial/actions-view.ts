@@ -7,6 +7,11 @@ import {
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { tradingToday } from "../dates/calendar";
 
+export const copilotActivityFilterSchema = z.enum([
+  "ALL",
+  "DECISION",
+  "EXECUTION",
+]);
 export const actionsViewSchema = z.strictObject({
   schemaVersion: z.literal(1),
   weekStart: copilotBusinessDateSchema.refine(
@@ -18,6 +23,7 @@ export const actionsViewSchema = z.strictObject({
     z.literal("ALL"),
     commercialExecutionTaskSchema.shape.status,
   ]),
+  copilotFilter: copilotActivityFilterSchema.optional(),
 });
 export type ActionsView = z.infer<typeof actionsViewSchema>;
 export function initialActionsView(date = tradingToday()): ActionsView {

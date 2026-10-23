@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+### M7 L5/L9 — decisions and declared realizations in Actions
+
+Expose existing owner/store-private decisions and independent action declarations through a ten-entry local weekly follow-up. Preserve original proposal provenance, logical-deletion privacy, canonical Paris date boundaries and separate realization semantics; route to existing chat without creating business commands. Use one joined page read, retained display/page/filter, lazy opening and focus/pull/manual refresh. Coalesce calculation progress while allowing reads when returning during blocked synchronization. No new model tool, writer, sync contract or business migration. See `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md` and retain full M7/M8 exit gates.
+
 ### M7 CRUD parity — inactive product metadata (23 October 2026)
 
 Exact-ID catalogue inspection and reviewed metadata updates may include nondeleted inactive products, preserving their inactive status through the manual canonical writer. Negotiate catalogue capability 2; capability 1 keeps existing eligibility. Do not broaden automatic matching, import association, classification or retirement. Keep immutable identity, scope, current-version/child checks, private proposal authority and atomic Outbox/recomputation/restart replay. See `../qa/M7_INACTIVE_CATALOGUE_MAINTENANCE_2026_10_23.md`. No additional model tool, prompt, migration or business permission. This completes one manual/tool exception, not the full M7/M8 acceptance.

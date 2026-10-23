@@ -37,6 +37,7 @@ it("restores a private selection from a migrated on-disk database after restart,
     const view = {
       ...initialActionsView("2025-12-31"),
       filter: "DONE" as const,
+      copilotFilter: "EXECUTION" as const,
     };
     await new ActionsViewRepository(adapter, scope).save(view);
     db.close();
