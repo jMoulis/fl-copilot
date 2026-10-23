@@ -8,12 +8,15 @@ import {
   productCatalogueIntent,
   productSaveResultSchema,
   productRetireResultSchema,
+  prepareCatalogueRequest,
+  searchCopilotProducts,
 } from "@fl-copilot/domain";
 import { runLocalMigrations } from "../db/migrations";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import {
   emptyProductDraft,
   productSnapshotToDraft,
+  loadProductEditorSnapshot,
 } from "../products/product-editor-service";
 import { ProductMasterRepository } from "../products/product-master-repository";
 import { CopilotConversationRepository } from "./conversation-repository";
@@ -581,5 +584,174 @@ it("restores completed catalogue card replay after a physical SQLite reopen with
     if (opened) opened.close();
     else s.db.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("corrects an inactive fiche through the reviewed canonical editor offline without reactivating it, then replays after restart", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "fl-inactive-maintenance-")),
+    path = join(dir, "local.db"),
+    s = await setup(path);
+  let db = s.db;
+  try {
+    const created = productSaveResultSchema.parse(
+      await s.runtime.execute(s.create, s.authority(s.create)),
+    );
+    const repo = new ProductMasterRepository(s.a);
+    const productId = created.after.product.entity.id;
+    await repo.upsertProduct(
+      { ...created.after.product.entity, status: "INACTIVE", version: 2 },
+      { commandId: randomUUID(), deviceId: s.authority(s.create).deviceId },
+    );
+    const before = (await loadProductEditorSnapshot(repo, productId))!;
+    const card = await catalogueCard(
+      s,
+      {
+        action: "UPDATE",
+        productId,
+        patch: { category: "FRUIT", nature: "BULK", salesUnit: "PIECE" },
+      },
+      before,
+    );
+    const controller = await catalogueController(s);
+    expect((await controller.open(card)).status).toBe("READY");
+    expect((await controller.confirm(card)).status).toBe("COMPLETED");
+    const after = (await loadProductEditorSnapshot(repo, productId))!;
+    expect(after.product.entity).toMatchObject({
+      id: productId,
+      status: "INACTIVE",
+      category: "FRUIT",
+      nature: "BULK",
+      salesUnit: "PIECE",
+      version: 3,
+      deletedAt: null,
+    });
+    expect(after.identifiers).toEqual(before.identifiers);
+    expect(after.aliases).toEqual(before.aliases);
+    expect(
+      searchCopilotProducts(
+        s.f.storeId,
+        { label: "BANANE VRAC", identifiers: [] },
+        {
+          products: [after.product.entity],
+          identifiers: after.identifiers.map((r) => r.entity),
+          aliases: after.aliases.map((r) => r.entity),
+        },
+      ).candidates,
+    ).toHaveLength(0);
+    const commands = db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    db.close();
+    db = new DatabaseSync(path);
+    const reopened = { ...s, db, a: new Adapter(db) };
+    expect(
+      (await (await catalogueController(reopened)).confirm(card)).status,
+    ).toBe("COMPLETED");
+    expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      commands,
+    );
+    expect(
+      (
+        await loadProductEditorSnapshot(
+          new ProductMasterRepository(reopened.a),
+          productId,
+        )
+      )?.product.entity.status,
+    ).toBe("INACTIVE");
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("keeps inactive retirement, deleted targets and stale reviews protected without writing commands", async () => {
+  const s = await setup();
+  try {
+    const created = productSaveResultSchema.parse(
+      await s.runtime.execute(s.create, s.authority(s.create)),
+    );
+    const repo = new ProductMasterRepository(s.a),
+      productId = created.after.product.entity.id;
+    await repo.upsertProduct(
+      { ...created.after.product.entity, status: "INACTIVE", version: 2 },
+      {
+        commandId: randomUUID(),
+        deviceId: s.authority(s.create).deviceId,
+      },
+    );
+    const before = (await loadProductEditorSnapshot(repo, productId))!;
+    const retire = {
+      operationId: randomUUID(),
+      schemaVersion: 1,
+      tool: "product.retire",
+      input: { productId, expectedVersion: 2 },
+    };
+    const commands = s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    expect(() =>
+      prepareCatalogueRequest(
+        { action: "RETIRE", productId, patch: {} },
+        before,
+        randomUUID(),
+      ),
+    ).toThrow("TARGET_UNAVAILABLE");
+    await expect(
+      s.runtime.execute(retire, s.authority(retire)),
+    ).rejects.toMatchObject({ code: "PRODUCT_UNAVAILABLE" });
+    expect(s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      commands,
+    );
+    const card = await catalogueCard(
+      s,
+      { action: "UPDATE", productId, patch: { category: "FRUIT" } },
+      before,
+    );
+    await repo.upsertProduct(
+      { ...before.product.entity, label: "BANANE MODIFIÉE", version: 3 },
+      {
+        commandId: randomUUID(),
+        deviceId: s.authority(s.create).deviceId,
+      },
+    );
+    const afterConcurrent = s.db
+      .prepare("SELECT COUNT(*) n FROM sync_outbox")
+      .get();
+    await expect((await catalogueController(s)).confirm(card)).rejects.toThrow(
+      "STALE",
+    );
+    expect(s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      afterConcurrent,
+    );
+    const current = (await loadProductEditorSnapshot(repo, productId))!;
+    expect(() =>
+      prepareCatalogueRequest(
+        { action: "UPDATE", productId, patch: { label: "Renommée" } },
+        {
+          ...current,
+          product: {
+            ...current.product,
+            entity: {
+              ...current.product.entity,
+              deletedAt: "2026-10-23T12:00:00.000Z",
+            },
+          },
+        },
+        randomUUID(),
+      ),
+    ).toThrow("TARGET_UNAVAILABLE");
+    await repo.delete(
+      "product",
+      productId,
+      s.f.storeId,
+      "2026-10-23T12:00:00.000Z",
+      { commandId: randomUUID(), deviceId: s.authority(s.create).deviceId },
+    );
+    const update = edit(current),
+      afterDeletion = s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    await expect(
+      s.runtime.execute(update, s.authority(update)),
+    ).rejects.toMatchObject({ code: "PRODUCT_UNAVAILABLE" });
+    expect(s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      afterDeletion,
+    );
+  } finally {
+    s.db.close();
   }
 });

@@ -1,5 +1,9 @@
 # Copilot manual-operation coverage inventory
 
+## 23 October — inactive product maintenance parity
+
+Catalogue capability `x-copilot-catalogue-proposals: 2` permits exact-ID INSPECT and reviewed UPDATE of a nondeleted inactive fiche, using the existing manual editor writer. Metadata corrections preserve INACTIVE, child identities/statuses, version checks, history and transactional Outbox/recomputation. The proposal and evidence explicitly say the fiche remains inactive. Retirement of an already inactive fiche stays unavailable; deleted/foreign targets stay protected. Model input cannot set product status or undelete a fiche. Legacy capability 1 remains active-only; unknown/missing versions expose no catalogue tool. Operational search, imports and classification retain their active-only eligibility. No new tool, prompt, schema shape, migration or permission is introduced. See `../qa/M7_INACTIVE_CATALOGUE_MAINTENANCE_2026_10_23.md`; API/native delivery and physical-device acceptance remain separate.
+
 ## 23 October — quantities and realized prices
 
 `analytics_query` supports optional `includeSalesMeasures: true` with PRODUCT groups, sales selected and at most ten products per page. The existing scoped snapshots and shared formulas supply period sold quantities and weighted realized prices for current/reference periods, with paired-input coverage, retained units and separate verified citations. Quantities stay totals even for daily-average money queries. Unknown/mixed units and non-positive denominators never produce a price. HT/TTC remains UNCONFIRMED under KPI §11.1; these are not historical shelf prices. No global prompt, agent, model registry entry, native capability or evidence-budget increase is introduced. Backend release and actual dialogue acceptance remain separate gates.

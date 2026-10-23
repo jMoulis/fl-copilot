@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot CRUD en validation — 23 octobre : maintenance des fiches inactives
+
+Le copilote peut préparer la correction des informations d’une fiche inactive par son identifiant exact, comme l’éditeur manuel. La confirmation conserve son statut inactif, ses identifiants, son historique et les gardes de version. L’aperçu le précise ; les produits supprimés restent protégés et le rapprochement opérationnel reste limité aux produits actifs. Une capacité versionnée conserve le comportement des anciens clients. Tests SQLite avec redémarrage et MongoDB transactionnel local : **46 cas ciblés passent** ; contrôles complets et CI finales en cours. Voir `../qa/M7_INACTIVE_CATALOGUE_MAINTENANCE_2026_10_23.md`.
+
+La PR 338 est fusionnée en `142da5d` après ses deux CI exactes vertes (**3 954 tests / 6 ignorés**) ; sa branche est supprimée. Les PR 337/338 et ce lot ne sont pas dans le build 13. **Sept chantiers : 1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours.** Réception Resend en attente d’accord de clé dédiée ; mesures physiques et recette humaine restent ouvertes. Aucun build payant, déploiement isolé ou clôture V1.
+
 ## Lot UX en validation — 23 octobre : liste des documents commerciaux
 
 Les PDF se recherchent par nom ou date, se filtrent par attente/résultats reçus/étapes à vérifier et se consultent par pages de dix cartes. Les analyses connues uniquement par synchronisation restent accessibles avec leur original ; une page reçue ne signifie pas une analyse terminée. Le bloc d’import est raccourci et le contexte/préparation n’est monté qu’à la première ouverture, puis garde son état après repli. Aucun traitement métier ni publication automatique n’est ajouté.

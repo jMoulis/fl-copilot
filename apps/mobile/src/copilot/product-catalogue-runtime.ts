@@ -51,7 +51,8 @@ export class CopilotProductCatalogueRuntime {
           if (
             !before ||
             before.product.entity.storeId !== ctx.storeId ||
-            before.product.entity.status === "INACTIVE"
+            (request.tool === "product.retire" &&
+              before.product.entity.status === "INACTIVE")
           )
             throw new ProductClassificationError("PRODUCT_UNAVAILABLE");
           if (before.product.entity.version !== request.input.expectedVersion)

@@ -91,4 +91,12 @@ it("requires explicit target/action and cannot manufacture authority, child IDs 
     }),
   ).not.toThrow();
   expect(catalogueSnapshotIdentity(null)).toBe("null");
+  for (const patch of [{ status: "ACTIVE" }, { deletedAt: null }])
+    expect(
+      copilotCatalogueInputSchema.safeParse({
+        action: "UPDATE",
+        productId: randomUUID(),
+        patch,
+      }).success,
+    ).toBe(false);
 });
