@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot UX en validation — 23 octobre : fiche produit progressive et saisie protégée
+
+La fiche garde libellé, catégorie, nature et unité de vente visibles ; conditionnement, codes et alias sont repliables avec résumé. Les valeurs, blancs volontaires, identifiants stables et zéros initiaux restent dans le formulaire même lorsque les champs ne sont plus montés. Une erreur ouvre la bonne section puis place le focus dans le champ concerné. Une sauvegarde bloque temporairement les modifications et les doubles envois ; un échec local conserve toute la saisie. Le clavier utilise une option native limitée à cet écran, sans nouvelle dépendance.
+
+Six tests du vrai formulaire et les cas de persistance/route existants passent ensemble : **17 tests**. Rendu réel à 390/320 points, zéro débordement horizontal, repli/code et erreur/focus vérifiés sur une page locale explicitement simulée. Voir `../qa/M7_UX_PRODUCT_FORM_2026_10_23.md` pour les limites ; contrôles complets/CI et recette iPhone/Android restent nécessaires. Aucun nouveau build EAS ni déploiement pour ce lot. **Sept chantiers : 1/3/4/5/6/7 en cours ; 2 Contre-promo code prêt.** La PR 334 Resend est fusionnée (`6e77057`) après deux CI exactes vertes (**3 919 tests / 6 ignorés**), sans création de clé ni livraison ; accord demandé pour la clé Full access dédiée.
+
 ## Lot courant — 23 octobre : revue progressive des tickets de casse
 
 La validation d’un ticket n’ouvre plus tous les formulaires à revoir à la fois. Les lignes restent visibles sous forme d’aperçus ; un seul éditeur est monté pour l’occurrence source choisie. Les répétitions se parcourent séparément, sans somme de quantités ni fusion d’identité. Replier ou changer de ligne conserve les saisies dans le ticket, avec avertissement visible et protection de sortie ; une publication reste bloquée tant qu’une correction n’est pas enregistrée. La liste des corrections montre les cinq premières puis donne accès au reste ; un lien ouvre l’occurrence exacte et attend ses nouvelles coordonnées avant le défilement. Les boutons de revue sont désactivés pendant l’enregistrement. Voir `../qa/M7_UX_RECEIPT_PROGRESSIVE_REVIEW_2026_10_23.md`.

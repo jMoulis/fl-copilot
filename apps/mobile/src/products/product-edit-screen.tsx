@@ -148,7 +148,7 @@ function LoadedProductEditor({
     else apply();
   }
   return (
-    <AppScreen>
+    <AppScreen keyboardAware>
       <AppHeader
         title={id === "new" ? "Nouveau produit" : "Modifier le produit"}
         subtitle={
@@ -157,6 +157,7 @@ function LoadedProductEditor({
         }
       />
       <SecondaryButton
+        disabled={form.saving}
         label={
           backLabel ??
           (id === "new" ? "Retour aux produits" : "Retour à la fiche")
@@ -195,6 +196,7 @@ function LoadedProductEditor({
           />
           <SecondaryButton
             label="Examiner le conflit"
+            disabled={form.saving}
             onPress={() =>
               router.push(`/(tabs)/sync-conflict/${state.conflictId}` as Href)
             }

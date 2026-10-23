@@ -29,10 +29,12 @@ export function AppScreen({
   refreshing = false,
   onRefresh,
   scrollRef,
+  keyboardAware = false,
 }: PropsWithChildren<{
   scrollRef?: Ref<ScrollView>;
   refreshing?: boolean;
   onRefresh?: () => void;
+  keyboardAware?: boolean;
 }>) {
   return (
     <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-canvas">
@@ -40,6 +42,14 @@ export function AppScreen({
         ref={scrollRef}
         contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 32 }}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={keyboardAware}
+        keyboardDismissMode={
+          keyboardAware
+            ? Platform.OS === "ios"
+              ? "interactive"
+              : "on-drag"
+            : "none"
+        }
         refreshControl={
           onRefresh ? (
             <RefreshControl
