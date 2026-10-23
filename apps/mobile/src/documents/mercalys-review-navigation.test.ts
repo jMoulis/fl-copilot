@@ -228,7 +228,9 @@ it("puts the ambiguous line beyond the old 20-row cutoff first and links directl
   });
   expect(text(renderer!.root)).toContain("ARTICLE 99");
   expect(text(renderer!.root)).not.toContain("ARTICLE 0");
-  expect(button("Appliquer la nouvelle version").props.disabled).toBe(true);
+  expect(button("Application bloquée — points à résoudre").props.disabled).toBe(
+    true,
+  );
   await press("Confirmer le produit");
   expect(resolve).toHaveBeenCalledExactlyOnceWith(99);
 });
@@ -285,12 +287,90 @@ it("explains different ambiguity causes and parser issues without enabling an un
     );
   });
   expect(text(renderer!.root)).toContain(
-    "ne seront pas additionnées automatiquement",
+    "ne peuvent pas être distinguées par leur code source",
   );
   expect(text(renderer!.root)).toContain("Plusieurs observations existantes");
   expect(text(renderer!.root)).toContain("Date invalide");
-  expect(button("Appliquer la nouvelle version").props.disabled).toBe(true);
+  expect(button("Application bloquée — points à résoudre").props.disabled).toBe(
+    true,
+  );
 });
+it("links every incoming collision line to its own correction and clears filters to reveal blockers", async () => {
+  const resolve = vi.fn(),
+    navigate = vi.fn();
+  const r = comparison();
+  r.rows = [
+    {
+      ...row(103),
+      reason: "MULTIPLE_INCOMING_ROWS",
+      category: "AMBIGUOUS",
+      incomingSourceIndexes: [103, 109],
+    },
+  ];
+  const incomingLines: NonNullable<
+    ComponentProps<typeof MercalysReconciliationReview>["incomingLines"]
+  > = [103, 109].map((sourceIndex) => ({
+    record: {
+      sourceIndex,
+      businessDate: "2026-10-21",
+      rawLabel: `BANANE ${sourceIndex}`,
+      itm8: `00000${sourceIndex}`,
+      ean: null,
+      quantity: 2,
+      salesValue: 6.12,
+      purchaseValue: null,
+      rceValue: null,
+      vatValue: null,
+      marginValue: null,
+      marginRate: null,
+      rawValues: {
+        itm8: `00000${sourceIndex}`,
+        ean: null,
+        rawLabel: `BANANE ${sourceIndex}`,
+        businessDate: "2026-10-21",
+        quantity: 2,
+        salesValue: 6.12,
+        purchaseValue: null,
+        rceValue: null,
+        vatValue: null,
+        marginValue: null,
+        marginRate: null,
+      },
+    },
+    match: {
+      engineVersion: "product-matcher-v1",
+      state: "AUTO_MATCH",
+      method: "EXACT_IDENTIFIER",
+      candidates: [],
+      conflict: null,
+      matchedProductId: `p-${sourceIndex}`,
+    },
+  }));
+  await act(async () => {
+    renderer = create(
+      review({
+        reconciliation: r,
+        incomingLines,
+        onReviewProducts: resolve,
+        onNavigate: navigate,
+      }),
+    );
+  });
+  await press("Corriger l’association de la ligne 110");
+  expect(resolve).toHaveBeenCalledExactlyOnceWith(109);
+  await act(async () =>
+    renderer!.root
+      .findByProps({
+        accessibilityLabel: "Rechercher une ligne par produit ou code",
+      })
+      .props.onChangeText("introuvable"),
+  );
+  expect(text(renderer!.root)).toContain("Aucune ligne dans cette sélection");
+  await press("Afficher les points à résoudre");
+  expect(text(renderer!.root)).toContain("BANANE 109");
+  expect(navigate).toHaveBeenCalledOnce();
+});
+
 const at = "2026-10-23T10:00:00.000Z";
 function batchFixture() {
   const items = Array.from({ length: 40 }, (_, n): MercalysBatchItem => ({

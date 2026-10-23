@@ -1,5 +1,13 @@
 # M7 — suivi des sept chantiers V1
 
+## Correction en validation — 23 octobre : réimport Mercalys et associations déjà automatiques
+
+La comparaison distingue désormais les lignes par date métier et code source (ITM8, sinon EAN), avec repli conservateur produit/date pour les anciens enregistrements sans code. Deux codes validés d’un même produit restent deux observations séparées ; les doublons de code et les rapprochements historiques indécidables restent bloquants. Une association corrigée suit la même ligne source et remplace son ancienne observation, avec recalcul des deux produits concernés.
+
+Depuis la comparaison, « Corriger l’association » ouvre la référence ciblée même si le compteur des produits à confirmer vaut zéro. La création explicite d’un produit distinct, la réaffectation de ses seuls codes et leurs commandes Outbox partagent une transaction locale ; aucun autre code du produit précédent n’est déplacé. Le blocage d’application est nommé et les points à résoudre sont accessibles. La publication exige toujours une comparaison fraîche et une décision explicite, conserve les originaux et ne double-publie pas.
+
+Chantiers **3 Documents / 7 UX-validation**, avec protection du chantier **1 Actions et conflits** : **1/3/4/5/6/7 en cours ; 2 code prêt**. Cas métier confirmés par Julien : les deux pommes de terre micro-ondes sont distinctes ; les deux libellés de bananes bio désignent le même produit. Tests SQLite réels ventes/casse, rollback d’identité/Outbox, redémarrage, empreinte périmée, recalcul ancien/nouveau produit et parcours React. Ce lot modifie le client ; fusion et contrôles ne constituent pas une livraison iPhone. Aucun build EAS payant ni déploiement API n’est déclenché pour cette PR.
+
 ## Correction en validation — 23 octobre : fin de réponse longue du copilote
 
 Le diagnostic ajouté dans la PR 326 identifie la nouvelle occurrence serveur : `ANSWER_TEXT_TOO_LARGE`, le 23/10 à 13:06 UTC. Le texte déjà diffusé échouait lors de sa finalisation ; les références encodées dans les liens comptaient dans la limite du message. Le cas est reproduit avec un tableau valide et ses sources complètes. Les réponses volumineuses placent désormais leurs références dans des métadonnées bornées séparées ; le texte reste limité à 16 000 caractères. La construction canonique ne dépend plus de la capacité du premier client ; la projection vers les clients reste versionnée.

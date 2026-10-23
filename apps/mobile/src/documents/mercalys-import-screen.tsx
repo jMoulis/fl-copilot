@@ -48,6 +48,7 @@ import type { MercalysReconciliation } from "./mercalys-import-reconciliation";
 import {
   buildMercalysProductResolutions,
   confirmMercalysProductMapping,
+  correctMercalysProductMapping,
   createMercalysProducts,
   type MercalysProductResolution,
 } from "./mercalys-product-resolution";
@@ -127,6 +128,7 @@ export function MercalysImportScreen({
     "SUMMARY" | "PRODUCTS" | "DIFFERENCES"
   >("SUMMARY");
   const [resolutionKey, setResolutionKey] = useState<string>();
+  const [reviewSourceIndex, setReviewSourceIndex] = useState<number>();
   const { sqlite, deviceId } = useLocalDatabase();
   const { session } = useAuth();
   const { syncNow } = useSync();
@@ -171,8 +173,11 @@ export function MercalysImportScreen({
   }>();
   const [error, setError] = useState<string>();
   const productResolutions = useMemo(
-    () => (summary ? buildMercalysProductResolutions(summary) : []),
-    [summary],
+    () =>
+      summary
+        ? buildMercalysProductResolutions(summary, reviewSourceIndex)
+        : [],
+    [summary, reviewSourceIndex],
   );
   const loading = ["READING", "MATCHING", "VALIDATING"].includes(stage);
   const busy = loading || publishing || resolvingProducts || batchBusy;
@@ -284,6 +289,7 @@ export function MercalysImportScreen({
     setStage("IDLE");
     setSection("SUMMARY");
     setResolutionKey(undefined);
+    setReviewSourceIndex(undefined);
     setFilename(undefined);
     setSummary(undefined);
     setProductCatalog(undefined);
@@ -325,15 +331,9 @@ export function MercalysImportScreen({
     setSummary(nextSummary);
     setContinuation(pending ?? undefined);
     setReconciliation(overlap ?? undefined);
-    if (
-      resolutionKey &&
-      !buildMercalysProductResolutions(nextSummary).some(
-        (r) => r.key === resolutionKey,
-      )
-    )
-      setResolutionKey(undefined);
+    setReviewSourceIndex(undefined);
+    setResolutionKey(undefined);
     if (!nextSummary.productReviewCount) {
-      setResolutionKey(undefined);
       setSection(overlap ? "DIFFERENCES" : "SUMMARY");
     }
   }
@@ -382,6 +382,36 @@ export function MercalysImportScreen({
     }
   }
 
+  async function createDistinctProduct(resolution: MercalysProductResolution) {
+    if (!resolution.expectedProductIds) {
+      await createMissingProducts([resolution], true);
+      return;
+    }
+    if (!storeId || !summary) return;
+    setResolvingProducts(true);
+    setError(undefined);
+    let saved = false;
+    try {
+      await correctMercalysProductMapping(sqlite, resolution, null, {
+        storeId,
+        deviceId,
+        now: () => new Date().toISOString(),
+        generateId: randomUUID,
+      });
+      saved = true;
+      onChanged?.();
+      await refreshProductMatches(summary);
+    } catch {
+      setError(
+        saved
+          ? "Le produit est créé, mais la comparaison n’a pas pu être actualisée. Rouvrez le fichier avant d’appliquer sa nouvelle version."
+          : "Le produit distinct n’a pas pu être créé. Aucune correction partielle n’a été enregistrée. Rouvrez le fichier pour vérifier les associations.",
+      );
+    } finally {
+      setResolvingProducts(false);
+    }
+  }
+
   async function confirmProductMapping(
     resolution: MercalysProductResolution,
     productId: string,
@@ -390,18 +420,32 @@ export function MercalysImportScreen({
     setResolvingProducts(true);
     setError(undefined);
     try {
-      // Mapping may commit several identities before a later conflict interrupts it.
-      onChanged?.();
-      await confirmMercalysProductMapping(repository, resolution, productId, {
+      const options = {
         storeId,
         deviceId,
         now: () => new Date().toISOString(),
         generateId: randomUUID,
-      });
+      };
+      if (resolution.expectedProductIds) {
+        await correctMercalysProductMapping(
+          sqlite,
+          resolution,
+          productId,
+          options,
+        );
+      } else {
+        await confirmMercalysProductMapping(
+          repository,
+          resolution,
+          productId,
+          options,
+        );
+      }
+      onChanged?.();
       await refreshProductMatches(summary);
     } catch {
       setError(
-        "La correspondance produit n’a pas pu être enregistrée localement.",
+        "La correspondance n’a pas pu être enregistrée. Vérifiez les conflits de synchronisation puis rouvrez le fichier.",
       );
     } finally {
       setResolvingProducts(false);
@@ -498,6 +542,11 @@ export function MercalysImportScreen({
       }
       if (caught instanceof MercalysOverlapReconciliationError) {
         setReconciliation(caught.reconciliation);
+        setSection("DIFFERENCES");
+        setError(
+          "La comparaison a changé. Examinez les points à résoudre ci-dessous avant d’appliquer la nouvelle version.",
+        );
+        scrollToStart();
         return;
       }
       setError(importErrorMessage(caught));
@@ -599,6 +648,15 @@ export function MercalysImportScreen({
       setKeptExisting(true);
       setSelectedBytes(undefined);
     } catch (caught) {
+      if (caught instanceof MercalysOverlapReconciliationError) {
+        setReconciliation(caught.reconciliation);
+        setSection("DIFFERENCES");
+        setError(
+          "La comparaison a changé. Examinez de nouveau les lignes avant de conserver l’existant.",
+        );
+        scrollToStart();
+        return;
+      }
       setError(
         caught instanceof Error && caught.message
           ? caught.message
@@ -786,7 +844,10 @@ export function MercalysImportScreen({
             }
             catalog={productCatalog}
             storeId={storeId}
-            onShowAll={() => setResolutionKey(undefined)}
+            onShowAll={() => {
+              setResolutionKey(undefined);
+              setReviewSourceIndex(undefined);
+            }}
             onNavigate={scrollToStart}
             loading={resolvingProducts}
             progress={resolutionProgress}
@@ -794,7 +855,7 @@ export function MercalysImportScreen({
               void createMissingProducts(resolutions);
             }}
             onCreateDistinct={(resolution) => {
-              void createMissingProducts([resolution], true);
+              void createDistinctProduct(resolution);
             }}
             onConfirm={(resolution, productId) => {
               void confirmProductMapping(resolution, productId);
@@ -843,11 +904,15 @@ export function MercalysImportScreen({
             validationMessages={summary.issueCodes.map(issueLabel)}
             incomingLines={summary.lines}
             onNavigate={scrollToStart}
+            productLabels={Object.fromEntries(
+              (productCatalog?.products ?? []).map((p) => [p.id, p.label]),
+            )}
             onReviewProducts={(index) => {
+              setReviewSourceIndex(index);
               setResolutionKey(
                 index === undefined
                   ? undefined
-                  : productResolutions.find((r) =>
+                  : buildMercalysProductResolutions(summary, index).find((r) =>
                       r.sourceIndexes.includes(index),
                     )?.key,
               );
@@ -1225,6 +1290,13 @@ function ProductResolutionSummary({
               busy={loading}
               onConfirm={(id) => onConfirm(resolution, id)}
             />
+            {resolution.expectedProductIds ? (
+              <Text className="text-sm text-warning">
+                Cette décision réassocie les codes de cette référence pour les
+                prochains imports. Les autres codes du produit actuel sont
+                conservés.
+              </Text>
+            ) : null}
             {resolution.canCreate ? (
               <SecondaryButton
                 label="Créer ce produit"

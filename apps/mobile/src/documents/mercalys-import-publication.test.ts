@@ -15,6 +15,7 @@ import { ProductMasterRepository } from "../products/product-master-repository";
 import {
   buildMercalysProductResolutions,
   confirmMercalysProductMapping,
+  correctMercalysProductMapping,
 } from "./mercalys-product-resolution";
 import {
   MercalysExactDuplicateError,
@@ -424,6 +425,422 @@ describe("MercalysImportPublicationRepository", () => {
     database.close();
   });
 
+  it.each(["MERCALYS_SALES", "MERCALYS_WASTE"] as const)(
+    "reconciles distinct source codes on the same product/date and a reviewed product split atomically (%s)",
+    async (sourceType) => {
+      const { adapter, database, path } = await openDatabase();
+      insertProductRecord(
+        database,
+        productIds[0],
+        "BANANE RUBAN 5 FRUITS BIO MMP",
+      );
+      insertProductRecord(
+        database,
+        productIds[1],
+        "PDT SALADE MICRO ONDE 500G",
+      );
+      const generateId = idGenerator(),
+        now = () => timestamp;
+      const repository = new MercalysImportPublicationRepository(
+        adapter,
+        generateId,
+        now,
+      );
+      const lines = [
+        [
+          103,
+          productIds[0],
+          "0000087200198",
+          "3250393062582",
+          "BANANE RUBAN 5 FRUITS BIO MMP",
+          1,
+        ],
+        [
+          109,
+          productIds[0],
+          "0000087430008",
+          "3347761000885",
+          "BANANE RUBAN 5 FRUITS BIO",
+          2.36,
+        ],
+        [
+          153,
+          productIds[1],
+          "0000087950039",
+          "3663362013537",
+          "PDT RACLETTE MICRO ONDE 500G",
+          3,
+        ],
+        [
+          155,
+          productIds[1],
+          "0000087950040",
+          "3663362013544",
+          "PDT SALADE MICRO ONDE 500G",
+          2,
+        ],
+      ] as const;
+      const original = {
+        ...reconciliationSummary(
+          lines.map(([index, id, itm8, ean, rawLabel, quantity]) => {
+            const line = matchedLine(index, id, quantity);
+            Object.assign(line.record, { itm8, ean, rawLabel });
+            Object.assign(line.record.rawValues, { itm8, ean, rawLabel });
+            return line;
+          }),
+        ),
+        sourceType,
+      };
+      const first = await repository.publish(input(original));
+      const products = new ProductMasterRepository(adapter);
+      for (const line of original.lines) {
+        for (const type of ["ITM8", "EAN"] as const) {
+          await products.upsertIdentifier(
+            {
+              id: generateId(),
+              storeId,
+              productId: line.match.matchedProductId!,
+              type,
+              value: (type === "ITM8" ? line.record.itm8 : line.record.ean)!,
+              source: "MERCALYS",
+              status: "VALIDATED",
+              version: 1,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+              deletedAt: null,
+            },
+            {
+              commandId: generateId(),
+              deviceId: "device",
+              expectedRemoteVersion: null,
+            },
+          );
+        }
+      }
+      const corrected = structuredClone(original);
+      [2, 10.6, 4, 2].forEach((quantity, i) => {
+        corrected.lines[i]!.record.quantity = quantity;
+        corrected.lines[i]!.record.rawValues.quantity = quantity;
+      });
+      // Two valid codes for the same banana remain separate observations, not an ambiguous aggregate.
+      const beforeSplit = await repository.analyzeOverlap(storeId, corrected);
+      expect(beforeSplit).toMatchObject({
+        safeToApply: true,
+        counts: { MODIFIED: 3, UNCHANGED: 1, AMBIGUOUS: 0 },
+      });
+      expect(beforeSplit!.rows).toHaveLength(4);
+      expect(buildMercalysProductResolutions(corrected)).toEqual([]);
+      const resolution = buildMercalysProductResolutions(corrected, 153)[0]!;
+      expect(resolution).toMatchObject({
+        canCreate: false,
+        canCreateAsDistinct: true,
+        expectedProductIds: [productIds[1]],
+      });
+      await correctMercalysProductMapping(adapter, resolution, null, {
+        storeId,
+        deviceId: "device",
+        now,
+        generateId,
+      });
+      const commandCount = database
+        .prepare("SELECT COUNT(*) count FROM sync_outbox")
+        .get();
+      await expect(
+        correctMercalysProductMapping(adapter, resolution, null, {
+          storeId,
+          deviceId: "device",
+          now,
+          generateId,
+        }),
+      ).rejects.toThrow("MERCALYS_MAPPING_CHANGED");
+      expect(
+        database.prepare("SELECT COUNT(*) count FROM sync_outbox").get(),
+      ).toEqual(commandCount);
+      const catalog = {
+        products: (await products.listProducts(storeId)).map((p) => p.entity),
+        identifiers: (await products.listIdentifiersByStore(storeId)).map(
+          (p) => p.entity,
+        ),
+        aliases: [],
+      };
+      const rematched = rematchMercalysImport(corrected, storeId, catalog);
+      const distinctId = rematched.lines[2]!.match.matchedProductId!;
+      expect(distinctId).not.toBe(productIds[1]);
+      expect(rematched.lines[3]!.match.matchedProductId).toBe(productIds[1]);
+      expect(
+        rematched.lines.slice(0, 2).map((l) => l.match.matchedProductId),
+      ).toEqual([productIds[0], productIds[0]]);
+      const overlap = (await repository.analyzeOverlap(storeId, rematched))!;
+      expect(overlap.safeToApply).toBe(true);
+      expect(overlap.fingerprint).not.toBe(beforeSplit!.fingerprint);
+      expect(
+        overlap.rows.find((r) => r.incomingSourceIndex === 153),
+      ).toMatchObject({
+        category: "MODIFIED",
+        existingProductIds: [productIds[1]],
+        productId: distinctId,
+      });
+      const changedSecond = structuredClone(rematched);
+      changedSecond.lines[1]!.record.quantity += 1;
+      expect(
+        (await repository.analyzeOverlap(storeId, changedSecond))!.fingerprint,
+      ).not.toBe(overlap.fingerprint);
+      const nextInput = {
+        ...input(rematched, `sha256:${"b".repeat(64)}`),
+        reconciliationApproval: {
+          fingerprint: overlap.fingerprint,
+          actorUserId: "99999999-9999-4999-8999-999999999999",
+        },
+      };
+      await expect(
+        repository.publish({
+          ...nextInput,
+          reconciliationApproval: {
+            ...nextInput.reconciliationApproval,
+            fingerprint: beforeSplit!.fingerprint,
+          },
+        }),
+      ).rejects.toBeInstanceOf(MercalysOverlapReconciliationError);
+      expect(await repository.publish(nextInput)).toMatchObject({
+        publishedCount: 4,
+        replacedCount: 4,
+      });
+      await expect(repository.publish(nextInput)).rejects.toBeInstanceOf(
+        MercalysExactDuplicateError,
+      );
+      const table =
+        sourceType === "MERCALYS_SALES"
+          ? "sales_observations"
+          : "waste_observations";
+      expect(
+        database
+          .prepare(
+            `SELECT COUNT(*) count FROM ${table} WHERE deleted_at IS NULL`,
+          )
+          .get(),
+      ).toEqual({ count: 4 });
+      expect(
+        database
+          .prepare(
+            `SELECT quantity FROM ${table} WHERE deleted_at IS NULL AND product_id=? ORDER BY CAST(quantity AS REAL)`,
+          )
+          .all(productIds[0]),
+      ).toEqual([{ quantity: "2" }, { quantity: "10.6" }]);
+      expect(
+        database
+          .prepare(
+            `SELECT COUNT(*) count FROM ${table} WHERE source_document_id=? AND deleted_at IS NOT NULL`,
+          )
+          .get(first.sourceDocumentId),
+      ).toEqual({ count: 4 });
+      const jobs = await adapter.getAllAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM local_jobs WHERE type='ANALYTICS_RECOMPUTE_PRODUCT_DATES'",
+      );
+      expect(
+        jobs.some((j) =>
+          JSON.parse(j.payload_json).scopes.some(
+            (scope: { productId: string }) => scope.productId === distinctId,
+          ),
+        ),
+      ).toBe(true);
+      database.close();
+      const reopened = new DatabaseSync(path);
+      expect(
+        reopened
+          .prepare(
+            `SELECT COUNT(*) count FROM ${table} WHERE deleted_at IS NULL`,
+          )
+          .get(),
+      ).toEqual({ count: 4 });
+      expect(
+        reopened
+          .prepare(
+            "SELECT COUNT(*) count FROM import_reconciliations WHERE decision='APPLY_NEW'",
+          )
+          .get(),
+      ).toEqual({ count: 1 });
+      expect(
+        reopened
+          .prepare(
+            "SELECT COUNT(*) count FROM source_records WHERE source_document_id=?",
+          )
+          .get(first.sourceDocumentId),
+      ).toEqual({ count: 4 });
+      reopened.close();
+    },
+  );
+
+  it.each([
+    "missing source codes",
+    "duplicate existing source code",
+    "duplicate incoming source code",
+  ])(
+    "keeps the conservative block for %s rather than silently summing",
+    async (scenario) => {
+      const { adapter, database } = await openDatabase();
+      insertProduct(database, "BULK");
+      const repository = new MercalysImportPublicationRepository(
+        adapter,
+        idGenerator(),
+        () => timestamp,
+      );
+      const first = matchedLine(8, productId, 1),
+        second = matchedLine(9, productId, 2);
+      if (scenario !== "duplicate existing source code") {
+        second.record.itm8 = "00000222";
+        second.record.ean = "0000000000222";
+      }
+      const original = reconciliationSummary([first, second]);
+      await repository.publish(input(original));
+      if (scenario === "missing source codes")
+        database.exec("UPDATE source_records SET normalized_payload_json='{}'");
+      const incoming = structuredClone(original);
+      if (scenario === "duplicate incoming source code")
+        incoming.lines[1]!.record.itm8 = first.record.itm8;
+      const overlap = (await repository.analyzeOverlap(storeId, incoming))!;
+      expect(overlap.safeToApply).toBe(false);
+      expect(overlap.counts.AMBIGUOUS).toBeGreaterThan(0);
+      expect(
+        new Set(overlap.rows.flatMap((r) => r.existingObservationIds)).size,
+      ).toBe(2);
+      await expect(
+        repository.publish({
+          ...input(incoming, `sha256:${"c".repeat(64)}`),
+          reconciliationApproval: {
+            fingerprint: overlap.fingerprint,
+            actorUserId: "99999999-9999-4999-8999-999999999999",
+          },
+        }),
+      ).rejects.toThrow("Ambiguous reconciliation");
+      expect(
+        database
+          .prepare(
+            "SELECT COUNT(*) count FROM sales_observations WHERE deleted_at IS NULL",
+          )
+          .get(),
+      ).toEqual({ count: 2 });
+      database.close();
+    },
+  );
+
+  it("uses EAN when ITM8 is absent and retains single-row legacy comparison", async () => {
+    const { adapter, database } = await openDatabase();
+    insertProduct(database, "BULK");
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    const line: MercalysImportValidationSummary["lines"][number] = matchedLine(
+      8,
+      productId,
+      1,
+    );
+    line.record.itm8 = null;
+    await repository.publish(input(reconciliationSummary([line])));
+    const corrected = reconciliationSummary([structuredClone(line)]);
+    corrected.lines[0]!.record.quantity = 2;
+    expect(await repository.analyzeOverlap(storeId, corrected)).toMatchObject({
+      safeToApply: true,
+      counts: { MODIFIED: 1 },
+    });
+    database.exec("UPDATE source_records SET normalized_payload_json='{}'");
+    expect(await repository.analyzeOverlap(storeId, corrected)).toMatchObject({
+      safeToApply: true,
+      counts: { MODIFIED: 1 },
+    });
+    database.close();
+  });
+
+  it("recomputes both the old and new product when a source row changes association", async () => {
+    const { adapter, database } = await openDatabase();
+    productIds
+      .slice(0, 2)
+      .forEach((id) => insertProductRecord(database, id, id));
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      idGenerator(),
+      () => timestamp,
+    );
+    const original = reconciliationSummary([matchedLine(8, productIds[0], 1)]);
+    await repository.publish(input(original));
+    const corrected = structuredClone(original);
+    corrected.lines[0]!.match.matchedProductId = productIds[1];
+    const overlap = (await repository.analyzeOverlap(storeId, corrected))!;
+    expect(overlap).toMatchObject({
+      safeToApply: true,
+      counts: { MODIFIED: 1, ADDED: 0, REMOVED: 0 },
+    });
+    const result = await repository.publish({
+      ...input(corrected, `sha256:${"d".repeat(64)}`),
+      reconciliationApproval: {
+        fingerprint: overlap.fingerprint,
+        actorUserId: "99999999-9999-4999-8999-999999999999",
+      },
+    });
+    const job = await adapter.getFirstAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM local_jobs WHERE id=?",
+      result.analyticsJobId,
+    );
+    expect(JSON.parse(job!.payload_json).scopes).toEqual(
+      expect.arrayContaining(
+        productIds.slice(0, 2).map((productId) => ({
+          productId,
+          businessDate: original.businessPeriodStart,
+        })),
+      ),
+    );
+    database.close();
+  });
+
+  it("rolls back a distinct product, identifier transfers and Outbox together if an identity command fails", async () => {
+    const { adapter, database } = await openDatabase();
+    insertProduct(database, "PACKAGED");
+    const generateId = idGenerator();
+    const repository = new ProductMasterRepository(adapter);
+    const corrected = reconciliationSummary([matchedLine(153, productId, 4)]);
+    const code = corrected.lines[0]!.record.itm8!;
+    await repository.upsertIdentifier(
+      {
+        id: generateId(),
+        storeId,
+        productId,
+        type: "ITM8",
+        value: code,
+        source: "MERCALYS",
+        status: "VALIDATED",
+        version: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null,
+      },
+      { commandId: generateId(), deviceId: "device" },
+    );
+    const resolution = buildMercalysProductResolutions(corrected, 153)[0]!;
+    const before = database.prepare("SELECT * FROM sync_outbox").all();
+    database.exec(
+      `CREATE TRIGGER fail_identity_command BEFORE INSERT ON sync_outbox WHEN NEW.command_type='PRODUCT_IDENTIFIER_UPSERT' BEGIN SELECT RAISE(ABORT, 'simulated identity failure'); END`,
+    );
+    await expect(
+      correctMercalysProductMapping(adapter, resolution, null, {
+        storeId,
+        deviceId: "device",
+        now: () => timestamp,
+        generateId,
+      }),
+    ).rejects.toThrow("simulated identity failure");
+    expect(
+      database.prepare("SELECT COUNT(*) count FROM products").get(),
+    ).toEqual({ count: 1 });
+    expect(
+      database
+        .prepare("SELECT product_id, deleted_at FROM product_identifiers")
+        .get(),
+    ).toEqual({ product_id: productId, deleted_at: null });
+    expect(database.prepare("SELECT * FROM sync_outbox").all()).toEqual(before);
+    database.close();
+  });
+
   it("reviews a 21 October correction imported on 23 October, resolves a product beyond line 20 and replaces once without losing the original or pending commands", async () => {
     const { adapter, database } = await openDatabase();
     const ids = Array.from(
@@ -742,6 +1159,10 @@ function matchedLine(
   quantity: number,
 ) {
   const nextRecord = record(sourceIndex, `Produit ${sourceIndex}`);
+  nextRecord.itm8 = matchedProductId.slice(-8);
+  nextRecord.ean = matchedProductId.slice(-13);
+  nextRecord.rawValues.itm8 = nextRecord.itm8;
+  nextRecord.rawValues.ean = nextRecord.ean;
   nextRecord.quantity = quantity;
   nextRecord.rawValues.quantity = quantity;
   return {

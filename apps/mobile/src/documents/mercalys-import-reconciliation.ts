@@ -26,9 +26,11 @@ export interface MercalysReconciliationRow {
   productLabel: string;
   businessDate: string;
   incomingSourceIndex: number | null;
+  incomingSourceIndexes?: number[];
   incomingRecord: ParsedMercalysArticleRecord | null;
   existingObservationIds: string[];
   existingSourceRecordIds: string[];
+  existingProductIds?: string[];
   existingValues: ReconciliationValues | null;
   incomingValues: ReconciliationValues | null;
   reason:
@@ -58,6 +60,7 @@ interface ExistingObservation {
   productLabel: string;
   businessDate: string;
   values: ReconciliationValues;
+  sourceIdentity: string | null;
 }
 
 export async function analyzeMercalysReconciliation(
@@ -103,6 +106,12 @@ export function reconciliationFingerprint(input: {
     rows: input.rows.map((row) => ({
       key: row.key,
       category: row.category,
+      productId: row.productId,
+      incomingIdentifiers: row.incomingRecord
+        ? { itm8: row.incomingRecord.itm8, ean: row.incomingRecord.ean }
+        : null,
+      existingSourceRecordIds: row.existingSourceRecordIds,
+      existingProductIds: row.existingProductIds,
       incomingSourceIndex: row.incomingSourceIndex,
       existingObservationIds: row.existingObservationIds,
       existingValues: row.existingValues,
@@ -116,6 +125,28 @@ function classifyRows(
   summary: MercalysImportValidationSummary,
   existing: ExistingObservation[],
 ) {
+  // Old imports without usable source identifiers retain the conservative
+  // product/date comparison. Never infer source identity from a label or row index.
+  const legacyKeys = new Set([
+    ...existing
+      .filter((o) => !o.sourceIdentity)
+      .map((o) => businessKey(o.productId, o.businessDate)),
+    ...summary.lines
+      .filter((l) => l.match.matchedProductId && !sourceIdentity(l.record))
+      .map((l) =>
+        businessKey(l.match.matchedProductId!, l.record.businessDate),
+      ),
+  ]);
+  const comparisonKey = (
+    productId: string,
+    date: string,
+    identity: string | null,
+  ) => {
+    const productKey = businessKey(productId, date);
+    return identity && !legacyKeys.has(productKey)
+      ? `${date}:source:${identity}`
+      : productKey;
+  };
   const incomingByKey = new Map<string, MercalysImportValidationLine[]>();
   const unresolved: MercalysImportValidationLine[] = [];
   for (const line of summary.lines) {
@@ -123,9 +154,10 @@ function classifyRows(
       unresolved.push(line);
       continue;
     }
-    const key = businessKey(
+    const key = comparisonKey(
       line.match.matchedProductId,
       line.record.businessDate,
+      sourceIdentity(line.record),
     );
     const values = incomingByKey.get(key) ?? [];
     values.push(line);
@@ -134,7 +166,11 @@ function classifyRows(
 
   const existingByKey = new Map<string, ExistingObservation[]>();
   for (const observation of existing) {
-    const key = businessKey(observation.productId, observation.businessDate);
+    const key = comparisonKey(
+      observation.productId,
+      observation.businessDate,
+      observation.sourceIdentity,
+    );
     const values = existingByKey.get(key) ?? [];
     values.push(observation);
     existingByKey.set(key, values);
@@ -166,7 +202,8 @@ function classifyRows(
           ? "REMOVED"
           : prior.length === 0
             ? "ADDED"
-            : valuesEqual(existingValues, incomingValues)
+            : line?.match.matchedProductId === observation?.productId &&
+                valuesEqual(existingValues, incomingValues)
               ? "UNCHANGED"
               : "MODIFIED";
     return {
@@ -177,9 +214,13 @@ function classifyRows(
       businessDate:
         line?.record.businessDate ?? observation?.businessDate ?? "",
       incomingSourceIndex: line?.record.sourceIndex ?? null,
+      incomingSourceIndexes: incoming.map((item) => item.record.sourceIndex),
       incomingRecord: line?.record ?? null,
       existingObservationIds: prior.map((item) => item.id).sort(),
       existingSourceRecordIds: prior.map((item) => item.sourceRecordId).sort(),
+      existingProductIds: [
+        ...new Set(prior.map((item) => item.productId)),
+      ].sort(),
       existingValues,
       incomingValues,
       reason: multipleIncoming
@@ -222,10 +263,12 @@ async function loadExistingObservations(
         SELECT o.id, o.source_document_id, o.source_record_id, o.product_id,
                p.label AS product_label, o.business_date, o.quantity,
                o.purchase_value, o.rce_value, o.sales_value, o.vat_value,
-               o.margin_value, o.margin_rate
+               o.margin_value, o.margin_rate, r.normalized_payload_json
         FROM sales_observations o
         JOIN products p ON p.id = o.product_id
         JOIN source_documents d ON d.id = o.source_document_id
+        LEFT JOIN source_records r ON r.id = o.source_record_id
+          AND r.store_id = o.store_id AND r.source_document_id = o.source_document_id
         WHERE o.store_id = ? AND o.business_date BETWEEN ? AND ?
           AND o.deleted_at IS NULL AND d.deleted_at IS NULL
           AND d.source_type = 'MERCALYS_SALES'
@@ -243,6 +286,7 @@ async function loadExistingObservations(
       productId: row.product_id,
       productLabel: row.product_label,
       businessDate: row.business_date,
+      sourceIdentity: storedSourceIdentity(row.normalized_payload_json),
       values: {
         quantity: row.quantity,
         purchaseValue: row.purchase_value,
@@ -259,10 +303,12 @@ async function loadExistingObservations(
     `
       SELECT o.id, o.source_document_id, o.source_record_id, o.product_id,
              p.label AS product_label, o.business_date, o.quantity,
-             o.purchase_value_known, o.sales_value
+             o.purchase_value_known, o.sales_value, r.normalized_payload_json
       FROM waste_observations o
       JOIN products p ON p.id = o.product_id
       JOIN source_documents d ON d.id = o.source_document_id
+      LEFT JOIN source_records r ON r.id = o.source_record_id
+        AND r.store_id = o.store_id AND r.source_document_id = o.source_document_id
       WHERE o.store_id = ? AND o.business_date BETWEEN ? AND ?
         AND o.deleted_at IS NULL AND d.deleted_at IS NULL
         AND d.source_type = 'MERCALYS_WASTE'
@@ -280,6 +326,7 @@ async function loadExistingObservations(
     productId: row.product_id,
     productLabel: row.product_label,
     businessDate: row.business_date,
+    sourceIdentity: storedSourceIdentity(row.normalized_payload_json),
     values: {
       quantity: row.quantity,
       purchaseValue: row.purchase_value_known,
@@ -327,6 +374,23 @@ function valuesEqual(
   return JSON.stringify(existing) === JSON.stringify(incoming);
 }
 
+function sourceIdentity(record: { itm8?: unknown; ean?: unknown }) {
+  if (typeof record.itm8 === "string" && record.itm8.trim())
+    return `ITM8:${record.itm8}`;
+  if (typeof record.ean === "string" && record.ean.trim())
+    return `EAN:${record.ean}`;
+  return null;
+}
+
+function storedSourceIdentity(payload: string | null) {
+  try {
+    const record: unknown = JSON.parse(payload ?? "null");
+    return record && typeof record === "object" ? sourceIdentity(record) : null;
+  } catch {
+    return null;
+  }
+}
+
 function businessKey(productId: string, businessDate: string) {
   return `${businessDate}:${productId}`;
 }
@@ -357,6 +421,7 @@ interface BaseObservationRow {
   source_record_id: string;
   product_id: string;
   product_label: string;
+  normalized_payload_json: string | null;
   business_date: string;
   quantity: string | null;
   sales_value: string | null;
