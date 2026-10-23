@@ -78,6 +78,7 @@ export function AppHeader({
       <View className="flex-row items-center justify-between gap-3">
         <Text
           accessibilityRole="header"
+          style={{ minWidth: 0 }}
           className="flex-1 text-3xl font-bold text-ink"
         >
           {title}

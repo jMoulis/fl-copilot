@@ -13,8 +13,15 @@ import {
   extractRetainedMercalysZip,
   nativeMercalysZipStorage,
 } from "./mercalys-zip-capture";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Modal,
+  Platform,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import {
   randomUUID,
   CryptoDigestAlgorithm,
@@ -27,7 +34,13 @@ import type {
   MercalysBatchItem,
   MercalysBatchPublicationPlan,
 } from "@fl-copilot/domain";
-import { SectionCard, SecondaryButton, InlineAlert } from "../components/ui";
+import {
+  AppHeader,
+  AppScreen,
+  SectionCard,
+  SecondaryButton,
+  InlineAlert,
+} from "../components/ui";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import { ProductMasterRepository } from "../products/product-master-repository";
@@ -49,7 +62,7 @@ export function MercalysBatchPanel({
   onPublished,
   pick,
   pickZip,
-  onReview,
+  renderReview,
   disabled = false,
 }: {
   db: OutboxDatabase & AtomicMutationDatabase;
@@ -61,9 +74,11 @@ export function MercalysBatchPanel({
   onPublished?(): Promise<void>;
   pick(): Promise<MercalysSelectedFile[] | undefined>;
   pickZip?(): Promise<MercalysSelectedFile | undefined>;
-  onReview(
+  renderReview(
     asset: MercalysSelectedFile & { expectedChecksum: string },
-  ): Promise<void>;
+    close: () => void,
+    onBusyChange: (busy: boolean) => void,
+  ): ReactNode;
   disabled?: boolean;
 }) {
   const repo = useMemo(
@@ -118,9 +133,24 @@ export function MercalysBatchPanel({
       ),
     [repo, service, db],
   );
-  const [history, setHistory] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [reviewAsset, setReviewAsset] = useState<
+    MercalysSelectedFile & { expectedChecksum: string }
+  >();
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const reviewDone = useRef<(() => void) | undefined>(undefined);
+  function finishReview() {
+    reviewDone.current?.();
+    reviewDone.current = undefined;
+  }
+  function closeReview() {
+    if (reviewBusy) return;
+    setReviewAsset(undefined);
+    if (Platform.OS !== "ios") finishReview();
+  }
   const [query, setQuery] = useState("");
   const [itemFilter, setItemFilter] = useState<BatchItemFilter>("ALL");
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [publicationPlan, setPublicationPlan] =
     useState<MercalysBatchPublicationPlan>();
   const [publicationReport, setPublicationReport] =
@@ -197,6 +227,7 @@ export function MercalysBatchPanel({
       if (activeRef.current !== batchId) {
         setQuery("");
         setItemFilter("ALL");
+        setToolsOpen(false);
       }
       setPublications(committed);
       setPublicationPlan(undefined);
@@ -236,6 +267,7 @@ export function MercalysBatchPanel({
     return () => {
       alive.current = false;
       abort.current?.abort();
+      reviewDone.current?.();
     };
   }, [repo, archiveRepo]);
   async function run(work: (signal: AbortSignal) => Promise<void>) {
@@ -285,404 +317,528 @@ export function MercalysBatchPanel({
     () => filterBatchItems(items, publications, query, itemFilter),
     [items, publications, query, itemFilter],
   );
+  const activeBatch = batches.find((batch) => batch.id === active);
+  const activeArchive = archives.find((archive) => archive.batchId === active);
+  const batchTitle =
+    activeArchive?.filename ??
+    (activeBatch?.files.length === 1
+      ? activeBatch.files[0]!.filename
+      : "Fichiers du lot");
+  const importedAt = activeBatch?.createdAt ?? activeArchive?.createdAt;
+  const fileCount =
+    activeBatch?.files.length ??
+    (activeArchive?.outcome.status === "PROCESSED"
+      ? activeArchive.outcome.retainedCount
+      : undefined);
+  const historyTerm = historyQuery.trim().toLocaleLowerCase("fr-FR");
+  const visibleArchives = archives.filter((a) =>
+    `${a.filename} ${new Date(a.createdAt).toLocaleString("fr-FR")}`
+      .toLocaleLowerCase("fr-FR")
+      .includes(historyTerm),
+  );
+  const archiveIds = new Set(archives.map((a) => a.id));
+  const visibleBatches = batches.filter(
+    (b) =>
+      (!b.archiveId || !archiveIds.has(b.archiveId)) &&
+      `${b.files.map((f) => f.filename).join(" ")} ${new Date(b.createdAt).toLocaleString("fr-FR")}`
+        .toLocaleLowerCase("fr-FR")
+        .includes(historyTerm),
+  );
   return (
-    <SectionCard title="Imports en lot">
-      <Text className="text-sm text-muted">
-        Sélectionnez plusieurs exports de ventes ou de casse. Chaque fichier
-        conserve sa période. Les fichiers sans ambiguïté sont publiés
-        automatiquement ; les autres restent à examiner.
-      </Text>
-      <SecondaryButton
-        label="Choisir plusieurs fichiers XLSX"
-        disabled={busy || disabled}
-        loading={busy}
-        onPress={() =>
-          void run(async (signal) => {
-            const files = await pick();
-            if (!files?.length || signal.aborted) return;
-            const captured = await captureMercalysBatch(
-              { files, storeId, ownerId, conversationId },
-              repo,
-              nativeMercalysBatchStorage,
-              randomUUID,
-              signal,
-              (n, total) => {
-                if (alive.current)
-                  setProgress(`${n} / ${total} copies traitées`);
-              },
-            );
-            await loadRecent();
-            if (captured.batchId) {
-              await load(captured.batchId);
-              if (alive.current) setProgress("Vérification du lot en cours…");
-              await service.preparePending(captured.batchId, signal);
-              await automaticallyPublish(captured.batchId, signal);
-            }
-            if (captured.failures.length && alive.current)
-              setError(
-                `Ces fichiers n’ont pas pu être copiés : ${captured.failures.join(", ")}. Sélectionnez-les de nouveau. Les autres sont conservés.`,
-              );
-          })
-        }
-      />
-      {pickZip ? (
+    <>
+      <SectionCard title="Ajouter des exports">
+        <Text className="text-sm text-muted">
+          Ventes ou casse, XLSX ou ZIP. Les fichiers prêts sont publiés
+          automatiquement ; les autres restent à examiner.
+        </Text>
         <SecondaryButton
-          label="Choisir une archive ZIP"
+          label="Choisir des fichiers XLSX"
           disabled={busy || disabled}
+          loading={busy}
           onPress={() =>
             void run(async (signal) => {
-              const asset = await pickZip();
-              if (!asset || signal.aborted) return;
-              const id = await retainMercalysZip(
-                asset,
-                archiveRepo,
-                nativeMercalysZipStorage,
+              const files = await pick();
+              if (!files?.length || signal.aborted) return;
+              const captured = await captureMercalysBatch(
+                { files, storeId, ownerId, conversationId },
+                repo,
+                nativeMercalysBatchStorage,
                 randomUUID,
                 signal,
+                (n, total) => {
+                  if (alive.current)
+                    setProgress(`${n} / ${total} copies traitées`);
+                },
               );
-              await loadArchives();
-              await processArchive(id, signal);
+              await loadRecent();
+              if (captured.batchId) {
+                await load(captured.batchId);
+                if (alive.current) setProgress("Vérification du lot en cours…");
+                await service.preparePending(captured.batchId, signal);
+                await automaticallyPublish(captured.batchId, signal);
+              }
+              if (captured.failures.length && alive.current)
+                setError(
+                  `Ces fichiers n’ont pas pu être copiés : ${captured.failures.join(", ")}. Sélectionnez-les de nouveau. Les autres sont conservés.`,
+                );
             })
           }
         />
-      ) : null}
-      <SecondaryButton
-        expanded={history}
-        label={
-          history
-            ? "Masquer les lots et archives précédents"
-            : "Voir les lots et archives précédents"
-        }
-        disabled={busy || disabled}
-        onPress={() => setHistory(!history)}
-      />
-      <View
-        style={{ display: history ? "flex" : "none" }}
-        accessibilityElementsHidden={!history}
-        importantForAccessibility={history ? "auto" : "no-hide-descendants"}
-        className="gap-3"
-      >
-        {archives.map((a) => (
-          <View key={a.id} className="gap-2 rounded-xl border border-line p-3">
-            <Text className="font-semibold text-ink">{a.filename}</Text>
-            <Text>
-              {a.outcome.status === "RETAINED"
-                ? "Archive conservée — lecture à reprendre"
+        {pickZip ? (
+          <SecondaryButton
+            label="Choisir une archive ZIP"
+            disabled={busy || disabled}
+            onPress={() =>
+              void run(async (signal) => {
+                const asset = await pickZip();
+                if (!asset || signal.aborted) return;
+                const id = await retainMercalysZip(
+                  asset,
+                  archiveRepo,
+                  nativeMercalysZipStorage,
+                  randomUUID,
+                  signal,
+                );
+                await loadArchives();
+                await processArchive(id, signal);
+              })
+            }
+          />
+        ) : null}
+        {!active && busy ? (
+          <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
+            {progress ?? "Préparation du lot…"}
+          </Text>
+        ) : null}
+        {!active && error ? (
+          <InlineAlert title="Import à reprendre" message={error} />
+        ) : null}
+      </SectionCard>
+      <SectionCard title="Imports récents">
+        <TextInput
+          accessibilityLabel="Rechercher un import par nom ou date"
+          placeholder="Nom du ZIP, du fichier ou date d’import"
+          placeholderTextColor={colors.muted}
+          value={historyQuery}
+          onChangeText={setHistoryQuery}
+          maxLength={200}
+          className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
+        />
+        {visibleArchives.map((a) => (
+          <Pressable
+            key={a.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Ouvrir ${a.filename}, importé le ${new Date(a.createdAt).toLocaleString("fr-FR")}`}
+            disabled={busy || disabled}
+            onPress={() =>
+              void run(async (signal) => {
+                if (a.outcome.status === "PROCESSED" && a.outcome.retainedCount)
+                  await load(a.batchId);
+                else await processArchive(a.id, signal);
+              })
+            }
+            className="min-h-16 gap-1 rounded-xl border border-line p-4"
+          >
+            <Text className="font-semibold text-ink">{a.filename} ›</Text>
+            <Text className="text-sm text-muted">
+              Importé le {new Date(a.createdAt).toLocaleString("fr-FR")}
+            </Text>
+            <Text className="text-sm text-muted">
+              {a.outcome.status === "PROCESSED"
+                ? `${a.outcome.retainedCount} fichiers · ${a.outcome.failures.length} erreurs d’extraction${a.outcome.ignored.length ? ` · ${a.outcome.ignored.length} ignorés` : ""}`
                 : a.outcome.status === "FAILED"
                   ? archiveError(a.outcome.code)
-                  : `${a.outcome.retainedCount} fichiers conservés · ${a.outcome.failures.length} erreurs · ${a.outcome.ignored.length} fichiers système ignorés`}
+                  : "Archive conservée · lecture à reprendre"}
             </Text>
-            {a.outcome.status === "PROCESSED"
-              ? a.outcome.failures.map((f) => (
-                  <Text key={f.path}>
-                    {f.path} : extraction impossible, sélectionnez l’original ou
-                    un ZIP corrigé.
-                  </Text>
-                ))
-              : null}
-            {a.outcome.status !== "PROCESSED" || a.outcome.failures.length ? (
-              <SecondaryButton
-                label="Lire / reprendre cette archive"
-                disabled={busy || disabled}
-                onPress={() =>
-                  void run((signal) => processArchive(a.id, signal))
-                }
-              />
-            ) : null}
-            {a.outcome.status === "PROCESSED" && a.outcome.retainedCount ? (
-              <SecondaryButton
-                label="Ouvrir les fichiers extraits"
-                disabled={busy || disabled}
-                onPress={() => void run(async () => load(a.batchId))}
-              />
-            ) : null}
-          </View>
+          </Pressable>
         ))}
+        {visibleBatches.map((batch) => (
+          <Pressable
+            key={batch.id}
+            accessibilityRole="button"
+            disabled={busy || disabled}
+            onPress={() => void run(async () => load(batch.id))}
+            className="min-h-16 gap-1 rounded-xl border border-line p-4"
+          >
+            <Text className="font-semibold text-ink">
+              {batch.files.length === 1
+                ? batch.files[0]!.filename
+                : `${batch.files.length} fichiers XLSX`}{" "}
+              ›
+            </Text>
+            <Text className="text-sm text-muted">
+              Importé le {new Date(batch.createdAt).toLocaleString("fr-FR")}
+            </Text>
+          </Pressable>
+        ))}
+        {!visibleArchives.length && !visibleBatches.length ? (
+          <Text className="text-sm text-muted">
+            {historyTerm
+              ? "Aucun import chargé ne correspond à cette recherche."
+              : "Vos prochains imports apparaîtront ici."}
+          </Text>
+        ) : null}
         {moreArchives ? (
           <SecondaryButton
-            label="Voir les archives précédentes"
+            label="Archives précédentes"
             disabled={busy || disabled}
             onPress={() => void run(async () => loadArchives(true))}
           />
         ) : null}
-        {archives.length ? (
-          <Text className="text-sm text-muted">
-            L’archive originale reste sur cet appareil. Chaque fichier publié
-            est synchronisé.
-          </Text>
-        ) : null}
-      </View>
-      <Text className="text-sm text-muted">
-        Les originaux sont conservés sur cet appareil. La synchronisation du
-        fichier commence après sa publication.
-      </Text>
-      {busy ? (
-        <SecondaryButton
-          label="Interrompre le lot"
-          onPress={() => abort.current?.abort()}
-        />
-      ) : null}
-      {progress ? (
-        <Text accessibilityLiveRegion="polite">{progress}</Text>
-      ) : null}
-      {error ? <InlineAlert title="Lot à reprendre" message={error} /> : null}
-      <View
-        style={{ display: history ? "flex" : "none" }}
-        accessibilityElementsHidden={!history}
-        importantForAccessibility={history ? "auto" : "no-hide-descendants"}
-        className="gap-3"
-      >
-        {batches.map((batch) => (
-          <SecondaryButton
-            key={batch.id}
-            label={`${batch.files.length} fichier${batch.files.length > 1 ? "s" : ""} · ${new Date(batch.createdAt).toLocaleDateString("fr-FR")}`}
-            disabled={busy || disabled}
-            onPress={() => void run(async () => load(batch.id))}
-          />
-        ))}
         {moreBatches ? (
           <SecondaryButton
-            label="Voir les lots précédents"
+            label="Lots précédents"
             disabled={busy || disabled}
             onPress={() => void run(async () => loadRecent(true))}
           />
         ) : null}
-      </View>
-      {active ? (
-        <SecondaryButton
-          label="Reprendre les fichiers en attente"
-          disabled={busy || disabled}
-          onPress={() =>
-            void run(async (signal) => {
-              if (alive.current)
-                setProgress("Vérification des fichiers en attente…");
-              await service.preparePending(active, signal);
-              await load(active);
-            })
+      </SectionCard>
+      <Modal
+        visible={!!active}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        allowSwipeDismissal={!busy}
+        onRequestClose={() => {
+          if (!busy) {
+            setActive(undefined);
+            activeRef.current = undefined;
           }
-        />
-      ) : null}
-      {active ? (
-        <SecondaryButton
-          label="Préparer la publication du lot"
-          disabled={busy || disabled}
-          onPress={() =>
-            void run(async (signal) => {
-              setPublicationReport(undefined);
-              setProgress("Vérification des lignes à publier…");
-              const plan = await publisher.preview(active, signal);
-              if (alive.current) setPublicationPlan(plan);
-            })
-          }
-        />
-      ) : null}
-      {publicationPlan ? (
-        <View className="gap-2 rounded-xl border border-line p-3">
-          <Text className="font-semibold text-ink">Publication du lot</Text>
-          <Text>
-            {publicationPlan.items.filter((i) => i.status === "READY").length}{" "}
-            fichiers ·{" "}
-            {publicationPlan.items
-              .filter((i) => i.status === "READY")
-              .reduce((n, i) => n + i.readyCount, 0)}{" "}
-            lignes prêtes
-          </Text>
-          <Text>
-            {
-              publicationPlan.items.filter((i) => i.status === "DUPLICATE")
-                .length
-            }{" "}
-            fichiers déjà publiés ·{" "}
-            {
-              publicationPlan.items.filter(
-                (i) => i.status === "BLOCKED" || i.status === "FAILED",
-              ).length
-            }{" "}
-            fichiers à examiner
-          </Text>
-          <Text className="text-sm text-muted">
-            Seules les lignes prêtes seront publiées. Les produits à confirmer
-            et les fichiers nécessitant un rapprochement restent à examiner.
-          </Text>
-          <SecondaryButton
-            label="Publier les lignes prêtes du lot"
-            disabled={
-              busy ||
-              disabled ||
-              !publicationPlan.items.some((i) => i.status === "READY")
-            }
-            onPress={() =>
-              void run(async (signal) => {
-                const plan = publicationPlan;
-                setPublicationPlan(undefined);
-                setProgress("Publication des fichiers en cours…");
-                const report = await publisher.confirm(plan, signal);
-                await load(plan.batchId);
-                if (alive.current) setPublicationReport(report);
-                if (report.some((item) => item.status === "PUBLISHED"))
-                  await onPublished?.();
-              })
+        }}
+      >
+        <AppScreen>
+          <AppHeader
+            title={batchTitle}
+            subtitle={
+              importedAt
+                ? `${fileCount === undefined ? "Lot" : `${fileCount} fichiers`} · importé le ${new Date(importedAt).toLocaleString("fr-FR")}`
+                : "Les originaux et les publications restent conservés."
             }
           />
           <SecondaryButton
-            label="Annuler la publication"
-            disabled={busy || disabled}
-            onPress={() => setPublicationPlan(undefined)}
-          />
-        </View>
-      ) : null}
-      {publicationReport ? (
-        <InlineAlert
-          title="Résultat du lot"
-          message={`${publicationReport.filter((i) => i.status === "PUBLISHED").length} fichiers publiés · ${publicationReport.reduce((n, i) => n + i.publishedCount, 0)} lignes publiées. ${publicationReport.filter((i) => i.status === "DUPLICATE").length} fichiers déjà publiés. ${publicationReport.filter((i) => i.status === "BLOCKED" || i.status === "FAILED").length} fichiers restent à examiner. Les lignes non publiées restent visibles dans le détail des fichiers.`}
-        />
-      ) : null}
-      {active && publications.length && onDiscuss ? (
-        <SecondaryButton
-          label="Préparer l’analyse dans le chat"
-          disabled={busy || disabled}
-          onPress={() => void run(async () => onDiscuss(active))}
-        />
-      ) : null}
-      {active ? (
-        <View className="gap-3">
-          <TextInput
-            accessibilityLabel="Rechercher un fichier du lot par nom"
-            placeholder="Rechercher un fichier"
-            placeholderTextColor={colors.muted}
-            value={query}
-            maxLength={200}
-            editable={!busy && !disabled}
-            onChangeText={setQuery}
-            className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
-          />
-          <View className="flex-row flex-wrap gap-2">
-            {(
-              [
-                ["ALL", "Tous"],
-                ["REVIEW", "À examiner"],
-                ["PUBLISHED", "Avec lignes publiées"],
-                ["QUEUED", "À lire"],
-              ] as const
-            ).map(([key, label]) => (
-              <Pressable
-                key={key}
-                accessibilityRole="radio"
-                aria-checked={itemFilter === key}
-                accessibilityState={{
-                  checked: itemFilter === key,
-                  disabled: busy || disabled,
-                }}
-                accessibilityLabel={`Fichiers : ${label}`}
-                disabled={busy || disabled}
-                onPress={() => setItemFilter(key)}
-                className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${itemFilter === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
-              >
-                <Text
-                  className={
-                    itemFilter === key
-                      ? "font-semibold text-on-accent"
-                      : "text-ink"
-                  }
-                >
-                  {label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text accessibilityLiveRegion="polite" className="text-sm text-muted">
-            {visibleItems.length} sur {items.length} fichiers chargés
-            {more ? " · d’autres fichiers restent à charger" : ""}
-          </Text>
-        </View>
-      ) : null}
-      {active && items.length > 0 && visibleItems.length === 0 ? (
-        <View className="gap-2">
-          <Text className="text-sm text-muted">
-            Aucun fichier chargé ne correspond à cette sélection.
-          </Text>
-          <SecondaryButton
-            label="Effacer la recherche et les filtres"
-            disabled={busy || disabled}
+            label="Retour aux imports"
+            disabled={busy}
             onPress={() => {
-              setQuery("");
-              setItemFilter("ALL");
+              setActive(undefined);
+              activeRef.current = undefined;
             }}
           />
-        </View>
-      ) : null}
-      {visibleItems.map((item) => (
-        <View key={item.id} className="gap-2 rounded-xl border border-line p-3">
-          <Text className="font-semibold text-ink">{item.filename}</Text>
-          {(publicationReport ?? publicationPlan?.items)?.find(
-            (result) =>
-              result.itemId === item.id &&
-              (result.status === "BLOCKED" || result.status === "FAILED"),
-          ) ? (
-            <Text className="text-sm text-critical">
-              À examiner :{" "}
-              {publicationIssue(
-                (publicationReport ?? publicationPlan?.items)?.find(
-                  (result) => result.itemId === item.id,
-                )?.code,
-              )}
+          {busy ? (
+            <Text
+              accessibilityLiveRegion="polite"
+              className="text-sm text-muted"
+            >
+              {progress ??
+                (reviewAsset ? "Examen du fichier" : "Traitement du lot…")}
             </Text>
           ) : null}
-          <Text
-            className={
-              publicationStatus(item, publications)
-                ? "rounded-xl bg-surface p-2 font-semibold text-forest"
-                : "text-ink"
-            }
-          >
-            {publicationStatus(item, publications) ?? status(item)}
-          </Text>
-          {item.result.status === "REVIEW" ? (
+          {busy && !reviewAsset ? (
             <SecondaryButton
-              label="Examiner ce fichier"
+              label="Interrompre le traitement"
+              onPress={() => abort.current?.abort()}
+            />
+          ) : null}
+          {error ? (
+            <InlineAlert title="Lot à reprendre" message={error} />
+          ) : null}
+          {activeArchive &&
+          (activeArchive.outcome.status !== "PROCESSED" ||
+            activeArchive.outcome.failures.length > 0) ? (
+            <SecondaryButton
+              label="Reprendre l’extraction de l’archive"
               disabled={busy || disabled}
               onPress={() =>
-                void run(async () => {
-                  await onReview({
-                    name: item.filename,
-                    uri: await repo.retainedLocation(item.batchId, item.id),
-                    expectedChecksum: item.checksum,
-                  });
-                  setPublicationPlan(undefined);
-                  setPublicationReport((old) =>
-                    old?.filter((r) => r.itemId !== item.id),
-                  );
-                  if (activeRef.current) {
-                    const committed = await repo.publications(
-                      activeRef.current,
-                    );
-                    if (alive.current) setPublications(committed);
-                  }
-                })
+                void run((signal) => processArchive(activeArchive.id, signal))
               }
             />
           ) : null}
           <SecondaryButton
-            label="Vérifier à nouveau ce fichier"
+            label={toolsOpen ? "Fermer les actions du lot" : "Actions du lot"}
+            expanded={toolsOpen}
             disabled={busy || disabled}
-            onPress={() =>
-              void run(async (signal) => {
-                await repo.refresh(item.batchId, item.id, item.version);
-                await service.prepare(item.batchId, item.id, signal);
-                await automaticallyPublish(item.batchId, signal);
-              })
-            }
+            onPress={() => setToolsOpen((value) => !value)}
           />
-        </View>
-      ))}
-      {active && more ? (
-        <SecondaryButton
-          label="Afficher les fichiers suivants"
-          disabled={busy || disabled}
-          onPress={() => void run(async () => load(active, true))}
-        />
-      ) : null}
-    </SectionCard>
+          {toolsOpen ? (
+            <View className="gap-3">
+              {activeArchive?.outcome.status === "PROCESSED" &&
+              activeArchive.outcome.failures.length ? (
+                <InlineAlert
+                  title="Fichiers non extraits"
+                  message={activeArchive.outcome.failures
+                    .map(
+                      (f) =>
+                        `${f.path} : extraction impossible. Reprenez l’archive ou sélectionnez ce fichier original.`,
+                    )
+                    .join("\n")}
+                />
+              ) : null}
+              {activeArchive?.outcome.status === "PROCESSED" &&
+              activeArchive.outcome.ignored.length ? (
+                <Text className="text-sm text-muted">
+                  {activeArchive.outcome.ignored.length} fichiers système
+                  ignorés.
+                </Text>
+              ) : null}
+              {active ? (
+                <SecondaryButton
+                  label="Reprendre les fichiers en attente"
+                  disabled={busy || disabled}
+                  onPress={() =>
+                    void run(async (signal) => {
+                      if (alive.current)
+                        setProgress("Vérification des fichiers en attente…");
+                      await service.preparePending(active, signal);
+                      await load(active);
+                    })
+                  }
+                />
+              ) : null}
+              {active ? (
+                <SecondaryButton
+                  label="Préparer la publication du lot"
+                  disabled={busy || disabled}
+                  onPress={() =>
+                    void run(async (signal) => {
+                      setPublicationReport(undefined);
+                      setProgress("Vérification des lignes à publier…");
+                      const plan = await publisher.preview(active, signal);
+                      if (alive.current) setPublicationPlan(plan);
+                    })
+                  }
+                />
+              ) : null}
+            </View>
+          ) : null}
+          {publicationPlan ? (
+            <View className="gap-2 rounded-xl border border-line p-3">
+              <Text className="font-semibold text-ink">Publication du lot</Text>
+              <Text>
+                {
+                  publicationPlan.items.filter((i) => i.status === "READY")
+                    .length
+                }{" "}
+                fichiers ·{" "}
+                {publicationPlan.items
+                  .filter((i) => i.status === "READY")
+                  .reduce((n, i) => n + i.readyCount, 0)}{" "}
+                lignes prêtes
+              </Text>
+              <Text>
+                {
+                  publicationPlan.items.filter((i) => i.status === "DUPLICATE")
+                    .length
+                }{" "}
+                fichiers déjà publiés ·{" "}
+                {
+                  publicationPlan.items.filter(
+                    (i) => i.status === "BLOCKED" || i.status === "FAILED",
+                  ).length
+                }{" "}
+                fichiers à examiner
+              </Text>
+              <Text className="text-sm text-muted">
+                Seules les lignes prêtes seront publiées. Les produits à
+                confirmer et les fichiers nécessitant un rapprochement restent à
+                examiner.
+              </Text>
+              <SecondaryButton
+                label="Publier les lignes prêtes du lot"
+                disabled={
+                  busy ||
+                  disabled ||
+                  !publicationPlan.items.some((i) => i.status === "READY")
+                }
+                onPress={() =>
+                  void run(async (signal) => {
+                    const plan = publicationPlan;
+                    setPublicationPlan(undefined);
+                    setProgress("Publication des fichiers en cours…");
+                    const report = await publisher.confirm(plan, signal);
+                    await load(plan.batchId);
+                    if (alive.current) setPublicationReport(report);
+                    if (report.some((item) => item.status === "PUBLISHED"))
+                      await onPublished?.();
+                  })
+                }
+              />
+              <SecondaryButton
+                label="Annuler la publication"
+                disabled={busy || disabled}
+                onPress={() => setPublicationPlan(undefined)}
+              />
+            </View>
+          ) : null}
+          {publicationReport ? (
+            <InlineAlert
+              title="Résultat du lot"
+              message={`${publicationReport.filter((i) => i.status === "PUBLISHED").length} fichiers publiés · ${publicationReport.reduce((n, i) => n + i.publishedCount, 0)} lignes publiées. ${publicationReport.filter((i) => i.status === "DUPLICATE").length} fichiers déjà publiés. ${publicationReport.filter((i) => i.status === "BLOCKED" || i.status === "FAILED").length} fichiers restent à examiner. Les lignes non publiées restent visibles dans le détail des fichiers.`}
+            />
+          ) : null}
+          {active && publications.length && onDiscuss ? (
+            <SecondaryButton
+              label="Préparer l’analyse dans le chat"
+              disabled={busy || disabled}
+              onPress={() => void run(async () => onDiscuss(active))}
+            />
+          ) : null}
+          {active ? (
+            <View className="gap-3">
+              <TextInput
+                accessibilityLabel="Rechercher un fichier du lot par nom"
+                placeholder="Rechercher un fichier"
+                placeholderTextColor={colors.muted}
+                value={query}
+                maxLength={200}
+                editable={!busy && !disabled}
+                onChangeText={setQuery}
+                className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
+              />
+              <View className="flex-row flex-wrap gap-2">
+                {(
+                  [
+                    ["ALL", "Tous"],
+                    ["REVIEW", "À examiner"],
+                    ["PUBLISHED", "Avec lignes publiées"],
+                    ["QUEUED", "À lire"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <Pressable
+                    key={key}
+                    accessibilityRole="radio"
+                    aria-checked={itemFilter === key}
+                    accessibilityState={{
+                      checked: itemFilter === key,
+                      disabled: busy || disabled,
+                    }}
+                    accessibilityLabel={`Fichiers : ${label}`}
+                    disabled={busy || disabled}
+                    onPress={() => setItemFilter(key)}
+                    className={`min-h-12 justify-center rounded-xl border px-3 py-2 ${itemFilter === key ? "border-forest bg-forest" : "border-line bg-surface"}`}
+                  >
+                    <Text
+                      className={
+                        itemFilter === key
+                          ? "font-semibold text-on-accent"
+                          : "text-ink"
+                      }
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text
+                accessibilityLiveRegion="polite"
+                className="text-sm text-muted"
+              >
+                {visibleItems.length} sur {items.length} fichiers chargés
+                {more ? " · d’autres fichiers restent à charger" : ""}
+              </Text>
+            </View>
+          ) : null}
+          {active && items.length > 0 && visibleItems.length === 0 ? (
+            <View className="gap-2">
+              <Text className="text-sm text-muted">
+                Aucun fichier chargé ne correspond à cette sélection.
+              </Text>
+              <SecondaryButton
+                label="Effacer la recherche et les filtres"
+                disabled={busy || disabled}
+                onPress={() => {
+                  setQuery("");
+                  setItemFilter("ALL");
+                }}
+              />
+            </View>
+          ) : null}
+          {visibleItems.map((item) => (
+            <Pressable
+              key={item.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Ouvrir le fichier ${item.filename}`}
+              disabled={busy || disabled}
+              onPress={() =>
+                void run(async (signal) => {
+                  const asset = {
+                    name: item.filename,
+                    uri: await repo.retainedLocation(item.batchId, item.id),
+                    expectedChecksum: item.checksum,
+                  };
+                  await new Promise<void>((resolve) => {
+                    reviewDone.current = resolve;
+                    setReviewAsset(asset);
+                  });
+                  if (!alive.current || signal.aborted) return;
+                  // Refresh this item in place: keep loaded pages, search, filters and list position.
+                  const current = await repo.get(item.batchId, item.id);
+                  await repo.refresh(item.batchId, item.id, current.version);
+                  const refreshed = await service.prepare(
+                    item.batchId,
+                    item.id,
+                    signal,
+                  );
+                  const committed = await repo.publications(item.batchId);
+                  if (!alive.current || signal.aborted) return;
+                  setItems((old) =>
+                    old.map((row) =>
+                      row.id === refreshed.id ? refreshed : row,
+                    ),
+                  );
+                  setPublications(committed);
+                  setPublicationPlan(undefined);
+                  setPublicationReport((old) =>
+                    old?.filter((r) => r.itemId !== item.id),
+                  );
+                })
+              }
+              className="min-h-16 gap-2 rounded-xl border border-line p-4"
+            >
+              <Text className="font-semibold text-ink">{item.filename} ›</Text>
+              <Text
+                className={
+                  publicationStatus(item, publications)
+                    ? "font-semibold text-forest"
+                    : "text-muted"
+                }
+              >
+                {publicationStatus(item, publications) ?? status(item)}
+              </Text>
+              {(publicationReport ?? publicationPlan?.items)?.find(
+                (r) =>
+                  r.itemId === item.id &&
+                  (r.status === "BLOCKED" || r.status === "FAILED"),
+              ) ? (
+                <Text className="text-sm text-warning">
+                  {publicationIssue(
+                    (publicationReport ?? publicationPlan?.items)?.find(
+                      (r) => r.itemId === item.id,
+                    )?.code,
+                  )}
+                </Text>
+              ) : null}
+            </Pressable>
+          ))}
+          {active && more ? (
+            <SecondaryButton
+              label="Afficher les fichiers suivants"
+              disabled={busy || disabled}
+              onPress={() => void run(async () => load(active, true))}
+            />
+          ) : null}
+        </AppScreen>
+        <Modal
+          visible={!!reviewAsset}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          allowSwipeDismissal={!reviewBusy}
+          onRequestClose={closeReview}
+          onDismiss={finishReview}
+        >
+          {reviewAsset
+            ? renderReview(reviewAsset, closeReview, setReviewBusy)
+            : null}
+        </Modal>
+      </Modal>
+    </>
   );
 }
 function status(item: MercalysBatchItem) {

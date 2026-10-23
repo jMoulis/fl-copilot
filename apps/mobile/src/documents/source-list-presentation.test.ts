@@ -168,3 +168,23 @@ it("does not infer a publication from an ambiguous checksum or treat queued and 
   expect(filterBatchItems([failed], [p], "", "REVIEW")).toEqual([failed]);
   expect(filterBatchItems([queued, failed], [], "missing", "ALL")).toEqual([]);
 });
+
+it("keeps an exact duplicate with unpublished rows in the review filter", () => {
+  const item = batchItem({
+    result: {
+      status: "DUPLICATE",
+      sourceDocumentId: "33333333-3333-4333-8333-333333333333",
+      sourceType: "MERCALYS_WASTE",
+    },
+  });
+  const p = {
+    checksum: item.checksum,
+    source_type: "MERCALYS_WASTE",
+    published_count: 10,
+    remaining_count: 2,
+  };
+  expect(filterBatchItems([item], [p], "", "REVIEW")).toEqual([item]);
+  expect(
+    filterBatchItems([item], [{ ...p, remaining_count: 0 }], "", "REVIEW"),
+  ).toEqual([]);
+});

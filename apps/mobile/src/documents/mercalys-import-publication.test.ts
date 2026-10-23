@@ -7,7 +7,15 @@ import type { ProductMatchResult } from "@fl-copilot/domain";
 import { runLocalMigrations } from "../db/migrations";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
-import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
+import {
+  rematchMercalysImport,
+  type MercalysImportValidationSummary,
+} from "./mercalys-import-validation";
+import { ProductMasterRepository } from "../products/product-master-repository";
+import {
+  buildMercalysProductResolutions,
+  confirmMercalysProductMapping,
+} from "./mercalys-product-resolution";
 import {
   MercalysExactDuplicateError,
   MercalysImportPublicationRepository,
@@ -413,6 +421,152 @@ describe("MercalysImportPublicationRepository", () => {
         )
         .get(),
     ).toEqual({ count: 1 });
+    database.close();
+  });
+
+  it("reviews a 21 October correction imported on 23 October, resolves a product beyond line 20 and replaces once without losing the original or pending commands", async () => {
+    const { adapter, database } = await openDatabase();
+    const ids = Array.from(
+      { length: 24 },
+      (_, i) => `22222222-2222-4222-8222-${String(i + 1).padStart(12, "0")}`,
+    );
+    ids.forEach((id, i) =>
+      insertProductRecord(database, id, `Produit ${i + 8}`),
+    );
+    const generateId = idGenerator(),
+      now = () => "2026-10-23T10:00:00.000Z";
+    const repository = new MercalysImportPublicationRepository(
+      adapter,
+      generateId,
+      now,
+    );
+    const original = reconciliationSummary(
+      ids.map((id, i) => {
+        const line: MercalysImportValidationSummary["lines"][number] =
+          matchedLine(i + 8, id, 1);
+        line.record.businessDate = "2026-10-21";
+        line.record.itm8 = String(i + 1).padStart(8, "0");
+        line.record.ean = null;
+        line.record.rawValues = {
+          ...line.record.rawValues,
+          businessDate: "2026-10-21",
+          itm8: line.record.itm8,
+          ean: null,
+        };
+        return line;
+      }),
+    );
+    original.businessPeriodStart = original.businessPeriodEnd = "2026-10-21";
+    const first = await repository.publish({
+      ...input(original, `sha256:${"1".repeat(64)}`),
+      filename: "21102026.xlsx",
+    });
+    const corrected = structuredClone(original);
+    corrected.lines[23]!.record.quantity = 2.5;
+    corrected.lines[23]!.record.rawValues.quantity = 2.5;
+    corrected.lines[23]!.match = match("NO_MATCH");
+    corrected.readyCount = 23;
+    corrected.productReviewCount = 1;
+    const blocked = await repository.analyzeOverlap(storeId, corrected);
+    expect(blocked?.safeToApply).toBe(false);
+    expect(
+      blocked?.rows.some(
+        (r) =>
+          r.reason === "UNRESOLVED_PRODUCT" && r.incomingSourceIndex === 31,
+      ),
+    ).toBe(true);
+    const snapshot = () => ({
+      observations: database
+        .prepare("SELECT * FROM sales_observations ORDER BY id")
+        .all(),
+      outbox: database
+        .prepare("SELECT * FROM sync_outbox ORDER BY command_id")
+        .all(),
+      sources: database
+        .prepare("SELECT * FROM source_documents ORDER BY id")
+        .all(),
+    });
+    const before = snapshot();
+    await expect(
+      repository.publish({
+        ...input(corrected, `sha256:${"2".repeat(64)}`),
+        filename: "21102026.xlsx",
+        reconciliationApproval: {
+          fingerprint: blocked!.fingerprint,
+          actorUserId: "99999999-9999-4999-8999-999999999999",
+        },
+      }),
+    ).rejects.toThrow("Ambiguous reconciliation cannot be applied");
+    expect(snapshot()).toEqual(before);
+    const products = new ProductMasterRepository(adapter);
+    await confirmMercalysProductMapping(
+      products,
+      buildMercalysProductResolutions(corrected)[0]!,
+      ids[23]!,
+      {
+        storeId,
+        deviceId: "88888888-8888-4888-8888-888888888888",
+        now,
+        generateId,
+      },
+    );
+    const [catalogProducts, identifiers, aliases] = await Promise.all([
+      products.listProducts(storeId),
+      products.listIdentifiersByStore(storeId),
+      products.listAliasesByStore(storeId),
+    ]);
+    const resolved = rematchMercalysImport(corrected, storeId, {
+      products: catalogProducts.map((p) => p.entity),
+      identifiers: identifiers.map((p) => p.entity),
+      aliases: aliases.map((p) => p.entity),
+    });
+    expect(resolved.productReviewCount).toBe(0);
+    const review = await repository.analyzeOverlap(storeId, resolved);
+    expect(review).toMatchObject({
+      safeToApply: true,
+      counts: { UNCHANGED: 23, MODIFIED: 1, AMBIGUOUS: 0 },
+    });
+    expect(review!.fingerprint).not.toBe(blocked!.fingerprint);
+    const result = await repository.publish({
+      ...input(resolved, `sha256:${"2".repeat(64)}`),
+      filename: "21102026.xlsx",
+      reconciliationApproval: {
+        fingerprint: review!.fingerprint,
+        actorUserId: "99999999-9999-4999-8999-999999999999",
+      },
+    });
+    expect(result).toMatchObject({ publishedCount: 24, replacedCount: 24 });
+    expect(
+      database
+        .prepare(
+          "SELECT COUNT(*) AS n FROM sales_observations WHERE deleted_at IS NULL",
+        )
+        .get(),
+    ).toEqual({ n: 24 });
+    expect(
+      database
+        .prepare(
+          "SELECT quantity FROM sales_observations WHERE product_id=? AND deleted_at IS NULL",
+        )
+        .get(ids[23]!),
+    ).toEqual({ quantity: "2.5" });
+    expect(
+      database
+        .prepare("SELECT COUNT(*) AS n FROM source_documents WHERE id=?")
+        .get(first.sourceDocumentId),
+    ).toEqual({ n: 1 });
+    for (const command of before.outbox)
+      expect(
+        database
+          .prepare("SELECT command_id FROM sync_outbox WHERE command_id=?")
+          .get(command.command_id as string),
+      ).toBeDefined();
+    await expect(
+      repository.publish({
+        ...input(resolved, `sha256:${"2".repeat(64)}`),
+        filename: "21102026.xlsx",
+      }),
+    ).rejects.toBeInstanceOf(MercalysExactDuplicateError);
     database.close();
   });
 
