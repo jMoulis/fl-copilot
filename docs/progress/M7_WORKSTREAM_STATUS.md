@@ -1,5 +1,13 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot UX en validation — 23 octobre : liste des documents commerciaux
+
+Les PDF se recherchent par nom ou date, se filtrent par attente/résultats reçus/étapes à vérifier et se consultent par pages de dix cartes. Les analyses connues uniquement par synchronisation restent accessibles avec leur original ; une page reçue ne signifie pas une analyse terminée. Le bloc d’import est raccourci et le contexte/préparation n’est monté qu’à la première ouverture, puis garde son état après repli. Aucun traitement métier ni publication automatique n’est ajouté.
+
+Le timer de lecture toutes les deux secondes est supprimé. Focus/retour, fin de synchronisation et relecture explicite relisent le snapshot local ; progression intermédiaire regroupée, erreurs et réponses tardives conservent le contenu. Pour 200 PDF sur SQLite, la lecture des états d’envoi passe de **200 requêtes à une**, sans changer le choix du job de reprise. Le snapshot de liste utilise quatre requêtes ; ce nombre exclut les panneaux visibles. Voir `../qa/M7_UX_COMMERCIAL_DOCUMENTS_2026_10_23.md`. Code en validation, non inclus dans le build 13 ; aucun build payant ni déploiement API isolé.
+
+La PR 337 est fusionnée en `4bda57f` après les deux CI exactes vertes (**3 944 tests / 6 ignorés**) et sa branche a été supprimée. Le build 13 reste disponible sur `5838bd8`, recette humaine ouverte. **Sept chantiers : 1/3/4/5/6/7 en cours ; 2 Contre-promo code prêt.** La réception Resend attend encore l’accord de clé dédiée et sa livraison API ; aucune clôture V1/M8 n’est déclarée.
+
 ## Lot M8 en validation — 23 octobre : sauvegarde produit et changement de session
 
 La fiche refuse les anciens callbacks après changement de compte, magasin, produit ou fermeture. Le même contrôle rejoint le writer SQLite existant avant son attente et avant validation de sa transaction : produit, codes, alias, Outbox et calculs sont annulés ensemble si le contexte a changé. Une session locale inchangée reste utilisable hors connexion, y compris après renouvellement de son objet ; aucun nouveau contrôle réseau ni rôle métier n’est ajouté. Voir `../qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md`. Contrôles finaux et CI exactes restent à consigner avant fusion ; ce lot n’est pas dans le build 13 déjà envoyé.
