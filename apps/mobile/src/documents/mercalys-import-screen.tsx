@@ -2,6 +2,11 @@ import { SourceOriginalButton } from "./source-original-button";
 import { SourceUploadRecoveryPanel } from "./source-upload-recovery-panel";
 import { MercalysBatchPanel } from "./mercalys-batch-panel";
 import { MercalysReconciliationReview } from "./mercalys-reconciliation-review";
+import { readRetainedMercalysBytes } from "./read-retained-mercalys";
+import {
+  localOperationFailureCode,
+  localOperationFailureMessage,
+} from "../observability/local-operation-failure";
 import { MercalysImportProductPicker } from "../copilot/mercalys-import-product-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -102,6 +107,7 @@ export function MercalysImportScreen({
   onClose,
   onDiscuss,
   onBusyChange,
+  onChanged,
   retainedAsset,
 }: {
   retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string };
@@ -109,6 +115,7 @@ export function MercalysImportScreen({
   onClose?(): void;
   onDiscuss?(batchId: string): Promise<void>;
   onBusyChange?(busy: boolean): void;
+  onChanged?(): void;
 } = {}) {
   const fileScroll = useRef<ScrollView>(null);
   const scrollToStart = () =>
@@ -198,9 +205,7 @@ export function MercalysImportScreen({
 
         setStage("READING");
         await yieldToInterface();
-        const bytes = await new nativeFileSystem.FileSystemFile(
-          asset.uri,
-        ).bytes();
+        const bytes = await readRetainedMercalysBytes(asset.uri);
         if (
           asset.expectedChecksum &&
           `sha256:${await sha256Hex(bytes)}` !== asset.expectedChecksum
@@ -356,7 +361,10 @@ export function MercalysImportScreen({
           now: () => new Date().toISOString(),
           generateId: randomUUID,
         },
-        (completed, total) => setResolutionProgress({ completed, total }),
+        (completed, total) => {
+          setResolutionProgress({ completed, total });
+          if (completed > 0) onChanged?.();
+        },
         allowExplicitDistinct,
       );
       await refreshProductMatches(summary);
@@ -382,6 +390,8 @@ export function MercalysImportScreen({
     setResolvingProducts(true);
     setError(undefined);
     try {
+      // Mapping may commit several identities before a later conflict interrupts it.
+      onChanged?.();
       await confirmMercalysProductMapping(repository, resolution, productId, {
         storeId,
         deviceId,
@@ -436,6 +446,7 @@ export function MercalysImportScreen({
           checksum: selectedChecksum,
           summary,
         });
+        onChanged?.();
         setPublication({
           ...result,
           publishedCount: continuation.publishedCount + result.publishedCount,
@@ -467,6 +478,7 @@ export function MercalysImportScreen({
       });
       // The publication transaction now owns this original. Later failures must never delete it.
       durableFile = undefined;
+      onChanged?.();
       setPublication(result);
       setReconciliation(undefined);
       const analyticsRun = await analyticsScheduler.process(storeId);
@@ -504,6 +516,7 @@ export function MercalysImportScreen({
     publicationRepository,
     analyticsScheduler,
     syncNow,
+    onChanged,
   ]);
   const autoAttempts = useRef(new Set<string>());
   useEffect(() => {
@@ -661,13 +674,14 @@ export function MercalysImportScreen({
             });
             return result.canceled ? undefined : result.assets[0];
           }}
-          renderReview={(asset, close, reportBusy) => (
+          renderReview={(asset, close, reportBusy, reportChanged) => (
             <MercalysImportScreen
               key={asset.uri}
               retainedAsset={asset}
               conversationId={conversationId}
               onClose={close}
               onBusyChange={reportBusy}
+              onChanged={reportChanged}
             />
           )}
         />
@@ -1329,6 +1343,10 @@ function progressState(stage: ImportStage, target: ImportStage) {
 }
 
 function importErrorMessage(error: unknown) {
+  const localMessage = localOperationFailureMessage(
+    localOperationFailureCode(error),
+  );
+  if (localMessage) return localMessage;
   if (error instanceof Error && error.message === "MERCALYS_BATCH_FILE_CHANGED")
     return "L’original conservé a changé. Sélectionnez de nouveau le fichier avant de l’examiner.";
   if (error instanceof MercalysImportValidationError) {
