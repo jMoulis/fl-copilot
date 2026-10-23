@@ -274,6 +274,8 @@ type AppDependencies = {
 };
 
 export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
+  const receivingApiKey =
+    config.RESEND_RECEIVING_API_KEY ?? config.RESEND_API_KEY;
   const auth =
     dependencies.auth ??
     createMongoAuthService(
@@ -341,12 +343,21 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           }),
           config.RESEND_RECEIVING_DOMAIN &&
             config.RESEND_RECEIVING_WEBHOOK_SECRET &&
-            config.RESEND_API_KEY
+            receivingApiKey
             ? createEmailOriginalProcessor(
                 dependencies.database,
                 createResendAttachmentReader(
-                  new Resend(config.RESEND_API_KEY).emails.receiving
-                    .attachments,
+                  new Resend(receivingApiKey).emails.receiving.attachments,
+                  fetch,
+                  Date.now,
+                  (diagnostic) =>
+                    app.log.warn(
+                      {
+                        code: "EMAIL_ATTACHMENT_PROVIDER_FAILED",
+                        ...diagnostic,
+                      },
+                      "Received attachment metadata is unavailable",
+                    ),
                 ),
               )
             : undefined,
@@ -2075,7 +2086,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     dependencies.emailIntake ??
     (config.RESEND_RECEIVING_DOMAIN &&
     config.RESEND_RECEIVING_WEBHOOK_SECRET &&
-    config.RESEND_API_KEY
+    receivingApiKey
       ? createEmailIntakeStore(
           dependencies.database,
           config.RESEND_RECEIVING_DOMAIN,
@@ -2098,13 +2109,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       dependencies.emailOriginalAccess ??
       createEmailOriginalAccess(dependencies.database),
   });
-  if (
-    emailIntake &&
-    config.RESEND_RECEIVING_WEBHOOK_SECRET &&
-    config.RESEND_API_KEY
-  )
+  if (emailIntake && config.RESEND_RECEIVING_WEBHOOK_SECRET && receivingApiKey)
     registerResendIntakeWebhook(app, {
-      client: new Resend(config.RESEND_API_KEY),
+      client: new Resend(receivingApiKey),
       secret: config.RESEND_RECEIVING_WEBHOOK_SECRET,
       admit: async (event) => {
         const receiptId = await emailIntake.admit(event);

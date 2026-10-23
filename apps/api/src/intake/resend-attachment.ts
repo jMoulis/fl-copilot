@@ -33,6 +33,32 @@ const allowed = new Set([
   "image/heif",
 ]);
 export type EmailAttachmentTarget = z.infer<typeof targetSchema>;
+export interface ResendAttachmentProviderFailure {
+  reason:
+    | "KEY_RESTRICTED"
+    | "KEY_INVALID"
+    | "ACCESS_DENIED"
+    | "NOT_FOUND"
+    | "RATE_LIMITED"
+    | "QUOTA_EXCEEDED"
+    | "PROVIDER_ERROR"
+    | "EMPTY_RESPONSE";
+  httpStatus: number | null;
+}
+const providerReasons = new Map<
+  string,
+  ResendAttachmentProviderFailure["reason"]
+>([
+  ["restricted_api_key", "KEY_RESTRICTED"],
+  ["missing_api_key", "KEY_INVALID"],
+  ["invalid_api_key", "KEY_INVALID"],
+  ["invalid_access", "ACCESS_DENIED"],
+  ["security_error", "ACCESS_DENIED"],
+  ["not_found", "NOT_FOUND"],
+  ["rate_limit_exceeded", "RATE_LIMITED"],
+  ["monthly_quota_exceeded", "QUOTA_EXCEEDED"],
+  ["daily_quota_exceeded", "QUOTA_EXCEEDED"],
+]);
 class AttachmentReadError extends Error {}
 const failure = (code: string) =>
   new AttachmentReadError(`EMAIL_ATTACHMENT_${code}`);
@@ -49,14 +75,20 @@ export function resendAttachmentUrl(
   } catch {
     throw failure("CAPABILITY_INVALID");
   }
+  const expectedPath =
+    url.hostname === "cdn.resend.app"
+      ? `/receiving/${emailId}/attachments/${attachmentId}`
+      : url.hostname === "inbound-cdn.resend.com"
+        ? `/${emailId}/attachments/${attachmentId}`
+        : null;
   if (
     url.protocol !== "https:" ||
-    url.hostname !== "inbound-cdn.resend.com" ||
+    !expectedPath ||
     url.port ||
     url.username ||
     url.password ||
     url.hash ||
-    url.pathname !== `/${emailId}/attachments/${attachmentId}` ||
+    url.pathname !== expectedPath ||
     [...raw].some(
       (char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127,
     )
@@ -69,6 +101,7 @@ export function createResendAttachmentReader(
   attachments: Pick<Resend["emails"]["receiving"]["attachments"], "get">,
   fetcher: typeof fetch = fetch,
   now: () => number = () => Date.now(),
+  onProviderFailure?: (details: ResendAttachmentProviderFailure) => void,
 ) {
   return {
     async read(
@@ -120,7 +153,28 @@ export function createResendAttachmentReader(
         const result = await wait(
           attachments.get({ emailId: target.emailId, id: target.attachmentId }),
         );
-        if (result.error || !result.data) throw failure("PROVIDER_UNAVAILABLE");
+        if (result.error || !result.data) {
+          // Never pass the SDK error/body/headers, email identity or signed URL to logs.
+          const status = result.error?.statusCode;
+          const details: ResendAttachmentProviderFailure = {
+            reason: result.error
+              ? (providerReasons.get(result.error.name) ?? "PROVIDER_ERROR")
+              : "EMPTY_RESPONSE",
+            httpStatus:
+              typeof status === "number" &&
+              Number.isInteger(status) &&
+              status >= 400 &&
+              status <= 599
+                ? status
+                : null,
+          };
+          try {
+            onProviderFailure?.(details);
+          } catch {
+            /* Diagnostics must not change the retry contract. */
+          }
+          throw failure("PROVIDER_UNAVAILABLE");
+        }
         const parsed = metadataSchema.safeParse(result.data);
         if (!parsed.success) throw failure("METADATA_INVALID");
         const metadata = parsed.data;
