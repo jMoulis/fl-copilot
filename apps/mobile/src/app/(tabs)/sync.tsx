@@ -1,3 +1,4 @@
+import { LocalCopiesPanel } from "@/db/local-copies-panel";
 import { SyncRecoveryPanel } from "@/sync/recovery-panel";
 import { LocalDatabaseRecoveryNotice } from "@/db/recovery-notice";
 import { Text, View } from "react-native";
@@ -165,6 +166,7 @@ export default function SynchronizationScreen() {
         </SectionCard>
       ) : null}
 
+      <LocalCopiesPanel />
       <SecondaryButton label="Retour" onPress={() => router.back()} />
     </AppScreen>
   );

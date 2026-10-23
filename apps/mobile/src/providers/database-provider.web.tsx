@@ -34,3 +34,13 @@ export function useDeviceIdentity() {
   if (!deviceId) throw new Error("Device identity is unavailable.");
   return deviceId;
 }
+
+export function useDatabaseAccessBinding():
+  { ownerId: string; generation: string } | undefined {
+  return undefined;
+}
+export function useDatabaseRestore() {
+  return () => {
+    throw new Error("LOCAL_RECOVERY_NATIVE_ONLY");
+  };
+}

@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Redirect, useRouter, type Href } from "expo-router";
 import { Text, TextInput, View } from "react-native";
 import { z } from "zod";
+import { LocalCopyError } from "../db/local-copy-contracts";
 import { ApiClientError } from "@fl-copilot/api-client";
 import { useAuth } from "@/auth/auth-provider";
 import {
@@ -38,7 +39,11 @@ export default function VerifyScreen() {
   if (!pendingChallenge) return <Redirect href={"/login" as Href} />;
 
   const errorMessage = (reason: unknown, fallback: string) =>
-    reason instanceof ApiClientError ? reason.response.messageFr : fallback;
+    reason instanceof LocalCopyError
+      ? reason.message
+      : reason instanceof ApiClientError
+        ? reason.response.messageFr
+        : fallback;
 
   const submit = handleSubmit(async ({ code }) => {
     setError(undefined);

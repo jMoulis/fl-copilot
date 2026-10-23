@@ -1,6 +1,7 @@
 import { drizzle, type ExpoSQLiteDatabase } from "drizzle-orm/expo-sqlite";
 import { randomUUID } from "expo-crypto";
 import { openDatabaseAsync, type SQLiteDatabase } from "expo-sqlite";
+import { restoredDatabaseOwner } from "./local-copies-native";
 import { runLocalMigrations } from "./migrations";
 import { serializeLocalWrites } from "./serialized-writes";
 import { localSchema } from "./schema";
@@ -25,6 +26,7 @@ export interface LocalDatabase {
   schemaVersion: number;
   deviceId: string;
   recovery?: { recoveredAt: string };
+  accessBinding?: { ownerId: string; generation: string };
 }
 
 let pendingCorruptClose:
@@ -84,11 +86,20 @@ async function openLocalDatabase(
     await sqlite.execAsync("PRAGMA busy_timeout = 5000;");
     const schemaVersion = await runLocalMigrations(sqlite);
     const deviceId = await getOrCreateDeviceId(sqlite, randomUUID);
+    const accessOwnerId = await restoredDatabaseOwner(location);
     return {
       sqlite: serializeLocalWrites(sqlite),
       orm: drizzle(sqlite, { schema: localSchema }),
       schemaVersion,
       deviceId,
+      ...(accessOwnerId && location.generation
+        ? {
+            accessBinding: {
+              ownerId: accessOwnerId,
+              generation: location.generation,
+            },
+          }
+        : {}),
       ...(location.recoveredAt
         ? { recovery: { recoveredAt: location.recoveredAt } }
         : {}),
