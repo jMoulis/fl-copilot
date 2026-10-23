@@ -362,11 +362,11 @@ function panel() {
     storeId: "store",
     ownerId: "owner",
     pick: vi.fn(),
-    renderReview: (asset, close, reportBusy) => {
+    renderReview: (asset, close, reportBusy, changed) => {
       fileBusy = reportBusy;
       return createElement(
         "FileReview",
-        { asset, close },
+        { asset, close, changed },
         "Examen de " + asset.name,
       );
     },
@@ -410,7 +410,8 @@ it("keeps archives and batch files on separate levels, labels the import date, a
   const dismiss = nestedModal.props.onDismiss;
   await act(async () => file.props.close());
   await act(async () => dismiss());
-  expect(ports.refresh).toHaveBeenCalledExactlyOnceWith("batch", "item-25", 1);
+  expect(ports.refresh).not.toHaveBeenCalled();
+  expect(ports.prepare).not.toHaveBeenCalled();
   expect(ports.page).toHaveBeenCalledTimes(2);
   expect(input.props.value).toBe("21102026");
   expect(text(renderer!.root)).toContain("1 sur 40 fichiers chargés");
@@ -442,11 +443,7 @@ it("allows opening retained failed files and protects dismissal during a file mu
     renderer!.root.findByType("FileReview" as ElementType).props.close(),
   );
   await act(async () => dismiss());
-  expect(ports.prepare).toHaveBeenCalledExactlyOnceWith(
-    "batch",
-    "item-0",
-    expect.any(AbortSignal),
-  );
+  expect(ports.prepare).not.toHaveBeenCalled();
 });
 it("does not mutate a batch after its owner-scoped review is unmounted", async () => {
   batchFixture();
@@ -495,4 +492,25 @@ it("retains extraction failures under batch actions and the archive timestamp wh
   await press("Actions du lot");
   expect(text(renderer!.root)).toContain("Ventes/fichier-absent.xlsx");
   expect(text(renderer!.root)).toContain("fichiers système ignorés");
+});
+
+it("reprepares only the changed file after a committed mapping/publication, once the sheet is dismissed", async () => {
+  batchFixture();
+  await act(async () => {
+    renderer = create(panel());
+  });
+  await openBatch();
+  await press("Ouvrir le fichier export-0.xlsx");
+  const file = renderer!.root.findByType("FileReview" as ElementType);
+  const dismiss = file.parent!.props.onDismiss;
+  await act(async () => file.props.changed());
+  expect(ports.refresh).not.toHaveBeenCalled();
+  await act(async () => file.props.close());
+  await act(async () => dismiss());
+  expect(ports.refresh).toHaveBeenCalledExactlyOnceWith("batch", "item-0", 1);
+  expect(ports.prepare).toHaveBeenCalledExactlyOnceWith(
+    "batch",
+    "item-0",
+    expect.any(AbortSignal),
+  );
 });

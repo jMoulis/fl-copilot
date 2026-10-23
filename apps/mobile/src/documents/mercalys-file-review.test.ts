@@ -23,6 +23,8 @@ const p = vi.hoisted(() => ({
   sync: vi.fn(),
   write: vi.fn(),
   close: vi.fn(),
+  changed: vi.fn(),
+  read: vi.fn(),
 }));
 vi.mock("react-native", () => ({
   StyleSheet: { create: (value: unknown) => value },
@@ -96,6 +98,9 @@ vi.mock("expo-file-system", () => ({
     write = p.write;
     delete() {}
   },
+}));
+vi.mock("./read-retained-mercalys", () => ({
+  readRetainedMercalysBytes: p.read,
 }));
 vi.mock("expo-modules-core", () => ({
   requireOptionalNativeModule: (name: string) =>
@@ -233,7 +238,7 @@ async function mount() {
     renderer = create(
       createElement<NonNullable<Parameters<typeof MercalysImportScreen>[0]>>(
         MercalysImportScreen,
-        { retainedAsset: asset, onClose: p.close },
+        { retainedAsset: asset, onClose: p.close, onChanged: p.changed },
       ),
     );
   });
@@ -246,6 +251,7 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  p.read.mockResolvedValue(new Uint8Array([1]).slice());
   p.identifiers = [];
   p.products = [
     {
@@ -348,6 +354,7 @@ it("opens a retained corrected file, resolves its product through the real mappi
   await press("Confirmer le produit");
   await press("Associer à TOMATE VRAC");
   expect(p.identifiers).toHaveLength(1);
+  expect(p.changed).toHaveBeenCalledTimes(1);
   expect(text(renderer!.root)).toContain("Comparer les deux versions");
   expect(button("Appliquer la nouvelle version").props.disabled).toBe(false);
   expect(p.publish).not.toHaveBeenCalled();
@@ -367,6 +374,7 @@ it("opens a retained corrected file, resolves its product through the real mappi
     }),
   );
   expect(p.write).toHaveBeenCalledWith(new Uint8Array([1]));
+  expect(p.changed).toHaveBeenCalledTimes(2);
   expect(text(renderer!.root)).toContain("publiée localement");
 });
 it("reopens comparison if observations change before apply instead of claiming a successful replacement", async () => {
@@ -451,4 +459,17 @@ it("keeps a completed duplicate read-only and explains a blocked partial-source 
   await mount();
   expect(text(renderer!.root)).toContain("conflit de synchronisation");
   expect(p.resume).not.toHaveBeenCalled();
+});
+
+it("explains an unavailable retained original without exposing native paths or enabling publication", async () => {
+  p.read.mockRejectedValueOnce(
+    Object.assign(new Error("native-private-path"), { code: "ENOENT" }),
+  );
+  await mount();
+  expect(text(renderer!.root)).toContain(
+    "L’original conservé ne peut pas être retrouvé",
+  );
+  expect(text(renderer!.root)).not.toContain("native-private-path");
+  expect(p.publish).not.toHaveBeenCalled();
+  expect(p.changed).not.toHaveBeenCalled();
 });

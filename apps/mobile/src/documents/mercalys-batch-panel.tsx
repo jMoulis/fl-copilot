@@ -28,7 +28,7 @@ import {
   digest,
   digestStringAsync,
 } from "expo-crypto";
-import { File } from "expo-file-system";
+import { readRetainedMercalysBytes } from "./read-retained-mercalys";
 import type {
   MercalysBatchInput,
   MercalysBatchItem,
@@ -78,6 +78,7 @@ export function MercalysBatchPanel({
     asset: MercalysSelectedFile & { expectedChecksum: string },
     close: () => void,
     onBusyChange: (busy: boolean) => void,
+    onChanged: () => void,
   ): ReactNode;
   disabled?: boolean;
 }) {
@@ -99,7 +100,7 @@ export function MercalysBatchPanel({
       new MercalysBatchPreparation(repo, {
         reportFailure: (reason) =>
           captureLocalOperationFailure(reason, "mercalys-prepare"),
-        read: (uri) => new File(uri).bytes(),
+        read: readRetainedMercalysBytes,
         checksum: async (bytes) => {
           const hash = await digest(CryptoDigestAlgorithm.SHA256, bytes);
           return `sha256:${Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("")}`;
@@ -138,6 +139,7 @@ export function MercalysBatchPanel({
     MercalysSelectedFile & { expectedChecksum: string }
   >();
   const [reviewBusy, setReviewBusy] = useState(false);
+  const reviewChanged = useRef(false);
   const reviewDone = useRef<(() => void) | undefined>(undefined);
   function finishReview() {
     reviewDone.current?.();
@@ -763,19 +765,23 @@ export function MercalysBatchPanel({
                     uri: await repo.retainedLocation(item.batchId, item.id),
                     expectedChecksum: item.checksum,
                   };
+                  reviewChanged.current = false;
                   await new Promise<void>((resolve) => {
                     reviewDone.current = resolve;
                     setReviewAsset(asset);
                   });
                   if (!alive.current || signal.aborted) return;
                   // Refresh this item in place: keep loaded pages, search, filters and list position.
-                  const current = await repo.get(item.batchId, item.id);
-                  await repo.refresh(item.batchId, item.id, current.version);
-                  const refreshed = await service.prepare(
-                    item.batchId,
-                    item.id,
-                    signal,
-                  );
+                  let refreshed = item;
+                  if (reviewChanged.current) {
+                    const current = await repo.get(item.batchId, item.id);
+                    await repo.refresh(item.batchId, item.id, current.version);
+                    refreshed = await service.prepare(
+                      item.batchId,
+                      item.id,
+                      signal,
+                    );
+                  }
                   const committed = await repo.publications(item.batchId);
                   if (!alive.current || signal.aborted) return;
                   setItems((old) =>
@@ -834,7 +840,9 @@ export function MercalysBatchPanel({
           onDismiss={finishReview}
         >
           {reviewAsset
-            ? renderReview(reviewAsset, closeReview, setReviewBusy)
+            ? renderReview(reviewAsset, closeReview, setReviewBusy, () => {
+                reviewChanged.current = true;
+              })
             : null}
         </Modal>
       </Modal>
