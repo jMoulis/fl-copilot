@@ -168,8 +168,9 @@ it("admits one save, locks edits and structural controls until it settles, and r
   await press("Afficher codes produit");
   await press("Afficher autres libellés");
   await change("Libellé du produit", "PERSIL BOTTE CORRIGÉ");
+  let completion: Promise<void> | undefined;
   await act(async () => {
-    control("Enregistrer le produit").props.onPress();
+    completion = control("Enregistrer le produit").props.onPress();
   });
   await act(async () => {
     await control("Enregistrer le produit").props.onPress();
@@ -189,6 +190,7 @@ it("admits one save, locks edits and structural controls until it settles, and r
   expect(formState).toHaveBeenLastCalledWith(true, true);
   await act(async () => {
     fail(Error("PRODUCT_EDITOR_IDENTIFIER_CONFLICT"));
+    await completion;
   });
   expect(input("Libellé du produit").props.value).toBe("PERSIL BOTTE CORRIGÉ");
   expect(input("Valeur de l’identifiant 1").props.value).toBe("000000123");

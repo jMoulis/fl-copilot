@@ -431,7 +431,7 @@ export function ProductEditorForm({
         label="Enregistrer le produit"
         loading={isSubmitting}
         disabled={disabled}
-        onPress={() => void submit()}
+        onPress={submit}
       />
     </>
   );
