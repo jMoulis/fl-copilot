@@ -11,6 +11,10 @@ import {
 } from "../components/ui";
 import { DashboardMetric, DetailsDisclosure } from "../components/dashboard";
 import { colors } from "../design/tokens";
+import {
+  LinkedProductVisual,
+  type SharedProductVisuals,
+} from "../products/linked-product-visual";
 import type {
   TodayMovement,
   TodayPriority,
@@ -24,7 +28,12 @@ import {
   priorityPresentation,
 } from "./today-priority-presentation";
 
-export function TodayContent({ summary }: { summary: TodaySummary }) {
+type TodayVisualProps = { storeId?: string; visuals?: SharedProductVisuals };
+export function TodayContent({
+  summary,
+  storeId,
+  visuals,
+}: { summary: TodaySummary } & TodayVisualProps) {
   const { fontScale, width } = useWindowDimensions();
   const columns = fontScale <= 1.3 && width >= 360;
   return (
@@ -111,7 +120,12 @@ export function TodayContent({ summary }: { summary: TodaySummary }) {
         ) : (
           <View className="gap-3">
             {summary.priorities.map((priority) => (
-              <PriorityCard key={priority.id} priority={priority} />
+              <PriorityCard
+                key={priority.id}
+                priority={priority}
+                storeId={storeId}
+                visuals={visuals}
+              />
             ))}
           </View>
         )}
@@ -129,7 +143,12 @@ export function TodayContent({ summary }: { summary: TodaySummary }) {
         ) : (
           <View className="gap-1">
             {summary.movements.map((movement) => (
-              <MovementRow key={movement.id} movement={movement} />
+              <MovementRow
+                key={movement.id}
+                movement={movement}
+                storeId={storeId}
+                visuals={visuals}
+              />
             ))}
           </View>
         )}
@@ -153,12 +172,16 @@ export function TodayContent({ summary }: { summary: TodaySummary }) {
   );
 }
 
-function PriorityCard({ priority }: { priority: TodayPriority }) {
+function PriorityCard({
+  priority,
+  storeId,
+  visuals,
+}: { priority: TodayPriority } & TodayVisualProps) {
   const presentation = priorityPresentation(priority);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${priority.rank}. ${presentation.title}. ${presentation.reason}`}
+      accessibilityLabel={`${priority.rank}. ${presentation.title}. ${priorityFact(priority)}. ${presentation.reason}`}
       onPress={() =>
         router.push({
           pathname: "/(tabs)/priority/[id]",
@@ -169,16 +192,41 @@ function PriorityCard({ priority }: { priority: TodayPriority }) {
       style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
     >
       <View className="flex-row items-center gap-3">
-        <View className="h-10 w-10 items-center justify-center rounded-full bg-forest-soft">
-          <Text className="text-base font-bold text-forest">
-            {priority.rank}
-          </Text>
+        <View>
+          {storeId && visuals ? (
+            <LinkedProductVisual
+              storeId={storeId}
+              productId={priority.productId}
+              visuals={visuals}
+              size={56}
+            />
+          ) : null}
+          <View
+            className={
+              storeId && visuals
+                ? "absolute -left-1 -top-1 h-6 w-6 items-center justify-center rounded-full bg-forest"
+                : "h-10 w-10 items-center justify-center rounded-full bg-forest-soft"
+            }
+          >
+            <Text
+              className={
+                storeId && visuals
+                  ? "text-xs font-bold text-on-accent"
+                  : "text-base font-bold text-forest"
+              }
+            >
+              {priority.rank}
+            </Text>
+          </View>
         </View>
         <View className="flex-1 gap-1">
-          <Text className="text-base font-semibold text-ink">
-            {presentation.title}
+          <Text className="text-xs font-semibold text-warning">
+            {presentation.heading}
           </Text>
-          <Text className="text-sm text-forest">{priorityFact(priority)}</Text>
+          <Text className="text-base font-semibold text-ink">
+            {priority.productLabel}
+          </Text>
+          <Text className="text-sm text-ink">{priorityFact(priority)}</Text>
         </View>
         <Ionicons
           name="chevron-forward"
@@ -198,8 +246,14 @@ function PriorityCard({ priority }: { priority: TodayPriority }) {
   );
 }
 
-function MovementRow({ movement }: { movement: TodayMovement }) {
+function MovementRow({
+  movement,
+  storeId,
+  visuals,
+}: { movement: TodayMovement } & TodayVisualProps) {
   const positive = isPositiveMovement(movement);
+  const trendIcon =
+    Number(movement.absoluteDifference) >= 0 ? "trending-up" : "trending-down";
   return (
     <Pressable
       accessibilityRole="button"
@@ -210,23 +264,42 @@ function MovementRow({ movement }: { movement: TodayMovement }) {
       className="flex-row items-center gap-3 border-b border-line py-3"
       style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
     >
-      <View
-        className={`rounded-xl p-2 ${positive ? "bg-positive-soft" : "bg-critical-soft"}`}
-      >
-        <Ionicons
-          name={positive ? "trending-up" : "trending-down"}
-          size={20}
-          color={positive ? colors.positive : colors.critical}
-          accessible={false}
+      {storeId && visuals ? (
+        <LinkedProductVisual
+          storeId={storeId}
+          productId={movement.productId}
+          visuals={visuals}
+          size={44}
         />
-      </View>
+      ) : (
+        <View
+          className={`rounded-xl p-2 ${positive ? "bg-positive-soft" : "bg-critical-soft"}`}
+        >
+          <Ionicons
+            name={trendIcon}
+            size={20}
+            color={positive ? colors.positive : colors.critical}
+            accessible={false}
+          />
+        </View>
+      )}
       <View className="flex-1 gap-1">
         <Text className="text-base font-semibold text-ink">
           {movement.productLabel}
         </Text>
-        <Text className="text-sm leading-5 text-muted">
-          {movementLabel(movement)}
-        </Text>
+        <View className="flex-row items-center gap-1">
+          {storeId && visuals ? (
+            <Ionicons
+              name={trendIcon}
+              size={16}
+              color={positive ? colors.positive : colors.critical}
+              accessible={false}
+            />
+          ) : null}
+          <Text className="flex-1 text-sm leading-5 text-muted">
+            {movementLabel(movement)}
+          </Text>
+        </View>
       </View>
       <Ionicons
         name="chevron-forward"

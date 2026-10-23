@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Text, View, Pressable } from "react-native";
 import { useIsFocused } from "expo-router/react-navigation";
 import { router } from "expo-router";
@@ -6,13 +6,19 @@ import { digestStringAsync, CryptoDigestAlgorithm } from "expo-crypto";
 import { currentCommercialWeek } from "@fl-copilot/commercial-core";
 import { addExplorerDays } from "@fl-copilot/analytics-core";
 import type { CommercialWeekPlan } from "@fl-copilot/domain";
-import { useAuth } from "@/auth/auth-provider";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
-import { CommercialPlanRepository } from "@/commercial/week-plan-repository";
-import { CommercialExecutionView } from "@/commercial/execution-view";
-import { DetailsDisclosure } from "@/components/dashboard";
-import { DateSelector } from "@/components/date-selector";
+import { useAuth } from "../../../auth/auth-provider";
+import { useLocalDatabase } from "../../../providers/database-provider";
+import { useSync } from "../../../sync/sync-provider";
+import { CommercialPlanRepository } from "../../../commercial/week-plan-repository";
+import { CommercialExecutionView } from "../../../commercial/execution-view";
+import {
+  ActionsViewRepository,
+  initialActionsView,
+  type ActionsView,
+} from "../../../commercial/actions-view";
+import { tradingToday } from "../../../dates/calendar";
+import { DetailsDisclosure } from "../../../components/dashboard";
+import { DateSelector } from "../../../components/date-selector";
 import {
   AppScreen,
   AppHeader,
@@ -21,13 +27,17 @@ import {
   SectionCard,
   EmptyState,
   MenuRow,
-} from "@/components/ui";
+} from "../../../components/ui";
 export default function ActionsScreen() {
   const { session } = useAuth(),
     storeId = session?.stores[0]?.storeId,
     ownerId = session?.user.id;
   return storeId && ownerId ? (
-    <StoreActions key={`${storeId}:${ownerId}`} storeId={storeId} />
+    <StoreActions
+      key={`${storeId}:${ownerId}`}
+      storeId={storeId}
+      ownerId={ownerId}
+    />
   ) : (
     <AppScreen>
       <AppHeader title="Actions" />
@@ -38,7 +48,13 @@ export default function ActionsScreen() {
     </AppScreen>
   );
 }
-function StoreActions({ storeId }: { storeId: string }) {
+function StoreActions({
+  storeId,
+  ownerId,
+}: {
+  storeId: string;
+  ownerId: string;
+}) {
   const { sqlite } = useLocalDatabase(),
     sync = useSync();
   const repo = useMemo(
@@ -48,7 +64,16 @@ function StoreActions({ storeId }: { storeId: string }) {
       ),
     [sqlite],
   );
-  const [week, setWeek] = useState(() => currentCommercialWeek());
+  const views = useMemo(
+    () => new ActionsViewRepository(sqlite, { storeId, ownerId }),
+    [sqlite, storeId, ownerId],
+  );
+  const [view, setView] = useState<ActionsView>();
+  const [notice, setNotice] = useState<string>();
+  const initialized = view !== undefined;
+  const week = currentCommercialWeek(
+    new Date(`${view?.weekStart ?? initialActionsView().weekStart}T12:00:00Z`),
+  );
   const [snapshot, setSnapshot] = useState<{
     week: string;
     plan: CommercialWeekPlan | null;
@@ -56,8 +81,42 @@ function StoreActions({ storeId }: { storeId: string }) {
   const [error, setError] = useState<string>();
   const [retry, setRetry] = useState(0);
   const focused = useIsFocused();
+  const displayed = useRef(snapshot);
+  displayed.current = snapshot;
+  const revision =
+    sync.status === "syncing"
+      ? "syncing"
+      : JSON.stringify([
+          sync.pendingCount,
+          sync.conflictCount,
+          sync.failedCount,
+          sync.lastSyncedAt,
+          sync.status,
+        ]);
   useEffect(() => {
-    if (!focused || sync.status === "syncing") return;
+    if (!focused || initialized) return;
+    let active = true;
+    void views
+      .read()
+      .then((saved) => {
+        if (active) setView(saved ?? initialActionsView());
+      })
+      .catch(() => {
+        if (active) {
+          setView(initialActionsView());
+          setNotice(
+            "La semaine mémorisée ne peut pas être relue. La semaine courante reste consultable ; vos actions ne sont pas modifiées.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [views, focused, initialized]);
+  useEffect(() => {
+    if (!focused || !initialized) return;
+    if (sync.status === "syncing" && displayed.current?.week === week.start)
+      return;
     let active = true;
     void repo
       .get(storeId, week.start)
@@ -78,19 +137,38 @@ function StoreActions({ storeId }: { storeId: string }) {
     };
   }, [
     focused,
+    initialized,
     storeId,
     week.start,
     repo,
-    sync.pendingCount,
-    sync.conflictCount,
+    revision,
     sync.status,
     retry,
   ]);
+  const change = (next: ActionsView) => {
+    setView(next);
+    void views
+      .save(next)
+      .then(() => setNotice(undefined))
+      .catch(() => {
+        setNotice(
+          "La sélection reste affichée, mais n’a pas pu être mémorisée pour le prochain démarrage. Choisissez à nouveau la semaine ou le filtre pour réessayer.",
+        );
+      });
+  };
   const visible = snapshot?.week === week.start ? snapshot : undefined;
   const selected = (date: string) => {
-    setWeek(currentCommercialWeek(new Date(`${date}T12:00:00Z`)));
+    if (!view) return;
+    change({ ...view, weekStart: initialActionsView(date).weekStart });
     setError(undefined);
   };
+  if (!view)
+    return (
+      <AppScreen>
+        <AppHeader compact title="Actions" />
+        <Text className="text-muted">Lecture de votre semaine…</Text>
+      </AppScreen>
+    );
   return (
     <AppScreen>
       <AppHeader
@@ -98,6 +176,9 @@ function StoreActions({ storeId }: { storeId: string }) {
         title="Actions"
         subtitle="Vos tâches et décisions sur le terrain."
       />
+      {notice ? (
+        <InlineAlert title="Affichage conservé" message={notice} />
+      ) : null}
       <View className="gap-3">
         <View className="flex-row items-center justify-between gap-2">
           <WeekArrow
@@ -121,10 +202,10 @@ function StoreActions({ storeId }: { storeId: string }) {
           />
         </View>
 
-        {week.start !== currentCommercialWeek().start ? (
+        {week.start !== initialActionsView().weekStart ? (
           <SecondaryButton
             label="Revenir à cette semaine"
-            onPress={() => setWeek(currentCommercialWeek())}
+            onPress={() => selected(tradingToday())}
           />
         ) : null}
       </View>
@@ -142,7 +223,13 @@ function StoreActions({ storeId }: { storeId: string }) {
           <Text className="text-muted">Lecture des actions de la semaine…</Text>
         ) : null
       ) : visible.plan ? (
-        <CommercialExecutionView key={week.start} plan={visible.plan} compact />
+        <CommercialExecutionView
+          key={week.start}
+          plan={visible.plan}
+          compact
+          filter={view.filter}
+          onFilter={(filter) => change({ ...view, filter })}
+        />
       ) : (
         <EmptyState
           title="Aucun plan validé cette semaine"

@@ -1,12 +1,22 @@
 # M7 — suivi des sept chantiers V1
 
-## Lot courant — 23 octobre : chiffres d’Aujourd’hui actualisés et cumuls qualifiés
+## Lot courant — 23 octobre : visuels d’Aujourd’hui et contexte d’Actions
+
+Les priorités et mouvements d’Aujourd’hui réutilisent la bibliothèque visuelle approuvée, avec un seul lecteur partagé par écran et un aperçu neutre si aucun fichier utilisable n’est disponible. Titre court, produit, fait chiffré et rang restent distincts ; une baisse numérique de casse possède une flèche descendante et une couleur favorable. Actions conserve localement la semaine ISO et le filtre par magasin/utilisateur, sans commande métier. La première ouverture lit le plan local pendant la synchronisation ; les variations intermédiaires du compteur sont regroupées, le dernier pull est pris en compte et un échec de lecture conserve le plan déjà affiché. Voir `../qa/M7_UX_TODAY_ACTIONS_CONTEXT_2026_10_23.md`.
+
+**Sept chantiers : 1 Actions/conflits, 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours ; 2 Contre-promo code prêt.** Ce lot ne clôt aucun chantier : code en validation avant fusion, pas encore livré sur iPhone. Les PR 328/330 sont incluses dans le build 12 terminé ; recette humaine du réimport/filtres toujours ouverte. La PR 331 est fusionnée sur `8f40e0d` après les CI push `40003085496` et PR `40003103365` vertes ; ses changements natifs attendent une livraison groupée. Aucun nouveau build EAS payant pour ce lot.
+
+### Réception email — configuration activée, vraie réception à valider
+
+L’API `8f40e0d` est livrée sur `dpl_HHq6sg4dGcTAVFsV6gbDS4ZzhrTg`, alias `fl-copilot.vercel.app`. Le domaine de développement fourni par Julien est configuré ; le webhook Resend `email.received` est activé, sa signature est contrôlée et le processeur de conservation est enregistré dans l’application Inngest existante. Santé/base, refus des requêtes privées sans session, refus d’un webhook non signé et acceptation d’un événement signé ignoré ont été vérifiés. Ce dernier contrôle ne crée aucun email ni document artificiel. La réception réelle, les droits fournisseur, le quota d’exécution, la conservation de l’original, le traitement confirmé et la restauration sur un autre appareil attendent leur preuve. La question de recette est envoyée ; aucun résultat humain n’est présumé. Le manifeste de livraison privé `releases/2026-10-23-resend-activation.json` conserve les identifiants, contrôles et prédécesseur de retour arrière, sans secret.
+
+## Lot précédent — 23 octobre : chiffres d’Aujourd’hui actualisés et cumuls qualifiés
 
 Aujourd’hui relit désormais les données locales après une synchronisation réussie même si les compteurs restent identiques, sans multiplier les lectures pendant les changements intermédiaires du compteur. Une première ouverture pendant la synchronisation lit toujours SQLite ; le contenu déjà affiché et les chiffres hors connexion restent conservés. Les cartes signalent directement un cumul ou une comparaison partiels, y compris un zéro connu, avec qualification accessible et couleur neutre. Les cartes secondaires sont plus compactes et passent en colonne sur écran étroit ou texte agrandi. Voir `../qa/M7_UX_TODAY_FRESHNESS_2026_10_23.md` pour les preuves et leurs limites.
 
 **Sept chantiers : 1 Actions/conflits, 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours ; 2 Contre-promo code prêt.** Ce lot est préparé pour une prochaine livraison groupée, pas inclus dans le build 12. Contrôles complets et CI exactes à consigner avant fusion ; aucun déploiement API ni nouveau build EAS payant.
 
-La PR 330 est fusionnée sur `6a7fbf4` après succès des deux CI exactes. Le build iOS **0.1.0 / 12**, EAS `5ad87301-01d8-452c-8d79-291e7a0d2db6`, est terminé sur ce même commit ; il comprend les PR 328 et 330. La recette du réimport et des filtres d’Analyses est demandée, sans résultat humain présumé. L’API 329 reste livrée sur `cdd1efd`. La réception Resend attend son domaine géré de développement ; aucune réception réelle n’est annoncée validée.
+La PR 330 est fusionnée sur `6a7fbf4` après succès des deux CI exactes. Le build iOS **0.1.0 / 12**, EAS `5ad87301-01d8-452c-8d79-291e7a0d2db6`, est terminé sur ce même commit ; il comprend les PR 328 et 330. La recette du réimport et des filtres d’Analyses est demandée, sans résultat humain présumé. L’API 329 a ensuite été reprise dans la livraison `8f40e0d` décrite ci-dessus. La réception Resend est configurée ; aucune réception réelle n’est annoncée validée.
 
 ## Lot UX en validation — 23 octobre : périmètre visible et commandes de lecture accessibles
 

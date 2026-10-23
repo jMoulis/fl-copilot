@@ -26,6 +26,7 @@ const marginPriority: TodayPriority = {
 describe("Today priority presentation", () => {
   it("explains a margin signal without turning it into a decision", () => {
     expect(priorityPresentation(marginPriority)).toEqual({
+      heading: "Examiner la marge",
       title: "Examiner la marge — BANANE VRAC",
       reason: "La marge baisse par rapport à J-7.",
       action: "Vérifier le prix de vente et le coût d’achat.",

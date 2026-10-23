@@ -17,7 +17,13 @@ reliable local data
 → pilot hardening
 ```
 
-## Current position
+## Current position — authoritative update, 23 October 2026
+
+M7 remains active across the seven workstreams in `progress/M7_WORKSTREAM_STATUS.md`; M8 acceptance is open. The primary conversational Copilot is delivered and in field use. The five-domain UX is being completed against `ux/AUDIT.md`, not replaced by a demo scope. The historical alpha descriptions below predate these releases and are not an inventory of currently missing functionality.
+
+The durable remote refresh after product-unit corrections is deployed, and the corrected Mercalys reimport plus Analytics filter improvements are available in iOS 0.1.0/build 12 (`6a7fbf4`), pending owner acceptance. Today freshness/partial-value UX is merged in PR 331 (`8f40e0d`) but awaits a grouped native delivery. The current Today visuals/Actions context increment remains in validation. Resend development reception is configured on the owner's managed domain and the existing Inngest app is synchronized; real email preservation, confirmed processing, conversation return and second-device restoration remain unaccepted. No full V1 or cross-platform acceptance is claimed.
+
+## Historical operational-alpha position
 
 The operational alpha is complete through M3 on the target iPhone Air. The application can authenticate, work offline, synchronize incrementally, manage the Product Master, ingest real Mercalys workbooks, reconcile corrected imports, retain private source files, verify imports remotely and present deterministic daily KPI and priorities from SQLite.
 
