@@ -1,10 +1,11 @@
+import { ReceiptReviewGroup } from "../../documents/receipt-review-group";
 import {
   ReceiptLinePreview,
   ReceiptIssueSummary,
   useReceiptIssueNavigation,
-} from "@/documents/receipt-issue-summary";
-import { useAuth } from "@/auth/auth-provider";
-import { useUnsavedForm } from "@/components/use-unsaved-form";
+} from "../../documents/receipt-issue-summary";
+import { useAuth } from "../../auth/auth-provider";
+import { useUnsavedForm } from "../../components/use-unsaved-form";
 import {
   receiptHeaderValues,
   receiptLineValues,
@@ -13,9 +14,17 @@ import {
   withoutReceiptLineEdit,
   type ReceiptLineEdits,
   type ReceiptLineValues,
-} from "@/documents/receipt-editor-state";
-import { ReceiptSourcePhotos } from "@/documents/receipt-source-photos";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+} from "../../documents/receipt-editor-state";
+import { ReceiptSourcePhotos } from "../../documents/receipt-source-photos";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   Alert,
   Platform,
@@ -30,9 +39,9 @@ import {
   type ProductAlias,
   type WasteLine,
 } from "@fl-copilot/domain";
-import { ProductMasterRepository } from "@/products/product-master-repository";
+import { ProductMasterRepository } from "../../products/product-master-repository";
 import { randomUUID } from "expo-crypto";
-import { DateSelector } from "@/components/date-selector";
+import { DateSelector } from "../../components/date-selector";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AppHeader,
@@ -42,27 +51,27 @@ import {
   SecondaryButton,
   SectionCard,
   StatusBadge,
-} from "@/components/ui";
+} from "../../components/ui";
 import {
   WasteReceiptRepository,
   type LocalWasteLineDraft,
   type LocalWasteReceiptDetail,
-} from "@/documents/waste-receipt-repository";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
-import { receiptProcessingPresentation } from "@/documents/waste-receipt-processing";
+} from "../../documents/waste-receipt-repository";
+import { useLocalDatabase } from "../../providers/database-provider";
+import { useSync } from "../../sync/sync-provider";
+import { receiptProcessingPresentation } from "../../documents/waste-receipt-processing";
 
-import { WasteReceiptPublicationRepository } from "@/documents/waste-receipt-publication";
+import { WasteReceiptPublicationRepository } from "../../documents/waste-receipt-publication";
 import {
   WastePublicationValidationError,
   type WastePublicationIssue,
   type WastePublicationWarning,
   type WastePublicationField,
-} from "@/documents/waste-publication-validation";
+} from "../../documents/waste-publication-validation";
 import {
   LocalAnalyticsRecomputationScheduler,
   SQLiteProductDateRecomputer,
-} from "@/analytics/local-recomputation";
+} from "../../analytics/local-recomputation";
 
 export default function WasteReceiptValidationScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -108,6 +117,7 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
     WastePublicationWarning[]
   >([]);
   const [edits, setEdits] = useState<ReceiptLineEdits>({});
+  const [activeLineId, setActiveLineId] = useState<string>();
   const [savingLines, setSavingLines] = useState<Record<string, boolean>>({});
   const onEdit = useCallback(
     (line: WasteLine, patch: Partial<ReceiptLineValues>) =>
@@ -468,6 +478,7 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
         <ReceiptIssueSummary
           published={detail.receipt.processingStatus === "PUBLISHED"}
           issues={summaryIssues}
+          disabled={busy}
           onLocate={(issue) => {
             if (
               detail.receipt.processingStatus === "PUBLISHED" ||
@@ -475,7 +486,17 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
                 !detail.lines.some((d) => d.line.id === issue.lineId))
             )
               scrollRef.current?.scrollToEnd({ animated: true });
-            else locate(issue);
+            else if (!busy) {
+              if (issue.lineId) setActiveLineId(issue.lineId);
+              const target = groups.find((g) =>
+                g.lines.some((d) => d.line.id === issue.lineId),
+              );
+              locate(issue, {
+                waitForGroupLayout:
+                  !!issue.lineId &&
+                  !target?.lines.some((d) => d.line.id === activeLineId),
+              });
+            }
           }}
         />
       ) : null}
@@ -857,8 +878,9 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
             Lignes du ticket
           </Text>
           <Text className="text-sm leading-5 text-muted">
-            Les répétitions sont regroupées, mais chaque occurrence reste
-            modifiable séparément.
+            Ouvrez une ligne pour la vérifier. Les répétitions restent
+            modifiables séparément ; vos saisies non enregistrées sont
+            conservées dans ce ticket.
           </Text>
         </View>
         {detail.receipt.processingStatus === "PUBLISHED"
@@ -887,6 +909,8 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
                 key={group.key}
                 onLayout={groupAnchor(group.lines.map((d) => d.line.id))}
                 label={group.label}
+                activeLineId={activeLineId}
+                onOpenLine={setActiveLineId}
                 needsReview={group.lines.some(
                   (d) =>
                     d.line.validationStatus === "TO_REVIEW" ||
@@ -947,6 +971,8 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
 
 function LineGroup({
   onLayout,
+  activeLineId,
+  onOpenLine,
   hasUnsavedChanges,
   needsReview,
   issues,
@@ -964,6 +990,8 @@ function LineGroup({
   onError,
 }: {
   onLayout(e: LayoutChangeEvent): void;
+  activeLineId?: string;
+  onOpenLine: Dispatch<SetStateAction<string | undefined>>;
   label: string;
   hasUnsavedChanges: boolean;
   needsReview: boolean;
@@ -980,72 +1008,44 @@ function LineGroup({
   onSaving(id: string, saving: boolean): void;
   disabled: boolean;
 }) {
-  const [manualExpanded, setExpanded] = useState<boolean>();
-  const hasIssues = issues.some((i) =>
+  const issueCount = issues.filter((i) =>
     lines.some((d) => d.line.id === i.lineId),
-  );
-  const expanded = (manualExpanded ?? needsReview) || hasIssues;
+  ).length;
   async function changed() {
     const ok = await onChanged();
-    if (ok) setExpanded(undefined);
+    if (ok)
+      onOpenLine((current) => (current === activeLineId ? undefined : current));
     return ok;
   }
   return (
-    <SectionCard
+    <ReceiptReviewGroup
       onLayout={onLayout}
-      title={label}
-      description={`${lines.length} occurrence${lines.length > 1 ? "s" : ""}`}
-    >
-      {!expanded &&
-      !issues.some((issue) => lines.some((d) => d.line.id === issue.lineId)) ? (
-        <>
-          {lines.slice(0, 2).map((d) => (
-            <ReceiptLinePreview key={d.line.id} draft={d} />
-          ))}
-          {lines.length > 2 ? (
-            <Text className="text-muted">
-              {lines.length - 2} autre(s) occurrence(s), dans le détail.
-            </Text>
-          ) : null}
-        </>
-      ) : null}
-      <SecondaryButton
-        label={
-          expanded
-            ? "Masquer le détail"
-            : lines.length === 1
-              ? "Examiner cette ligne"
-              : "Voir les occurrences"
-        }
-        expanded={expanded}
-        disabled={hasUnsavedChanges || hasIssues}
-        onPress={() => setExpanded(!expanded)}
-      />
-      {hasUnsavedChanges ? (
-        <Text className="text-sm text-muted">
-          Enregistrez les lignes modifiées avant de fermer le groupe.
-        </Text>
-      ) : null}
-      {expanded
-        ? lines.map((draft) => (
-            <LineEditor
-              key={draft.line.id}
-              draft={draft}
-              receiptId={receiptId}
-              repository={repository}
-              onChanged={changed}
-              onMessage={onMessage}
-              onError={onError}
-              issues={issues}
-              edits={edits}
-              onEdit={onEdit}
-              onReset={onReset}
-              onSaving={onSaving}
-              disabled={disabled}
-            />
-          ))
-        : null}
-    </SectionCard>
+      label={label}
+      lines={lines}
+      activeLineId={activeLineId}
+      onOpenLine={onOpenLine}
+      hasUnsavedChanges={hasUnsavedChanges}
+      needsReview={needsReview}
+      issueCount={issueCount}
+      disabled={disabled}
+      renderLine={(draft) => (
+        <LineEditor
+          key={draft.line.id}
+          draft={draft}
+          receiptId={receiptId}
+          repository={repository}
+          onChanged={changed}
+          onMessage={onMessage}
+          onError={onError}
+          issues={issues}
+          edits={edits}
+          onEdit={onEdit}
+          onReset={onReset}
+          onSaving={onSaving}
+          disabled={disabled}
+        />
+      )}
+    />
   );
 }
 

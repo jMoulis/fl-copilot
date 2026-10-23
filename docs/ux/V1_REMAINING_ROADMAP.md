@@ -8,6 +8,10 @@ La livraison iOS groupée **0.1.0/build 12** est terminée sur `6a7fbf4` (PR 328
 
 La PR 331 est fusionnée après les deux CI exactes vertes : fraîcheur d’Aujourd’hui après pull, relectures coalescées et qualification directe des cumuls partiels. Elle n’est pas dans le build 12. Le lot suivant réutilise les visuels produit existants sur les priorités/mouvements et conserve la semaine/le filtre d’Actions par magasin/utilisateur ; première lecture locale pendant la synchronisation et rétention du contenu en erreur. Ce lot est en validation, destiné à une livraison native groupée ultérieure sans build payant isolé. Voir `../qa/M7_UX_TODAY_ACTIONS_CONTEXT_2026_10_23.md`.
 
+La PR 332 est fusionnée sur `fc3ee74` après les deux CI exactes vertes (3 885 tests / 6 ignorés), sans nouveau binaire. Le lot suivant reprend la validation Casse : un seul formulaire d’occurrence à la fois, aperçus et corrections progressifs, saisies conservées après repli, blocage de publication inchangé. Le parcours de 140 lignes et 100 changements d’éditeur est vérifié dans la route réelle avec dépôts isolés ; il ne constitue pas une mesure sur téléphone ni une simulation de 100 écritures SQLite. Voir `../qa/M7_UX_RECEIPT_PROGRESSIVE_REVIEW_2026_10_23.md`.
+
+Le premier vrai mail est reçu et rattaché à la conversation ; sa conservation d’original est en reprise `PROVIDER_UNAVAILABLE`. Les droits de la clé serveur restent à clarifier. La configuration de réception n’est donc pas une preuve d’import complet ni de restauration.
+
 Les cinq domaines UX, formulaires, gestes, parcours documents/casse/réglages et les recettes complètes M7/M8 restent dans le périmètre. Les sections L1–L11 ci-dessous conservent le découpage initial du 19 octobre ; lire leurs anciens statuts avec le journal courant et le suivi des sept chantiers, sans les interpréter comme une liste actuelle de fonctions absentes.
 
 ## Ordre des lots et critères de sortie
