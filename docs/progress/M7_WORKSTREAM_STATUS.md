@@ -1,5 +1,13 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot courant — 23 octobre : chiffres d’Aujourd’hui actualisés et cumuls qualifiés
+
+Aujourd’hui relit désormais les données locales après une synchronisation réussie même si les compteurs restent identiques, sans multiplier les lectures pendant les changements intermédiaires du compteur. Une première ouverture pendant la synchronisation lit toujours SQLite ; le contenu déjà affiché et les chiffres hors connexion restent conservés. Les cartes signalent directement un cumul ou une comparaison partiels, y compris un zéro connu, avec qualification accessible et couleur neutre. Les cartes secondaires sont plus compactes et passent en colonne sur écran étroit ou texte agrandi. Voir `../qa/M7_UX_TODAY_FRESHNESS_2026_10_23.md` pour les preuves et leurs limites.
+
+**Sept chantiers : 1 Actions/conflits, 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours ; 2 Contre-promo code prêt.** Ce lot est préparé pour une prochaine livraison groupée, pas inclus dans le build 12. Contrôles complets et CI exactes à consigner avant fusion ; aucun déploiement API ni nouveau build EAS payant.
+
+La PR 330 est fusionnée sur `6a7fbf4` après succès des deux CI exactes. Le build iOS **0.1.0 / 12**, EAS `5ad87301-01d8-452c-8d79-291e7a0d2db6`, est terminé sur ce même commit ; il comprend les PR 328 et 330. La recette du réimport et des filtres d’Analyses est demandée, sans résultat humain présumé. L’API 329 reste livrée sur `cdd1efd`. La réception Resend attend son domaine géré de développement ; aucune réception réelle n’est annoncée validée.
+
 ## Lot UX en validation — 23 octobre : périmètre visible et commandes de lecture accessibles
 
 Analyses affiche les filtres actifs avant le montant, avec un accès à leur feuille et une action pour élargir la sélection sans changer la période ni la métrique. Le retour restitue le périmètre et les défilements précédents. Une citation fondée sur les produits renseignés conserve sa base, ses dates de référence et son mode somme/moyenne ; elle ne devient pas silencieusement un total officiel du rayon. Les choix CA/Marge/Casse PV/Casse PA passent avant le résultat et le graphique ; le coût d’achat déjà accessible depuis Aujourd’hui possède désormais un choix sélectionné explicite. Une période entièrement sans montant ne laisse plus un grand graphique vide ; un zéro enregistré garde son graphique.
