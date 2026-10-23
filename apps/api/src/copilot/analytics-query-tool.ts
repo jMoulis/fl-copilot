@@ -14,11 +14,30 @@ import {
   analyticsProductMatches,
   executeAnalyticsQuery,
   type AnalyticsQueryPoint,
+  salesMeasuresSchema,
 } from "@fl-copilot/analytics-core";
 import { departmentEvidencePerformanceSchema } from "./daily-evidence.js";
 const performanceSchema = departmentEvidencePerformanceSchema.extend({
   productId: z.uuid(),
   formulaVersion: z.literal("product-daily-v1"),
+  sales: departmentEvidencePerformanceSchema.shape.sales.extend({
+    quantity: z
+      .string()
+      .regex(/^-?\d+(?:\.\d+)?$/)
+      .nullable()
+      .optional(),
+    quantityUnit: z.enum(["KG", "PIECE", "PACK"]).nullable().optional(),
+  }),
+  availability: departmentEvidencePerformanceSchema.shape.availability.extend({
+    salesQuantity:
+      departmentEvidencePerformanceSchema.shape.availability.shape.salesValue
+        .extend({
+          reason: z
+            .enum(["MISSING_INPUT", "UNKNOWN_UNIT", "INCOMPATIBLE_UNITS"])
+            .optional(),
+        })
+        .optional(),
+  }),
 });
 const decimal = z
   .string()
@@ -48,6 +67,24 @@ export const analyticsQueryResultSchema = z.strictObject({
         key: z.string().max(100),
         label: z.string().max(280),
         productCount: z.number().int().nonnegative(),
+        salesMeasures: z
+          .object({
+            current: salesMeasuresSchema.extend({
+              evidenceIds: z.object({
+                quantity: z.string(),
+                averageRealizedPrice: z.string(),
+              }),
+            }),
+            reference: salesMeasuresSchema
+              .extend({
+                evidenceIds: z.object({
+                  quantity: z.string(),
+                  averageRealizedPrice: z.string(),
+                }),
+              })
+              .nullable(),
+          })
+          .optional(),
         metrics: z
           .array(
             z.strictObject({
@@ -166,6 +203,12 @@ export async function readAnalyticsQuery(
                 "performance.computedAt": 1,
                 "performance.sales.salesValue": 1,
                 "performance.sales.marginValue": 1,
+                ...(query.includeSalesMeasures
+                  ? {
+                      "performance.sales.quantity": 1,
+                      "performance.sales.quantityUnit": 1,
+                    }
+                  : {}),
                 "performance.waste.salesValue": 1,
                 "performance.availability": 1,
               },
@@ -203,6 +246,20 @@ export async function readAnalyticsQuery(
         value: p.waste.salesValue,
         status: p.availability.wasteSalesValue.status,
       },
+      ...(query.includeSalesMeasures
+        ? {
+            soldQuantity: {
+              value: p.sales.quantity ?? null,
+              status:
+                p.availability.salesQuantity?.status ??
+                ("UNAVAILABLE" as const),
+              ...(p.availability.salesQuantity?.reason
+                ? { reason: p.availability.salesQuantity.reason }
+                : {}),
+            },
+            quantityUnit: p.sales.quantityUnit ?? null,
+          }
+        : {}),
     };
   });
   let result: ReturnType<typeof executeAnalyticsQuery>;
@@ -259,6 +316,24 @@ export async function readAnalyticsQuery(
   };
   const resultRows = result.rows.map((r, i) => ({
     ...r,
+    ...(r.salesMeasures
+      ? {
+          salesMeasures: {
+            current: measureEvidence(
+              r.salesMeasures.current,
+              r.label,
+              `${sourceId}/${query.offset + i}/sales-measures/current`,
+            ),
+            reference: r.salesMeasures.reference
+              ? measureEvidence(
+                  r.salesMeasures.reference,
+                  r.label,
+                  `${sourceId}/${query.offset + i}/sales-measures/reference`,
+                )
+              : null,
+          },
+        }
+      : {}),
     metrics: r.metrics.map((m) => {
       const base = `${sourceId}/${query.offset + i}/${m.metric}`;
       const c = m.currentCoverage,
@@ -347,6 +422,45 @@ export async function readAnalyticsQuery(
       };
     }),
   }));
+  function measureEvidence(
+    measure: z.infer<typeof salesMeasuresSchema>,
+    label: string,
+    base: string,
+  ) {
+    const units = {
+      KG: "kg",
+      PIECE: "pièce",
+      PACK: "unité conditionnée",
+      UNKNOWN: "unité inconnue",
+    };
+    const quantity = measure.quantity,
+      price = measure.averageRealizedPrice;
+    const quantityUnit = quantity.unit
+      ? units[quantity.unit]
+      : "unité non exploitable";
+    const priceUnit = price.unit
+      ? `€/${units[price.unit]}`
+      : "unité non exploitable";
+    const dates = `${measure.period.start} au ${measure.period.end}`;
+    const detail = `${label} · ${dates}. Quantités cumulées de la période, même si le CA demandé est une moyenne journalière. ${quantity.availableDays} jours de quantité complets, ${quantity.partialDays} partiels, ${quantity.missingDays} sans quantité exploitable. Prix moyen réalisé : somme des valeurs de vente Mercalys / somme des quantités des mêmes journées complètes et compatibles ; ${price.pairedDays} journées appariées, ${price.pairedSalesValue ?? "indisponible"} € / ${price.pairedQuantity ?? "indisponible"} ${price.unit ? units[price.unit] : "unité inconnue"}. Les autres journées ne sont pas estimées. Valeurs partielles utilisables sur ce périmètre. Base HT/TTC non confirmée : ne pas présenter ce prix comme un PV TTC ni comme le prix affiché en rayon. Unités historiques des indicateurs conservées ; aucune conversion kg/pièces/conditionné.`;
+    return {
+      ...measure,
+      evidenceIds: {
+        quantity: add(
+          `${base}/quantity`,
+          `Quantité vendue (${quantityUnit}) — ${label} — ${dates}`,
+          quantity.value,
+          detail,
+        ),
+        averageRealizedPrice: add(
+          `${base}/price`,
+          `Prix moyen réalisé (${priceUnit}) — ${label} — ${dates}`,
+          price.value,
+          detail,
+        ),
+      },
+    };
+  }
   add(
     `${sourceId}/scope`,
     "Périmètre du classement",

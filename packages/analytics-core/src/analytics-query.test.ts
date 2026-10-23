@@ -55,6 +55,99 @@ const query = (
   limit: 10,
   ...extra,
 });
+it("exposes requested product sales totals and weighted prices for independent periods without changing a daily-average monetary query", () => {
+  const a = product("BANANE"),
+    q = query({
+      includeSalesMeasures: true,
+      aggregation: "AVERAGE",
+      referencePeriod: { start: "2024-10-01", end: "2024-10-01" },
+    });
+  const r = executeAnalyticsQuery({
+    storeId,
+    query: q,
+    products: [a],
+    points: [
+      {
+        ...point(a.id, "10.00"),
+        soldQuantity: { value: "2", status: "AVAILABLE" },
+        quantityUnit: "KG",
+      },
+      {
+        ...point(a.id, "30.00", "2025-10-02"),
+        soldQuantity: { value: "3", status: "AVAILABLE" },
+        quantityUnit: "KG",
+      },
+      {
+        ...point(a.id, "12.00", "2024-10-01"),
+        soldQuantity: { value: "2", status: "AVAILABLE" },
+        quantityUnit: "KG",
+      },
+    ],
+  });
+  expect(r.rows[0]).toMatchObject({
+    metrics: [{ current: "20.00" }],
+    salesMeasures: {
+      current: {
+        quantity: { value: "5", status: "PARTIAL" },
+        averageRealizedPrice: { value: "8.00" },
+      },
+      reference: {
+        quantity: { value: "2", status: "AVAILABLE" },
+        averageRealizedPrice: { value: "6.00" },
+      },
+    },
+  });
+});
+it("preserves existing query results when sales measures were not requested and bounds detailed product pages", () => {
+  const a = product("POIRE"),
+    r = executeAnalyticsQuery({
+      storeId,
+      products: [a],
+      query: query(),
+      points: [point(a.id, "2")],
+    });
+  expect(r.rows[0]).not.toHaveProperty("salesMeasures");
+  for (const extra of [
+    { groupBy: "CATEGORY" as const },
+    { limit: 11 },
+    {
+      metrics: ["margin"] as const,
+      sort: {
+        metric: "margin" as const,
+        value: "CURRENT" as const,
+        direction: "DESC" as const,
+      },
+    },
+  ]) {
+    expect(
+      copilotAnalyticsQuerySchema.safeParse({
+        ...query(),
+        includeSalesMeasures: true,
+        ...extra,
+      }).success,
+    ).toBe(false);
+  }
+});
+it("keeps a known quantity usable even when the sales amount and realized price are unavailable", () => {
+  const a = product("POIRE"),
+    r = executeAnalyticsQuery({
+      storeId,
+      products: [a],
+      query: query({ includeSalesMeasures: true }),
+      points: [
+        {
+          ...point(a.id, null),
+          soldQuantity: { value: "2.500", status: "AVAILABLE" },
+          quantityUnit: "KG",
+        },
+      ],
+    });
+  expect(r.knownGroups).toBe(1);
+  expect(r.rows[0]!.salesMeasures!.current).toMatchObject({
+    quantity: { value: "2.500", status: "PARTIAL" },
+    averageRealizedPrice: { value: null, status: "UNAVAILABLE" },
+  });
+});
 it("ranks every product before pagination, keeps precise totals and usable partial coverage", () => {
   const a = product("BANANE VRAC"),
     b = product("POIRE"),

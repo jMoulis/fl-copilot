@@ -9,6 +9,7 @@ import {
 import { addDecimals, parseDecimal } from "./decimal";
 import { calculateCalendarPeriodComparison } from "./calendar-period-comparison";
 import type { DatedKpiValue } from "./comparison";
+import { calculateSalesMeasures } from "./sales-measures";
 export const ANALYTICS_QUERY_LIMITS = {
   maxProducts: 10000,
   maxPoints: 100000,
@@ -26,6 +27,17 @@ export const analyticsQueryPointSchema = z.strictObject({
   margin: metricSchema,
   waste: metricSchema,
   wasteCost: metricSchema.optional(),
+  soldQuantity: metricSchema
+    .extend({
+      reason: z
+        .enum(["MISSING_INPUT", "UNKNOWN_UNIT", "INCOMPATIBLE_UNITS"])
+        .optional(),
+    })
+    .optional(),
+  quantityUnit: z
+    .enum(["KG", "PIECE", "PACK", "UNKNOWN"])
+    .nullable()
+    .optional(),
 });
 export const analyticsQueryProductSchema = z.strictObject({
   id: z.uuid(),
@@ -206,6 +218,19 @@ export function executeAnalyticsQuery(input: {
       label: group.label,
       productCount: group.productIds.size,
       metrics,
+      ...(query.includeSalesMeasures
+        ? {
+            salesMeasures: {
+              current: calculateSalesMeasures(
+                query.currentPeriod,
+                group.points,
+              ),
+              reference: query.referencePeriod
+                ? calculateSalesMeasures(query.referencePeriod, group.points)
+                : null,
+            },
+          }
+        : {}),
     };
   });
   const sortKey = {
@@ -273,8 +298,11 @@ export function executeAnalyticsQuery(input: {
     totalGroups: allRows.length,
     evaluatedGroups,
     unknownConditionGroups,
-    knownGroups: allRows.filter((r) =>
-      r.metrics.some((m) => m.current !== null || m.reference !== null),
+    knownGroups: allRows.filter(
+      (r) =>
+        r.metrics.some((m) => m.current !== null || m.reference !== null) ||
+        r.salesMeasures?.current.quantity.value != null ||
+        r.salesMeasures?.reference?.quantity.value != null,
     ).length,
     hasMore: allRows.length > query.offset + query.limit,
     nextOffset:
