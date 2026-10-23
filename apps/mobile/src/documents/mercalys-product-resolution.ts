@@ -2,11 +2,17 @@ import {
   normalizeProductLabel,
   type ProductIdentifier,
 } from "@fl-copilot/domain";
-import type { ProductMasterRepository } from "../products/product-master-repository";
+import { ProductMasterRepository } from "../products/product-master-repository";
 import {
   emptyProductDraft,
   saveProductEditor,
+  productMutationExpectedRemoteVersion,
 } from "../products/product-editor-service";
+import {
+  joinedMutationDatabase,
+  type AtomicMutationDatabase,
+} from "../sync/atomic-local-mutation";
+import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { MercalysImportValidationSummary } from "./mercalys-import-validation";
 
 export interface MercalysProductResolution {
@@ -17,6 +23,8 @@ export interface MercalysProductResolution {
   candidateProductIds: string[];
   canCreate: boolean;
   canCreateAsDistinct: boolean;
+  /** Explicit review of an existing automatic association, never a bulk action. */
+  expectedProductIds?: string[];
 }
 
 interface ResolutionOptions {
@@ -28,11 +36,19 @@ interface ResolutionOptions {
 
 export function buildMercalysProductResolutions(
   summary: MercalysImportValidationSummary,
+  reviewSourceIndex?: number,
 ): MercalysProductResolution[] {
+  const selected = summary.lines.find(
+    (l) => l.record.sourceIndex === reviewSourceIndex,
+  );
+  const selectedKey =
+    selected?.match.state === "AUTO_MATCH"
+      ? resolutionKey(selected.record)
+      : undefined;
   const groups = new Map<string, MercalysImportValidationSummary["lines"]>();
   for (const line of summary.lines) {
-    if (line.match.state === "AUTO_MATCH") continue;
     const key = resolutionKey(line.record);
+    if (line.match.state === "AUTO_MATCH" && key !== selectedKey) continue;
     groups.set(key, [...(groups.get(key) ?? []), line]);
   }
 
@@ -53,9 +69,12 @@ export function buildMercalysProductResolutions(
       );
       const candidateProductIds = [
         ...new Set(
-          lines.flatMap(({ match }) =>
-            match.candidates.map(({ productId }) => productId),
-          ),
+          lines.flatMap(({ match }) => [
+            ...match.candidates.map(({ productId }) => productId),
+            ...(key === selectedKey && match.matchedProductId
+              ? [match.matchedProductId]
+              : []),
+          ]),
         ),
       ];
       const hasStableIdentity =
@@ -69,25 +88,41 @@ export function buildMercalysProductResolutions(
         canCreate:
           hasStableIdentity &&
           lines.every(({ match }) => match.state === "NO_MATCH"),
+        ...(key === selectedKey
+          ? {
+              expectedProductIds: [
+                ...new Set(
+                  lines.flatMap(({ match }) =>
+                    match.matchedProductId ? [match.matchedProductId] : [],
+                  ),
+                ),
+              ].sort(),
+            }
+          : {}),
         canCreateAsDistinct:
           hasStableIdentity &&
-          lines.every(
-            ({ match }) =>
-              match.state !== "AUTO_MATCH" &&
-              match.method !== "EXACT_IDENTIFIER",
-          ),
+          (key === selectedKey ||
+            lines.every(
+              ({ match }) =>
+                match.state !== "AUTO_MATCH" &&
+                match.method !== "EXACT_IDENTIFIER",
+            )),
       };
     })
     .sort((left, right) =>
       left.label.localeCompare(right.label, "fr", { sensitivity: "base" }),
     );
   const identifierOwners = new Map<string, Set<string>>();
-  for (const resolution of resolutions) {
-    for (const identifier of resolution.identifiers) {
+  for (const { record } of summary.lines) {
+    const keyOwner = resolutionKey(record);
+    for (const identifier of [
+      ...(record.itm8 ? [{ type: "ITM8", value: record.itm8 }] : []),
+      ...(record.ean ? [{ type: "EAN", value: record.ean }] : []),
+    ]) {
       const key = `${identifier.type}:${identifier.value}`;
       identifierOwners.set(
         key,
-        new Set(identifierOwners.get(key)).add(resolution.key),
+        new Set(identifierOwners.get(key)).add(keyOwner),
       );
     }
   }
@@ -165,7 +200,8 @@ export async function confirmMercalysProductMapping(
         {
           commandId: options.generateId(),
           deviceId: options.deviceId,
-          expectedRemoteVersion: conflicting.remoteVersion,
+          expectedRemoteVersion:
+            productMutationExpectedRemoteVersion(conflicting),
         },
       );
     }
@@ -211,7 +247,8 @@ export async function confirmMercalysProductMapping(
       {
         commandId: options.generateId(),
         deviceId: options.deviceId,
-        expectedRemoteVersion: conflicting.remoteVersion,
+        expectedRemoteVersion:
+          productMutationExpectedRemoteVersion(conflicting),
       },
     );
   }
@@ -237,6 +274,76 @@ export async function confirmMercalysProductMapping(
       expectedRemoteVersion: null,
     },
   );
+}
+
+/** A reviewed correction, its product and all identity commands commit together. */
+export async function correctMercalysProductMapping(
+  database: OutboxDatabase & AtomicMutationDatabase,
+  resolution: MercalysProductResolution,
+  targetProductId: string | null,
+  options: ResolutionOptions,
+) {
+  await database.withExclusiveTransactionAsync(async (tx) => {
+    const repository = new ProductMasterRepository(joinedMutationDatabase(tx));
+    const identifiers = await repository.listIdentifiersByStore(
+      options.storeId,
+    );
+    const owners = identifiers.filter(({ entity }) =>
+      resolution.identifiers.some(
+        (i) => i.type === entity.type && i.value === entity.value,
+      ),
+    );
+    if (
+      resolution.expectedProductIds &&
+      owners.some(
+        ({ entity }) =>
+          !resolution.expectedProductIds!.includes(entity.productId),
+      )
+    )
+      throw Error("MERCALYS_MAPPING_CHANGED");
+    const involved = [
+      ...new Set([
+        ...owners.map(({ entity }) => entity.productId),
+        ...(targetProductId ? [targetProductId] : []),
+      ]),
+    ];
+    for (const productId of involved) {
+      const product = await repository.getProduct(productId);
+      if (
+        !product ||
+        product.entity.storeId !== options.storeId ||
+        product.entity.deletedAt ||
+        product.entity.status !== "ACTIVE"
+      )
+        throw Error("MERCALYS_MAPPING_CHANGED");
+      const conflict = await tx.getFirstAsync<{ id: string }>(
+        `SELECT c.id FROM sync_conflicts c
+         LEFT JOIN product_identifiers pi ON c.entity_type='product_identifier' AND pi.id=c.entity_id
+         WHERE c.store_id=? AND c.status='OPEN' AND
+          ((c.entity_type='product' AND c.entity_id=?) OR (c.entity_type='product_identifier' AND pi.product_id=?)) LIMIT 1`,
+        options.storeId,
+        productId,
+        productId,
+      );
+      if (conflict) throw Error("MERCALYS_MAPPING_CONFLICT");
+    }
+    let productId = targetProductId;
+    if (!productId) {
+      if (!resolution.canCreateAsDistinct || !resolution.expectedProductIds)
+        throw Error("MERCALYS_DISTINCT_REVIEW_REQUIRED");
+      productId = await saveProductEditor(
+        repository,
+        { ...emptyProductDraft, label: resolution.label },
+        options,
+      );
+    }
+    await confirmMercalysProductMapping(
+      repository,
+      resolution,
+      productId,
+      options,
+    );
+  });
 }
 
 function resolutionKey(record: {

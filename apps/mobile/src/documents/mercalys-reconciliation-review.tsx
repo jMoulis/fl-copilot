@@ -17,7 +17,7 @@ import type { MercalysImportValidationLine } from "./mercalys-import-validation"
 const reasons = {
   UNRESOLVED_PRODUCT: "Le produit de cette ligne reste à confirmer.",
   MULTIPLE_INCOMING_ROWS:
-    "Plusieurs lignes du nouveau fichier correspondent au même produit et à la même date. Vérifiez les codes et les lignes dans le fichier source ; elles ne seront pas additionnées automatiquement.",
+    "Plusieurs lignes ne peuvent pas être distinguées par leur code source à cette date. Vérifiez les associations ci-dessous ; si elles sont correctes, corrigez les doublons dans l’export puis réimportez-le.",
   MULTIPLE_EXISTING_ROWS:
     "Plusieurs observations existantes correspondent à ce produit et à cette date. Le remplacement reste bloqué pour éviter de supprimer une donnée sans rapprochement sûr.",
   UNRESOLVED_ROW_ON_DATE:
@@ -46,6 +46,7 @@ export function MercalysReconciliationReview({
   reconciliation,
   validationMessages = [],
   incomingLines = [],
+  productLabels = {},
   onNavigate,
   keptExisting,
   loading,
@@ -57,6 +58,7 @@ export function MercalysReconciliationReview({
   reconciliation: MercalysReconciliation;
   validationMessages?: readonly string[];
   incomingLines?: readonly MercalysImportValidationLine[];
+  productLabels?: Readonly<Record<string, string>>;
   onNavigate?(): void;
   keptExisting: boolean;
   loading: boolean;
@@ -179,6 +181,9 @@ export function MercalysReconciliationReview({
           <ComparisonRow
             key={row.key}
             row={row}
+            productLabel={
+              row.productId ? productLabels[row.productId] : undefined
+            }
             incomingLines={incomingLines}
             busy={loading}
             onReviewProducts={onReviewProducts}
@@ -210,8 +215,35 @@ export function MercalysReconciliationReview({
           L’application remplace les observations concernées après une nouvelle
           vérification. L’original et l’historique restent conservés.
         </Text>
+        {!reconciliation.safeToApply ? (
+          <>
+            <Text
+              accessibilityLiveRegion="polite"
+              className="text-base text-warning"
+            >
+              {reconciliation.counts.AMBIGUOUS > 0
+                ? `Application bloquée : ${reconciliation.counts.AMBIGUOUS} ligne${reconciliation.counts.AMBIGUOUS > 1 ? "s" : ""} à résoudre.`
+                : "Application bloquée : des informations du fichier restent à corriger."}{" "}
+              Les données publiées sont conservées.
+            </Text>
+            <SecondaryButton
+              label="Afficher les points à résoudre"
+              disabled={loading}
+              onPress={() => {
+                setFilter("REVIEW");
+                setQuery("");
+                setPage(0);
+                onNavigate?.();
+              }}
+            />
+          </>
+        ) : null}
         <PrimaryButton
-          label="Appliquer la nouvelle version"
+          label={
+            reconciliation.safeToApply
+              ? "Appliquer la nouvelle version"
+              : "Application bloquée — points à résoudre"
+          }
           disabled={!reconciliation.safeToApply}
           loading={loading}
           onPress={onApply}
@@ -242,11 +274,13 @@ function valueText(value: string | null | undefined) {
 }
 function ComparisonRow({
   row,
+  productLabel,
   incomingLines,
   busy,
   onReviewProducts,
 }: {
   row: MercalysReconciliationRow;
+  productLabel?: string;
   incomingLines: readonly MercalysImportValidationLine[];
   busy: boolean;
   onReviewProducts(sourceIndex?: number): void;
@@ -277,6 +311,11 @@ function ComparisonRow({
             .join(" · ")}
         </Text>
       ) : null}
+      {productLabel ? (
+        <Text className="text-sm text-muted">
+          Produit associé : {productLabel}
+        </Text>
+      ) : null}
       {row.reason ? (
         <Text className="text-base text-warning">{reasons[row.reason]}</Text>
       ) : null}
@@ -289,31 +328,44 @@ function ComparisonRow({
           </Text>
           {row.reason === "MULTIPLE_INCOMING_ROWS" ? (
             incomingLines
-              .filter(
-                (line) =>
-                  line.record.businessDate === row.businessDate &&
-                  line.match.matchedProductId === row.productId,
+              .filter((line) =>
+                row.incomingSourceIndexes
+                  ? row.incomingSourceIndexes.includes(line.record.sourceIndex)
+                  : line.record.businessDate === row.businessDate &&
+                    line.match.matchedProductId === row.productId,
               )
               .map((line) => (
-                <Text
-                  key={line.record.sourceIndex}
-                  className="text-base text-ink"
-                >
-                  Ligne source {line.record.sourceIndex + 1} ·{" "}
-                  {line.record.rawLabel} · quantité{" "}
-                  {valueText(
-                    line.record.quantity == null
-                      ? null
-                      : String(line.record.quantity),
-                  )}{" "}
-                  · vente{" "}
-                  {valueText(
-                    line.record.salesValue == null
-                      ? null
-                      : String(line.record.salesValue),
-                  )}{" "}
-                  €
-                </Text>
+                <View key={line.record.sourceIndex} className="gap-2">
+                  <Text className="text-base text-ink">
+                    Ligne source {line.record.sourceIndex + 1} ·{" "}
+                    {line.record.rawLabel} · quantité{" "}
+                    {valueText(
+                      line.record.quantity == null
+                        ? null
+                        : String(line.record.quantity),
+                    )}{" "}
+                    · vente{" "}
+                    {valueText(
+                      line.record.salesValue == null
+                        ? null
+                        : String(line.record.salesValue),
+                    )}{" "}
+                    €
+                  </Text>
+                  <Text className="text-sm text-muted">
+                    {[
+                      line.record.itm8 && `ITM8 ${line.record.itm8}`,
+                      line.record.ean && `EAN ${line.record.ean}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </Text>
+                  <SecondaryButton
+                    label={`Corriger l’association de la ligne ${line.record.sourceIndex + 1}`}
+                    disabled={busy}
+                    onPress={() => onReviewProducts(line.record.sourceIndex)}
+                  />
+                </View>
               ))
           ) : (
             <Text className="text-sm text-muted">
@@ -341,6 +393,13 @@ function ComparisonRow({
           label="Confirmer le produit"
           disabled={busy}
           onPress={() => onReviewProducts(row.incomingSourceIndex ?? undefined)}
+        />
+      ) : row.incomingSourceIndex !== null &&
+        row.reason !== "MULTIPLE_INCOMING_ROWS" ? (
+        <SecondaryButton
+          label="Corriger l’association"
+          disabled={busy}
+          onPress={() => onReviewProducts(row.incomingSourceIndex!)}
         />
       ) : null}
     </View>

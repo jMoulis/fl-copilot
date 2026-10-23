@@ -377,6 +377,70 @@ it("opens a retained corrected file, resolves its product through the real mappi
   expect(p.changed).toHaveBeenCalledTimes(2);
   expect(text(renderer!.root)).toContain("publiée localement");
 });
+it("offers correction and distinct creation for an already automatic association even when no products need confirmation", async () => {
+  const source = p.validate.mock.results[0]?.value as
+    MercalysImportValidationSummary | undefined;
+  expect(source).toBeUndefined();
+  const resolved: MercalysImportValidationSummary = {
+    sourceType: "MERCALYS_SALES",
+    parserVersion: "v1",
+    businessPeriodStart: "2026-10-21",
+    businessPeriodEnd: "2026-10-21",
+    detectedLineCount: 1,
+    readyCount: 1,
+    productReviewCount: 0,
+    errorCount: 0,
+    issueCodes: [],
+    lines: [
+      {
+        record: {
+          sourceIndex: 30,
+          itm8: "00000042",
+          ean: null,
+          rawLabel: "PDT RACLETTE MICRO ONDE 500G",
+          businessDate: "2026-10-21",
+          quantity: 4,
+          purchaseValue: 2,
+          rceValue: 0,
+          salesValue: 7.96,
+          vatValue: 0,
+          marginValue: 1,
+          marginRate: 10,
+          rawValues: {
+            itm8: "00000042",
+            ean: null,
+            rawLabel: "PDT RACLETTE MICRO ONDE 500G",
+            businessDate: "2026-10-21",
+            quantity: 4,
+            purchaseValue: 2,
+            rceValue: 0,
+            salesValue: 7.96,
+            vatValue: 0,
+            marginValue: 1,
+            marginRate: 10,
+          },
+        },
+        match: {
+          engineVersion: "product-matcher-v1",
+          state: "AUTO_MATCH",
+          matchedProductId: "22222222-2222-4222-8222-222222222222",
+          method: "EXACT_IDENTIFIER",
+          candidates: [],
+          conflict: null,
+        },
+      },
+    ],
+  };
+  p.validate.mockReturnValue(resolved);
+  await mount();
+  expect(text(renderer!.root)).toContain("Produit associé : TOMATE VRAC");
+  await press("Corriger l’association");
+  expect(text(renderer!.root)).toContain("PDT RACLETTE MICRO ONDE 500G");
+  expect(button("Créer comme nouveau produit").props.disabled).not.toBe(true);
+  expect(button("Associer à TOMATE VRAC")).toBeDefined();
+  expect(p.publish).not.toHaveBeenCalled();
+});
+
 it("reopens comparison if observations change before apply instead of claiming a successful replacement", async () => {
   await mount();
   await press("Confirmer le produit");
@@ -385,7 +449,9 @@ it("reopens comparison if observations change before apply instead of claiming a
   blocked.fingerprint = "changed-again";
   p.publish.mockRejectedValue(new MercalysOverlapReconciliationError(blocked));
   await press("Appliquer la nouvelle version");
-  expect(button("Appliquer la nouvelle version").props.disabled).toBe(true);
+  expect(button("Application bloquée — points à résoudre").props.disabled).toBe(
+    true,
+  );
   expect(text(renderer!.root)).toContain("Des points restent à résoudre");
   expect(text(renderer!.root)).not.toContain("publiée localement");
 });

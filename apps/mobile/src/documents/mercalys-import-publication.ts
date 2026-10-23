@@ -486,10 +486,18 @@ export class MercalysImportPublicationRepository {
         jobId: analyticsJobId,
         storeId: input.storeId,
         sourceDocumentId,
-        scopes: readyLines.map((line) => ({
-          productId: line.match.matchedProductId!,
-          businessDate: line.record.businessDate,
-        })),
+        scopes: [
+          ...readyLines.map((line) => ({
+            productId: line.match.matchedProductId!,
+            businessDate: line.record.businessDate,
+          })),
+          ...(reconciliation?.rows.flatMap((row) =>
+            (row.existingProductIds ?? []).map((productId) => ({
+              productId,
+              businessDate: row.businessDate,
+            })),
+          ) ?? []),
+        ],
         createdAt,
       });
 
@@ -531,8 +539,9 @@ function assertCurrentReconciliation(
   current: MercalysReconciliation | null,
   expectedFingerprint: string,
 ): asserts current is MercalysReconciliation {
-  if (!current || current.fingerprint !== expectedFingerprint) {
-    throw new Error("Reconciliation changed and must be reviewed again.");
+  if (!current) throw new Error("Reconciliation is no longer required.");
+  if (current.fingerprint !== expectedFingerprint) {
+    throw new MercalysOverlapReconciliationError(current);
   }
 }
 
