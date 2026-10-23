@@ -141,8 +141,24 @@ export function CatalogueList({
                   autoCorrect={false}
                   className="min-h-12 flex-1 py-3 text-base text-ink"
                 />
+                {view.query ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Effacer la recherche"
+                    onPress={() => update({ query: "" })}
+                    className="h-12 w-12 items-center justify-center"
+                  >
+                    <Ionicons
+                      name="close-circle-outline"
+                      size={21}
+                      color={colors.muted}
+                      accessible={false}
+                    />
+                  </Pressable>
+                ) : null}
               </View>
               <IconButton
+                active={active}
                 label={
                   active
                     ? "Filtrer les produits · filtres actifs"
@@ -188,10 +204,24 @@ export function CatalogueList({
             <View className="flex-row flex-wrap items-center gap-3">
               <Text
                 accessibilityLiveRegion="polite"
-                className="flex-shrink text-sm text-muted"
+                className="flex-1 text-sm text-muted"
               >
                 {rows.length} sur {items.length} produits
               </Text>
+              {active ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Effacer les filtres en conservant la recherche"
+                  onPress={() =>
+                    update({ category: "ALL", nature: "ALL", state: "ALL" })
+                  }
+                  className="min-h-12 justify-center px-2"
+                >
+                  <Text className="text-sm font-semibold text-forest">
+                    Effacer les filtres
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
             {active ? (
               <Text className="text-sm text-muted">

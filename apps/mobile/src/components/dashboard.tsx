@@ -9,11 +9,13 @@ export function IconButton({
   icon,
   onPress,
   disabled = false,
+  active = false,
 }: {
   label: string;
   icon: Icon;
   onPress(): void;
   disabled?: boolean;
+  active?: boolean;
 }) {
   return (
     <Pressable
@@ -25,9 +27,17 @@ export function IconButton({
       className="h-12 w-12 items-center justify-center rounded-2xl border border-line bg-surface"
       style={({ pressed }) => ({
         opacity: disabled ? 0.45 : pressed ? 0.7 : 1,
+        ...(active
+          ? { borderColor: colors.forest, backgroundColor: colors.forestSoft }
+          : {}),
       })}
     >
-      <Ionicons name={icon} size={21} color={colors.ink} accessible={false} />
+      <Ionicons
+        name={icon}
+        size={21}
+        color={active ? colors.forest : colors.ink}
+        accessible={false}
+      />
     </Pressable>
   );
 }

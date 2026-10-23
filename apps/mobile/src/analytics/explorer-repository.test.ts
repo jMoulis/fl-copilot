@@ -14,6 +14,7 @@ import {
   backExplorerView,
   changeExplorerGranularity,
   shiftExplorerView,
+  drillExplorerScope,
 } from "./explorer-state";
 class Adapter implements OutboxDatabase {
   constructor(readonly db: DatabaseSync) {}
@@ -702,5 +703,82 @@ it("uses exactly the same product values through the detail context and Explorer
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("restores a cleared product scope after SQLite restart and returns to the exact filtered analysis without changing business data", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "explorer-clear-scope-"));
+  const file = join(dir, "local.db"),
+    storeId = randomUUID(),
+    ownerId = randomUUID(),
+    productId = randomUUID();
+  let db = new DatabaseSync(file);
+  try {
+    await runLocalMigrations(new Adapter(db));
+    insertProduct(db, storeId, productId, "Poire");
+    const other = randomUUID();
+    insertProduct(db, storeId, other, "Banane");
+    insertProductDay(db, storeId, productId, "2026-10-15", "15");
+    insertProductDay(db, storeId, other, "2026-10-15", "25");
+    insert(db, storeId, "2026-10-15", "77");
+    const initial = initialExplorerView("2026-10-15");
+    const selected = {
+      ...initial,
+      frame: {
+        ...initial.frame,
+        period: { kind: "day" as const, date: "2026-10-15" },
+        filters: {
+          category: "FRUIT" as const,
+          nature: "BULK" as const,
+          productId,
+          productIds: [productId],
+          labelContains: "poire",
+        },
+        scroll: 375,
+        chartScroll: 120,
+        detailsOffset: 20,
+      },
+    };
+    const cleared = drillExplorerScope(selected, {
+      category: null,
+      nature: null,
+      productId: null,
+    });
+    await new ExplorerViewRepository(new Adapter(db), {
+      storeId,
+      ownerId,
+    }).save(cleared);
+    db.close();
+    db = new DatabaseSync(file);
+    const restored = (await new ExplorerViewRepository(new Adapter(db), {
+      storeId,
+      ownerId,
+    }).read())!;
+    expect(restored).toEqual(cleared);
+    const read = (view: typeof restored) =>
+      new ExplorerRepository(new Adapter(db)).load(
+        storeId,
+        view.frame.period,
+        view.metric,
+        "2026-10-23",
+        view.frame.filters,
+        view.frame.detailsOffset,
+      );
+    const full = await read(restored);
+    expect(full.total).toBe("77.00"); // The official department total, not the 40 € product subtotal.
+    const back = backExplorerView(restored);
+    expect(back).toEqual(selected);
+    expect((await read(back)).total).toBe("15.00");
+    expect(
+      db.prepare("SELECT count(*) AS count FROM sync_outbox").get(),
+    ).toMatchObject({ count: 0 });
+    expect(
+      db
+        .prepare("SELECT count(*) AS count FROM product_daily_performance")
+        .get(),
+    ).toMatchObject({ count: 2 });
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true });
   }
 });
