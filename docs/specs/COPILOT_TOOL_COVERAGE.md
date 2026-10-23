@@ -1,5 +1,9 @@
 # Copilot manual-operation coverage inventory
 
+## Actions — private conversational follow-up (23 October)
+
+The native Actions screen reads existing private recommendation decisions and explicit action executions across owned conversations, in bounded weekly pages. It preserves decision/execution distinctions, independent business history, deleted-source privacy and local context, and opens the existing scoped conversation route. This is a read-only functional surface, not a new model tool or mutation authority. Latest-change week is not the actual execution period. See `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md`; real-loop and device acceptance remain open.
+
 ## 23 October — inactive product maintenance parity
 
 Catalogue capability `x-copilot-catalogue-proposals: 2` permits exact-ID INSPECT and reviewed UPDATE of a nondeleted inactive fiche, using the existing manual editor writer. Metadata corrections preserve INACTIVE, child identities/statuses, version checks, history and transactional Outbox/recomputation. The proposal and evidence explicitly say the fiche remains inactive. Retirement of an already inactive fiche stays unavailable; deleted/foreign targets stay protected. Model input cannot set product status or undelete a fiche. Legacy capability 1 remains active-only; unknown/missing versions expose no catalogue tool. Operational search, imports and classification retain their active-only eligibility. No new tool, prompt, schema shape, migration or permission is introduced. See `../qa/M7_INACTIVE_CATALOGUE_MAINTENANCE_2026_10_23.md`; API/native delivery and physical-device acceptance remain separate.

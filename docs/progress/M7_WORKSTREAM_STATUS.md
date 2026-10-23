@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot Actions / UX en validation — décisions et réalisations du copilote
+
+Actions donne accès aux choix et réalisations enregistrés dans les conversations, même sans plan commercial : dix éléments par page, filtre mémorisé, retour au chat et historique conservé. Accepter/adapter/reporter/écarter un conseil ne déclare pas sa réalisation. La semaine décrit les derniers changements, avec dates réelles séparées ; sources supprimées ou indisponibles restent qualifiées. Ouverture à la demande, repli/page conservés et lectures coalescées, sans nouvel outil, writer ou instruction modèle. Voir `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md` ; **25 tests ciblés passent**, contrôles finaux en cours.
+
+La PR 339 est fusionnée sur `7f033f7` après les deux CI exactes vertes (**3 965 tests / 6 ignorés**) ; sa branche est supprimée. Les PR 337–339 et ce lot ne sont pas dans le build 13. **1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours.** Livraisons groupées, accord Resend, mesures physiques et recette humaine restent ouverts ; aucune clôture V1.
+
 ## Lot CRUD en validation — 23 octobre : maintenance des fiches inactives
 
 Le copilote peut préparer la correction des informations d’une fiche inactive par son identifiant exact, comme l’éditeur manuel. La confirmation conserve son statut inactif, ses identifiants, son historique et les gardes de version. L’aperçu le précise ; les produits supprimés restent protégés et le rapprochement opérationnel reste limité aux produits actifs. Une capacité versionnée conserve le comportement des anciens clients. Tests SQLite avec redémarrage et MongoDB transactionnel local : **46 cas ciblés passent** ; contrôles complets et CI finales en cours. Voir `../qa/M7_INACTIVE_CATALOGUE_MAINTENANCE_2026_10_23.md`.

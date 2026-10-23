@@ -1,5 +1,9 @@
 # Roadmap V1 restante — bilan au 19 octobre 2026
 
+## Avancement courant — suivi du copilote dans Actions
+
+L5/L9 : les décisions et réalisations hors plan deviennent consultables dans Actions, par semaine de dernier changement et sans transformer un conseil retenu en réalisation. Lecture locale bornée, reprise, pagination/filtre, lien vers le chat et préservation des enregistrements malgré une source supprimée sont vérifiés ; lot en validation native, pas dans le build 13. La PR 339 est fusionnée avec ses deux CI exactes vertes ; les PR 337–339 attendent leur livraison groupée. Voir `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md`. La boucle conversationnelle réelle complète et tous les critères V1 restent ouverts.
+
 Objectif de Julien : V1 testable pour la présentation du **28 octobre**, avec l’UX intégrée et sans contourner la logique métier. Base examinée : PR 273 / `824cf4c`. Cet ordre est une proposition d’exécution issue de l’audit ; il ne supprime aucun engagement V1 et ne déclare aucun lot livré. Voir `AUDIT.md` pour les arbitrages.
 
 ## Point courant — 23 octobre : données livrées, réception email à activer, finition UX en validation

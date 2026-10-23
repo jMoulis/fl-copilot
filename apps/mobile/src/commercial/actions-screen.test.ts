@@ -6,6 +6,7 @@ import { commercialPlanFixture } from "../../../../scripts/test-commercial-plan-
 import { runLocalMigrations } from "../db/migrations";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { ActionsViewRepository, initialActionsView } from "./actions-view";
+import { CopilotActivityPanel } from "./copilot-activity-panel";
 import ActionsScreen from "../app/(tabs)/actions";
 
 const runtime = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const runtime = vi.hoisted(() => ({
   sync: {
     status: "synced",
     pendingCount: 0,
+    pendingCommandCount: 0,
     conflictCount: 0,
     failedCount: 0,
     lastSyncedAt: "2026-10-23T10:00:00Z",
@@ -90,6 +92,7 @@ beforeEach(async () => {
   runtime.sync = {
     status: "synced",
     pendingCount: 0,
+    pendingCommandCount: 0,
     conflictCount: 0,
     failedCount: 0,
     lastSyncedAt: "2026-10-23T10:00:00Z",
@@ -147,12 +150,18 @@ it("restores the week and filter and preserves that context in both preparation 
     expect(runtime.push.mock.lastCall?.[0].params.weekStart).toBe("2025-12-29");
   }
   await act(() => execution().props.onFilter("DONE"));
+  await act(() =>
+    rendered!.root.findByType(CopilotActivityPanel).props.onFilter("EXECUTION"),
+  );
   await act(() => date().props.onConfirm("2026-01-08"));
   await act(() => rendered!.unmount());
   rendered = undefined;
   await render();
   expect(date().props.value).toBe("2026-01-05");
   expect(execution().props.filter).toBe("DONE");
+  expect(rendered!.root.findByType(CopilotActivityPanel).props.filter).toBe(
+    "EXECUTION",
+  );
   expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
 });
 
@@ -248,4 +257,20 @@ it("isolates owner and store selections and ignores a late local plan from a pre
   await render();
   expect(runtime.readPlan.mock.lastCall?.[0]).toBe(runtime.scope.storeId);
   expect(execution().props.filter).toBe("TODO");
+});
+
+it("ignores local-calculation counters but rereads the retained week when returning during blocked synchronization", async () => {
+  await render();
+  for (let i = 200; i > 0; i--) {
+    runtime.sync = { ...runtime.sync, pendingCount: i };
+    await render();
+  }
+  expect(runtime.readPlan).toHaveBeenCalledTimes(1);
+  runtime.sync = { ...runtime.sync, status: "syncing" };
+  await render();
+  runtime.focused = false;
+  await render();
+  runtime.focused = true;
+  await render();
+  expect(runtime.readPlan).toHaveBeenCalledTimes(2);
 });

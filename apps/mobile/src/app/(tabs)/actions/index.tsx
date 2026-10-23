@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Text, View, Pressable } from "react-native";
+import { Text, View, Pressable, type ScrollView } from "react-native";
 import { useIsFocused } from "expo-router/react-navigation";
 import { router } from "expo-router";
 import { digestStringAsync, CryptoDigestAlgorithm } from "expo-crypto";
@@ -10,6 +10,7 @@ import { useAuth } from "../../../auth/auth-provider";
 import { useLocalDatabase } from "../../../providers/database-provider";
 import { useSync } from "../../../sync/sync-provider";
 import { CommercialPlanRepository } from "../../../commercial/week-plan-repository";
+import { CopilotActivityPanel } from "../../../commercial/copilot-activity-panel";
 import { CommercialExecutionView } from "../../../commercial/execution-view";
 import {
   ActionsViewRepository,
@@ -57,6 +58,8 @@ function StoreActions({
 }) {
   const { sqlite } = useLocalDatabase(),
     sync = useSync();
+  const scroll = useRef<ScrollView>(null),
+    activityTop = useRef(0);
   const repo = useMemo(
     () =>
       new CommercialPlanRepository(sqlite, (s) =>
@@ -82,12 +85,14 @@ function StoreActions({
   const [retry, setRetry] = useState(0);
   const focused = useIsFocused();
   const displayed = useRef(snapshot);
+  const wasFocused = useRef(false),
+    lastReadRetry = useRef(-1);
   displayed.current = snapshot;
   const revision =
     sync.status === "syncing"
       ? "syncing"
       : JSON.stringify([
-          sync.pendingCount,
+          sync.pendingCommandCount ?? sync.pendingCount,
           sync.conflictCount,
           sync.failedCount,
           sync.lastSyncedAt,
@@ -114,9 +119,17 @@ function StoreActions({
     };
   }, [views, focused, initialized]);
   useEffect(() => {
+    const entering = focused && !wasFocused.current;
+    wasFocused.current = focused;
     if (!focused || !initialized) return;
-    if (sync.status === "syncing" && displayed.current?.week === week.start)
+    if (
+      sync.status === "syncing" &&
+      displayed.current?.week === week.start &&
+      !entering &&
+      lastReadRetry.current === retry
+    )
       return;
+    lastReadRetry.current = retry;
     let active = true;
     void repo
       .get(storeId, week.start)
@@ -170,7 +183,7 @@ function StoreActions({
       </AppScreen>
     );
   return (
-    <AppScreen>
+    <AppScreen scrollRef={scroll}>
       <AppHeader
         compact
         title="Actions"
@@ -218,6 +231,22 @@ function StoreActions({
           />
         </>
       ) : null}
+      <CopilotActivityPanel
+        db={sqlite}
+        storeId={storeId}
+        ownerId={ownerId}
+        weekStart={week.start}
+        focused={focused}
+        revision={revision}
+        filter={view.copilotFilter ?? "ALL"}
+        onFilter={(copilotFilter) => change({ ...view, copilotFilter })}
+        onLayout={(y) => {
+          activityTop.current = y;
+        }}
+        onNavigate={() =>
+          scroll.current?.scrollTo({ y: activityTop.current, animated: false })
+        }
+      />
       {!visible ? (
         !error ? (
           <Text className="text-muted">Lecture des actions de la semaine…</Text>
