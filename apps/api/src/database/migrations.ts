@@ -1024,6 +1024,20 @@ export const mongoMigrations: readonly MongoMigration[] = [
       // Budget documents use their stable global/store/owner UTC-day identity as _id.
     },
   },
+  {
+    version: 52,
+    name: "product-unit-derived-refresh",
+    async up(db) {
+      await db.collection("products").createIndex(
+        { storeId: 1, "analyticsRefresh.requestedAt": 1 },
+        {
+          partialFilterExpression: {
+            "analyticsRefresh.requestedAt": { $exists: true },
+          },
+        },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

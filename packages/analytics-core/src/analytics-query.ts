@@ -27,6 +27,7 @@ export const analyticsQueryPointSchema = z.strictObject({
   margin: metricSchema,
   waste: metricSchema,
   wasteCost: metricSchema.optional(),
+  quantityRefreshPending: z.boolean().optional(),
   soldQuantity: metricSchema
     .extend({
       reason: z

@@ -53,28 +53,8 @@ export class RemoteAnalyticsConfirmationService {
     storeId: string,
     scopes: readonly RemoteProductDateScope[],
   ): Promise<RemoteAnalyticsConfirmation> {
+    const products = await this.confirmProducts(storeId, scopes);
     const normalized = normalizeScopes(scopes);
-    if (normalized.length === 0) {
-      throw new Error("At least one product/date scope is required.");
-    }
-
-    const products: ProductDailyPerformance[] = [];
-    // Independent product/date computations are bounded; aggregate the department only after every save.
-    for (let offset = 0; offset < normalized.length; offset += 8) {
-      const batch = await Promise.all(
-        normalized.slice(offset, offset + 8).map(async (scope) => {
-          const input = await this.repository.loadProductDay(storeId, scope);
-          const performance = buildProductDailyPerformance({
-            ...input,
-            businessDate: scope.businessDate,
-            computedAt: this.now(),
-          });
-          await this.repository.saveProductDay(performance);
-          return performance;
-        }),
-      );
-      products.push(...batch);
-    }
 
     const departments: DepartmentDailyPerformance[] = [];
     const dates = [...new Set(normalized.map((scope) => scope.businessDate))];
@@ -99,6 +79,40 @@ export class RemoteAnalyticsConfirmationService {
     }
 
     return { products, departments };
+  }
+
+  /** Unit corrections change product quantities/prices, never department money. */
+  async confirmProducts(
+    storeId: string,
+    scopes: readonly RemoteProductDateScope[],
+  ) {
+    const normalized = normalizeScopes(scopes);
+    if (normalized.length === 0) {
+      throw new Error("At least one product/date scope is required.");
+    }
+
+    const products: ProductDailyPerformance[] = [];
+    // Independent product/date computations are bounded; aggregate the department only after every save.
+    for (let offset = 0; offset < normalized.length; offset += 8) {
+      const results = await Promise.allSettled(
+        normalized.slice(offset, offset + 8).map(async (scope) => {
+          const input = await this.repository.loadProductDay(storeId, scope);
+          const performance = buildProductDailyPerformance({
+            ...input,
+            businessDate: scope.businessDate,
+            computedAt: this.now(),
+          });
+          await this.repository.saveProductDay(performance);
+          return performance;
+        }),
+      );
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw failed.reason;
+      for (const result of results)
+        if (result.status === "fulfilled") products.push(result.value);
+    }
+
+    return products;
   }
 }
 
@@ -183,9 +197,23 @@ interface DepartmentDailyPerformanceDocument {
 export function createMongoRemoteAnalyticsRepository(
   database: DatabaseService,
 ): RemoteAnalyticsRepository {
+  const expectedSnapshots = new Map<
+    string,
+    ProductDailyPerformanceDocument | null
+  >();
   return {
     async loadProductDay(storeId, scope) {
       const db = await database.getDb();
+      const previous = await db
+        .collection<ProductDailyPerformanceDocument>("productDailyPerformance")
+        .findOne({
+          _id: productDayId(storeId, scope.productId, scope.businessDate),
+          storeId,
+        });
+      expectedSnapshots.set(
+        productDayId(storeId, scope.productId, scope.businessDate),
+        previous,
+      );
       const product = await db.collection<ProductDocument>("products").findOne({
         _id: scope.productId,
         storeId,
@@ -223,12 +251,13 @@ export function createMongoRemoteAnalyticsRepository(
         product: mapProduct(product),
         salesObservations: sales.map(mapSalesObservation),
         wasteObservations: waste.map(mapWasteObservation),
-        commercialOperationIds: [],
-        merchandisingPlanIds: [],
-        contextEventIds: [],
-        marketSignalIds: [],
-        storeProductEventIds: [],
-        weatherRecordId: null,
+        commercialOperationIds:
+          previous?.performance.commercialOperationIds ?? [],
+        merchandisingPlanIds: previous?.performance.merchandisingPlanIds ?? [],
+        contextEventIds: previous?.performance.contextEventIds ?? [],
+        marketSignalIds: previous?.performance.marketSignalIds ?? [],
+        storeProductEventIds: previous?.performance.storeProductEventIds ?? [],
+        weatherRecordId: previous?.performance.weatherRecordId ?? null,
       };
     },
 
@@ -249,9 +278,29 @@ export function createMongoRemoteAnalyticsRepository(
         inputRevision: performance.inputRevision,
         computedAt: new Date(performance.computedAt),
       };
-      await db
-        .collection<ProductDailyPerformanceDocument>("productDailyPerformance")
-        .replaceOne({ _id: document._id }, document, { upsert: true });
+      const key = document._id;
+      if (!expectedSnapshots.has(key))
+        throw Error("REMOTE_ANALYTICS_INPUT_REQUIRED");
+      const previous = expectedSnapshots.get(key);
+      const collection = db.collection<ProductDailyPerformanceDocument>(
+        "productDailyPerformance",
+      );
+      if (!previous) {
+        await collection.insertOne(document);
+      } else {
+        const result = await collection.replaceOne(
+          {
+            _id: key,
+            storeId: performance.storeId,
+            inputRevision: previous.inputRevision,
+            computedAt: previous.computedAt,
+          },
+          document,
+        );
+        if (result.matchedCount !== 1)
+          throw Error("REMOTE_ANALYTICS_SNAPSHOT_CHANGED");
+      }
+      expectedSnapshots.set(key, document);
     },
 
     async loadProductDays(storeId, businessDate) {

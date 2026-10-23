@@ -1,3 +1,4 @@
+import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import {
   readableEmailDecisions,
   type EmailDecisionDocument,
@@ -143,6 +144,7 @@ export function createMongoSyncPullService(
         : Long.ZERO;
       if (query.commercialReview === "true")
         await registerCommercialReviewPages(database, storeId);
+      await advanceProductUnitRefresh(database, storeId, now);
       const mongoDatabase = await database.getDb();
       const page = await mongoDatabase
         .collection<SyncChangeDocument>("syncChanges")

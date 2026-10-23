@@ -140,3 +140,15 @@ it("preserves an existing unknown-unit diagnosis instead of asking for sales fil
     value: null,
   });
 });
+
+it("excludes a pending unit refresh without hiding known money or claiming the product unit is missing", () => {
+  const r = calculateSalesMeasures(period, [
+    point(period.start, "10.00", "2"),
+    { ...point(period.end, "90.00", "999"), quantityRefreshPending: true },
+  ]);
+  expect(r).toMatchObject({
+    refreshPendingDays: 1,
+    quantity: { value: "2", status: "PARTIAL", reason: "MISSING_INPUT" },
+    averageRealizedPrice: { value: "5.00", pairedDays: 1, status: "PARTIAL" },
+  });
+});

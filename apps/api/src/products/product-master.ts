@@ -1,3 +1,4 @@
+import type { ProductUnitRefresh } from "../analytics/product-unit-refresh";
 import { Decimal128 } from "mongodb";
 import {
   productAliasSchema,
@@ -19,6 +20,7 @@ export interface ProductDocument extends Omit<
   "id" | "packaging" | "createdAt" | "updatedAt" | "deletedAt"
 > {
   _id: string;
+  analyticsRefresh?: ProductUnitRefresh;
   packaging?: {
     quantity: Decimal128;
     unit: NonNullable<Product["packaging"]>["unit"];
@@ -203,6 +205,22 @@ export async function applyProductMasterCommand(
     existing?.createdAt ?? timestamp,
     timestamp,
   );
+  if (descriptor.entityType === "product") {
+    const before = existing as ProductDocument | null;
+    const after = document as ProductDocument;
+    if (before && before.salesUnit !== after.salesUnit) {
+      after.analyticsRefresh = {
+        generation: command.commandId,
+        requestedAt: timestamp,
+        afterDate: null,
+        leaseId: before.analyticsRefresh?.leaseId ?? null,
+        leaseUntil: before.analyticsRefresh?.leaseUntil ?? null,
+        retryAt: null,
+      };
+    } else if (before?.analyticsRefresh) {
+      after.analyticsRefresh = before.analyticsRefresh;
+    }
+  }
   await collection.replaceOne({ _id: command.entityId }, document, {
     upsert: true,
     session: context.session,

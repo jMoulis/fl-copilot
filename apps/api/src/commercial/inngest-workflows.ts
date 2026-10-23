@@ -1,3 +1,4 @@
+import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import type { LayoutIllustrationGenerationService } from "../copilot/layout-illustration-generation";
 import { createCommercialProcessingRecovery } from "./processing-recovery.js";
 import type { EmailOriginalProcessor } from "../intake/email-originals.js";
@@ -305,6 +306,13 @@ export function createCommercialInngestWorkflows(
       triggers: [{ cron: "*/5 * * * *" }],
     },
     async ({ step }) => {
+      // Reuse the existing recovery cadence; sync also advances this work when workflow quota is unavailable.
+      for (let page = 0; page < 4; page += 1) {
+        const refreshed = await step.run(`refresh-product-units-${page}`, () =>
+          advanceProductUnitRefresh(database),
+        );
+        if (!refreshed.processed) break;
+      }
       if (emailOriginals)
         await step.run("recover-email-originals", () =>
           dispatchEmailOriginals(),

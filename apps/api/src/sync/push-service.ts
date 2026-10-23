@@ -1,3 +1,4 @@
+import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import type { LayoutIllustrationGenerationService } from "../copilot/layout-illustration-generation";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
@@ -210,6 +211,17 @@ export function createMongoSyncPushService(
                 : retryableResult(command, requestId),
           );
         }
+      }
+      if (
+        input.commands.some(
+          (command, index) =>
+            command.type === "PRODUCT_UPSERT" &&
+            ["APPLIED", "ALREADY_APPLIED"].includes(
+              results[index]?.status ?? "",
+            ),
+        )
+      ) {
+        await advanceProductUnitRefresh(database, input.storeId, now);
       }
       if (!input.physicalAllocations)
         for (const result of results)
