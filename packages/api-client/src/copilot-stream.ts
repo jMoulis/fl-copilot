@@ -24,7 +24,20 @@ export async function readCopilotStream(
   try {
     while (true) {
       if (signal?.aborted) throw Error("COPILOT_STREAM_CANCELLED");
-      const next = await reader.read();
+      let next: ReadableStreamReadResult<Uint8Array>;
+      try {
+        next = await reader.read();
+      } catch (error) {
+        // A native connection can fail while closing after the final NDJSON frame.
+        // The API client still validates this result and its complete reply scope.
+        if (
+          !signal?.aborted &&
+          doneResult &&
+          !(buffer + decoder.decode()).trim()
+        )
+          return result;
+        throw error;
+      }
       if (signal?.aborted) throw Error("COPILOT_STREAM_CANCELLED");
       total += next.value?.byteLength ?? 0;
       if (total > 4 * 1024 * 1024) throw Error("COPILOT_STREAM_LIMIT");

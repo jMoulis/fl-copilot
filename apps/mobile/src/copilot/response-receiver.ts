@@ -47,7 +47,7 @@ export async function receiveCopilotReply(
       throw new Error("COPILOT_REPLY_PARENT_INVALID");
     await applyCopilotRecord(tx, scope, "copilot_message", message);
     await tx.runAsync(
-      "UPDATE copilot_pending_turns SET status='APPLIED',updated_at=? WHERE reply_id=? AND store_id=? AND owner_id=? AND conversation_id=? AND user_message_id=?",
+      "UPDATE copilot_pending_turns SET status='APPLIED',updated_at=? WHERE reply_id=? AND store_id=? AND owner_id=? AND conversation_id=? AND user_message_id=? AND status='PENDING'",
       message.createdAt,
       request.replyId,
       scope.storeId,

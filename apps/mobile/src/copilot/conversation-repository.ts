@@ -144,6 +144,29 @@ export async function applyCopilotRecord(
       JSON.stringify(m),
       1,
     );
+    if (m.role === "ASSISTANT" && m.replyToMessageId) {
+      // A canonical pull is also a delivery receipt. Never leave an answered
+      // question queued, and never settle another question/conversation/owner.
+      await db.runAsync(
+        `UPDATE copilot_pending_turns SET status='APPLIED',updated_at=?
+         WHERE reply_id=? AND store_id=? AND owner_id=? AND conversation_id=?
+         AND user_message_id=? AND status='PENDING'
+         AND EXISTS (SELECT 1 FROM copilot_messages p
+           WHERE p.id=copilot_pending_turns.user_message_id
+           AND p.store_id=copilot_pending_turns.store_id
+           AND p.owner_id=copilot_pending_turns.owner_id
+           AND p.conversation_id=copilot_pending_turns.conversation_id
+           AND json_extract(p.payload_json,'$.role')='USER'
+           AND julianday(p.created_at)<=julianday(?))`,
+        m.createdAt,
+        m.id,
+        m.storeId,
+        m.ownerId,
+        m.conversationId,
+        m.replyToMessageId,
+        m.createdAt,
+      );
+    }
   } else
     await db.runAsync(
       `INSERT INTO copilot_conversations(id,store_id,owner_id,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES(?,?,?,?,?,?,'SYNCED',0) ON CONFLICT(id) DO UPDATE SET payload_json=excluded.payload_json,remote_payload_json=excluded.remote_payload_json,remote_version=excluded.remote_version,sync_state='SYNCED',dirty=0`,

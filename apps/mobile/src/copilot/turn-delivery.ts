@@ -1,4 +1,5 @@
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
+import { ApiClientError } from "@fl-copilot/api-client";
 import {
   copilotTurnRequestSchema,
   copilotMessageSchema,
@@ -8,6 +9,18 @@ import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import { CopilotConversationRepository } from "./conversation-repository";
 import { receiveCopilotReply } from "./response-receiver";
+
+/** Correlate a delivery failure with its immutable question/reply pair. */
+export class CopilotTurnDeliveryError extends Error {
+  constructor(
+    readonly request: CopilotTurnRequest,
+    cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : "COPILOT_DELIVERY_FAILED", {
+      cause,
+    });
+  }
+}
 
 /** One in-flight delivery per conversation and instance; persisted request IDs survive instance/app restart. */
 export class CopilotTurnDelivery {
@@ -94,89 +107,152 @@ export class CopilotTurnDelivery {
     const pending = await repo.pendingTurns(conversationId);
     if (!pending.length) return "NONE";
     const request = copilotTurnRequestSchema.parse(pending[0]);
-    cancelled(signal);
-    await this.dependencies.sync();
-    cancelled(signal);
-    const parent = await this.db.getFirstAsync<{
-      sync_state: string;
-      payload_json: string;
-    }>(
-      "SELECT sync_state,payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-      request.userMessageId,
-      this.scope.storeId,
-      this.scope.ownerId,
-      conversationId,
-    );
-    if (!parent) throw new Error("COPILOT_REPLY_PARENT_INVALID");
-    const user = copilotMessageSchema.parse(JSON.parse(parent.payload_json));
-    if (
-      user.id !== request.userMessageId ||
-      user.storeId !== this.scope.storeId ||
-      user.ownerId !== this.scope.ownerId ||
-      user.conversationId !== conversationId ||
-      user.role !== "USER"
-    )
-      throw new Error("COPILOT_REPLY_PARENT_INVALID");
-    const existing = await this.db.getFirstAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-      request.replyId,
-      this.scope.storeId,
-      this.scope.ownerId,
-      conversationId,
-    );
-    cancelled(signal);
-    if (existing) {
-      await receiveCopilotReply(this.db, this.scope, request, {
-        message: copilotMessageSchema.parse(JSON.parse(existing.payload_json)),
-        alreadyApplied: true,
-      });
-      return "RECEIVED";
-    }
-    if (parent.sync_state !== "SYNCED") return "WAITING";
-    const current = await repo.get(conversationId);
-    if (!current || current.status !== "ACTIVE")
-      throw new Error("COPILOT_CONVERSATION_UNAVAILABLE");
-    cancelled(signal);
-    this.listeners.get(conversationId)?.("");
-    this.activityListeners.get(conversationId)?.(null);
-    let result: unknown;
     try {
-      result = await this.dependencies.ask(
-        request,
-        signal,
-        (text) => {
-          if (!signal.aborted) this.listeners.get(conversationId)?.(text);
-        },
-        (activity) => {
-          if (!signal.aborted)
-            this.activityListeners.get(conversationId)?.(activity);
-        },
+      cancelled(signal);
+      await this.dependencies.sync();
+      cancelled(signal);
+      const parent = await this.db.getFirstAsync<{
+        sync_state: string;
+        payload_json: string;
+      }>(
+        "SELECT sync_state,payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+        request.userMessageId,
+        this.scope.storeId,
+        this.scope.ownerId,
+        conversationId,
       );
-    } catch (error) {
+      if (!parent) throw new Error("COPILOT_REPLY_PARENT_INVALID");
+      const user = copilotMessageSchema.parse(JSON.parse(parent.payload_json));
+      if (
+        user.id !== request.userMessageId ||
+        user.storeId !== this.scope.storeId ||
+        user.ownerId !== this.scope.ownerId ||
+        user.conversationId !== conversationId ||
+        user.role !== "USER"
+      )
+        throw new Error("COPILOT_REPLY_PARENT_INVALID");
+      const existing = await this.db.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+        request.replyId,
+        this.scope.storeId,
+        this.scope.ownerId,
+        conversationId,
+      );
+      cancelled(signal);
+      if (existing) {
+        await receiveCopilotReply(this.db, this.scope, request, {
+          message: copilotMessageSchema.parse(
+            JSON.parse(existing.payload_json),
+          ),
+          alreadyApplied: true,
+        });
+        return "RECEIVED";
+      }
+      if (parent.sync_state !== "SYNCED") return "WAITING";
+      const current = await repo.get(conversationId);
+      if (!current || current.status !== "ACTIVE")
+        throw new Error("COPILOT_CONVERSATION_UNAVAILABLE");
+      cancelled(signal);
       this.listeners.get(conversationId)?.("");
       this.activityListeners.get(conversationId)?.(null);
-      throw error;
-    }
-    cancelled(signal);
-    const message = await receiveCopilotReply(
-      this.db,
-      this.scope,
-      request,
-      result,
-    );
-    this.listeners.get(conversationId)?.(message.text);
-    cancelled(signal);
-    try {
-      await this.dependencies.sync();
-    } catch {
-      // The reply is already durable locally; the shared sync service owns its retry state.
+      let result: unknown;
+      let remoteStarted = false;
+      try {
+        result = await this.dependencies.ask(
+          request,
+          signal,
+          (text) => {
+            if (text) remoteStarted = true;
+            if (!signal.aborted) this.listeners.get(conversationId)?.(text);
+          },
+          (activity) => {
+            remoteStarted = true;
+            if (!signal.aborted)
+              this.activityListeners.get(conversationId)?.(activity);
+          },
+        );
+      } catch (error) {
+        this.listeners.get(conversationId)?.("");
+        this.activityListeners.get(conversationId)?.(null);
+        cancelled(signal);
+        if (recoverable(error)) {
+          // Reuse canonical pull once; never resubmit this AI turn.
+          try {
+            await this.dependencies.sync();
+          } catch {
+            cancelled(signal);
+          }
+          cancelled(signal);
+          const recovered = await this.db.getFirstAsync<{
+            payload_json: string;
+          }>(
+            "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+            request.replyId,
+            this.scope.storeId,
+            this.scope.ownerId,
+            conversationId,
+          );
+          if (recovered) {
+            await receiveCopilotReply(this.db, this.scope, request, {
+              message: copilotMessageSchema.parse(
+                JSON.parse(recovered.payload_json),
+              ),
+              alreadyApplied: true,
+            });
+            cancelled(signal);
+            return "RECEIVED";
+          }
+          if (
+            (remoteStarted &&
+              !(
+                error instanceof Error &&
+                error.message === "COPILOT_STREAM_FAILED"
+              )) ||
+            (error instanceof ApiClientError &&
+              error.response.code === "COPILOT_TURN_PENDING")
+          )
+            return "WAITING";
+        }
+        throw error;
+      }
       cancelled(signal);
+      const message = await receiveCopilotReply(
+        this.db,
+        this.scope,
+        request,
+        result,
+      );
+      this.listeners.get(conversationId)?.(message.text);
+      cancelled(signal);
+      try {
+        await this.dependencies.sync();
+      } catch {
+        // The reply is already durable locally; the shared sync service owns its retry state.
+        cancelled(signal);
+      }
+      cancelled(signal);
+      return "RECEIVED";
+    } catch (error) {
+      cancelled(signal);
+      throw new CopilotTurnDeliveryError(request, error);
     }
-    cancelled(signal);
-    return "RECEIVED";
   }
 }
 
 function cancelled(signal: AbortSignal) {
   if (signal.aborted) throw new Error("COPILOT_DELIVERY_CANCELLED");
+}
+
+function recoverable(error: unknown) {
+  if (error instanceof ApiClientError) return error.response.retryable;
+  if (!(error instanceof Error)) return false;
+  if (["SyntaxError", "ZodError"].includes(error.name)) return false;
+  return (
+    !error.message.startsWith("COPILOT_") ||
+    [
+      "COPILOT_STREAM_FAILED",
+      "COPILOT_STREAM_INCOMPLETE",
+      "COPILOT_STREAM_UNAVAILABLE",
+    ].includes(error.message)
+  );
 }

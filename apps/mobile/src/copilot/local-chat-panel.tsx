@@ -14,7 +14,10 @@ import { CommercialAnalysisRecoveryPanel } from "../commercial/analysis-recovery
 import { CommercialOriginalButton } from "../commercial/original-button";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import { ApiClientError } from "@fl-copilot/api-client";
-import type { CopilotTurnDelivery } from "./turn-delivery";
+import {
+  CopilotTurnDeliveryError,
+  type CopilotTurnDelivery,
+} from "./turn-delivery";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -135,6 +138,7 @@ function LocalChatPanel({
     useState<CopilotLocalChatController>();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string>();
+  const [replyFailure, setReplyFailure] = useState<{ reason: unknown }>();
   const [sending, setSending] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const attachmentAbort = useRef<AbortController | undefined>(undefined);
@@ -164,12 +168,13 @@ function LocalChatPanel({
           if (openingRevision === draftRevision.current)
             setDraft(value.draft?.text ?? "");
           setError(undefined);
+          setReplyFailure(undefined);
           if (delivery && value.pendingTurns.length) {
             setSending(true);
             try {
               await delivery.deliver(conversationId);
             } catch (reason) {
-              if (alive) setError(replyError(reason));
+              if (alive) setReplyFailure({ reason });
             } finally {
               try {
                 const revision = draftRevision.current;
@@ -306,6 +311,7 @@ function LocalChatPanel({
     setActivities([]);
     setSending(true);
     setError(undefined);
+    setReplyFailure(undefined);
     try {
       await controller.send(conversationId);
       const revision = draftRevision.current;
@@ -338,10 +344,11 @@ function LocalChatPanel({
     setActivities([]);
     setSending(true);
     setError(undefined);
+    setReplyFailure(undefined);
     try {
       await delivery.deliver(conversationId);
     } catch (reason) {
-      if (isCurrent()) setError(replyError(reason));
+      if (isCurrent()) setReplyFailure({ reason });
     } finally {
       try {
         const revision = draftRevision.current;
@@ -542,6 +549,18 @@ function LocalChatPanel({
     }
   }
   const queued = snapshot.pendingTurns.length > 0;
+  const failedRequest =
+    replyFailure?.reason instanceof CopilotTurnDeliveryError
+      ? replyFailure.reason.request
+      : undefined;
+  const failedTurnPending =
+    !failedRequest ||
+    snapshot.pendingTurns.some(
+      (turn) =>
+        turn.replyId === failedRequest.replyId &&
+        turn.conversationId === failedRequest.conversationId &&
+        turn.userMessageId === failedRequest.userMessageId,
+    );
   return (
     <>
       <CopilotChatView
@@ -568,7 +587,12 @@ function LocalChatPanel({
           )}
         draft={draft}
         status={sending ? "GENERATING" : queued ? "QUEUED" : "IDLE"}
-        error={error}
+        error={
+          error ??
+          (replyFailure && failedTurnPending
+            ? replyError(replyFailure.reason)
+            : undefined)
+        }
         draftAttachments={snapshot.draft?.attachments ?? []}
         attaching={attaching}
         onAttach={
@@ -771,6 +795,7 @@ function LocalChatPanel({
 }
 
 function replyError(error: unknown) {
+  if (error instanceof CopilotTurnDeliveryError) error = error.cause;
   return error instanceof ApiClientError
     ? error.response.messageFr
     : "La réponse n’a pas pu être reçue. Votre question est conservée.";
