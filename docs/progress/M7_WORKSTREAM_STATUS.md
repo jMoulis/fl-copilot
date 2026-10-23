@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot M8 en validation — 24 octobre : reprise de connexion locale
+
+Deux erreurs reproduites effaçaient la session après une simple lecture SecureStore/trace de propriétaire indisponible. La session est maintenant conservée, avec écran de reprise explicite et sans exposition des vues privées. Un marqueur local valide rouvre le contenu avant la fin d’un renouvellement réseau bloqué ; une erreur ancienne n’efface pas une connexion plus récente. **58 tests ciblés passent**, suite locale **3 399 passés / 636 ignorés** ; contrôles/CI finales et recette native restent nécessaires. Voir `../qa/M8_AUTH_STARTUP_STORAGE_2026_10_24.md`.
+
+La PR 342 est fusionnée en `cdb6e0b` après les deux CI exactes vertes (**4 019 tests / 6 ignorés**) ; branche locale supprimée et distante absente. Les PR 337–342 et ce correctif sont hors build 13. API compatible livrée sur `4941513`. **Sept chantiers : 1 Actions/conflits en cours ; 2 Contre-promo code prêt ; 3 Documents, 4 Expertise, 5 Recommandations, 6 Implantation et 7 UX-validation en cours.** Aucun chantier entier, V1/M8 ni recette physique clôturé ; livraisons groupées conservées.
+
 ## Lot M8 en validation — 24 octobre : copies locales et reprise explicite
 
 Synchronisation donne accès à des copies SQLite privées vérifiées et à l’examen des anciennes copies conservées. Reprise dans une génération séparée après confirmation, fermeture de session et redémarrage complet ; UUID des commandes/device, tentatives, brouillons et base précédente conservés. Aucun merge arbitraire, nouvel envoi métier ou export de données privées. Le compte d’origine est vérifié avant l’accès, puis les changements de compte normaux restent possibles. Voir `../qa/M8_LOCAL_DATABASE_COPIES_2026_10_24.md`. **51 tests ciblés passent ; suite locale : 3 389 passés / 636 ignorés**, typage/lint/structure/formatage verts. Les deux CI exactes restent nécessaires ; recette physique et sauvegardes distantes restent ouvertes.

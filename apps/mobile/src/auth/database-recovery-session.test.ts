@@ -162,3 +162,40 @@ it("requires original-owner authentication once before normal account switching,
   );
   expect(state.reads).not.toContain("auth.refresh-token");
 });
+it("loads a schema-validated stored session and refuses malformed marker structure instead of exposing it as authenticated", async () => {
+  const f = fixture(),
+    { loadStoredSession } = await import("./auth-storage");
+  const stored = await loadStoredSession();
+  expect(stored?.marker.user.id).toBe(f.ownerId);
+  expect(stored?.refreshToken).toBe("private-refresh-token-not-for-archive");
+  state.values.set(
+    "auth.session-marker",
+    JSON.stringify({ user: { id: f.ownerId } }),
+  );
+  expect(await loadStoredSession()).toBeNull();
+  expect(state.values.has("auth.refresh-token")).toBe(false);
+  expect(state.values.has("auth.session-marker")).toBe(false);
+});
+it("distinguishes unknown restore ownership from a proven foreign session", async () => {
+  const f = fixture(),
+    {
+      assertRestoredSessionOwner,
+      preserveDatabaseRecoveryOwner,
+      currentDatabaseOwner,
+    } = await import("./auth-storage");
+  await expect(
+    assertRestoredSessionOwner(f.generation, f.ownerId, f.ownerId),
+  ).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  await preserveDatabaseRecoveryOwner(
+    f.generation,
+    await currentDatabaseOwner(),
+  );
+  await expect(
+    assertRestoredSessionOwner(f.generation, f.ownerId, randomUUID()),
+  ).rejects.toMatchObject({ code: "OWNER" });
+  state.values.set(`auth.local-restore-verified.${f.generation}`, randomUUID());
+  await expect(
+    assertRestoredSessionOwner(f.generation, f.ownerId, f.ownerId),
+  ).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  expect(state.values.has("auth.refresh-token")).toBe(true);
+});

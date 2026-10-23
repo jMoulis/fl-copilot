@@ -52,7 +52,13 @@ export class NativeSessionManager {
     };
   }
   restore() {
-    this.restoration ??= this.restoreStoredSession();
+    if (!this.restoration) {
+      const attempt = this.restoreStoredSession();
+      this.restoration = attempt;
+      void attempt.catch(() => {
+        if (this.restoration === attempt) this.restoration = undefined;
+      });
+    }
     return this.restoration;
   }
   private async restoreStoredSession() {
