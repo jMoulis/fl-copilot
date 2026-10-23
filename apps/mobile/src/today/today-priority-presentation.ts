@@ -3,6 +3,7 @@ import type { TodayPriority } from "./today-summary";
 export function priorityPresentation(priority: TodayPriority) {
   if (priority.type === "WASTE_SPIKE") {
     return {
+      heading: "Contrôler la casse",
       title: `Contrôler la casse — ${priority.productLabel}`,
       reason: "La casse augmente par rapport à J-7.",
       action: "Vérifier le stock, la maturité et la rotation aujourd’hui.",
@@ -11,6 +12,7 @@ export function priorityPresentation(priority: TodayPriority) {
   }
   if (priority.type === "SALES_DROP") {
     return {
+      heading: "Vérifier les ventes",
       title: `Vérifier les ventes — ${priority.productLabel}`,
       reason: "Les ventes reculent par rapport à J-7.",
       action: "Contrôler la disponibilité, le prix et la mise en avant.",
@@ -19,6 +21,7 @@ export function priorityPresentation(priority: TodayPriority) {
   }
   if (priority.type === "MARGIN_DROP") {
     return {
+      heading: "Examiner la marge",
       title: `Examiner la marge — ${priority.productLabel}`,
       reason: "La marge baisse par rapport à J-7.",
       action: "Vérifier le prix de vente et le coût d’achat.",
@@ -26,6 +29,7 @@ export function priorityPresentation(priority: TodayPriority) {
     };
   }
   return {
+    heading: "Vérifier les données",
     title: `Vérifier les données — ${priority.productLabel}`,
     reason:
       "Les données disponibles sont insuffisantes pour une lecture fiable.",

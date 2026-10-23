@@ -69,9 +69,13 @@ type Editor = {
 export function CommercialExecutionView({
   plan,
   compact = false,
+  filter: controlledFilter,
+  onFilter,
 }: {
   plan: CommercialWeekPlan;
   compact?: boolean;
+  filter?: ExecutionFilter;
+  onFilter?(filter: ExecutionFilter): void;
 }) {
   const visuals = useVisualLibrary();
   const { sqlite, deviceId } = useLocalDatabase(),
@@ -81,7 +85,9 @@ export function CommercialExecutionView({
       [sqlite],
     );
   const [loadedRevision, setLoadedRevision] = useState<string>();
-  const [filter, setFilter] = useState<ExecutionFilter>("TODO");
+  const [localFilter, setLocalFilter] = useState<ExecutionFilter>("TODO");
+  const filter = controlledFilter ?? localFilter;
+  const setFilter = onFilter ?? setLocalFilter;
   const [proposals, setProposals] = useState<CommercialExecutionProposal[]>([]),
     [records, setRecords] = useState<LocalCommercialExecution[]>([]),
     [editor, setEditor] = useState<Editor | null>(null),

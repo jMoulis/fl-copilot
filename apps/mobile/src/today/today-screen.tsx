@@ -14,7 +14,7 @@ import { IconButton } from "@/components/dashboard";
 import { useSync } from "@/sync/sync-provider";
 import { formatBusinessDate } from "./today-priority-presentation";
 import { useTodaySummary } from "./use-today-summary";
-import { TodayContent } from "./today-overview";
+import { TodayNativeContent } from "./today-native-overview";
 
 export default function TodayScreen() {
   const { loading, refreshing, storeMissing, summary, error, refresh } =
@@ -67,7 +67,7 @@ export default function TodayScreen() {
         <Text className="text-base text-muted">Préparation de la journée…</Text>
       ) : summary ? (
         <>
-          <TodayContent summary={summary} />
+          <TodayNativeContent summary={summary} />
           <StoreEventsView compact />
         </>
       ) : error ? null : (
