@@ -4,6 +4,7 @@ import {
   useContext,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,79 +45,95 @@ export function ReminderProvider({ children }: PropsWithChildren) {
     { lastSyncedAt, syncNow } = useSync(),
     { sqlite } = useLocalDatabase(),
     storeId = session?.stores[0]?.storeId;
+  const context = useMemo(
+    () => ({ storeId, status, ownerId: session?.user.id, sqlite }),
+    [storeId, status, session?.user.id, sqlite],
+  );
   const root = useRootNavigationState(),
-    active = useRef<string | undefined>(storeId),
+    active = useRef<typeof context | undefined>(context),
     queue = useMemo(() => new CoalescedReminderRunner(), []),
     [error, setError] = useState<string>();
   const repo = useMemo(() => new ReminderRepository(sqlite, digest), [sqlite]);
-  const refresh = useCallback(() => {
-    const work = queue
-      .run(async () => {
-        if (status === "loading" || active.current !== storeId) return;
-        const store = storeId,
-          rows = store ? await repo.list(store) : [],
-          enabled = store ? await repo.preferences(store) : false;
-        const planIds = enabled
-          ? [
-              ...new Set(
-                rows
-                  .filter(
-                    (r) =>
-                      r.reminder.enabled &&
-                      r.reminder.fireAt > new Date().toISOString(),
-                  )
-                  .map((r) => r.reminder.planId),
-              ),
-            ]
-          : [];
-        const raw =
-          store && planIds.length
-            ? await sqlite.getAllAsync<{
-                payload_json: string;
-                sync_state: string;
-              }>(
-                `SELECT payload_json,sync_state FROM commercial_week_plans WHERE store_id=? AND id IN (${planIds.map(() => "?").join(",")})`,
-                store,
-                ...planIds,
-              )
+  const refresh = useCallback(
+    () =>
+      queue.run(async () => {
+        if (status === "loading" || active.current !== context) return;
+        try {
+          const store = storeId,
+            rows = store ? await repo.list(store) : [],
+            enabled = store ? await repo.preferences(store) : false;
+          const planIds = enabled
+            ? [
+                ...new Set(
+                  rows
+                    .filter(
+                      (r) =>
+                        r.reminder.enabled &&
+                        r.reminder.fireAt > new Date().toISOString(),
+                    )
+                    .map((r) => r.reminder.planId),
+                ),
+              ]
             : [];
-        const plans = await Promise.all(
-          raw.map(async (row) => {
-            const p = commercialWeekPlanSchema.parse(
-                JSON.parse(row.payload_json),
-              ),
-              ctx = await readWeekPlanContext(sqlite, p.preparation);
-            return {
-              id: p.id,
-              revisionId: p.revisionId,
-              checksum: await commercialExecutionPlanChecksum(p, digest),
-              syncState: row.sync_state,
-              needsReview: commercialPlanNeedsReview(p, ctx).length > 0,
-              operations: p.operations,
-            };
-          }),
-        );
-        await reconcileReminders({
-          storeId: store,
-          enabled,
-          reminders: rows.map((r) => r.reminder),
-          plans,
-          native: await notificationAdapter(),
-          now: new Date(),
-          isCurrent: () => active.current === store,
-          status: (r, s, id) => repo.setStatus(r, s, id),
-        });
-        if (active.current === store) setError(undefined);
-      })
-      .catch(() =>
-        setError(
-          "Les rappels n’ont pas pu être vérifiés. Le plan reste utilisable ; réessayez depuis les réglages des rappels.",
-        ),
-      );
-    return work;
-  }, [repo, sqlite, status, storeId, queue]);
+          const raw =
+            store && planIds.length
+              ? await sqlite.getAllAsync<{
+                  payload_json: string;
+                  sync_state: string;
+                }>(
+                  `SELECT payload_json,sync_state FROM commercial_week_plans WHERE store_id=? AND id IN (${planIds.map(() => "?").join(",")})`,
+                  store,
+                  ...planIds,
+                )
+              : [];
+          const plans = await Promise.all(
+            raw.map(async (row) => {
+              const p = commercialWeekPlanSchema.parse(
+                  JSON.parse(row.payload_json),
+                ),
+                ctx = await readWeekPlanContext(sqlite, p.preparation);
+              return {
+                id: p.id,
+                revisionId: p.revisionId,
+                checksum: await commercialExecutionPlanChecksum(p, digest),
+                syncState: row.sync_state,
+                needsReview: commercialPlanNeedsReview(p, ctx).length > 0,
+                operations: p.operations,
+              };
+            }),
+          );
+          if (active.current !== context) return;
+          const native = await notificationAdapter();
+          if (active.current !== context) return;
+          await reconcileReminders({
+            storeId: store,
+            enabled,
+            reminders: rows.map((r) => r.reminder),
+            plans,
+            native,
+            now: new Date(),
+            isCurrent: () => active.current === context,
+            status: async (r, s, id) => {
+              if (active.current === context) await repo.setStatus(r, s, id);
+            },
+          });
+          if (active.current === context) setError(undefined);
+        } catch {
+          if (active.current === context)
+            setError(
+              "Les rappels n’ont pas pu être vérifiés. Le plan reste utilisable ; réessayez depuis les réglages des rappels.",
+            );
+        }
+      }),
+    [repo, sqlite, status, storeId, queue, context],
+  );
+  useLayoutEffect(() => {
+    active.current = context;
+    return () => {
+      if (active.current === context) active.current = undefined;
+    };
+  }, [context]);
   useEffect(() => {
-    active.current = storeId;
     void refresh();
     const unsubscribe = subscribeReminders(() => void refresh()),
       outbox = subscribeOutboxChanges(() => void refresh()),
@@ -128,7 +145,7 @@ export function ReminderProvider({ children }: PropsWithChildren) {
       outbox();
       state.remove();
     };
-  }, [storeId, refresh]);
+  }, [context, refresh]);
   useEffect(() => {
     if (lastSyncedAt) void refresh();
   }, [lastSyncedAt, refresh]);
@@ -140,39 +157,52 @@ export function ReminderProvider({ children }: PropsWithChildren) {
       .then(async (n) => {
         if (!n || !alive) return;
         n.setNotificationHandler({
-          handleNotification: async () => ({
-            shouldPlaySound: true,
-            shouldSetBadge: false,
-            shouldShowBanner: true,
-            shouldShowList: true,
-          }),
+          handleNotification: async (notification) => {
+            const data = notification.request.content.data;
+            const visible =
+              alive &&
+              active.current === context &&
+              data?.storeId === storeId &&
+              (data?.kind === "COMMERCIAL_REMINDER_TEST" ||
+                reminderNotificationDataSchema.safeParse(data).success);
+            return {
+              shouldPlaySound: visible,
+              shouldSetBadge: false,
+              shouldShowBanner: visible,
+              shouldShowList: visible,
+            };
+          },
         });
         const handle = async (data: unknown) => {
-          if (!alive || active.current !== storeId) return;
+          if (!alive || active.current !== context) return;
           if (
             typeof data === "object" &&
             data !== null &&
             "kind" in data &&
             data.kind === "COMMERCIAL_REMINDER_TEST" &&
             "storeId" in data &&
-            data.storeId === active.current
+            data.storeId === storeId
           ) {
             n.clearLastNotificationResponse();
             router.push("/reminder-settings");
             return;
           }
           const parsed = reminderNotificationDataSchema.safeParse(data);
-          if (!parsed.success || parsed.data.storeId !== active.current) return;
+          if (!parsed.success || parsed.data.storeId !== storeId) return;
           const local = (await repo.list(parsed.data.storeId)).find(
             (r) =>
               r.reminder.id === parsed.data.reminderId &&
               r.reminder.operationId === parsed.data.operationId &&
               r.reminder.weekStart === parsed.data.weekStart,
           );
-          if (!alive || !local || active.current !== parsed.data.storeId)
-            return;
+          if (!alive || !local || active.current !== context) return;
           n.clearLastNotificationResponse();
-          void syncNow(parsed.data.storeId);
+          void syncNow(parsed.data.storeId).catch(() => {
+            if (alive && active.current === context)
+              setError(
+                "Le rappel est ouvert avec les données locales. L’actualisation n’a pas abouti ; réessayez depuis la synchronisation.",
+              );
+          });
           router.push({
             pathname: "/commercial-operation/[id]",
             params: {
@@ -182,27 +212,35 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             },
           });
         };
-        const response = n.getLastNotificationResponse();
-        if (response) await handle(response.notification.request.content.data);
-        const subscription = n.addNotificationResponseReceivedListener(
-          (res) => {
-            void handle(res.notification.request.content.data).catch(() =>
+        const receive = async (data: unknown) => {
+          try {
+            await handle(data);
+          } catch {
+            if (alive && active.current === context)
               setError(
                 "Le rappel ne peut pas être ouvert. Consultez votre plan de semaine.",
-              ),
-            );
+              );
+          }
+        };
+        const response = n.getLastNotificationResponse();
+        if (response) await receive(response.notification.request.content.data);
+        if (!alive || active.current !== context) return;
+        const subscription = n.addNotificationResponseReceivedListener(
+          (res) => {
+            void receive(res.notification.request.content.data);
           },
         );
         remove = () => subscription.remove();
       })
-      .catch(() =>
-        setError("Les notifications ne sont pas disponibles dans ce build."),
-      );
+      .catch(() => {
+        if (alive && active.current === context)
+          setError("Les notifications ne sont pas disponibles dans ce build.");
+      });
     return () => {
       alive = false;
       remove?.();
     };
-  }, [repo, status, storeId, root?.key, syncNow]);
+  }, [repo, status, storeId, root?.key, syncNow, context]);
   return (
     <Context.Provider
       value={{ refresh, error, available: notificationsAvailable() }}

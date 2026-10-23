@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+### M8-T11 — local notification context lifetime (24 October 2026)
+
+The existing reminder provider invalidates queued work and native response/display callbacks across owner/store/database/session closure. Recheck context after cold-response reads before listener registration; retain local navigation and contain background-sync rejection. Isolate old job errors inside the existing coalesced runner. Foreground presentation accepts only the current store's supported reminder payload. Eighteen targeted tests include seven before-fix failures and 200 context replacements with bounded subscriptions. No notification delivery policy, remote push service, schema, permission prompt, provider call or business writer is added. See `../qa/M8_REMINDER_LIFETIME_2026_10_24.md`; exact-head CI, grouped native delivery and physical iOS/Android notification acceptance remain required. All seven M7 states and complete V1 gates remain open.
+
 ### M7 L5/L9 — decisions and declared realizations in Actions
 
 Expose existing owner/store-private decisions and independent action declarations through a ten-entry local weekly follow-up. Preserve original proposal provenance, logical-deletion privacy, canonical Paris date boundaries and separate realization semantics; route to existing chat without creating business commands. Use one joined page read, retained display/page/filter, lazy opening and focus/pull/manual refresh. Coalesce calculation progress while allowing reads when returning during blocked synchronization. No new model tool, writer, sync contract or business migration. See `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md` and retain full M7/M8 exit gates.
