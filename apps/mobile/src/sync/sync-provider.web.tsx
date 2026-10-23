@@ -20,6 +20,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       value={{
         status: "synced",
         pendingCount: 0,
+        pendingCommandCount: 0,
         conflictCount: 0,
         failedCount: 0,
         syncNow: async () => previewSummary,

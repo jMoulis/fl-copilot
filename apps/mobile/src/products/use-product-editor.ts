@@ -17,10 +17,24 @@ import type {
   ProductListState,
 } from "./product-editor-hooks.types";
 
+// Catalogue follows commands, not unrelated local-job progress. Counter updates
+// during one sync share a revision; focus and its settled/pull state still read.
+function productReadRevision(sync: ReturnType<typeof useSync>) {
+  return sync.status === "syncing"
+    ? "syncing"
+    : JSON.stringify([
+        sync.pendingCommandCount ?? sync.pendingCount,
+        sync.conflictCount,
+        sync.failedCount,
+        sync.lastSyncedAt,
+        sync.status,
+      ]);
+}
+
 export function useProductList(): ProductListState {
   const { sqlite } = useLocalDatabase();
   const { session } = useAuth();
-  const { pendingCount, conflictCount, lastSyncedAt } = useSync();
+  const revision = productReadRevision(useSync());
   const storeId = session?.stores[0]?.storeId;
   const repository = useMemo(
     () => new ProductMasterRepository(sqlite),
@@ -97,7 +111,7 @@ export function useProductList(): ProductListState {
       return () => {
         request.current++;
       };
-    }, [refresh, pendingCount, conflictCount, lastSyncedAt]),
+    }, [refresh, revision]),
   );
   return { loading, storeMissing: !storeId, products, error, refresh };
 }
@@ -105,7 +119,10 @@ export function useProductList(): ProductListState {
 export function useProductEditor(productId?: string): ProductEditorState {
   const database = useLocalDatabase();
   const { session } = useAuth();
-  const { pendingCount, conflictCount, lastSyncedAt } = useSync();
+  const sync = useSync();
+  const revision = productReadRevision(sync);
+  const syncing = useRef(sync.status === "syncing");
+  syncing.current = sync.status === "syncing";
   const storeId = session?.stores[0]?.storeId;
   const repository = useMemo(
     () => new ProductMasterRepository(database.sqlite),
@@ -172,26 +189,37 @@ export function useProductEditor(productId?: string): ProductEditorState {
       return () => {
         generation.current++;
       };
-    }, [refresh, pendingCount, conflictCount, lastSyncedAt]),
+    }, [refresh, revision]),
   );
 
   const save = useCallback(
     async (draft: ProductEditorDraft, expected?: ProductEditorSnapshot) => {
       if (!storeId) throw new Error("Aucun magasin actif.");
-      return saveProductEditorLocally(
-        database.sqlite,
-        draft,
-        {
-          storeId,
-          deviceId: database.deviceId,
-          productId,
-          now: () => new Date().toISOString(),
-          generateId: randomUUID,
-        },
-        expected,
-      );
+      try {
+        const saved = await saveProductEditorLocally(
+          database.sqlite,
+          draft,
+          {
+            storeId,
+            deviceId: database.deviceId,
+            productId,
+            now: () => new Date().toISOString(),
+            generateId: randomUUID,
+          },
+          expected,
+        );
+        // An explicit local save still refreshes immediately during a long sync.
+        // Outside sync the ordinary pending-command invalidation already does so.
+        if (syncing.current) void refresh();
+        return saved;
+      } catch (error) {
+        // Reveal the current version/conflict even if a rejected save added no
+        // Outbox command and the network pipeline has not settled yet.
+        void refresh();
+        throw error;
+      }
     },
-    [database, productId, storeId],
+    [database, productId, storeId, refresh],
   );
 
   return {

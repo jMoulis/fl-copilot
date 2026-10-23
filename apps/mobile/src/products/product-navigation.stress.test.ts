@@ -20,7 +20,12 @@ import { runLocalMigrations } from "../db/migrations";
 import { serializeLocalWrites } from "../db/serialized-writes";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { ProductEditorState } from "./product-editor-hooks.types";
-import { productSnapshotToDraft } from "./product-editor-service";
+import {
+  productSnapshotToDraft,
+  loadProductEditorSnapshot,
+  saveProductEditorLocally,
+} from "./product-editor-service";
+import { ProductMasterRepository } from "./product-master-repository";
 import { returnToProduct, returnToProducts } from "./product-navigation";
 import { useProductEditor, useProductList } from "./use-product-editor";
 import { useVisualLibrary } from "./use-visual-library";
@@ -36,6 +41,8 @@ const Focus = createContext(false);
 const Sync = createContext({
   pendingCount: 0,
   conflictCount: 0,
+  failedCount: 0,
+  status: "offline",
   lastSyncedAt: undefined as string | undefined,
   visuals: undefined,
   syncNow: async () => undefined,
@@ -466,6 +473,8 @@ it("stress-tests real mounted product hooks with 500 offline edits and retained 
           value: {
             pendingCount,
             conflictCount: 0,
+            failedCount: 0,
+            status: "offline",
             lastSyncedAt: undefined,
             visuals: undefined,
             syncNow: async () => undefined,
@@ -656,3 +665,192 @@ it("stress-tests real mounted product hooks with 500 offline edits and retained 
     rmSync(f.directory, { recursive: true, force: true });
   }
 }, 120_000);
+
+function CatalogueListReadProbe() {
+  latestList = useProductList();
+  return null;
+}
+it.each(["list", "editor"] as const)(
+  "coalesces 300 sync counter updates in the actual %s hook, while first entry and return still read SQLite during sync",
+  async (kind) => {
+    const f = await fixture();
+    runtime.database = { sqlite: f.db, deviceId: f.deviceId };
+    runtime.session = {
+      user: { id: f.ownerId },
+      stores: [{ storeId: f.storeId, role: "MANAGER" }],
+    };
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const originalError = console.error;
+    vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      if (!String(args[0]).includes("react-test-renderer is deprecated"))
+        originalError(...args);
+    });
+    let renderer: ReactTestRenderer | undefined;
+    const state = {
+      pendingCount: 300,
+      conflictCount: 0,
+      failedCount: 0,
+      lastSyncedAt: undefined as string | undefined,
+      status: "syncing",
+      visuals: undefined,
+      syncNow: async () => undefined,
+    };
+    const id = f.ids[0]!;
+    async function render(focused = true) {
+      await act(async () => {
+        const tree = createElement(
+          Sync.Provider,
+          { value: { ...state } },
+          createElement(
+            Focus.Provider,
+            { value: focused },
+            kind === "list"
+              ? createElement(CatalogueListReadProbe)
+              : createElement(EditProbe, { id, routeKey: "sync-test" }),
+          ),
+        );
+        if (renderer) renderer.update(tree);
+        else renderer = create(tree);
+      });
+    }
+    function label() {
+      return kind === "list"
+        ? latestList?.products.find((p) => p.record.entity.id === id)?.record
+            .entity.label
+        : probes.get("sync-test")?.snapshot?.product.entity.label;
+    }
+    try {
+      const start = f.counters.statements;
+      await render();
+      expect(label()).toBeTruthy();
+      const firstReadStatements = f.counters.statements - start;
+      const before = {
+        statements: f.counters.statements,
+        rows: f.counters.rows,
+      };
+      for (let pending = 299; pending >= 0; pending--) {
+        state.pendingCount = pending;
+        await render();
+      }
+      const churn = {
+        statements: f.counters.statements - before.statements,
+        rows: f.counters.rows - before.rows,
+      };
+      console.log(
+        "product-sync-read-churn",
+        JSON.stringify({ kind, changes: 300, firstReadStatements, ...churn }),
+      );
+      expect(churn).toEqual({ statements: 0, rows: 0 });
+
+      // Navigation must re-read even if a slow remote sync has not settled.
+      await render(false);
+      const base = (await loadProductEditorSnapshot(
+        new ProductMasterRepository(f.db),
+        id,
+      ))!;
+      await saveProductEditorLocally(
+        f.db,
+        {
+          ...productSnapshotToDraft(base),
+          label: "Modification locale pendant la synchronisation",
+        },
+        {
+          storeId: f.storeId,
+          deviceId: f.deviceId,
+          productId: id,
+          now: () => "2026-10-23T18:00:00.000Z",
+          generateId: randomUUID,
+        },
+        base,
+      );
+      await render(true);
+      expect(label()).toBe("Modification locale pendant la synchronisation");
+      expect(
+        f.raw
+          .prepare("SELECT COUNT(*) n FROM sync_outbox WHERE status='PENDING'")
+          .get(),
+      ).toEqual({ n: 1 });
+      const afterReturn = f.counters.statements;
+      state.status = "synced";
+      state.lastSyncedAt = "2026-10-23T18:01:00.000Z";
+      await render();
+      expect(f.counters.statements - afterReturn).toBe(firstReadStatements);
+      const afterSync = f.counters.statements;
+      // Successful pull with unchanged counters and without a rendered syncing phase.
+      state.lastSyncedAt = "2026-10-23T18:02:00.000Z";
+      await render();
+      expect(f.counters.statements - afterSync).toBe(firstReadStatements);
+      state.status = "syncing";
+      await render();
+      if (kind === "editor") {
+        const editor = probes.get("sync-test")!;
+        await act(async () => {
+          await editor.save(
+            {
+              ...productSnapshotToDraft(editor.snapshot!),
+              label: "Enregistré localement",
+            },
+            editor.snapshot,
+          );
+        });
+        expect(label()).toBe("Enregistré localement");
+        const old = probes.get("sync-test")!.snapshot!;
+        await saveProductEditorLocally(
+          f.db,
+          { ...productSnapshotToDraft(old), label: "Version plus récente" },
+          {
+            storeId: f.storeId,
+            deviceId: f.deviceId,
+            productId: id,
+            now: () => "2026-10-23T18:03:00.000Z",
+            generateId: randomUUID,
+          },
+          old,
+        );
+        await act(async () => {
+          await expect(
+            probes.get("sync-test")!.save(
+              {
+                ...productSnapshotToDraft(old),
+                label: "Ne doit pas écraser",
+              },
+              old,
+            ),
+          ).rejects.toThrow("PRODUCT_EDITOR_CHANGED");
+        });
+        expect(label()).toBe("Version plus récente");
+      } else {
+        const old = (await loadProductEditorSnapshot(
+          new ProductMasterRepository(f.db),
+          id,
+        ))!;
+        await saveProductEditorLocally(
+          f.db,
+          { ...productSnapshotToDraft(old), label: "Actualisation manuelle" },
+          {
+            storeId: f.storeId,
+            deviceId: f.deviceId,
+            productId: id,
+            now: () => "2026-10-23T18:03:00.000Z",
+            generateId: randomUUID,
+          },
+          old,
+        );
+        await act(async () => latestList!.refresh());
+        expect(label()).toBe("Actualisation manuelle");
+      }
+      const hidden = f.counters.statements;
+      await render(false);
+      state.pendingCount = 40;
+      state.failedCount = 1;
+      await render(false);
+      expect(f.counters.statements).toBe(hidden);
+    } finally {
+      if (renderer) await act(async () => renderer!.unmount());
+      vi.unstubAllGlobals();
+      f.raw.close();
+      rmSync(f.directory, { recursive: true, force: true });
+    }
+  },
+  30000,
+);

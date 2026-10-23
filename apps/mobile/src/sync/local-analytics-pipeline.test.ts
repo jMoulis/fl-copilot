@@ -236,6 +236,7 @@ it.each([
         raw.prepare("SELECT COUNT(*) n FROM product_daily_performance").get(),
       ).toEqual({ n: 1 });
       expect(latest?.pendingCount).toBe(1);
+      expect(latest?.pendingCommandCount).toBe(1);
       expect(
         raw
           .prepare("SELECT * FROM sync_outbox WHERE command_id=?")
@@ -266,6 +267,7 @@ it.each([
       });
       expect(runtime.network).toHaveBeenCalledTimes(1);
       expect(latest?.pendingCount).toBe(1);
+      expect(latest?.pendingCommandCount).toBe(1);
       expect(
         raw.prepare("SELECT COUNT(*) n FROM product_daily_performance").get(),
       ).toEqual({ n: 2 });
@@ -282,6 +284,7 @@ it.each([
       });
       expect(latest?.status).toBe(failureStatus);
       expect(latest?.pendingCount).toBe(1);
+      expect(latest?.pendingCommandCount).toBe(1);
       expect(
         raw
           .prepare("SELECT * FROM sync_outbox WHERE command_id=?")

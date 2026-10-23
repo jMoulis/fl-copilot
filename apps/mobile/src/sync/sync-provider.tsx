@@ -71,6 +71,7 @@ export type SyncRuntimeStatus =
 interface LocalSyncSnapshot {
   pendingDetails?: PendingWorkGroup[];
   pendingCount: number;
+  pendingCommandCount?: number;
   pendingLocalCalculationCount?: number;
   conflictCount: number;
   failedCount: number;
@@ -145,6 +146,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
   const [state, setState] = useState<Omit<SyncContextValue, "syncNow">>({
     status: "pending",
     pendingCount: 0,
+    pendingCommandCount: 0,
     conflictCount: 0,
     failedCount: 0,
   });
@@ -1218,6 +1220,7 @@ async function readLocalSyncSnapshot(
     pendingCount:
       Number(outboxCounts?.pending_count ?? 0) +
       Number(jobCounts?.pending_count ?? 0),
+    pendingCommandCount: Number(outboxCounts?.pending_count ?? 0),
     conflictCount:
       Number(conflictCounts?.conflict_count ?? 0) +
       Number(importVerificationCounts?.conflict_count ?? 0),

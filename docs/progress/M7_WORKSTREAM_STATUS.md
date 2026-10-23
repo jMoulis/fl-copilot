@@ -1,5 +1,13 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot performance en validation — 23 octobre : lectures Produits pendant la synchronisation
+
+Les lecteurs de catalogue et de fiche ne relisent plus toute leur donnée à chaque changement du compteur pendant une même synchronisation. Ouverture et retour lisent toujours SQLite, même si le réseau reste bloqué ; un pull terminé et une sauvegarde locale explicite restent pris en compte. Hors synchronisation, les calculs/fichiers en attente ne provoquent plus à eux seuls une relecture du catalogue : le compteur de commandes déjà calculé est exposé dans le contexte local, sans nouvelle requête ni file.
+
+Deux reproductions mesurées sur SQLite passent de **1 200 requêtes à zéro requête supplémentaire** pour 300 notifications après la lecture initiale, tout en vérifiant le retour après une modification réelle, la version concurrente et les refus. Le parcours existant de **500 modifications/navigation** passe aussi, avec une route racine, un observateur et un abonnement à la fin ; il ne mesure pas la latence du pont natif. Voir `../qa/M8_PRODUCT_SYNC_READS_2026_10_23.md`. CI finales/livraison groupée et recette matérielle restent ouvertes. **Sept chantiers : 1/3/4/5/6/7 en cours ; 2 Contre-promo code prêt.**
+
+La PR 335 est fusionnée en `b8e4332` après les deux CI vertes (**3 925 tests / 6 ignorés**) ; son formulaire progressif attend le binaire groupé avec les PR 331–333. La PR 334 Resend est fusionnée, mais l’accord pour la clé Full access dédiée et la livraison API restent en attente. Aucun nouveau build EAS ni déploiement pour le présent lot.
+
 ## Lot UX en validation — 23 octobre : fiche produit progressive et saisie protégée
 
 La fiche garde libellé, catégorie, nature et unité de vente visibles ; conditionnement, codes et alias sont repliables avec résumé. Les valeurs, blancs volontaires, identifiants stables et zéros initiaux restent dans le formulaire même lorsque les champs ne sont plus montés. Une erreur ouvre la bonne section puis place le focus dans le champ concerné. Une sauvegarde bloque temporairement les modifications et les doubles envois ; un échec local conserve toute la saisie. Le clavier utilise une option native limitée à cet écran, sans nouvelle dépendance.
