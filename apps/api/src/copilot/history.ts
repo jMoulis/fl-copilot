@@ -31,7 +31,7 @@ export async function readCopilotHistory(
   ownerId: string,
   query: z.infer<typeof historyQuerySchema>,
   supportsDeletion = false,
-  supportsAnalyticsDestinations = false,
+  supportsAnalyticsDestinations: boolean | 2 = false,
 ) {
   const scope = { storeId, ownerId };
   if (query.recordType === "LAYOUT_ILLUSTRATIONS") {

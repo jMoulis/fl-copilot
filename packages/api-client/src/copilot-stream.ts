@@ -42,9 +42,9 @@ export async function readCopilotStream(
       total += next.value?.byteLength ?? 0;
       if (total > 4 * 1024 * 1024) throw Error("COPILOT_STREAM_LIMIT");
       buffer += decoder.decode(next.value, { stream: !next.done });
-      if (buffer.length > 256000) throw Error("COPILOT_STREAM_LIMIT");
       let end: number;
       while ((end = buffer.indexOf("\n")) >= 0) {
+        if (end > 1024 * 1024) throw Error("COPILOT_STREAM_LIMIT");
         const line = buffer.slice(0, end);
         buffer = buffer.slice(end + 1);
         if (!line.trim()) continue;
@@ -74,6 +74,7 @@ export async function readCopilotStream(
           doneResult = true;
         } else throw Error("COPILOT_STREAM_FAILED");
       }
+      if (buffer.length > 1024 * 1024) throw Error("COPILOT_STREAM_LIMIT");
       if (next.done) break;
     }
     if (!doneResult || buffer.trim()) throw Error("COPILOT_STREAM_INCOMPLETE");

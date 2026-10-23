@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Correction en validation — 23 octobre : fin de réponse longue du copilote
+
+Le diagnostic ajouté dans la PR 326 identifie la nouvelle occurrence serveur : `ANSWER_TEXT_TOO_LARGE`, le 23/10 à 13:06 UTC. Le texte déjà diffusé échouait lors de sa finalisation ; les références encodées dans les liens comptaient dans la limite du message. Le cas est reproduit avec un tableau valide et ses sources complètes. Les réponses volumineuses placent désormais leurs références dans des métadonnées bornées séparées ; le texte reste limité à 16 000 caractères. La construction canonique ne dépend plus de la capacité du premier client ; la projection vers les clients reste versionnée.
+
+Chantier **7 UX/validation + M8** : **1/3/4/5/6/7 en cours ; 2 code prêt**. Les règles de reprise, les files hors ligne et le nombre de générations ne changent pas. La réception complète, les liens, l’enregistrement MongoDB, le retour par l’historique et la conservation SQLite après redémarrage sont vérifiés séparément ; une livraison API compatible puis un binaire natif groupé et une validation iPhone restent nécessaires. Cet incident ne justifie pas de remanier les agents ni la synchronisation métier.
+
 ## Incident en qualification — 23 octobre : erreur de flux serveur et build groupé
 
 L’alerte `FRUITS-ET-LEGUMES-API-6` correspond à des échecs serveur de réception du chat, également visibles dans les journaux Vercel. La télémétrie existante ne conservait que `COPILOT_STREAM_FAILED` ; elle ne permet pas d’attribuer rétroactivement une cause précise. Le gestionnaire ajoute une raison technique à liste fermée dans les journaux et le tag Sentry, sans message brut, contenu de requête, chemin de validation ou corps fournisseur. Aucun nouvel essai automatique ni masquage de l’échec serveur n’est ajouté. Ce changement rend l’incident qualifiable ; il ne prouve pas sa résolution.

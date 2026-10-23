@@ -91,7 +91,6 @@ export async function runCopilotTurn(
     onActivity?: (activity: CopilotActivity) => void;
     onGenerationFailure?: (failure: CopilotGenerationFailure) => void;
     allowMemorySuggestions?: boolean;
-    supportsAnalyticsDestinations?: boolean;
   },
   raw: CopilotTurnRequest,
   signal?: AbortSignal,
@@ -276,11 +275,15 @@ export async function runCopilotTurn(
       parent: latest.parent,
       request,
       generation,
-      supportsAnalyticsDestinations: dependencies.supportsAnalyticsDestinations,
     });
     // TOOL builders inherit identity/time only, never assistant presentation metadata.
-    const { analyticsDestinations: _destinations, ...toolParent } = message;
+    const {
+      analyticsDestinations: _destinations,
+      answerSources: _sources,
+      ...toolParent
+    } = message;
     void _destinations;
+    void _sources;
     const session = dependencies.db.client.startSession();
     try {
       const result = await session.withTransaction(async () => {

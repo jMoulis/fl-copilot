@@ -730,3 +730,58 @@ it("refuses invalid, oversized or conflicting completed facts instead of trustin
     expect(failures[0]?.code).toBe(code);
   }
 });
+
+it("finalizes the streamed long answer that formerly failed after generation, without oversized provisional snapshots", async () => {
+  const { longCopilotAnswerFixture } =
+    await import("../../../../scripts/test-copilot-long-answer-fixtures");
+  const { chatFixture } =
+    await import("../../../../scripts/test-chat-fixtures");
+  const { buildCopilotResponseMessage } = await import("./response-message");
+  const { copilotMessageSchema } = await import("@fl-copilot/domain");
+  const f = longCopilotAnswerFixture(),
+    r = request(),
+    chat = chatFixture(randomUUID),
+    progress = vi.fn();
+  const provider = {
+    model: "test",
+    generate: vi.fn(async (_r, _schema, _signal, onProgress) => {
+      onProgress?.(f.output, f.evidence);
+      return {
+        output: f.output,
+        toolEvidence: f.evidence,
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "test-long-answer",
+          inputTokens: 0,
+          outputTokens: 0,
+        },
+      };
+    }),
+  } as CopilotAiProvider;
+  const generation = await generateCopilotResponse(
+    provider,
+    r,
+    undefined,
+    progress,
+  );
+  expect(generation.mode).toBe("AI");
+  expect(progress).toHaveBeenCalled();
+  expect(progress.mock.lastCall![0]).toContain("23,25 €");
+  expect(progress.mock.calls.every(([text]) => text.length <= 16000)).toBe(
+    true,
+  );
+  const message = buildCopilotResponseMessage({
+    id: randomUUID(),
+    createdAt: chat.message.createdAt,
+    parent: { ...chat.message, storeId: r.storeId, attachments: [] },
+    request: r,
+    generation,
+  });
+  expect(copilotMessageSchema.parse(message).answerSources).toHaveLength(
+    f.evidence.length,
+  );
+  expect(message.text).toContain("23,25 €");
+  expect(message.text).not.toContain("momentanément indisponible");
+  expect(provider.generate).toHaveBeenCalledTimes(1);
+});

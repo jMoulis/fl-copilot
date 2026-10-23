@@ -1292,13 +1292,21 @@ it("enriches only server-owned destinations after upgrading a projected history 
     const base = {
       ...f.message,
       role: "ASSISTANT" as const,
-      text: "Bilan [Source](copilot-source:reference)",
+      text: "Bilan [Source](copilot-source:ref:0)",
       attachments: [],
     };
     await applyCopilotRecord(a, f, "copilot_conversation", f.conversation);
     await applyCopilotRecord(a, f, "copilot_message", base);
     const rich = {
       ...base,
+      answerSources: [
+        {
+          label: "CA",
+          value: "Qualification conservée",
+          sourceId: "canonical",
+          sourceType: "KPI",
+        },
+      ],
       analyticsDestinations: packAnalyticsDestinations([
         largeAnalyticalContext(),
       ]),
@@ -1306,6 +1314,7 @@ it("enriches only server-owned destinations after upgrading a projected history 
     await applyCopilotRecord(a, f, "copilot_message", rich);
     await applyCopilotRecord(a, f, "copilot_message", base); // older projection cannot erase metadata
     for (const altered of [
+      { answerSources: [{ ...rich.answerSources[0]!, value: "changed" }] },
       { text: "changed" },
       { ownerId: randomUUID() },
       {
@@ -1324,6 +1333,14 @@ it("enriches only server-owned destinations after upgrading a projected history 
       await new CopilotConversationRepository(a, f).messages(f.conversation.id)
     ).messages[0]!;
     expect(restored.entity).toEqual(rich);
+    const { readAnswerSource } = await import("./answer-source");
+    expect(
+      readAnswerSource(
+        "ref:0",
+        restored.entity.analyticsDestinations,
+        restored.entity.answerSources,
+      ).value,
+    ).toBe("Qualification conservée");
     expect(restored.syncState).toBe("SYNCED");
     expect(
       db.prepare("SELECT count(*) AS n FROM sync_outbox").get(),

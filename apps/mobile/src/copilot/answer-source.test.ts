@@ -90,3 +90,25 @@ it("keeps source facts readable before enrichment and resolves compact targets l
       ),
     ).toThrow();
 });
+
+it("opens message-local compact citations and rejects invalid or absent table references", async () => {
+  const sources = [
+    {
+      label: "Ventes",
+      value: "Qualification intégrale",
+      sourceId: "published-period",
+      sourceType: "KPI",
+    },
+  ];
+  expect(readAnswerSource("ref:0", undefined, sources)).toEqual(sources[0]);
+  for (const link of [
+    "ref:-1",
+    "ref:0.5",
+    "ref:01",
+    "ref:1",
+    "ref:96",
+    "ref:0/../1",
+  ])
+    expect(() => readAnswerSource(link, undefined, sources)).toThrow();
+  expect(() => readAnswerSource("ref:0")).toThrow();
+});

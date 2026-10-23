@@ -103,13 +103,21 @@ export function serializeChatForClient(
   type: string,
   row: ChatRecordDocument,
   supportsDeletion = false,
-  supportsAnalyticsDestinations = false,
+  supportsAnalyticsDestinations: boolean | 2 = false,
 ) {
   const record = serializeChat(type, row);
-  if (type === "copilot_message" && !supportsAnalyticsDestinations) {
-    const { analyticsDestinations, ...legacy } = record as CopilotMessage;
-    void analyticsDestinations;
-    return legacy;
+  if (type === "copilot_message") {
+    const { analyticsDestinations, answerSources, ...body } =
+      record as CopilotMessage;
+    return {
+      ...body,
+      ...(supportsAnalyticsDestinations && analyticsDestinations
+        ? { analyticsDestinations }
+        : {}),
+      ...(supportsAnalyticsDestinations === 2 && answerSources
+        ? { answerSources }
+        : {}),
+    };
   }
   if (type !== "copilot_conversation" || supportsDeletion) return record;
   const { deletedAt, deletedMessageIds, ...legacy } =
@@ -403,7 +411,7 @@ export async function chatBootstrap(
   ownerId: string,
   session: ClientSession,
   supportsDeletion = false,
-  supportsAnalyticsDestinations = false,
+  supportsAnalyticsDestinations: boolean | 2 = false,
 ) {
   const scope = { storeId, ownerId };
   const messages = await db
@@ -454,3 +462,8 @@ import {
   serializeExecutionLink,
   type ExecutionLinkDocument,
 } from "./execution-link-store";
+
+/** Version two adds independently bounded citation snapshots to analytical navigation. */
+export function copilotPresentationVersion(value: unknown): boolean | 2 {
+  return value === "2" ? 2 : value === "1";
+}

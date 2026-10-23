@@ -1,3 +1,4 @@
+import { copilotAnswerSourcesSchema } from "./copilot-answer-source";
 import { analyticsDestinationTableSchema } from "./analytics-destination-table";
 import { z } from "zod";
 const id = z.string().uuid(),
@@ -48,6 +49,7 @@ export const copilotMessageSchema = z
     role: z.enum(["USER", "ASSISTANT", "TOOL"]),
     text: z.string().trim().max(16000),
     analyticsDestinations: analyticsDestinationTableSchema.optional(),
+    answerSources: copilotAnswerSourcesSchema.optional(),
     attachments: z.array(copilotAttachmentReferenceSchema).max(10),
     replyToMessageId: id.nullable(),
     supersedesMessageId: id.nullable(),
@@ -56,6 +58,12 @@ export const copilotMessageSchema = z
   })
   .strict()
   .superRefine((e, c) => {
+    if (e.answerSources && e.role !== "ASSISTANT")
+      c.addIssue({
+        code: "custom",
+        path: ["answerSources"],
+        message: "Sources belong to assistant answers",
+      });
     if (e.analyticsDestinations && e.role !== "ASSISTANT")
       c.addIssue({
         code: "custom",
@@ -127,7 +135,8 @@ export function copilotMessageIsDeleted(
 
 /** Stable business content for source freshness; optional navigation is presentation only. */
 export function copilotMessageContent(message: CopilotMessage) {
-  const { analyticsDestinations, ...content } = message;
+  const { analyticsDestinations, answerSources, ...content } = message;
   void analyticsDestinations;
+  void answerSources;
   return content;
 }

@@ -32,7 +32,10 @@ import {
   type VisualFileService,
 } from "./products/visual-file-service";
 import { registerVisualFileRoutes } from "./products/visual-file-routes";
-import { serializeChatForClient } from "./copilot/conversation-store";
+import {
+  serializeChatForClient,
+  copilotPresentationVersion,
+} from "./copilot/conversation-store";
 import { readStoreLayoutScenarioSources } from "./copilot/store-layout-scenario-tool";
 import {
   readRecommendationContext,
@@ -1481,8 +1484,6 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
             }),
             authorize,
-            supportsAnalyticsDestinations:
-              request.headers["x-copilot-analytics-destinations"] === "1",
             allowMemorySuggestions:
               request.headers["x-copilot-memory-suggestions"] === "1",
             onGenerationFailure: (failure) => {
@@ -1541,7 +1542,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             "copilot_message",
             { ...result.message, _id: result.message.id },
             true,
-            request.headers["x-copilot-analytics-destinations"] === "1",
+            copilotPresentationVersion(
+              request.headers["x-copilot-analytics-destinations"],
+            ),
           ) as typeof result.message,
         };
         if (streaming) {
@@ -1679,7 +1682,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         store.userId,
         request.query,
         request.headers["x-copilot-history-deletion"] === "1",
-        request.headers["x-copilot-analytics-destinations"] === "1",
+        copilotPresentationVersion(
+          request.headers["x-copilot-analytics-destinations"],
+        ),
       );
     },
   );
@@ -1888,6 +1893,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
       const principal = await auth.authorizeStore(accessToken, storeId);
+      const presentation = copilotPresentationVersion(
+        request.headers["x-copilot-analytics-destinations"],
+      );
       try {
         return request.query.copilotHistory === "true"
           ? await syncPull.pull(
@@ -1895,9 +1903,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               request.query,
               principal.userId,
               request.headers["x-copilot-history-deletion"] === "1",
-              ...(request.headers["x-copilot-analytics-destinations"] === "1"
-                ? ([true] as const)
-                : []),
+              ...(presentation ? ([presentation] as const) : []),
             )
           : await syncPull.pull(storeId, request.query);
       } catch (error) {
@@ -1946,12 +1952,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
       const store = await auth.authorizeStore(accessToken, storeId);
-      if (request.headers["x-copilot-analytics-destinations"] === "1")
+      const presentation = copilotPresentationVersion(
+        request.headers["x-copilot-analytics-destinations"],
+      );
+      if (presentation)
         return syncBootstrap.bootstrap(
           store,
           request.query,
           request.headers["x-copilot-history-deletion"] === "1",
-          true,
+          presentation,
         );
       return request.headers["x-copilot-history-deletion"] === "1"
         ? syncBootstrap.bootstrap(store, request.query, true)

@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import {
   type AnalyticsDestinationTable,
+  type CopilotAnswerSources,
   retailExpertiseFreshness,
   isPublicResearchUrl,
 } from "@fl-copilot/domain";
@@ -29,11 +30,13 @@ export function AssistantAnswer({
   renderSource,
   selectable = true,
   analyticsDestinations,
+  answerSources,
   onLongPress,
 }: {
   text: string;
   selectable?: boolean;
   analyticsDestinations?: AnalyticsDestinationTable;
+  answerSources?: CopilotAnswerSources;
   onLongPress?(): void;
   renderSource?(id: string): ReactNode;
 }) {
@@ -42,7 +45,11 @@ export function AssistantAnswer({
   const blocks = useMemo(() => markdownBlocks(text), [text]);
   function openSource(encoded: string) {
     try {
-      const value = readAnswerSource(encoded, analyticsDestinations);
+      const value = readAnswerSource(
+        encoded,
+        analyticsDestinations,
+        answerSources,
+      );
       setLinkError(false);
       setSource(value);
     } catch {

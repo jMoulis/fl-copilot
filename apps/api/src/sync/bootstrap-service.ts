@@ -136,7 +136,7 @@ export interface SyncBootstrapService {
     store: AuthorizedStoreContext,
     query: BootstrapQuery,
     supportsHistoryDeletion?: boolean,
-    supportsAnalyticsDestinations?: boolean,
+    supportsAnalyticsDestinations?: boolean | 2,
   ): Promise<BootstrapResponse>;
 }
 
@@ -150,7 +150,7 @@ export function createMongoSyncBootstrapService(
       store,
       query,
       supportsHistoryDeletion = false,
-      supportsAnalyticsDestinations = false,
+      supportsAnalyticsDestinations: boolean | 2 = false,
     ) {
       if (query.commercialReview === "true")
         await registerCommercialReviewPages(database, store.storeId);

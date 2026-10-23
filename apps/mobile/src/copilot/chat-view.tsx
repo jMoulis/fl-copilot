@@ -276,6 +276,7 @@ export function CopilotChatView({
                   <AssistantAnswer
                     text={item.text}
                     analyticsDestinations={item.analyticsDestinations}
+                    answerSources={item.answerSources}
                     selectable={false}
                     onLongPress={onLongPress}
                     renderSource={(id) => {

@@ -9,7 +9,11 @@ import {
   preferEvidenceNavigation,
 } from "./evidence-identity";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
-import { answerProse, renderAnswerText } from "./answer-text.js";
+import {
+  answerProse,
+  renderAnswerText,
+  renderAnswerContent,
+} from "./answer-text.js";
 import {
   copilotResponseSchema,
   type CopilotResponse,
@@ -384,14 +388,13 @@ export async function generateCopilotResponse(
                 typeof f.evidenceId === "string",
             );
             try {
-              onProgress(
-                renderAnswerText(
-                  value.narrative,
-                  facts,
-                  [...copilotRequestEvidence(request), ...evidence],
-                  true,
-                ),
+              const { text } = renderAnswerContent(
+                value.narrative,
+                facts,
+                [...copilotRequestEvidence(request), ...evidence],
+                true,
               );
+              if (text.length <= 16000) onProgress(text);
             } catch {
               /* Unresolved/unsupported partial output is never displayed. */
             }

@@ -122,7 +122,7 @@ export interface SyncPullService {
     query: SyncPullQuery,
     ownerId?: string,
     supportsHistoryDeletion?: boolean,
-    supportsAnalyticsDestinations?: boolean,
+    supportsAnalyticsDestinations?: boolean | 2,
   ): Promise<SyncPullResponse>;
 }
 
@@ -136,7 +136,7 @@ export function createMongoSyncPullService(
       query,
       ownerId,
       supportsHistoryDeletion = false,
-      supportsAnalyticsDestinations = false,
+      supportsAnalyticsDestinations: boolean | 2 = false,
     ) {
       const afterSequence = query.cursor
         ? decodeCursor(query.cursor, storeId)
