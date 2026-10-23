@@ -1144,7 +1144,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               receiptCorrection: canManageProducts ? 2 : false,
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
-              catalogueProposals: canManageProducts,
+              catalogueProposals: canManageProducts ? 2 : false,
               executionProposals: canDeclareCommercialExecution,
               fetch: expoFetch as typeof fetch,
             }),

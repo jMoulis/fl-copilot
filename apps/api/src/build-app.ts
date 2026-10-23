@@ -990,7 +990,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(request.headers["x-copilot-catalogue-proposals"] === "1"
+              ...(request.headers["x-copilot-catalogue-proposals"] === "1" ||
+              request.headers["x-copilot-catalogue-proposals"] === "2"
                 ? {
                     cataloguePreview: async (input) => {
                       await authorize();
@@ -998,6 +999,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         db,
                         storeId,
                         input,
+                        {
+                          allowInactiveMaintenance:
+                            request.headers["x-copilot-catalogue-proposals"] ===
+                            "2",
+                        },
                       );
                       await authorize();
                       return result;

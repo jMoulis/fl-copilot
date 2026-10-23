@@ -57,6 +57,55 @@ describe.skipIf(!uri)("catalogue chat proposals", () => {
       },
     };
   }
+  it("allows inactive inspection and maintenance only for compatible clients, without restoring or deleting a product", async () => {
+    const f = await fixture();
+    await db.collection("products").updateOne(
+      { storeId: f.storeId },
+      {
+        $set: { status: "INACTIVE" },
+      },
+    );
+    const before = await db
+      .collection("products")
+      .findOne({ storeId: f.storeId });
+    const v2 = { allowInactiveMaintenance: true };
+    for (const action of ["INSPECT", "UPDATE"] as const) {
+      const input = {
+        ...f.input,
+        action,
+        patch: action === "INSPECT" ? {} : f.input.patch,
+      };
+      expect((await readCataloguePreview(db, f.storeId, input)).status).toBe(
+        "UNAVAILABLE",
+      );
+      const preview = await readCataloguePreview(db, f.storeId, input, v2);
+      expect(preview.status).toBe(action === "INSPECT" ? "INSPECTED" : "READY");
+      expect(preview.before?.product.entity.status).toBe("INACTIVE");
+      expect(preview.evidence[0]?.value).toContain("inactive et le restera");
+    }
+    expect(
+      (
+        await readCataloguePreview(
+          db,
+          f.storeId,
+          { action: "RETIRE", productId: f.productId, patch: {} },
+          v2,
+        )
+      ).status,
+    ).toBe("UNAVAILABLE");
+    expect(
+      (await readCataloguePreview(db, randomUUID(), f.input, v2)).status,
+    ).toBe("UNAVAILABLE");
+    expect(
+      await db.collection("products").findOne({ storeId: f.storeId }),
+    ).toEqual(before);
+    await db
+      .collection("products")
+      .updateOne({ storeId: f.storeId }, { $set: { deletedAt: new Date() } });
+    expect(
+      (await readCataloguePreview(db, f.storeId, f.input, v2)).status,
+    ).toBe("UNAVAILABLE");
+  });
   it("reads full children, preserves unrequested fields and leading zeros, refuses foreign products and oversized child sets", async () => {
     const f = await fixture(),
       id = randomUUID(),

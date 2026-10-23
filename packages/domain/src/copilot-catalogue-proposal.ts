@@ -56,7 +56,8 @@ export function prepareCatalogueRequest(
     (!before ||
       before.product.entity.id !== input.productId ||
       before.product.entity.deletedAt ||
-      before.product.entity.status === "INACTIVE")
+      (input.action === "RETIRE" &&
+        before.product.entity.status === "INACTIVE"))
   )
     throw Error("CATALOGUE_TARGET_UNAVAILABLE");
   if (input.action === "CREATE" && before)

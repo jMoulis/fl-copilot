@@ -22,6 +22,7 @@ export async function readCataloguePreview(
   db: Db,
   storeId: string,
   raw: unknown,
+  options: { allowInactiveMaintenance?: boolean } = {},
 ) {
   z.uuid().parse(storeId);
   const input = copilotCatalogueInputSchema.parse(raw);
@@ -31,7 +32,9 @@ export async function readCataloguePreview(
           _id: input.productId,
           storeId,
           deletedAt: null,
-          status: { $ne: "INACTIVE" },
+          ...(options.allowInactiveMaintenance && input.action !== "RETIRE"
+            ? {}
+            : { status: { $ne: "INACTIVE" } }),
         },
         { maxTimeMS: 2000 },
       )
@@ -123,13 +126,16 @@ export async function readCataloguePreview(
         sourceVersion: before?.product.entity.version ?? null,
         label: "Aperçu de fiche produit",
         value:
-          status === "READY"
+          (status === "READY"
             ? `Action ${input.action} préparée pour ${before?.product.entity.label ?? input.patch.label}. Confirmation requise, aucune fiche enregistrée. Les tableaux d'identifiants/alias remplacent la liste affichée : vérifier tout retrait.`
             : status === "INSPECTED"
               ? "Fiche synchronisée consultée, sans modification. Les statuts validés ou refusés sont conservés."
               : status === "UNCHANGED"
                 ? "La fiche contient déjà ces informations ; aucune modification."
-                : "Fiche indisponible ou limite atteinte ; aucune action préparée.",
+                : "Fiche indisponible ou limite atteinte ; aucune action préparée.") +
+          (before?.product.entity.status === "INACTIVE"
+            ? " Cette fiche est inactive et le restera après cette correction."
+            : ""),
         factKind: "QUALITY",
       },
     ],

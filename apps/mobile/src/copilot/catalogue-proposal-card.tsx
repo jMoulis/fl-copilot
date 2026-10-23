@@ -125,6 +125,11 @@ export function CatalogueProposalCard({
             {state.content.before?.product.entity.label ??
               state.content.input.patch.label}
           </Text>
+          {state.content.before?.product.entity.status === "INACTIVE" ? (
+            <Text>
+              Cette fiche est inactive et le restera après cette correction.
+            </Text>
+          ) : null}
           {Object.entries(state.content.input.patch).map(([key, value]) => (
             <View key={key} style={{ gap: 3 }}>
               <Text style={{ fontWeight: "600" }}>{labels[key]}</Text>

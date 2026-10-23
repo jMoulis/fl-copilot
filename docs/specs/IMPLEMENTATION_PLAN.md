@@ -1,5 +1,10 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+### M7 CRUD parity — inactive product metadata (23 October 2026)
+
+Exact-ID catalogue inspection and reviewed metadata updates may include nondeleted inactive products, preserving their inactive status through the manual canonical writer. Negotiate catalogue capability 2; capability 1 keeps existing eligibility. Do not broaden automatic matching, import association, classification or retirement. Keep immutable identity, scope, current-version/child checks, private proposal authority and atomic Outbox/recomputation/restart replay. See `../qa/M7_INACTIVE_CATALOGUE_MAINTENANCE_2026_10_23.md`. No additional model tool, prompt, migration or business permission. This completes one manual/tool exception, not the full M7/M8 acceptance.
+
+
 ### M7 UX / M8 performance — commercial document browsing (23 October 2026)
 
 Reuse canonical PDF/original/review/recovery services in a compact searchable/status-filtered list with ten mounted cards per page, preserved route context and synchronized review-only sources. Delay preparation mounting until requested, retain its state after folding, and replace screen polling/N+1 upload-state reads with focus/pull/manual snapshot reads and one store-scoped grouped job read. Preserve earliest-job identity, source bytes, exact recovery authority and late/error content. No network loop, schema or business command. See `../qa/M7_UX_COMMERCIAL_DOCUMENTS_2026_10_23.md`; final CI, grouped native/device acceptance and all full V1/M8 requirements remain open.

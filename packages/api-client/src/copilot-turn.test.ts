@@ -843,3 +843,37 @@ it("bounds both unfinished and completed oversized frames before accepting any d
     );
   }
 });
+
+it.each([true, false, 2] as const)(
+  "negotiates inactive catalogue maintenance explicitly (%s)",
+  async (catalogueProposals) => {
+    const transport = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ message, alreadyApplied: false }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", transport);
+    await new ApiClient("https://test.invalid").copilotTurn(
+      "test-token",
+      id(4),
+      id(5),
+      input,
+      undefined,
+      {
+        catalogueProposals,
+        onProgress: vi.fn(),
+      },
+    );
+    const headers = transport.mock.calls[0]![1]!.headers;
+    if (catalogueProposals)
+      expect(headers).toHaveProperty(
+        "x-copilot-catalogue-proposals",
+        catalogueProposals === 2 ? "2" : "1",
+      );
+    else expect(headers).not.toHaveProperty("x-copilot-catalogue-proposals");
+    expect(JSON.parse(String(transport.mock.calls[0]![1]!.body))).toEqual(
+      input,
+    );
+  },
+);
