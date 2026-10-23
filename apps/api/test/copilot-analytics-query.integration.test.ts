@@ -117,6 +117,98 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
         snapshot(otherStore, randomUUID(), "2025-10-01", "999999.00"),
       ]);
   });
+  it("reads stored quantities, preserves units and supplies citable weighted realized-price evidence without asserting TTC", async () => {
+    await db.collection("productDailyPerformance").updateMany(
+      { storeId, productId: banana },
+      {
+        $set: {
+          "performance.sales.quantity": "2.000",
+          "performance.sales.quantityUnit": "KG",
+          "performance.availability.salesQuantity": {
+            status: "AVAILABLE",
+            inputCount: 1,
+            availableInputCount: 1,
+            missingInputCount: 0,
+          },
+        },
+      },
+    );
+    const r = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({
+        includeSalesMeasures: true,
+        referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+      }),
+    );
+    const row = r.rows.find((p) => p.key === banana)!;
+    expect(row.salesMeasures).toMatchObject({
+      current: {
+        taxBasis: "UNCONFIRMED",
+        quantity: { value: "4.000", unit: "KG", status: "PARTIAL" },
+        averageRealizedPrice: {
+          value: "2.58",
+          pairedDays: 2,
+          pairedSalesValue: "10.30",
+          pairedQuantity: "4.000",
+        },
+      },
+      reference: { averageRealizedPrice: { value: "20.00" } },
+    });
+    const price = r.evidence.find(
+      (e) =>
+        e.id === row.salesMeasures!.current.evidenceIds.averageRealizedPrice,
+    )!;
+    expect(price.value).toBe("2.58");
+    expect(price.label).toContain("€/kg");
+    expect(price.detail).toContain("Base HT/TTC non confirmée");
+    expect(price.analyticsContext).toBeUndefined();
+    const rendered = renderAnswerText(
+      "| Quantité | Prix moyen |\n| --- | --- |\n| {{value:0}} kg | {{value:1}} €/kg |\n{{source:1}}",
+      [
+        { evidenceId: row.salesMeasures!.current.evidenceIds.quantity },
+        { evidenceId: price.id },
+      ],
+      r.evidence,
+    );
+    expect(rendered).toContain("2,58 €/kg");
+    expect(rendered).toContain("copilot-source:");
+    expect(
+      r.rows.find((p) => p.key === pear)!.salesMeasures!.current.quantity.value,
+    ).toBeNull();
+    expect(JSON.stringify(r)).not.toContain("999999");
+  });
+  it("keeps the existing evidence budget even with ten products, three metrics and a reference period", async () => {
+    for (let i = 0; i < 8; i++) {
+      const productId = randomUUID();
+      await db.collection<Document & { _id: string }>("products").insertOne({
+        _id: productId,
+        storeId,
+        label: `PRODUIT TEST ${i}`,
+        category: "FRUIT",
+        nature: "BULK",
+      } as Document & { _id: string });
+      await db
+        .collection<Document & { _id: string }>("productDailyPerformance")
+        .insertMany([
+          snapshot(storeId, productId, "2025-10-01", "10"),
+          snapshot(storeId, productId, "2024-10-01", "12"),
+        ]);
+    }
+    const r = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({
+        includeSalesMeasures: true,
+        limit: 10,
+        metrics: ["sales", "margin", "waste"],
+        referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+      }),
+    );
+    expect(r.rows).toHaveLength(10);
+    expect(r.evidence).toHaveLength(161);
+    expect(r.rows.every((row) => row.salesMeasures)).toBe(true);
+  });
   it("returns a complete-scope product ranking on partial calendar data and renders a verified table", async () => {
     const r = await readAnalyticsQuery(db, storeId, query());
     expect(r).toMatchObject({

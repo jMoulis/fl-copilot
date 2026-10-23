@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Complément en validation — 23 octobre : quantités et prix moyens accessibles au copilote
+
+L’extrait fourni par Julien confirme un manque d’exposition : Mercalys et les indicateurs produit conservent les quantités, mais l’outil d’analyse ne renvoyait que les montants. Le même outil peut demander, pour dix produits par page, les quantités cumulées et les prix moyens pondérés sur les périodes choisies, avec des valeurs citables. Les unités restent distinctes ; le calcul emploie les mêmes journées complètes au numérateur et au dénominateur. La base HT/TTC reste non confirmée selon les specs ; le résultat ne reconstitue pas les prix affichés en rayon.
+
+Chantiers **4 Expertise et 7 UX/validation**, moteur partagé : couverture des outils complétée, sans nouvel agent ni nouvel outil et sans modification du prompt global. **1/3/4/5/6/7 en cours ; 2 code prêt**. Livraison API groupée et acceptation conversationnelle à confirmer ; cet ajout ne nécessite pas de build EAS. La reprise automatique de la PR 324 reste à livrer dans un prochain binaire groupé.
+
 ## Correctif en validation — 23 octobre : reprise du chat sans clic
 
 Retour utilisateur après la PR 323 : la réception nécessite encore « Réessayer ». Le service ne faisait qu’une récupération immédiate ; il ajoute une reprise automatique bornée, avec les mêmes identifiants, les contrôles du serveur et l’annulation à la fermeture de la conversation. Les erreurs de droits, de validation, de quota et les erreurs explicites du serveur ne relancent pas automatiquement la génération. Les tests montés couvrent réponse tardive, reprise, attente serveur, limite et annulation ; la validation native reste distincte et attend une livraison groupée.

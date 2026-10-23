@@ -12,6 +12,7 @@ export const copilotAnalyticsQuerySchema = z
       .min(1)
       .max(3),
     aggregation: z.enum(["SUM", "AVERAGE"]),
+    includeSalesMeasures: z.boolean().optional(),
     filters: z.strictObject({
       productIds: z.array(z.uuid()).min(1).max(100).nullable(),
       labelContains: z.string().trim().min(1).max(100).nullable(),
@@ -45,6 +46,15 @@ export const copilotAnalyticsQuerySchema = z
     limit: z.number().int().min(1).max(20),
   })
   .superRefine((v, c) => {
+    if (
+      v.includeSalesMeasures &&
+      (v.groupBy !== "PRODUCT" || v.limit > 10 || !v.metrics.includes("sales"))
+    )
+      c.addIssue({
+        code: "custom",
+        message:
+          "Sales quantities and realized prices require PRODUCT groups, sales and pages of at most ten products",
+      });
     if (
       new Set(v.metrics).size !== v.metrics.length ||
       !v.metrics.includes(v.sort.metric) ||

@@ -2272,6 +2272,7 @@ it("lets the model request a product ranking without enumerating product IDs and
   const { copilotResponseSchema } = await import("@fl-copilot/domain");
   const { validateCopilotResponse } = await import("./response-service");
   const { renderAnswerText } = await import("./answer-text");
+  const { calculateSalesMeasures } = await import("@fl-copilot/analytics-core");
   const f = fixture();
   const input = {
     currentPeriod: { start: "2025-10-01", end: "2025-10-31" },
@@ -2293,6 +2294,7 @@ it("lets the model request a product ranking without enumerating product IDs and
     },
     offset: 0,
     limit: 10,
+    includeSalesMeasures: true,
   };
   const evidence = {
     id: "query-ranking/sales",
@@ -2302,6 +2304,18 @@ it("lets the model request a product ranking without enumerating product IDs and
     label: "BANANE VRAC — CA net (€)",
     value: "1234.56",
     factKind: "DERIVED" as const,
+  };
+  const quantityEvidence = {
+    ...evidence,
+    id: "query-ranking/quantity",
+    label: "Quantité vendue (kg)",
+    value: "100",
+  };
+  const priceEvidence = {
+    ...evidence,
+    id: "query-ranking/price",
+    label: "Prix moyen réalisé (€/kg)",
+    value: "12.35",
   };
   const analyticsQuery = vi.fn(async () =>
     analyticsQueryResultSchema.parse({
@@ -2320,6 +2334,23 @@ it("lets the model request a product ranking without enumerating product IDs and
           key: randomUUID(),
           label: "BANANE VRAC",
           productCount: 1,
+          salesMeasures: {
+            current: {
+              ...calculateSalesMeasures(input.currentPeriod, [
+                {
+                  businessDate: "2025-10-01",
+                  sales: { value: "1234.56", status: "AVAILABLE" },
+                  soldQuantity: { value: "100", status: "AVAILABLE" },
+                  quantityUnit: "KG",
+                },
+              ]),
+              evidenceIds: {
+                quantity: quantityEvidence.id,
+                averageRealizedPrice: priceEvidence.id,
+              },
+            },
+            reference: null,
+          },
           metrics: [
             {
               metric: "sales",
@@ -2346,7 +2377,7 @@ it("lets the model request a product ranking without enumerating product IDs and
           ],
         },
       ],
-      evidence: [evidence],
+      evidence: [evidence, quantityEvidence, priceEvidence],
     }),
   );
   let calls = 0;
@@ -2374,13 +2405,19 @@ it("lets the model request a product ranking without enumerating product IDs and
       });
     }
     expect(JSON.stringify(body)).toContain(evidence.id);
+    expect(JSON.stringify(body)).toContain(priceEvidence.id);
+    expect(JSON.stringify(body)).toContain("UNCONFIRMED");
     return response(
       JSON.stringify({
         language: "fr-FR",
         summary: "Voici le classement renseigné.",
-        facts: [{ evidenceId: evidence.id }],
+        facts: [
+          { evidenceId: evidence.id },
+          { evidenceId: quantityEvidence.id },
+          { evidenceId: priceEvidence.id },
+        ],
         narrative:
-          "| Produit | CA |\n| --- | --- |\n| {{label:0}} | {{value:0}} € |\nCe classement porte sur les données disponibles. {{source:0}}",
+          "| Produit | CA | Quantité | Prix moyen |\n| --- | --- | --- | --- |\n| {{label:0}} | {{value:0}} € | {{value:1}} kg | {{value:2}} €/kg |\nCe classement porte sur les données disponibles. {{source:2}}",
         interpretation: [],
         recommendations: [],
         questions: [],
@@ -2393,7 +2430,11 @@ it("lets the model request a product ranking without enumerating product IDs and
   }).generate(f.request, copilotResponseSchema);
   expect(analyticsQuery).toHaveBeenCalledTimes(1);
   expect(analyticsQuery.mock.calls[0]).toEqual([input]);
-  expect(result.toolEvidence).toEqual([evidence]);
+  expect(result.toolEvidence).toEqual([
+    evidence,
+    quantityEvidence,
+    priceEvidence,
+  ]);
   expect(calls).toBe(2);
   const verified = validateCopilotResponse(result.output, {
     ...f.request,
@@ -2405,6 +2446,7 @@ it("lets the model request a product ranking without enumerating product IDs and
     result.toolEvidence!,
   );
   expect(text).toContain("1\u202f234,56 €");
+  expect(text).toContain("12,35 €/kg");
   expect(text).toContain("copilot-source:");
 });
 
