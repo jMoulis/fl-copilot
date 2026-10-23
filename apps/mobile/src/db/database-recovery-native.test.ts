@@ -844,3 +844,50 @@ it("retains a corrupt isolated triplet unchanged and refuses recovery instead of
     }
   }
 });
+it("keeps an independent owned backup available when an older retained generation manifest becomes unreadable", async () => {
+  const f = await copyFixture(),
+    api = await copies();
+  try {
+    const ref = await api.createLocalCopy(
+      f.a as never,
+      f.deviceId,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    const first = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    await api.activatePreparedLocalCopy(first);
+    const olderTarget = await databaseTarget(first.next, false);
+    const second = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    await api.activatePreparedLocalCopy(second);
+    await writeFile(
+      join(fileURLToPath(olderTarget.directory), "manifest.json"),
+      "unreadable old manifest",
+    );
+    expect(
+      (await api.listLocalCopies(f.ownerId, f.storeId)).some(
+        (v) => v.kind === "backup" && v.id === ref.id,
+      ),
+    ).toBe(true);
+    const prepared = await api.prepareLocalCopy(
+      ref,
+      f.ownerId,
+      f.storeId,
+      () => {},
+    );
+    expect(prepared.deviceId).toBe(f.deviceId);
+    expect(await storage.readLocation()).toEqual(second.next);
+  } finally {
+    f.db.close();
+  }
+});

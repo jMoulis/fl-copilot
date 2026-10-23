@@ -74,18 +74,24 @@ async function ancestors() {
     { location: DatabaseLocation; owner: RecoveryOwner; date: string }
   >();
   let location = await storage.readLocation();
-  for (let n = 0; location.generation; n++) {
-    if (n >= 100 || result.has(locationKey(location)))
-      throw new LocalCopyError("INVALID");
-    const previous = await parent(location);
-    const owner = await readDatabaseRecoveryOwner(location.generation);
-    if (owner)
-      result.set(locationKey(previous), {
-        location: previous,
-        owner,
-        date: location.recoveredAt!,
-      });
-    location = previous;
+  const seen = new Set<string>();
+  for (let n = 0; location.generation && n < 100; n++) {
+    if (seen.has(locationKey(location))) break;
+    seen.add(locationKey(location));
+    try {
+      const previous = await parent(location);
+      const owner = await readDatabaseRecoveryOwner(location.generation);
+      if (owner)
+        result.set(locationKey(previous), {
+          location: previous,
+          owner,
+          date: location.recoveredAt!,
+        });
+      location = previous;
+    } catch {
+      // An unreadable older link grants no ownership, but must not hide an independent verified backup.
+      break;
+    }
   }
   return result;
 }
