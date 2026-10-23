@@ -228,6 +228,89 @@ describe("guarded manual product editing", () => {
       generateId: idSequence(),
     };
   }
+  it.each([
+    ["edit", "before"],
+    ["edit", "queued"],
+    ["edit", "written"],
+    ["create", "before"],
+    ["create", "queued"],
+    ["create", "written"],
+  ] as const)(
+    "cancels %s and its commands when scope changes at stage %s",
+    async (mode, phase) => {
+      const { adapter, database } = await temporaryDatabase();
+      try {
+        const opt = options(),
+          repo = new ProductMasterRepository(adapter);
+        const id = await saveProductEditorLocally(
+          adapter,
+          {
+            ...emptyProductDraft,
+            label: "Poire",
+            identifiers: [{ type: "EAN", value: "000123" }],
+            aliases: [{ alias: "Poire initiale" }],
+          },
+          opt,
+        );
+        const base = (await loadProductEditorSnapshot(repo, id))!;
+        database
+          .prepare(
+            `INSERT INTO product_daily_performance
+          (id,store_id,product_id,business_date,payload_json,origin,formula_version,input_revision,computed_at)
+          VALUES(?,?,?,'2026-10-19','{}','LOCAL','product-daily-v1','scope-test',?)`,
+          )
+          .run(opt.generateId(), storeId, id, opt.now());
+        const tables = [
+          "products",
+          "product_identifiers",
+          "product_aliases",
+          "sync_outbox",
+          "local_jobs",
+        ];
+        const snapshot = () =>
+          tables.map((table) =>
+            database.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all(),
+          );
+        const before = snapshot();
+        let allowed = phase !== "before";
+        const transaction = adapter.withExclusiveTransactionAsync.bind(adapter);
+        adapter.withExclusiveTransactionAsync = (task) =>
+          transaction(async (tx) => {
+            if (phase === "queued") allowed = false;
+            const run = tx.runAsync.bind(tx);
+            tx.runAsync = async (...args) => {
+              const result = await run(...args);
+              if (phase === "written") allowed = false;
+              return result;
+            };
+            await task(tx);
+          });
+        const guarded = {
+          ...opt,
+          productId: mode === "edit" ? id : undefined,
+          assertCurrentScope() {
+            if (!allowed) throw Error("PRODUCT_EDITOR_SCOPE_CHANGED");
+          },
+        };
+        await expect(
+          saveProductEditorLocally(
+            adapter,
+            {
+              ...productSnapshotToDraft(base),
+              label: "Saisie d’un ancien compte",
+              aliases: [{ alias: "Nouvel alias" }],
+              identifiers: [{ type: "EAN", value: "000456" }],
+            },
+            guarded,
+            mode === "edit" ? base : undefined,
+          ),
+        ).rejects.toThrow("PRODUCT_EDITOR_SCOPE_CHANGED");
+        expect(snapshot()).toEqual(before);
+      } finally {
+        database.close();
+      }
+    },
+  );
   it("allows an acknowledgement-only refresh but refuses a changed canonical fiche without overwriting it", async () => {
     const { adapter, database } = await temporaryDatabase();
     try {

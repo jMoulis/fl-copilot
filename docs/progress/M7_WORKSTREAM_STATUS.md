@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Lot M8 en validation — 23 octobre : sauvegarde produit et changement de session
+
+La fiche refuse les anciens callbacks après changement de compte, magasin, produit ou fermeture. Le même contrôle rejoint le writer SQLite existant avant son attente et avant validation de sa transaction : produit, codes, alias, Outbox et calculs sont annulés ensemble si le contexte a changé. Une session locale inchangée reste utilisable hors connexion, y compris après renouvellement de son objet ; aucun nouveau contrôle réseau ni rôle métier n’est ajouté. Voir `../qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md`. Contrôles finaux et CI exactes restent à consigner avant fusion ; ce lot n’est pas dans le build 13 déjà envoyé.
+
+Le **build iOS 13**, source `5838bd8` (PR 331–333, 335–336 et précédentes), est terminé et proposé à l’installation par-dessus l’app existante ; l’API `8f40e0d` conserve son alias et sa santé MongoDB. Sa recette humaine reste ouverte. La PR 336 a passé les deux CI exactes (3 931 tests / 6 ignorés), puis a été fusionnée et sa branche supprimée. La réception Resend reste distincte, en attente d’accord sur la clé dédiée et de livraison API. **Sept chantiers : 1/3/4/5/6/7 en cours ; 2 Contre-promo code prêt.** Aucun chantier entier ni V1/M8 clôturé.
+
 ## Lot performance en validation — 23 octobre : lectures Produits pendant la synchronisation
 
 Les lecteurs de catalogue et de fiche ne relisent plus toute leur donnée à chaque changement du compteur pendant une même synchronisation. Ouverture et retour lisent toujours SQLite, même si le réseau reste bloqué ; un pull terminé et une sauvegarde locale explicite restent pris en compte. Hors synchronisation, les calculs/fichiers en attente ne provoquent plus à eux seuls une relecture du catalogue : le compteur de commandes déjà calculé est exposé dans le contexte local, sans nouvelle requête ni file.

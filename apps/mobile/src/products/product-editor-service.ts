@@ -261,11 +261,16 @@ function productContentChanged(before: Product, after: Product) {
 export async function saveProductEditorLocally(
   db: OutboxDatabase & AtomicMutationDatabase,
   draft: ProductEditorDraft,
-  options: Omit<SaveProductEditorOptions, "existing">,
+  options: Omit<SaveProductEditorOptions, "existing"> & {
+    assertCurrentScope?(): void;
+  },
   expected?: ProductEditorSnapshot,
 ) {
+  options.assertCurrentScope?.();
   let savedId: string | undefined;
   await db.withExclusiveTransactionAsync(async (tx) => {
+    // The exclusive writer may have waited behind another local operation.
+    options.assertCurrentScope?.();
     const repo = new ProductMasterRepository(joinedMutationDatabase(tx));
     const current = options.productId
       ? await loadProductEditorSnapshot(repo, options.productId)
@@ -328,6 +333,8 @@ export async function saveProductEditorLocally(
         options.generateId(),
         options.now(),
       );
+    // Revoke the entire aggregate/Outbox/job mutation, never just its last row.
+    options.assertCurrentScope?.();
   });
   if (!savedId) throw Error("PRODUCT_EDITOR_UNAVAILABLE");
   return savedId;

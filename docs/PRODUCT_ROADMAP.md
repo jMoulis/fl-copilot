@@ -2,6 +2,8 @@
 
 Date: 2026-10-09.
 
+Current V1 delivery note (23 October): grouped iOS build 13 from `5838bd8` is available, with owner acceptance still pending. The following M8 increment fences manual product saves against stale owner/store/editor contexts within the existing SQLite aggregate/Outbox transaction, without changing permissions or requiring connectivity. See `qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md` and the seven-workstream ledger; no complete V1/M8 acceptance is implied.
+
 ## Product objective
 
 Fruits & Vegetables Copilot helps a department manager understand the latest trusted business state, prepare weekly work, capture field evidence and make explicit decisions from a small number of grounded recommendations.
