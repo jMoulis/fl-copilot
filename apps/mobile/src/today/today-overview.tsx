@@ -1,5 +1,5 @@
 import { randomUUID } from "expo-crypto";
-import { explorerHref } from "@/analytics/explorer-link";
+import { explorerHref } from "../analytics/explorer-link";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, type Href } from "expo-router";
 import { Pressable, Text, View, useWindowDimensions } from "react-native";
@@ -8,9 +8,9 @@ import {
   SecondaryButton,
   SectionCard,
   StatusBadge,
-} from "@/components/ui";
-import { DashboardMetric, DetailsDisclosure } from "@/components/dashboard";
-import { colors } from "@/design/tokens";
+} from "../components/ui";
+import { DashboardMetric, DetailsDisclosure } from "../components/dashboard";
+import { colors } from "../design/tokens";
 import type {
   TodayMovement,
   TodayPriority,
@@ -39,7 +39,7 @@ export function TodayContent({ summary }: { summary: TodaySummary }) {
                 flexGrow: 1,
               }}
               accessibilityRole="button"
-              accessibilityLabel={`Explorer ${kpi.label} pour la journée analysée`}
+              accessibilityLabel={`${kpi.label} : ${formatCurrency(kpi.value) ?? "indisponible"}${kpi.status === "PARTIAL" && kpi.value !== null ? ", cumul partiel" : ""}. ${comparisonLabel(kpi.comparison)}. Explorer la journée analysée.`}
               accessibilityHint="Ouvre Analyses pour cette date, avec une référence ISO N−1 distincte des écarts J−7 affichés ici."
               onPress={() =>
                 router.navigate(
@@ -52,6 +52,7 @@ export function TodayContent({ summary }: { summary: TodaySummary }) {
               }
             >
               <DashboardMetric
+                compact={columns && index > 0}
                 icon={
                   kpi.id === "sales"
                     ? "bag-handle-outline"
@@ -61,6 +62,7 @@ export function TodayContent({ summary }: { summary: TodaySummary }) {
                 }
                 label={kpi.label}
                 tone={
+                  kpi.comparison.status !== "AVAILABLE" ||
                   kpi.comparison.percentageDifference === null
                     ? "neutral"
                     : Number(kpi.comparison.percentageDifference) >= 0 !==
@@ -69,6 +71,11 @@ export function TodayContent({ summary }: { summary: TodaySummary }) {
                       : "critical"
                 }
                 value={formatCurrency(kpi.value)}
+                qualifier={
+                  kpi.status === "PARTIAL" && kpi.value !== null
+                    ? "Cumul partiel"
+                    : undefined
+                }
                 detail={comparisonLabel(kpi.comparison)}
               />
             </Pressable>
@@ -253,9 +260,12 @@ function comparisonLabel(
     return "Comparaison J-7 indisponible";
   }
   const percentage = formatSignedPercentage(comparison.percentageDifference);
-  return percentage
+  const detail = percentage
     ? `${percentage} vs J-7`
     : `${formatSignedCurrency(comparison.absoluteDifference)} vs J-7`;
+  return comparison.status === "PARTIAL"
+    ? `Comparaison partielle · ${detail}`
+    : detail;
 }
 
 function isPositiveMovement(movement: TodayMovement) {

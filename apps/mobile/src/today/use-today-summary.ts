@@ -1,20 +1,33 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { useAuth } from "@/auth/auth-provider";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
+import { useAuth } from "../auth/auth-provider";
+import { useLocalDatabase } from "../providers/database-provider";
+import { useSync } from "../sync/sync-provider";
 import { TodaySummaryRepository, type TodaySummary } from "./today-summary";
 import { visibleStoreSnapshot, type StoreSnapshot } from "./today-snapshot";
 
 export function useTodaySummary() {
   const { sqlite } = useLocalDatabase();
   const { session } = useAuth();
-  const { pendingCount, conflictCount, failedCount } = useSync();
+  const { pendingCount, conflictCount, failedCount, lastSyncedAt, status } =
+    useSync();
   const storeId = session?.stores[0]?.storeId;
   const [snapshot, setSnapshot] =
     useState<StoreSnapshot<TodaySummary | null>>();
   const [error, setError] = useState<string>();
   const [refreshing, setRefreshing] = useState(false);
+  const visibleSnapshot = useRef(snapshot);
+  visibleSnapshot.current = snapshot;
+  const revision =
+    status === "syncing"
+      ? "syncing"
+      : JSON.stringify([
+          pendingCount,
+          conflictCount,
+          failedCount,
+          lastSyncedAt,
+          status,
+        ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -25,6 +38,11 @@ export function useTodaySummary() {
           active = false;
         };
       }
+      // Keep the displayed local snapshot while the existing sync pipeline writes.
+      // Read once it settles, including pulls that leave all counters unchanged.
+      // An initial/fresh-store visit still reads SQLite, even during sync.
+      if (status === "syncing" && visibleSnapshot.current?.storeId === storeId)
+        return;
       const repository = new TodaySummaryRepository(sqlite);
       void repository
         .load(storeId)
@@ -37,7 +55,7 @@ export function useTodaySummary() {
       return () => {
         active = false;
       };
-    }, [conflictCount, failedCount, pendingCount, sqlite, storeId]),
+    }, [revision, status, sqlite, storeId]),
   );
 
   const refresh = useCallback(async () => {

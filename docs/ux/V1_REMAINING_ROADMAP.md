@@ -4,6 +4,8 @@ Objectif de Julien : V1 testable pour la présentation du **28 octobre**, avec l
 
 ## Point courant — 23 octobre : données livrées, continuité UX en validation
 
+La livraison iOS groupée 0.1.0/build 12 est terminée sur `6a7fbf4` (PR 328 et 330 incluses) ; son acceptation humaine reste ouverte. Le nouveau lot Aujourd’hui corrige la fraîcheur après pull, évite les lectures répétées pendant les variations du compteur de synchronisation et qualifie directement les montants/comparaisons partiels. Il est destiné à une livraison ultérieure, sans nouveau build payant isolé. Voir `../qa/M7_UX_TODAY_FRESHNESS_2026_10_23.md`. Les sections historiques suivantes ne doivent pas être prises pour l’état de livraison actuel.
+
 Le recalcul distant après correction d’unité (PR 329) est livré sur l’API `cdd1efd`, avec reprise durable et observations sources conservées. Le correctif natif de réimport (PR 328) reste à installer/valider dans la prochaine livraison groupée. Le lot UX courant améliore Analyses et Produits : filtres visibles et réversibles, choix monétaires avant le graphique, absence de graphique vide et séparation recherche/filtres. Il ne clôt pas les cinq domaines UX, la recette native ou les autres chantiers M7/M8. Les sections L1–L11 ci-dessous décrivent le découpage initial ; leurs statuts du 19 octobre doivent être lus avec le journal des incréments et le suivi M7, et non comme une liste actuelle de fonctions absentes.
 
 ## Ordre des lots et critères de sortie

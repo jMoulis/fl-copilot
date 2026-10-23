@@ -122,6 +122,7 @@ export function DashboardMetric({
   label,
   value,
   detail,
+  qualifier,
   icon,
   tone = "neutral",
   compact = false,
@@ -129,6 +130,7 @@ export function DashboardMetric({
   label: string;
   value: string | null;
   detail?: string;
+  qualifier?: string;
   icon: Icon;
   tone?: "neutral" | "positive" | "critical";
   compact?: boolean;
@@ -169,6 +171,9 @@ export function DashboardMetric({
       >
         {value ?? "Indisponible"}
       </Text>
+      {qualifier ? (
+        <Text className="text-xs font-semibold text-warning">{qualifier}</Text>
+      ) : null}
       {detail ? (
         <Text style={{ color, fontSize: 12, lineHeight: 18 }}>{detail}</Text>
       ) : null}
