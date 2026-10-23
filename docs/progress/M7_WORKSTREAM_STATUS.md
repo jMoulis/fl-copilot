@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## Incident en qualification — 23 octobre : erreur de flux serveur et build groupé
+
+L’alerte `FRUITS-ET-LEGUMES-API-6` correspond à des échecs serveur de réception du chat, également visibles dans les journaux Vercel. La télémétrie existante ne conservait que `COPILOT_STREAM_FAILED` ; elle ne permet pas d’attribuer rétroactivement une cause précise. Le gestionnaire ajoute une raison technique à liste fermée dans les journaux et le tag Sentry, sans message brut, contenu de requête, chemin de validation ou corps fournisseur. Aucun nouvel essai automatique ni masquage de l’échec serveur n’est ajouté. Ce changement rend l’incident qualifiable ; il ne prouve pas sa résolution.
+
+Chantier **7 UX/validation + M8** : **1/3/4/5/6/7 en cours ; 2 code prêt**. Le build iOS staging 10 demandé par Julien part du SHA fusionné `0aa99ea` et inclut la reprise automatique mobile de la PR 324 ; le diagnostic serveur est livré séparément après CI. Installation et nouvelle erreur serveur restent deux validations distinctes.
+
 ## Complément en validation — 23 octobre : quantités et prix moyens accessibles au copilote
 
 L’extrait fourni par Julien confirme un manque d’exposition : Mercalys et les indicateurs produit conservent les quantités, mais l’outil d’analyse ne renvoyait que les montants. Le même outil peut demander, pour dix produits par page, les quantités cumulées et les prix moyens pondérés sur les périodes choisies, avec des valeurs citables. Les unités restent distinctes ; le calcul emploie les mêmes journées complètes au numérateur et au dénominateur. La base HT/TTC reste non confirmée selon les specs ; le résultat ne reconstitue pas les prix affichés en rayon.
