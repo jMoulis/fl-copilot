@@ -1,5 +1,9 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — historique des conversations, geste et confirmation
+
+Suppression accessible par bouton visible de 48 points et balayage conservé ; titres longs bornés, date compacte et libellés complets. La confirmation est liée au contexte courant et transmet l’annulation au service SQLite existant jusque dans sa transaction : quatre reproductions modifiaient auparavant les données malgré l’annulation, cinq contrôles canoniques passent maintenant. Onze cas montés et la revue locale à 320/390 points complètent les **66 tests ciblés**. Les erreurs de relecture après suppression ne prétendent plus que celle-ci a échoué ; reprise locale visible. Voir [la QA et ses limites](../qa/M7_CONVERSATION_HISTORY_ACTIONS_2026_10_24.md). **Hors build 15**, aucun build payant isolé ni déploiement API ; recette physique ouverte. Chantiers 1/7 avancés, états globaux conservés : **1/3/4/5/6/7 en cours, 2 code prêt**.
+
 ## 24 octobre — accès visible aux actions d’un message
 
 Le menu natif Copier/Supprimer/Annuler est aussi accessible par un bouton `•••` de 48 points dans le fil, avec libellé d’accessibilité. Appui long, confirmation métier et défilement horizontal des tableaux conservés. Trois reproductions échouent avant ; neuf tests ciblés passent après. Voir [la QA](../qa/M7_CHAT_MESSAGE_ACTIONS_2026_10_24.md). **Hors source du build 15 déjà en cours** ; aucun build payant isolé. Chantier 7 avancé, états globaux inchangés : **1/3/4/5/6/7 en cours, 2 code prêt**. Recette physique et autres alternatives aux gestes restent ouvertes.

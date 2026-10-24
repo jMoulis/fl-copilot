@@ -64,8 +64,8 @@ import { readCopilotReferenceProposal } from "@fl-copilot/domain";
 import { PlanValidationCard } from "@/copilot/plan-validation-card";
 import { CopilotPlanValidationController } from "@/copilot/plan-validation-controller";
 import { readCopilotPlanValidationProposal } from "@fl-copilot/domain";
-import Swipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import { Pressable, Alert, Platform } from "react-native";
+import { ConversationMenuRow } from "@/copilot/conversation-menu-row";
+import { Platform } from "react-native";
 import { OfferValidationCard } from "@/copilot/offer-validation-card";
 import { CopilotOfferValidationController } from "@/copilot/offer-validation-controller";
 import { readCopilotOfferValidationProposal } from "@fl-copilot/domain";
@@ -1669,7 +1669,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         if (alive && revision === topicRevision.current) setConversations(rows);
       })
       .catch(() => {
-        if (alive)
+        if (alive && revision === topicRevision.current)
           setError("Les conversations locales ne peuvent pas être lues.");
       });
     return () => {
@@ -1678,15 +1678,18 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   }, [repo]);
   const refreshMenu = useCallback(() => {
     setMenu(true);
+    setError(undefined);
     const revision = ++topicRevision.current;
     void repo
       .list()
       .then((rows) => {
-        if (revision === topicRevision.current) setConversations(rows);
+        if (mounted.current && revision === topicRevision.current)
+          setConversations(rows);
       })
-      .catch(() =>
-        setError("Les conversations locales ne peuvent pas être lues."),
-      );
+      .catch(() => {
+        if (mounted.current && revision === topicRevision.current)
+          setError("Les conversations locales ne peuvent pas être lues.");
+      });
   }, [repo]);
   const create = async () => {
     if (createLocked.current) return;
@@ -1717,7 +1720,13 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         }}
       />
       {error ? (
-        <InlineAlert title="Conversation indisponible" message={error} />
+        <>
+          <InlineAlert title="Conversation indisponible" message={error} />
+          <SecondaryButton
+            label="Relire les conversations"
+            onPress={refreshMenu}
+          />
+        </>
       ) : null}
       {conversations
         .filter((row) => ["CONFLICT", "ERROR"].includes(row.syncState))
@@ -1735,78 +1744,37 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       {conversations
         .filter((row) => row.entity.status === "ACTIVE")
         .map((row) => (
-          <Swipeable
+          <ConversationMenuRow
             key={row.entity.id}
-            overshootRight={false}
-            renderRightActions={(_progress, _translation, methods) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Supprimer la conversation ${row.entity.title}`}
-                style={{
-                  minWidth: 100,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  backgroundColor: colors.critical,
-                  borderRadius: 16,
-                  marginLeft: 8,
-                }}
-                onPress={() => {
-                  methods.close();
-                  Alert.alert(
-                    "Supprimer cette conversation ?",
-                    "Elle sera retirée du fil et du contexte du copilote. Les fichiers, les souvenirs mémorisés et les actions déjà confirmées sont conservés.",
-                    [
-                      { text: "Annuler", style: "cancel" },
-                      {
-                        text: "Supprimer",
-                        style: "destructive",
-                        onPress: () => {
-                          const revision = ++topicRevision.current;
-                          void controller
-                            .removeConversation(row.entity.id)
-                            .then(async () => {
-                              const rows = await repo.list();
-                              if (
-                                !mounted.current ||
-                                revision !== topicRevision.current
-                              )
-                                return;
-                              setConversations(rows);
-                              if (active === row.entity.id)
-                                setActive(undefined);
-                              void syncNow(storeId);
-                            })
-                            .catch(() => {
-                              if (
-                                mounted.current &&
-                                revision === topicRevision.current
-                              )
-                                setError(
-                                  "La conversation n’a pas pu être supprimée.",
-                                );
-                            });
-                        },
-                      },
-                    ],
-                  );
-                }}
-              >
-                <Text style={{ color: colors.onAccent, fontWeight: "600" }}>
-                  Supprimer
-                </Text>
-              </Pressable>
-            )}
-          >
-            <MenuRow
-              title={row.entity.title}
-              description={`Créée le ${new Date(row.entity.createdAt).toLocaleString("fr-FR")}`}
-              icon="chatbubble-outline"
-              onPress={() => {
-                setActive(row.entity.id);
-                setMenu(false);
-              }}
-            />
-          </Swipeable>
+            conversation={row.entity}
+            context={controller}
+            enabled={!active || menu}
+            onOpen={() => {
+              setActive(row.entity.id);
+              setMenu(false);
+            }}
+            onDelete={async (signal) => {
+              const revision = ++topicRevision.current;
+              await controller.removeConversation(row.entity.id, signal);
+              const current = () =>
+                mounted.current &&
+                !signal.aborted &&
+                revision === topicRevision.current;
+              if (!current()) return;
+              try {
+                const rows = await repo.list();
+                if (!current()) return;
+                setConversations(rows);
+              } catch {
+                if (!current()) return;
+                setError(
+                  "La suppression est enregistrée, mais la liste ne peut pas être relue. Rouvrez les conversations pour réessayer.",
+                );
+              }
+              if (active === row.entity.id) setActive(undefined);
+              void syncNow(storeId).catch(() => undefined);
+            }}
+          />
         ))}
       <SecondaryButton
         label="Retour à l’application"

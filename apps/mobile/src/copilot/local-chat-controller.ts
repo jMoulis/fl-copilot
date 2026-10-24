@@ -60,12 +60,12 @@ export class CopilotLocalChatController {
       ),
     );
   }
-  removeConversation(conversationId: string) {
+  removeConversation(conversationId: string, signal?: AbortSignal) {
     return this.serial(() =>
       this.repo.remove(
         conversationId,
         null,
-        { commandId: this.id(), deviceId: this.scope.deviceId },
+        { commandId: this.id(), deviceId: this.scope.deviceId, signal },
         this.now(),
       ),
     );

@@ -332,10 +332,15 @@ export class CopilotConversationRepository {
   async remove(
     conversationId: string,
     messageId: string | null,
-    ctx: { commandId: string; deviceId: string },
+    ctx: { commandId: string; deviceId: string; signal?: AbortSignal },
     timestamp: string,
   ) {
+    const current = () => {
+      if (ctx.signal?.aborted) throw Error("COPILOT_DELETE_CANCELLED");
+    };
+    current();
     await this.db.withExclusiveTransactionAsync(async (tx) => {
+      current();
       const joined = {
         getFirstAsync: tx.getFirstAsync.bind(tx),
         getAllAsync: tx.getAllAsync.bind(tx),
@@ -346,6 +351,7 @@ export class CopilotConversationRepository {
       };
       const repo = new CopilotConversationRepository(joined, this.scope);
       const before = await repo.get(conversationId);
+      current();
       if (!before) throw Error("COPILOT_CONVERSATION_MISSING");
       if (before.deletedAt) return;
       if (before.status !== "ACTIVE")
@@ -374,6 +380,7 @@ export class CopilotConversationRepository {
           },
           ctx,
         );
+        current();
         const pendingParent =
           message.role === "USER" ? message.id : message.replyToMessageId;
         if (pendingParent)
@@ -395,6 +402,7 @@ export class CopilotConversationRepository {
           },
           ctx,
         );
+        current();
         await tx.runAsync(
           "DELETE FROM copilot_pending_turns WHERE store_id=? AND owner_id=? AND conversation_id=?",
           this.scope.storeId,
@@ -408,6 +416,7 @@ export class CopilotConversationRepository {
           conversationId,
         );
       }
+      current();
     });
   }
   async resolve(
