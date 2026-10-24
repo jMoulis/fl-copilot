@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — périodes agrégées annoncées dans l’Explorer
+
+Le composant réel annonçait une colonne mensuelle comme sa seule première date. Il indique désormais les bornes effectives du groupe et distingue cumul renseigné et moyenne des jours renseignés. Trois reproductions échouent avant la correction ; **25 tests ciblés** et le contrôle local **4 474 / 727** passent, avec les mêmes valeurs, distinction absent/zéro et navigation/historique. Aucune formule, donnée, permission, API ou instruction IA changée. Voir [la QA et ses limites](../qa/M8_EXPLORER_AGGREGATE_LABELS_2026_10_24.md).
+
+Code après la source du **build 16 déjà disponible**, sans build EAS isolé ni déploiement API. Recette vocale physique et CI du commit final restent nécessaires ; **1/3/4/5/6/7 en cours ; 2 code prêt**. La PR 377 documentaire est fusionnée (`902e294`), deux CI exactes **5 192 / 6** et branche supprimée ; elle n’ajoute aucun changement runtime ni acceptation humaine.
+
 ## Livraison groupée disponible — 24 octobre, API 375 et iOS 16
 
 **API livrée :** `8c72dfb`, déploiement `dpl_FkhnTQK82vVyENZ5CAth6NGXNhxv`, production `https://fl-copilot.vercel.app`. Les CI exactes push/PR puis master passent chacune avec **5 192 tests / 6 ignorés**. Le même artefact préparé a été promu ; santé/Mongo et frontières authentifiées vérifiés. Les fenêtres de logs contrôlées ne certifient ni une réponse modèle réelle ni une recette métier.
