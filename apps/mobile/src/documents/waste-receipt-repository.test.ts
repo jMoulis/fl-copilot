@@ -1,3 +1,5 @@
+import { ProductMasterConflictRepository } from "../products/conflict-repository";
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -719,7 +721,7 @@ describe("explicit waste label memory", () => {
     ).rejects.toThrow("WASTE_ALIAS_CONFLICT");
     database.close();
   });
-  it("resumes only an unchanged waste-alias delete conflict with a new command, atomically", async () => {
+  it("resumes a waste-alias deletion through the canonical comparison, with explicit consent and atomic history", async () => {
     const { database, adapter, repository } = await setup();
     const remote = await repository.rememberWasteReceiptAlias(
       receiptId,
@@ -748,32 +750,41 @@ describe("explicit waste label memory", () => {
     };
     await conflicts.recordPushConflict(command, result);
     database
+      .prepare("UPDATE product_aliases SET sync_state='CONFLICT' WHERE id=?")
+      .run(aliasId);
+    const canonical = new ProductMasterConflictRepository(
+      adapter,
+      receiptReviewDigest,
+    );
+    const retry = async (commandId: string, consent = true) => {
+      const review = await canonical.review(storeId, sourceDocumentId);
+      return canonical.resolve(storeId, sourceDocumentId, true, {
+        commandId,
+        deviceId: context.deviceId,
+        jobId: fileId,
+        reviewHash: review.hash,
+        confirmLocalDeletionChoice: consent,
+        canResolve: () => true,
+      });
+    };
+    await expect(retry(receiptId, false)).rejects.toThrow(
+      "LOCAL_DELETION_CONFIRMATION_REQUIRED",
+    );
+
+    database
       .prepare("UPDATE sync_conflicts SET remote_payload_json = ?")
       .run(JSON.stringify({ ...remote, productId: fileId }));
-    await expect(
-      repository.retryWasteAliasDeletion(sourceDocumentId, {
-        ...context,
-        commandId: receiptId,
-      }),
-    ).rejects.toThrow("WASTE_ALIAS_RESOLUTION_UNSAFE");
+    await expect(retry(receiptId)).rejects.toThrow();
     database
       .prepare("UPDATE sync_conflicts SET remote_payload_json = ?")
       .run(JSON.stringify(remote));
     database.exec(
       "CREATE TRIGGER fail_repair BEFORE INSERT ON sync_outbox BEGIN SELECT RAISE(ABORT, 'REPAIR_FAILED'); END",
     );
-    await expect(
-      repository.retryWasteAliasDeletion(sourceDocumentId, {
-        ...context,
-        commandId: receiptId,
-      }),
-    ).rejects.toThrow("REPAIR_FAILED");
+    await expect(retry(receiptId)).rejects.toThrow("REPAIR_FAILED");
     expect((await conflicts.getById(sourceDocumentId))?.status).toBe("OPEN");
     database.exec("DROP TRIGGER fail_repair");
-    await repository.retryWasteAliasDeletion(sourceDocumentId, {
-      ...context,
-      commandId: receiptId,
-    });
+    await retry(receiptId);
     expect(await outbox.getById(receiptId)).toMatchObject({
       status: "PENDING",
       expectedRemoteVersion: 1,
@@ -785,12 +796,17 @@ describe("explicit waste label memory", () => {
     expect(
       (await outbox.listPending(storeId)).map((item) => item.commandId),
     ).toEqual([receiptId]);
-    await expect(
-      repository.retryWasteAliasDeletion(sourceDocumentId, {
-        ...context,
-        commandId: fileId,
-      }),
-    ).rejects.toThrow("WASTE_ALIAS_RESOLUTION_UNSAFE");
+    await expect(retry(fileId)).rejects.toThrow();
+    expect(
+      database
+        .prepare("SELECT decision FROM product_master_conflict_history")
+        .get()!.decision,
+    ).toBe("KEEP_LOCAL");
+    expect(
+      database
+        .prepare("SELECT local_json FROM product_master_conflict_history")
+        .get()!.local_json,
+    ).toContain('"deletedAt"');
     database.close();
   });
   it("refuses canonical-label collisions and inactive products without changing the receipt", async () => {

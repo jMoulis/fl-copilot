@@ -7,6 +7,7 @@ import {
   catalogueConflictTypes,
   catalogueConflictTables,
   type CatalogueConflictKind,
+  type ProductAlias,
 } from "../packages/domain/src/index";
 import {
   nativeReceiptPublicationFixture,
@@ -26,6 +27,7 @@ export async function nativeCatalogueConflictFixture(
   reversal?: "LOCAL" | "REMOTE",
   remoteDeleted = false,
   localDeleted = false,
+  aliasSource: ProductAlias["source"] = "USER",
 ) {
   const s = await nativeReceiptPublicationFixture(path),
     { storeId, ownerId, deviceId } = s.scope,
@@ -48,7 +50,7 @@ export async function nativeCatalogueConflictFixture(
       productId: product.id,
       alias: "Figues jaunes",
       normalizedAlias: normalizeProductLabel("Figues jaunes"),
-      source: "USER",
+      source: aliasSource,
       status:
         localDeleted && kind === "ALIAS" && reversal === "LOCAL"
           ? "REJECTED"

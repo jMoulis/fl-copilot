@@ -17,11 +17,6 @@ import { CommercialPlanConflict } from "@/commercial/plan-conflict";
 import { CommercialPreparationConflict } from "@/commercial/preparation-conflict";
 import { CommercialChoiceConflict } from "@/commercial/choice-conflict";
 import { commercialReviewDecisionSchema } from "@fl-copilot/sync-contracts";
-import { useState } from "react";
-import { randomUUID } from "expo-crypto";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
-import { ProductMasterRepository } from "@/products/product-master-repository";
 import { Text } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -40,10 +35,6 @@ import { useSyncConflict } from "@/sync/use-sync-conflicts";
 export default function SyncConflictDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const conflict = useSyncConflict(id);
-  const database = useLocalDatabase();
-  const { syncNow } = useSync();
-  const [resolving, setResolving] = useState(false);
-  const [error, setError] = useState<string>();
   const review =
     conflict?.entityType === "commercial_review_decision"
       ? commercialReviewDecisionSchema.safeParse(conflict.localPayload)
@@ -141,7 +132,12 @@ export default function SyncConflictDetailScreen() {
               </SectionCard>
             </>
           )}
-          {conflict.entityType !== "email_intake_decision" ? (
+          {![
+            "email_intake_decision",
+            "product",
+            "product_identifier",
+            "product_alias",
+          ].includes(conflict.entityType) ? (
             <SectionCard title="Actions autorisées">
               {review?.success ? (
                 <SecondaryButton
@@ -152,36 +148,6 @@ export default function SyncConflictDetailScreen() {
                     )
                   }
                 />
-              ) : null}
-              {conflict.entityType === "product_alias" ? (
-                <SecondaryButton
-                  label={
-                    resolving ? "Reprise…" : "Reprendre l’annulation du libellé"
-                  }
-                  disabled={resolving}
-                  onPress={() => {
-                    setResolving(true);
-                    setError(undefined);
-                    void new ProductMasterRepository(database.sqlite)
-                      .retryWasteAliasDeletion(conflict.id, {
-                        commandId: randomUUID(),
-                        deviceId: database.deviceId,
-                      })
-                      .then(async () => {
-                        await syncNow(conflict.storeId);
-                        router.back();
-                      })
-                      .catch(() =>
-                        setError(
-                          "Cette annulation ne peut pas être reprise automatiquement : l’association a changé ou ce conflit ne concerne pas une suppression de libellé de casse. Aucune donnée distante n’a été remplacée.",
-                        ),
-                      )
-                      .finally(() => setResolving(false));
-                  }}
-                />
-              ) : null}
-              {error ? (
-                <InlineAlert title="Résolution impossible" message={error} />
               ) : null}
               <Text className="text-base leading-6 text-muted">
                 {conflict.entityType === "copilot_conversation"
@@ -196,9 +162,7 @@ export default function SyncConflictDetailScreen() {
                           ? "La préparation reste un brouillon. Comparez les affectations avant de choisir une version."
                           : conflict.entityType === "commercial_offer_choice"
                             ? "Comparez les deux choix ci-dessus. La résolution conserve leur historique et ne confirme aucune action exécutée."
-                            : conflict.entityType === "product_alias"
-                              ? "La reprise vérifie que le libellé désigne toujours le même produit avant de renvoyer votre annulation."
-                              : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
+                            : "Les choix de résolution seront proposés selon les règles métier de cette donnée. Aucune version ne sera remplacée automatiquement."}
               </Text>
             </SectionCard>
           ) : null}

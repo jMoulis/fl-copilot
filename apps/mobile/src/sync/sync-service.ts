@@ -1015,6 +1015,20 @@ export class MobileSyncService {
           }
           pushed += 1;
         } else if (result.status === "CONFLICT") {
+          const catalogueTable =
+            command.entityType === "product"
+              ? "products"
+              : command.entityType === "product_identifier"
+                ? "product_identifiers"
+                : command.entityType === "product_alias"
+                  ? "product_aliases"
+                  : null;
+          if (catalogueTable)
+            await transaction.runAsync(
+              `UPDATE ${catalogueTable} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "mercalys_publication")
             await transaction.runAsync(
               "UPDATE source_documents SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
