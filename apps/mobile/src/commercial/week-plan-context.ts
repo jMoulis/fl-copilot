@@ -9,7 +9,7 @@ import {
 } from "@fl-copilot/sync-contracts";
 import type { CommercialPlanContext } from "@fl-copilot/commercial-core";
 import type { OutboxDatabase } from "../sync/outbox-repository";
-import { readCommercialChoices } from "./offer-choice-repository";
+import { readCommercialChoices } from "./choice-read";
 import { readValidatedOffers } from "./validated-offer-repository";
 export async function readWeekPlanContext(
   db: OutboxDatabase,

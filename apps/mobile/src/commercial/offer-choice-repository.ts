@@ -12,36 +12,19 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  readCommercialConflictReview,
+  requireCommercialConflictDecision,
+  type CommercialConflictResolutionContext,
+} from "./conflict-review";
 import { readCommercialVisualReadings } from "./visual-repository";
-type Row = {
-  id: string;
-  store_id: string;
-  payload_json: string;
-  remote_payload_json: string | null;
-  remote_version: number | null;
-  sync_state: string;
-  dirty: number;
-  last_error_code?: string | null;
-};
-export type LocalCommercialChoice = {
-  entity: CommercialOfferChoice;
-  remoteVersion: number | null;
-  syncState: string;
-  remote: CommercialOfferChoice | null;
-  lastErrorCode: string | null;
-};
-function mapped(row: Row): LocalCommercialChoice {
-  return {
-    entity: commercialOfferChoiceSchema.parse(JSON.parse(row.payload_json)),
-    remoteVersion: row.remote_version,
-    syncState: row.sync_state,
-    remote: row.remote_payload_json
-      ? commercialOfferChoiceSchema.parse(JSON.parse(row.remote_payload_json))
-      : null,
-    lastErrorCode: row.last_error_code ?? null,
-  };
-}
+import {
+  mapCommercialChoice as mapped,
+  readCommercialChoices,
+  type CommercialChoiceRow as Row,
+} from "./choice-read";
+export { readCommercialChoices };
+export type { LocalCommercialChoice } from "./choice-read";
 export async function applyCommercialChoice(
   db: OutboxDatabase,
   storeId: string,
@@ -101,6 +84,15 @@ export class CommercialChoiceRepository {
     private db: AtomicMutationDatabase & OutboxDatabase,
     private digest: (text: string) => Promise<string>,
   ) {}
+  review(storeId: string, conflictId: string) {
+    return readCommercialConflictReview(
+      this.db,
+      storeId,
+      "COMMERCIAL_CHOICE",
+      conflictId,
+      this.digest,
+    );
+  }
   async list(storeId: string, sourceDocumentId?: string) {
     return readCommercialChoices(this.db, storeId, sourceDocumentId);
   }
@@ -234,55 +226,36 @@ export class CommercialChoiceRepository {
   async resolve(
     conflictId: string,
     useLocal: boolean,
-    ctx: { commandId: string; deviceId: string },
+    ctx: CommercialConflictResolutionContext,
   ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const conflict = await new ConflictRepository(tx).getById(conflictId);
-      if (
-        !conflict ||
-        conflict.status !== "OPEN" ||
-        conflict.entityType !== "commercial_offer_choice"
-      )
-        throw Error("COMMERCIAL_CHOICE_RESOLUTION_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-        "SELECT * FROM commercial_offer_choices WHERE id=? AND store_id=?",
-        conflict.entityId,
-        conflict.storeId,
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("COMMERCIAL_CONFLICT_FORBIDDEN");
+      const review = await readCommercialConflictReview(
+        tx,
+        ctx.storeId,
+        "COMMERCIAL_CHOICE",
+        conflictId,
+        this.digest,
       );
-      if (!row) throw Error("COMMERCIAL_CHOICE_RESOLUTION_INVALID");
-      const local = mapped(row).entity,
-        parsed = commercialOfferChoiceSchema.safeParse(conflict.remotePayload);
-      const remote = parsed.success ? parsed.data : null;
-      if (
-        remote &&
-        !commercialChoiceSameSource(
-          { ...local, createdAt: remote.createdAt },
-          remote,
-        )
-      )
-        throw Error("COMMERCIAL_CHOICE_SOURCE_CHANGED");
-      if (!useLocal && !remote) throw Error("COMMERCIAL_CHOICE_REMOTE_MISSING");
-      const syncing = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM sync_outbox WHERE store_id=? AND entity_type='commercial_offer_choice' AND entity_id=? AND status='SYNCING'",
-        local.storeId,
-        local.id,
-      );
-      if (syncing?.n) throw Error("COMMERCIAL_CHOICE_SYNCING");
+      requireCommercialConflictDecision(review, useLocal, ctx);
+      const local = commercialOfferChoiceSchema.parse(review.current.entity),
+        remote = commercialOfferChoiceSchema.parse(review.group.remote);
       await retireCommands(tx, local.storeId, local.id);
       const now = new Date().toISOString();
       const resolved = useLocal
         ? commercialOfferChoiceSchema.parse({
             ...local,
-            createdAt: remote?.createdAt ?? local.createdAt,
-            version: (remote?.version ?? 0) + 1,
+            createdAt: remote.createdAt,
+            version: remote.version + 1,
             updatedAt: now,
           })
-        : remote!;
+        : remote;
       await tx.runAsync(
         "UPDATE commercial_offer_choices SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=? WHERE id=?",
         JSON.stringify(resolved),
-        remote ? JSON.stringify(remote) : null,
-        remote?.version ?? null,
+        JSON.stringify(remote),
+        remote.version,
         useLocal ? "PENDING" : "SYNCED",
         useLocal ? 1 : 0,
         local.id,
@@ -296,13 +269,31 @@ export class CommercialChoiceRepository {
         useLocal ? "RESOLVE_LOCAL" : "RESOLVE_REMOTE",
         now,
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='commercial_offer_choice' AND entity_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
-        local.storeId,
-        local.id,
-      );
+      if (
+        !review.group.conflicts.some(
+          (c) =>
+            JSON.stringify(
+              commercialOfferChoiceSchema.parse(c.remotePayload),
+            ) === JSON.stringify(remote),
+        )
+      )
+        await tx.runAsync(
+          "INSERT INTO commercial_choice_history(action_id,choice_id,store_id,payload_json,action,created_at) VALUES(?,?,?,?,?,?)",
+          ctx.remoteHistoryId,
+          local.id,
+          local.storeId,
+          JSON.stringify(remote),
+          "RESOLUTION_REMOTE_BASELINE",
+          now,
+        );
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          conflict.id,
+          local.storeId,
+        );
       if (useLocal)
         await new OutboxRepository(tx).enqueue({
           commandId: ctx.commandId,
@@ -311,10 +302,12 @@ export class CommercialChoiceRepository {
           commandType: "COMMERCIAL_OFFER_CHOICE_UPSERT",
           entityType: "commercial_offer_choice",
           entityId: local.id,
-          expectedRemoteVersion: remote?.version ?? null,
+          expectedRemoteVersion: remote.version,
           payload: resolved,
           createdAt: now,
         });
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("COMMERCIAL_CONFLICT_FORBIDDEN");
     });
   }
 }
@@ -324,17 +317,4 @@ async function retireCommands(tx: OutboxDatabase, storeId: string, id: string) {
     storeId,
     id,
   );
-}
-
-export async function readCommercialChoices(
-  db: OutboxDatabase,
-  storeId: string,
-  sourceDocumentId?: string,
-) {
-  const rows = await db.getAllAsync<Row>(
-    `SELECT c.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=c.store_id AND o.entity_id=c.id AND o.entity_type='commercial_offer_choice' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM commercial_offer_choices c WHERE c.store_id=? ${sourceDocumentId ? "AND source_document_id=?" : ""}`,
-    storeId,
-    ...(sourceDocumentId ? [sourceDocumentId] : []),
-  );
-  return rows.map(mapped);
 }

@@ -4,6 +4,7 @@ import {
   commercialWeekPreparationSchema,
   commercialWeekPlanSchema,
   type CommercialOfferChoice,
+  type Product,
 } from "@fl-copilot/domain";
 import {
   commercialChoiceId,
@@ -19,9 +20,40 @@ import {
   commercialPlanNeedsReview,
 } from "@fl-copilot/commercial-core";
 import type { OutboxDatabase } from "../sync/outbox-repository";
-import { readCommercialChoices } from "../commercial/offer-choice-repository";
-import { readWeekPlanContext } from "../commercial/week-plan-context";
-import { productToolRepository } from "./product-tool-transaction";
+import { readCommercialChoices } from "./choice-read";
+import { readWeekPlanContext } from "./week-plan-context";
+async function ownedProduct(db: OutboxDatabase, storeId: string, id: string) {
+  const row = await db.getFirstAsync<{
+    id: string;
+    store_id: string;
+    label: string;
+    sales_unit: Product["salesUnit"];
+    status: string;
+    deleted_at: string | null;
+    version: number;
+    sync_state: string;
+    dirty: number;
+  }>(
+    "SELECT id,store_id,label,sales_unit,status,deleted_at,version,sync_state,dirty FROM products WHERE store_id=? AND id=?",
+    storeId,
+    id,
+  );
+  return row
+    ? {
+        entity: {
+          id: row.id,
+          storeId: row.store_id,
+          label: row.label,
+          salesUnit: row.sales_unit,
+          status: row.status,
+          deletedAt: row.deleted_at,
+          version: row.version,
+        },
+        syncState: row.sync_state,
+        dirty: row.dirty,
+      }
+    : null;
+}
 /** Complete local dependency proof. No sampled set can authorize a write. */
 export async function readCommercialConflictPolicy(
   db: OutboxDatabase,
@@ -84,12 +116,12 @@ export async function readCommercialConflictPolicy(
     result.retainLocal = l.status === "RETAINED" && r.status === "WITHDRAWN";
     result.retainRemote = r.status === "RETAINED" && l.status === "WITHDRAWN";
     for (const id of new Set([l.productId, r.productId])) {
-      const product = await productToolRepository(db).getProduct(id);
+      const product = await ownedProduct(db, l.storeId, id);
       result.snapshots.push(product);
       if (product?.entity.storeId === l.storeId)
         result.products[id] = product.entity.label;
     }
-    const product = await productToolRepository(db).getProduct(l.productId);
+    const product = await ownedProduct(db, l.storeId, l.productId);
     const size = await db.getFirstAsync<{ n: number; bytes: number }>(
       "SELECT COUNT(*) n,COALESCE(SUM(length(payload_json)),0) bytes FROM commercial_offer_choices WHERE store_id=? AND source_document_id=?",
       l.storeId,

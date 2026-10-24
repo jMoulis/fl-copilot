@@ -218,7 +218,17 @@ it("adopts or explicitly rebases a two-device plan conflict while retaining supe
     remoteVersion: 1,
     remoteEntity: remote,
   });
+  await x.tx.runAsync(
+    "UPDATE commercial_week_plans SET sync_state='CONFLICT' WHERE store_id=?",
+    x.storeId,
+  );
+  const resolutionReview = await x.repo.review(x.storeId, conflict.id);
   await x.repo.resolve(conflict.id, false, {
+    storeId: x.storeId,
+    reviewHash: resolutionReview.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
+    retainWithdrawn: true,
     ...x.ctx,
     commandId: randomUUID(),
   });
@@ -291,7 +301,17 @@ it("explicit local rebase rechecks dependencies, regenerates revision IDs and un
     remoteVersion: 1,
     remoteEntity: remote,
   });
+  await x.tx.runAsync(
+    "UPDATE commercial_week_plans SET sync_state='CONFLICT' WHERE store_id=?",
+    x.storeId,
+  );
+  const resolutionReview = await x.repo.review(x.storeId, conflict.id);
   await x.repo.resolve(conflict.id, true, {
+    storeId: x.storeId,
+    reviewHash: resolutionReview.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
+    retainWithdrawn: true,
     ...x.ctx,
     commandId: randomUUID(),
   });

@@ -8,21 +8,22 @@ import {
   readCatalogueConflictPolicy,
 } from "../products/conflict-repository";
 import {
-  isCommercialDecisionConflictKind,
   commercialVersionDecisionSchema,
   commercialExecutionTaskSchema,
-  isCommercialConflictKind,
   commercialOfferChoiceSchema,
   commercialWeekPreparationSchema,
   commercialWeekPlanSchema,
 } from "@fl-copilot/domain";
 import { CommercialVersionDecisionRepository } from "../commercial/version-decision-repository";
 import { CommercialExecutionRepository } from "../commercial/execution-repository";
-import { readCommercialDecisionConflictPolicy } from "./commercial-decision-conflict-policy";
+
 import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
 import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
 import { CommercialPlanRepository } from "../commercial/week-plan-repository";
-import { readCommercialConflictPolicy } from "./commercial-conflict-policy";
+import {
+  readCommercialConflictReview,
+  isReviewedCommercialConflictKind,
+} from "../commercial/conflict-review";
 import {
   needUnitSchema,
   needMembershipSchema,
@@ -196,11 +197,22 @@ export async function readStoreConflictReview(
           digest,
         )
       : null;
+  const commercialReview =
+    isReviewedCommercialConflictKind(input.kind) && rows[0]
+      ? await readCommercialConflictReview(
+          db,
+          basis.storeId,
+          input.kind,
+          rows[0].id,
+          digest,
+        )
+      : null;
   const reviewedGroup =
     catalogueGroup ??
     settingsReview?.group ??
     eventReview?.group ??
-    needReview?.group;
+    needReview?.group ??
+    commercialReview?.group;
   const conflict = reviewedGroup
     ? reviewedGroup.conflict
     : rows[0]
@@ -331,26 +343,10 @@ export async function readStoreConflictReview(
     block(
       "L’identité du besoin ou de la relation a changé. Examinez les versions dans Synchronisation ; aucune association n’est réaffectée.",
     );
-  const commercialDecisionPolicy = isCommercialDecisionConflictKind(input.kind)
-    ? await readCommercialDecisionConflictPolicy(
-        db,
-        input.kind,
-        current.entity,
-        remote,
-        digest,
-      )
-    : null;
-  const commercialPolicy =
-    isCommercialConflictKind(input.kind) &&
-    !isCommercialDecisionConflictKind(input.kind)
-      ? await readCommercialConflictPolicy(
-          db,
-          input.kind,
-          current.entity,
-          remote,
-          digest,
-        )
-      : null;
+  const commercialDecisionPolicy = commercialReview?.decisionPolicy ?? null,
+    commercialPolicy = commercialReview?.workflowPolicy ?? null;
+  if (commercialReview && !commercialReview.ready)
+    block(commercialReview.reason!);
   const commercialIdentity = commercialDecisionPolicy ?? commercialPolicy;
   if (commercialIdentity && !commercialIdentity.identityValid && remote)
     block(
@@ -360,7 +356,8 @@ export async function readStoreConflictReview(
     (!reviewedGroup || reviewedGroup.valid) &&
     (!settingsReview || settingsReview.canResolve) &&
     (!eventReview || eventReview.ready) &&
-    (!needReview || needReview.ready);
+    (!needReview || needReview.ready) &&
+    (!commercialReview || commercialReview.ready);
   const canKeepLocal =
     groupAllowsDecision &&
     !!remote &&
@@ -396,10 +393,7 @@ export async function readStoreConflictReview(
       ...(settingsReview ? { settings: settingsReview.hash } : {}),
       ...(eventReview ? { event: eventReview.hash } : {}),
       ...(needReview ? { need: needReview.hash } : {}),
-      ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
-      ...(commercialDecisionPolicy
-        ? { commercialDecision: commercialDecisionPolicy.snapshots }
-        : {}),
+      ...(commercialReview ? { commercial: commercialReview.hash } : {}),
     }),
   );
   return {
@@ -428,6 +422,7 @@ export async function readStoreConflictReview(
     eventReview,
     commercialPolicy,
     commercialDecisionPolicy,
+    commercialReview,
     needPolicy,
     needReview,
     basisHash,
