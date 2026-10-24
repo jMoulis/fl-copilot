@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Image, Text } from "react-native";
 import { useFocusEffect } from "expo-router";
 import type {
@@ -25,23 +25,51 @@ export function VisualVersion({
   const { sqlite } = useLocalDatabase();
   const [uri, setUri] = useState<string | null>(),
     [busy, setBusy] = useState(false);
-  const live = useRef(0);
+  const source = preview ? JSON.stringify(preview) : null;
+  const context = useRef<
+    | {
+        database: typeof sqlite;
+        source: string | null;
+        reading: boolean;
+      }
+    | undefined
+  >(undefined);
+  useLayoutEffect(() => {
+    context.current = undefined;
+    setUri(undefined);
+    setBusy(false);
+    return () => {
+      context.current = undefined;
+    };
+  }, [sqlite, source]);
   useFocusEffect(
     useCallback(() => {
-      live.current++;
+      const current = { database: sqlite, source, reading: false };
+      context.current = current;
+      setUri(undefined);
+      setBusy(false);
       return () => {
-        live.current++;
+        if (context.current === current) context.current = undefined;
       };
-    }, []),
+    }, [sqlite, source]),
   );
   async function open() {
-    if (!preview || busy) return;
-    const run = live.current;
+    const run = context.current;
+    if (
+      !preview ||
+      !run ||
+      run.database !== sqlite ||
+      run.source !== source ||
+      run.reading
+    )
+      return;
+    run.reading = true;
     setBusy(true);
     try {
       const cached = await new VisualFileCache(sqlite)
         .get(preview.storeId, preview, "PREVIEW")
         .catch(() => null);
+      if (context.current !== run) return;
       const thumbnail = cached?.manifest
         ? await nativeVisualFileStorage
             .uri(preview.storeId, "PREVIEW", {
@@ -51,14 +79,18 @@ export function VisualVersion({
             })
             .catch(() => null)
         : null;
+      if (context.current !== run) return;
       const source =
         thumbnail ??
         (await nativeVisualFileStorage
           .uri(preview.storeId, "SOURCE", preview)
           .catch(() => null));
-      if (live.current === run) setUri(source);
+      if (context.current === run) setUri(source);
     } finally {
-      if (live.current === run) setBusy(false);
+      if (context.current === run) {
+        run.reading = false;
+        setBusy(false);
+      }
     }
   }
   return (
