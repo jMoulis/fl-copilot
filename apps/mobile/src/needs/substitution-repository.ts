@@ -13,7 +13,11 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  readNeedConflictReview,
+  requireNeedConflictDecision,
+  type NeedConflictResolutionContext,
+} from "./conflict-review";
 
 type Row = {
   id: string;
@@ -98,6 +102,15 @@ export class ProductSubstitutionRepository {
     private db: AtomicMutationDatabase & OutboxDatabase,
     private digest: (s: string) => Promise<string>,
   ) {}
+  review(storeId: string, conflictId: string) {
+    return readNeedConflictReview(
+      this.db,
+      storeId,
+      "SUBSTITUTION",
+      conflictId,
+      this.digest,
+    );
+  }
   async list(storeId: string) {
     const rows = await this.db.getAllAsync<Row>(
       "SELECT p.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=p.store_id AND o.entity_id=p.id AND o.entity_type='product_substitution' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM product_substitutions p WHERE p.store_id=? ORDER BY json_extract(p.payload_json,'$.sourceProductId')",
@@ -299,64 +312,43 @@ export class ProductSubstitutionRepository {
   async resolve(
     conflictId: string,
     useLocal: boolean,
-    ctx: { commandId: string; deviceId: string },
+    ctx: NeedConflictResolutionContext,
   ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const conflict = await new ConflictRepository(tx).getById(conflictId);
-      if (
-        !conflict ||
-        conflict.status !== "OPEN" ||
-        conflict.entityType !== "product_substitution"
-      )
-        throw Error("PRODUCT_SUBSTITUTION_RESOLUTION_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-        "SELECT * FROM product_substitutions WHERE id=? AND store_id=?",
-        conflict.entityId,
-        conflict.storeId,
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("NEED_CONFLICT_FORBIDDEN");
+      const review = await readNeedConflictReview(
+        tx,
+        ctx.storeId,
+        "SUBSTITUTION",
+        conflictId,
+        this.digest,
       );
-      if (!row) throw Error("PRODUCT_SUBSTITUTION_RESOLUTION_INVALID");
-      const local = mapped(row).entity,
-        parsed = productSubstitutionSchema.safeParse(conflict.remotePayload);
-      const remote = parsed.success ? parsed.data : null;
-      if (
-        remote &&
-        !sameIdentity({ ...local, createdAt: remote.createdAt }, remote)
-      )
-        throw Error("PRODUCT_SUBSTITUTION_SOURCE_CHANGED");
-      if (!useLocal && !remote)
-        throw Error("PRODUCT_SUBSTITUTION_REMOTE_MISSING");
-      const syncing = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM sync_outbox WHERE store_id=? AND entity_type='product_substitution' AND entity_id=? AND status='SYNCING'",
-        local.storeId,
-        local.id,
-      );
-      if (syncing?.n) throw Error("PRODUCT_SUBSTITUTION_SYNCING");
+      requireNeedConflictDecision(review, useLocal, ctx);
+      const local = productSubstitutionSchema.parse(review.current.entity),
+        remote = productSubstitutionSchema.parse(review.group.remote);
       await retireCommands(tx, local.storeId, local.id);
       const now = new Date().toISOString();
       const resolved = useLocal
         ? productSubstitutionSchema.parse({
             ...local,
-            ...(remote
-              ? {
-                  observedSubstitution: remote.observedSubstitution,
-                  relationshipScore: remote.relationshipScore,
-                  confidence: remote.confidence,
-                  evidenceCount: remote.evidenceCount,
-                  lastEvidenceAt: remote.lastEvidenceAt,
-                }
-              : {}),
-            createdAt: remote?.createdAt ?? local.createdAt,
+            observedSubstitution: remote.observedSubstitution,
+            relationshipScore: remote.relationshipScore,
+            confidence: remote.confidence,
+            evidenceCount: remote.evidenceCount,
+            lastEvidenceAt: remote.lastEvidenceAt,
+            createdAt: remote.createdAt,
             humanConfirmed: true,
-            source: remote?.source ?? local.source,
-            version: (remote?.version ?? 0) + 1,
+            source: remote.source,
+            version: remote.version + 1,
             updatedAt: now,
           })
-        : remote!;
+        : remote;
       await tx.runAsync(
         "UPDATE product_substitutions SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=? WHERE id=?",
         JSON.stringify(resolved),
-        remote ? JSON.stringify(remote) : null,
-        remote?.version ?? null,
+        JSON.stringify(remote),
+        remote.version,
         useLocal ? "PENDING" : "SYNCED",
         useLocal ? 1 : 0,
         local.id,
@@ -370,13 +362,30 @@ export class ProductSubstitutionRepository {
         useLocal ? "RESOLVE_LOCAL" : "RESOLVE_REMOTE",
         now,
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='product_substitution' AND entity_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
-        local.storeId,
-        local.id,
-      );
+      if (
+        !review.group.conflicts.some(
+          (c) =>
+            JSON.stringify(productSubstitutionSchema.parse(c.remotePayload)) ===
+            JSON.stringify(remote),
+        )
+      )
+        await tx.runAsync(
+          "INSERT INTO product_substitution_history(action_id,substitution_id,store_id,payload_json,action,created_at) VALUES(?,?,?,?,?,?)",
+          ctx.remoteHistoryId,
+          local.id,
+          local.storeId,
+          JSON.stringify(remote),
+          "RESOLUTION_REMOTE_BASELINE",
+          now,
+        );
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          conflict.id,
+          local.storeId,
+        );
       if (useLocal)
         await new OutboxRepository(tx).enqueue({
           commandId: ctx.commandId,
@@ -385,10 +394,12 @@ export class ProductSubstitutionRepository {
           commandType: "PRODUCT_SUBSTITUTION_UPSERT",
           entityType: "product_substitution",
           entityId: local.id,
-          expectedRemoteVersion: remote?.version ?? null,
+          expectedRemoteVersion: remote.version,
           payload: resolved,
           createdAt: now,
         });
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("NEED_CONFLICT_FORBIDDEN");
     });
   }
 }
