@@ -954,17 +954,28 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                   }
                 : {}),
               ...(request.headers["x-copilot-visual-actions"] === "1" ||
-              request.headers["x-copilot-visual-actions"] === "2"
+              request.headers["x-copilot-visual-actions"] === "2" ||
+              request.headers["x-copilot-visual-actions"] === "3"
                 ? {
-                    visualSourceActions:
-                      request.headers["x-copilot-visual-actions"] === "2",
+                    visualSourceActions: ["2", "3"].includes(
+                      String(request.headers["x-copilot-visual-actions"]),
+                    ),
+                    visualRecoveryActions:
+                      request.headers["x-copilot-visual-actions"] === "3",
                     visualAction: async (input) => {
                       const principal = await authorize();
                       if (
                         input.action === "ASSIGN_SOURCE" &&
-                        request.headers["x-copilot-visual-actions"] !== "2"
+                        !["2", "3"].includes(
+                          String(request.headers["x-copilot-visual-actions"]),
+                        )
                       )
                         throw Error("VISUAL_ACTION_SOURCE_UNSUPPORTED");
+                      if (
+                        input.action === "REVIEW_RECOVERY" &&
+                        request.headers["x-copilot-visual-actions"] !== "3"
+                      )
+                        throw Error("VISUAL_RECOVERY_CLIENT_REQUIRED");
                       const result = await previewVisualAction(
                         db,
                         storeId,

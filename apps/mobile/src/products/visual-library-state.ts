@@ -30,7 +30,7 @@ export interface VisualLibraryState {
 }
 /** Follow explicit links only, including their tombstone, so a rejected choice remains reachable. */
 export function productVisualRecoveryTargets(
-  state: VisualLibraryState | null,
+  state: Pick<VisualLibraryState, "links" | "assets" | "identities"> | null,
   productId: string,
 ) {
   const result: Array<{

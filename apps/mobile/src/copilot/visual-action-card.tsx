@@ -1,3 +1,5 @@
+import { readVisualActionProposal } from "@fl-copilot/domain";
+import { VisualRecoveryCard } from "./visual-recovery-card";
 import type { PreparedVisualSourcePhoto } from "./visual-source-photo";
 import { visualConflictSummary } from "../products/visual-conflict-presentation";
 import { useCallback, useMemo, useState, useRef, useLayoutEffect } from "react";
@@ -14,19 +16,29 @@ import type { CopilotVisualActionController } from "./visual-action-controller";
 import { useReviewedConflict } from "../components/use-reviewed-conflict";
 import { VisualVersion } from "../products/visual-conflict-preview";
 import { colors } from "../design/tokens";
-export function VisualActionCard({
-  message,
-  controller,
-  canConfirm,
-  onSaved,
-  requestPreview,
-}: {
+type VisualActionCardProps = {
   message: CopilotMessage;
   controller: CopilotVisualActionController;
   canConfirm: boolean;
   onSaved: () => void;
   requestPreview: (assetId: string) => Promise<void>;
-}) {
+  retryFile?: (assetId: string) => Promise<void>;
+};
+export function VisualActionCard(props: VisualActionCardProps) {
+  return readVisualActionProposal(props.message).content.input.action ===
+    "REVIEW_RECOVERY" ? (
+    <VisualRecoveryCard {...props} />
+  ) : (
+    <VisualMutationCard {...props} />
+  );
+}
+function VisualMutationCard({
+  message,
+  controller,
+  canConfirm,
+  onSaved,
+  requestPreview,
+}: VisualActionCardProps) {
   const scope = useMemo(
     () => ({ message, controller, canConfirm }),
     [message, controller, canConfirm],

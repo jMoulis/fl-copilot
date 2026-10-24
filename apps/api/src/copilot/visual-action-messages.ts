@@ -20,7 +20,9 @@ export function buildVisualActionMessages(
     validateVisualActionPreview(assistant.storeId, p.input, p);
     latest.set(p.input.productId, p);
   }
-  const ready = [...latest.values()].filter((p) => p.status === "READY");
+  const ready = [...latest.values()].filter((p) =>
+    ["READY", "REVIEW_LOCAL"].includes(p.status),
+  );
   if (ready.length > 3) throw Error("VISUAL_ACTION_LIMIT");
   return ready.map((p) => {
     const content = visualActionProposalSchema.parse({

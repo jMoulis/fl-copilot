@@ -7392,3 +7392,78 @@ it.each(["READY", "DISABLED", "FOREIGN", "WRONG_SOURCE"] as const)(
     }
   },
 );
+
+it.each([false, true])(
+  "negotiates visual recovery through the installed SDK without discovering or deciding local failures: %s",
+  async (enabled) => {
+    const { visualRecoveryActionFixture } =
+      await import("../../../../scripts/test-visual-recovery-action-fixtures");
+    const { visualActionPreviewSchema } = await import("@fl-copilot/domain");
+    const native = await visualRecoveryActionFixture();
+    try {
+      const f = fixture();
+      f.request.storeId = native.f.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: native.f.storeId,
+          evaluatedAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const before = native.db.raw
+        .prepare("SELECT * FROM sync_outbox ORDER BY rowid")
+        .all();
+      const read = vi.fn(async () =>
+        visualActionPreviewSchema.parse(native.preview),
+      );
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body)),
+          t = body.tools.find(
+            (t: { name: string }) => t.name === "product_visual_preview",
+          );
+        expect(JSON.stringify(t.parameters).includes("REVIEW_RECOVERY")).toBe(
+          enabled,
+        );
+        expect(JSON.stringify(t.parameters)).not.toMatch(
+          /recoveryAction|comparisonReviewed|rightsConfirmed|canWrite|ownerId/,
+        );
+        if (calls++ === 0) {
+          const envelope = z
+            .record(z.string(), z.unknown())
+            .parse(await response().json());
+          envelope.output = [
+            {
+              type: "function_call",
+              id: "fc_recovery",
+              call_id: "call_recovery",
+              name: "product_visual_preview",
+              arguments: JSON.stringify(native.input),
+              status: "completed",
+            },
+          ];
+          return new Response(JSON.stringify(envelope), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        visualAction: read,
+        visualSourceActions: true,
+        visualRecoveryActions: enabled,
+      }).generate(f.request, schema);
+      expect(read).toHaveBeenCalledTimes(enabled ? 1 : 0);
+      expect(result.visualActionPreviews ?? []).toHaveLength(enabled ? 1 : 0);
+      if (enabled)
+        expect(result.visualActionPreviews![0]!.status).toBe("REVIEW_LOCAL");
+      expect(
+        native.db.raw.prepare("SELECT * FROM sync_outbox ORDER BY rowid").all(),
+      ).toEqual(before);
+    } finally {
+      native.db.raw.close();
+    }
+  },
+);

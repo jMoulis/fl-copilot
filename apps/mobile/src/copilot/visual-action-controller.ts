@@ -4,6 +4,8 @@ import {
   visualActionStatus,
   visualActionRequestSchema,
   visualActionResultSchema,
+  visualRecoveryRequestSchema,
+  visualRecoveryResultSchema,
   type CopilotMessage,
   type VisualActionInput,
 } from "@fl-copilot/domain";
@@ -33,6 +35,8 @@ import {
   type VisualSourcePhotoPort,
   type PreparedVisualSourcePhoto,
 } from "./visual-source-photo";
+import { VisualRecoveryRepository } from "../products/visual-recovery-repository";
+import { productVisualRecoveryTargets } from "../products/visual-library-state";
 import { withVisualFiles } from "../products/visual-file-lock";
 type Database = OutboxDatabase & AtomicMutationDatabase;
 type Scope = {
@@ -181,6 +185,100 @@ async function storedProposal(tx: OutboxDatabase, scope: Scope, id: string) {
   );
   return artifact;
 }
+async function readRecoveryReview(
+  tx: OutboxDatabase,
+  scope: Scope,
+  artifact: Awaited<ReturnType<typeof storedProposal>>,
+  hash: Hash,
+  now: () => string,
+) {
+  const { input, basis } = artifact.content;
+  if (input.action !== "REVIEW_RECOVERY")
+    throw Error("VISUAL_RECOVERY_KIND_INVALID");
+  const db = joinedProductToolDatabase(tx),
+    repo = new VisualLibraryRepository(db);
+  const product = await loadProductEditorSnapshot(
+    new ProductMasterRepository(db),
+    input.productId,
+  );
+  if (product && product.product.entity.storeId !== scope.storeId)
+    throw Error("VISUAL_ACTION_SCOPE_INVALID");
+  const localBasis = await prepareVisualActionBasis(
+    scope.storeId,
+    input,
+    {
+      product,
+      currentLink: null,
+      currentIdentity: null,
+      currentAsset: null,
+      selectedIdentity: null,
+      selectedAsset: null,
+    },
+    hash,
+  );
+  const productChanged =
+    !!basis.product &&
+    !!localBasis.product &&
+    JSON.stringify(basis.product) !== JSON.stringify(localBasis.product);
+  const link = await repo.get(
+    "product_visual_link",
+    scope.storeId,
+    await nativeVisualId("product_visual_link", scope.storeId, input.productId),
+  );
+  const identity = link
+    ? await repo.get(
+        "visual_identity",
+        scope.storeId,
+        link.entity.visualIdentityId,
+      )
+    : null;
+  const assets = await Promise.all(
+    [
+      ...new Set(
+        [link?.entity.overrideAssetId, identity?.entity.primaryAssetId].filter(
+          (id): id is string => !!id,
+        ),
+      ),
+    ].map((id) => repo.get("visual_asset", scope.storeId, id)),
+  );
+  if (link) await assertCanonicalVisualId("product_visual_link", link.entity);
+  if (identity)
+    await assertCanonicalVisualId("visual_identity", identity.entity);
+  for (const asset of assets)
+    if (asset) await assertCanonicalVisualId("visual_asset", asset.entity);
+  const graph = {
+    links: new Map(link ? [[input.productId, [link]]] : []),
+    identities: new Map(identity ? [[identity.entity.id, identity]] : []),
+    assets: new Map(
+      assets.flatMap((asset) =>
+        asset ? [[asset.entity.id, asset] as const] : [],
+      ),
+    ),
+  };
+  const targets = await Promise.all(
+    productVisualRecoveryTargets(graph, input.productId).map(
+      async (target) => ({
+        ...target,
+        review: await new VisualRecoveryRepository(db, hash, now).review(
+          scope.storeId,
+          target.kind,
+          target.id,
+          scope.ownerId,
+        ),
+      }),
+    ),
+  );
+  const basisHash = await hash(
+    JSON.stringify({
+      localBasis,
+      productChanged,
+      graph: [link, identity, ...assets],
+      targets: targets.map((t) => [t.kind, t.id, t.review.hash]),
+    }),
+  );
+  return { product, productChanged, targets, basisHash };
+}
+
 export class CopilotVisualActionController {
   private sourcePhotos = new Map<
     string,
@@ -196,6 +294,8 @@ export class CopilotVisualActionController {
   ) {}
   async open(raw: CopilotMessage) {
     const parsed = readVisualActionProposal(raw);
+    if (parsed.content.input.action === "REVIEW_RECOVERY")
+      throw Error("VISUAL_RECOVERY_REVIEW_REQUIRED");
     let result:
       Awaited<ReturnType<CopilotVisualActionController["read"]>> | undefined;
     await this.db.withExclusiveTransactionAsync(async (tx) => {
@@ -267,6 +367,210 @@ export class CopilotVisualActionController {
           ? ("BLOCKED" as const)
           : ("READY" as const);
     return { ...artifact, status, result: null, request: null, review };
+  }
+  async openRecovery(raw: CopilotMessage) {
+    const parsed = readVisualActionProposal(raw);
+    let state:
+      | Awaited<ReturnType<CopilotVisualActionController["readRecovery"]>>
+      | undefined;
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      const artifact = await storedProposal(tx, this.scope, parsed.message.id);
+      if (JSON.stringify(artifact.message) !== JSON.stringify(parsed.message))
+        throw Error("VISUAL_ACTION_PROPOSAL_CHANGED");
+      state = await this.readRecovery(tx, artifact);
+    });
+    return state!;
+  }
+  private async readRecovery(
+    tx: OutboxDatabase,
+    artifact: Awaited<ReturnType<typeof storedProposal>>,
+  ) {
+    const { message, content } = artifact;
+    if (content.input.action !== "REVIEW_RECOVERY")
+      throw Error("VISUAL_RECOVERY_KIND_INVALID");
+    const old = await tx.getFirstAsync<{
+      store_id: string;
+      owner_id: string;
+      conversation_id: string;
+      request_json: string;
+      result_json: string;
+    }>("SELECT * FROM copilot_tool_results WHERE operation_id=?", message.id);
+    if (old) {
+      const result = visualRecoveryResultSchema.parse(
+          JSON.parse(old.result_json),
+        ),
+        request = visualRecoveryRequestSchema.parse(
+          JSON.parse(old.request_json),
+        );
+      if (
+        old.store_id !== this.scope.storeId ||
+        old.owner_id !== this.scope.ownerId ||
+        old.conversation_id !== message.conversationId ||
+        result.operationId !== message.id ||
+        result.userMessageId !== message.replyToMessageId ||
+        result.productId !== content.input.productId ||
+        Object.keys(request).some(
+          (key) =>
+            result[key as keyof typeof request] !==
+            request[key as keyof typeof request],
+        )
+      )
+        throw Error("VISUAL_ACTION_SCOPE_INVALID");
+      return {
+        ...artifact,
+        status: "COMPLETED" as const,
+        result,
+        request,
+        review: null,
+      };
+    }
+    const review = await readRecoveryReview(
+      tx,
+      this.scope,
+      artifact,
+      this.hash,
+      this.now,
+    );
+    return {
+      ...artifact,
+      status: review.productChanged
+        ? ("STALE" as const)
+        : !review.targets.length
+          ? ("UNCHANGED" as const)
+          : ("READY" as const),
+      review,
+      result: null,
+      request: null,
+    };
+  }
+  async confirmRecovery(
+    message: CopilotMessage,
+    input: Omit<
+      ReturnType<typeof visualRecoveryRequestSchema.parse>,
+      "operationId"
+    >,
+    signal?: AbortSignal,
+    canContinue: () => boolean = () => true,
+  ) {
+    const check = () => {
+      if (
+        !this.scope.canManageVisualLibrary ||
+        signal?.aborted ||
+        !canContinue()
+      )
+        throw Error("VISUAL_ACTION_FORBIDDEN");
+    };
+    check();
+    const request = visualRecoveryRequestSchema.parse({
+      operationId: message.id,
+      ...input,
+    });
+    const state = await this.openRecovery(message);
+    check();
+    if (state.status === "COMPLETED") {
+      if (JSON.stringify(request) !== JSON.stringify(state.request))
+        throw Error("VISUAL_ACTION_DECISION_CHANGED");
+      return state;
+    }
+    if (
+      state.status !== "READY" ||
+      state.review?.basisHash !== request.basisHash
+    )
+      throw Error("VISUAL_ACTION_STALE");
+    const { canManageVisualLibrary, ...scope } = this.scope;
+    let result: ReturnType<typeof visualRecoveryResultSchema.parse> | undefined;
+    await this.db.withExclusiveTransactionAsync(async (outer) => {
+      check();
+      const artifact = await storedProposal(outer, this.scope, message.id);
+      if (JSON.stringify(artifact.message) !== JSON.stringify(message))
+        throw Error("VISUAL_ACTION_PROPOSAL_CHANGED");
+      result = await runReviewedStoreOperation(
+        joinedProductToolDatabase(outer),
+        request,
+        {
+          ...scope,
+          canExecute: canManageVisualLibrary,
+          conversationId: message.conversationId,
+          userMessageId: message.replyToMessageId!,
+          authorizedRequestJson: JSON.stringify(request),
+          decisionLevel: "REVIEWED",
+        },
+        visualRecoveryResultSchema,
+        async (tx, ctx) => {
+          check();
+          const review = await readRecoveryReview(
+            tx,
+            this.scope,
+            artifact,
+            this.hash,
+            this.now,
+          );
+          if (review.productChanged || review.basisHash !== request.basisHash)
+            throw Error("VISUAL_ACTION_STALE");
+          const target = review.targets.find(
+            (t) => t.kind === request.kind && t.id === request.entityId,
+          );
+          if (!target) throw Error("VISUAL_ACTION_SCOPE_INVALID");
+          const db = joinedProductToolDatabase(tx),
+            at = this.now();
+          await new VisualRecoveryRepository(db, this.hash, () => at).recover(
+            ctx.storeId,
+            target.kind,
+            target.id,
+            request.recoveryAction,
+            {
+              actorId: ctx.ownerId,
+              deviceId: ctx.deviceId,
+              commandId: this.id(),
+              reviewHash: target.review.hash,
+              reactivate: request.reactivate,
+              rightsConfirmed: request.rightsConfirmed,
+              canWrite: () => {
+                check();
+                return true;
+              },
+              signal,
+            },
+          );
+          const after = await new VisualLibraryRepository(db).get(
+            target.kind,
+            ctx.storeId,
+            target.id,
+          );
+          check();
+          if (!after || !["PENDING", "SYNCED"].includes(after.syncState))
+            throw Error("VISUAL_RECOVERY_RESULT_INVALID");
+          return visualRecoveryResultSchema.parse({
+            ...request,
+            action: "REVIEW_RECOVERY",
+            productId: artifact.content.input.productId,
+            userMessageId: ctx.userMessageId,
+            appliedAt: at,
+            version: after.entity.version,
+            syncState: after.syncState,
+            retryFileAssetId:
+              target.kind === "visual_asset" &&
+              ["RETRY_LOCAL", "ADOPT_REMOTE"].includes(
+                request.recoveryAction,
+              ) &&
+              !after.entity.deletedAt &&
+              "review" in after.entity &&
+              after.entity.review.status === "APPROVED"
+                ? after.entity.id
+                : null,
+          });
+        },
+        signal,
+      );
+      check();
+    });
+    return {
+      ...state,
+      status: "COMPLETED" as const,
+      result: result!,
+      request,
+      review: null,
+    };
   }
   async prepareSourcePhoto(
     message: CopilotMessage,
@@ -381,14 +685,16 @@ export class CopilotVisualActionController {
               artifact.message.replyToMessageId !== ctx.userMessageId
             )
               throw Error("VISUAL_ACTION_SCOPE_INVALID");
-            const { input } = artifact.content,
-              review = await readLocal(
-                tx,
-                this.scope,
-                input,
-                this.hash,
-                artifact.content.basis.sourcePhoto ?? undefined,
-              );
+            const { input } = artifact.content;
+            if (input.action === "REVIEW_RECOVERY")
+              throw Error("VISUAL_RECOVERY_REVIEW_REQUIRED");
+            const review = await readLocal(
+              tx,
+              this.scope,
+              input,
+              this.hash,
+              artifact.content.basis.sourcePhoto ?? undefined,
+            );
             if (
               !canContinue() ||
               signal?.aborted ||

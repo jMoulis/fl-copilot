@@ -1,5 +1,6 @@
+import { colors } from "../design/tokens";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import { Image, Text } from "react-native";
+import { Image, Text, Pressable } from "react-native";
 import { useFocusEffect } from "expo-router";
 import type {
   VisualAsset,
@@ -153,5 +154,39 @@ export function VisualVersion({
         </Text>
       ) : null}
     </SectionCard>
+  );
+}
+
+export function VisualReviewCheck({
+  checked,
+  disabled,
+  label,
+  onPress,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  label: string;
+  onPress(): void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityLabel={label}
+      accessibilityState={{ checked, disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={{
+        minHeight: 48,
+        padding: 12,
+        borderWidth: 1,
+        borderRadius: 12,
+        borderColor: checked ? colors.forest : colors.line,
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <Text className="text-base text-ink">
+        {checked ? "☑" : "☐"} {label}
+      </Text>
+    </Pressable>
   );
 }

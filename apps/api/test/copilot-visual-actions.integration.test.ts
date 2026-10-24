@@ -441,5 +441,154 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         }
       },
     );
+    it("hands off an absent remote visual to native reviewed recovery, then synchronizes the strict-create retry once to another offline SQLite", async () => {
+      const { visualRecoveryActionFixture } =
+        await import("../../../scripts/test-visual-recovery-action-fixtures");
+      const { applyCopilotRecord } =
+        await import("../../mobile/src/copilot/conversation-repository");
+      const s = await visualRecoveryActionFixture();
+      const db = await database.getDb(),
+        push = createMongoSyncPushService(database, () => new Date(s.f.at));
+      const dir = mkdtempSync(join(tmpdir(), "fl-visual-recovery-restore-")),
+        path = join(dir, "second.db");
+      let other: VisualTestDatabase | undefined;
+      try {
+        await db.collection("storeMemberships").insertOne({
+          storeId: s.f.storeId,
+          userId: s.f.actorId,
+          role: "MANAGER",
+          active: true,
+        });
+        const seed = await push.push(
+          syncPushRequestSchema.parse({
+            syncProtocolVersion: 1,
+            appVersion: "test",
+            deviceId: s.f.deviceId,
+            storeId: s.f.storeId,
+            commands: [
+              {
+                commandId: randomUUID(),
+                localSequence: 1,
+                type: "PRODUCT_UPSERT",
+                entityType: "product",
+                entityId: s.f.product.id,
+                expectedRemoteVersion: null,
+                createdAt: s.f.at,
+                payload: s.f.product,
+              },
+            ],
+          }),
+          "recovery-product",
+          s.f.actorId,
+        );
+        expect(seed.results[0]!.status).toBe("APPLIED");
+        expect(
+          await db
+            .collection("visualAssets")
+            .countDocuments({ storeId: s.f.storeId }),
+        ).toBe(0);
+        const preview = await previewVisualAction(db, s.f.storeId, s.input);
+        expect(preview.status).toBe("REVIEW_LOCAL");
+        expect(preview.basis.currentAsset).toBeNull();
+        expect(JSON.stringify(preview)).not.toMatch(
+          /canRetry|remoteVersion|rightsConfirmed/,
+        );
+        const message = buildVisualActionMessages(s.assistant, [preview])[0]!;
+        await applyCopilotRecord(s.db, s.chat, "copilot_message", message);
+        const state = await s.controller.openRecovery(message);
+        expect(state.status).toBe("READY");
+        await s.controller.confirmRecovery(message, {
+          ...s.request,
+          basisHash: state.review!.basisHash,
+        });
+        const command = (await s.outbox.listPending(s.f.storeId)).find(
+          (c) => c.entityId === s.targetId,
+        )!;
+        expect(command.expectedRemoteVersion).toBeNull();
+        const packet = syncPushRequestSchema.parse({
+          syncProtocolVersion: 1,
+          appVersion: "test",
+          deviceId: s.f.deviceId,
+          storeId: s.f.storeId,
+          commands: [
+            {
+              commandId: command.commandId,
+              localSequence: command.localSequence,
+              type: command.commandType,
+              entityType: command.entityType,
+              entityId: command.entityId,
+              expectedRemoteVersion: command.expectedRemoteVersion,
+              createdAt: command.createdAt,
+              payload: command.payload,
+            },
+          ],
+        });
+        expect(
+          (await push.push(packet, "recovery", s.f.actorId)).results[0]!.status,
+        ).toBe("APPLIED");
+        expect(
+          (await push.push(packet, "replay", s.f.actorId)).results[0]!.status,
+        ).toBe("ALREADY_APPLIED");
+        other = new VisualTestDatabase(new DatabaseSync(path));
+        await runLocalMigrations(other);
+        const pull = createMongoSyncPullService(database),
+          boot = createMongoSyncBootstrapService(database),
+          deviceId = randomUUID();
+        await new MobileSyncService(
+          other,
+          {
+            push: (r) => push.push(r, randomUUID(), s.f.actorId),
+            pull: (storeId, cursor) =>
+              pull.pull(
+                storeId,
+                syncPullQuerySchema.parse({ cursor, visualLibrary: "true" }),
+              ),
+            bootstrap: () =>
+              boot.bootstrap(
+                {
+                  storeId: s.f.storeId,
+                  userId: s.f.actorId,
+                  storeName: "Fixture",
+                  role: "MANAGER",
+                  sessionId: randomUUID(),
+                  deviceId,
+                },
+                bootstrapQuerySchema.parse({ visualLibrary: "true" }),
+              ),
+          },
+          {
+            deviceId,
+            appVersion: "test",
+            visualLibrary: true,
+            copilotOwnerId: s.f.actorId,
+          },
+        ).sync(s.f.storeId);
+        const expected = (await s.library.get(
+          "visual_asset",
+          s.f.storeId,
+          s.targetId,
+        ))!.entity;
+        expect(
+          (await new VisualLibraryRepository(other).get(
+            "visual_asset",
+            s.f.storeId,
+            s.targetId,
+          ))!.entity,
+        ).toEqual(expected);
+        other.raw.close();
+        other = new VisualTestDatabase(new DatabaseSync(path));
+        expect(
+          (await new VisualLibraryRepository(other).get(
+            "visual_asset",
+            s.f.storeId,
+            s.targetId,
+          ))!.entity,
+        ).toEqual(expected);
+      } finally {
+        s.db.raw.close();
+        other?.raw.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
   },
 );
