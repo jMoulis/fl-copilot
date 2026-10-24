@@ -795,6 +795,14 @@ export class MobileSyncService {
       for (const command of commands) {
         const result = results.get(command.commandId);
         const code = result?.error?.code ?? "SYNC_RESULT_MISSING";
+        const catalogueTable =
+          command.entityType === "product"
+            ? "products"
+            : command.entityType === "product_identifier"
+              ? "product_identifiers"
+              : command.entityType === "product_alias"
+                ? "product_aliases"
+                : null;
         if (!result || result.status === "RETRYABLE_ERROR") {
           await outbox.markPendingForRetry(command.commandId, code);
           retryable += 1;
@@ -1015,14 +1023,6 @@ export class MobileSyncService {
           }
           pushed += 1;
         } else if (result.status === "CONFLICT") {
-          const catalogueTable =
-            command.entityType === "product"
-              ? "products"
-              : command.entityType === "product_identifier"
-                ? "product_identifiers"
-                : command.entityType === "product_alias"
-                  ? "product_aliases"
-                  : null;
           if (catalogueTable)
             await transaction.runAsync(
               `UPDATE ${catalogueTable} SET sync_state='CONFLICT' WHERE id=? AND store_id=?`,
@@ -1153,6 +1153,28 @@ export class MobileSyncService {
           await outbox.markConflict(command.commandId, code);
           conflicts += 1;
         } else {
+          // The refusal belongs to the sent version, never to a newer edit.
+          if (catalogueTable)
+            await transaction.runAsync(
+              `UPDATE ${catalogueTable} SET sync_state='ERROR'
+               WHERE id=? AND store_id=? AND sync_state='PENDING' AND version=?
+                 AND NOT EXISTS (
+                   SELECT 1 FROM sync_outbox WHERE store_id=? AND entity_type=? AND entity_id=?
+                     AND local_sequence>? AND status IN ('PENDING','SYNCING','CONFLICT')
+                 )`,
+              command.entityId,
+              storeId,
+              typeof command.payload === "object" &&
+                command.payload !== null &&
+                "version" in command.payload &&
+                typeof command.payload.version === "number"
+                ? command.payload.version
+                : null,
+              storeId,
+              command.entityType,
+              command.entityId,
+              command.localSequence,
+            );
           if (command.entityType === "mercalys_publication")
             await transaction.runAsync(
               "UPDATE source_documents SET sync_state='ERROR' WHERE id=? AND store_id=?",
