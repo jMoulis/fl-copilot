@@ -1838,9 +1838,13 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
             ? () => setEmailConversation(active)
             : undefined
         }
-        onOpenMercalys={() => {
-          void importFiles();
-        }}
+        onOpenMercalys={
+          canManageProducts
+            ? () => {
+                void importFiles();
+              }
+            : undefined
+        }
         externalMessageRevision={`${importMessageRevision}/${lastSyncedAt ?? ""}`}
         externalDraftRevision={draftRefresh}
         intakeSummary={
