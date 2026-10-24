@@ -1,4 +1,9 @@
 import {
+  transcriptionReviewInputSchema,
+  transcriptionReviewPreviewSchema,
+  validateTranscriptionReviewPreview,
+} from "@fl-copilot/domain";
+import {
   visualActionInputSchema,
   visualActionPreviewSchema,
   validateVisualActionPreview,
@@ -423,6 +428,9 @@ export interface CopilotAiProvider {
       z.infer<typeof receiptPublicationPreviewSchema>
     >;
     identityReviews?: Array<z.infer<typeof identityReviewPreviewSchema>>;
+    transcriptionReviewPreviews?: Array<
+      z.infer<typeof transcriptionReviewPreviewSchema>
+    >;
     visualActionPreviews?: Array<z.infer<typeof visualActionPreviewSchema>>;
     cataloguePreviews?: Array<z.infer<typeof copilotCataloguePreviewSchema>>;
     executionPreviews?: Array<
@@ -530,6 +538,9 @@ export function createCopilotAiProvider(
     identityReview?(
       input: z.infer<typeof identityReviewInputSchema>,
     ): Promise<z.infer<typeof identityReviewPreviewSchema>>;
+    transcriptionReview?(
+      input: z.infer<typeof transcriptionReviewInputSchema>,
+    ): Promise<z.infer<typeof transcriptionReviewPreviewSchema>>;
     visualAction?(
       input: z.infer<typeof visualActionInputSchema>,
     ): Promise<z.infer<typeof visualActionPreviewSchema>>;
@@ -813,6 +824,9 @@ export function createCopilotAiProvider(
         > = [];
         const identityReviews: Array<
           z.infer<typeof identityReviewPreviewSchema>
+        > = [];
+        const transcriptionReviewPreviews: Array<
+          z.infer<typeof transcriptionReviewPreviewSchema>
         > = [];
         const visualActionPreviews: Array<
           z.infer<typeof visualActionPreviewSchema>
@@ -1412,6 +1426,42 @@ export function createCopilotAiProvider(
                             )
                               throw Error("IDENTITY_REVIEW_LIMIT");
                             identityReviews.push(result);
+                            return result;
+                          },
+                        ),
+                    }),
+                  }
+                : {}),
+              ...(reads.transcriptionReview
+                ? {
+                    commercial_transcription_review: tool({
+                      description:
+                        "Prepare local comparison of rejected commercial transcriptions for one exact known PDF sourceDocumentId, only on an explicit user request to review/resolve such a conflict. Discover the document first. REVIEW_LOCAL opens a native document-scoped card; it neither knows how many conflicts this device has nor executes anything. The first accepted transcription of an immutable source occurrence can only be adopted after explicit native comparison; local corrections/originals stay in history. This is not offer retention, validation, publication, planning or execution. No local IDs, corrections, approvals or actor authority are model arguments.",
+                      inputSchema: transcriptionReviewInputSchema,
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["transcription-review", input]),
+                          async () => {
+                            const result = validateTranscriptionReviewPreview(
+                              request.storeId,
+                              await reads.transcriptionReview!(input),
+                              input,
+                            );
+                            const old = transcriptionReviewPreviews.findIndex(
+                              (p) =>
+                                p.input.sourceDocumentId ===
+                                input.sourceDocumentId,
+                            );
+                            if (old >= 0)
+                              transcriptionReviewPreviews.splice(old, 1);
+                            if (
+                              result.status === "REVIEW_LOCAL" &&
+                              transcriptionReviewPreviews.filter(
+                                (p) => p.status === "REVIEW_LOCAL",
+                              ).length >= 3
+                            )
+                              throw Error("TRANSCRIPTION_REVIEW_LIMIT");
+                            transcriptionReviewPreviews.push(result);
                             return result;
                           },
                         ),
@@ -3150,6 +3200,7 @@ export function createCopilotAiProvider(
               reads.receiptPublication ||
               reads.identityReview ||
               reads.cataloguePreview ||
+              reads.transcriptionReview ||
               reads.visualAction
               ? 4
               : reads.planReadiness ||
@@ -3338,6 +3389,14 @@ export function createCopilotAiProvider(
                 identityReviews: identityReviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
+                ...(reads.transcriptionReview
+                  ? {
+                      transcriptionReviewPreviews:
+                        transcriptionReviewPreviews.filter((p) =>
+                          p.evidence.every((e) => evidence.has(e.id)),
+                        ),
+                    }
+                  : {}),
                 ...(reads.visualAction
                   ? {
                       visualActionPreviews: visualActionPreviews.filter((p) =>

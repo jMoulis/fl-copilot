@@ -1,11 +1,10 @@
-import { serializeLocalWrites } from "../apps/mobile/src/db/serialized-writes";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID, createHash } from "node:crypto";
 import {
   visualLibraryFixture,
   testVisualId,
 } from "./test-visual-library-fixtures";
-import { VisualTestDatabase } from "./test-visual-sqlite";
+import { serializedTestDatabase } from "./test-serialized-sqlite";
 import { chatFixture } from "./test-chat-fixtures";
 import { runLocalMigrations } from "../apps/mobile/src/db/migrations";
 import { ProductMasterRepository } from "../apps/mobile/src/products/product-master-repository";
@@ -26,22 +25,6 @@ import {
   copilotMessageSchema,
   visualActionStatus,
 } from "../packages/domain/src/index";
-// Expo gives the exclusive callback an unwrapped transaction connection. Keep
-// that boundary while exercising the actual app writer queue with node:sqlite.
-class VisualActionTestDatabase extends VisualTestDatabase {
-  readonly transaction = new VisualTestDatabase(this.raw);
-  override async withExclusiveTransactionAsync(
-    task: (tx: VisualTestDatabase) => Promise<void>,
-  ) {
-    await this.transaction.withExclusiveTransactionAsync(task);
-  }
-}
-function serializedDatabase(raw: DatabaseSync) {
-  const db = new VisualActionTestDatabase(raw);
-  serializeLocalWrites(db);
-  return db;
-}
-
 export const visualActionDigest = async (v: string) =>
   createHash("sha256").update(v).digest("hex");
 export async function visualActionFixture(
@@ -51,7 +34,7 @@ export async function visualActionFixture(
   options: { retiredAssociation?: boolean } = {},
 ) {
   const f = visualLibraryFixture(),
-    db = serializedDatabase(new DatabaseSync(path));
+    db = serializedTestDatabase(new DatabaseSync(path));
   await runLocalMigrations(db);
   const products = new ProductMasterRepository(db),
     library = new VisualLibraryRepository(db);

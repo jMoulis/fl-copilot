@@ -1,3 +1,4 @@
+import { previewTranscriptionReview } from "./copilot/transcription-review-tool.js";
 import { previewVisualAction } from "./copilot/visual-actions-tool.js";
 import { readVisualLibrary } from "./copilot/visual-library-tool.js";
 import { layoutIllustrationGenerationPolicySchema } from "@fl-copilot/domain";
@@ -932,6 +933,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         storeId,
                         input,
                         request.headers["x-copilot-layout-preparation"] === "1",
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-transcription-review"] === "1"
+                ? {
+                    transcriptionReview: async (input) => {
+                      await authorize();
+                      const result = await previewTranscriptionReview(
+                        db,
+                        storeId,
+                        input,
                       );
                       await authorize();
                       return result;

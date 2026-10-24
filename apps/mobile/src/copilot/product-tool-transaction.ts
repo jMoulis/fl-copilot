@@ -138,6 +138,7 @@ export async function runReviewedStoreOperation<
         JSON.stringify(result),
         result.appliedAt,
       );
+      if (signal?.aborted) throw new ProductClassificationError("CANCELLED");
     });
   } catch (e) {
     if (e instanceof ProductClassificationError) throw e;

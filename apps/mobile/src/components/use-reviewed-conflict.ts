@@ -36,11 +36,18 @@ export function useReviewedConflict<R>({
       if (activeScope.current === scope) activeScope.current = null;
     };
   }, [scope]);
-  const [review, setReview] = useState<R>(),
+  const [loaded, setLoaded] = useState<{ scope: object; value: R }>(),
     [compared, setCompared] = useState(false),
     [busy, setBusy] = useState(false),
     [reading, setReading] = useState(true),
     [error, setError] = useState<string>();
+  const review = loaded?.scope === scope ? loaded.value : undefined;
+  const setReview = useCallback(
+    (value: R | undefined) => {
+      setLoaded(value === undefined ? undefined : { scope, value });
+    },
+    [scope],
+  );
   const revision = useRef(0),
     live = useRef(false),
     locked = useRef(false),
@@ -76,7 +83,7 @@ export function useReviewedConflict<R>({
         revision.current++;
         abort.current?.abort();
       };
-    }, [read, scope, readError]),
+    }, [read, scope, readError, setReview]),
   );
   const renderedRevision = revision.current;
   async function resolve(useLocal: boolean) {
@@ -152,11 +159,22 @@ export function useReviewedConflict<R>({
   }
   return {
     review,
-    compared,
-    setCompared,
-    busy,
-    reading,
-    error,
+    compared: review !== undefined && compared,
+    setCompared: (value: boolean) => {
+      if (
+        activeScope.current === scope &&
+        renderedRevision === revision.current &&
+        live.current &&
+        !locked.current &&
+        !reading &&
+        !error &&
+        review !== undefined
+      )
+        setCompared(value);
+    },
+    busy: loaded?.scope === scope && busy,
+    reading: reading || (loaded !== undefined && loaded.scope !== scope),
+    error: loaded && loaded.scope !== scope ? undefined : error,
     resolve,
     reload,
     isCurrent: () =>

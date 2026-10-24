@@ -1,3 +1,6 @@
+import { readTranscriptionReviewProposal } from "@fl-copilot/domain";
+import { CopilotTranscriptionReviewController } from "@/copilot/transcription-review-controller";
+import { TranscriptionReviewCard } from "@/copilot/transcription-review-card";
 import { readVisualActionProposal } from "@fl-copilot/domain";
 import { CopilotVisualActionController } from "@/copilot/visual-action-controller";
 import { VisualActionCard } from "@/copilot/visual-action-card";
@@ -457,6 +460,20 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         sqlite,
         { storeId, ownerId, deviceId, canManageProducts },
         randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const transcriptionReview = useMemo(
+    () =>
+      new CopilotTranscriptionReviewController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canReviewTranscriptions: canManageProducts,
+        },
+        executionDigest,
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
@@ -1003,6 +1020,22 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readTranscriptionReviewProposal(message);
+      return (
+        <TranscriptionReviewCard
+          key={message.id}
+          message={message}
+          controller={transcriptionReview}
+          canConfirm={canManageProducts}
+          onSaved={() => {
+            void syncNow(storeId).catch(() => undefined);
+          }}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readVisualActionProposal(message);
       return (
         <VisualActionCard
@@ -1185,6 +1218,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
               visualActions: canManageProducts,
+              transcriptionReview: canManageProducts,
               catalogueProposals: canManageProducts ? 2 : false,
               executionProposals: canDeclareCommercialExecution,
               fetch: expoFetch as typeof fetch,

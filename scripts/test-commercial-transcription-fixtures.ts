@@ -19,6 +19,7 @@ import { ConflictRepository } from "../apps/mobile/src/sync/conflict-repository"
 export async function nativeCommercialTranscriptionFixture(
   path = ":memory:",
   confidence = 0.8,
+  additionalBlocks = 0,
 ) {
   const db = new DatabaseSync(path),
     a = new ReceiptTestDatabase(db),
@@ -58,6 +59,12 @@ export async function nativeCommercialTranscriptionFixture(
       },
     ],
   };
+  for (let i = 1; i <= additionalBlocks; i++)
+    page.blocks.push({
+      ...page.blocks[0]!,
+      sourceBlockIndex: i,
+      label: `POIRE ${i + 1}`,
+    });
   const local: CommercialReviewDecision = {
       id: randomUUID(),
       storeId,

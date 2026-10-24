@@ -82,6 +82,62 @@ function TranscriptionChoice({
     </>
   );
 }
+export function TranscriptionComparison({
+  review,
+  showOriginal = true,
+}: {
+  showOriginal?: boolean;
+  review:
+    | Awaited<ReturnType<CommercialReviewRepository["reviewConflict"]>>
+    | null
+    | undefined;
+}) {
+  return (
+    <>
+      {review?.page ? (
+        <SectionCard title={`Extrait source · page ${review.page.pageNumber}`}>
+          <Text selectable className="text-ink">
+            {
+              review.page.blocks.find(
+                (b) => b.sourceBlockIndex === review.local.sourceBlockIndex,
+              )?.label
+            }
+          </Text>
+          {showOriginal ? (
+            <CommercialOriginalButton
+              sourceDocumentId={review.page.sourceDocumentId}
+            />
+          ) : null}
+        </SectionCard>
+      ) : null}
+      <SectionCard title="Votre transcription locale">
+        {review ? (
+          <TranscriptionChoice decision={review.local} />
+        ) : (
+          <Text className="text-muted">Lecture du choix local…</Text>
+        )}
+      </SectionCard>
+      <SectionCard title="Transcription synchronisée">
+        {review?.remote ? (
+          <TranscriptionChoice decision={review.remote} />
+        ) : (
+          <Text className="text-muted">Choix synchronisé non vérifié.</Text>
+        )}
+      </SectionCard>
+      {review && review.group.length > 1 ? (
+        <Text className="text-muted">
+          {review.group.length} conflits concernent ce même choix. Ils sont
+          examinés ensemble.
+        </Text>
+      ) : null}
+      <Text className="text-muted">
+        La première transcription acceptée reste la référence de cet extrait.
+        Votre choix local et ses corrections restent dans l’historique. Cela ne
+        publie aucune offre et ne valide pas son application au magasin.
+      </Text>
+    </>
+  );
+}
 function TranscriptionReview({
   storeId,
   localId,
@@ -159,45 +215,7 @@ function TranscriptionReview({
           Lecture de la comparaison…
         </Text>
       ) : null}
-      {review?.page ? (
-        <SectionCard title={`Extrait source · page ${review.page.pageNumber}`}>
-          <Text selectable className="text-ink">
-            {
-              review.page.blocks.find(
-                (b) => b.sourceBlockIndex === review.local.sourceBlockIndex,
-              )?.label
-            }
-          </Text>
-          <CommercialOriginalButton
-            sourceDocumentId={review.page.sourceDocumentId}
-          />
-        </SectionCard>
-      ) : null}
-      <SectionCard title="Votre transcription locale">
-        {review ? (
-          <TranscriptionChoice decision={review.local} />
-        ) : (
-          <Text className="text-muted">Lecture du choix local…</Text>
-        )}
-      </SectionCard>
-      <SectionCard title="Transcription synchronisée">
-        {review?.remote ? (
-          <TranscriptionChoice decision={review.remote} />
-        ) : (
-          <Text className="text-muted">Choix synchronisé non vérifié.</Text>
-        )}
-      </SectionCard>
-      {review && review.group.length > 1 ? (
-        <Text className="text-muted">
-          {review.group.length} conflits concernent ce même choix. Ils sont
-          examinés ensemble.
-        </Text>
-      ) : null}
-      <Text className="text-muted">
-        La première transcription acceptée reste la référence de cet extrait.
-        Votre choix local et ses corrections restent dans l’historique. Cela ne
-        publie aucune offre et ne valide pas son application au magasin.
-      </Text>
+      <TranscriptionComparison review={review} />
       {completed ? (
         <InlineAlert
           title="Comparaison enregistrée"
