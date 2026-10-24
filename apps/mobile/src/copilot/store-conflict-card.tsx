@@ -1,3 +1,5 @@
+import { storeLayoutSchema } from "@fl-copilot/domain";
+import { LayoutComparison } from "../store/layout-comparison";
 import { isCatalogueConflictKind } from "@fl-copilot/domain";
 import { catalogueConflictSummary } from "../products/conflict-presentation";
 import {
@@ -17,7 +19,7 @@ import { commercialPlanSummary } from "../commercial/plan-presentation";
 import { needUnitSummary } from "../needs/presentation";
 import { membershipSummary } from "../needs/membership-presentation";
 import { substitutionSummary } from "../needs/substitution-presentation";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { router, useFocusEffect } from "expo-router";
 import { ActivityIndicator, Pressable, Switch, View } from "react-native";
 import { ChatText as Text } from "./chat-text";
@@ -53,6 +55,27 @@ export function StoreConflictCard({
   const revision = useRef(0),
     locked = useRef(false),
     abort = useRef<AbortController | undefined>(undefined);
+  const committedScope = useRef<
+    | { controller: CopilotStoreConflictController; message: CopilotMessage }
+    | undefined
+  >(undefined);
+  const invalidate = useCallback(() => {
+    revision.current++;
+    abort.current?.abort();
+  }, []);
+  useLayoutEffect(() => {
+    committedScope.current = { controller, message };
+    setState(undefined);
+    setDecision(null);
+    setReviewed(false);
+    setReactivateRejected(false);
+    setLocalDeletionConfirmed(false);
+    setError(undefined);
+    return () => {
+      committedScope.current = undefined;
+      invalidate();
+    };
+  }, [controller, message, invalidate]);
   useFocusEffect(
     useCallback(() => {
       const v = ++revision.current;
@@ -74,14 +97,13 @@ export function StoreConflictCard({
               "La comparaison ne peut pas être préparée. Synchronisez puis demandez un nouvel aperçu ; les deux versions restent conservées.",
             );
         });
-      return () => {
-        revision.current++;
-        abort.current?.abort();
-      };
-    }, [controller, message]),
+      return invalidate;
+    }, [controller, message, invalidate]),
   );
   const confirm = async () => {
     if (
+      committedScope.current?.controller !== controller ||
+      committedScope.current.message !== message ||
       locked.current ||
       state?.status !== "READY" ||
       !decision ||
@@ -178,6 +200,10 @@ export function StoreConflictCard({
         review?.cataloguePolicy?.products,
       );
     switch (state?.content.input.kind) {
+      case "STORE_LAYOUT": {
+        const p = storeLayoutSchema.parse(raw);
+        return `${p.referenceRevisionId === p.revisionId ? "Plan de référence" : "Brouillon du plan"} · version ${p.version}\n${p.content.assemblies.length} ensembles · ${p.content.furniture.length} meubles · ${p.content.surfaces.length} surfaces\nLes qualifications des mesures sont conservées.`;
+      }
       case "COMMERCIAL_REFERENCE": {
         const e = commercialVersionDecisionSchema.parse(raw),
           selected = e.preference === "KEEP_PREVIOUS" ? e.before : e.after;
@@ -269,6 +295,7 @@ export function StoreConflictCard({
       <Text style={{ fontWeight: "700", color: colors.forest }}>
         {state
           ? {
+              STORE_LAYOUT: "Comparer le plan magasin",
               PRODUCT: "Comparer la fiche produit",
               IDENTIFIER: "Comparer le code produit",
               ALIAS: "Comparer le libellé associé",
@@ -290,6 +317,26 @@ export function StoreConflictCard({
       ) : null}
       {review ? (
         <>
+          {review.layoutReview?.remote ? (
+            <>
+              <Text style={{ color: colors.ink }}>
+                Conserver votre version crée un nouveau brouillon sur la
+                référence synchronisée. Ce choix n’adopte aucune référence et ne
+                confirme aucune mesure.
+              </Text>
+              <LayoutComparison
+                before={review.layoutReview.local.content}
+                after={review.layoutReview.remote.content}
+              />
+              {review.layoutReview.group.conflicts.length > 1 ? (
+                <Text style={{ color: colors.muted }}>
+                  {review.layoutReview.group.conflicts.length} conflits du même
+                  plan sont examinés ensemble ; les versions précédentes restent
+                  conservées.
+                </Text>
+              ) : null}
+            </>
+          ) : null}
           {(review.catalogueConflicts?.length ?? 0) > 1 ? (
             <Text style={{ color: colors.ink }}>
               {review.catalogueConflicts!.length} conflits concernent cette même
@@ -368,7 +415,7 @@ export function StoreConflictCard({
         : null}
       <Text accessibilityLiveRegion="polite">
         {state?.status === "COMPLETED"
-          ? `Résolution enregistrée : ${state.result.decision === "KEEP_LOCAL" ? "votre version a été retenue" : "la version synchronisée a été adoptée"}. ${state.result.syncState === "PENDING" ? "L’envoi reste à synchroniser." : "Aucun nouvel envoi n’est nécessaire."}`
+          ? `Résolution enregistrée : ${state.content.input.kind === "STORE_LAYOUT" && state.result.decision === "KEEP_LOCAL" ? "un nouveau brouillon du plan a été conservé" : state.result.decision === "KEEP_LOCAL" ? "votre version a été retenue" : "la version synchronisée a été adoptée"}. ${state.result.syncState === "PENDING" ? "L’envoi reste à synchroniser." : "Aucun nouvel envoi n’est nécessaire."}`
           : state?.status === "UNCHANGED"
             ? "Aucun conflit ouvert à résoudre sur cet appareil."
             : state?.status === "BLOCKED"
@@ -408,21 +455,25 @@ export function StoreConflictCard({
             </Text>
           ) : (
             <Text style={{ color: colors.ink }}>
-              {state.content.input.kind === "SUBSTITUTION"
-                ? "La relation garde son sens. Conserver votre version retient vos déclarations ; les scores appris synchronisés sont préservés."
-                : "Les identités et l’historique restent conservés. Réactiver une association rejetée nécessite une confirmation distincte."}
+              {state.content.input.kind === "STORE_LAYOUT"
+                ? "Les observations commerciales et les qualifications des mesures restent conservées."
+                : state.content.input.kind === "SUBSTITUTION"
+                  ? "La relation garde son sens. Conserver votre version retient vos déclarations ; les scores appris synchronisés sont préservés."
+                  : "Les identités et l’historique restent conservés. Réactiver une association rejetée nécessite une confirmation distincte."}
             </Text>
           )}
           {choice(
             "KEEP_LOCAL",
-            state.content.input.kind === "FIELD_EVENT"
-              ? "Conserver mon heure de fin"
-              : state.content.input.kind === "SETTINGS"
-                ? "Conserver mes réglages locaux"
-                : review.cataloguePolicy?.localDeleted &&
-                    !review.cataloguePolicy.remoteDeleted
-                  ? "Maintenir ma suppression locale"
-                  : "Conserver ma version locale",
+            state.content.input.kind === "STORE_LAYOUT"
+              ? "Conserver comme nouveau brouillon"
+              : state.content.input.kind === "FIELD_EVENT"
+                ? "Conserver mon heure de fin"
+                : state.content.input.kind === "SETTINGS"
+                  ? "Conserver mes réglages locaux"
+                  : review.cataloguePolicy?.localDeleted &&
+                      !review.cataloguePolicy.remoteDeleted
+                    ? "Maintenir ma suppression locale"
+                    : "Conserver ma version locale",
             review.canKeepLocal,
           )}
           {choice(

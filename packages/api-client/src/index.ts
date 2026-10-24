@@ -145,7 +145,7 @@ export class ApiClient {
       layoutInventory?: boolean;
       storeOperations?: boolean;
       needProposals?: boolean;
-      storeConflicts?: boolean | 2 | 3 | 4 | 5;
+      storeConflicts?: boolean | 2 | 3 | 4 | 5 | 6;
       receiptRecovery?: boolean;
       receiptCorrection?: boolean | 2;
       receiptPublication?: boolean;

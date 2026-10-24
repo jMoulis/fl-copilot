@@ -1,3 +1,4 @@
+import { storeConflictLayoutBasis } from "../packages/domain/src/index";
 import type { z } from "zod";
 import { randomUUID, createHash } from "node:crypto";
 import {
@@ -38,7 +39,10 @@ export function storeConflictPreview<
         })(storeContextSettingsSchema.parse(remote))
       : null;
   return storeConflictPreviewSchema.parse({
-    input: { kind, entityId: kind === "SETTINGS" ? null : remote.id },
+    input: {
+      kind,
+      entityId: ["SETTINGS", "STORE_LAYOUT"].includes(kind) ? null : remote.id,
+    },
     basis: {
       storeId: remote.storeId,
       entityId: remote.id,
@@ -59,6 +63,9 @@ export function storeConflictPreview<
       ...(kind === "PRODUCT" ? { product: remote } : {}),
       ...(kind === "IDENTIFIER" ? { identifier: remote } : {}),
       ...(kind === "ALIAS" ? { alias: remote } : {}),
+      ...(kind === "STORE_LAYOUT"
+        ? { layout: storeConflictLayoutBasis(remote) }
+        : {}),
     },
     evidence: [
       {

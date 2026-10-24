@@ -66,6 +66,7 @@ import {
   storeConflictV2InputSchema,
   storeConflictV3InputSchema,
   storeConflictV4InputSchema,
+  storeConflictV5InputSchema,
 } from "@fl-copilot/domain";
 import { previewStoreConflict } from "./copilot/store-conflict-tool.js";
 import { previewReceiptRecovery } from "./copilot/receipt-recovery-tool.js";
@@ -877,21 +878,24 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(["1", "2", "3", "4", "5"].includes(
+              ...(["1", "2", "3", "4", "5", "6"].includes(
                 String(request.headers["x-copilot-store-conflicts"]),
               )
                 ? {
                     storeConflictVersion:
-                      request.headers["x-copilot-store-conflicts"] === "5"
-                        ? (5 as const)
-                        : request.headers["x-copilot-store-conflicts"] === "4"
-                          ? (4 as const)
-                          : request.headers["x-copilot-store-conflicts"] === "3"
-                            ? (3 as const)
+                      request.headers["x-copilot-store-conflicts"] === "6"
+                        ? (6 as const)
+                        : request.headers["x-copilot-store-conflicts"] === "5"
+                          ? (5 as const)
+                          : request.headers["x-copilot-store-conflicts"] === "4"
+                            ? (4 as const)
                             : request.headers["x-copilot-store-conflicts"] ===
-                                "2"
-                              ? (2 as const)
-                              : (1 as const),
+                                "3"
+                              ? (3 as const)
+                              : request.headers["x-copilot-store-conflicts"] ===
+                                  "2"
+                                ? (2 as const)
+                                : (1 as const),
                     storeConflict: async (input) => {
                       if (request.headers["x-copilot-store-conflicts"] === "1")
                         storeConflictLegacyInputSchema.parse(input);
@@ -907,6 +911,10 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         request.headers["x-copilot-store-conflicts"] === "4"
                       )
                         storeConflictV4InputSchema.parse(input);
+                      else if (
+                        request.headers["x-copilot-store-conflicts"] === "5"
+                      )
+                        storeConflictV5InputSchema.parse(input);
                       await authorize();
                       const result = await previewStoreConflict(
                         db,

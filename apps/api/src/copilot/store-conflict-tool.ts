@@ -1,4 +1,9 @@
 import {
+  serializeStoreLayout,
+  type StoreLayoutDocument,
+} from "../store-layout-sync.js";
+import { storeConflictLayoutBasis } from "@fl-copilot/domain";
+import {
   serializeProductDocument,
   serializeProductIdentifierDocument,
   serializeProductAliasDocument,
@@ -61,6 +66,13 @@ export async function previewStoreConflict(
 ) {
   z.uuid().parse(storeId);
   const input = storeConflictInputSchema.parse(raw);
+  const layoutRow =
+    input.kind === "STORE_LAYOUT"
+      ? await db
+          .collection<StoreLayoutDocument>("storeLayouts")
+          .findOne({ _id: storeId, storeId }, { maxTimeMS: 2000 })
+      : null;
+  const layout = layoutRow ? serializeStoreLayout(layoutRow) : null;
   const eventRow =
     input.kind === "FIELD_EVENT"
       ? await db
@@ -163,6 +175,7 @@ export async function previewStoreConflict(
   const event = eventRow ? serializeStoreProductEvent(eventRow) : null,
     settings = settingsRow ? serializeStoreContext(settingsRow) : null,
     entity =
+      layout ??
       event ??
       settings ??
       need ??
@@ -183,7 +196,7 @@ export async function previewStoreConflict(
       plan?.preparation.physicalAllocation !== undefined)
   )
     throw Error("PHYSICAL_ALLOCATION_CLIENT_REQUIRED");
-  if (JSON.stringify(entity).length > 96000)
+  if (!layout && JSON.stringify(entity).length > 96000)
     throw Error("STORE_CONFLICT_REVIEW_LIMIT");
   const visible = settings
     ? (({ position, ...rest }) => {
@@ -211,6 +224,7 @@ export async function previewStoreConflict(
     ...(product ? { product } : {}),
     ...(identifier ? { identifier } : {}),
     ...(alias ? { alias } : {}),
+    ...(layout ? { layout: storeConflictLayoutBasis(layout) } : {}),
   });
   return storeConflictPreviewSchema.parse({
     input,
@@ -222,15 +236,17 @@ export async function previewStoreConflict(
         sourceId: entity.id,
         sourceVersion: entity.version,
         label:
-          input.kind === "SETTINGS"
-            ? "Comparer les réglages du magasin"
-            : input.kind === "FIELD_EVENT"
-              ? "Comparer un signalement magasin"
-              : product || identifier || alias
-                ? "Comparer le référentiel produit"
-                : choice || preparation || plan || reference || execution
-                  ? "Comparer les versions commerciales"
-                  : "Comparer le besoin ou l’association",
+          input.kind === "STORE_LAYOUT"
+            ? "Comparer les versions du plan magasin"
+            : input.kind === "SETTINGS"
+              ? "Comparer les réglages du magasin"
+              : input.kind === "FIELD_EVENT"
+                ? "Comparer un signalement magasin"
+                : product || identifier || alias
+                  ? "Comparer le référentiel produit"
+                  : choice || preparation || plan || reference || execution
+                    ? "Comparer les versions commerciales"
+                    : "Comparer le besoin ou l’association",
         factKind: "QUALITY",
         value:
           "Comparaison proposée uniquement. L’appareil vérifiera le conflit local, les deux versions et les choix métier autorisés. Aucune version n’est choisie ni modifiée ici. La présence d’un conflit sur l’appareil reste à vérifier.",

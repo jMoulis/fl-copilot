@@ -1,3 +1,4 @@
+import { storeLayoutSchema } from "./store-layout";
 import {
   catalogueConflictKinds,
   isCatalogueConflictKind,
@@ -65,15 +66,17 @@ export function isCommercialConflictKind(kind: string) {
   return (commercialConflictKinds as readonly string[]).includes(kind);
 }
 export function storeConflictArtifactVersion(kind: string) {
-  return isCatalogueConflictKind(kind)
-    ? 5
-    : isCommercialDecisionConflictKind(kind)
-      ? 4
-      : isCommercialConflictKind(kind)
-        ? 3
-        : isNeedConflictKind(kind)
-          ? 2
-          : 1;
+  return kind === "STORE_LAYOUT"
+    ? 6
+    : isCatalogueConflictKind(kind)
+      ? 5
+      : isCommercialDecisionConflictKind(kind)
+        ? 4
+        : isCommercialConflictKind(kind)
+          ? 3
+          : isNeedConflictKind(kind)
+            ? 2
+            : 1;
 }
 export const storeConflictV3InputSchema = z
   .strictObject({
@@ -101,7 +104,7 @@ export const storeConflictV4InputSchema = z
   .refine((v) =>
     v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
   );
-export const storeConflictInputSchema = z
+export const storeConflictV5InputSchema = z
   .strictObject({
     kind: z.enum([
       "FIELD_EVENT",
@@ -115,6 +118,40 @@ export const storeConflictInputSchema = z
   .refine((v) =>
     v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
   );
+export const storeConflictInputSchema = z
+  .strictObject({
+    kind: z.enum([
+      ...storeConflictV5InputSchema.shape.kind.options,
+      "STORE_LAYOUT",
+    ]),
+    entityId: z.uuid().nullable(),
+  })
+  .refine((v) =>
+    ["SETTINGS", "STORE_LAYOUT"].includes(v.kind)
+      ? v.entityId === null
+      : v.entityId !== null,
+  );
+// A plan comparison's model-facing basis is metadata only. Its fingerprint
+// still binds the complete canonical plan, reviewed on the device.
+export const storeConflictLayoutBasisSchema = z.strictObject({
+  id: z.uuid(),
+  storeId: z.uuid(),
+  version: z.number().int().positive(),
+  revisionId: z.uuid(),
+  referenceRevisionId: z.uuid().nullable(),
+  action: storeLayoutSchema.shape.action,
+});
+export function storeConflictLayoutBasis(raw: unknown) {
+  const p = storeLayoutSchema.parse(raw);
+  return storeConflictLayoutBasisSchema.parse({
+    id: p.id,
+    storeId: p.storeId,
+    version: p.version,
+    revisionId: p.revisionId,
+    referenceRevisionId: p.referenceRevisionId,
+    action: p.action,
+  });
+}
 export const storeConflictBasisSchema = z.strictObject({
   storeId: z.uuid(),
   entityId: z.uuid(),
@@ -133,6 +170,7 @@ export const storeConflictBasisSchema = z.strictObject({
   product: productSchema.optional(),
   identifier: productIdentifierSchema.optional(),
   alias: productAliasSchema.optional(),
+  layout: storeConflictLayoutBasisSchema.optional(),
 });
 export function validateStoreConflictBasis(
   storeId: string,
@@ -141,47 +179,26 @@ export function validateStoreConflictBasis(
 ) {
   const input = storeConflictInputSchema.parse(rawInput),
     basis = storeConflictBasisSchema.parse(rawBasis);
-  const entity =
-    input.kind === "FIELD_EVENT"
-      ? basis.event
-      : input.kind === "SETTINGS"
-        ? basis.settings
-        : input.kind === "NEED"
-          ? basis.need
-          : input.kind === "MEMBERSHIP"
-            ? basis.membership
-            : input.kind === "SUBSTITUTION"
-              ? basis.substitution
-              : input.kind === "COMMERCIAL_CHOICE"
-                ? basis.choice
-                : input.kind === "COMMERCIAL_PREPARATION"
-                  ? basis.preparation
-                  : input.kind === "COMMERCIAL_PLAN"
-                    ? basis.plan
-                    : input.kind === "COMMERCIAL_REFERENCE"
-                      ? basis.reference
-                      : input.kind === "COMMERCIAL_EXECUTION"
-                        ? basis.execution
-                        : input.kind === "PRODUCT"
-                          ? basis.product
-                          : input.kind === "IDENTIFIER"
-                            ? basis.identifier
-                            : basis.alias;
-  const present = [
-    basis.event,
-    basis.settings,
-    basis.need,
-    basis.membership,
-    basis.substitution,
-    basis.choice,
-    basis.preparation,
-    basis.plan,
-    basis.reference,
-    basis.execution,
-    basis.product,
-    basis.identifier,
-    basis.alias,
-  ].filter(Boolean);
+  const fields = {
+    FIELD_EVENT: "event",
+    SETTINGS: "settings",
+    NEED: "need",
+    MEMBERSHIP: "membership",
+    SUBSTITUTION: "substitution",
+    COMMERCIAL_CHOICE: "choice",
+    COMMERCIAL_PREPARATION: "preparation",
+    COMMERCIAL_PLAN: "plan",
+    COMMERCIAL_REFERENCE: "reference",
+    COMMERCIAL_EXECUTION: "execution",
+    PRODUCT: "product",
+    IDENTIFIER: "identifier",
+    ALIAS: "alias",
+    STORE_LAYOUT: "layout",
+  } as const;
+  const entity = basis[fields[input.kind]],
+    present = Object.values(fields)
+      .map((field) => basis[field])
+      .filter(Boolean);
   if (
     basis.storeId !== storeId ||
     !entity ||
@@ -189,7 +206,7 @@ export function validateStoreConflictBasis(
     entity.storeId !== storeId ||
     entity.id !== basis.entityId ||
     entity.version !== basis.remoteVersion ||
-    (input.kind === "SETTINGS"
+    (["SETTINGS", "STORE_LAYOUT"].includes(input.kind)
       ? entity.id !== storeId
       : input.entityId !== entity.id)
   )
@@ -209,6 +226,7 @@ export const storeConflictProposalSchema = z.strictObject({
     z.literal(3),
     z.literal(4),
     z.literal(5),
+    z.literal(6),
   ]),
   assistantMessageId: z.uuid(),
   input: storeConflictInputSchema,
@@ -252,6 +270,7 @@ export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
   .extend({
     canCaptureStoreEvents: z.boolean(),
     canManageStoreSettings: z.boolean(),
+    canManageStoreLayout: z.boolean().default(false),
     comparisonReviewed: z.boolean(),
     canManageProducts: z.boolean().default(false),
     canManageCommercialChoices: z.boolean().default(false),

@@ -1,4 +1,9 @@
 import {
+  storeLayoutSchema,
+  storeConflictLayoutBasis,
+} from "@fl-copilot/domain";
+import { StoreLayoutRepository } from "../store/layout-repository";
+import {
   isCatalogueConflictKind,
   catalogueConflictSchemas,
 } from "@fl-copilot/domain";
@@ -53,6 +58,9 @@ import {
 } from "../store/context-repository";
 import { joinedProductToolDatabase } from "./product-tool-transaction";
 type Content = z.infer<typeof storeConflictProposalSchema>;
+const readOnlyLayoutId = () => {
+  throw Error("STORE_CONFLICT_READ_ONLY");
+};
 export async function readStoreConflictCurrent(
   db: OutboxDatabase,
   content: Content,
@@ -70,6 +78,13 @@ export async function readStoreConflictCurrent(
   const joined = joinedProductToolDatabase(db),
     { basis, input } = content;
   switch (input.kind) {
+    case "STORE_LAYOUT":
+      return new StoreLayoutRepository(
+        joined,
+        readOnlyLayoutId,
+        undefined,
+        digest,
+      ).get(basis.storeId);
     case "COMMERCIAL_REFERENCE":
       return new CommercialVersionDecisionRepository(joined, digest).get(
         basis.storeId,
@@ -121,6 +136,7 @@ export async function readStoreConflictReview(
   db: OutboxDatabase,
   content: Content,
   digest: (s: string) => Promise<string>,
+  actorId?: string,
 ) {
   const { input, basis } = validateStoreConflictBasis(
     content.basis.storeId,
@@ -128,6 +144,7 @@ export async function readStoreConflictReview(
     content.basis,
   );
   const entityType = {
+    STORE_LAYOUT: "store_layout",
     PRODUCT: "product",
     IDENTIFIER: "product_identifier",
     ALIAS: "product_alias",
@@ -207,61 +224,78 @@ export async function readStoreConflictReview(
           digest,
         )
       : null;
+  const layoutReview =
+    input.kind === "STORE_LAYOUT" && rows[0] && actorId
+      ? await new StoreLayoutRepository(
+          joinedProductToolDatabase(db),
+          readOnlyLayoutId,
+          undefined,
+          digest,
+        ).review(basis.storeId, rows[0].id, actorId)
+      : null;
   const reviewedGroup =
     catalogueGroup ??
     settingsReview?.group ??
     eventReview?.group ??
     needReview?.group ??
-    commercialReview?.group;
-  const conflict = reviewedGroup
-    ? reviewedGroup.conflict
-    : rows[0]
-      ? await new ConflictRepository(db).getById(rows[0].id)
-      : null;
+    commercialReview?.group ??
+    layoutReview?.group;
+  const conflict = layoutReview
+    ? layoutReview.anchor
+    : reviewedGroup
+      ? reviewedGroup.conflict
+      : rows[0]
+        ? await new ConflictRepository(db).getById(rows[0].id)
+        : null;
   let status: "READY" | "BLOCKED" | "UNCHANGED" = "READY",
     reason: string | null = null;
   const block = (message: string) => {
     status = "BLOCKED";
     reason = message;
   };
-  const remoteSchema = isCatalogueConflictKind(input.kind)
-    ? catalogueConflictSchemas[input.kind]
-    : input.kind === "COMMERCIAL_REFERENCE"
-      ? commercialVersionDecisionSchema
-      : input.kind === "COMMERCIAL_EXECUTION"
-        ? commercialExecutionTaskSchema
-        : input.kind === "COMMERCIAL_CHOICE"
-          ? commercialOfferChoiceSchema
-          : input.kind === "COMMERCIAL_PREPARATION"
-            ? commercialWeekPreparationSchema
-            : input.kind === "COMMERCIAL_PLAN"
-              ? commercialWeekPlanSchema
-              : input.kind === "FIELD_EVENT"
-                ? storeProductEventSchema
-                : input.kind === "SETTINGS"
-                  ? storeContextSettingsSchema
-                  : input.kind === "NEED"
-                    ? needUnitSchema
-                    : input.kind === "MEMBERSHIP"
-                      ? needMembershipSchema
-                      : productSubstitutionSchema;
+  const remoteSchema =
+    input.kind === "STORE_LAYOUT"
+      ? storeLayoutSchema
+      : isCatalogueConflictKind(input.kind)
+        ? catalogueConflictSchemas[input.kind]
+        : input.kind === "COMMERCIAL_REFERENCE"
+          ? commercialVersionDecisionSchema
+          : input.kind === "COMMERCIAL_EXECUTION"
+            ? commercialExecutionTaskSchema
+            : input.kind === "COMMERCIAL_CHOICE"
+              ? commercialOfferChoiceSchema
+              : input.kind === "COMMERCIAL_PREPARATION"
+                ? commercialWeekPreparationSchema
+                : input.kind === "COMMERCIAL_PLAN"
+                  ? commercialWeekPlanSchema
+                  : input.kind === "FIELD_EVENT"
+                    ? storeProductEventSchema
+                    : input.kind === "SETTINGS"
+                      ? storeContextSettingsSchema
+                      : input.kind === "NEED"
+                        ? needUnitSchema
+                        : input.kind === "MEMBERSHIP"
+                          ? needMembershipSchema
+                          : productSubstitutionSchema;
   const parsed = remoteSchema.safeParse(conflict?.remotePayload);
   const remote = reviewedGroup
     ? reviewedGroup.remote
     : parsed.success
       ? parsed.data
       : null;
-  const commands = await db.getAllAsync<{
-    command_id: string;
-    status: string;
-    payload_json: string;
-    expected_remote_version: number | null;
-  }>(
-    "SELECT command_id,status,payload_json,expected_remote_version FROM sync_outbox WHERE store_id=? AND entity_type=? AND entity_id=? AND status IN ('PENDING','SYNCING','CONFLICT','FAILED') ORDER BY local_sequence LIMIT 101",
-    basis.storeId,
-    entityType,
-    basis.entityId,
-  );
+  const commands =
+    layoutReview?.commands ??
+    (await db.getAllAsync<{
+      command_id: string;
+      status: string;
+      payload_json: string;
+      expected_remote_version: number | null;
+    }>(
+      "SELECT command_id,status,payload_json,expected_remote_version FROM sync_outbox WHERE store_id=? AND entity_type=? AND entity_id=? AND status IN ('PENDING','SYNCING','CONFLICT','FAILED') ORDER BY local_sequence LIMIT 101",
+      basis.storeId,
+      entityType,
+      basis.entityId,
+    ));
   if (!conflict) {
     if (current.syncState === "CONFLICT")
       block(
@@ -275,7 +309,9 @@ export async function readStoreConflictReview(
         : "Plusieurs conflits concernent cette donnée. Examinez-les dans Synchronisation avant de décider.",
     );
   else if (
-    current.syncState !== "CONFLICT" ||
+    (input.kind === "STORE_LAYOUT"
+      ? !["CONFLICT", "ERROR"].includes(current.syncState)
+      : current.syncState !== "CONFLICT") ||
     !remote ||
     remote.storeId !== basis.storeId ||
     remote.id !== basis.entityId ||
@@ -302,6 +338,18 @@ export async function readStoreConflictReview(
   else if (commands.some((c) => c.status === "SYNCING"))
     block(
       "Un envoi est en cours. Attendez sa fin avant de choisir une version.",
+    );
+  if (
+    input.kind === "STORE_LAYOUT" &&
+    conflict &&
+    (!layoutReview?.canResolve ||
+      !remote ||
+      JSON.stringify(storeConflictLayoutBasis(remote)) !==
+        JSON.stringify(basis.layout))
+  )
+    block(
+      layoutReview?.reason ??
+        "Le plan ou son contexte a changé. Relisez les versions avant de décider.",
     );
   if (settingsReview && !settingsReview.canResolve)
     block(settingsReview.reason!);
@@ -357,27 +405,30 @@ export async function readStoreConflictReview(
     (!settingsReview || settingsReview.canResolve) &&
     (!eventReview || eventReview.ready) &&
     (!needReview || needReview.ready) &&
-    (!commercialReview || commercialReview.ready);
+    (!commercialReview || commercialReview.ready) &&
+    (!layoutReview || layoutReview.canResolve);
   const canKeepLocal =
     groupAllowsDecision &&
     !!remote &&
-    (cataloguePolicy
-      ? cataloguePolicy.canKeep
-      : commercialDecisionPolicy
-        ? commercialDecisionPolicy.canKeep
-        : commercialPolicy
-          ? commercialPolicy.canKeep
-          : needPolicy
-            ? needPolicy.canKeep
-            : eventReview
-              ? eventReview.canKeepLocal
-              : input.kind === "SETTINGS" ||
-                (!!localEvent &&
-                  !!remoteEvent &&
-                  localEvent.source === "USER" &&
-                  remoteEvent.source === "USER" &&
-                  localEvent.status === "CLOSED" &&
-                  sameStoreEventCapture(localEvent, remoteEvent)));
+    (layoutReview
+      ? layoutReview.canResolve
+      : cataloguePolicy
+        ? cataloguePolicy.canKeep
+        : commercialDecisionPolicy
+          ? commercialDecisionPolicy.canKeep
+          : commercialPolicy
+            ? commercialPolicy.canKeep
+            : needPolicy
+              ? needPolicy.canKeep
+              : eventReview
+                ? eventReview.canKeepLocal
+                : input.kind === "SETTINGS" ||
+                  (!!localEvent &&
+                    !!remoteEvent &&
+                    localEvent.source === "USER" &&
+                    remoteEvent.source === "USER" &&
+                    localEvent.status === "CLOSED" &&
+                    sameStoreEventCapture(localEvent, remoteEvent)));
   const basisHash = await digest(
     JSON.stringify({
       content,
@@ -390,6 +441,7 @@ export async function readStoreConflictReview(
             conflicts: catalogueGroup?.conflicts,
           }
         : {}),
+      ...(layoutReview ? { layout: layoutReview.hash } : {}),
       ...(settingsReview ? { settings: settingsReview.hash } : {}),
       ...(eventReview ? { event: eventReview.hash } : {}),
       ...(needReview ? { need: needReview.hash } : {}),
@@ -418,6 +470,7 @@ export async function readStoreConflictReview(
                 : !!remote,
     cataloguePolicy,
     catalogueConflicts: catalogueGroup?.conflicts,
+    layoutReview,
     settingsReview,
     eventReview,
     commercialPolicy,

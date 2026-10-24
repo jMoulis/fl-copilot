@@ -151,6 +151,7 @@ export async function readStoreLayoutConflict(
     JSON.stringify({ actorId, anchor, row, group, commands, history }),
   );
   return {
+    anchor,
     local,
     remote,
     group,
