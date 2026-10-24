@@ -15,6 +15,7 @@ import {
   executeAnalyticsQuery,
   type AnalyticsQueryPoint,
   salesMeasuresSchema,
+  salesConcentrationPeriodSchema,
 } from "@fl-copilot/analytics-core";
 import { departmentEvidencePerformanceSchema } from "./daily-evidence.js";
 const performanceSchema = departmentEvidencePerformanceSchema.extend({
@@ -50,6 +51,18 @@ const coverage = z.strictObject({
   missingDays: z.number().int().nonnegative(),
   missingDateExamples: z.array(z.string().date()).max(14),
 });
+const concentrationEvidenceIds = z.strictObject({
+  availableProductCount: z.string(),
+  totalSalesValue: z.string(),
+  top20ProductCount: z.string(),
+  top20SalesSharePercent: z.string(),
+  productsFor80Percent: z.string(),
+  productShareFor80Percent: z.string(),
+  actualSalesShareFor80Percent: z.string(),
+});
+const concentrationPeriodResult = salesConcentrationPeriodSchema.extend({
+  evidenceIds: concentrationEvidenceIds,
+});
 export const analyticsQueryResultSchema = z.strictObject({
   query: copilotAnalyticsQuerySchema,
   status: z.enum(["AVAILABLE", "EMPTY", "UNAVAILABLE", "LIMIT_EXCEEDED"]),
@@ -61,6 +74,12 @@ export const analyticsQueryResultSchema = z.strictObject({
   nextOffset: z.number().int().nonnegative().nullable(),
   unresolvedProductIds: z.array(z.uuid()).max(100),
   scope: z.literal("OBSERVED_PRODUCT_DAYS_CURRENT_CATALOGUE"),
+  salesConcentration: z
+    .strictObject({
+      current: concentrationPeriodResult,
+      reference: concentrationPeriodResult.nullable(),
+    })
+    .optional(),
   rows: z
     .array(
       z.strictObject({
@@ -504,6 +523,58 @@ export async function readAnalyticsQuery(
       },
     };
   }
+  const concentration = result.salesConcentration;
+  const salesConcentration = concentration
+    ? {
+        current: concentrationEvidence(
+          concentration.current,
+          "current",
+          query.currentPeriod,
+        ),
+        reference:
+          concentration.reference && query.referencePeriod
+            ? concentrationEvidence(
+                concentration.reference,
+                "reference",
+                query.referencePeriod,
+              )
+            : null,
+      }
+    : undefined;
+  function concentrationEvidence(
+    value: z.infer<typeof salesConcentrationPeriodSchema>,
+    side: "current" | "reference",
+    dates: { start: string; end: string },
+  ) {
+    const labels = {
+      availableProductCount: "Produits à CA renseigné",
+      totalSalesValue: "CA net renseigné du périmètre (€)",
+      top20ProductCount: "Nombre de produits du premier cinquième",
+      top20SalesSharePercent:
+        "Part du CA portée par les premiers 20 % des produits (%)",
+      productsFor80Percent: "Nombre minimal de produits atteignant 80 % du CA",
+      productShareFor80Percent:
+        "Part des produits nécessaire pour atteindre 80 % du CA (%)",
+      actualSalesShareFor80Percent:
+        "Part du CA atteinte au franchissement du seuil de 80 % (%)",
+    } as const;
+    const detail = `Concentration du CA net enregistré du ${dates.start} au ${dates.end}, sur tous les produits du périmètre avant pagination. ${value.availableProductCount} produits à CA renseigné, ${value.missingProductCount} sans valeur exploitable, ${value.partialProductCount} aux journées incomplètes, ${value.negativeProductCount} à CA négatif. Premier cinquième arrondi au nombre entier supérieur ; seuil de 80 % testé en décimales exactes avant arrondi des pourcentages. Les périodes sont classées indépendamment. Aucune absence n’est remplacée par zéro, aucun jour manquant n’est estimé, aucun kg n’est additionné à des pièces. Ce n’est pas une certification de la couverture complète du rayon. ${value.reason === "NEGATIVE_SALES" ? "Les CA négatifs empêchent l’interprétation de Pareto ; pourcentages indisponibles." : value.reason ? "Le total positif nécessaire à Pareto est indisponible." : "Une concentration observée ne prouve ni une cause ni une prévision."}`;
+    const ids = Object.fromEntries(
+      Object.entries(labels).map(([key, label]) => {
+        const v = value[key as keyof typeof labels];
+        return [
+          key,
+          add(
+            `${sourceId}/concentration/${side}/${key}`,
+            `${label} — ${dates.start} au ${dates.end}`,
+            v === null ? null : String(v),
+            detail,
+          ),
+        ];
+      }),
+    );
+    return { ...value, evidenceIds: concentrationEvidenceIds.parse(ids) };
+  }
   add(
     `${sourceId}/scope`,
     "Périmètre du classement",
@@ -513,6 +584,7 @@ export async function readAnalyticsQuery(
   );
   return analyticsQueryResultSchema.parse({
     ...result,
+    ...(salesConcentration ? { salesConcentration } : {}),
     rows: resultRows,
     status: !result.totalGroups
       ? result.unknownConditionGroups

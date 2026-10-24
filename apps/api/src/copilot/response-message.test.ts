@@ -87,6 +87,21 @@ it("binds assistant identity and parent without substituting daily figures for a
     }).text,
   ).not.toContain("poisoned");
 });
+it("preserves the output-limit explanation in the persisted message without inviting an identical retry or accepting provider prose", () => {
+  const f = fixture();
+  const result = buildCopilotResponseMessage({
+    ...f,
+    generation: {
+      ...f.generation,
+      outputLimited: true,
+      response: { ...f.generation.response, summary: "private provider body" },
+    },
+  });
+  expect(result.text).toContain("synthèse des principaux résultats");
+  expect(result.text).not.toContain("réessayer");
+  expect(result.text).not.toContain("private provider body");
+  expect(result.text).not.toContain("Ventes : 25");
+});
 it("rejects foreign scope, wrong parent role, stale timestamp and mismatched question", () => {
   const f = fixture();
   expect(() =>

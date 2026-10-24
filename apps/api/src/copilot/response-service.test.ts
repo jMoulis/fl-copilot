@@ -481,7 +481,11 @@ it.each([
     expect(result.mode).toBe("FALLBACK");
     expect(result.response.facts).toEqual([]);
     expect(result.response.recommendations).toEqual([]);
-    expect(result.response.summary).toContain("réessayer");
+    expect(result.response.summary).toContain(
+      code === "COPILOT_AI_OUTPUT_LIMIT" ? "synthèse" : "réessayer",
+    );
+    if (code === "COPILOT_AI_OUTPUT_LIMIT")
+      expect(result.response.summary).not.toContain("réessayer");
     expect(onFailure).toHaveBeenCalledTimes(1);
     expect(onFailure).toHaveBeenCalledWith({
       requestId: r.requestId,
