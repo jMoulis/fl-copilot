@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current M7/M8 increment — 24 October: private advice decision review
+
+Complete the existing private decision writer's group/cache/history-prefix review and hash; recheck authority/cancellation through commit and retain an independent local comparison capture. Keep chosen intent, immutable source and physical execution separate. Read the returned state within the transaction so read failure rolls back rather than falsely failing after commit. Reuse the native comparison hook in chat/sync; preserve draft fields across focus and bound post-send parent refresh. See `../qa/M7_RECOMMENDATION_DECISION_CONFLICTS_2026_10_24.md`. No new model tool, business permission, migration or API runtime behavior. Exact-head CI, grouped delivery, physical acceptance and all complete V1/M8 gates remain required.
+
 ## Current M7/M8 increment — 24 October: private conversation metadata and deletion
 
 Keep logical deletion monotone across pull, acknowledgement and explicit metadata choice. Compare the complete current owner/store group and verified cache, bind the reviewed hash and context through commit, retain immutable messages/source references/pending intent, and suppress replay of deleted questions. Expose recovery in synchronization and private conversation history, including ERROR with verified cache. Preserve an independent local comparison capture and exact remote precondition; no universal writer, new model permission or schema. See `../qa/M7_CONVERSATION_CONFLICTS_2026_10_24.md`; exact-head CI, grouped native delivery and physical acceptance remain required. Full V1/M8 and seven workstream states stay open.

@@ -1,3 +1,7 @@
+import { nativeRecommendationDecisionConflictFixture } from "../../../../scripts/test-recommendation-decision-conflict-fixtures";
+import { RecommendationDecisionConflict } from "../copilot/recommendation-decision-conflict";
+import { applyDecisionRecord } from "../copilot/decision-repository";
+import { recommendationDecisionSchema } from "@fl-copilot/domain";
 import { nativeConversationConflictFixture } from "../../../../scripts/test-conversation-conflict-fixtures";
 import { ConversationConflict } from "../copilot/conversation-conflict";
 import { applyCopilotRecord } from "../copilot/conversation-repository";
@@ -59,6 +63,7 @@ function ConversationRouteForTest({ conflict }: { conflict: SyncConflict }) {
   });
 }
 const kinds = [
+  "RECOMMENDATION",
   "CONVERSATION",
   "SETTINGS",
   "FIELD_EVENT",
@@ -74,6 +79,8 @@ const kinds = [
 ] as const;
 type Kind = (typeof kinds)[number];
 const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
+  if (kind === "RECOMMENDATION")
+    return nativeRecommendationDecisionConflictFixture();
   if (kind === "SETTINGS" || kind === "FIELD_EVENT")
     return nativeStoreConflictFixture(kind);
   if (kind === "CONVERSATION") return nativeConversationConflictFixture();
@@ -86,6 +93,7 @@ const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
   return nativeCommercialConflictFixture(kind, ":memory:", refusal);
 };
 const components = {
+  RECOMMENDATION: RecommendationDecisionConflict,
   CONVERSATION: ConversationRouteForTest,
   KNOWLEDGE: KnowledgeRouteForTest,
   SETTINGS: StoreContextConflict,
@@ -101,6 +109,7 @@ const components = {
 };
 const component = (kind: Kind) => components[kind];
 const entityTables = {
+  RECOMMENDATION: "copilot_decisions",
   CONVERSATION: "copilot_conversations",
   KNOWLEDGE: "copilot_knowledge",
   SETTINGS: "store_context_settings",
@@ -111,6 +120,7 @@ const entityTables = {
   COMMERCIAL_EXECUTION: "commercial_execution_tasks",
 };
 const histories = {
+  RECOMMENDATION: "sync_conflicts",
   CONVERSATION: "copilot_conversation_history",
   KNOWLEDGE: "sync_conflicts",
   SETTINGS: "store_context_history",
@@ -125,6 +135,7 @@ const histories = {
   COMMERCIAL_EXECUTION: "commercial_execution_history",
 };
 const readable = {
+  RECOMMENDATION: "Tester sur une TG plus petite.",
   CONVERSATION: "Titre local",
   KNOWLEDGE: "Pratique locale",
   SETTINGS: "Asnières",
@@ -139,6 +150,15 @@ const readable = {
   COMMERCIAL_EXECUTION: "plan version",
 };
 const pulls = {
+  RECOMMENDATION: (db: OutboxDatabase, storeId: string, payload: unknown) =>
+    applyDecisionRecord(
+      db,
+      {
+        storeId,
+        ownerId: (runtime.session as { user: { id: string } }).user.id,
+      },
+      payload,
+    ),
   CONVERSATION: (db: OutboxDatabase, storeId: string, payload: unknown) =>
     applyCopilotRecord(
       db,
@@ -182,6 +202,12 @@ vi.mock("@/dates/calendar", () => import("../dates/calendar"));
 vi.mock("../commercial/original-button", () => ({
   CommercialOriginalButton: "OriginalButton",
 }));
+vi.mock("../auth/auth-provider", () => ({
+  useAuth: () => ({ session: runtime.session }),
+}));
+vi.mock("../providers/database-provider", () => ({
+  useLocalDatabase: () => runtime.database,
+}));
 vi.mock("@/auth/auth-provider", () => ({
   useAuth: () => ({ session: runtime.session }),
 }));
@@ -196,6 +222,7 @@ vi.mock("@/components/ui", () => ({
   SecondaryButton: "Button",
   InlineAlert: "Alert",
 }));
+vi.mock("../copilot/chat-text", () => ({ ChatText: "Text" }));
 vi.mock("react-native", () => ({
   Text: "Text",
   View: "View",
@@ -447,13 +474,27 @@ describe.each(kinds)("%s native comparison", (kind) => {
       action.props.onPress();
     });
     expect(s.count(historyTable)).toBe(before + 1);
-    expect(runtime.back).toHaveBeenCalledTimes(kind === "KNOWLEDGE" ? 2 : 1);
+    expect(runtime.back).toHaveBeenCalledTimes(
+      kind === "KNOWLEDGE" ? 2 : kind === "RECOMMENDATION" ? 0 : 1,
+    );
     expect(runtime.sync).toHaveBeenCalledTimes(1);
   });
   it("shows a targeted stale error, clears consent and requires rereading before another choice", async () => {
     const s = await setup(kind);
     await act(async () => host("Switch").props.onValueChange(true));
     let remote = { ...s.review.remote, version: 3 };
+    if (kind === "RECOMMENDATION") {
+      const previous = recommendationDecisionSchema.parse(s.review.remote);
+      remote = recommendationDecisionSchema.parse({
+        ...previous,
+        version: 3,
+        revisions: [
+          ...previous.revisions,
+          { ...previous.revisions[0]!, version: 2 },
+          { ...previous.revisions[0]!, version: 3 },
+        ],
+      });
+    }
     if (kind === "COMMERCIAL_PLAN") {
       const p = commercialWeekPlanSchema.parse(s.review.remote);
       remote = await buildCommercialWeekPlan(
@@ -483,7 +524,9 @@ describe.each(kinds)("%s native comparison", (kind) => {
     expect(
       s.db.prepare(`SELECT remote_version FROM ${table}`).get()!.remote_version,
     ).toBe(3);
-    expect(runtime.back).toHaveBeenCalledTimes(kind === "KNOWLEDGE" ? 2 : 1);
+    expect(runtime.back).toHaveBeenCalledTimes(
+      kind === "KNOWLEDGE" ? 2 : kind === "RECOMMENDATION" ? 0 : 1,
+    );
   });
   it.each([
     "OWNER",
@@ -625,11 +668,13 @@ describe.each(kinds)("%s native comparison", (kind) => {
         .prepare(`SELECT sync_state FROM ${table} WHERE store_id=?`)
         .get(s.scope.storeId)!.sync_state,
     ).toBe("PENDING");
-    if (kind === "KNOWLEDGE")
+    if (kind === "KNOWLEDGE" || kind === "RECOMMENDATION")
       expect(hosts("Alert").map((n) => n.props.title)).toEqual([
         "Comparaison enregistrée",
       ]);
     else expect(hosts("Alert")).toHaveLength(0);
-    expect(runtime.back).toHaveBeenCalledTimes(1);
+    expect(runtime.back).toHaveBeenCalledTimes(
+      kind === "RECOMMENDATION" ? 0 : 1,
+    );
   });
 });

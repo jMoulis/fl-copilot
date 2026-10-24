@@ -1,5 +1,7 @@
 # Copilot manual-operation coverage inventory
 
+Current advice-decision exception (24 October): existing native/chat decision confirmation now reviews the complete private group and verified canonical history prefix. KEEP appends one explicit choice to that history; ADOPT preserves it without an enqueued choice. Current scope/cancellation, independent comparison capture, ERROR recovery and parent/form lifetime are checked in the existing services. No new model capability or physical execution is inferred. See `../qa/M7_RECOMMENDATION_DECISION_CONFLICTS_2026_10_24.md`; native delivery, owner acceptance and global parity remain open.
+
 Current native private-history exception (24 October): conversation title/archive conflicts have a current-group/hash-bound review and preserve every known logical deletion; the menu also reaches verified-cache ERROR recovery for a deleted conversation. No conversation metadata conflict tool is newly granted to the model. Source files, confirmed memory and business actions remain independent. See `../qa/M7_CONVERSATION_CONFLICTS_2026_10_24.md`; grouped native and actual owner/device acceptance remain pending.
 
 ## Current reading rule — 24 October 2026

@@ -229,7 +229,7 @@ it.each([true, false])(
       ).toHaveLength(useLocal ? 1 : 0);
       expect(
         await f.db.getFirstAsync(
-          "SELECT COUNT(*) AS n FROM sync_conflicts WHERE status IN ('RESOLVED_LOCAL','RESOLVED_REMOTE')",
+          "SELECT COUNT(*) AS n FROM sync_conflicts WHERE status IN ('RESOLVED_LOCAL','RESOLVED_REMOTE') AND conflict_type!='COPILOT_DECISION_REVIEW_CAPTURE'",
         ),
       ).toEqual({ n: 1 });
     } finally {
@@ -276,36 +276,21 @@ it("requires a fresh comparison after a newer pull and permits remote adoption f
     f.db.db.close();
   }
 });
-it.each(["SYNCING", "MULTIPLE"])(
-  "refuses incomplete conflict comparisons (%s)",
-  async (mode) => {
-    const f = await conflicting();
-    try {
-      if (mode === "SYNCING")
-        await f.db.runAsync(
-          "UPDATE sync_outbox SET status='SYNCING' WHERE entity_id=?",
-          f.recommendationId,
-        );
-      else
-        await f.db.runAsync(
-          "INSERT INTO sync_conflicts(id,store_id,entity_type,entity_id,local_payload_json,remote_payload_json,local_expected_version,remote_version,conflict_type,status,created_at) VALUES(?,?,?,?,?,?,NULL,1,'OTHER','OPEN',?)",
-          randomUUID(),
-          f.storeId,
-          "copilot_decision",
-          f.recommendationId,
-          JSON.stringify((await f.repo.open(f.card)).decision),
-          JSON.stringify(f.remote),
-          "2026-10-18T12:00:00.000Z",
-        );
-      const s = await f.repo.open(f.card);
-      await expect(f.repo.resolve(f.card, false, s.review)).rejects.toThrow(
-        mode === "SYNCING" ? "SYNCING" : "REVIEW",
-      );
-    } finally {
-      f.db.db.close();
-    }
-  },
-);
+it("refuses a conflict resolution while a command is in flight", async () => {
+  const f = await conflicting();
+  try {
+    await f.db.runAsync(
+      "UPDATE sync_outbox SET status='SYNCING' WHERE entity_id=?",
+      f.recommendationId,
+    );
+    const s = await f.repo.open(f.card);
+    await expect(f.repo.resolve(f.card, false, s.review)).rejects.toThrow(
+      "SYNCING",
+    );
+  } finally {
+    f.db.db.close();
+  }
+});
 
 it("keeps one workflow when the same advice is prepared again in a later answer", async () => {
   const { buildRecommendationTrackingMessages } =
