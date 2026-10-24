@@ -1,5 +1,9 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — correctifs SDK 57 avant recette native groupée
+
+Le contrôle gratuit avant EAS a signalé onze dépendances Expo en retard. Elles sont alignées sur les correctifs du même SDK, avec le runtime Metro explicitement compatible avec le routeur. Le contrôle Expo repasse ; les tests existants et les exports iOS/Android passent localement. Aucun build payant n’est encore soumis et aucune recette téléphone n’est présumée. Voir [la QA et les limites](../qa/M8_EXPO57_PATCH_READINESS_2026_10_24.md). La PR 375 est fusionnée (`8c72dfb`), avec contrôles push/PR/master verts, chacun **5 192 / 6** ; son déploiement API est suivi séparément. Cet alignement mobile attend ses propres CI et la livraison native groupée. **1/3/4/5/6/7 en cours ; 2 code prêt.**
+
 ## 24 octobre — proposer dans le chat une offre lue dans l’original
 
 Activation en validation après la base PR 374 fusionnée (`12dcfbe`, deux CI exactes **5 177 / 6**). Le même outil prépare une offre depuis un original effectivement remis au modèle pendant l’échange ; le serveur fournit l’empreinte et le responsable confirme dans le chat avant l’écriture canonique locale/synchronisée. Aucun passage obligatoire par une extraction ou la revue de toutes les pages. Capacité 1 historique conservée ; source format 2 et capacité 2 exigés pour ce chemin. La carte affiche l’extrait et ouvre l’original privé, sans fausse confiance ni métadonnée IA. Voir [la QA](../qa/M7_ORIGINAL_OFFER_PROPOSALS_2026_10_24.md).
