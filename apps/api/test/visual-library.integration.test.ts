@@ -1,3 +1,26 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { visualConflictKinds } from "../../../scripts/test-visual-conflict-fixtures";
+import { receiptReviewDigest } from "../../../scripts/test-receipt-publication-sqlite";
+import { VisualTestDatabase } from "../../../scripts/test-visual-sqlite";
+import { runLocalMigrations } from "../../mobile/src/db/migrations";
+import { VisualLibraryRepository } from "../../mobile/src/products/visual-library-repository";
+import { VisualConflictRepository } from "../../mobile/src/products/visual-conflict-repository";
+import { ConflictRepository } from "../../mobile/src/sync/conflict-repository";
+import { OutboxRepository } from "../../mobile/src/sync/outbox-repository";
+import { MobileSyncService } from "../../mobile/src/sync/sync-service";
+import {
+  bootstrapQuerySchema,
+  syncPullQuerySchema,
+  syncPushRequestSchema,
+} from "@fl-copilot/sync-contracts";
+import {
+  visualEntitySchemas,
+  type VisualEntityMap,
+  type VisualEntityType,
+} from "@fl-copilot/domain";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
@@ -86,6 +109,274 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         payload: f.link,
       },
     ];
+    for (const kind of visualConflictKinds)
+      it.each([true, false])(
+        `${kind} resolves a complete real group on its latest pull, restores metadata on another device and reopens offline (local=%s)`,
+        async (local) => {
+          const { f, push, db } = await initialize(),
+            dir = mkdtempSync(join(tmpdir(), "fl-visual-mongo-")),
+            path = join(dir, "restored.db"),
+            a = new VisualTestDatabase(new DatabaseSync(":memory:")),
+            b = new VisualTestDatabase(new DatabaseSync(":memory:")),
+            c = new VisualTestDatabase(new DatabaseSync(path)),
+            pull = createMongoSyncPullService(database),
+            boot = createMongoSyncBootstrapService(database),
+            bDevice = randomUUID(),
+            cDevice = randomUUID();
+          let cClosed = false;
+          const synchronize = (device: VisualTestDatabase, deviceId: string) =>
+            new MobileSyncService(
+              device,
+              {
+                push: (r: SyncPushRequest) =>
+                  push.push(r, randomUUID(), f.actorId),
+                pull: (storeId: string, cursor: string) =>
+                  pull.pull(
+                    storeId,
+                    syncPullQuerySchema.parse({
+                      cursor,
+                      visualLibrary: "true",
+                    }),
+                  ),
+                bootstrap: () =>
+                  boot.bootstrap(
+                    {
+                      storeId: f.storeId,
+                      userId: f.actorId,
+                      storeName: "Test",
+                      role: "MANAGER",
+                      sessionId: randomUUID(),
+                      deviceId,
+                    },
+                    bootstrapQuerySchema.parse({ visualLibrary: "true" }),
+                  ),
+              },
+              {
+                deviceId,
+                appVersion: "test",
+                visualLibrary: true,
+                copilotOwnerId: f.actorId,
+              },
+            ).sync(f.storeId);
+          try {
+            expect(
+              (
+                await push.push(request(f, entries(f)), "initial", f.actorId)
+              ).results.every((r) => r.status === "APPLIED"),
+            ).toBe(true);
+            for (const device of [a, b, c]) await runLocalMigrations(device);
+            await synchronize(a, f.deviceId);
+            await synchronize(b, bDevice);
+            const repoA = new VisualLibraryRepository(a),
+              repoB = new VisualLibraryRepository(b),
+              initial = visualEntitySchemas[kind].parse(
+                kind === "visual_asset"
+                  ? f.asset
+                  : kind === "visual_identity"
+                    ? f.identity
+                    : f.link,
+              ) as VisualEntityMap[VisualEntityType],
+              remote = rebaseVisualChoice(
+                kind,
+                initial,
+                initial,
+                f.actorId,
+                "2026-10-20T11:00:00.000Z",
+              ),
+              pending = rebaseVisualChoice(
+                kind,
+                initial,
+                initial,
+                f.actorId,
+                "2026-10-20T12:00:00.000Z",
+              );
+            await repoA.save(kind, remote, {
+              storeId: f.storeId,
+              actorId: f.actorId,
+              deviceId: f.deviceId,
+              commandId: randomUUID(),
+              expectedLocalVersion: 1,
+              canWrite: true,
+            });
+            expect(await synchronize(a, f.deviceId)).toMatchObject({
+              pushed: 1,
+              conflicts: 0,
+              failed: 0,
+            });
+            await repoB.save(kind, pending, {
+              storeId: f.storeId,
+              actorId: f.actorId,
+              deviceId: bDevice,
+              commandId: randomUUID(),
+              expectedLocalVersion: 1,
+              canWrite: true,
+            });
+            expect(await synchronize(b, bDevice)).toMatchObject({
+              pushed: 0,
+              conflicts: 1,
+              failed: 0,
+            });
+            const first = (
+                await new ConflictRepository(b).listOpenForEntity(
+                  f.storeId,
+                  kind,
+                  initial.id,
+                )
+              )[0]!,
+              original = (await new OutboxRepository(b).getById(
+                first.commandId!,
+              ))!,
+              clone = await new OutboxRepository(b).enqueue({
+                ...original,
+                commandId: randomUUID(),
+              });
+            await new OutboxRepository(b).markSyncing(clone.commandId);
+            const collision = await push.push(
+              syncPushRequestSchema.parse({
+                syncProtocolVersion: 1,
+                appVersion: "test",
+                deviceId: bDevice,
+                storeId: f.storeId,
+                commands: [
+                  {
+                    commandId: clone.commandId,
+                    localSequence: clone.localSequence,
+                    type: clone.commandType,
+                    entityType: kind,
+                    entityId: clone.entityId,
+                    expectedRemoteVersion: clone.expectedRemoteVersion,
+                    createdAt: clone.createdAt,
+                    payload: clone.payload,
+                  },
+                ],
+              }),
+              "second-conflict",
+              f.actorId,
+            );
+            expect(collision.results[0]).toMatchObject({
+              status: "CONFLICT",
+              remoteVersion: 2,
+            });
+            await new ConflictRepository(b).recordPushConflict(
+              clone,
+              collision.results[0]!,
+            );
+            await new OutboxRepository(b).markConflict(
+              clone.commandId,
+              "VISUAL_VERSION_CONFLICT",
+            );
+            const latest = rebaseVisualChoice(
+              kind,
+              remote,
+              remote,
+              f.actorId,
+              "2026-10-20T14:00:00.000Z",
+            );
+            await repoA.save(kind, latest, {
+              storeId: f.storeId,
+              actorId: f.actorId,
+              deviceId: f.deviceId,
+              commandId: randomUUID(),
+              expectedLocalVersion: 2,
+              canWrite: true,
+            });
+            await synchronize(a, f.deviceId);
+            await synchronize(b, bDevice);
+            const conflicts = new VisualConflictRepository(
+                b,
+                receiptReviewDigest,
+                () => "2026-10-20T15:00:00.000Z",
+              ),
+              review = await conflicts.review(f.storeId, first.id, f.actorId);
+            expect(review.group.conflicts).toHaveLength(2);
+            expect(review.remote).toEqual(latest);
+            expect(review.canKeep).toBe(true);
+            expect(review.canAdopt).toBe(true);
+            const actionId = randomUUID();
+            await conflicts.resolve(f.storeId, first.id, local, {
+              actorId: f.actorId,
+              deviceId: bDevice,
+              commandId: actionId,
+              reviewHash: review.hash,
+              rightsConfirmed: true,
+              canResolve: () => true,
+            });
+            await synchronize(b, bDevice);
+            await synchronize(c, cDevice);
+            const chosen = (await repoB.get(kind, f.storeId, initial.id))!,
+              restored = (await new VisualLibraryRepository(c).get(
+                kind,
+                f.storeId,
+                initial.id,
+              ))!;
+            expect(chosen.entity.version).toBe(local ? 4 : 3);
+            expect(chosen.syncState).toBe("SYNCED");
+            expect(restored.entity).toEqual(chosen.entity);
+            expect(restored.remoteVersion).toBe(chosen.entity.version);
+            expect(chosen.entity.createdBy).toBe(initial.createdBy);
+            expect(chosen.entity.createdAt).toBe(initial.createdAt);
+            expect(
+              await new ConflictRepository(b).listOpenForEntity(
+                f.storeId,
+                kind,
+                initial.id,
+              ),
+            ).toEqual([]);
+            const history = await b.getFirstAsync<{
+              local_json: string;
+              remote_json: string;
+            }>(
+              "SELECT local_json,remote_json FROM visual_conflict_history WHERE action_id=?",
+              actionId,
+            );
+            expect(JSON.parse(history!.local_json)).toEqual(pending);
+            expect(JSON.parse(history!.remote_json)).toEqual(latest);
+            const count = await db
+              .collection("visualLibraryHistory")
+              .countDocuments({
+                storeId: f.storeId,
+                entityType: kind,
+                entityId: initial.id,
+              });
+            expect(count).toBe(local ? 4 : 3);
+            await synchronize(b, bDevice);
+            expect(
+              await db.collection("visualLibraryHistory").countDocuments({
+                storeId: f.storeId,
+                entityType: kind,
+                entityId: initial.id,
+              }),
+            ).toBe(count);
+            c.raw.close();
+            cClosed = true;
+            const offline = new VisualTestDatabase(new DatabaseSync(path)),
+              fetch = globalThis.fetch;
+            globalThis.fetch = async () => {
+              throw Error("OFFLINE");
+            };
+            try {
+              expect(
+                (await new VisualLibraryRepository(offline).get(
+                  kind,
+                  f.storeId,
+                  initial.id,
+                ))!.entity,
+              ).toEqual(chosen.entity);
+              expect(
+                await new OutboxRepository(offline).listPending(f.storeId),
+              ).toEqual([]);
+            } finally {
+              globalThis.fetch = fetch;
+              offline.raw.close();
+            }
+          } finally {
+            a.raw.close();
+            b.raw.close();
+            if (!cClosed) c.raw.close();
+            rmSync(dir, { recursive: true, force: true });
+          }
+        },
+      );
     it("persists explicit approved links idempotently and negotiates metadata for bootstrap/pull", async () => {
       const { f, push, db } = await initialize(),
         input = request(f, entries(f));
