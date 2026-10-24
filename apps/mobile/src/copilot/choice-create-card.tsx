@@ -35,10 +35,14 @@ export function ChoiceCreateCard({
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
   const locked = useRef(false),
+    generation = useRef(0),
     alive = useRef(true),
     abort = useRef<AbortController | undefined>(undefined);
   useEffect(() => {
     alive.current = true;
+    generation.current += 1;
+    locked.current = false;
+    setSaving(false);
     let active = true;
     setState(undefined);
     setShowSource(false);
@@ -62,6 +66,8 @@ export function ChoiceCreateCard({
   }, [controller, message]);
   const confirm = async () => {
     if (locked.current || !canConfirm || !critical || !applicable) return;
+    const epoch = generation.current;
+    const isCurrent = () => alive.current && generation.current === epoch;
     locked.current = true;
     setSaving(true);
     setError(undefined);
@@ -76,19 +82,21 @@ export function ChoiceCreateCard({
         },
         cancellation.signal,
       );
-      if (alive.current) setState(value);
+      if (isCurrent()) setState(value);
     } catch {
-      if (alive.current) {
+      if (isCurrent()) {
         setError(
           "La sélection n’a pas pu être enregistrée. Vérifiez la synchronisation et demandez un nouvel aperçu.",
         );
         const s = await controller.open(message).catch(() => undefined);
-        if (alive.current && s) setState(s);
+        if (isCurrent() && s) setState(s);
       }
     } finally {
-      locked.current = false;
+      if (isCurrent()) {
+        locked.current = false;
+        setSaving(false);
+      }
       if (abort.current === cancellation) abort.current = undefined;
-      if (alive.current) setSaving(false);
     }
   };
   return (
@@ -121,8 +129,10 @@ export function ChoiceCreateCard({
           </Text>
           <Text>Note : {state.content.input.note || "Sans note"}</Text>
           <Text>
-            Source extraite à confirmer · page{" "}
-            {state.content.basis.offer.pageNumber}
+            {isCommercialOriginalSource(state.content.input.source)
+              ? "Extrait du PDF original à vérifier"
+              : "Source extraite à confirmer"}{" "}
+            · page {state.content.basis.offer.pageNumber}
           </Text>
           <Pressable
             accessibilityRole="button"
@@ -131,11 +141,19 @@ export function ChoiceCreateCard({
             onPress={() => setShowSource((v) => !v)}
           >
             <Text style={{ color: colors.forest }}>
-              {showSource
-                ? "Masquer les informations extraites"
-                : "Comparer avec les informations extraites"}
+              {isCommercialOriginalSource(state.content.input.source)
+                ? showSource
+                  ? "Masquer l’extrait du PDF"
+                  : "Voir l’extrait du PDF"
+                : showSource
+                  ? "Masquer les informations extraites"
+                  : "Comparer avec les informations extraites"}
             </Text>
           </Pressable>
+          {showSource &&
+          isCommercialOriginalSource(state.content.basis.offer.source) ? (
+            <Text selectable>{state.content.basis.offer.source.excerpt}</Text>
+          ) : null}
           {showSource
             ? [
                 ...state.content.basis.offer.operationFields,

@@ -128,7 +128,7 @@ export class ApiClient {
       storePhotos?: boolean;
       choiceUpdate?: boolean;
       choiceRetention?: boolean;
-      choiceCreate?: boolean;
+      choiceCreate?: boolean | 2;
       offerValidation?: boolean;
       planValidation?: boolean;
       commercialReference?: boolean;
@@ -177,7 +177,10 @@ export class ApiClient {
                   ? { "x-copilot-choice-retention": "1" }
                   : {}),
                 ...(streaming.choiceCreate
-                  ? { "x-copilot-choice-create": "1" }
+                  ? {
+                      "x-copilot-choice-create":
+                        streaming.choiceCreate === 2 ? "2" : "1",
+                    }
                   : {}),
                 ...(streaming.commercialReference
                   ? { "x-copilot-commercial-reference": "1" }

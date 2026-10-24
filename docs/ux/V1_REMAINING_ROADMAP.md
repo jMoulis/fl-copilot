@@ -1,5 +1,9 @@
 # Roadmap V1 — état courant et historique des lots
 
+## Activation en validation — offres de l’original dans le chat
+
+La base PR 374 est fusionnée après deux CI exactes vertes, sans nouvelle livraison native. L’activation suivante branche le même outil de création de choix sur l’original remis au modèle, avec identité produit actuelle, dates libres/semaine suivante, conditions complètes et confirmation directe dans le chat. Les tests contrôlés couvrent la proposition privée et le vrai rédacteur/Outbox jusqu’au plan futur ; ils ne remplacent ni une réponse réelle ni l’acceptation sur téléphone. La livraison groupée API/native et les autres portes V1 restent à franchir. L’extraction en arrière-plan reste disponible et n’est plus un préalable. Voir `../qa/M7_ORIGINAL_OFFER_PROPOSALS_2026_10_24.md`.
+
 ## Actualisation — 24 octobre : le PDF original précède le workflow commercial
 
 La lecture directe et sourcée de l’original est livrée dans l’API PR 372, puis la confirmation d’upload découplée de l’envoi d’événement dans PR 373 (`276bdcb`). Les nouvelles lectures de documents conservent les semaines futures. Build iOS 15 reste inchangé et sa recette humaine reste ouverte ; les anciennes lectures immuables ne sont pas réécrites.

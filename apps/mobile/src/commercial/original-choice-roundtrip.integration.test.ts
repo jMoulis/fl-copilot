@@ -32,6 +32,12 @@ import {
   runMongoMigrations,
 } from "../../../api/src/database/migrations";
 import { ApiClientError } from "../../../../packages/api-client/src/index";
+import { previewChoiceCreate } from "../../../api/src/copilot/choice-create-tool";
+import { buildChoiceCreateProposalMessages } from "../../../api/src/copilot/choice-create-messages";
+import { CopilotChoiceCreateController } from "../copilot/choice-create-controller";
+import { applyCopilotRecord } from "../copilot/conversation-repository";
+import { chatFixture } from "../../../../scripts/test-chat-fixtures";
+import { copilotMessageSchema } from "@fl-copilot/domain";
 import { commercialPdfFixture } from "../../../api/test/fixtures/commercial-pdf";
 import {
   commercialChoiceFixture,
@@ -292,7 +298,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           pageNumber: 2,
           excerpt,
         };
-        const choice = commercialOfferChoiceSchema.parse({
+        let choice = commercialOfferChoiceSchema.parse({
           ...f.choice,
           id: await commercialChoiceId(storeId, source, testChoiceDigest),
           source,
@@ -314,8 +320,85 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         });
         // This test explicitly simulates the manager's confirmation; it is not real pilot approval.
         const choices = new CommercialChoiceRepository(a, testChoiceDigest);
-        for (const c of [choice, otherChoice])
-          await choices.save(c, { commandId: randomUUID(), deviceId });
+        const chat = chatFixture(randomUUID),
+          conversation = { ...chat.conversation, storeId, ownerId },
+          scope = { storeId, ownerId };
+        const user = {
+          ...chat.message,
+          storeId,
+          ownerId,
+          conversationId: conversation.id,
+          attachments: [],
+          text: "Retiens le raisin pour la semaine prochaine",
+        };
+        const assistant = copilotMessageSchema.parse({
+          ...user,
+          id: randomUUID(),
+          role: "ASSISTANT",
+          replyToMessageId: user.id,
+          text: "Voici le choix à confirmer.",
+        });
+        const preview = await previewChoiceCreate(mongo, storeId, {
+          source: choice.source,
+          productId: choice.productId,
+          saleStart: choice.saleStart,
+          saleEnd: choice.saleEnd,
+          mechanism: choice.mechanism,
+          note: choice.note,
+          originalDescription: {
+            operationKind: choice.operationKind,
+            operationLabel: choice.operationLabel,
+            rawProductLabel: choice.rawProductLabel,
+          },
+        });
+        expect(preview.status).toBe("READY");
+        const card = buildChoiceCreateProposalMessages(assistant, [
+          preview,
+        ])[0]!;
+        await a.withExclusiveTransactionAsync(async (tx) => {
+          await applyCopilotRecord(
+            tx,
+            scope,
+            "copilot_conversation",
+            conversation,
+          );
+          for (const message of [user, assistant, card])
+            await applyCopilotRecord(tx, scope, "copilot_message", message);
+        });
+        const controller = new CopilotChoiceCreateController(
+            a,
+            { ...scope, deviceId, canManageCommercialChoices: true },
+            testChoiceDigest,
+            randomUUID,
+          ),
+          review = {
+            criticalFieldsConfirmed: true,
+            applicabilityConfirmed: true,
+          };
+        expect((await controller.open(card)).status).toBe("READY");
+        await expect(
+          controller.confirm(card, {
+            ...review,
+            criticalFieldsConfirmed: false,
+          }),
+        ).rejects.toThrow("REVIEW_REQUIRED");
+        await expect(
+          controller.confirm(
+            {
+              ...card,
+              text: card.text.replace("Prospectus S44", "Forged source"),
+            },
+            review,
+          ),
+        ).rejects.toThrow();
+        expect((await controller.confirm(card, review)).status).toBe(
+          "COMPLETED",
+        );
+        expect((await controller.confirm(card, review)).status).toBe(
+          "COMPLETED",
+        );
+        choice = (await choices.get(storeId, choice.id))!.entity;
+        await choices.save(otherChoice, { commandId: randomUUID(), deviceId });
         read.mockClear();
         requests.length = 0;
         expect(await sync.sync(storeId)).toMatchObject({

@@ -1514,8 +1514,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(request.headers["x-copilot-choice-create"] === "1"
+              ...(["1", "2"].includes(
+                String(request.headers["x-copilot-choice-create"]),
+              )
                 ? {
+                    choiceCreateVersion:
+                      request.headers["x-copilot-choice-create"] === "2" &&
+                      request.headers["x-commercial-source-version"] === "2"
+                        ? (2 as const)
+                        : (1 as const),
                     choiceCreate: async (input) => {
                       await authorize();
                       const result = await previewChoiceCreate(

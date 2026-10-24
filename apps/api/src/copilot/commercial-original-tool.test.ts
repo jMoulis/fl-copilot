@@ -2,6 +2,9 @@ import { randomUUID, createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import {
   copilotResponseSchema,
+  copilotChoiceCreateInputSchema,
+  copilotChoiceCreatePreviewSchema,
+  copilotChoiceCreateModelInputSchema,
   type CopilotOriginalPdfRead,
 } from "@fl-copilot/domain";
 import {
@@ -16,6 +19,7 @@ import {
 import {
   createCommercialOriginalTool,
   bindCommercialOriginalReadings,
+  bindCommercialOriginalChoiceInput,
 } from "./commercial-original-tool";
 import {
   createCopilotAiProvider,
@@ -406,3 +410,467 @@ it.each([false, true])(
     );
   },
 );
+
+it("binds choice sources only after the original is delivered, never accepting a model-supplied hash or nonexistent page", async () => {
+  const f = fixture(),
+    data = await import("../../../../scripts/test-choice-create-fixtures").then(
+      (m) => m.choiceCreateFixture(storeId),
+    );
+  const input = {
+    ...data.input,
+    source: {
+      kind: "PDF_ORIGINAL",
+      sourceDocumentId: f.sourceDocumentId,
+      pageNumber: 2,
+      excerpt: "Semaine 44 : avocat 2,50 euros",
+    },
+    originalDescription: {
+      operationKind: "PROSPECTUS",
+      operationLabel: "Prospectus semaine 44",
+      rawProductLabel: "Avocat",
+    },
+  };
+  expect(() =>
+    bindCommercialOriginalChoiceInput(input, f.factory.documents),
+  ).toThrow("CHOICE_CREATE_ORIGINAL_NOT_READ");
+  const originalInput = { sourceDocumentId: f.sourceDocumentId },
+    output = await f.factory.tool.execute!(originalInput, call);
+  expect(() =>
+    bindCommercialOriginalChoiceInput(input, f.factory.documents),
+  ).toThrow("CHOICE_CREATE_ORIGINAL_NOT_READ");
+  await f.factory.tool.toModelOutput!({
+    input: originalInput,
+    output,
+    toolCallId: call.toolCallId,
+  });
+  expect(
+    bindCommercialOriginalChoiceInput(input, f.factory.documents).source,
+  ).toEqual({ ...input.source, checksum: f.file.snapshot.source.checksum });
+  for (const source of [
+    { ...input.source, pageNumber: 3 },
+    { ...input.source, sourceDocumentId: randomUUID() },
+  ])
+    expect(() =>
+      bindCommercialOriginalChoiceInput(
+        { ...input, source },
+        f.factory.documents,
+      ),
+    ).toThrow("CHOICE_CREATE_ORIGINAL_NOT_READ");
+  for (const extra of [
+    { checksum: f.file.snapshot.source.checksum },
+    { approved: true },
+    { confidence: 1 },
+  ])
+    expect(
+      copilotChoiceCreateModelInputSchema.safeParse({
+        ...input,
+        source: { ...input.source, ...extra },
+      }).success,
+    ).toBe(false);
+  expect(
+    bindCommercialOriginalChoiceInput(
+      { ...data.input, originalDescription: null },
+      f.factory.documents,
+    ),
+  ).toEqual(data.input);
+});
+
+it.each([
+  { streaming: false, early: false },
+  { streaming: true, early: false },
+  { streaming: true, early: true },
+])(
+  "prepares a future offer from the actually delivered original through installed Responses, without extraction or business write (streaming $streaming, early proposal $early)",
+  async ({ streaming, early }) => {
+    const f = fixture(),
+      data =
+        await import("../../../../scripts/test-choice-create-fixtures").then(
+          (m) => m.choiceCreateFixture(storeId),
+        );
+    const { projectCommercialOriginalOffer } =
+      await import("@fl-copilot/commercial-core");
+    const input = {
+      source: {
+        kind: "PDF_ORIGINAL",
+        sourceDocumentId: f.sourceDocumentId,
+        pageNumber: 2,
+        excerpt: "Semaine 44 : avocat 2,50 euros",
+      },
+      originalDescription: {
+        operationKind: "PROSPECTUS",
+        operationLabel: "Prospectus S44",
+        rawProductLabel: "Avocat",
+      },
+      productId: data.basis.product.id,
+      saleStart: "2026-10-26",
+      saleEnd: "2026-11-01",
+      mechanism: {
+        type: "FIXED_PRICE",
+        amount: 2.5,
+        currency: "EUR",
+        unit: "PIECE",
+      },
+      note: null,
+    };
+    const canonical = copilotChoiceCreateInputSchema.parse({
+      ...input,
+      source: { ...input.source, checksum: f.file.snapshot.source.checksum },
+    });
+    const basis = {
+      storeId,
+      product: {
+        ...data.basis.product,
+        label: "AVOCAT PIECE",
+        salesUnit: "PIECE",
+      },
+      offer: projectCommercialOriginalOffer({
+        source: {
+          ...input.source,
+          kind: "PDF_ORIGINAL",
+          checksum: f.file.snapshot.source.checksum,
+        },
+        operationKind: "PROSPECTUS",
+        operationLabel: input.originalDescription.operationLabel,
+        rawProductLabel: input.originalDescription.rawProductLabel,
+      }),
+    };
+    const value = {
+      status: "READY",
+      existingChoice: null,
+      input: canonical,
+      basis,
+      evidence: [
+        {
+          id: "choice-create-original",
+          sourceType: "DATA_QUALITY",
+          sourceId: f.sourceDocumentId,
+          sourceVersion: null,
+          label: "Choix proposé",
+          value: "À confirmer",
+          factKind: "QUALITY",
+        },
+      ],
+    };
+    const choiceCreate = vi.fn(async () => value),
+      extraction = vi.fn(async () => {
+        throw Error("EXTRACTION_MUST_NOT_RUN");
+      });
+    const batch = scoreCopilotPriorities({
+        storeId,
+        evaluatedAt,
+        candidates: [priorityFixture("original-choice")],
+      }),
+      request: CopilotGenerationRequest = {
+        requestId: randomUUID(),
+        storeId,
+        context: detectCopilotConflicts({ batch, intents: [] }),
+        userQuestion: "Retiens cet avocat pour la semaine prochaine",
+      };
+    let calls = 0;
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        definition = body.tools.find(
+          (t: { name: string }) => t.name === "commercial_choice_create",
+        );
+      expect(definition.parameters.type).toBe("object");
+      const original = definition.parameters.properties.source.anyOf.find(
+        (branch: { properties: Record<string, unknown> }) =>
+          branch.properties.kind,
+      );
+      expect(original.properties).not.toHaveProperty("checksum");
+      expect(original.properties).not.toHaveProperty("approved");
+      const current = calls++;
+      if (early && current === 0)
+        return envelope(
+          [
+            {
+              type: "function_call",
+              name: "commercial_choice_create",
+              id: "fc_unread",
+              call_id: "call_unread",
+              arguments: JSON.stringify(input),
+              status: "completed",
+            },
+          ],
+          streaming,
+        );
+      const step = current - (early ? 1 : 0);
+      if (step === 0)
+        return envelope(
+          [
+            {
+              type: "function_call",
+              name: "commercial_pdf",
+              id: "fc_original",
+              call_id: "call_original",
+              arguments: JSON.stringify({
+                sourceDocumentId: f.sourceDocumentId,
+              }),
+              status: "completed",
+            },
+          ],
+          streaming,
+        );
+      if (step === 1) {
+        expect(JSON.stringify(body)).toContain(
+          `data:application/pdf;base64,${Buffer.from(f.file.pdf).toString("base64")}`,
+        );
+        return envelope(
+          [
+            {
+              type: "function_call",
+              name: "commercial_choice_create",
+              id: "fc_original_choice",
+              call_id: "call_original_choice",
+              arguments: JSON.stringify(input),
+              status: "completed",
+            },
+          ],
+          streaming,
+        );
+      }
+      return envelope(
+        [
+          {
+            id: "msg_original_choice",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  ...answer,
+                  narrative: "Je te propose cette offre pour confirmation.",
+                  documentReadings: [],
+                }),
+                annotations: [],
+              },
+            ],
+          },
+        ],
+        streaming,
+      );
+    });
+    const config = parseEnvironment({
+      NODE_ENV: "test",
+      OPENAI_API_KEY: "sk-test-only-not-a-real-secret",
+      COPILOT_AI_MODEL: "test-model",
+      COPILOT_AI_TIMEOUT_MS: "4000",
+    });
+    const result = await createCopilotAiProvider(config, transport, {
+      daily: extraction,
+      commercialPdf: extraction,
+      commercialPdfOriginal: f.read,
+      choiceCreateVersion: 2,
+      choiceCreate: async (input) => {
+        expect(input).toEqual(canonical);
+        return copilotChoiceCreatePreviewSchema.parse(await choiceCreate());
+      },
+    }).generate(
+      request,
+      copilotResponseSchema,
+      undefined,
+      streaming ? vi.fn() : undefined,
+    );
+    expect(calls).toBe(early ? 4 : 3);
+    expect(choiceCreate).toHaveBeenCalledOnce();
+    expect(extraction).not.toHaveBeenCalled();
+    expect(result.choiceCreates).toEqual([value]);
+  },
+);
+
+it("finishes three explicitly requested original offers with real product resolutions even when the model calls tools serially", async () => {
+  const f = fixture(),
+    data = await import("../../../../scripts/test-choice-create-fixtures").then(
+      (m) => m.choiceCreateFixture(storeId),
+    ),
+    { projectCommercialOriginalOffer } =
+      await import("@fl-copilot/commercial-core");
+  const specifications = [
+    { label: "AVOCAT PIECE", amount: 2.5, unit: "PIECE" },
+    { label: "TOMATE VRAC", amount: 1.99, unit: "KG" },
+    { label: "BANANE VRAC", amount: 1.49, unit: "KG" },
+  ] as const;
+  const excerpts = specifications.map(
+    (p) => `S44 ${p.label} ${p.amount} EUR/${p.unit}`,
+  );
+  f.file.pdf = commercialPdfFixture(["Semaine 44 2026", excerpts.join(" ; ")]);
+  f.file.snapshot.source.checksum = `sha256:${createHash("sha256").update(f.file.pdf).digest("hex")}`;
+  f.file.snapshot.source.sizeBytes = f.file.pdf.length;
+  f.file.snapshot.evidence[0]!.id = `pdf-original/${f.file.snapshot.source.checksum.slice(7)}/${f.sourceDocumentId}`;
+  const products = specifications.map((p) => ({
+    ...data.basis.product,
+    id: randomUUID(),
+    label: p.label,
+    salesUnit: p.unit,
+  }));
+  const inputs = specifications.map((p, i) => ({
+    source: {
+      kind: "PDF_ORIGINAL",
+      sourceDocumentId: f.sourceDocumentId,
+      pageNumber: 2,
+      excerpt: excerpts[i],
+    },
+    originalDescription: {
+      operationKind: "PROSPECTUS",
+      operationLabel: "Prospectus S44",
+      rawProductLabel: p.label,
+    },
+    productId: products[i]!.id,
+    saleStart: "2026-10-26",
+    saleEnd: "2026-11-01",
+    mechanism: {
+      type: "FIXED_PRICE",
+      amount: p.amount,
+      currency: "EUR",
+      unit: p.unit,
+    },
+    note: null,
+  }));
+  const productSearch = vi.fn(async (input: { label: string | null }) => {
+    const product = products.find((p) => p.label === input.label)!;
+    return {
+      status: "COMPLETE_CATALOG" as const,
+      state: "AUTO_MATCH" as const,
+      matchedProductId: product.id,
+      candidateCount: 1,
+      hasMoreCandidates: false,
+      candidates: [
+        {
+          product,
+          basis: "CANONICAL_LABEL" as const,
+          score: 1,
+          reasons: ["Libellé exact"],
+        },
+      ],
+      missingIdentifiers: [],
+      evidence: [],
+    };
+  });
+  const choiceCreate = vi.fn(
+    async (
+      input: Parameters<
+        NonNullable<
+          NonNullable<
+            Parameters<typeof createCopilotAiProvider>[2]
+          >["choiceCreate"]
+        >
+      >[0],
+    ) => {
+      expect(input.source).toHaveProperty(
+        "checksum",
+        f.file.snapshot.source.checksum,
+      );
+      if (!("kind" in input.source)) throw Error("ORIGINAL_REQUIRED");
+      return copilotChoiceCreatePreviewSchema.parse({
+        input,
+        status: "READY",
+        existingChoice: null,
+        basis: {
+          storeId,
+          product: products.find((p) => p.id === input.productId),
+          offer: projectCommercialOriginalOffer({
+            source: input.source,
+            ...input.originalDescription!,
+          }),
+        },
+        evidence: [
+          {
+            id: `proposal/${input.productId}`,
+            sourceType: "DATA_QUALITY",
+            sourceId: f.sourceDocumentId,
+            sourceVersion: null,
+            label: "Choix proposé",
+            value: "À confirmer",
+            factKind: "QUALITY",
+          },
+        ],
+      });
+    },
+  );
+  const batch = scoreCopilotPriorities({
+      storeId,
+      evaluatedAt,
+      candidates: [priorityFixture("three-offers")],
+    }),
+    request: CopilotGenerationRequest = {
+      requestId: randomUUID(),
+      storeId,
+      context: detectCopilotConflicts({ batch, intents: [] }),
+      userQuestion: "Prépare ces trois offres pour la semaine prochaine",
+    };
+  let calls = 0;
+  const transport = vi.fn<typeof fetch>(async (_url, init) => {
+    const body = JSON.parse(String(init?.body)),
+      step = calls++;
+    if (step < 7) {
+      const index = Math.floor((step - 1) / 2),
+        name =
+          step === 0
+            ? "commercial_pdf"
+            : step % 2 === 1
+              ? "product_search"
+              : "commercial_choice_create",
+        input =
+          step === 0
+            ? { sourceDocumentId: f.sourceDocumentId }
+            : step % 2 === 1
+              ? { label: products[index]!.label, identifiers: [] }
+              : inputs[index];
+      return envelope(
+        [
+          {
+            type: "function_call",
+            name,
+            id: `fc_${step}`,
+            call_id: `call_${step}`,
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ],
+        false,
+      );
+    }
+    expect(body.tool_choice).toBeDefined();
+    return envelope(
+      [
+        {
+          id: "msg_three_offers",
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({
+                ...answer,
+                narrative: "Les offres sont prêtes pour ta confirmation.",
+                documentReadings: [],
+              }),
+              annotations: [],
+            },
+          ],
+        },
+      ],
+      false,
+    );
+  });
+  const config = parseEnvironment({
+    NODE_ENV: "test",
+    OPENAI_API_KEY: "sk-test-only-not-a-real-secret",
+    COPILOT_AI_MODEL: "test-model",
+    COPILOT_AI_TIMEOUT_MS: "4000",
+  });
+  const result = await createCopilotAiProvider(config, transport, {
+    daily: vi.fn(),
+    commercialPdfOriginal: f.read,
+    choiceCreateVersion: 2,
+    choiceCreate,
+    productSearch,
+  }).generate(request, copilotResponseSchema);
+  expect(calls).toBe(8);
+  expect(productSearch).toHaveBeenCalledTimes(3);
+  expect(choiceCreate).toHaveBeenCalledTimes(3);
+  expect(result.choiceCreates).toHaveLength(3);
+});

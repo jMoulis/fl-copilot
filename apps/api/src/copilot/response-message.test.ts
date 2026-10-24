@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { COPILOT_COMPLETED_EVIDENCE_LIMIT } from "./generation-limits";
 import { randomUUID } from "node:crypto";
 import {
   detectCopilotConflicts,
@@ -360,10 +361,13 @@ it("keeps the initial request limit and rejects conflicting or oversized complet
       ...f,
       generation: {
         ...f.generation,
-        evidence: Array.from({ length: 1306 }, (_, index) => ({
-          ...evidence[0]!,
-          id: `overflow-${index}`,
-        })),
+        evidence: Array.from(
+          { length: COPILOT_COMPLETED_EVIDENCE_LIMIT + 1 },
+          (_, index) => ({
+            ...evidence[0]!,
+            id: `overflow-${index}`,
+          }),
+        ),
       },
     }),
   ).toThrow("COPILOT_AI_INPUT_INVALID");

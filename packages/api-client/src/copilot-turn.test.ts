@@ -961,3 +961,29 @@ it.each([true, false])(
     expect(JSON.parse(String(sent.body))).toEqual(input);
   },
 );
+
+it("advertises the original-backed renderer and source format together for the new native chat", async () => {
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(
+        JSON.stringify({
+          type: "result",
+          result: { message, alreadyApplied: false },
+        }) + "\n",
+        { headers: { "content-type": "application/x-ndjson" } },
+      ),
+  );
+  vi.stubGlobal("fetch", transport);
+  await new ApiClient("https://test.invalid").copilotTurn(
+    "test",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { choiceCreate: 2, onProgress: vi.fn() },
+  );
+  expect(transport.mock.calls[0]![1]!.headers).toMatchObject({
+    "x-copilot-choice-create": "2",
+    "x-commercial-source-version": "2",
+  });
+});

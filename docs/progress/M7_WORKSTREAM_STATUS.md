@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — proposer dans le chat une offre lue dans l’original
+
+Activation en validation après la base PR 374 fusionnée (`12dcfbe`, deux CI exactes **5 177 / 6**). Le même outil prépare une offre depuis un original effectivement remis au modèle pendant l’échange ; le serveur fournit l’empreinte et le responsable confirme dans le chat avant l’écriture canonique locale/synchronisée. Aucun passage obligatoire par une extraction ou la revue de toutes les pages. Capacité 1 historique conservée ; source format 2 et capacité 2 exigés pour ce chemin. La carte affiche l’extrait et ouvre l’original privé, sans fausse confiance ni métadonnée IA. Voir [la QA](../qa/M7_ORIGINAL_OFFER_PROPOSALS_2026_10_24.md).
+
+Le test de trois offres a aussi révélé une limite d’orchestration trop courte : ce parcours dispose d’un budget dérivé de sept outils/huit étapes, avec les plafonds de PDF, taille, tokens et durée existants. Le parcours contrôlé inclut désormais la vraie proposition privée et sa confirmation native, jusqu’au plan de la semaine suivante. Aucun appel modèle payant ni nouveau binaire. API et recette native de cette activation encore à livrer ; les sept états globaux ne sont pas clos.
+
 ## 24 octobre — enregistrer un choix depuis le PDF original, sans extraction préalable
 
 Base de compatibilité en validation : le même choix commercial, sa validation et le plan peuvent porter une référence à l’original confirmé (empreinte, page, extrait présenté), sans identifiant d’extraction inventé. Le rédacteur atomique local, l’Outbox et les endpoints synchronisés existants sont réutilisés. Les identités historiques, les droits du responsable, les confirmations explicites et la distinction plan/exécution restent conservés. Une semaine future peut être préparée sans page extraite. Les anciennes apps reçoivent une demande de mise à jour avant un payload illisible ; leurs commandes locales restent en attente. Voir [la QA et les limites](../qa/M7_ORIGINAL_OFFER_SELECTION_2026_10_24.md).
