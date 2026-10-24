@@ -288,6 +288,14 @@ export function StoreConflictCard({
       ) : null}
       {review ? (
         <>
+          {(review.catalogueConflicts?.length ?? 0) > 1 ? (
+            <Text style={{ color: colors.ink }}>
+              {review.catalogueConflicts!.length} conflits concernent cette même
+              fiche. Votre choix porte sur la version locale actuelle et la
+              version synchronisée v{review.remote?.version}. Les versions
+              précédentes restent conservées dans l’historique.
+            </Text>
+          ) : null}
           <Text style={{ fontWeight: "600" }}>Votre version actuelle</Text>
           <Text style={{ color: colors.ink }}>
             {summary(review.current.entity)}

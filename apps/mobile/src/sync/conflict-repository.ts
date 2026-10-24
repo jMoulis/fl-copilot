@@ -93,6 +93,20 @@ export class ConflictRepository {
     return row ? mapRow(row) : null;
   }
 
+  async listOpenForEntity(
+    storeId: string,
+    entityType: string,
+    entityId: string,
+  ) {
+    const rows = await this.database.getAllAsync<SyncConflictRow>(
+      "SELECT * FROM sync_conflicts WHERE store_id=? AND entity_type=? AND entity_id=? AND status='OPEN' ORDER BY remote_version DESC,id DESC LIMIT 101",
+      storeId,
+      entityType,
+      entityId,
+    );
+    return rows.map(mapRow);
+  }
+
   async listOpen(storeId: string) {
     const rows = await this.database.getAllAsync<SyncConflictRow>(
       `
