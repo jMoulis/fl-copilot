@@ -1,3 +1,7 @@
+import {
+  ConflictRepository,
+  reviewConflictVersions,
+} from "../sync/conflict-repository";
 import { copilotMessageContent } from "@fl-copilot/domain";
 import {
   recommendationDecisionSchema,
@@ -187,7 +191,7 @@ export class CopilotDecisionRepository {
     const decision = row
         ? recommendationDecisionSchema.parse(JSON.parse(row.payload_json))
         : null,
-      remote = row?.remote_payload_json
+      cached = row?.remote_payload_json
         ? recommendationDecisionSchema.parse(
             JSON.parse(row.remote_payload_json),
           )
@@ -205,19 +209,94 @@ export class CopilotDecisionRepository {
     )
       throw Error("COPILOT_DECISION_IDENTITY_INVALID");
     if (
-      remote &&
-      (!decision || !sameRecommendationDecisionIdentity(decision, remote))
+      cached &&
+      (!decision || !sameRecommendationDecisionIdentity(decision, cached))
     )
       throw Error("COPILOT_DECISION_IDENTITY_INVALID");
-    const conflicts = await this.db.getAllAsync<{
-      id: string;
-      local_payload_json: string;
-      remote_payload_json: string;
-    }>(
-      "SELECT id,local_payload_json,remote_payload_json FROM sync_conflicts WHERE store_id=? AND entity_type='copilot_decision' AND entity_id=? AND status='OPEN' ORDER BY id LIMIT 2",
-      this.scope.storeId,
-      content.recommendationId,
-    );
+    const conflicts = await new ConflictRepository(this.db).listOpenForEntity(
+        this.scope.storeId,
+        "copilot_decision",
+        content.recommendationId,
+      ),
+      cacheValid = !!cached && cached.version === row?.remote_version,
+      group = conflicts.length
+        ? reviewConflictVersions(
+            conflicts,
+            (raw) => {
+              const result = recommendationDecisionSchema.safeParse(raw);
+              return result.success ? result.data : null;
+            },
+            (candidate) =>
+              !!decision &&
+              sameRecommendationDecisionIdentity(decision, candidate),
+            cached,
+          )
+        : {
+            conflicts,
+            conflict: null,
+            remote: cacheValid ? cached : null,
+            valid: cacheValid,
+            reason: cacheValid
+              ? null
+              : "La copie synchronisée de cette décision n’est pas vérifiée. Votre choix reste conservé ; aucune nouvelle création n’est proposée.",
+          },
+      remote = group.remote,
+      commands = await this.db.getAllAsync<{
+        command_id: string;
+        status: string;
+        payload_json: string;
+        expected_remote_version: number | null;
+        last_error_code: string | null;
+      }>(
+        "SELECT command_id,status,payload_json,expected_remote_version,last_error_code FROM sync_outbox WHERE store_id=? AND entity_type='copilot_decision' AND entity_id=? AND status IN ('PENDING','SYNCING','CONFLICT','FAILED') ORDER BY local_sequence LIMIT 101",
+        this.scope.storeId,
+        content.recommendationId,
+      );
+    const owned = (raw: unknown) => {
+        const p = recommendationDecisionSchema.safeParse(raw);
+        return (
+          p.success &&
+          !!decision &&
+          sameRecommendationDecisionIdentity(decision, p.data)
+        );
+      },
+      historyValid =
+        !!remote &&
+        conflicts.every((c) => {
+          const p = recommendationDecisionSchema.safeParse(c.remotePayload);
+          return (
+            p.success &&
+            JSON.stringify(remote.revisions.slice(0, p.data.version)) ===
+              JSON.stringify(p.data.revisions)
+          );
+        }) &&
+        (!cached ||
+          JSON.stringify(remote.revisions.slice(0, cached.version)) ===
+            JSON.stringify(cached.revisions)),
+      commandsOwned = commands.every((c) => {
+        try {
+          return owned(JSON.parse(c.payload_json));
+        } catch {
+          return false;
+        }
+      }),
+      canResolve =
+        !!row &&
+        ["CONFLICT", "ERROR"].includes(row.sync_state) &&
+        group.valid &&
+        !!decision &&
+        !!remote &&
+        historyValid &&
+        (!row.remote_payload_json || cacheValid) &&
+        (row.remote_version ?? 0) <= remote.version &&
+        conflicts.every((c) => owned(c.localPayload)) &&
+        commandsOwned &&
+        commands.length <= 100 &&
+        !commands.some((c) => c.status === "SYNCING"),
+      resolutionIssue = canResolve
+        ? null
+        : (group.reason ??
+          "La comparaison est incomplète, contradictoire ou un envoi est en cours. Vos versions et leurs historiques restent conservés ; relisez-les avant de décider.");
     const count = row
       ? 0
       : ((
@@ -228,7 +307,16 @@ export class CopilotDecisionRepository {
           )
         )?.n ?? 0);
     const review = await this.digest(
-      JSON.stringify([message, sourceMessage, row, conflicts]),
+      JSON.stringify([
+        message,
+        sourceMessage,
+        topic,
+        persisted,
+        parent,
+        row,
+        group,
+        commands,
+      ]),
     );
     const localDate = decision?.revisions.at(-1)?.postponeUntil;
     const retentionIssue = !sourceCurrent
@@ -253,12 +341,33 @@ export class CopilotDecisionRepository {
       status:
         row?.sync_state === "CONFLICT"
           ? ("CONFLICT" as const)
-          : !sourceCurrent
-            ? ("SOURCE_UNAVAILABLE" as const)
-            : row?.sync_state === "ERROR"
-              ? ("ERROR" as const)
+          : row?.sync_state === "ERROR"
+            ? ("ERROR" as const)
+            : !sourceCurrent
+              ? ("SOURCE_UNAVAILABLE" as const)
               : ("READY" as const),
-      canResolve: conflicts.length === 1 && !!remote,
+      group,
+      remoteVersion: row?.remote_version ?? null,
+      syncing: commands.some((c) => c.status === "SYNCING"),
+      resolutionIssue,
+      canResolve,
+    };
+  }
+  private writeGuard(
+    signal?: AbortSignal,
+    canMutate: () => boolean = () => true,
+  ) {
+    const { storeId, ownerId, deviceId } = this.scope;
+    return () => {
+      if (signal?.aborted) throw Error("COPILOT_DECISION_CANCELLED");
+      if (
+        !this.scope.canDecide ||
+        !canMutate() ||
+        this.scope.storeId !== storeId ||
+        this.scope.ownerId !== ownerId ||
+        this.scope.deviceId !== deviceId
+      )
+        throw Error("COPILOT_DECISION_FORBIDDEN");
     };
   }
   async save(
@@ -266,10 +375,14 @@ export class CopilotDecisionRepository {
     raw: RecommendationChoice,
     review: string,
     signal?: AbortSignal,
+    canMutate: () => boolean = () => true,
   ) {
     if (!this.scope.canDecide || signal?.aborted)
       throw Error("COPILOT_DECISION_FORBIDDEN");
-    const choice = recommendationChoiceSchema.parse(raw);
+    const choice = recommendationChoiceSchema.parse(raw),
+      guard = this.writeGuard(signal, canMutate);
+    let result!: Awaited<ReturnType<CopilotDecisionRepository["open"]>>;
+    guard();
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       const db = joinedProductToolDatabase(tx),
         repo = new CopilotDecisionRepository(
@@ -280,6 +393,7 @@ export class CopilotDecisionRepository {
           this.now,
         ),
         state = await repo.open(message);
+      guard();
       if (!state.hasCapacity) throw Error("COPILOT_DECISION_LIMIT");
       if (state.review !== review || state.status !== "READY")
         throw Error("COPILOT_DECISION_REVIEW_REQUIRED");
@@ -288,8 +402,10 @@ export class CopilotDecisionRepository {
         state.decision.revisions.at(-1)!.proposalMessageId === message.id &&
         JSON.stringify(decisionChoice(state.decision.revisions.at(-1)!)) ===
           JSON.stringify(choice)
-      )
+      ) {
+        result = state;
         return;
+      }
       const now = this.now();
       if (
         choice.postponeUntil &&
@@ -337,44 +453,46 @@ export class CopilotDecisionRepository {
         payload: e,
         createdAt: now,
       });
-      if (signal?.aborted) throw Error("COPILOT_DECISION_CANCELLED");
+      guard();
+      result = await repo.open(message);
+      guard();
     });
-    return this.open(message);
+    return result;
   }
   async resolve(
     message: CopilotMessage,
     useLocal: boolean,
     review: string,
     signal?: AbortSignal,
+    canMutate: () => boolean = () => true,
   ) {
     if (!this.scope.canDecide || signal?.aborted)
       throw Error("COPILOT_DECISION_FORBIDDEN");
+    const guard = this.writeGuard(signal, canMutate);
+    let result!: Awaited<ReturnType<CopilotDecisionRepository["open"]>>;
+    guard();
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       const db = joinedProductToolDatabase(tx),
-        state = await new CopilotDecisionRepository(
+        repo = new CopilotDecisionRepository(
           db,
           this.scope,
           this.digest,
           this.id,
           this.now,
-        ).open(message);
+        ),
+        state = await repo.open(message);
+      guard();
+      if (state.syncing) throw Error("COPILOT_DECISION_SYNCING");
       if (
         state.review !== review ||
-        state.status !== "CONFLICT" ||
+        !["CONFLICT", "ERROR"].includes(state.status) ||
         !state.canResolve ||
         !state.decision ||
         !state.remote
       )
         throw Error("COPILOT_DECISION_REVIEW_REQUIRED");
-      const commands = await tx.getAllAsync<{ status: string }>(
-        "SELECT status FROM sync_outbox WHERE store_id=? AND entity_type='copilot_decision' AND entity_id=? ORDER BY local_sequence LIMIT 101",
-        this.scope.storeId,
-        state.content.recommendationId,
-      );
       if (useLocal && !state.canRetainLocal)
         throw Error("COPILOT_DECISION_SOURCE_UNAVAILABLE");
-      if (commands.length > 100 || commands.some((c) => c.status === "SYNCING"))
-        throw Error("COPILOT_DECISION_SYNCING");
       const now = this.now(),
         remote = state.remote;
       const resolved = useLocal
@@ -414,16 +532,34 @@ export class CopilotDecisionRepository {
         useLocal ? 1 : 0,
         state.content.recommendationId,
       );
+      const captureId = this.id(),
+        commandId = useLocal ? this.id() : null;
+      if (captureId === commandId)
+        throw Error("COPILOT_DECISION_CAPTURE_ID_INVALID");
       await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='copilot_decision' AND entity_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
+        "INSERT INTO sync_conflicts(id,store_id,command_id,entity_type,entity_id,local_payload_json,remote_payload_json,local_expected_version,remote_version,conflict_type,status,created_at,resolved_at) VALUES(?,?,NULL,'copilot_decision',?,?,?,?,?,'COPILOT_DECISION_REVIEW_CAPTURE',?,?,?)",
+        captureId,
         this.scope.storeId,
         state.content.recommendationId,
+        JSON.stringify(state.decision),
+        JSON.stringify(remote),
+        state.remoteVersion,
+        remote.version,
+        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+        now,
+        now,
       );
+      for (const conflict of state.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          conflict.id,
+          this.scope.storeId,
+        );
       if (useLocal)
         await new OutboxRepository(tx).enqueue({
-          commandId: this.id(),
+          commandId: commandId!,
           deviceId: this.scope.deviceId,
           storeId: this.scope.storeId,
           commandType: "COPILOT_DECISION_UPSERT",
@@ -433,8 +569,10 @@ export class CopilotDecisionRepository {
           payload: resolved,
           createdAt: now,
         });
-      if (signal?.aborted) throw Error("COPILOT_DECISION_CANCELLED");
+      guard();
+      result = await repo.open(message);
+      guard();
     });
-    return this.open(message);
+    return result;
   }
 }

@@ -1,12 +1,11 @@
+import { ChoiceSummary, decisionDate } from "./decision-choice-summary";
+import { RecommendationDecisionReview } from "./recommendation-decision-review";
 import { todayCalendarDate } from "../dates/calendar";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState, useLayoutEffect, useCallback } from "react";
+import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Pressable, TextInput, View } from "react-native";
 import { ChatText as Text } from "./chat-text";
-import type {
-  CopilotMessage,
-  RecommendationChoice,
-  RecommendationDecision,
-} from "@fl-copilot/domain";
+import type { CopilotMessage, RecommendationChoice } from "@fl-copilot/domain";
 import type { CopilotDecisionRepository } from "./decision-repository";
 import { DateSelector } from "../components/date-selector";
 import { colors } from "../design/tokens";
@@ -16,38 +15,6 @@ const labels = {
   POSTPONE: "Reporter",
   REJECT: "Refuser",
 };
-const done = {
-  ACCEPT: "Acceptée",
-  MODIFY: "Action modifiée",
-  POSTPONE: "Reportée",
-  REJECT: "Refusée",
-};
-const date = (v: string) =>
-  new Intl.DateTimeFormat("fr-FR", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "Europe/Paris",
-  }).format(new Date(v));
-function ChoiceSummary({
-  value,
-}: {
-  value: RecommendationDecision["revisions"][number];
-}) {
-  return (
-    <View style={{ gap: 4 }}>
-      <Text style={{ fontWeight: "600" }}>
-        {done[value.type]} · {date(value.decidedAt)}
-      </Text>
-      {value.modifiedAction ? <Text>{value.modifiedAction}</Text> : null}
-      {value.postponeUntil ? (
-        <Text>
-          À reprendre le {value.postponeUntil.split("-").reverse().join("/")}
-        </Text>
-      ) : null}
-      {value.reason ? <Text>Note : {value.reason}</Text> : null}
-    </View>
-  );
-}
 export function RecommendationDecisionCard({
   message,
   repository,
@@ -66,7 +33,6 @@ export function RecommendationDecisionCard({
     [action, setAction] = useState(""),
     [postpone, setPostpone] = useState(""),
     [reason, setReason] = useState(""),
-    [side, setSide] = useState<"LOCAL" | "REMOTE">(),
     [historyLimit, setHistoryLimit] = useState(5);
   // Server TOOL messages are immutable: a refreshed object must not clear a draft.
   const currentMessage = useRef(message);
@@ -74,58 +40,90 @@ export function RecommendationDecisionCard({
   const generation = useRef(0),
     locked = useRef(false),
     abort = useRef<AbortController | undefined>(undefined);
-  useEffect(() => {
-    const token = ++generation.current;
+  const lifetime = useRef<{
+    active: boolean;
+    focused: boolean;
+    repository: CopilotDecisionRepository;
+    messageId: string;
+    canConfirm: boolean;
+  } | null>(null);
+  useLayoutEffect(() => {
+    const value = {
+      active: true,
+      focused: false,
+      repository,
+      messageId: message.id,
+      canConfirm,
+    };
+    lifetime.current = value;
     setState(undefined);
     setBusy(false);
     setError(undefined);
     setEditing(false);
     setSelected(undefined);
-    setSide(undefined);
     setAction("");
     setPostpone("");
     setReason("");
     setHistoryLimit(5);
-    void repository
-      .open(currentMessage.current)
-      .then((s) => {
-        if (generation.current === token) setState(s);
-      })
-      .catch(() => {
-        if (generation.current === token)
-          setError(
-            "Le conseil d’origine n’est pas disponible sur cet appareil. Actualisez la conversation.",
-          );
-      });
     return () => {
-      generation.current = token + 1;
+      value.active = false;
       abort.current?.abort();
     };
-  }, [repository, message.id]);
-  const refresh = async () => {
-    if (locked.current) return;
-    const token = generation.current;
+  }, [repository, message.id, canConfirm]);
+  const current = () =>
+    !!lifetime.current?.active &&
+    lifetime.current.focused &&
+    lifetime.current.repository === repository &&
+    lifetime.current.messageId === message.id;
+  useFocusEffect(
+    useCallback(() => {
+      const value = lifetime.current;
+      if (
+        !value ||
+        value.messageId !== message.id ||
+        value.canConfirm !== canConfirm
+      )
+        return;
+      value.focused = true;
+      const token = ++generation.current;
+      void repository
+        .open(currentMessage.current)
+        .then((s) => {
+          if (generation.current === token) setState(s);
+        })
+        .catch(() => {
+          if (generation.current === token)
+            setError(
+              "Le conseil d’origine n’est pas disponible sur cet appareil. Actualisez la conversation.",
+            );
+        });
+      return () => {
+        if (value) value.focused = false;
+        generation.current = token + 1;
+        abort.current?.abort();
+      };
+    }, [repository, message.id, canConfirm]),
+  );
+  const refresh = async (preserveDraft = false) => {
+    if (locked.current || !current()) return;
+    const token = ++generation.current;
     setError(undefined);
     try {
       const s = await repository.open(message);
-      if (token === generation.current) {
+      if (token === generation.current && current()) {
         setState(s);
-        setSelected(undefined);
-        setSide(undefined);
-        setEditing(false);
+        if (!preserveDraft) {
+          setSelected(undefined);
+          setEditing(false);
+        }
       }
     } catch {
-      if (token === generation.current)
+      if (token === generation.current && current())
         setError("Le suivi n’a pas pu être actualisé.");
     }
   };
-  const run = async (resolve: boolean) => {
-    if (
-      locked.current ||
-      !canConfirm ||
-      !state ||
-      (resolve ? !side : !selected)
-    )
+  const run = async () => {
+    if (locked.current || !current() || !canConfirm || !state || !selected)
       return;
     const token = generation.current,
       cancellation = new AbortController();
@@ -134,30 +132,25 @@ export function RecommendationDecisionCard({
     setBusy(true);
     setError(undefined);
     try {
-      const next = resolve
-        ? await repository.resolve(
-            message,
-            side === "LOCAL",
-            state.review,
-            cancellation.signal,
-          )
-        : await repository.save(
-            message,
-            {
-              type: selected!,
-              modifiedAction:
-                selected === "MODIFY" ? action.trim() || null : null,
-              postponeUntil: selected === "POSTPONE" ? postpone || null : null,
-              reason: reason.trim() || null,
-            },
-            state.review,
-            cancellation.signal,
-          );
+      const next = await repository.save(
+        message,
+        {
+          type: selected!,
+          modifiedAction: selected === "MODIFY" ? action.trim() || null : null,
+          postponeUntil: selected === "POSTPONE" ? postpone || null : null,
+          reason: reason.trim() || null,
+        },
+        state.review,
+        cancellation.signal,
+        () =>
+          current() &&
+          generation.current === token &&
+          !!lifetime.current?.canConfirm,
+      );
       if (generation.current === token) {
         setState(next);
         setEditing(false);
         setSelected(undefined);
-        setSide(undefined);
       }
     } catch {
       if (generation.current === token) {
@@ -168,7 +161,6 @@ export function RecommendationDecisionCard({
         if (generation.current === token) {
           if (current) setState(current);
           setSelected(undefined);
-          setSide(undefined);
         }
       }
     } finally {
@@ -214,7 +206,7 @@ export function RecommendationDecisionCard({
       {state ? (
         <>
           <Text style={{ color: colors.muted }}>
-            Conseil du {date(state.content.basis.sourceCreatedAt)}
+            Conseil du {decisionDate(state.content.basis.sourceCreatedAt)}
           </Text>
           <Text>{state.content.basis.quote}</Text>
           <Text style={{ color: colors.muted }}>
@@ -235,76 +227,13 @@ export function RecommendationDecisionCard({
               </Text>
             </>
           ) : null}
-          {state.status === "CONFLICT" ? (
-            <>
-              <Text style={{ fontWeight: "700" }}>Votre choix</Text>
-              {state.decision ? (
-                <ChoiceSummary value={state.decision.revisions.at(-1)!} />
-              ) : null}
-              <Text style={{ fontWeight: "700" }}>Choix synchronisé</Text>
-              {state.remote ? (
-                <ChoiceSummary value={state.remote.revisions.at(-1)!} />
-              ) : (
-                <Text>Version synchronisée indisponible.</Text>
-              )}
-              {!state.canRetainLocal ? (
-                <Text>
-                  {state.retentionIssue === "POSTPONE_DATE_PASSED"
-                    ? "La date du report local est passée. Reprenez le choix synchronisé avant de saisir une nouvelle date."
-                    : state.retentionIssue === "HISTORY_LIMIT"
-                      ? "L’historique synchronisé est complet ; il peut être repris sans ajouter un choix."
-                      : "Le conseil d’origine n’est plus actif : seul le choix synchronisé peut être repris."}
-                </Text>
-              ) : null}
-              {canConfirm && state.canResolve ? (
-                <>
-                  {(["LOCAL", "REMOTE"] as const).map((v) => (
-                    <Pressable
-                      key={v}
-                      accessibilityRole="radio"
-                      accessibilityLabel={
-                        v === "LOCAL"
-                          ? "Conserver mon choix"
-                          : "Reprendre le choix synchronisé"
-                      }
-                      aria-checked={side === v}
-                      accessibilityState={{
-                        checked: side === v,
-                        disabled:
-                          busy || (v === "LOCAL" && !state.canRetainLocal),
-                      }}
-                      disabled={
-                        busy || (v === "LOCAL" && !state.canRetainLocal)
-                      }
-                      onPress={() => setSide(v)}
-                      style={{
-                        padding: 12,
-                        minHeight: 44,
-                        borderWidth: 1,
-                        borderColor: side === v ? colors.forest : colors.line,
-                        borderRadius: 12,
-                      }}
-                    >
-                      <Text>
-                        {side === v ? "✓ " : ""}
-                        {v === "LOCAL"
-                          ? "Conserver mon choix"
-                          : "Reprendre le choix synchronisé"}
-                      </Text>
-                    </Pressable>
-                  ))}
-                  {button(
-                    "Confirmer ce choix",
-                    () => {
-                      void run(true);
-                    },
-                    busy || !side,
-                  )}
-                </>
-              ) : (
-                <Text>Actualisez pour obtenir une comparaison complète.</Text>
-              )}
-            </>
+          {state.status === "CONFLICT" || state.status === "ERROR" ? (
+            <RecommendationDecisionReview
+              message={message}
+              repository={repository}
+              canConfirm={canConfirm}
+              onResolved={() => refresh(true)}
+            />
           ) : state.status === "READY" &&
             canConfirm &&
             canAppend &&
@@ -401,7 +330,7 @@ export function RecommendationDecisionCard({
                   {button(
                     "Enregistrer ma décision",
                     () => {
-                      void run(false);
+                      void run();
                     },
                     busy ||
                       (selected === "MODIFY" && !action.trim()) ||

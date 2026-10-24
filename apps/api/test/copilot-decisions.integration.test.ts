@@ -1,3 +1,9 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { ConflictRepository } from "../../mobile/src/sync/conflict-repository";
+import { syncPushRequestSchema } from "@fl-copilot/sync-contracts";
 import {
   appendFactContext,
   readRecommendationContext,
@@ -295,29 +301,152 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       }
     });
     it.each([true, false])(
-      "requires explicit resolution of two-device contradictory choices (local=%s)",
+      "resolves a complete real two-device group on the latest pull and restores the decision offline on another device (local=%s)",
       async (useLocal) => {
         const f = await seed(),
           a = await decisionNativeFixture(f),
-          b = await decisionNativeFixture(f);
+          b = await decisionNativeFixture(f),
+          dir = mkdtempSync(join(tmpdir(), "fl-decision-mongo-")),
+          path = join(dir, "restored.db"),
+          c = new MercalysTestDatabase(new DatabaseSync(path));
+        let cClosed = false;
         try {
+          await runLocalMigrations(c);
           await saveDecision(a, "ACCEPT");
           await saveDecision(b, "REJECT");
           await sync(f, a.db).sync(f.storeId);
           await sync(f, b.db).sync(f.storeId);
+          const firstConflict = (
+              await new ConflictRepository(b.db).listOpenForEntity(
+                f.storeId,
+                "copilot_decision",
+                f.recommendationId,
+              )
+            )[0]!,
+            original = (await new OutboxRepository(b.db).getById(
+              firstConflict.commandId!,
+            ))!;
+          const duplicate = await new OutboxRepository(b.db).enqueue({
+            ...original,
+            commandId: randomUUID(),
+          });
+          const collision = await transport(f).rawPush.push(
+            syncPushRequestSchema.parse({
+              syncProtocolVersion: 1,
+              appVersion: "test",
+              deviceId: f.deviceId,
+              storeId: f.storeId,
+              commands: [
+                {
+                  commandId: duplicate.commandId,
+                  localSequence: duplicate.localSequence,
+                  type: duplicate.commandType,
+                  entityType: duplicate.entityType,
+                  entityId: duplicate.entityId,
+                  expectedRemoteVersion: duplicate.expectedRemoteVersion,
+                  createdAt: duplicate.createdAt,
+                  payload: duplicate.payload,
+                },
+              ],
+            }),
+            randomUUID(),
+            f.ownerId,
+          );
+          expect(collision.results[0]).toMatchObject({
+            status: "CONFLICT",
+            remoteVersion: 1,
+          });
+          await new ConflictRepository(b.db).recordPushConflict(
+            duplicate,
+            collision.results[0]!,
+          );
+          await b.db.runAsync(
+            "UPDATE sync_outbox SET status='CONFLICT' WHERE command_id=?",
+            duplicate.commandId,
+          );
+          await saveDecision(a, "MODIFY");
+          await sync(f, a.db).sync(f.storeId);
+          await sync(f, b.db).sync(f.storeId);
           const compared = await b.repo.open(f.card);
           expect(compared.status).toBe("CONFLICT");
-          expect(compared.decision?.revisions.at(-1)?.type).toBe("REJECT");
-          expect(compared.remote?.revisions.at(-1)?.type).toBe("ACCEPT");
+          expect(compared.canResolve).toBe(true);
+          expect(compared.group.conflicts).toHaveLength(2);
+          expect(compared.remote!.version).toBe(2);
+          expect(compared.decision!.revisions.at(-1)!.type).toBe("REJECT");
+          expect(compared.remote!.revisions.map((r) => r.type)).toEqual([
+            "ACCEPT",
+            "MODIFY",
+          ]);
           await b.repo.resolve(f.card, useLocal, compared.review);
           await sync(f, b.db).sync(f.storeId);
           await sync(f, a.db).sync(f.storeId);
+          await sync(f, c).sync(f.storeId);
+          const resolved = (await a.repo.open(f.card)).decision!;
+          expect(resolved.revisions.map((r) => r.type)).toEqual(
+            useLocal ? ["ACCEPT", "MODIFY", "REJECT"] : ["ACCEPT", "MODIFY"],
+          );
           expect(
-            (await a.repo.open(f.card)).decision?.revisions.map((r) => r.type),
-          ).toEqual(useLocal ? ["ACCEPT", "REJECT"] : ["ACCEPT"]);
+            (
+              await new CopilotDecisionRepository(
+                c,
+                b.scope,
+                decisionDigest,
+                randomUUID,
+              ).open(f.card)
+            ).decision,
+          ).toEqual(resolved);
+          expect(
+            await new ConflictRepository(b.db).listOpenForEntity(
+              f.storeId,
+              "copilot_decision",
+              f.recommendationId,
+            ),
+          ).toEqual([]);
+          const capture = await b.db.getFirstAsync<{
+            command_id: string | null;
+            remote_payload_json: string;
+          }>(
+            "SELECT command_id,remote_payload_json FROM sync_conflicts WHERE conflict_type='COPILOT_DECISION_REVIEW_CAPTURE'",
+          );
+          expect(capture!.command_id).toBeNull();
+          expect(JSON.parse(capture!.remote_payload_json)).toEqual(
+            compared.remote,
+          );
+          await sync(f, b.db).sync(f.storeId);
+          expect((await b.repo.open(f.card)).decision).toEqual(resolved);
+          expect(
+            await db
+              .collection("copilotDecisions")
+              .countDocuments({ storeId: f.storeId }),
+          ).toBe(1);
+          expect(
+            await db
+              .collection("commercialExecutionTasks")
+              .countDocuments({ storeId: f.storeId }),
+          ).toBe(0);
+          c.db.close();
+          cClosed = true;
+          const restored = new MercalysTestDatabase(new DatabaseSync(path));
+          try {
+            const state = await new CopilotDecisionRepository(
+              restored,
+              b.scope,
+              decisionDigest,
+              randomUUID,
+            ).open(f.card);
+            expect(state.decision).toEqual(resolved);
+            expect(state.syncState).toBe("SYNCED");
+            expect(
+              await new OutboxRepository(restored).listPending(f.storeId),
+            ).toEqual([]);
+          } finally {
+            restored.db.close();
+          }
         } finally {
           a.db.db.close();
           b.db.db.close();
+          if (!cClosed) c.db.close();
+          rmSync(dir, { recursive: true, force: true });
         }
       },
     );

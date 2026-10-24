@@ -14,12 +14,27 @@ import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import type { SyncConflict } from "../sync/conflict-repository";
 import { CopilotDecisionRepository } from "./decision-repository";
-import { RecommendationDecisionCard } from "./recommendation-decision-card";
+import { RecommendationDecisionReview } from "./recommendation-decision-review";
 export function RecommendationDecisionConflict({
   conflict,
 }: {
   conflict: SyncConflict;
 }) {
+  const { session } = useAuth(),
+    { deviceId } = useLocalDatabase(),
+    store = session?.stores[0];
+  return session && store?.storeId === conflict.storeId ? (
+    <DecisionConflictContent
+      key={`${session.user.id}:${store.storeId}:${store.role}:${deviceId}:${conflict.id}:${conflict.entityId}`}
+      conflict={conflict}
+    />
+  ) : (
+    <Text>
+      Ouvrez cette décision depuis son compte et son magasin d’origine.
+    </Text>
+  );
+}
+function DecisionConflictContent({ conflict }: { conflict: SyncConflict }) {
   const { session } = useAuth(),
     { sqlite, deviceId } = useLocalDatabase(),
     ownerId = session?.user.id;
@@ -84,10 +99,11 @@ export function RecommendationDecisionConflict({
     };
   }, [sqlite, conflict.entityId, conflict.storeId, ownerId, permitted]);
   return message ? (
-    <RecommendationDecisionCard
+    <RecommendationDecisionReview
       message={message}
       repository={repository}
       canConfirm={permitted}
+      onResolved={() => undefined}
     />
   ) : (
     <Text>
