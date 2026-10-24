@@ -1,3 +1,4 @@
+import { readTranscriptionReviewProposal } from "@fl-copilot/domain";
 import { readVisualActionProposal } from "@fl-copilot/domain";
 import { readStoreLayoutScenarioCard } from "@fl-copilot/domain";
 import { readCopilotLayoutEditProposal } from "@fl-copilot/domain";
@@ -220,9 +221,14 @@ export async function appendCopilotToolRecord(
                                                           ? readVisualActionProposal(
                                                               decoded,
                                                             )
-                                                          : readCopilotProductProposal(
-                                                              decoded,
-                                                            );
+                                                          : kind ===
+                                                              "COMMERCIAL_TRANSCRIPTION_REVIEW"
+                                                            ? readTranscriptionReviewProposal(
+                                                                decoded,
+                                                              )
+                                                            : readCopilotProductProposal(
+                                                                decoded,
+                                                              );
   if (kind === "ACTION_EXECUTION_PROPOSAL")
     await validateActionExecutionSource(
       ctx.database,

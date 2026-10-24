@@ -1,3 +1,4 @@
+import { buildTranscriptionReviewMessages } from "./transcription-review-messages.js";
 import { buildVisualActionMessages } from "./visual-action-messages.js";
 import { buildStoreLayoutScenarioMessages } from "./store-layout-scenario-messages";
 import { buildStoreLayoutEditMessages } from "./store-layout-edit-messages";
@@ -448,6 +449,10 @@ export async function runCopilotTurn(
             ...buildIdentityReviewMessages(
               toolParent,
               generation.identityReviews ?? [],
+            ),
+            ...buildTranscriptionReviewMessages(
+              toolParent,
+              generation.transcriptionReviewPreviews ?? [],
             ),
             ...buildVisualActionMessages(
               toolParent,

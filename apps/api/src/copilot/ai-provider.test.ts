@@ -7281,3 +7281,94 @@ it.each(["DISABLED", "FOREIGN"] as const)(
     }
   },
 );
+
+it.each(["READY", "DISABLED", "FOREIGN", "WRONG_SOURCE"] as const)(
+  "negotiates local transcription comparison without model approval (%s)",
+  async (mode) => {
+    const { copilotTranscriptionFixture } =
+        await import("../../../../scripts/test-copilot-transcription-fixtures"),
+      native = await copilotTranscriptionFixture();
+    try {
+      const f = fixture();
+      f.request.storeId = native.scope.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: native.scope.storeId,
+          evaluatedAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const foreign = randomUUID(),
+        value =
+          mode === "FOREIGN"
+            ? {
+                ...native.preview,
+                source: { ...native.source, storeId: foreign },
+              }
+            : mode === "WRONG_SOURCE"
+              ? {
+                  ...native.preview,
+                  input: { sourceDocumentId: foreign },
+                  source: { ...native.source, sourceDocumentId: foreign },
+                }
+              : native.preview,
+        read = vi.fn(async () => value),
+        before = native.db
+          .prepare("SELECT * FROM sync_outbox ORDER BY rowid")
+          .all();
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body)),
+          tool = body.tools.find(
+            (t: { name: string }) =>
+              t.name === "commercial_transcription_review",
+          );
+        expect(!!tool).toBe(mode !== "DISABLED");
+        if (mode === "DISABLED") return response();
+        expect(JSON.stringify(tool.parameters)).not.toMatch(
+          /localId|ownerId|storeId|deviceId|corrections|comparisonReviewed/,
+        );
+        if (calls++ === 0) {
+          const envelope = z
+            .record(z.string(), z.unknown())
+            .parse(await response().json());
+          envelope.output = [
+            {
+              type: "function_call",
+              id: "fc_transcription",
+              call_id: "call_transcription",
+              name: "commercial_transcription_review",
+              arguments: JSON.stringify(native.preview.input),
+              status: "completed",
+            },
+          ];
+          return new Response(JSON.stringify(envelope), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        if (mode !== "READY") {
+          const output = body.input
+            .filter((x: { type: string }) => x.type === "function_call_output")
+            .map((x: { output: string }) => JSON.parse(x.output));
+          expect(output.at(-1)?.unavailable).toBe(true);
+          expect(JSON.stringify(output)).not.toContain(foreign);
+        }
+        return response();
+      };
+      const result = await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        ...(mode === "DISABLED" ? {} : { transcriptionReview: read }),
+      }).generate(f.request, schema);
+      expect(result.transcriptionReviewPreviews ?? []).toEqual(
+        mode === "READY" ? [native.preview] : [],
+      );
+      expect(read).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+      expect(
+        native.db.prepare("SELECT * FROM sync_outbox ORDER BY rowid").all(),
+      ).toEqual(before);
+    } finally {
+      native.db.close();
+    }
+  },
+);

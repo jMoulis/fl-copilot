@@ -151,6 +151,7 @@ export class ApiClient {
       receiptPublication?: boolean;
       identityReview?: boolean;
       visualActions?: boolean;
+      transcriptionReview?: boolean;
       catalogueProposals?: boolean | 2;
       executionProposals?: boolean;
       fetch?: typeof fetch;
@@ -275,6 +276,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.identityReview
                   ? { "x-copilot-identity-review": "1" }
+                  : {}),
+                ...(streaming.transcriptionReview
+                  ? { "x-copilot-transcription-review": "1" }
                   : {}),
                 ...(streaming.visualActions
                   ? { "x-copilot-visual-actions": "1" }

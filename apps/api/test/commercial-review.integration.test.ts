@@ -1,3 +1,15 @@
+import { vi } from "vitest";
+import type { Document } from "mongodb";
+import { chatFixture } from "../../../scripts/test-chat-fixtures";
+import { runCopilotTurn } from "../src/copilot/turn-service";
+import type { CopilotAiProvider } from "../src/copilot/ai-provider";
+import {
+  detectCopilotConflicts,
+  scoreCopilotPriorities,
+} from "@fl-copilot/analytics-core";
+import { readTranscriptionReviewProposal } from "@fl-copilot/domain";
+import { attachTranscriptionChat } from "../../../scripts/test-copilot-transcription-fixtures";
+import { previewTranscriptionReview } from "../src/copilot/transcription-review-tool";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -89,6 +101,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         _id: sourceDocumentId,
         storeId,
         originalFilename: page.originalFilename,
+        sourceType: "WEEKLY_COMMERCIAL_PDF",
+        checksum: page.checksum,
+        remoteUploadStatus: "CONFIRMED",
+        deletedAt: null,
       });
       await collection("commercialDocumentJobs").insertOne({
         _id: sourceDocumentId,
@@ -115,6 +131,177 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       });
       return { storeId, sourceDocumentId, pageId, page };
     }
+    it.each([
+      "READY",
+      "FOREIGN",
+      "UNCONFIRMED",
+      "DELETED",
+      "WRONG_TYPE",
+    ] as const)(
+      "reads only confirmed same-store document metadata for local review (%s)",
+      async (mode) => {
+        const f = await seed(),
+          db = await database.getDb();
+        if (mode === "UNCONFIRMED")
+          await db
+            .collection("sourceDocuments")
+            .updateOne({ _id: f.sourceDocumentId } as never, {
+              $set: { remoteUploadStatus: "PENDING" },
+            });
+        if (mode === "DELETED")
+          await db
+            .collection("sourceDocuments")
+            .updateOne({ _id: f.sourceDocumentId } as never, {
+              $set: { deletedAt: new Date() },
+            });
+        if (mode === "WRONG_TYPE")
+          await db
+            .collection("sourceDocuments")
+            .updateOne({ _id: f.sourceDocumentId } as never, {
+              $set: { sourceType: "WASTE_RECEIPT" },
+            });
+        await db
+          .collection("sourceDocuments")
+          .updateOne({ _id: f.sourceDocumentId } as never, {
+            $set: {
+              storageKey: "private-never-disclosed",
+              signedUrl: "https://secret.invalid/private",
+            },
+          });
+        const before = await db
+          .collection("sourceDocuments")
+          .findOne({ _id: f.sourceDocumentId } as never);
+        const r = await previewTranscriptionReview(
+          db,
+          mode === "FOREIGN" ? randomUUID() : f.storeId,
+          { sourceDocumentId: f.sourceDocumentId },
+        );
+        expect(r.status).toBe(
+          mode === "READY" ? "REVIEW_LOCAL" : "UNAVAILABLE",
+        );
+        expect(r.source !== null).toBe(mode === "READY");
+        expect(JSON.stringify(r)).not.toMatch(
+          /private-never-disclosed|secret.invalid|signedUrl|storageKey|localId|corrections|conflictCount/,
+        );
+        expect(
+          await db
+            .collection("sourceDocuments")
+            .findOne({ _id: f.sourceDocumentId } as never),
+        ).toEqual(before);
+        expect(
+          await db
+            .collection("commercialReviewDecisions")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(0);
+      },
+    );
+    it.each([false, true])(
+      "persists a genuine source-scoped server invitation once, or rolls back foreign scope (forged=%s)",
+      async (forged) => {
+        const f = await seed(),
+          db = await database.getDb(),
+          chat = chatFixture(randomUUID);
+        chat.storeId = f.storeId;
+        chat.conversation.storeId = f.storeId;
+        chat.message.storeId = f.storeId;
+        chat.message.attachments = [
+          {
+            sourceDocumentId: f.sourceDocumentId,
+            filename: "week.pdf",
+            mediaType: "application/pdf",
+          },
+        ];
+        await db
+          .collection<Document & { _id: string }>("copilotConversations")
+          .insertOne({ _id: chat.conversation.id, ...chat.conversation });
+        await db
+          .collection<Document & { _id: string }>("copilotMessages")
+          .insertOne({ _id: chat.message.id, ...chat.message });
+        const preview = await previewTranscriptionReview(db, f.storeId, {
+          sourceDocumentId: f.sourceDocumentId,
+        });
+        if (!preview.source) throw Error("SOURCE_MISSING");
+        const value = forged
+          ? { ...preview, source: { ...preview.source, storeId: randomUUID() } }
+          : preview;
+        const generate = vi.fn(async () => ({
+          output: {
+            language: "fr-FR",
+            summary: "Comparaison à ouvrir sur cet appareil.",
+            facts: preview.evidence.map((e) => ({ evidenceId: e.id })),
+            interpretation: [],
+            recommendations: [],
+            questions: [],
+          },
+          metadata: {
+            requestedModel: "test",
+            resolvedModel: "test",
+            responseId: "fixture-transcription-review",
+            inputTokens: null,
+            outputTokens: null,
+          },
+          toolEvidence: preview.evidence,
+          transcriptionReviewPreviews: [value],
+        }));
+        const dependencies = {
+          db,
+          provider: { model: "test", generate } as CopilotAiProvider,
+          authorize: async () => ({
+            storeId: f.storeId,
+            ownerId: chat.ownerId,
+            canRespond: true,
+          }),
+          loadContext: async () =>
+            detectCopilotConflicts({
+              batch: scoreCopilotPriorities({
+                storeId: f.storeId,
+                evaluatedAt: chat.message.createdAt,
+                candidates: [],
+              }),
+              intents: [],
+            }),
+        };
+        const turn = {
+          conversationId: chat.conversation.id,
+          userMessageId: chat.message.id,
+          replyId: randomUUID(),
+        };
+        if (forged) {
+          await expect(runCopilotTurn(dependencies, turn)).rejects.toThrow();
+          expect(
+            await db.collection("copilotMessages").countDocuments({
+              conversationId: chat.conversation.id,
+              role: { $in: ["ASSISTANT", "TOOL"] },
+            }),
+          ).toBe(0);
+        } else {
+          await runCopilotTurn(dependencies, turn);
+          const rows = await db
+            .collection("copilotMessages")
+            .find({ conversationId: chat.conversation.id, role: "TOOL" })
+            .toArray();
+          expect(rows).toHaveLength(1);
+          const { _id, ...raw } = rows[0]!;
+          expect(readTranscriptionReviewProposal(raw).content.source).toEqual(
+            preview.source,
+          );
+          expect(
+            await db
+              .collection("syncChanges")
+              .countDocuments({ entityId: _id }),
+          ).toBe(1);
+          expect(
+            (await runCopilotTurn(dependencies, turn)).alreadyApplied,
+          ).toBe(true);
+          expect(generate).toHaveBeenCalledTimes(1);
+        }
+        expect(
+          await db
+            .collection("commercialReviewDecisions")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(0);
+      },
+    );
     function review(
       page: CommercialReviewPage,
       overrides: Partial<CommercialReviewDecision> = {},
@@ -161,7 +348,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         randomUUID(),
       );
     }
-    it("retains the first accepted transcription across a real conflict group, third-device restore and offline reopen", async () => {
+    async function runConflictScenario(mode: "MANUAL" | "COPILOT") {
       const f = await seed(),
         actorId = randomUUID(),
         aDevice = randomUUID(),
@@ -179,7 +366,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         new MobileSyncService(
           db,
           {
-            push: (r) => pushing.push(r, randomUUID()),
+            push: (r) => pushing.push(r, randomUUID(), actorId),
             pull: (storeId, cursor) =>
               pulling.pull(storeId, {
                 cursor,
@@ -199,7 +386,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
                 { rawObservationDays: 90, commercialReview: "true" },
               ),
           },
-          { appVersion: "test", deviceId, commercialReview: true },
+          {
+            appVersion: "test",
+            deviceId,
+            commercialReview: true,
+            copilotOwnerId: actorId,
+          },
         );
       try {
         await registerCommercialReviewPages(
@@ -277,7 +469,47 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         expect(compared.group).toHaveLength(2);
         expect(compared.canResolve).toBe(true);
         expect(compared.remote).toEqual(accepted);
-        await repoB.useRemoteDecision(f.storeId, local.id, accepted.id, action);
+        if (mode === "COPILOT") {
+          const preview = await previewTranscriptionReview(
+            await database.getDb(),
+            f.storeId,
+            { sourceDocumentId: f.sourceDocumentId },
+          );
+          expect(preview.status).toBe("REVIEW_LOCAL");
+          const chat = await attachTranscriptionChat(
+              b,
+              { storeId: f.storeId, ownerId: actorId, deviceId: bDevice },
+              f.page,
+              preview,
+            ),
+            list = await chat.controller.list(chat.message);
+          expect((await syncB.sync(f.storeId)).pushed).toBe(2);
+          expect(list.items.map((r) => r.id)).toEqual([local.id]);
+          const review = await chat.controller.review(chat.message, local.id);
+          if (review.status !== "READY") throw Error("CHAT_REVIEW_NOT_READY");
+          const outcome = await chat.controller.confirm(
+            chat.message,
+            local.id,
+            review.review.hash,
+            true,
+          );
+          expect(outcome.remoteId).toBe(accepted.id);
+          expect(
+            await chat.controller.confirm(
+              chat.message,
+              local.id,
+              review.review.hash,
+              true,
+            ),
+          ).toEqual(outcome);
+        } else
+          await repoB.useRemoteDecision(
+            f.storeId,
+            local.id,
+            accepted.id,
+            action,
+          );
+
         expect((await syncB.sync(f.storeId)).pushed).toBe(0);
         await syncC.sync(f.storeId);
         expect(
@@ -295,7 +527,13 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           failed_count: 0,
         });
         expect(await new ConflictRepository(b).listOpen(f.storeId)).toEqual([]);
-        await repoB.useRemoteDecision(f.storeId, local.id, accepted.id, action);
+        if (mode === "MANUAL")
+          await repoB.useRemoteDecision(
+            f.storeId,
+            local.id,
+            accepted.id,
+            action,
+          );
         await syncB.sync(f.storeId);
         const remoteDb = await database.getDb();
         expect(
@@ -339,7 +577,13 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         if (!cClosed) c.db.close();
         rmSync(dir, { recursive: true, force: true });
       }
-    }, 60000);
+    }
+    it.each(["MANUAL", "COPILOT"] as const)(
+      "retains the first accepted transcription across a real conflict group, third-device restore and offline reopen (%s)",
+      runConflictScenario,
+      60000,
+    );
+
     it("registers immutable page snapshots exactly once under concurrent delivery", async () => {
       const { storeId, sourceDocumentId, pageId, page } = await seed();
       const db = await database.getDb();

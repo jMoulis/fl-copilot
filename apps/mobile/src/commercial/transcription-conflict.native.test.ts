@@ -278,3 +278,27 @@ it.each(["SEND", "PARENT"] as const)(
     ]);
   },
 );
+
+it("rejects a retained comparison checkbox after another source is committed", async () => {
+  const a = await setup(),
+    oldCheck = hosts("Switch")[0]!.props.onValueChange;
+  const b = await nativeCommercialTranscriptionFixture();
+  fixtures.push(b);
+  runtime.session = {
+    user: { id: b.scope.ownerId },
+    stores: [{ storeId: b.scope.storeId, role: "MANAGER" }],
+  };
+  runtime.database = { sqlite: b.a, deviceId: b.scope.deviceId };
+  await act(async () => {
+    tree!.update(view(b));
+  });
+  const beforeA = snapshot(a),
+    beforeB = snapshot(b);
+  await act(async () => {
+    oldCheck(true);
+  });
+  expect(hosts("Switch")[0]!.props.value).toBe(false);
+  expect(button(label).props.disabled).toBe(true);
+  expect(snapshot(a)).toEqual(beforeA);
+  expect(snapshot(b)).toEqual(beforeB);
+});

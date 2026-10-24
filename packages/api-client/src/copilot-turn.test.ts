@@ -927,3 +927,33 @@ it.each([true, false])(
     expect(JSON.parse(String(sent.body))).toEqual(input);
   },
 );
+
+it.each([true, false])(
+  "advertises transcription-review preparation without mutation/consent fields in the request body (%s)",
+  async (transcriptionReview) => {
+    const transport = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ message, alreadyApplied: false }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", transport);
+    await new ApiClient("https://test.invalid").copilotTurn(
+      "test-token",
+      id(4),
+      id(5),
+      input,
+      undefined,
+      { transcriptionReview, onProgress: vi.fn() },
+    );
+    const sent = transport.mock.calls[0]![1]!;
+    if (transcriptionReview)
+      expect(sent.headers).toHaveProperty(
+        "x-copilot-transcription-review",
+        "1",
+      );
+    else
+      expect(sent.headers).not.toHaveProperty("x-copilot-transcription-review");
+    expect(JSON.parse(String(sent.body))).toEqual(input);
+  },
+);
