@@ -47,7 +47,7 @@ export function buildCopilotResponseMessage(input: {
   const response =
     input.generation.mode === "AI"
       ? validateCopilotResponse(input.generation.response, request)
-      : copilotResponseFallback(request);
+      : copilotResponseFallback(request, input.generation.outputLimited);
   const evidence = new Map(
     copilotRequestEvidence(request).map((e) => [e.id, e] as const),
   );

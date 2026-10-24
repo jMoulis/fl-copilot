@@ -48,6 +48,27 @@ export const analyticsQueryProductSchema = z.strictObject({
 });
 export type AnalyticsQueryPoint = z.infer<typeof analyticsQueryPointSchema>;
 export type AnalyticsQueryProduct = z.infer<typeof analyticsQueryProductSchema>;
+/** Concentration concerns recorded product totals, never an estimated department total. */
+export const salesConcentrationPeriodSchema = z.strictObject({
+  status: z.enum(["AVAILABLE", "PARTIAL", "UNAVAILABLE"]),
+  reason: z
+    .enum(["NO_AVAILABLE_SALES", "NON_POSITIVE_TOTAL", "NEGATIVE_SALES"])
+    .nullable(),
+  availableProductCount: z.number().int().nonnegative(),
+  missingProductCount: z.number().int().nonnegative(),
+  partialProductCount: z.number().int().nonnegative(),
+  negativeProductCount: z.number().int().nonnegative(),
+  totalSalesValue: z.string().nullable(),
+  top20ProductCount: z.number().int().nonnegative(),
+  top20SalesSharePercent: z.string().nullable(),
+  productsFor80Percent: z.number().int().positive().nullable(),
+  productShareFor80Percent: z.string().nullable(),
+  actualSalesShareFor80Percent: z.string().nullable(),
+});
+export const salesConcentrationSchema = z.strictObject({
+  current: salesConcentrationPeriodSchema,
+  reference: salesConcentrationPeriodSchema.nullable(),
+});
 export function analyticsLabelContains(label: string, term: string) {
   const normalize = (v: string) =>
     v.normalize("NFKD").replace(/\p{M}/gu, "").toLocaleLowerCase("fr-FR");
@@ -296,6 +317,16 @@ export function executeAnalyticsQuery(input: {
   });
   return {
     query,
+    ...(query.includeSalesConcentration
+      ? {
+          salesConcentration: {
+            current: concentration("current"),
+            reference: query.referencePeriod
+              ? concentration("reference")
+              : null,
+          },
+        }
+      : {}),
     totalGroups: allRows.length,
     evaluatedGroups,
     unknownConditionGroups,
@@ -312,6 +343,93 @@ export function executeAnalyticsQuery(input: {
         : null,
     rows: allRows.slice(query.offset, query.offset + query.limit),
   };
+  function concentration(period: "current" | "reference") {
+    const values = allRows
+      .flatMap((r) => {
+        const metric = r.metrics.find((m) => m.metric === "sales")!;
+        const value = metric[period];
+        return value === null
+          ? []
+          : [
+              {
+                key: r.key,
+                value,
+                coverage:
+                  period === "current"
+                    ? metric.currentCoverage
+                    : metric.referenceCoverage!,
+              },
+            ];
+      })
+      .sort(
+        (a, b) =>
+          parseDecimal(b.value).value.comparedTo(parseDecimal(a.value).value) ||
+          (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+      );
+    const missingProductCount = allRows.length - values.length,
+      partialProductCount = values.filter(
+        (v) => v.coverage.availableDays !== v.coverage.expectedDays,
+      ).length,
+      negativeProductCount = values.filter((v) =>
+        parseDecimal(v.value).value.isNegative(),
+      ).length,
+      totalSalesValue = values.length
+        ? addDecimals(values.map((v) => v.value))
+        : null,
+      reason = !values.length
+        ? ("NO_AVAILABLE_SALES" as const)
+        : negativeProductCount
+          ? ("NEGATIVE_SALES" as const)
+          : parseDecimal(totalSalesValue!).value.lte(0)
+            ? ("NON_POSITIVE_TOTAL" as const)
+            : null,
+      top20ProductCount = Math.ceil(values.length / 5);
+    let productsFor80Percent: number | null = null,
+      top20SalesSharePercent: string | null = null,
+      productShareFor80Percent: string | null = null,
+      actualSalesShareFor80Percent: string | null = null;
+    if (reason === null) {
+      const total = parseDecimal(totalSalesValue!).value,
+        share = (value: string) =>
+          parseDecimal(value).value.div(total).times(100).toFixed(2);
+      top20SalesSharePercent = share(
+        addDecimals(values.slice(0, top20ProductCount).map((v) => v.value)),
+      );
+      let cumulative = parseDecimal("0").value;
+      productsFor80Percent = 0;
+      for (const item of values) {
+        cumulative = cumulative.plus(parseDecimal(item.value).value);
+        productsFor80Percent++;
+        if (cumulative.gte(total.times("0.8"))) break;
+      }
+      productShareFor80Percent = parseDecimal(String(productsFor80Percent))
+        .value.div(values.length)
+        .times(100)
+        .toFixed(2);
+      actualSalesShareFor80Percent = cumulative
+        .div(total)
+        .times(100)
+        .toFixed(2);
+    }
+    return salesConcentrationPeriodSchema.parse({
+      status: reason
+        ? "UNAVAILABLE"
+        : missingProductCount || partialProductCount
+          ? "PARTIAL"
+          : "AVAILABLE",
+      reason,
+      availableProductCount: values.length,
+      missingProductCount,
+      partialProductCount,
+      negativeProductCount,
+      totalSalesValue,
+      top20ProductCount,
+      top20SalesSharePercent,
+      productsFor80Percent,
+      productShareFor80Percent,
+      actualSalesShareFor80Percent,
+    });
+  }
 }
 
 /** Shared coverage rule for observed product-days. Callers validate scope/uniqueness first. */

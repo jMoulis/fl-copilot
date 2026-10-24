@@ -163,14 +163,16 @@ export function validateCopilotResponse(
 
 export function copilotResponseFallback(
   request: CopilotGenerationRequest,
+  outputLimited = false,
 ): CopilotResponse {
   // The default daily snapshot is not an answer to an arbitrary chat question.
   // Keep that deterministic overview only for the dedicated no-question brief.
   if (request.userQuestion?.trim() || request.attachedSources?.length)
     return copilotResponseSchema.parse({
       language: "fr-FR",
-      summary:
-        "Je n’ai pas pu terminer cette analyse. Tu peux me demander de réessayer ; ta demande et tes fichiers sont conservés.",
+      summary: outputLimited
+        ? "Je n’ai pas pu terminer cette analyse dans la limite prévue. Ta demande et tes fichiers sont conservés. Pour reprendre, demande-moi d’abord une synthèse des principaux résultats, puis le détail des produits."
+        : "Je n’ai pas pu terminer cette analyse. Tu peux me demander de réessayer ; ta demande et tes fichiers sont conservés.",
       facts: [],
       interpretation: [],
       recommendations: [],
@@ -264,6 +266,7 @@ export async function generateCopilotResponse(
   onFailure?: (failure: CopilotGenerationFailure) => void,
 ): Promise<{
   mode: "AI" | "FALLBACK";
+  outputLimited?: boolean;
   factTrace?: Awaited<ReturnType<CopilotAiProvider["generate"]>>["factTrace"];
   response: CopilotResponse;
   metadata: CopilotGenerationMetadata | null;
@@ -484,7 +487,15 @@ export async function generateCopilotResponse(
     }
     return {
       mode: "FALLBACK",
-      response: copilotResponseFallback(request),
+      ...(error instanceof CopilotAiError &&
+      error.code === "COPILOT_AI_OUTPUT_LIMIT"
+        ? { outputLimited: true }
+        : {}),
+      response: copilotResponseFallback(
+        request,
+        error instanceof CopilotAiError &&
+          error.code === "COPILOT_AI_OUTPUT_LIMIT",
+      ),
       metadata: null,
       evidence: request.evidence,
       // A failed narrative does not invalidate a separately checked read-only

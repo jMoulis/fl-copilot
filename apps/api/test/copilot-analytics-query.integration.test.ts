@@ -117,6 +117,101 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
         snapshot(otherStore, randomUUID(), "2025-10-01", "999999.00"),
       ]);
   });
+  it("computes a citable complete-cohort Pareto before pagination, with independent reference and unchanged tenant data", async () => {
+    const before = await db
+      .collection("productDailyPerformance")
+      .countDocuments();
+    const r = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({
+        includeSalesConcentration: true,
+        limit: 1,
+        referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+      }),
+    );
+    expect(r.rows).toHaveLength(1);
+    expect(r.hasMore).toBe(true);
+    expect(r.salesConcentration?.current).toMatchObject({
+      status: "PARTIAL",
+      availableProductCount: 2,
+      totalSalesValue: "30.30",
+      top20ProductCount: 1,
+      top20SalesSharePercent: "66.01",
+      productsFor80Percent: 2,
+      productShareFor80Percent: "100.00",
+    });
+    expect(r.salesConcentration?.reference).toMatchObject({
+      status: "PARTIAL",
+      availableProductCount: 1,
+      missingProductCount: 1,
+      totalSalesValue: "40.00",
+      productsFor80Percent: 1,
+    });
+    const current = r.salesConcentration!.current;
+    for (const [key, id] of Object.entries(current.evidenceIds)) {
+      const item = r.evidence.find((e) => e.id === id)!;
+      expect(item.value).toBe(String(current[key as keyof typeof current]));
+      expect(item.detail).toContain("avant pagination");
+      expect(item.analyticsContext).toBeUndefined();
+    }
+    const text = renderAnswerText(
+      "{{label:0}} : {{value:0}}. {{source:0}}",
+      [{ evidenceId: current.evidenceIds.top20SalesSharePercent }],
+      r.evidence,
+    );
+    expect(text).toContain("66,01");
+    expect(text).toContain("copilot-source:");
+    const next = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({
+        includeSalesConcentration: true,
+        limit: 1,
+        offset: 1,
+        referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+      }),
+    );
+    const { evidenceIds: _firstIds, ...first } = current;
+    const { evidenceIds: _nextIds, ...second } =
+      next.salesConcentration!.current;
+    void _firstIds;
+    void _nextIds;
+    expect(first).toEqual(second);
+    expect(
+      await db.collection("productDailyPerformance").countDocuments(),
+    ).toBe(before);
+    expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
+  });
+  it("keeps analytical evidence keys compact and stable while retaining the full source revision and citable values", async () => {
+    const input = query({
+      includeSalesConcentration: true,
+      includeSalesMeasures: true,
+      referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+    });
+    const r = await readAnalyticsQuery(db, storeId, input);
+    expect(r.evidence.length).toBeGreaterThan(14);
+    expect(new Set(r.evidence.map((e) => e.id)).size).toBe(r.evidence.length);
+    for (const e of r.evidence) {
+      expect(e.id).toMatch(/^aq:[0-9a-f]{32}$/);
+      expect(e.sourceId).toMatch(/^analytics-query\/[0-9a-f]{64}$/);
+      expect(e.id.length).toBeLessThan(e.sourceId.length / 2);
+    }
+    const again = await readAnalyticsQuery(db, storeId, input);
+    expect(again.evidence).toEqual(r.evidence);
+    const current = r.salesConcentration!.current;
+    const fact = r.evidence.find(
+      (e) => e.id === current.evidenceIds.top20SalesSharePercent,
+    )!;
+    expect(
+      renderAnswerText(
+        "{{value:0}} % {{source:0}}",
+        [{ evidenceId: fact.id }],
+        r.evidence,
+      ),
+    ).toContain("66,01 %");
+    expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
+  });
   it("reads stored quantities, preserves units and supplies citable weighted realized-price evidence without asserting TTC", async () => {
     await db.collection("productDailyPerformance").updateMany(
       { storeId, productId: banana },

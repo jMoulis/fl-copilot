@@ -13,6 +13,7 @@ export const copilotAnalyticsQuerySchema = z
       .max(3),
     aggregation: z.enum(["SUM", "AVERAGE"]),
     includeSalesMeasures: z.boolean().optional(),
+    includeSalesConcentration: z.boolean().optional(),
     filters: z.strictObject({
       productIds: z.array(z.uuid()).min(1).max(100).nullable(),
       labelContains: z.string().trim().min(1).max(100).nullable(),
@@ -46,6 +47,19 @@ export const copilotAnalyticsQuerySchema = z
     limit: z.number().int().min(1).max(20),
   })
   .superRefine((v, c) => {
+    if (
+      v.includeSalesConcentration &&
+      (v.groupBy !== "PRODUCT" ||
+        v.aggregation !== "SUM" ||
+        v.metrics.length !== 1 ||
+        v.metrics[0] !== "sales" ||
+        v.having !== null)
+    )
+      c.addIssue({
+        code: "custom",
+        message:
+          "Sales concentration requires PRODUCT sales SUM and no having condition",
+      });
     if (
       v.includeSalesMeasures &&
       (v.groupBy !== "PRODUCT" || v.limit > 10 || !v.metrics.includes("sales"))
