@@ -1,4 +1,18 @@
-# Roadmap V1 restante — bilan au 19 octobre 2026
+# Roadmap V1 — état courant et historique des lots
+
+## Point courant — 24 octobre 2026
+
+L'ordre et le périmètre complet de la V1 restent ceux convenus pour la présentation du 28 octobre. Les maquettes v1.1 sont arbitrées par `AUDIT.md` et les invariants, pas une nouvelle architecture. **API `4941513` livrée ; iOS build 14 (`7e46885`) terminé et disponible**, regroupant les PR 337–343 après leurs CI exactes. Build 13 est conservé pour retour arrière ; installation et recette utilisateur du build 14 sont encore ouvertes. Lire d'abord le [suivi des sept chantiers](../progress/M7_WORKSTREAM_STATUS.md) et la [recette native courante](../qa/M7_GROUPED_IPHONE_ACCEPTANCE.md).
+
+1. **Données.** Vérifier le réimport corrigé de `21102026.xlsx`, ses identités et sa répétition, puis les quantités/prix sur les journées effectivement disponibles. Le recalcul distant est livré ; les originaux et nombres historiques sont conservés.
+2. **UX.** Valider les cinq domaines et les parcours détaillés sur le binaire identifié : fidélité visuelle, densité, clavier/formulaires, feuilles/retours, filtres/scroll, chat naturel/streaming/tableaux/sources. Le code compilé ne vaut pas recette physique.
+3. **Copilote.** Fermer/qualifier les limites de parité restantes, notamment conflits multiples et absence distante non prouvée, sans writer générique ni écrasement arbitraire. Rejouer les analyses et les cas d'expertise/web/photos/mémoire/compactage réels ; valider contre-promo et décision → réalisation → bilan.
+4. **Canaux/implantation.** Obtenir l'accord de clé Resend Full access dédiée puis reprendre la réception réelle par le compte propriétaire ; vérifier original/traitement/conversation et second appareil. Finaliser mesures/mobiles, puis modèle/budget et illustration liée au scénario ; aucune référence ni image ne suffit à prouver le plan.
+5. **M8/livraison.** Exercer réseau/hors connexion/redémarrage/conflits/migrations/copies et sauvegardes/restaurations, ainsi que performances, sécurité, accessibilité, notifications et observabilité iOS/Android. Identifier versions compatibles/retour arrière et consigner la recette pilote avant de déclarer la V1 achevée.
+
+Les exceptions techniques, permissions, mesures et recettes encore ouvertes ne sont pas requalifiées en simples finitions. Les sections datées et L1–L11 ci-dessous conservent les étapes depuis le 19 octobre ; leurs anciens états ne sont pas une liste actuelle de fonctions absentes. Le correctif Resend PR 334 est **déjà déployé dans l'API `4941513`** ; son activation de droits et l'original réel restent non validés.
+
+## Historique des incréments et des critères initiaux
 
 L11/M8 : la connexion locale propose une reprise après erreur de lecture du stockage sécurisé, sans déconnexion ni effacement non justifié. Le contenu local vérifié reste accessible avant un renouvellement réseau en attente. Voir `../qa/M8_AUTH_STARTUP_STORAGE_2026_10_24.md`. PR 342 fusionnée après les deux CI exactes ; PR 337–342 et ce lot restent hors build 13, recette physique et périmètre V1 complet ouverts.
 

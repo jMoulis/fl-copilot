@@ -1,5 +1,11 @@
 # Copilot manual-operation coverage inventory
 
+## Current reading rule — 24 October 2026
+
+This is a dated operation inventory, not an assertion that every historical pending adapter is still missing or that every public repository helper should become a model writer. The 11 October introduction describes pre-activation history. The model-facing SDK bindings are in `apps/api/src/copilot/ai-provider.ts`, conditional on trusted capabilities/permissions; native cards and canonical local transactions remain part of execution. Use the later dated entries, source and current seven-workstream ledger together.
+
+The compatible API `4941513` is deployed. Grouped iOS build 14 from `7e46885` is finished/available and includes catalogue capability 2; installation and device acceptance remain unproven. Known tombstone choices and inactive-fiche metadata maintenance are implemented. The current native `store-conflict-review.ts` deliberately blocks multiple OPEN conflicts for one entity and directs the user to Synchronisation; it also refuses absent/unverified/reassigned source snapshots. Domain-specific parity/rejected-command/recovery gaps must still be closed or qualified; do not announce blanket CRUD completion or build a universal last-write-wins repair tool. Technical local-copy/session startup support does not give the model a raw database export or authority to restore a device.
+
 ## Actions — private conversational follow-up (23 October)
 
 The native Actions screen reads existing private recommendation decisions and explicit action executions across owned conversations, in bounded weekly pages. It preserves decision/execution distinctions, independent business history, deleted-source privacy and local context, and opens the existing scoped conversation route. This is a read-only functional surface, not a new model tool or mutation authority. Latest-change week is not the actual execution period. See `../qa/M7_ACTIONS_COPILOT_FOLLOWUP_2026_10_23.md`; real-loop and device acceptance remain open.

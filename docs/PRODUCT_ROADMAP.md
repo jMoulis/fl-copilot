@@ -1,10 +1,14 @@
 # Product roadmap
 
-Date: 2026-10-09.
+Initial roadmap: 9 October 2026. Current delivery checkpoint: 24 October 2026.
 
-Commercial-document UX increment (23 October, in validation): searchable/filterable ten-card pages retain original/review-only sources and preparation state; focused/pull/manual reads replace the two-second screen poll. A store-scoped grouped upload-job reader preserves recovery selection while reducing 200 individual job queries to one. See `qa/M7_UX_COMMERCIAL_DOCUMENTS_2026_10_23.md`; later grouped native delivery and owner acceptance remain distinct from PR 337/build 13 and from the complete V1/M8 gates.
+## Current delivery — 24 October 2026
 
-Current V1 delivery note (23 October): grouped iOS build 13 from `5838bd8` is available, with owner acceptance still pending. The following M8 increment fences manual product saves against stale owner/store/editor contexts within the existing SQLite aggregate/Outbox transaction, without changing permissions or requiring connectivity. See `qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md` and the seven-workstream ledger; no complete V1/M8 acceptance is implied.
+The compatible API is deployed from `4941513bc28de0a0f8494f88575c0e531dc7d0aa`, deployment `dpl_J8GundEHU4dF1yEg4Fv5XSwyhKzR`, at `https://fl-copilot.vercel.app`. JSON health/database connectivity and unauthenticated private-route refusal were verified. The server-side product-unit refresh and receiving-key code are included. A sending-only Resend credential still prevents real original reception; code deployment is not rights activation.
+
+The grouped native **iOS 0.1.0/build 14 is FINISHED and available**, source `7e46885af8a1253911bfea0718cc21e6524a48a0`, [EAS build](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/eabbf760-49d8-4161-9e40-e16a63f02403). It groups PR 337–343, including product-edit context guards, searchable commercial documents, inactive-catalogue metadata maintenance, private Actions follow-up, reminder lifetimes, verified local copies and retryable secure-storage startup. Both final-head push/PR checks and merge-master checks passed; each final PR check ran 4,029 passing tests / 6 skipped and fresh iOS/Android exports. The inspected build source matches the merged Git tree. Availability and installation remain distinct from owner acceptance. **Build 13 is retained for rollback; installing and accepting build 14 are still unconfirmed.**
+
+No SQL schema change was introduced after build 13. Installing an update must preserve the existing app container, local sources and unsent actions; do not uninstall/reset. A private local copy is not a cloud/device-loss backup. The current native recipe is in [M7_GROUPED_IPHONE_ACCEPTANCE.md](qa/M7_GROUPED_IPHONE_ACCEPTANCE.md). Full V1/M8, Android and real pilot acceptance remain open.
 
 ## Product objective
 
@@ -21,11 +25,15 @@ reliable local data
 → pilot hardening
 ```
 
-## Current position — authoritative update, 23 October 2026
+## Current position — authoritative update, 24 October 2026
 
-M7 remains active across the seven workstreams in `progress/M7_WORKSTREAM_STATUS.md`; M8 acceptance is open. The primary conversational Copilot is delivered and in field use. The five-domain UX is being completed against `ux/AUDIT.md`, not replaced by a demo scope. The historical alpha descriptions below predate these releases and are not an inventory of currently missing functionality.
+M7 remains active across the seven agreed workstreams in [the current ledger](progress/M7_WORKSTREAM_STATUS.md), and M8 hardening/acceptance is in progress. The primary conversational Copilot and five-domain native navigation are implemented and in pilot use; historical statements about chat not yet being activated describe earlier stages. The complete UX is still being accepted against [the arbitrated audit](ux/AUDIT.md), not narrowed to a presentation demo.
 
-The durable remote refresh after product-unit corrections is deployed, and the corrected Mercalys reimport plus Analytics filter improvements are available in iOS 0.1.0/build 12 (`6a7fbf4`), pending owner acceptance. Today freshness/partial-value UX is merged in PR 331 (`8f40e0d`) but awaits a grouped native delivery. The current Today visuals/Actions context increment remains in validation. Resend development reception is configured on the owner's managed domain and the existing Inngest app is synchronized; real email preservation, confirmed processing, conversation return and second-device restoration remain unaccepted. No full V1 or cross-platform acceptance is claimed.
+Reliable-data code is merged and released in the compatible API/native sequence: remote unit corrections recompute derived quantities/prices through shared engines without converting historic numbers; corrected reimport and filter handling from PR 328 are included from build 12 onward. Today visuals/freshness, progressive receipt/product forms and product navigation/read stability are included from build 13 onward. The real corrected `21102026.xlsx` reimport and current UX still need the owner's version-identified recipe; two micro-wave potato references remain distinct and the two BIO banana references share a product.
+
+This is not a claim that every manual action is exposed identically in chat. [The operation inventory](specs/COPILOT_TOOL_COVERAGE.md) and current adapters retain explicit conflict/rejected-command/source-recovery limits. In particular, the current native conversational comparison refuses multiple open conflicts for one entity and routes to Synchronisation. Unknown remote absence must not be treated as a deletion or silently overwritten. Further parity closure and the real recommendation → decision → explicit execution → bilan remain workstream requirements.
+
+Remaining necessary inputs/acceptance include dedicated Resend receiving-key approval and the real email/original/processing/conversation loop, second-device originals, measured store geometry/mobiles, approved illustration model/budget, real Copilot expertise/web/photo/memory/compaction scenarios, and the full iOS/Android/offline/security/performance/accessibility/notifications/backup/restore pilot matrix. A compiled binary, a reference floor plan or a green mocked-provider test does not close those gates. The complete execution order remains [the V1 roadmap](ux/V1_REMAINING_ROADMAP.md).
 
 ## Historical operational-alpha position
 
@@ -50,7 +58,7 @@ M4 receipt capture, extraction, validation, publication and recovery have been a
 | M5 — Commercial planning             | Complete on iOS | Import weekly commercial PDFs, validate operations and use Ma semaine offline                                | Validated plan, operation detail and execution checklist remain usable offline and synchronize later             |
 | M6 — Need Units and substitution     | Complete on iOS | Record customer needs, directed substitutes and field events such as tension or stockout                     | Offline event and substitute lookup later produce an auditable remote evidence update                            |
 | M7 — Copilot decisions and execution | In progress     | Primary chat uses business tools, shared memory and grounded advice; decisions and execution remain explicit | Maximum three priorities, no unsupported number, offline decisions and deterministic fallback during AI outage   |
-| M8 — Pilot release                   | Planned         | Secure, observable and recoverable iOS/Android pilot distribution                                            | Full offline/conflict matrix, recovery, accessibility, performance, security, backups and release checklist pass |
+| M8 — Pilot release                   | In progress     | Secure, observable and recoverable iOS/Android pilot distribution                                            | Full offline/conflict matrix, recovery, accessibility, performance, security, backups and release checklist pass |
 
 ## Product delivery stages
 
@@ -348,3 +356,11 @@ Use Resend inbound receiving for automatic document intake within M7-T23, starti
 ### Store-owned physical plan — clarified 19 October 2026
 
 M7 workstream 6 starts from the store's reusable physical reference, not standalone chat geometry. The interactive 2D plan in the store page represents two eight-element islands, three TGs and optional selling mobiles with habitual positions. Each fixed island element owns its bac and upper shelf. Commercial assignments and illustrations use an exact physical revision while keeping furniture fixed by default. The fleg editor/reference supplies an unconfirmed starting model to adapt to native local-first persistence. See [the canonical specification](specs/STORE_LAYOUT_SPEC.md) for versions, face-level interaction, progressive measurements and the delivery sequence; the seven workstreams and M7 exit gate remain unchanged.
+
+## Historical increment notes — 23 October, before grouped build 14
+
+These dated preparation notes are retained for traceability; use the current delivery checkpoint above.
+
+Commercial-document UX increment (23 October, in validation): searchable/filterable ten-card pages retain original/review-only sources and preparation state; focused/pull/manual reads replace the two-second screen poll. A store-scoped grouped upload-job reader preserves recovery selection while reducing 200 individual job queries to one. See `qa/M7_UX_COMMERCIAL_DOCUMENTS_2026_10_23.md`; later grouped native delivery and owner acceptance remain distinct from PR 337/build 13 and from the complete V1/M8 gates.
+
+Current V1 delivery note (23 October): grouped iOS build 13 from `5838bd8` is available, with owner acceptance still pending. The following M8 increment fences manual product saves against stale owner/store/editor contexts within the existing SQLite aggregate/Outbox transaction, without changing permissions or requiring connectivity. See `qa/M8_PRODUCT_EDITOR_SCOPE_2026_10_23.md` and the seven-workstream ledger; no complete V1/M8 acceptance is implied.
