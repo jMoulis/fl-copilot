@@ -1,4 +1,9 @@
 import {
+  visualActionInputSchema,
+  visualActionPreviewSchema,
+  validateVisualActionPreview,
+} from "@fl-copilot/domain";
+import {
   copilotVisualLookupInputSchema,
   validateCopilotVisualLookup,
   copilotVisualLookupResultSchema,
@@ -418,6 +423,7 @@ export interface CopilotAiProvider {
       z.infer<typeof receiptPublicationPreviewSchema>
     >;
     identityReviews?: Array<z.infer<typeof identityReviewPreviewSchema>>;
+    visualActionPreviews?: Array<z.infer<typeof visualActionPreviewSchema>>;
     cataloguePreviews?: Array<z.infer<typeof copilotCataloguePreviewSchema>>;
     executionPreviews?: Array<
       z.infer<typeof copilotExecutionPreviewResultSchema>
@@ -524,6 +530,9 @@ export function createCopilotAiProvider(
     identityReview?(
       input: z.infer<typeof identityReviewInputSchema>,
     ): Promise<z.infer<typeof identityReviewPreviewSchema>>;
+    visualAction?(
+      input: z.infer<typeof visualActionInputSchema>,
+    ): Promise<z.infer<typeof visualActionPreviewSchema>>;
     cataloguePreview?(
       input: z.infer<typeof copilotCatalogueInputSchema>,
     ): Promise<z.infer<typeof copilotCataloguePreviewSchema>>;
@@ -804,6 +813,9 @@ export function createCopilotAiProvider(
         > = [];
         const identityReviews: Array<
           z.infer<typeof identityReviewPreviewSchema>
+        > = [];
+        const visualActionPreviews: Array<
+          z.infer<typeof visualActionPreviewSchema>
         > = [];
         const cataloguePreviews: Array<
           z.infer<typeof copilotCataloguePreviewSchema>
@@ -1400,6 +1412,39 @@ export function createCopilotAiProvider(
                             )
                               throw Error("IDENTITY_REVIEW_LIMIT");
                             identityReviews.push(result);
+                            return result;
+                          },
+                        ),
+                    }),
+                  }
+                : {}),
+              ...(reads.visualAction
+                ? {
+                    product_visual_preview: tool({
+                      description:
+                        "Prepare an explicit user's product-image choice, never save it: ASSIGN_LIBRARY selects one exact existing visualIdentityId discovered with product_visuals; REMOVE_PRODUCT removes only this product’s association; REVOKE_CURRENT withdraws its currently resolved image for all products. productId is always the exact target; visualIdentityId is null except for assignment. No upload, generation or rights grant. READY creates a native review card; assignment needs viewing the actual local photo, and global withdrawal/restoring a removed association need separate human confirmation. Originals and business figures remain unchanged.",
+                      inputSchema: visualActionInputSchema,
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["visual-action-preview", input]),
+                          async () => {
+                            const result = validateVisualActionPreview(
+                              request.storeId,
+                              input,
+                              await reads.visualAction!(input),
+                            );
+                            const old = visualActionPreviews.findIndex(
+                              (p) => p.input.productId === input.productId,
+                            );
+                            if (old >= 0) visualActionPreviews.splice(old, 1);
+                            if (
+                              result.status === "READY" &&
+                              visualActionPreviews.filter(
+                                (p) => p.status === "READY",
+                              ).length >= 3
+                            )
+                              throw Error("VISUAL_ACTION_LIMIT");
+                            visualActionPreviews.push(result);
                             return result;
                           },
                         ),
@@ -2483,7 +2528,7 @@ export function createCopilotAiProvider(
                 ? {
                     product_visuals: tool({
                       description:
-                        "Read synchronized product-image metadata only. For one product, provide productId with kind/cursor null; this returns its link, identity and referenced images together. Otherwise select one visual kind and cursor (null initially) for ten records per page. Discover exact visual IDs before requesting a comparison. Deleted/rejected/partial metadata is not approval, image content, available local files or current device sync state. No mutation, binary download, external image search or generation.",
+                        "Read synchronized product-image metadata only. For one product, provide productId with kind/cursor null; this returns its link, identity and referenced images together. Otherwise select one visual kind and cursor (null initially) for ten records per page. Optional query filters visual identities by literal name; it is not a database expression. Discover exact visual IDs before requesting a comparison. Deleted/rejected/partial metadata is not approval, image content, available local files or current device sync state. No mutation, binary download, external image search or generation.",
                       inputSchema: copilotVisualLookupInputSchema,
                       execute: (input) =>
                         executeRead(
@@ -3104,7 +3149,8 @@ export function createCopilotAiProvider(
               reads.receiptCorrection ||
               reads.receiptPublication ||
               reads.identityReview ||
-              reads.cataloguePreview
+              reads.cataloguePreview ||
+              reads.visualAction
               ? 4
               : reads.planReadiness ||
                   reads.commercialPreparation ||
@@ -3292,6 +3338,13 @@ export function createCopilotAiProvider(
                 identityReviews: identityReviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),
+                ...(reads.visualAction
+                  ? {
+                      visualActionPreviews: visualActionPreviews.filter((p) =>
+                        p.evidence.every((e) => evidence.has(e.id)),
+                      ),
+                    }
+                  : {}),
                 cataloguePreviews: cataloguePreviews.filter((p) =>
                   p.evidence.every((e) => evidence.has(e.id)),
                 ),

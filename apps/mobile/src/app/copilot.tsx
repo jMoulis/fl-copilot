@@ -1,3 +1,6 @@
+import { readVisualActionProposal } from "@fl-copilot/domain";
+import { CopilotVisualActionController } from "@/copilot/visual-action-controller";
+import { VisualActionCard } from "@/copilot/visual-action-card";
 import { LayoutIllustrationGenerationRepository } from "../copilot/layout-illustration-generation-repository";
 import { LayoutIllustrationTransfer } from "../copilot/layout-illustration-transfer";
 import { nativeLayoutIllustrationFiles } from "../copilot/layout-illustration-native-files";
@@ -453,6 +456,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       new CopilotIdentityReviewController(
         sqlite,
         { storeId, ownerId, deviceId, canManageProducts },
+        randomUUID,
+      ),
+    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+  );
+  const visualActions = useMemo(
+    () =>
+      new CopilotVisualActionController(
+        sqlite,
+        {
+          storeId,
+          ownerId,
+          deviceId,
+          canManageVisualLibrary: canManageProducts,
+        },
+        executionDigest,
         randomUUID,
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
@@ -985,6 +1003,26 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       /* Other artifacts follow. */
     }
     try {
+      readVisualActionProposal(message);
+      return (
+        <VisualActionCard
+          key={message.id}
+          message={message}
+          controller={visualActions}
+          canConfirm={canManageProducts}
+          onSaved={() => {
+            void syncNow(storeId).catch(() => undefined);
+          }}
+          requestPreview={async (assetId) => {
+            await visuals.requestPreview(assetId);
+            await syncNow(storeId);
+          }}
+        />
+      );
+    } catch {
+      /* Other artifacts follow. */
+    }
+    try {
       readCopilotCatalogueProposal(message);
       return (
         <CatalogueProposalCard
@@ -1146,6 +1184,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               receiptCorrection: canManageProducts ? 2 : false,
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
+              visualActions: canManageProducts,
               catalogueProposals: canManageProducts ? 2 : false,
               executionProposals: canDeclareCommercialExecution,
               fetch: expoFetch as typeof fetch,

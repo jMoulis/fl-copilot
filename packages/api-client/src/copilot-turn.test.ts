@@ -901,3 +901,29 @@ it.each([true, false, 2] as const)(
     );
   },
 );
+
+it.each([true, false])(
+  "advertises visual-action preparation without mutation/consent fields in the request body (%s)",
+  async (visualActions) => {
+    const transport = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ message, alreadyApplied: false }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", transport);
+    await new ApiClient("https://test.invalid").copilotTurn(
+      "test-token",
+      id(4),
+      id(5),
+      input,
+      undefined,
+      { visualActions, onProgress: vi.fn() },
+    );
+    const sent = transport.mock.calls[0]![1]!;
+    if (visualActions)
+      expect(sent.headers).toHaveProperty("x-copilot-visual-actions", "1");
+    else expect(sent.headers).not.toHaveProperty("x-copilot-visual-actions");
+    expect(JSON.parse(String(sent.body))).toEqual(input);
+  },
+);

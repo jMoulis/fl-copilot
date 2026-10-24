@@ -227,4 +227,47 @@ describe.skipIf(!uri)("scoped product visual metadata lookup", () => {
       }),
     ).rejects.toThrow("ID_INVALID");
   });
+  it("finds a named library identity with an escaped literal query, preserving old unfiltered inputs", async () => {
+    const f = visualLibraryFixture();
+    await put("visualIdentities", {
+      ...f.identity,
+      canonicalName: "TOMATE (BIO)",
+    });
+    await put("visualIdentities", {
+      ...f.identity,
+      id: randomUUID(),
+      canonicalName: "TOMATE X",
+    });
+    await put("visualIdentities", {
+      ...f.identity,
+      id: randomUUID(),
+      storeId: randomUUID(),
+      canonicalName: "TOMATE (BIO)",
+    });
+    const input = {
+        productId: null,
+        kind: "VISUAL_IDENTITY",
+        cursor: null,
+        query: "(bio)",
+      },
+      result = await readVisualLibrary(db, f.storeId, input);
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]!.metadata.id).toBe(f.identity.id);
+    expect(
+      (await readVisualLibrary(db, f.storeId, { ...input, query: "." }))
+        .entries,
+    ).toEqual([]);
+    const old = { productId: null, kind: "VISUAL_IDENTITY", cursor: null };
+    expect((await readVisualLibrary(db, f.storeId, old)).input).toEqual(old);
+    await expect(
+      readVisualLibrary(db, f.storeId, { ...input, kind: "VISUAL_ASSET" }),
+    ).rejects.toThrow();
+    await expect(
+      readVisualLibrary(db, f.storeId, {
+        ...input,
+        productId: f.product.id,
+        kind: null,
+      }),
+    ).rejects.toThrow();
+  });
 });

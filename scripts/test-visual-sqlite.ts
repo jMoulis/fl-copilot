@@ -15,7 +15,7 @@ export class VisualTestDatabase implements OutboxDatabase {
     this.raw.exec(sql);
   }
   async withExclusiveTransactionAsync(
-    task: (db: OutboxDatabase) => Promise<void>,
+    task: (db: VisualTestDatabase) => Promise<void>,
   ) {
     this.raw.exec("BEGIN IMMEDIATE");
     try {
