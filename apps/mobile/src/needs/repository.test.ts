@@ -1,3 +1,4 @@
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
 import { needUnitSchema } from "@fl-copilot/sync-contracts";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
@@ -69,7 +70,7 @@ async function setup() {
     db,
     tx,
     path,
-    repo: new NeedUnitRepository(tx),
+    repo: new NeedUnitRepository(tx, receiptReviewDigest),
     ctx: { commandId: randomUUID(), deviceId: randomUUID() },
   };
 }
@@ -144,7 +145,16 @@ it("resolves different-device edits explicitly and preserves superseded actions"
     remoteVersion: 1,
     remoteEntity: remote,
   });
+  await x.tx.runAsync(
+    "UPDATE need_units SET sync_state='CONFLICT' WHERE id=?",
+    conflict.entityId,
+  );
+  const review = await x.repo.review(x.settings.storeId, conflict.id);
   await x.repo.resolve(conflict.id, false, {
+    storeId: x.settings.storeId,
+    reviewHash: review.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
     ...x.ctx,
     commandId: randomUUID(),
   });

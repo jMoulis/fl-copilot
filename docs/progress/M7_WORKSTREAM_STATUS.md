@@ -18,6 +18,10 @@ Ordre de poursuite inchangé : données/réimport et recette du binaire → UX a
 
 Les paragraphes datés ci-dessous sont un journal de préparation et de livraison ; « en validation » ou « hors build 13 » y décrit le moment de rédaction. Ils ne remplacent pas ce point courant et ne prouvent pas une validation physique.
 
+## Lot M7/M8 en validation — 24 octobre : besoins et associations
+
+Les quinze cas reproduits sur les trois familles sont fermés par une revue canonique commune aux parcours manuel/chat, en conservant leurs writers et règles propres. Les confirmations anciennes, absences non vérifiées et changements de parents/contexte sont refusés ; les rejets humains, le sens des substitutions et les derniers scores appris sont préservés. Les trois pages partagent la durée de vie native déjà testée. Six cas de groupe sont ajoutés à la CI Mongo. PR 347 fusionnée après ses deux CI exactes vertes (**4 133 tests / 6 ignorés**). PR 345–347 et ce complément restent **hors build 14**, sans déploiement API ni build EAS propre. Voir [la QA](../qa/M7_NEED_CONFLICTS_2026_10_24.md). Les exceptions commerciales et les autres portes V1/M8 restent ouvertes ; aucun des sept états n’est annoncé terminé.
+
 ## Lot M7/M8 en validation — 24 octobre : conflits des observations terrain
 
 Quatre cas reproduits confirmaient une ancienne comparaison malgré une version distante plus récente. La revue canonique des événements terrain vérifie maintenant l'épisode initial, tout le groupe et l'empreinte au commit ; elle ne permet de conserver que la fin d'une capture USER identique. Adopter une instruction PDF ne la transforme pas en rupture réelle. Les pages Réglages/Événements partagent désormais leur seule gestion de durée de vie React, avec **22 montages réels/SQLite** et **81 tests ciblés**. Deux scénarios Mongo transactionnels sont ajoutés à la CI. PR 346 est fusionnée ; PR 345–346 et ce lot restent **hors build 14**, sans nouvelle livraison API/EAS propre. Voir [la QA](../qa/M7_STORE_EVENT_CONFLICTS_2026_10_24.md). Les sept états et le périmètre complet V1/M8 restent inchangés.

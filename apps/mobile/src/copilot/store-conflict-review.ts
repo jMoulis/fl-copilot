@@ -24,7 +24,6 @@ import { CommercialPreparationRepository } from "../commercial/week-preparation-
 import { CommercialPlanRepository } from "../commercial/week-plan-repository";
 import { readCommercialConflictPolicy } from "./commercial-conflict-policy";
 import {
-  isNeedConflictKind,
   needUnitSchema,
   needMembershipSchema,
   productSubstitutionSchema,
@@ -32,7 +31,7 @@ import {
 import { NeedUnitRepository } from "../needs/repository";
 import { NeedMembershipRepository } from "../needs/membership-repository";
 import { ProductSubstitutionRepository } from "../needs/substitution-repository";
-import { readNeedConflictPolicy } from "./need-conflict-policy";
+import { readNeedConflictReview } from "../needs/conflict-review";
 import { z } from "zod";
 import {
   storeProductEventSchema,
@@ -184,8 +183,24 @@ export async function readStoreConflictReview(
           digest,
         )
       : null;
+  const needReview =
+    (input.kind === "NEED" ||
+      input.kind === "MEMBERSHIP" ||
+      input.kind === "SUBSTITUTION") &&
+    rows[0]
+      ? await readNeedConflictReview(
+          db,
+          basis.storeId,
+          input.kind,
+          rows[0].id,
+          digest,
+        )
+      : null;
   const reviewedGroup =
-    catalogueGroup ?? settingsReview?.group ?? eventReview?.group;
+    catalogueGroup ??
+    settingsReview?.group ??
+    eventReview?.group ??
+    needReview?.group;
   const conflict = reviewedGroup
     ? reviewedGroup.conflict
     : rows[0]
@@ -310,15 +325,8 @@ export async function readStoreConflictReview(
     block(
       "Une suppression plus récente a été reçue. Synchronisez avant de choisir une version.",
     );
-  const needPolicy = isNeedConflictKind(input.kind)
-    ? await readNeedConflictPolicy(
-        db,
-        input.kind,
-        current.entity,
-        remote,
-        digest,
-      )
-    : null;
+  const needPolicy = needReview?.policy ?? null;
+  if (needReview && !needReview.ready) block(needReview.reason!);
   if (needPolicy && !needPolicy.identityValid && remote)
     block(
       "L’identité du besoin ou de la relation a changé. Examinez les versions dans Synchronisation ; aucune association n’est réaffectée.",
@@ -351,7 +359,8 @@ export async function readStoreConflictReview(
   const groupAllowsDecision =
     (!reviewedGroup || reviewedGroup.valid) &&
     (!settingsReview || settingsReview.canResolve) &&
-    (!eventReview || eventReview.ready);
+    (!eventReview || eventReview.ready) &&
+    (!needReview || needReview.ready);
   const canKeepLocal =
     groupAllowsDecision &&
     !!remote &&
@@ -386,7 +395,7 @@ export async function readStoreConflictReview(
         : {}),
       ...(settingsReview ? { settings: settingsReview.hash } : {}),
       ...(eventReview ? { event: eventReview.hash } : {}),
-      ...(needPolicy ? { parents: needPolicy.parentSnapshots } : {}),
+      ...(needReview ? { need: needReview.hash } : {}),
       ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
       ...(commercialDecisionPolicy
         ? { commercialDecision: commercialDecisionPolicy.snapshots }
@@ -420,6 +429,7 @@ export async function readStoreConflictReview(
     commercialPolicy,
     commercialDecisionPolicy,
     needPolicy,
+    needReview,
     basisHash,
   };
 }

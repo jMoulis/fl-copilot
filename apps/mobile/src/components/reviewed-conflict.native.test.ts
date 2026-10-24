@@ -6,9 +6,31 @@ import { applyStoreContext } from "../store/context-repository";
 import { StoreContextConflict } from "../store/context-conflict";
 import { StoreEventConflict } from "../needs/store-event-conflict";
 import { applyStoreProductEvent } from "../needs/store-event-repository";
-type Kind = "SETTINGS" | "FIELD_EVENT";
+import {
+  nativeNeedConflictFixture,
+  needConflictTables,
+} from "../../../../scripts/test-need-conflict-fixtures";
+import { NeedUnitConflict } from "../needs/conflict";
+import { NeedMembershipConflict } from "../needs/membership-conflict";
+import { ProductSubstitutionConflict } from "../needs/substitution-conflict";
+import { applyNeedUnit } from "../needs/repository";
+import { applyNeedMembership } from "../needs/membership-repository";
+import { applyProductSubstitution } from "../needs/substitution-repository";
+type Kind = "SETTINGS" | "FIELD_EVENT" | "NEED" | "MEMBERSHIP" | "SUBSTITUTION";
+const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") =>
+  kind === "SETTINGS" || kind === "FIELD_EVENT"
+    ? nativeStoreConflictFixture(kind)
+    : nativeNeedConflictFixture(kind, ":memory:", refusal);
 const component = (kind: Kind) =>
-  kind === "SETTINGS" ? StoreContextConflict : StoreEventConflict;
+  kind === "SETTINGS"
+    ? StoreContextConflict
+    : kind === "FIELD_EVENT"
+      ? StoreEventConflict
+      : kind === "NEED"
+        ? NeedUnitConflict
+        : kind === "MEMBERSHIP"
+          ? NeedMembershipConflict
+          : ProductSubstitutionConflict;
 const runtime = vi.hoisted(() => ({
   session: undefined as unknown,
   database: undefined as unknown,
@@ -61,15 +83,14 @@ vi.mock("expo-crypto", async () => {
   };
 });
 let tree: ReactTestRenderer | undefined;
-const fixtures: Array<Awaited<ReturnType<typeof nativeStoreConflictFixture>>> =
-  [];
-async function setup(kind: Kind) {
-  const s = await nativeStoreConflictFixture(kind);
+const fixtures: Array<Awaited<ReturnType<typeof fixture>>> = [];
+async function setup(kind: Kind, refusal?: "LOCAL" | "REMOTE") {
+  const s = await fixture(kind, refusal);
   fixtures.push(s);
   runtime.database = { sqlite: s.a, deviceId: s.scope.deviceId };
   runtime.session = {
     user: { id: s.scope.ownerId },
-    stores: [{ storeId: s.scope.storeId }],
+    stores: [{ storeId: s.scope.storeId, role: "MANAGER" }],
   };
   await act(async () => {
     tree = create(
@@ -96,6 +117,27 @@ function deferred() {
   });
   return { promise, resolve };
 }
+it.each(["MEMBERSHIP", "SUBSTITUTION"] as const)(
+  "%s manual reactivation needs its own consent, cleared on reread",
+  async (kind) => {
+    const s = await setup(kind, "REMOTE"),
+      before = s.count("sync_conflicts");
+    const keep = "Conserver ma version locale";
+    expect(hosts("Switch")).toHaveLength(2);
+    await act(async () => host("Switch").props.onValueChange(true));
+    expect(button(keep).props.disabled).toBe(true);
+    await act(async () => hosts("Switch")[1]!.props.onValueChange(true));
+    expect(button(keep).props.disabled).toBe(false);
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(hosts("Switch").every((n) => n.props.value === false)).toBe(true);
+    await act(async () => host("Switch").props.onValueChange(true));
+    expect(button(keep).props.disabled).toBe(true);
+    await act(async () => hosts("Switch")[1]!.props.onValueChange(true));
+    await act(async () => button(keep).props.onPress());
+    expect(s.count("sync_conflicts")).toBe(before);
+    expect(runtime.back).toHaveBeenCalledTimes(1);
+  },
+);
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   runtime.focused = true;
@@ -114,191 +156,229 @@ afterEach(async () => {
   for (const s of fixtures.splice(0)) s.db.close();
   runtime.hold = undefined;
 });
-describe.each(["SETTINGS", "FIELD_EVENT"] as const)(
-  "%s native comparison",
-  (kind) => {
-    const table =
-        kind === "SETTINGS" ? "store_context_settings" : "store_product_events",
-      historyTable =
-        kind === "SETTINGS"
-          ? "store_context_history"
-          : "store_product_event_history",
-      keepLabel =
-        kind === "SETTINGS"
-          ? "Conserver mes réglages locaux"
-          : "Confirmer mon heure de fin",
-      adoptLabel =
-        kind === "SETTINGS"
-          ? "Adopter les réglages synchronisés"
-          : "Adopter la version synchronisée";
-    const pull =
-      kind === "SETTINGS" ? applyStoreContext : applyStoreProductEvent;
-    it("requires a comparison and accepts a double press only once through the real SQLite writer", async () => {
+describe.each([
+  "SETTINGS",
+  "FIELD_EVENT",
+  "NEED",
+  "MEMBERSHIP",
+  "SUBSTITUTION",
+] as const)("%s native comparison", (kind) => {
+  const table =
+      kind === "SETTINGS"
+        ? "store_context_settings"
+        : kind === "FIELD_EVENT"
+          ? "store_product_events"
+          : needConflictTables[kind],
+    historyTable =
+      kind === "SETTINGS"
+        ? "store_context_history"
+        : kind === "FIELD_EVENT"
+          ? "store_product_event_history"
+          : kind === "NEED"
+            ? "need_unit_history"
+            : kind === "MEMBERSHIP"
+              ? "need_membership_history"
+              : "product_substitution_history",
+    keepLabel =
+      kind === "SETTINGS"
+        ? "Conserver mes réglages locaux"
+        : kind === "FIELD_EVENT"
+          ? "Confirmer mon heure de fin"
+          : "Conserver ma version locale",
+    adoptLabel =
+      kind === "SETTINGS"
+        ? "Adopter les réglages synchronisés"
+        : "Adopter la version synchronisée";
+  const pull =
+    kind === "SETTINGS"
+      ? applyStoreContext
+      : kind === "FIELD_EVENT"
+        ? applyStoreProductEvent
+        : kind === "NEED"
+          ? applyNeedUnit
+          : kind === "MEMBERSHIP"
+            ? applyNeedMembership
+            : applyProductSubstitution;
+  it("requires a comparison and accepts a double press only once through the real SQLite writer", async () => {
+    const s = await setup(kind),
+      before = s.count(historyTable);
+    expect(button(keepLabel).props.disabled).toBe(true);
+    await act(async () => host("Switch").props.onValueChange(true));
+    const action = button(keepLabel);
+    expect(action.props.disabled).toBe(false);
+    await act(async () => {
+      action.props.onPress();
+      action.props.onPress();
+    });
+    expect(s.count(historyTable)).toBe(before + 1);
+    expect(runtime.back).toHaveBeenCalledTimes(1);
+    expect(runtime.sync).toHaveBeenCalledTimes(1);
+  });
+  it("shows a targeted stale error, clears consent and requires rereading before another choice", async () => {
+    const s = await setup(kind);
+    await act(async () => host("Switch").props.onValueChange(true));
+    await pull(s.a, s.scope.storeId, {
+      ...s.review.remote,
+      version: 3,
+    });
+    await act(async () => button(adoptLabel).props.onPress());
+    expect(
+      hosts("Alert").some((n) =>
+        /comparaison.*changé/.test(String(n.props.message)),
+      ),
+    ).toBe(true);
+    expect(host("Switch").props.value).toBe(false);
+    expect(button(adoptLabel).props.disabled).toBe(true);
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(host("Switch").props.value).toBe(false);
+    await act(async () => host("Switch").props.onValueChange(true));
+    await act(async () => button(adoptLabel).props.onPress());
+    expect(
+      s.db.prepare(`SELECT remote_version FROM ${table}`).get()!.remote_version,
+    ).toBe(3);
+    expect(runtime.back).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    "OWNER",
+    "STORE",
+    "DATABASE",
+    "DEVICE",
+    "BLUR",
+    "UNMOUNT",
+    ...(kind === "SETTINGS" || kind === "FIELD_EVENT"
+      ? []
+      : (["ROLE"] as const)),
+  ] as const)(
+    "cancels a delayed decision when its native context changes (%s)",
+    async (mode) => {
       const s = await setup(kind),
-        before = s.count(historyTable);
-      expect(button(keepLabel).props.disabled).toBe(true);
-      await act(async () => host("Switch").props.onValueChange(true));
-      const action = button(keepLabel);
-      expect(action.props.disabled).toBe(false);
-      await act(async () => {
-        action.props.onPress();
-        action.props.onPress();
-      });
-      expect(s.count(historyTable)).toBe(before + 1);
-      expect(runtime.back).toHaveBeenCalledTimes(1);
-      expect(runtime.sync).toHaveBeenCalledTimes(1);
-    });
-    it("shows a targeted stale error, clears consent and requires rereading before another choice", async () => {
-      const s = await setup(kind);
-      await act(async () => host("Switch").props.onValueChange(true));
-      await pull(s.a, s.scope.storeId, {
-        ...s.review.remote,
-        version: 3,
-      });
-      await act(async () => button(adoptLabel).props.onPress());
-      expect(
-        hosts("Alert").some((n) =>
-          /comparaison.*changé/.test(String(n.props.message)),
-        ),
-      ).toBe(true);
-      expect(host("Switch").props.value).toBe(false);
-      expect(button(adoptLabel).props.disabled).toBe(true);
-      await act(async () => button("Relire la comparaison").props.onPress());
-      expect(host("Switch").props.value).toBe(false);
-      await act(async () => host("Switch").props.onValueChange(true));
-      await act(async () => button(adoptLabel).props.onPress());
-      expect(
-        s.db.prepare(`SELECT remote_version FROM ${table}`).get()!
-          .remote_version,
-      ).toBe(3);
-      expect(runtime.back).toHaveBeenCalledTimes(1);
-    });
-    it.each([
-      "OWNER",
-      "STORE",
-      "DATABASE",
-      "DEVICE",
-      "BLUR",
-      "UNMOUNT",
-    ] as const)(
-      "cancels a delayed decision when its native context changes (%s)",
-      async (mode) => {
-        const s = await setup(kind),
-          before = [table, "sync_conflicts", "sync_outbox", historyTable].map(
-            (t) => s.db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(),
-          );
-        await act(async () => host("Switch").props.onValueChange(true));
-        const entered = deferred(),
-          release = deferred();
-        runtime.hold = { entered: entered.resolve, promise: release.promise };
-        await act(async () => {
-          button(keepLabel).props.onPress();
-          await entered.promise;
-        });
-        await act(async () => {
-          if (mode === "OWNER")
-            runtime.session = {
-              user: { id: "another-owner" },
-              stores: [{ storeId: s.scope.storeId }],
-            };
-          if (mode === "STORE")
-            runtime.session = {
-              user: { id: s.scope.ownerId },
-              stores: [{ storeId: "another-store" }],
-            };
-          if (mode === "DATABASE") {
-            const other = await nativeStoreConflictFixture(kind);
-            fixtures.push(other);
-            runtime.database = { sqlite: other.a, deviceId: s.scope.deviceId };
-          }
-          if (mode === "DEVICE")
-            runtime.database = { sqlite: s.a, deviceId: "another-device" };
-          if (mode === "BLUR") runtime.focused = false;
-          if (mode === "UNMOUNT") {
-            tree!.unmount();
-            tree = undefined;
-          } else
-            tree!.update(
-              createElement(component(kind), { conflict: s.review.conflict }),
-            );
-        });
-        await act(async () => {
-          release.resolve();
-          await release.promise;
-        });
-        expect(
-          [table, "sync_conflicts", "sync_outbox", historyTable].map((t) =>
-            s.db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(),
-          ),
-        ).toEqual(before);
-        expect(runtime.sync).not.toHaveBeenCalled();
-        expect(runtime.back).not.toHaveBeenCalled();
-      },
-    );
-    it("keeps the readable local data after a failed reread and retries without accepting a stale comparison", async () => {
-      const s = await setup(kind),
-        before = s.count(historyTable);
-      vi.spyOn(s.a, "getFirstAsync").mockRejectedValueOnce(
-        Error("TEMPORARY_READ"),
-      );
-      await act(async () => button("Relire la comparaison").props.onPress());
-      expect(
-        hosts("Text").some((n) =>
-          String(n.props.children).includes(
-            kind === "SETTINGS" ? "Asnières" : "Rupture",
-          ),
-        ),
-      ).toBe(true);
-      expect(button(keepLabel).props.disabled).toBe(true);
-      expect(
-        hosts("Alert").some((n) =>
-          String(n.props.message).includes("ne peut pas être relue"),
-        ),
-      ).toBe(true);
-      await act(async () => button("Relire la comparaison").props.onPress());
-      expect(host("Switch").props.value).toBe(false);
-      expect(host("Switch").props.disabled).toBe(false);
-      expect(s.count(historyTable)).toBe(before);
-      expect(runtime.sync).not.toHaveBeenCalled();
-    });
-    it("rejects an old rendered button callback after replacing the operational SQLite connection", async () => {
-      const s = await setup(kind);
-      await act(async () => host("Switch").props.onValueChange(true));
-      const oldAction = button(keepLabel).props.onPress,
-        before = [table, "sync_outbox", historyTable, "sync_conflicts"].map(
+        before = [table, "sync_conflicts", "sync_outbox", historyTable].map(
           (t) => s.db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(),
         );
-      const other = await nativeStoreConflictFixture(kind);
-      fixtures.push(other);
-      runtime.database = { sqlite: other.a, deviceId: s.scope.deviceId };
-      await act(async () =>
-        tree!.update(
-          createElement(component(kind), { conflict: s.review.conflict }),
-        ),
-      );
-      await act(async () => oldAction());
+      await act(async () => host("Switch").props.onValueChange(true));
+      const entered = deferred(),
+        release = deferred();
+      runtime.hold = { entered: entered.resolve, promise: release.promise };
+      await act(async () => {
+        button(keepLabel).props.onPress();
+        await entered.promise;
+      });
+      await act(async () => {
+        if (mode === "OWNER")
+          runtime.session = {
+            user: { id: "another-owner" },
+            stores: [{ storeId: s.scope.storeId, role: "MANAGER" }],
+          };
+        if (mode === "ROLE")
+          runtime.session = {
+            user: { id: s.scope.ownerId },
+            stores: [{ storeId: s.scope.storeId, role: "VIEWER" }],
+          };
+        if (mode === "STORE")
+          runtime.session = {
+            user: { id: s.scope.ownerId },
+            stores: [{ storeId: "another-store" }],
+          };
+        if (mode === "DATABASE") {
+          const other = await fixture(kind);
+          fixtures.push(other);
+          runtime.database = { sqlite: other.a, deviceId: s.scope.deviceId };
+        }
+        if (mode === "DEVICE")
+          runtime.database = { sqlite: s.a, deviceId: "another-device" };
+        if (mode === "BLUR") runtime.focused = false;
+        if (mode === "UNMOUNT") {
+          tree!.unmount();
+          tree = undefined;
+        } else
+          tree!.update(
+            createElement(component(kind), { conflict: s.review.conflict }),
+          );
+      });
+      await act(async () => {
+        release.resolve();
+        await release.promise;
+      });
       expect(
-        [table, "sync_outbox", historyTable, "sync_conflicts"].map((t) =>
+        [table, "sync_conflicts", "sync_outbox", historyTable].map((t) =>
           s.db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(),
         ),
       ).toEqual(before);
       expect(runtime.sync).not.toHaveBeenCalled();
       expect(runtime.back).not.toHaveBeenCalled();
-    });
-    it("preserves a committed local choice when the subsequent synchronization fails", async () => {
-      const s = await setup(kind),
-        before = s.count(historyTable);
-      runtime.sync.mockRejectedValueOnce(Error("OFFLINE"));
-      await act(async () => host("Switch").props.onValueChange(true));
-      await act(async () => button(keepLabel).props.onPress());
-      expect(s.count(historyTable)).toBe(before + 1);
-      expect(
-        s.db
-          .prepare(`SELECT sync_state FROM ${table} WHERE store_id=?`)
-          .get(s.scope.storeId)!.sync_state,
-      ).toBe("PENDING");
-      expect(hosts("Alert")).toHaveLength(0);
-      expect(runtime.back).toHaveBeenCalledTimes(1);
-    });
-  },
-);
+    },
+  );
+  it("keeps the readable local data after a failed reread and retries without accepting a stale comparison", async () => {
+    const s = await setup(kind),
+      before = s.count(historyTable);
+    vi.spyOn(s.a, "getFirstAsync").mockRejectedValueOnce(
+      Error("TEMPORARY_READ"),
+    );
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(
+      hosts("Text").some((n) =>
+        String(n.props.children).includes(
+          kind === "SETTINGS"
+            ? "Asnières"
+            : kind === "FIELD_EVENT"
+              ? "Rupture"
+              : kind === "NEED"
+                ? "Besoin local"
+                : kind === "MEMBERSHIP"
+                  ? "compatibilité déclarée"
+                  : "observation",
+        ),
+      ),
+    ).toBe(true);
+    expect(button(keepLabel).props.disabled).toBe(true);
+    expect(
+      hosts("Alert").some((n) =>
+        String(n.props.message).includes("ne peut pas être relue"),
+      ),
+    ).toBe(true);
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(host("Switch").props.value).toBe(false);
+    expect(host("Switch").props.disabled).toBe(false);
+    expect(s.count(historyTable)).toBe(before);
+    expect(runtime.sync).not.toHaveBeenCalled();
+  });
+  it("rejects an old rendered button callback after replacing the operational SQLite connection", async () => {
+    const s = await setup(kind);
+    await act(async () => host("Switch").props.onValueChange(true));
+    const oldAction = button(keepLabel).props.onPress,
+      before = [table, "sync_outbox", historyTable, "sync_conflicts"].map((t) =>
+        s.db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(),
+      );
+    const other = await fixture(kind);
+    fixtures.push(other);
+    runtime.database = { sqlite: other.a, deviceId: s.scope.deviceId };
+    await act(async () =>
+      tree!.update(
+        createElement(component(kind), { conflict: s.review.conflict }),
+      ),
+    );
+    await act(async () => oldAction());
+    expect(
+      [table, "sync_outbox", historyTable, "sync_conflicts"].map((t) =>
+        s.db.prepare(`SELECT * FROM ${t} ORDER BY rowid`).all(),
+      ),
+    ).toEqual(before);
+    expect(runtime.sync).not.toHaveBeenCalled();
+    expect(runtime.back).not.toHaveBeenCalled();
+  });
+  it("preserves a committed local choice when the subsequent synchronization fails", async () => {
+    const s = await setup(kind),
+      before = s.count(historyTable);
+    runtime.sync.mockRejectedValueOnce(Error("OFFLINE"));
+    await act(async () => host("Switch").props.onValueChange(true));
+    await act(async () => button(keepLabel).props.onPress());
+    expect(s.count(historyTable)).toBe(before + 1);
+    expect(
+      s.db
+        .prepare(`SELECT sync_state FROM ${table} WHERE store_id=?`)
+        .get(s.scope.storeId)!.sync_state,
+    ).toBe("PENDING");
+    expect(hosts("Alert")).toHaveLength(0);
+    expect(runtime.back).toHaveBeenCalledTimes(1);
+  });
+});

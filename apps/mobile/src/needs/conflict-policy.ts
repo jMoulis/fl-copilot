@@ -8,11 +8,6 @@ import {
   productSubstitutionId,
 } from "@fl-copilot/domain";
 import type { OutboxDatabase } from "../sync/outbox-repository";
-import { NeedUnitRepository } from "../needs/repository";
-import {
-  joinedProductToolDatabase,
-  productToolRepository,
-} from "./product-tool-transaction";
 /** Local comparison policy only; canonical .resolve remains the sole writer. */
 export async function readNeedConflictPolicy(
   db: OutboxDatabase,
@@ -51,12 +46,53 @@ export async function readNeedConflictPolicy(
       ? [l.productId]
       : [l.sourceProductId, l.substituteProductId];
   const products = await Promise.all(
-      productIds.map((id) => productToolRepository(db).getProduct(id)),
-    ),
-    need = await new NeedUnitRepository(joinedProductToolDatabase(db)).get(
-      l.storeId,
-      l.needUnitId,
-    );
+    productIds.map(async (id) => {
+      const row = await db.getFirstAsync<{
+        id: string;
+        store_id: string;
+        label: string;
+        status: string;
+        deleted_at: string | null;
+        version: number;
+        sync_state: string;
+        dirty: number;
+      }>(
+        "SELECT id,store_id,label,status,deleted_at,version,sync_state,dirty FROM products WHERE id=? AND store_id=?",
+        id,
+        l.storeId,
+      );
+      return row
+        ? {
+            entity: {
+              id: row.id,
+              storeId: row.store_id,
+              label: row.label,
+              status: row.status,
+              deletedAt: row.deleted_at,
+              version: row.version,
+            },
+            syncState: row.sync_state,
+            dirty: row.dirty,
+          }
+        : null;
+    }),
+  );
+  const needRow = await db.getFirstAsync<{
+    payload_json: string;
+    sync_state: string;
+    dirty: number;
+  }>(
+    "SELECT payload_json,sync_state,dirty FROM need_units WHERE id=? AND store_id=?",
+    l.needUnitId,
+    l.storeId,
+  );
+  const need = needRow
+    ? {
+        entity: needUnitSchema.parse(JSON.parse(needRow.payload_json)),
+        syncState: needRow.sync_state,
+        dirty: needRow.dirty,
+      }
+    : null;
   for (const p of products)
     if (p?.entity.storeId === l.storeId)
       names.products[p.entity.id] = p.entity.label;

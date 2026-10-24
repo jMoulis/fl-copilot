@@ -9,7 +9,11 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  readNeedConflictReview,
+  requireNeedConflictDecision,
+  type NeedConflictResolutionContext,
+} from "./conflict-review";
 
 type Row = {
   id: string;
@@ -92,6 +96,15 @@ export class NeedMembershipRepository {
     private db: AtomicMutationDatabase & OutboxDatabase,
     private digest: (s: string) => Promise<string>,
   ) {}
+  review(storeId: string, conflictId: string) {
+    return readNeedConflictReview(
+      this.db,
+      storeId,
+      "MEMBERSHIP",
+      conflictId,
+      this.digest,
+    );
+  }
   async list(storeId: string) {
     const rows = await this.db.getAllAsync<Row>(
       "SELECT p.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=p.store_id AND o.entity_id=p.id AND o.entity_type='need_membership' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM need_memberships p WHERE p.store_id=? ORDER BY json_extract(p.payload_json,'$.productId')",
@@ -258,54 +271,38 @@ export class NeedMembershipRepository {
   async resolve(
     conflictId: string,
     useLocal: boolean,
-    ctx: { commandId: string; deviceId: string },
+    ctx: NeedConflictResolutionContext,
   ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const conflict = await new ConflictRepository(tx).getById(conflictId);
-      if (
-        !conflict ||
-        conflict.status !== "OPEN" ||
-        conflict.entityType !== "need_membership"
-      )
-        throw Error("NEED_MEMBERSHIP_RESOLUTION_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-        "SELECT * FROM need_memberships WHERE id=? AND store_id=?",
-        conflict.entityId,
-        conflict.storeId,
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("NEED_CONFLICT_FORBIDDEN");
+      const review = await readNeedConflictReview(
+        tx,
+        ctx.storeId,
+        "MEMBERSHIP",
+        conflictId,
+        this.digest,
       );
-      if (!row) throw Error("NEED_MEMBERSHIP_RESOLUTION_INVALID");
-      const local = mapped(row).entity,
-        parsed = needMembershipSchema.safeParse(conflict.remotePayload);
-      const remote = parsed.success ? parsed.data : null;
-      if (
-        remote &&
-        !sameIdentity({ ...local, createdAt: remote.createdAt }, remote)
-      )
-        throw Error("NEED_MEMBERSHIP_SOURCE_CHANGED");
-      if (!useLocal && !remote) throw Error("NEED_MEMBERSHIP_REMOTE_MISSING");
-      const syncing = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM sync_outbox WHERE store_id=? AND entity_type='need_membership' AND entity_id=? AND status='SYNCING'",
-        local.storeId,
-        local.id,
-      );
-      if (syncing?.n) throw Error("NEED_MEMBERSHIP_SYNCING");
+      requireNeedConflictDecision(review, useLocal, ctx);
+      const local = needMembershipSchema.parse(review.current.entity),
+        remote = needMembershipSchema.parse(review.group.remote);
       await retireCommands(tx, local.storeId, local.id);
       const now = new Date().toISOString();
       const resolved = useLocal
         ? needMembershipSchema.parse({
             ...local,
-            createdAt: remote?.createdAt ?? local.createdAt,
+            createdAt: remote.createdAt,
             humanConfirmed: true,
-            source: remote?.source ?? local.source,
-            version: (remote?.version ?? 0) + 1,
+            source: remote.source,
+            version: remote.version + 1,
             updatedAt: now,
           })
-        : remote!;
+        : remote;
       await tx.runAsync(
         "UPDATE need_memberships SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=? WHERE id=?",
         JSON.stringify(resolved),
-        remote ? JSON.stringify(remote) : null,
-        remote?.version ?? null,
+        JSON.stringify(remote),
+        remote.version,
         useLocal ? "PENDING" : "SYNCED",
         useLocal ? 1 : 0,
         local.id,
@@ -319,13 +316,30 @@ export class NeedMembershipRepository {
         useLocal ? "RESOLVE_LOCAL" : "RESOLVE_REMOTE",
         now,
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='need_membership' AND entity_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
-        local.storeId,
-        local.id,
-      );
+      if (
+        !review.group.conflicts.some(
+          (c) =>
+            JSON.stringify(needMembershipSchema.parse(c.remotePayload)) ===
+            JSON.stringify(remote),
+        )
+      )
+        await tx.runAsync(
+          "INSERT INTO need_membership_history(action_id,membership_id,store_id,payload_json,action,created_at) VALUES(?,?,?,?,?,?)",
+          ctx.remoteHistoryId,
+          local.id,
+          local.storeId,
+          JSON.stringify(remote),
+          "RESOLUTION_REMOTE_BASELINE",
+          now,
+        );
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          conflict.id,
+          local.storeId,
+        );
       if (useLocal)
         await new OutboxRepository(tx).enqueue({
           commandId: ctx.commandId,
@@ -334,10 +348,12 @@ export class NeedMembershipRepository {
           commandType: "NEED_MEMBERSHIP_UPSERT",
           entityType: "need_membership",
           entityId: local.id,
-          expectedRemoteVersion: remote?.version ?? null,
+          expectedRemoteVersion: remote.version,
           payload: resolved,
           createdAt: now,
         });
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("NEED_CONFLICT_FORBIDDEN");
     });
   }
 }

@@ -293,22 +293,49 @@ export class CopilotStoreConflictRuntime {
             },
           );
         else if (request.kind === "NEED")
-          await new NeedUnitRepository(joined).resolve(
+          await new NeedUnitRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              storeId: ctx.storeId,
+              reviewHash: review.needReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+              reactivateRejected: request.reactivateRejected,
+            },
           );
         else if (request.kind === "MEMBERSHIP")
           await new NeedMembershipRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              storeId: ctx.storeId,
+              reviewHash: review.needReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+              reactivateRejected: request.reactivateRejected,
+            },
           );
         else
           await new ProductSubstitutionRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              storeId: ctx.storeId,
+              reviewHash: review.needReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+              reactivateRejected: request.reactivateRejected,
+            },
           );
         const after = await readStoreConflictCurrent(tx, content, this.digest);
         if (!after || !["PENDING", "SYNCED"].includes(after.syncState))

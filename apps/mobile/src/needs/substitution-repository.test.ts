@@ -184,7 +184,16 @@ it("requires explicit conflict adoption and preserves superseded local actions",
     remoteVersion: 1,
     remoteEntity: remote,
   });
+  await f.tx.runAsync(
+    "UPDATE product_substitutions SET sync_state='CONFLICT' WHERE id=?",
+    conflict.entityId,
+  );
+  const review = await f.repo.review(f.need.storeId, conflict.id);
   await f.repo.resolve(conflict.id, false, {
+    storeId: f.need.storeId,
+    reviewHash: review.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
     ...f.ctx,
     commandId: randomUUID(),
   });
