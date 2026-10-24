@@ -1,3 +1,5 @@
+import { createVisualSourcePhotoPort } from "@/copilot/visual-source-photo";
+import { nativeVisualFileStorage } from "@/products/visual-file-storage";
 import { readTranscriptionReviewProposal } from "@fl-copilot/domain";
 import { CopilotTranscriptionReviewController } from "@/copilot/transcription-review-controller";
 import { TranscriptionReviewCard } from "@/copilot/transcription-review-card";
@@ -477,6 +479,18 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
+  const { syncNow, emailIntake, lastSyncedAt, originals } = useSync();
+  const visualSourcePort = useMemo(
+    () =>
+      originals
+        ? createVisualSourcePhotoPort(
+            storeId,
+            originals,
+            nativeVisualFileStorage,
+          )
+        : undefined,
+    [storeId, originals],
+  );
   const visualActions = useMemo(
     () =>
       new CopilotVisualActionController(
@@ -489,8 +503,10 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         },
         executionDigest,
         randomUUID,
+        undefined,
+        visualSourcePort,
       ),
-    [sqlite, storeId, ownerId, deviceId, canManageProducts],
+    [sqlite, storeId, ownerId, deviceId, canManageProducts, visualSourcePort],
   );
   const catalogueProposals = useMemo(
     () =>
@@ -675,7 +691,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId],
   );
-  const { syncNow, emailIntake, lastSyncedAt } = useSync();
+
   const [emailConversation, setEmailConversation] = useState<string>();
   const [emailConfigurationRevision, setEmailConfigurationRevision] =
     useState(0);
@@ -1217,7 +1233,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               receiptCorrection: canManageProducts ? 2 : false,
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
-              visualActions: canManageProducts,
+              visualActions: canManageProducts ? 2 : false,
               transcriptionReview: canManageProducts,
               catalogueProposals: canManageProducts ? 2 : false,
               executionProposals: canDeclareCommercialExecution,

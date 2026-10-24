@@ -953,14 +953,23 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(request.headers["x-copilot-visual-actions"] === "1"
+              ...(request.headers["x-copilot-visual-actions"] === "1" ||
+              request.headers["x-copilot-visual-actions"] === "2"
                 ? {
+                    visualSourceActions:
+                      request.headers["x-copilot-visual-actions"] === "2",
                     visualAction: async (input) => {
-                      await authorize();
+                      const principal = await authorize();
+                      if (
+                        input.action === "ASSIGN_SOURCE" &&
+                        request.headers["x-copilot-visual-actions"] !== "2"
+                      )
+                        throw Error("VISUAL_ACTION_SOURCE_UNSUPPORTED");
                       const result = await previewVisualAction(
                         db,
                         storeId,
                         input,
+                        { ownerId: principal.ownerId, signal: abort.signal },
                       );
                       await authorize();
                       return result;

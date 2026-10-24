@@ -3,8 +3,9 @@ import { productSchema } from "./products";
 import { copilotMessageSchema } from "./copilot-conversation";
 import { copilotEvidenceSchema } from "./copilot-candidate";
 import { copilotVisualMetadataEntrySchema } from "./copilot-visual-library";
+import { storePhotoSourceMetadataSchema } from "./store-photo";
 const digest = z.string().regex(/^[a-f0-9]{64}$/);
-export const visualActionInputSchema = z
+export const legacyVisualActionInputSchema = z
   .strictObject({
     action: z.enum(["ASSIGN_LIBRARY", "REMOVE_PRODUCT", "REVOKE_CURRENT"]),
     productId: z.uuid(),
@@ -14,6 +15,27 @@ export const visualActionInputSchema = z
     v.action === "ASSIGN_LIBRARY"
       ? v.visualIdentityId !== null
       : v.visualIdentityId === null,
+  );
+/** Capability 2 adds only an exact attached source ID; authority/paths remain native. */
+export const visualActionInputSchema = z
+  .strictObject({
+    action: z.enum([
+      "ASSIGN_LIBRARY",
+      "REMOVE_PRODUCT",
+      "REVOKE_CURRENT",
+      "ASSIGN_SOURCE",
+    ]),
+    productId: z.uuid(),
+    visualIdentityId: z.uuid().nullable(),
+    sourceDocumentId: z.uuid().optional(),
+  })
+  .refine((v) =>
+    v.action === "ASSIGN_LIBRARY"
+      ? v.visualIdentityId !== null && v.sourceDocumentId === undefined
+      : v.visualIdentityId === null &&
+        (v.action === "ASSIGN_SOURCE"
+          ? !!v.sourceDocumentId
+          : v.sourceDocumentId === undefined),
   );
 export const visualActionProofSchema = z.strictObject({
   entry: copilotVisualMetadataEntrySchema,
@@ -42,6 +64,7 @@ export const visualActionBasisSchema = z.strictObject({
   currentAsset: visualActionProofSchema.nullable(),
   selectedIdentity: visualActionProofSchema.nullable(),
   selectedAsset: visualActionProofSchema.nullable(),
+  sourcePhoto: storePhotoSourceMetadataSchema.nullable().optional(),
   currentDisplay: z.enum(["ASSET", "PLACEHOLDER", "UNAVAILABLE"]),
 });
 export type VisualActionInput = z.infer<typeof visualActionInputSchema>;
@@ -53,6 +76,14 @@ export function validateVisualActionBasis(
 ) {
   const input = visualActionInputSchema.parse(rawInput),
     basis = visualActionBasisSchema.parse(raw);
+  if (input.action === "ASSIGN_SOURCE") {
+    if (
+      basis.sourcePhoto &&
+      basis.sourcePhoto.sourceDocumentId !== input.sourceDocumentId
+    )
+      throw Error("VISUAL_ACTION_SOURCE_INVALID");
+  } else if (basis.sourcePhoto !== undefined)
+    throw Error("VISUAL_ACTION_SOURCE_INVALID");
   const {
     product,
     currentLink: l,
@@ -167,6 +198,8 @@ export function visualActionStatus(
     return b.currentDisplay === "ASSET"
       ? ("READY" as const)
       : ("UNAVAILABLE" as const);
+  if (input.action === "ASSIGN_SOURCE")
+    return b.sourcePhoto ? ("READY" as const) : ("UNAVAILABLE" as const);
   const i = b.selectedIdentity?.entry,
     a = b.selectedAsset?.entry;
   if (
@@ -233,16 +266,42 @@ export const visualActionRequestSchema = z.strictObject({
   photoReviewed: z.boolean(),
   confirmGlobalRevoke: z.boolean(),
   restoreAssociation: z.boolean(),
+  rightsConfirmed: z.boolean().optional(),
 });
-export const visualActionResultSchema = visualActionRequestSchema.extend({
-  userMessageId: z.uuid(),
-  appliedAt: z.iso.datetime(),
-  action: visualActionInputSchema.shape.action,
-  productId: z.uuid(),
-  entityId: z.uuid(),
-  version: z.number().int().positive(),
-  syncState: z.enum(["PENDING", "SYNCED"]),
-});
+export const visualActionResultSchema = visualActionRequestSchema
+  .extend({
+    userMessageId: z.uuid(),
+    appliedAt: z.iso.datetime(),
+    action: visualActionInputSchema.shape.action,
+    productId: z.uuid(),
+    sourceDocumentId: z.uuid().optional(),
+    sourceChecksum: z
+      .string()
+      .regex(/^sha256:[a-f0-9]{64}$/)
+      .optional(),
+    assetId: z.uuid().optional(),
+    assetContentHash: z
+      .string()
+      .regex(/^sha256:[a-f0-9]{64}$/)
+      .optional(),
+    entityId: z.uuid(),
+    version: z.number().int().positive(),
+    syncState: z.enum(["PENDING", "SYNCED"]),
+  })
+  .refine((v) =>
+    v.action === "ASSIGN_SOURCE"
+      ? !!v.sourceDocumentId &&
+        !!v.sourceChecksum &&
+        !!v.assetId &&
+        !!v.assetContentHash &&
+        v.photoReviewed &&
+        v.rightsConfirmed === true
+      : v.sourceDocumentId === undefined &&
+        v.sourceChecksum === undefined &&
+        v.assetId === undefined &&
+        v.assetContentHash === undefined &&
+        v.rightsConfirmed === undefined,
+  );
 
 import {
   catalogueSnapshotIdentity,
@@ -272,6 +331,7 @@ export async function prepareVisualActionBasis(
   rawInput: unknown,
   full: VisualActionEntities,
   hash: (value: string) => Promise<string>,
+  sourcePhoto?: z.infer<typeof storePhotoSourceMetadataSchema> | null,
 ): Promise<VisualActionBasis> {
   const input = visualActionInputSchema.parse(rawInput);
   async function proof(kind: CopilotVisualKind, raw: unknown | null) {
@@ -302,6 +362,9 @@ export async function prepareVisualActionBasis(
     : "UNAVAILABLE";
   return validateVisualActionBasis(storeId, input, {
     storeId,
+    ...(input.action === "ASSIGN_SOURCE"
+      ? { sourcePhoto: sourcePhoto ?? null }
+      : {}),
     product: p
       ? {
           metadata: {

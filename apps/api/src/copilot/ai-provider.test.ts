@@ -7148,7 +7148,12 @@ it("reads bounded visual metadata through the SDK only on compatible clients and
   }
 });
 
-it.each(["ASSIGN_LIBRARY", "REMOVE_PRODUCT", "REVOKE_CURRENT"] as const)(
+it.each([
+  "ASSIGN_LIBRARY",
+  "REMOVE_PRODUCT",
+  "REVOKE_CURRENT",
+  "ASSIGN_SOURCE",
+] as const)(
   "prepares %s via the installed SDK without granting mutation or native consent",
   async (action) => {
     const { visualActionFixture } =
@@ -7165,6 +7170,17 @@ it.each(["ASSIGN_LIBRARY", "REMOVE_PRODUCT", "REVOKE_CURRENT"] as const)(
         }),
         intents: [],
       });
+      if (action === "ASSIGN_SOURCE")
+        f.request.attachedSources = [
+          {
+            sourceDocumentId: native.sourcePhoto.sourceDocumentId,
+            sourceType: "STORE_PHOTO",
+            status: "CONFIRMED",
+            filename: native.sourcePhoto.filename,
+            mediaType: native.sourcePhoto.mimeType,
+            registeredAt: native.sourcePhoto.registeredAt,
+          },
+        ];
       const read = vi.fn(async () => native.preview),
         before = native.db.raw
           .prepare("SELECT * FROM sync_outbox ORDER BY rowid")
@@ -7202,6 +7218,7 @@ it.each(["ASSIGN_LIBRARY", "REMOVE_PRODUCT", "REVOKE_CURRENT"] as const)(
       const result = await createCopilotAiProvider(f.config, transport, {
         daily: vi.fn(),
         visualAction: read,
+        visualSourceActions: action === "ASSIGN_SOURCE",
       }).generate(f.request, schema);
       expect(read).toHaveBeenCalledTimes(1);
       expect(result.visualActionPreviews).toEqual([native.preview]);
@@ -7213,12 +7230,14 @@ it.each(["ASSIGN_LIBRARY", "REMOVE_PRODUCT", "REVOKE_CURRENT"] as const)(
     }
   },
 );
-it.each(["DISABLED", "FOREIGN"] as const)(
+it.each(["DISABLED", "FOREIGN", "SOURCE_NOT_ATTACHED"] as const)(
   "keeps unnegotiated/foreign visual actions unavailable (%s)",
   async (mode) => {
     const { visualActionFixture } =
         await import("../../../../scripts/test-visual-action-fixtures"),
-      native = await visualActionFixture();
+      native = await visualActionFixture(
+        mode === "SOURCE_NOT_ATTACHED" ? "ASSIGN_SOURCE" : "ASSIGN_LIBRARY",
+      );
     try {
       const f = fixture();
       f.request.storeId = native.f.storeId;
@@ -7272,9 +7291,10 @@ it.each(["DISABLED", "FOREIGN"] as const)(
       };
       const result = await createCopilotAiProvider(f.config, transport, {
         daily: vi.fn(),
+        visualSourceActions: mode === "SOURCE_NOT_ATTACHED",
         ...(mode === "DISABLED" ? {} : { visualAction: read }),
       }).generate(f.request, schema);
-      expect(read).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
+      expect(read).toHaveBeenCalledTimes(mode === "FOREIGN" ? 1 : 0);
       expect(result.visualActionPreviews ?? []).toEqual([]);
     } finally {
       native.db.raw.close();

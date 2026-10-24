@@ -75,7 +75,8 @@ it.each([undefined, "1", "2", "1,1"])(
       });
       expect(result.statusCode).toBe(200);
       const reads = vi.mocked(createCopilotAiProvider).mock.calls[0]![2]!;
-      if (version === "1") {
+      if (version === "1" || version === "2") {
+        expect(reads.visualSourceActions).toBe(version === "2");
         expect(reads.visualAction).toBeTypeOf("function");
         authorizeStore.mockRejectedValueOnce(Error("FIXTURE_ACCESS_REVOKED"));
         await expect(

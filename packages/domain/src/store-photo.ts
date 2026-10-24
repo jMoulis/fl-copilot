@@ -14,6 +14,19 @@ export const storePhotoMimeSchema = z.enum([
 export const storePhotoReadInputSchema = z.strictObject({
   sourceDocumentId: z.uuid(),
 });
+/** Immutable original metadata only; no pixels, local path, storage key or owner token. */
+export const storePhotoSourceMetadataSchema = z.strictObject({
+  sourceDocumentId: z.uuid(),
+  sourceType: z.literal("STORE_PHOTO"),
+  filename: z.string().min(1).max(240),
+  checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  registeredAt: z.iso.datetime(),
+  mimeType: storePhotoMimeSchema,
+  sizeBytes: z.number().int().min(1).max(MAX_STORE_PHOTO_BYTES),
+});
+export type StorePhotoSourceMetadata = z.infer<
+  typeof storePhotoSourceMetadataSchema
+>;
 export const storePhotoSnapshotSchema = z
   .strictObject({
     source: z.strictObject({
