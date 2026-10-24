@@ -33,6 +33,18 @@ export function mapCommercialChoice(
     lastErrorCode: row.last_error_code ?? null,
   };
 }
+export async function readCommercialChoice(
+  db: OutboxDatabase,
+  storeId: string,
+  id: string,
+): Promise<LocalCommercialChoice | null> {
+  const row = await db.getFirstAsync<CommercialChoiceRow>(
+    `SELECT c.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=c.store_id AND o.entity_id=c.id AND o.entity_type='commercial_offer_choice' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM commercial_offer_choices c WHERE c.store_id=? AND c.id=?`,
+    storeId,
+    id,
+  );
+  return row ? mapCommercialChoice(row) : null;
+}
 export async function readCommercialChoices(
   db: OutboxDatabase,
   storeId: string,

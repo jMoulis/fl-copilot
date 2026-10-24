@@ -5,7 +5,7 @@ import {
 import { assertPhysicalAllocationCurrent } from "@fl-copilot/commercial-core";
 import { StoreLayoutRepository } from "../store/layout-repository";
 import { ProductMasterRepository } from "../products/product-master-repository";
-import { CommercialChoiceRepository } from "./offer-choice-repository";
+import { readCommercialChoice } from "./choice-read";
 import { joinedProductToolDatabase } from "../copilot/product-tool-transaction";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 /** Call within the caller's transaction when authorizing a save. Does not write. */
@@ -20,10 +20,7 @@ export async function readPhysicalAllocationSources(
     layouts = new StoreLayoutRepository(joined, () => {
       throw Error("READ_ONLY");
     }),
-    products = new ProductMasterRepository(joined),
-    offers = new CommercialChoiceRepository(joined, async () => {
-      throw Error("READ_ONLY");
-    });
+    products = new ProductMasterRepository(joined);
   const head = await layouts.get(storeId),
     reference = head?.entity.referenceRevisionId
       ? await layouts.getRevision(storeId, head.entity.referenceRevisionId)
@@ -36,7 +33,7 @@ export async function readPhysicalAllocationSources(
     choices = await Promise.all(
       scenario.items
         .filter((i) => i.kind === "OFFER")
-        .map((i) => offers.get(storeId, i.id)),
+        .map((i) => readCommercialChoice(db, storeId, i.id)),
     );
   if (
     [head, ...rows, ...choices].some(

@@ -116,7 +116,14 @@ it("preserves notes, selection and TG identities in an existing draft, and carri
     s.db.close();
   }
 });
-it.each(["PREPARATION", "REFERENCE", "PRODUCT", "ROLE", "PRIVATE_CARD"])(
+it.each([
+  "PREPARATION",
+  "REFERENCE",
+  "PRODUCT",
+  "OFFER_CONFLICT",
+  "ROLE",
+  "PRIVATE_CARD",
+])(
   "refuses changed authority or sources without a partial write: %s",
   async (mode) => {
     const s = await allocationSqliteFixture();
@@ -142,6 +149,12 @@ it.each(["PREPARATION", "REFERENCE", "PRODUCT", "ROLE", "PRIVATE_CARD"])(
           productAliases: [],
           productIdentifiers: [],
         });
+      if (mode === "OFFER_CONFLICT")
+        s.db
+          .prepare(
+            "UPDATE commercial_offer_choices SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+          )
+          .run(s.f.choice.id, s.f.storeId);
       if (mode === "PRIVATE_CARD")
         s.db
           .prepare("UPDATE copilot_conversations SET payload_json=? WHERE id=?")

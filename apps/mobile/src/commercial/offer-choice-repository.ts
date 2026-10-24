@@ -20,6 +20,7 @@ import {
 import { readCommercialVisualReadings } from "./visual-repository";
 import {
   mapCommercialChoice as mapped,
+  readCommercialChoice,
   readCommercialChoices,
   type CommercialChoiceRow as Row,
 } from "./choice-read";
@@ -98,12 +99,7 @@ export class CommercialChoiceRepository {
   }
 
   async get(storeId: string, id: string) {
-    const row = await this.db.getFirstAsync<Row>(
-      `SELECT c.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=c.store_id AND o.entity_id=c.id AND o.entity_type='commercial_offer_choice' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM commercial_offer_choices c WHERE c.store_id=? AND c.id=?`,
-      storeId,
-      id,
-    );
-    return row ? mapped(row) : null;
+    return readCommercialChoice(this.db, storeId, id);
   }
   async save(
     input: CommercialOfferChoice,
