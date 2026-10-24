@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { it, expect } from "vitest";
+import { it, expect, vi } from "vitest";
 import { reminderFixture } from "../../../../scripts/test-reminder-fixtures";
 import { testChoiceDigest } from "../../../../scripts/test-commercial-choice-fixtures";
 import { runLocalMigrations } from "../db/migrations";
@@ -97,3 +97,107 @@ it("persists device intent and audit before OS writes, rolls back failed capture
     rmSync(dir, { recursive: true, force: true });
   }
 });
+it.each(["preferences", "reminder"] as const)(
+  "rolls back %s and local history when its form context closes during the transaction",
+  async (kind) => {
+    const f = await reminderFixture(),
+      raw = new DatabaseSync(":memory:"),
+      a = new Adapter(raw);
+    try {
+      await runLocalMigrations(a);
+      raw
+        .prepare(
+          "INSERT INTO commercial_week_plans(id,store_id,week_start,payload_json,sync_state,dirty) VALUES(?,?,?,?,'SYNCED',0)",
+        )
+        .run(
+          f.plan.id,
+          f.plan.storeId,
+          f.plan.weekStart,
+          JSON.stringify(f.plan),
+        );
+      const repo = new ReminderRepository(a, testChoiceDigest),
+        write = a.runAsync.bind(a);
+      let current = true;
+      vi.spyOn(a, "runAsync").mockImplementation(async (sql, ...params) => {
+        const result = await write(sql, ...params);
+        if (sql.includes("INSERT INTO device_reminder_history"))
+          current = false;
+        return result;
+      });
+      const check = () => {
+        if (!current) throw Error("CONTEXT_CLOSED");
+      };
+      const action =
+        kind === "preferences"
+          ? repo.setEnabled(
+              f.plan.storeId,
+              true,
+              randomUUID(),
+              f.plan.validatedAt,
+              check,
+            )
+          : repo.save(f.reminder, randomUUID(), check);
+      await expect(action).rejects.toThrow("CONTEXT_CLOSED");
+      expect(await repo.preferences(f.plan.storeId)).toBe(false);
+      expect(await repo.list(f.plan.storeId)).toEqual([]);
+      expect(
+        raw.prepare("SELECT COUNT(*) count FROM device_reminder_history").get(),
+      ).toEqual({ count: 0 });
+      expect(
+        raw.prepare("SELECT COUNT(*) count FROM sync_outbox").get(),
+      ).toEqual({ count: 0 });
+      expect(
+        raw.prepare("SELECT payload_json FROM commercial_week_plans").get(),
+      ).toEqual({ payload_json: JSON.stringify(f.plan) });
+    } finally {
+      raw.close();
+    }
+  },
+);
+it.each(["preferences", "reminder"] as const)(
+  "does not write queued %s after its form context closes before transaction acquisition",
+  async (kind) => {
+    const f = await reminderFixture(),
+      raw = new DatabaseSync(":memory:"),
+      a = new Adapter(raw);
+    try {
+      await runLocalMigrations(a);
+      let current = true,
+        release!: () => void;
+      const gate = new Promise<void>((r) => {
+          release = r;
+        }),
+        transaction = a.withExclusiveTransactionAsync.bind(a);
+      vi.spyOn(a, "withExclusiveTransactionAsync").mockImplementationOnce(
+        async (fn) => {
+          await gate;
+          return transaction(fn);
+        },
+      );
+      const repo = new ReminderRepository(a, testChoiceDigest),
+        check = () => {
+          if (!current) throw Error("CONTEXT_CLOSED");
+        };
+      const action =
+        kind === "preferences"
+          ? repo.setEnabled(
+              f.plan.storeId,
+              true,
+              randomUUID(),
+              f.plan.validatedAt,
+              check,
+            )
+          : repo.save(f.reminder, randomUUID(), check);
+      current = false;
+      release();
+      await expect(action).rejects.toThrow("CONTEXT_CLOSED");
+      expect(await repo.preferences(f.plan.storeId)).toBe(false);
+      expect(await repo.list(f.plan.storeId)).toEqual([]);
+      expect(
+        raw.prepare("SELECT COUNT(*) count FROM device_reminder_history").get(),
+      ).toEqual({ count: 0 });
+    } finally {
+      raw.close();
+    }
+  },
+);
