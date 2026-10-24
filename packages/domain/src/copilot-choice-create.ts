@@ -3,6 +3,7 @@ import {
   commercialOfferChoiceSchema,
   commercialOfferSourceSchema,
   commercialChoiceSourceSchema,
+  commercialOriginalOfferSourceSchema,
   isCommercialOriginalSource,
 } from "./commercial-offer-choice";
 import { productSchema } from "./products";
@@ -19,17 +20,32 @@ export const copilotLegacyChoiceCreateInputSchema = z.strictObject({
   mechanism: z.union(fields.mechanism.options),
   note: fields.note,
 });
+const originalChoiceDescriptionSchema = z.strictObject({
+  operationKind: fields.operationKind,
+  operationLabel: fields.operationLabel,
+  rawProductLabel: fields.rawProductLabel,
+});
+/** Model input has no authority to supply an original checksum or approval. */
+export const copilotChoiceCreateModelInputSchema =
+  copilotLegacyChoiceCreateInputSchema
+    .extend({
+      source: z.union([
+        commercialOfferSourceSchema,
+        commercialOriginalOfferSourceSchema.omit({ checksum: true }),
+      ]),
+      originalDescription: originalChoiceDescriptionSchema.nullable(),
+    })
+    .refine(
+      (input) =>
+        ("kind" in input.source && input.source.kind === "PDF_ORIGINAL") ===
+        (input.originalDescription !== null),
+      "La description accompagne uniquement la référence à l’original.",
+    );
 export const copilotChoiceCreateInputSchema =
   copilotLegacyChoiceCreateInputSchema
     .extend({
       source: commercialChoiceSourceSchema,
-      originalDescription: z
-        .strictObject({
-          operationKind: fields.operationKind,
-          operationLabel: fields.operationLabel,
-          rawProductLabel: fields.rawProductLabel,
-        })
-        .optional(),
+      originalDescription: originalChoiceDescriptionSchema.optional(),
     })
     .refine(
       (input) =>

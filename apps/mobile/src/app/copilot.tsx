@@ -1215,7 +1215,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               storePhotos: true,
               choiceUpdate: canManageProducts,
               choiceRetention: canManageProducts,
-              choiceCreate: canManageProducts,
+              choiceCreate: canManageProducts ? 2 : false,
               offerValidation: canManageProducts,
               planValidation: canManageProducts,
               commercialReference: canManageProducts,

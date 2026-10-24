@@ -1,6 +1,7 @@
 import {
   createCommercialOriginalTool,
   bindCommercialOriginalReadings,
+  bindCommercialOriginalChoiceInput,
 } from "./commercial-original-tool";
 import type { CopilotOriginalPdfRead as CommercialOriginalRead } from "@fl-copilot/domain";
 import {
@@ -27,6 +28,7 @@ import {
 import {
   COPILOT_INITIAL_EVIDENCE_LIMIT,
   COPILOT_TOOL_READ_LIMIT,
+  COPILOT_ORIGINAL_CHOICE_TOOL_READ_LIMIT,
   COPILOT_READ_EVIDENCE_LIMIT,
 } from "./generation-limits";
 import {
@@ -133,6 +135,7 @@ import {
 import {
   copilotChoiceCreateInputSchema,
   copilotLegacyChoiceCreateInputSchema,
+  copilotChoiceCreateModelInputSchema,
   copilotChoiceCreatePreviewSchema,
   choiceCreateRequest,
 } from "@fl-copilot/domain";
@@ -683,6 +686,7 @@ export function createCopilotAiProvider(
     choiceRetention?(
       input: z.infer<typeof copilotChoiceRetentionInputSchema>,
     ): Promise<z.infer<typeof copilotChoiceRetentionPreviewSchema>>;
+    choiceCreateVersion?: 1 | 2;
     choiceCreate?(
       input: z.infer<typeof copilotChoiceCreateInputSchema>,
     ): Promise<z.infer<typeof copilotChoiceCreatePreviewSchema>>;
@@ -907,6 +911,11 @@ export function createCopilotAiProvider(
         let completeFactTrace = true;
         let readCalls = 0;
         let usedBytes = Buffer.byteLength(prompt, "utf8");
+        const originalChoiceWorkflow =
+          reads?.choiceCreateVersion === 2 && !!reads.commercialPdfOriginal;
+        const readLimit = originalChoiceWorkflow
+          ? COPILOT_ORIGINAL_CHOICE_TOOL_READ_LIMIT
+          : COPILOT_TOOL_READ_LIMIT;
         const executeRead = async (
           key: string,
           load: () => Promise<{
@@ -919,7 +928,7 @@ export function createCopilotAiProvider(
             message:
               "Les données demandées ne peuvent pas être consultées maintenant. Ne les inventez pas.",
           };
-          if (++readCalls > COPILOT_TOOL_READ_LIMIT || abortSignal.aborted) {
+          if (++readCalls > readLimit || abortSignal.aborted) {
             completeFactTrace = false;
             return unavailable;
           }
@@ -936,7 +945,11 @@ export function createCopilotAiProvider(
                         informationKeys.size -
                         knowledgeKeys.size -
                         contextKeys.size >=
-                      (reads?.needPreview || reads?.layoutScenario ? 4 : 3)
+                      (originalChoiceWorkflow
+                        ? readLimit
+                        : reads?.needPreview || reads?.layoutScenario
+                          ? 4
+                          : 3)
             ) {
               completeFactTrace = false;
               return unavailable;
@@ -1018,6 +1031,13 @@ export function createCopilotAiProvider(
               run: executeRead,
             })
           : undefined;
+        const choiceCreationSchema: z.ZodType<
+          | z.infer<typeof copilotChoiceCreateModelInputSchema>
+          | z.infer<typeof copilotLegacyChoiceCreateInputSchema>
+        > =
+          reads?.choiceCreateVersion === 2 && originalPdf
+            ? copilotChoiceCreateModelInputSchema
+            : copilotLegacyChoiceCreateInputSchema;
         // Keep stored/legacy responses compatible while requiring the new body in fresh strict OpenAI output.
         const generationSchema: z.ZodType = Object.is(
           schema,
@@ -2858,10 +2878,31 @@ export function createCopilotAiProvider(
                 ? {
                     commercial_choice_create: tool({
                       description:
-                        "Prepare initial retention of one explicitly requested OFFER from commercial_source_offers. Copy the exact returned source coordinates/checksum, identify an unambiguous active product with product_search, and supply only the intended dates, complete mechanism and note. Preserve ceiling operators, thresholds, lots and card scope; ask for missing/ambiguous terms or identity, never invent them. READY is a proposal only: native manager must verify source/product/conditions and store applicability separately before local save. ALREADY_EXISTS means inspect the existing choice, never overwrite or reactivate it. BLOCKED reviews source/units/dates/duplicate; UNAVAILABLE needs source/product synchronization; LIMIT_EXCEEDED uses manual offer review. No plan validation, TG, execution or paid extraction. At most three latest proposals by exact source item.",
-                      inputSchema: copilotLegacyChoiceCreateInputSchema,
-                      execute: (input) =>
-                        executeRead(
+                        reads.choiceCreateVersion === 2 && originalPdf
+                          ? "Prepare one explicitly requested offer from an original PDF already read with commercial_pdf in this turn, or from commercial_source_offers. For an original use PDF_ORIGINAL, its source ID, actual page, concise displayed excerpt and originalDescription; the server supplies the immutable checksum. Resolve the active product with product_search and supply the intended dates, complete mechanism and note, including future weeks. Ask only for genuine missing/ambiguous identity or terms. This prepares a proposal: the manager confirms source, conditions and applicability before local persistence. No full-document extraction/review prerequisite, automatic approval, execution or paid extraction. At most three proposals. ALREADY_EXISTS means inspect the saved choice; never overwrite or reactivate it."
+                          : "Prepare initial retention of one explicitly requested OFFER from commercial_source_offers. Copy the exact returned source coordinates/checksum, identify an unambiguous active product with product_search, and supply only the intended dates, complete mechanism and note. Preserve ceiling operators, thresholds, lots and card scope; ask for missing/ambiguous terms or identity, never invent them. READY is a proposal only: native manager must verify source/product/conditions and store applicability separately before local save. ALREADY_EXISTS means inspect the existing choice, never overwrite or reactivate it. BLOCKED reviews source/units/dates/duplicate; UNAVAILABLE needs source/product synchronization; LIMIT_EXCEEDED uses manual offer review. No plan validation, TG, execution or paid extraction. At most three latest proposals by exact source item.",
+                      inputSchema: choiceCreationSchema,
+                      execute: (raw) => {
+                        abortSignal.throwIfAborted();
+                        let input: z.infer<
+                          typeof copilotChoiceCreateInputSchema
+                        >;
+                        try {
+                          input =
+                            reads.choiceCreateVersion === 2 && originalPdf
+                              ? bindCommercialOriginalChoiceInput(
+                                  raw,
+                                  originalPdf.documents,
+                                )
+                              : copilotLegacyChoiceCreateInputSchema.parse(raw);
+                        } catch {
+                          return {
+                            unavailable: true as const,
+                            message:
+                              "Cette offre n’est pas encore rattachée à une page du PDF lu dans cet échange. Consultez d’abord l’original, puis reprenez la proposition sans inventer de conditions.",
+                          };
+                        }
+                        return executeRead(
                           JSON.stringify(["choice-create", input]),
                           async () => {
                             const value =
@@ -2894,7 +2935,8 @@ export function createCopilotAiProvider(
                             choiceCreates.push(value);
                             return value;
                           },
-                        ),
+                        );
+                      },
                     }),
                   }
                 : {}),
@@ -3247,60 +3289,62 @@ export function createCopilotAiProvider(
               find_tools: toolSearch(),
             }
           : businessTools;
-        const maxSteps = discoverTools
-          ? 6
-          : reads
-            ? reads.referencePreview ||
-              reads.layoutScenario ||
-              reads.planValidation ||
-              reads.choiceReassociation ||
-              reads.offerValidation ||
-              reads.choiceCreate ||
-              reads.choiceRetention ||
-              reads.choiceUpdate ||
-              reads.choiceWithdrawal ||
-              reads.preparationPreview ||
-              reads.operationsPreview ||
-              reads.needPreview ||
-              reads.storeConflict ||
-              reads.receiptRecovery ||
-              reads.receiptCorrection ||
-              reads.receiptPublication ||
-              reads.identityReview ||
-              reads.cataloguePreview ||
-              reads.transcriptionReview ||
-              reads.visualAction
-              ? 4
-              : reads.planReadiness ||
-                  reads.commercialPreparation ||
-                  reads.actionExecutionPreview ||
-                  reads.actionExecutions ||
-                  reads.declaredActionReview ||
-                  reads.executionLinkPreview ||
-                  reads.executionLinks ||
-                  reads.executionPreview ||
-                  reads.analyticsQuery ||
-                  reads.publicResearch ||
-                  reads.retailExpertise ||
-                  reads.actionReview ||
-                  reads.recommendationTracking ||
-                  reads.recommendationContext ||
-                  reads.recommendationDecisions ||
-                  reads.prepareContextCheckpoint ||
-                  reads.conversationHistory ||
-                  reads.period ||
-                  reads.commercialOffers ||
-                  reads.referenceInspection ||
-                  reads.documentComparison ||
-                  reads.commercialPdfOriginal ||
-                  reads.commercialPdf ||
-                  reads.receiptDocuments ||
-                  reads.needCatalogue ||
-                  reads.productPreview ||
-                  reads.productBatchPreview
-                ? 3
-                : 2
-            : 1;
+        const maxSteps = originalChoiceWorkflow
+          ? readLimit + 1
+          : discoverTools
+            ? 6
+            : reads
+              ? reads.referencePreview ||
+                reads.layoutScenario ||
+                reads.planValidation ||
+                reads.choiceReassociation ||
+                reads.offerValidation ||
+                reads.choiceCreate ||
+                reads.choiceRetention ||
+                reads.choiceUpdate ||
+                reads.choiceWithdrawal ||
+                reads.preparationPreview ||
+                reads.operationsPreview ||
+                reads.needPreview ||
+                reads.storeConflict ||
+                reads.receiptRecovery ||
+                reads.receiptCorrection ||
+                reads.receiptPublication ||
+                reads.identityReview ||
+                reads.cataloguePreview ||
+                reads.transcriptionReview ||
+                reads.visualAction
+                ? 4
+                : reads.planReadiness ||
+                    reads.commercialPreparation ||
+                    reads.actionExecutionPreview ||
+                    reads.actionExecutions ||
+                    reads.declaredActionReview ||
+                    reads.executionLinkPreview ||
+                    reads.executionLinks ||
+                    reads.executionPreview ||
+                    reads.analyticsQuery ||
+                    reads.publicResearch ||
+                    reads.retailExpertise ||
+                    reads.actionReview ||
+                    reads.recommendationTracking ||
+                    reads.recommendationContext ||
+                    reads.recommendationDecisions ||
+                    reads.prepareContextCheckpoint ||
+                    reads.conversationHistory ||
+                    reads.period ||
+                    reads.commercialOffers ||
+                    reads.referenceInspection ||
+                    reads.documentComparison ||
+                    reads.commercialPdfOriginal ||
+                    reads.commercialPdf ||
+                    reads.receiptDocuments ||
+                    reads.needCatalogue ||
+                    reads.productPreview ||
+                    reads.productBatchPreview
+                  ? 3
+                  : 2
+              : 1;
         const agent = reads
           ? new ToolLoopAgent({
               ...settings,

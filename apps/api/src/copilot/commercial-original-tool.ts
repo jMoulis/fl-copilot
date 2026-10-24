@@ -3,6 +3,8 @@ import { tool } from "ai";
 import { z } from "zod";
 import {
   copilotOriginalPdfInputSchema,
+  copilotChoiceCreateModelInputSchema,
+  copilotChoiceCreateInputSchema,
   copilotOriginalPdfSnapshotSchema,
   copilotPdfObservationsSchema,
   copilotEvidenceSchema,
@@ -187,4 +189,29 @@ export function bindCommercialOriginalReadings(
     },
     evidence,
   };
+}
+
+/** Only originals actually delivered to this model generation may seed a new choice.
+ * The source hash comes from the authenticated reader, never from model arguments. */
+export function bindCommercialOriginalChoiceInput(
+  raw: unknown,
+  documents: ReadonlyMap<string, Snapshot>,
+) {
+  const input = copilotChoiceCreateModelInputSchema.parse(raw);
+  if (!("kind" in input.source)) {
+    const { originalDescription: _unused, ...legacy } = input;
+    void _unused;
+    return copilotChoiceCreateInputSchema.parse(legacy);
+  }
+  const original = documents.get(input.source.sourceDocumentId);
+  if (
+    !original ||
+    original.source.sourceDocumentId !== input.source.sourceDocumentId ||
+    input.source.pageNumber > original.source.pageCount
+  )
+    throw Error("CHOICE_CREATE_ORIGINAL_NOT_READ");
+  return copilotChoiceCreateInputSchema.parse({
+    ...input,
+    source: { ...input.source, checksum: original.source.checksum },
+  });
 }
