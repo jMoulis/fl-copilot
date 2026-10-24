@@ -75,7 +75,8 @@ const answer = {
   language: "fr-FR",
   summary: "Voici les offres annoncées par le document.",
   facts: [],
-  narrative: "Pour la préparation à venir, le document annonce {{document:0}}.",
+  narrative:
+    "Pour la préparation à venir, le document annonce {{document-value:0}}.",
   interpretation: [],
   recommendations: [],
   questions: [],
@@ -194,6 +195,123 @@ it("binds source observations to a delivered original/page, preserving source cl
     ),
   ).toThrow("REFERENCE_INVALID");
 });
+it("cites a paraphrased PDF passage without appending the whole observation into every table row", async () => {
+  const f = fixture(),
+    input = { sourceDocumentId: f.sourceDocumentId };
+  const output = await f.factory.tool.execute!(input, call);
+  await f.factory.tool.toModelOutput!({ input, output, toolCallId: "pdf" });
+  const reading = {
+    sourceDocumentId: f.sourceDocumentId,
+    pageNumber: 2,
+    text: "La gamme fruits démarre jeudi avec ses affichettes. L’offre orange dégressive débute mardi avec paramétrage demandé.",
+  };
+  const bound = bindCommercialOriginalReadings(
+    {
+      ...answer,
+      narrative:
+        "| Animation | Démarrage |\n|---|---|\n| TG fruits | Dès jeudi, avec affichettes. {{document:0}} |\n| Orange dégressive | Dès mardi. {{document:0}} |",
+      documentReadings: [reading],
+    },
+    f.factory.documents,
+  );
+  const parsed = copilotResponseSchema.parse(bound.output),
+    text = renderAnswerText(parsed.narrative!, parsed.facts, bound.evidence);
+  expect(text.match(/\[Source\]/g)).toHaveLength(2);
+  expect(text).toContain("Dès jeudi, avec affichettes.");
+  expect(text).not.toContain(reading.text);
+  expect(text.match(/paramétrage demandé/g) ?? []).toHaveLength(0);
+  expect(bound.evidence[0]!.value).toBe(reading.text);
+});
+it("inserts a sourced figure only when requested, preserving existing fact indices and the numeric prose guard", async () => {
+  const f = fixture(),
+    input = { sourceDocumentId: f.sourceDocumentId };
+  const output = await f.factory.tool.execute!(input, call);
+  await f.factory.tool.toModelOutput!({ input, output, toolCallId: "pdf" });
+  const raw = {
+    ...answer,
+    facts: [{ evidenceId: f.file.snapshot.evidence[0]!.id }],
+    narrative:
+      "Original {{source:0}}. Prix annoncé : {{document-value:0}}. Ce prix vient du document {{document:0}}.",
+    documentReadings: [
+      {
+        sourceDocumentId: f.sourceDocumentId,
+        pageNumber: 2,
+        text: "2,50 €/kg",
+      },
+    ],
+  };
+  const bound = bindCommercialOriginalReadings(raw, f.factory.documents),
+    parsed = copilotResponseSchema.parse(bound.output);
+  const evidence = [...f.file.snapshot.evidence, ...bound.evidence];
+  const text = renderAnswerText(parsed.narrative!, parsed.facts, evidence);
+  expect(text.match(/2,50/g)).toHaveLength(1);
+  expect(text.match(/\[Source\]/g)).toHaveLength(3);
+  expect(parsed.facts[0]).toEqual(raw.facts[0]);
+  expect(parsed.facts[1]!.evidenceId).toBe(bound.evidence[0]!.id);
+  const unsafe = bindCommercialOriginalReadings(
+    { ...raw, narrative: "Prix 2,50 € {{document:0}}" },
+    f.factory.documents,
+  );
+  const rejected = copilotResponseSchema.parse(unsafe.output);
+  expect(() =>
+    renderAnswerText(rejected.narrative!, rejected.facts, evidence),
+  ).toThrow("INVALID_ANSWER_TEMPLATE");
+  expect(() =>
+    bindCommercialOriginalReadings(
+      { ...raw, facts: Array.from({ length: 96 }, () => raw.facts[0]!) },
+      f.factory.documents,
+    ),
+  ).toThrow("OBSERVATIONS_LIMIT");
+});
+it.each(["document", "document-value"])(
+  "never leaks malformed or incomplete %s references while streaming",
+  async (kind) => {
+    const f = fixture(),
+      input = { sourceDocumentId: f.sourceDocumentId };
+    const output = await f.factory.tool.execute!(input, call);
+    await f.factory.tool.toModelOutput!({ input, output, toolCallId: "pdf" });
+    const raw = {
+      ...answer,
+      narrative: `Lecture en cours {{${kind}:0`,
+      documentReadings: [
+        {
+          sourceDocumentId: f.sourceDocumentId,
+          pageNumber: 2,
+          text: "Offre à lire",
+        },
+      ],
+    };
+    expect(
+      (
+        bindCommercialOriginalReadings(raw, f.factory.documents, true)
+          .output as { narrative: string }
+      ).narrative,
+    ).toBe("Lecture en cours ");
+    expect(() =>
+      bindCommercialOriginalReadings(raw, f.factory.documents),
+    ).toThrow("REFERENCE_INVALID");
+    const malformed = { ...raw, narrative: `Lecture en cours {{${kind}:bad}}` };
+    expect(
+      (
+        bindCommercialOriginalReadings(malformed, f.factory.documents, true)
+          .output as { narrative: string }
+      ).narrative,
+    ).toBe("Lecture en cours ");
+    expect(() =>
+      bindCommercialOriginalReadings(malformed, f.factory.documents),
+    ).toThrow("REFERENCE_INVALID");
+    const incomplete = {
+      ...raw,
+      documentReadings: [{ sourceDocumentId: "pending" }],
+    };
+    expect(
+      (
+        bindCommercialOriginalReadings(incomplete, f.factory.documents, true)
+          .output as { narrative: string }
+      ).narrative,
+    ).toBe("Lecture en cours ");
+  },
+);
 it("rejects malformed source observation references instead of exposing template syntax", () => {
   expect(() =>
     bindCommercialOriginalReadings(
@@ -287,9 +405,14 @@ function envelope(output: unknown[], streaming = false) {
     { headers: { "content-type": "application/json" } },
   );
 }
-it.each([false, true])(
-  "reads the original and answers about next week without extraction, through the installed Responses transport (streaming %s)",
-  async (streaming) => {
+it.each([
+  { streaming: false, citationOnly: false },
+  { streaming: true, citationOnly: false },
+  { streaming: false, citationOnly: true },
+  { streaming: true, citationOnly: true },
+])(
+  "reads the original and answers about next week without extraction, through installed Responses (streaming $streaming, citation only $citationOnly)",
+  async ({ streaming, citationOnly }) => {
     const f = fixture(),
       batch = scoreCopilotPriorities({
         storeId,
@@ -340,6 +463,9 @@ it.each([false, true])(
                 type: "output_text",
                 text: JSON.stringify({
                   ...answer,
+                  narrative: citationOnly
+                    ? "L’offre à venir est présentée dans le document {{document:0}}."
+                    : answer.narrative,
                   documentReadings: [
                     {
                       sourceDocumentId: f.sourceDocumentId,
@@ -381,7 +507,9 @@ it.each([false, true])(
       expect(
         partial.mock.calls.some(
           ([value, evidence]) =>
-            JSON.stringify(value).includes("{{value:") &&
+            JSON.stringify(value).includes(
+              citationOnly ? "{{source:" : "{{value:",
+            ) &&
             evidence.some(
               (e: { factKind: string }) => e.factKind === "SOURCE_INSTRUCTION",
             ),
@@ -392,13 +520,14 @@ it.each([false, true])(
     expect(extraction).not.toHaveBeenCalled();
     const grounded = { ...request, evidence: result.toolEvidence };
     const validated = validateCopilotResponse(result.output, grounded);
-    expect(
-      renderAnswerText(
-        validated.narrative!,
-        validated.facts,
-        result.toolEvidence!,
-      ),
-    ).toContain("2,50 €");
+    const rendered = renderAnswerText(
+      validated.narrative!,
+      validated.facts,
+      result.toolEvidence!,
+    );
+    expect(rendered).toContain("[Source]");
+    if (citationOnly) expect(rendered).not.toContain("2,50 €");
+    else expect(rendered).toContain("2,50 €");
     expect(() =>
       validateCopilotResponse(
         { ...validated, narrative: "Le CA magasin est de 9000 €." },

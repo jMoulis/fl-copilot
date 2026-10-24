@@ -1049,7 +1049,7 @@ export function createCopilotAiProvider(
               ...(originalPdf
                 ? {
                     documentReadings: copilotPdfObservationsSchema.describe(
-                      "Concise source observations read from original commercial PDFs, never official store KPIs. Use {{document:0}} etc in narrative; empty when no source observations are needed.",
+                      "Concise source observations read from original commercial PDFs, never official store KPIs. {{document:0}} in narrative adds only its source link. {{document-value:0}} inserts the observation text plus its link, for example a sourced price: keep that observation short and do not repeat it in surrounding prose. Empty when no source observations are needed.",
                     ),
                   }
                 : {}),
