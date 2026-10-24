@@ -198,7 +198,17 @@ describe("offline weekly preparation", () => {
     await x.tx.runAsync(
       "UPDATE commercial_week_preparations SET sync_state='CONFLICT'",
     );
+    await x.tx.runAsync(
+      "UPDATE commercial_week_preparations SET sync_state='CONFLICT' WHERE store_id=?",
+      x.f.storeId,
+    );
+    const resolutionReview = await x.repo.review(x.f.storeId, commandId);
     await x.repo.resolve(commandId, false, {
+      storeId: x.f.storeId,
+      reviewHash: resolutionReview.hash,
+      remoteHistoryId: randomUUID(),
+      canResolve: () => true,
+      retainWithdrawn: true,
       commandId: randomUUID(),
       deviceId: x.deviceId,
     });

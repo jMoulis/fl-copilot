@@ -13,7 +13,7 @@ import {
   commercialExecutionSameTarget,
 } from "@fl-copilot/commercial-core";
 import type { OutboxDatabase } from "../sync/outbox-repository";
-import { readCommercialExecutionPlan } from "../commercial/execution-repository";
+import { readCommercialExecutionPlan } from "./execution-plan-read";
 /** Sources and declarations remain immutable inputs; canonical resolvers own writes. */
 export async function readCommercialDecisionConflictPolicy(
   db: OutboxDatabase,

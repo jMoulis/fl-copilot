@@ -16,21 +16,104 @@ import { ProductSubstitutionConflict } from "../needs/substitution-conflict";
 import { applyNeedUnit } from "../needs/repository";
 import { applyNeedMembership } from "../needs/membership-repository";
 import { applyProductSubstitution } from "../needs/substitution-repository";
-type Kind = "SETTINGS" | "FIELD_EVENT" | "NEED" | "MEMBERSHIP" | "SUBSTITUTION";
-const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") =>
-  kind === "SETTINGS" || kind === "FIELD_EVENT"
-    ? nativeStoreConflictFixture(kind)
-    : nativeNeedConflictFixture(kind, ":memory:", refusal);
-const component = (kind: Kind) =>
-  kind === "SETTINGS"
-    ? StoreContextConflict
-    : kind === "FIELD_EVENT"
-      ? StoreEventConflict
-      : kind === "NEED"
-        ? NeedUnitConflict
-        : kind === "MEMBERSHIP"
-          ? NeedMembershipConflict
-          : ProductSubstitutionConflict;
+import {
+  nativeCommercialConflictFixture,
+  commercialConflictTables,
+} from "../../../../scripts/test-commercial-conflict-fixtures";
+import { nativeCommercialDecisionConflictFixture } from "../../../../scripts/test-commercial-decision-conflict-fixtures";
+import { CommercialChoiceConflict } from "../commercial/choice-conflict";
+import { CommercialPreparationConflict } from "../commercial/preparation-conflict";
+import { CommercialPlanConflict } from "../commercial/plan-conflict";
+import { CommercialVersionDecisionConflict } from "../commercial/version-decision-conflict";
+import { CommercialExecutionConflict } from "../commercial/execution-conflict";
+import { applyCommercialChoice } from "../commercial/offer-choice-repository";
+import { applyCommercialPreparation } from "../commercial/week-preparation-repository";
+import { applyCommercialPlan } from "../commercial/week-plan-repository";
+import { applyCommercialVersionDecision } from "../commercial/version-decision-repository";
+import { applyCommercialExecution } from "../commercial/execution-repository";
+import { commercialWeekPlanSchema } from "@fl-copilot/domain";
+import { buildCommercialWeekPlan } from "@fl-copilot/commercial-core";
+import { readWeekPlanContext } from "../commercial/week-plan-context";
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
+const kinds = [
+  "SETTINGS",
+  "FIELD_EVENT",
+  "NEED",
+  "MEMBERSHIP",
+  "SUBSTITUTION",
+  "COMMERCIAL_CHOICE",
+  "COMMERCIAL_PREPARATION",
+  "COMMERCIAL_PLAN",
+  "COMMERCIAL_REFERENCE",
+  "COMMERCIAL_EXECUTION",
+] as const;
+type Kind = (typeof kinds)[number];
+const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
+  if (kind === "SETTINGS" || kind === "FIELD_EVENT")
+    return nativeStoreConflictFixture(kind);
+  if (kind === "NEED" || kind === "MEMBERSHIP" || kind === "SUBSTITUTION")
+    return nativeNeedConflictFixture(kind, ":memory:", refusal);
+  if (kind === "COMMERCIAL_REFERENCE" || kind === "COMMERCIAL_EXECUTION")
+    return nativeCommercialDecisionConflictFixture(kind);
+  return nativeCommercialConflictFixture(kind, ":memory:", refusal);
+};
+const components = {
+  SETTINGS: StoreContextConflict,
+  FIELD_EVENT: StoreEventConflict,
+  NEED: NeedUnitConflict,
+  MEMBERSHIP: NeedMembershipConflict,
+  SUBSTITUTION: ProductSubstitutionConflict,
+  COMMERCIAL_CHOICE: CommercialChoiceConflict,
+  COMMERCIAL_PREPARATION: CommercialPreparationConflict,
+  COMMERCIAL_PLAN: CommercialPlanConflict,
+  COMMERCIAL_REFERENCE: CommercialVersionDecisionConflict,
+  COMMERCIAL_EXECUTION: CommercialExecutionConflict,
+};
+const component = (kind: Kind) => components[kind];
+const entityTables = {
+  SETTINGS: "store_context_settings",
+  FIELD_EVENT: "store_product_events",
+  ...needConflictTables,
+  ...commercialConflictTables,
+  COMMERCIAL_REFERENCE: "commercial_version_decisions",
+  COMMERCIAL_EXECUTION: "commercial_execution_tasks",
+};
+const histories = {
+  SETTINGS: "store_context_history",
+  FIELD_EVENT: "store_product_event_history",
+  NEED: "need_unit_history",
+  MEMBERSHIP: "need_membership_history",
+  SUBSTITUTION: "product_substitution_history",
+  COMMERCIAL_CHOICE: "commercial_choice_history",
+  COMMERCIAL_PREPARATION: "commercial_preparation_history",
+  COMMERCIAL_PLAN: "commercial_plan_history",
+  COMMERCIAL_REFERENCE: "commercial_version_decision_history",
+  COMMERCIAL_EXECUTION: "commercial_execution_history",
+};
+const readable = {
+  SETTINGS: "Asnières",
+  FIELD_EVENT: "Rupture",
+  NEED: "Besoin local",
+  MEMBERSHIP: "compatibilité déclarée",
+  SUBSTITUTION: "observation",
+  COMMERCIAL_CHOICE: "Retenue",
+  COMMERCIAL_PREPARATION: "Brouillon",
+  COMMERCIAL_PLAN: "Version",
+  COMMERCIAL_REFERENCE: "Référence",
+  COMMERCIAL_EXECUTION: "plan version",
+};
+const pulls = {
+  SETTINGS: applyStoreContext,
+  FIELD_EVENT: applyStoreProductEvent,
+  NEED: applyNeedUnit,
+  MEMBERSHIP: applyNeedMembership,
+  SUBSTITUTION: applyProductSubstitution,
+  COMMERCIAL_CHOICE: applyCommercialChoice,
+  COMMERCIAL_PREPARATION: applyCommercialPreparation,
+  COMMERCIAL_PLAN: applyCommercialPlan,
+  COMMERCIAL_REFERENCE: applyCommercialVersionDecision,
+  COMMERCIAL_EXECUTION: applyCommercialExecution,
+};
 const runtime = vi.hoisted(() => ({
   session: undefined as unknown,
   database: undefined as unknown,
@@ -39,6 +122,10 @@ const runtime = vi.hoisted(() => ({
   sync: vi.fn(),
   hold: undefined as
     undefined | { entered: () => void; promise: Promise<void> },
+}));
+vi.mock("@/dates/calendar", () => import("../dates/calendar"));
+vi.mock("../commercial/original-button", () => ({
+  CommercialOriginalButton: "OriginalButton",
 }));
 vi.mock("@/auth/auth-provider", () => ({
   useAuth: () => ({ session: runtime.session }),
@@ -150,35 +237,35 @@ beforeEach(() => {
       error(...args);
   });
 });
+it.each(["LOCAL", "REMOTE"] as const)(
+  "manual withdrawn offer needs a separate confirmation (%s)",
+  async (withdrawal) => {
+    await setup("COMMERCIAL_CHOICE", withdrawal);
+    const label =
+      withdrawal === "REMOTE"
+        ? "Conserver ma version locale"
+        : "Adopter la version synchronisée";
+    await act(async () => host("Switch").props.onValueChange(true));
+    expect(button(label).props.disabled).toBe(true);
+    await act(async () => hosts("Switch")[1]!.props.onValueChange(true));
+    expect(button(label).props.disabled).toBe(false);
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(hosts("Switch").every((n) => n.props.value === false)).toBe(true);
+    await act(async () => host("Switch").props.onValueChange(true));
+    await act(async () => hosts("Switch")[1]!.props.onValueChange(true));
+    await act(async () => button(label).props.onPress());
+    expect(runtime.back).toHaveBeenCalledTimes(1);
+  },
+);
 afterEach(async () => {
   if (tree) await act(async () => tree!.unmount());
   tree = undefined;
   for (const s of fixtures.splice(0)) s.db.close();
   runtime.hold = undefined;
 });
-describe.each([
-  "SETTINGS",
-  "FIELD_EVENT",
-  "NEED",
-  "MEMBERSHIP",
-  "SUBSTITUTION",
-] as const)("%s native comparison", (kind) => {
-  const table =
-      kind === "SETTINGS"
-        ? "store_context_settings"
-        : kind === "FIELD_EVENT"
-          ? "store_product_events"
-          : needConflictTables[kind],
-    historyTable =
-      kind === "SETTINGS"
-        ? "store_context_history"
-        : kind === "FIELD_EVENT"
-          ? "store_product_event_history"
-          : kind === "NEED"
-            ? "need_unit_history"
-            : kind === "MEMBERSHIP"
-              ? "need_membership_history"
-              : "product_substitution_history",
+describe.each(kinds)("%s native comparison", (kind) => {
+  const table = entityTables[kind],
+    historyTable = histories[kind],
     keepLabel =
       kind === "SETTINGS"
         ? "Conserver mes réglages locaux"
@@ -188,17 +275,8 @@ describe.each([
     adoptLabel =
       kind === "SETTINGS"
         ? "Adopter les réglages synchronisés"
-        : "Adopter la version synchronisée";
-  const pull =
-    kind === "SETTINGS"
-      ? applyStoreContext
-      : kind === "FIELD_EVENT"
-        ? applyStoreProductEvent
-        : kind === "NEED"
-          ? applyNeedUnit
-          : kind === "MEMBERSHIP"
-            ? applyNeedMembership
-            : applyProductSubstitution;
+        : "Adopter la version synchronisée",
+    pull = pulls[kind];
   it("requires a comparison and accepts a double press only once through the real SQLite writer", async () => {
     const s = await setup(kind),
       before = s.count(historyTable);
@@ -217,10 +295,21 @@ describe.each([
   it("shows a targeted stale error, clears consent and requires rereading before another choice", async () => {
     const s = await setup(kind);
     await act(async () => host("Switch").props.onValueChange(true));
-    await pull(s.a, s.scope.storeId, {
-      ...s.review.remote,
-      version: 3,
-    });
+    let remote = { ...s.review.remote, version: 3 };
+    if (kind === "COMMERCIAL_PLAN") {
+      const p = commercialWeekPlanSchema.parse(s.review.remote);
+      remote = await buildCommercialWeekPlan(
+        {
+          preparation: p.preparation,
+          createdAt: p.createdAt,
+          version: 3,
+          validatedAt: "2026-10-11T14:00:00.000Z",
+        },
+        await readWeekPlanContext(s.a, p.preparation),
+        receiptReviewDigest,
+      );
+    }
+    await pull(s.a, s.scope.storeId, remote);
     await act(async () => button(adoptLabel).props.onPress());
     expect(
       hosts("Alert").some((n) =>
@@ -317,17 +406,7 @@ describe.each([
     await act(async () => button("Relire la comparaison").props.onPress());
     expect(
       hosts("Text").some((n) =>
-        String(n.props.children).includes(
-          kind === "SETTINGS"
-            ? "Asnières"
-            : kind === "FIELD_EVENT"
-              ? "Rupture"
-              : kind === "NEED"
-                ? "Besoin local"
-                : kind === "MEMBERSHIP"
-                  ? "compatibilité déclarée"
-                  : "observation",
-        ),
+        String(n.props.children).includes(readable[kind]),
       ),
     ).toBe(true);
     expect(button(keepLabel).props.disabled).toBe(true);

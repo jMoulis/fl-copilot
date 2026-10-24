@@ -207,7 +207,17 @@ it("compares and explicitly adopts a different-device choice while preserving th
     remoteEntity: remote,
   });
   const conflict = (await conflicts.listOpen(x.f.storeId))[0]!;
+  await x.tx.runAsync(
+    "UPDATE commercial_version_decisions SET sync_state='CONFLICT' WHERE store_id=?",
+    x.f.storeId,
+  );
+  const resolutionReview = await x.repo.review(x.f.storeId, conflict.id);
   await x.repo.resolve(conflict.id, false, {
+    storeId: x.f.storeId,
+    reviewHash: resolutionReview.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
+    retainWithdrawn: true,
     ...x.ctx,
     commandId: randomUUID(),
   });
@@ -254,7 +264,17 @@ it("rebases an opposite-orientation device conflict explicitly without changing 
       remoteEntity: remote,
     },
   );
+  await x.tx.runAsync(
+    "UPDATE commercial_version_decisions SET sync_state='CONFLICT' WHERE store_id=?",
+    x.f.storeId,
+  );
+  const resolutionReview = await x.repo.review(x.f.storeId, conflict.id);
   await x.repo.resolve(conflict.id, true, {
+    storeId: x.f.storeId,
+    reviewHash: resolutionReview.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
+    retainWithdrawn: true,
     ...x.ctx,
     commandId: randomUUID(),
   });

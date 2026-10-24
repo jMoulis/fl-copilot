@@ -12,7 +12,11 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  readCommercialConflictReview,
+  requireCommercialConflictDecision,
+  type CommercialConflictResolutionContext,
+} from "./conflict-review";
 import { readWeekPlanContext } from "./week-plan-context";
 import { buildCommercialWeekPlan } from "@fl-copilot/commercial-core";
 import { commercialPlanRevisionSchema } from "@fl-copilot/sync-contracts";
@@ -105,6 +109,15 @@ export class CommercialPlanRepository {
     private db: AtomicMutationDatabase & OutboxDatabase,
     private digest: (text: string) => Promise<string>,
   ) {}
+  review(storeId: string, conflictId: string) {
+    return readCommercialConflictReview(
+      this.db,
+      storeId,
+      "COMMERCIAL_PLAN",
+      conflictId,
+      this.digest,
+    );
+  }
   async get(storeId: string, weekStart: string) {
     const row = await this.db.getFirstAsync<Row>(
       "SELECT p.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=p.store_id AND o.entity_id=p.id AND o.entity_type='commercial_week_plan' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM commercial_week_plans p WHERE p.store_id=? AND p.week_start=?",
@@ -197,59 +210,40 @@ export class CommercialPlanRepository {
   async resolve(
     conflictId: string,
     useLocal: boolean,
-    ctx: { commandId: string; deviceId: string },
+    ctx: CommercialConflictResolutionContext,
   ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const conflict = await new ConflictRepository(tx).getById(conflictId);
-      if (
-        !conflict ||
-        conflict.status !== "OPEN" ||
-        conflict.entityType !== "commercial_week_plan"
-      )
-        throw Error("COMMERCIAL_PLAN_RESOLUTION_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-        "SELECT * FROM commercial_week_plans WHERE id=? AND store_id=?",
-        conflict.entityId,
-        conflict.storeId,
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("COMMERCIAL_CONFLICT_FORBIDDEN");
+      const review = await readCommercialConflictReview(
+        tx,
+        ctx.storeId,
+        "COMMERCIAL_PLAN",
+        conflictId,
+        this.digest,
       );
-      if (!row) throw Error("COMMERCIAL_PLAN_RESOLUTION_INVALID");
-      const local = mapped(row).entity,
-        parsed = commercialWeekPlanSchema.safeParse(conflict.remotePayload);
-      const remote = parsed.success ? parsed.data : null;
-      if (
-        remote &&
-        !commercialPlanSameIdentity(
-          { ...local, createdAt: remote.createdAt },
-          remote,
-        )
-      )
-        throw Error("COMMERCIAL_PLAN_SOURCE_CHANGED");
-      if (!useLocal && !remote) throw Error("COMMERCIAL_PLAN_REMOTE_MISSING");
-      const syncing = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM sync_outbox WHERE store_id=? AND entity_type='commercial_week_plan' AND entity_id=? AND status='SYNCING'",
-        local.storeId,
-        local.id,
-      );
-      if (syncing?.n) throw Error("COMMERCIAL_PLAN_SYNCING");
+      requireCommercialConflictDecision(review, useLocal, ctx);
+      const local = commercialWeekPlanSchema.parse(review.current.entity),
+        remote = commercialWeekPlanSchema.parse(review.group.remote);
       await retireCommands(tx, local.storeId, local.id);
       const now = new Date().toISOString();
       const resolved = useLocal
         ? await buildCommercialWeekPlan(
             {
               preparation: local.preparation,
-              version: (remote?.version ?? 0) + 1,
-              createdAt: remote?.createdAt ?? local.createdAt,
+              version: remote.version + 1,
+              createdAt: remote.createdAt,
               validatedAt: now,
             },
             await readWeekPlanContext(tx, local.preparation),
             this.digest,
           )
-        : remote!;
+        : remote;
       await tx.runAsync(
         "UPDATE commercial_week_plans SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=? WHERE id=?",
         JSON.stringify(resolved),
-        remote ? JSON.stringify(remote) : null,
-        remote?.version ?? null,
+        JSON.stringify(remote),
+        remote.version,
         useLocal ? "PENDING" : "SYNCED",
         useLocal ? 1 : 0,
         local.id,
@@ -271,13 +265,30 @@ export class CommercialPlanRepository {
         useLocal ? "RESOLVE_LOCAL" : "RESOLVE_REMOTE",
         now,
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='commercial_week_plan' AND entity_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
-        local.storeId,
-        local.id,
-      );
+      if (
+        !review.group.conflicts.some(
+          (c) =>
+            JSON.stringify(commercialWeekPlanSchema.parse(c.remotePayload)) ===
+            JSON.stringify(remote),
+        )
+      )
+        await tx.runAsync(
+          "INSERT INTO commercial_plan_history(action_id,plan_id,store_id,payload_json,action,created_at) VALUES(?,?,?,?,?,?)",
+          ctx.remoteHistoryId,
+          local.id,
+          local.storeId,
+          JSON.stringify(remote),
+          "RESOLUTION_REMOTE_BASELINE",
+          now,
+        );
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          conflict.id,
+          local.storeId,
+        );
       if (useLocal)
         await new OutboxRepository(tx).enqueue({
           commandId: ctx.commandId,
@@ -286,10 +297,12 @@ export class CommercialPlanRepository {
           commandType: "COMMERCIAL_WEEK_PLAN_UPSERT",
           entityType: "commercial_week_plan",
           entityId: local.id,
-          expectedRemoteVersion: remote?.version ?? null,
+          expectedRemoteVersion: remote.version,
           payload: resolved,
           createdAt: now,
         });
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("COMMERCIAL_CONFLICT_FORBIDDEN");
     });
   }
 }

@@ -236,18 +236,42 @@ export class CopilotStoreConflictRuntime {
           ).resolve(request.conflictId, useLocal, {
             commandId,
             deviceId: ctx.deviceId,
+            storeId: ctx.storeId,
+            reviewHash: review.commercialReview!.hash,
+            remoteHistoryId: this.id(),
+            canResolve: () => allowed(authority, request.kind),
+            signal,
+            retainWithdrawn: request.retainWithdrawn,
           });
         else if (request.kind === "COMMERCIAL_EXECUTION")
           await new CommercialExecutionRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              storeId: ctx.storeId,
+              reviewHash: review.commercialReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+              retainWithdrawn: request.retainWithdrawn,
+            },
           );
         else if (request.kind === "COMMERCIAL_CHOICE")
           await new CommercialChoiceRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              storeId: ctx.storeId,
+              reviewHash: review.commercialReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+              retainWithdrawn: request.retainWithdrawn,
+            },
           );
         else if (request.kind === "COMMERCIAL_PREPARATION")
           await new CommercialPreparationRepository(
@@ -256,12 +280,27 @@ export class CopilotStoreConflictRuntime {
           ).resolve(request.conflictId, useLocal, {
             commandId,
             deviceId: ctx.deviceId,
+            storeId: ctx.storeId,
+            reviewHash: review.commercialReview!.hash,
+            remoteHistoryId: this.id(),
+            canResolve: () => allowed(authority, request.kind),
+            signal,
+            retainWithdrawn: request.retainWithdrawn,
           });
         else if (request.kind === "COMMERCIAL_PLAN")
           await new CommercialPlanRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              storeId: ctx.storeId,
+              reviewHash: review.commercialReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+              retainWithdrawn: request.retainWithdrawn,
+            },
           );
         else if (request.kind === "FIELD_EVENT")
           await new StoreProductEventRepository(joined, this.digest).resolve(

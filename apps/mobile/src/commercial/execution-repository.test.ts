@@ -220,7 +220,17 @@ it("explicitly adopts/rebases a two-device task conflict with no last-write-wins
     remoteVersion: 1,
     remoteEntity: remote,
   });
+  await x.tx.runAsync(
+    "UPDATE commercial_execution_tasks SET sync_state='CONFLICT' WHERE store_id=?",
+    x.storeId,
+  );
+  const resolutionReview = await x.repo.review(x.storeId, conflict.id);
   await x.repo.resolve(conflict.id, true, {
+    storeId: x.storeId,
+    reviewHash: resolutionReview.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
+    retainWithdrawn: true,
     ...x.ctx,
     commandId: randomUUID(),
   });

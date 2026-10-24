@@ -238,7 +238,17 @@ describe("offline retained commercial offers", () => {
         { commandId: randomUUID(), deviceId: f.deviceId },
       ),
     ).rejects.toThrow("RESOLVE_REQUIRED");
+    await f.adapter.runAsync(
+      "UPDATE commercial_offer_choices SET sync_state='CONFLICT' WHERE store_id=?",
+      f.storeId,
+    );
+    const resolutionReview = await f.repo.review(f.storeId, cmdId);
     await f.repo.resolve(cmdId, false, {
+      storeId: f.storeId,
+      reviewHash: resolutionReview.hash,
+      remoteHistoryId: randomUUID(),
+      canResolve: () => true,
+      retainWithdrawn: true,
       commandId: randomUUID(),
       deviceId: f.deviceId,
     });
@@ -317,7 +327,17 @@ describe("offline retained commercial offers", () => {
       "UPDATE commercial_offer_choices SET sync_state='CONFLICT'",
     );
     expect(await outbox.listPending(f.storeId)).toEqual([]);
+    await f.adapter.runAsync(
+      "UPDATE commercial_offer_choices SET sync_state='CONFLICT' WHERE store_id=?",
+      f.storeId,
+    );
+    const resolutionReview = await f.repo.review(f.storeId, cmdId);
     await f.repo.resolve(cmdId, true, {
+      storeId: f.storeId,
+      reviewHash: resolutionReview.hash,
+      remoteHistoryId: randomUUID(),
+      canResolve: () => true,
+      retainWithdrawn: true,
       commandId: randomUUID(),
       deviceId: f.deviceId,
     });

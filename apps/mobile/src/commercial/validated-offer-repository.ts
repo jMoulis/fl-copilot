@@ -9,7 +9,7 @@ import {
   commercialOfferValidationCurrent,
   commercialChoiceProductUnitMatches,
 } from "@fl-copilot/commercial-core";
-import { readCommercialChoices } from "./offer-choice-repository";
+import { readCommercialChoices } from "./choice-read";
 import { readCommercialVisualReadings } from "./visual-repository";
 import {
   OutboxRepository,
