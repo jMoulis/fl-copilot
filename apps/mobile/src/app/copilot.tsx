@@ -1575,10 +1575,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     void repo
       .list()
       .then((rows) => {
-        if (alive && revision === topicRevision.current)
-          setConversations(
-            rows.filter((row) => row.entity.status === "ACTIVE"),
-          );
+        if (alive && revision === topicRevision.current) setConversations(rows);
       })
       .catch(() => {
         if (alive)
@@ -1594,10 +1591,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     void repo
       .list()
       .then((rows) => {
-        if (revision === topicRevision.current)
-          setConversations(
-            rows.filter((row) => row.entity.status === "ACTIVE"),
-          );
+        if (revision === topicRevision.current) setConversations(rows);
       })
       .catch(() =>
         setError("Les conversations locales ne peuvent pas être lues."),
@@ -1634,6 +1628,19 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       {error ? (
         <InlineAlert title="Conversation indisponible" message={error} />
       ) : null}
+      {conversations
+        .filter((row) => ["CONFLICT", "ERROR"].includes(row.syncState))
+        .map((row) => (
+          <MenuRow
+            key={`review:${row.entity.id}`}
+            title={`Comparer : ${row.entity.title}`}
+            description="Titre, archivage et suppressions conservées"
+            icon="git-compare-outline"
+            onPress={() =>
+              router.push(`/copilot-conversation-review/${row.entity.id}`)
+            }
+          />
+        ))}
       {conversations
         .filter((row) => row.entity.status === "ACTIVE")
         .map((row) => (

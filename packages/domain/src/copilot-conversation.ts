@@ -133,6 +133,61 @@ export function copilotMessageIsDeleted(
   return false;
 }
 
+/** Metadata choices never undo a known logical deletion. The first known
+ * snapshot is the current canonical baseline, whose deletion timestamp is immutable. */
+export function preserveCopilotConversationDeletions(
+  metadata: CopilotConversation,
+  ...known: CopilotConversation[]
+): CopilotConversation {
+  metadata = copilotConversationSchema.parse(metadata);
+  const snapshots = [...known, metadata].map((e) =>
+    copilotConversationSchema.parse(e),
+  );
+  if (
+    snapshots.some(
+      (e) =>
+        e.id !== metadata.id ||
+        e.storeId !== metadata.storeId ||
+        e.ownerId !== metadata.ownerId ||
+        e.createdAt !== metadata.createdAt,
+    )
+  )
+    throw Error("COPILOT_HISTORY_IDENTITY_INVALID");
+  const deletedAt = snapshots.find((e) => e.deletedAt)?.deletedAt,
+    deletedMessageIds = [
+      ...new Set(snapshots.flatMap((e) => e.deletedMessageIds ?? [])),
+    ].sort();
+  if (deletedMessageIds.length > 500)
+    throw Error("COPILOT_DELETION_REVIEW_LIMIT");
+  return copilotConversationSchema.parse({
+    ...metadata,
+    ...(deletedMessageIds.length ? { deletedMessageIds } : {}),
+    ...(deletedAt
+      ? {
+          deletedAt,
+          status: "ARCHIVED",
+          updatedAt: new Date(
+            Math.max(Date.parse(metadata.updatedAt), Date.parse(deletedAt)),
+          ).toISOString(),
+        }
+      : {}),
+  });
+}
+
+/** Version and update time do not change the meaning of a metadata decision. */
+export function copilotConversationMetadataEqual(
+  a: CopilotConversation,
+  b: CopilotConversation,
+): boolean {
+  return (
+    a.title === b.title &&
+    a.status === b.status &&
+    a.deletedAt === b.deletedAt &&
+    JSON.stringify([...(a.deletedMessageIds ?? [])].sort()) ===
+      JSON.stringify([...(b.deletedMessageIds ?? [])].sort())
+  );
+}
+
 /** Stable business content for source freshness; optional navigation is presentation only. */
 export function copilotMessageContent(message: CopilotMessage) {
   const { analyticsDestinations, answerSources, ...content } = message;

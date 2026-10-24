@@ -1,5 +1,7 @@
 # Copilot manual-operation coverage inventory
 
+Current native private-history exception (24 October): conversation title/archive conflicts have a current-group/hash-bound review and preserve every known logical deletion; the menu also reaches verified-cache ERROR recovery for a deleted conversation. No conversation metadata conflict tool is newly granted to the model. Source files, confirmed memory and business actions remain independent. See `../qa/M7_CONVERSATION_CONFLICTS_2026_10_24.md`; grouped native and actual owner/device acceptance remain pending.
+
 ## Current reading rule — 24 October 2026
 
 This is a dated operation inventory, not an assertion that every historical pending adapter is still missing or that every public repository helper should become a model writer. The 11 October introduction describes pre-activation history. The model-facing SDK bindings are in `apps/api/src/copilot/ai-provider.ts`, conditional on trusted capabilities/permissions; native cards and canonical local transactions remain part of execution. Use the later dated entries, source and current seven-workstream ledger together.

@@ -8,7 +8,14 @@ import { RECEIPT_PHOTO_BUNDLE_MIME } from "@fl-copilot/domain";
 import { readReceiptPhotoViews } from "../documents/receipt-photo-views";
 import { copilotMessageIsDeleted } from "@fl-copilot/domain";
 import { applyKnowledgeRecord } from "./knowledge-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  readConversationConflictReview,
+  type ConversationResolutionContext,
+} from "./conversation-conflict-review";
+import {
+  preserveCopilotConversationDeletions,
+  copilotConversationMetadataEqual,
+} from "@fl-copilot/domain";
 import { applyLayoutIllustrationRecord } from "./layout-illustration-repository";
 import {
   copilotTurnRequestSchema,
@@ -127,13 +134,27 @@ export async function applyCopilotRecord(
     old?.dirty &&
     (ackVersion === undefined || previous!.version !== ackVersion)
   ) {
-    if (!old.remote_version || e.version >= old.remote_version)
-      await db.runAsync(
-        `UPDATE ${table} SET remote_payload_json=?,remote_version=? WHERE id=?`,
-        JSON.stringify(e),
-        e.version,
-        e.id,
-      );
+    if (!old.remote_version || e.version >= old.remote_version) {
+      if (type === "copilot_conversation") {
+        const effective = preserveCopilotConversationDeletions(
+          previous as CopilotConversation,
+          e as CopilotConversation,
+        );
+        await db.runAsync(
+          "UPDATE copilot_conversations SET payload_json=?,remote_payload_json=?,remote_version=? WHERE id=?",
+          JSON.stringify(effective),
+          JSON.stringify(e),
+          e.version,
+          e.id,
+        );
+      } else
+        await db.runAsync(
+          `UPDATE ${table} SET remote_payload_json=?,remote_version=? WHERE id=?`,
+          JSON.stringify(e),
+          e.version,
+          e.id,
+        );
+    }
     return;
   }
   if (old && (old.remote_version ?? 0) > e.version) return;
@@ -179,22 +200,40 @@ export async function applyCopilotRecord(
         m.createdAt,
       );
     }
-  } else
+  } else {
+    const remote = e as CopilotConversation,
+      effective = previous
+        ? preserveCopilotConversationDeletions(
+            remote,
+            remote,
+            previous as CopilotConversation,
+          )
+        : remote,
+      needsReview = !copilotConversationMetadataEqual(remote, effective);
     await db.runAsync(
-      `INSERT INTO copilot_conversations(id,store_id,owner_id,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES(?,?,?,?,?,?,'SYNCED',0) ON CONFLICT(id) DO UPDATE SET payload_json=excluded.payload_json,remote_payload_json=excluded.remote_payload_json,remote_version=excluded.remote_version,sync_state='SYNCED',dirty=0`,
+      `INSERT INTO copilot_conversations(id,store_id,owner_id,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload_json=excluded.payload_json,remote_payload_json=excluded.remote_payload_json,remote_version=excluded.remote_version,sync_state=excluded.sync_state,dirty=excluded.dirty`,
       e.id,
       e.storeId,
       e.ownerId,
-      JSON.stringify(e),
-      JSON.stringify(e),
+      JSON.stringify(effective),
+      JSON.stringify(remote),
       e.version,
+      needsReview ? "ERROR" : "SYNCED",
+      needsReview ? 1 : 0,
     );
+  }
 }
 export class CopilotConversationRepository {
   constructor(
     private db: OutboxDatabase & AtomicMutationDatabase,
     private scope: Scope,
+    private digest: (s: string) => Promise<string> = async () => {
+      throw Error("COPILOT_CONVERSATION_DIGEST_REQUIRED");
+    },
   ) {}
+  review(id: string) {
+    return readConversationConflictReview(this.db, this.scope, id, this.digest);
+  }
   async get(conversationId: string) {
     const row = await this.db.getFirstAsync<Row>(
       "SELECT * FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
@@ -372,87 +411,98 @@ export class CopilotConversationRepository {
     });
   }
   async resolve(
-    conflictId: string,
+    id: string,
     useLocal: boolean,
-    ctx: { commandId: string; deviceId: string },
+    ctx: ConversationResolutionContext,
   ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const conflict = await new ConflictRepository(tx).getById(conflictId);
-      if (
-        !conflict ||
-        conflict.status !== "OPEN" ||
-        conflict.entityType !== "copilot_conversation" ||
-        conflict.storeId !== this.scope.storeId
-      )
-        throw Error("COPILOT_CONFLICT_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-        "SELECT * FROM copilot_conversations WHERE id=?",
-        conflict.entityId,
-      );
-      if (!row) throw Error("COPILOT_CONFLICT_INVALID");
-      scoped({ storeId: row.store_id, ownerId: row.owner_id }, this.scope);
-      const local = copilotConversationSchema.parse(
-          JSON.parse(row.payload_json),
+      const current = () =>
+        ctx.canResolve() &&
+        !ctx.signal?.aborted &&
+        this.scope.storeId === ctx.storeId &&
+        this.scope.ownerId === ctx.ownerId;
+      if (!current()) throw Error("COPILOT_CONVERSATION_FORBIDDEN");
+      if (!ctx.reviewCaptureId || ctx.reviewCaptureId === ctx.commandId)
+        throw Error("COPILOT_CONVERSATION_CAPTURE_ID_INVALID");
+      const review = await readConversationConflictReview(
+          tx,
+          this.scope,
+          id,
+          this.digest,
         ),
-        remote = copilotConversationSchema.parse(conflict.remotePayload);
-      scoped(remote, this.scope);
-      if (!identity(local, remote))
-        throw Error("COPILOT_CONFLICT_IDENTITY_INVALID");
-      const running = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM sync_outbox WHERE store_id=? AND entity_type='copilot_conversation' AND entity_id=? AND status='SYNCING'",
-        this.scope.storeId,
-        local.id,
-      );
-      if (running?.n) throw Error("COPILOT_CONVERSATION_SYNCING");
+        local = review.current.entity,
+        remote = review.group.remote,
+        chosen = useLocal ? review.localChoice : review.remoteChoice;
+      if (!current()) throw Error("COPILOT_CONVERSATION_FORBIDDEN");
+      if (!review.ready || !remote || !chosen || review.hash !== ctx.reviewHash)
+        throw Error("COPILOT_CONVERSATION_REVIEW_CHANGED");
       const now = new Date().toISOString(),
-        resolved = useLocal
+        send = !copilotConversationMetadataEqual(chosen, remote),
+        resolved = send
           ? copilotConversationSchema.parse({
-              ...local,
+              ...chosen,
               version: remote.version + 1,
-              updatedAt: now,
+              updatedAt: new Date(
+                Math.max(Date.parse(now), Date.parse(chosen.updatedAt)),
+              ).toISOString(),
             })
           : remote;
       await tx.runAsync(
         "UPDATE sync_outbox SET status='FAILED',last_error_code='COPILOT_CONVERSATION_SUPERSEDED' WHERE store_id=? AND entity_type='copilot_conversation' AND entity_id=? AND status IN ('PENDING','CONFLICT','FAILED')",
         local.storeId,
-        local.id,
+        id,
       );
       await tx.runAsync(
         "UPDATE copilot_conversations SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=? WHERE id=?",
         JSON.stringify(resolved),
         JSON.stringify(remote),
         remote.version,
-        useLocal ? "PENDING" : "SYNCED",
-        useLocal ? 1 : 0,
-        local.id,
+        send ? "PENDING" : "SYNCED",
+        send ? 1 : 0,
+        id,
       );
       await tx.runAsync(
         "INSERT INTO copilot_conversation_history(action_id,store_id,owner_id,conversation_id,payload_json) VALUES(?,?,?,?,?)",
         ctx.commandId,
         local.storeId,
         local.ownerId,
-        local.id,
+        id,
         JSON.stringify(local),
       );
       await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='copilot_conversation' AND entity_id=? AND status='OPEN'",
+        "INSERT INTO sync_conflicts(id,store_id,command_id,entity_type,entity_id,local_payload_json,remote_payload_json,local_expected_version,remote_version,conflict_type,status,created_at,resolved_at) VALUES(?,?,NULL,'copilot_conversation',?,?,?,?,?,'COPILOT_CONVERSATION_REVIEW_CAPTURE',?,?,?)",
+        ctx.reviewCaptureId,
+        local.storeId,
+        id,
+        JSON.stringify(local),
+        JSON.stringify(remote),
+        review.current.remoteVersion,
+        remote.version,
         useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
         now,
-        local.storeId,
-        local.id,
+        now,
       );
-      if (useLocal)
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          conflict.id,
+          local.storeId,
+        );
+      if (send)
         await new OutboxRepository(tx).enqueue({
           commandId: ctx.commandId,
           deviceId: ctx.deviceId,
           storeId: local.storeId,
           commandType: "COPILOT_CONVERSATION_UPSERT",
           entityType: "copilot_conversation",
-          entityId: local.id,
+          entityId: id,
           expectedRemoteVersion: remote.version,
           payload: resolved,
           createdAt: now,
         });
+      if (!current()) throw Error("COPILOT_CONVERSATION_FORBIDDEN");
     });
   }
   async append(
@@ -557,6 +607,8 @@ export class CopilotConversationRepository {
     return e;
   }
   async pendingTurns(conversationId: string) {
+    const parent = await this.get(conversationId);
+    if (!parent || parent.status !== "ACTIVE" || parent.deletedAt) return [];
     const rows = await this.db.getAllAsync<{
       reply_id: string;
       conversation_id: string;
@@ -567,13 +619,15 @@ export class CopilotConversationRepository {
       this.scope.ownerId,
       conversationId,
     );
-    return rows.map((row) =>
-      copilotTurnRequestSchema.parse({
-        replyId: row.reply_id,
-        conversationId: row.conversation_id,
-        userMessageId: row.user_message_id,
-      }),
-    );
+    return rows
+      .filter((row) => !parent.deletedMessageIds?.includes(row.user_message_id))
+      .map((row) =>
+        copilotTurnRequestSchema.parse({
+          replyId: row.reply_id,
+          conversationId: row.conversation_id,
+          userMessageId: row.user_message_id,
+        }),
+      );
   }
   async messages(
     conversationId: string,

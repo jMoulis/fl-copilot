@@ -1,3 +1,4 @@
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
 import { captureCommercialPdf } from "../documents/commercial-pdf-capture";
 import { SourceDocumentRepository } from "../documents/source-document-repository";
 import { CopilotTurnDelivery } from "./turn-delivery";
@@ -168,7 +169,7 @@ it("preserves both titles and explicitly reconciles a version conflict without c
     f = chatFixture(randomUUID);
   try {
     await runLocalMigrations(a);
-    const repo = new CopilotConversationRepository(a, f),
+    const repo = new CopilotConversationRepository(a, f, receiptReviewDigest),
       ctx = command();
     await repo.save(f.conversation, ctx);
     await repo.append(f.message, command());
@@ -203,7 +204,17 @@ it("preserves both titles and explicitly reconciles a version conflict without c
       "UPDATE copilot_conversations SET sync_state='CONFLICT' WHERE id=?",
       f.conversation.id,
     );
-    await repo.resolve(cf.id, true, command());
+    await repo.resolve(f.conversation.id, true, {
+      ...command(),
+      storeId: f.storeId,
+      ownerId: f.ownerId,
+      reviewCaptureId: randomUUID(),
+      reviewHash: (await repo.review(f.conversation.id)).hash,
+      canResolve: () => true,
+    });
+    expect((await new ConflictRepository(a).getById(cf.id))?.status).toBe(
+      "RESOLVED_LOCAL",
+    );
     expect((await repo.list())[0]!.entity).toMatchObject({
       title: f.conversation.title,
       version: 3,
