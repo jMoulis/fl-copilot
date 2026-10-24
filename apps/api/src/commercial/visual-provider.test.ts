@@ -20,8 +20,8 @@ vi.mock("ai", () => ({
   Output: { object: () => ({}) },
 }));
 import { createCommercialVisualProvider } from "./visual-provider";
-describe("visual extraction week context", () => {
-  it("sends the frozen Paris ISO week alongside the original PDF, separately from source dates", async () => {
+describe("visual extraction preserves all source weeks", () => {
+  it("sends a reference week without filtering out future source dates", async () => {
     const provider = createCommercialVisualProvider({
       model: "test-model",
       gatewayApiKey: "test-only",
@@ -58,7 +58,7 @@ describe("visual extraction week context", () => {
       content: Array<{ text?: string; data?: Uint8Array }>;
     }>;
     const context = JSON.parse(messages[0]!.content[0]!.text!);
-    expect(context.CURRENT_WEEK).toMatchObject({
+    expect(context.REFERENCE_WEEK).toMatchObject({
       year: 2026,
       number: 41,
       start: "2026-10-05",
@@ -66,6 +66,9 @@ describe("visual extraction week context", () => {
     });
     expect(context.SOURCE_TEXT_PAGES[0].spans[0].text).toBe("Semaine 43");
     expect(messages[0]!.content[1]!.data).toEqual(bytes);
-    expect(input.system).toContain("actual SALES period");
+    expect(input.system).toContain("including past and future weeks");
+    expect(input.system).not.toContain(
+      "Extract only offers whose actual SALES period",
+    );
   });
 });

@@ -20,6 +20,7 @@ it("maps real tool keys without disclosing private arguments", () => {
   for (const key of [
     "documents",
     "pdf",
+    "commercial-original",
     "offers",
     "waste-receipt",
     "store-photo",

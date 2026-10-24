@@ -1,3 +1,4 @@
+import { readCommercialOriginal } from "./copilot/commercial-original-reader";
 import { previewTranscriptionReview } from "./copilot/transcription-review-tool.js";
 import { previewVisualAction } from "./copilot/visual-actions-tool.js";
 import { readVisualLibrary } from "./copilot/visual-library-tool.js";
@@ -1407,6 +1408,17 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                   db,
                   storeId,
                   input,
+                );
+                await authorize();
+                return result;
+              },
+              commercialPdfOriginal: async (input, signal) => {
+                const principal = await authorize();
+                const result = await readCommercialOriginal(
+                  db,
+                  principal.storeId,
+                  input,
+                  signal,
                 );
                 await authorize();
                 return result;

@@ -628,7 +628,8 @@ it("lets the model discover a PDF then read its week-scoped extraction with cite
     const body = JSON.parse(String(init?.body)),
       step = calls++;
     if (step < 2) {
-      const name = step === 0 ? "commercial_documents" : "commercial_pdf";
+      const name =
+        step === 0 ? "commercial_documents" : "commercial_pdf_extraction";
       if (step === 1) expect(JSON.stringify(body)).toContain(sourceId);
       expect(body.tools.some((t: { name: string }) => t.name === name)).toBe(
         true,
@@ -1327,7 +1328,7 @@ it.each(["attachedSources", "recentSources"] as const)(
             type: "function_call",
             id: "fc_attachment",
             call_id: "call_attachment",
-            name: "commercial_pdf",
+            name: "commercial_pdf_extraction",
             arguments: JSON.stringify(input),
             status: "completed",
           },
@@ -1937,7 +1938,8 @@ it("can reopen a PDF discovered in older history without requesting it again", a
     const body = JSON.parse(String(init?.body)),
       step = calls++;
     if (step < 2) {
-      const name = step === 0 ? "conversation_history" : "commercial_pdf";
+      const name =
+        step === 0 ? "conversation_history" : "commercial_pdf_extraction";
       if (step === 1) expect(JSON.stringify(body)).toContain(sourceId);
       const envelope = z
         .record(z.string(), z.unknown())

@@ -3,12 +3,7 @@ import {
   COMMERCIAL_VISUAL_SCHEMA_VERSION,
   commercialPdfPageSchema,
 } from "@fl-copilot/domain";
-import {
-  anchorCommercialVisualReading,
-  currentCommercialWeek,
-  commercialDocumentWeekContext,
-  scopeCommercialVisualReading,
-} from "@fl-copilot/commercial-core";
+import { anchorCommercialVisualReading } from "@fl-copilot/commercial-core";
 import {
   synchronizedCommercialVisualReadingSchema,
   type SynchronizedCommercialVisualReading,
@@ -308,11 +303,8 @@ export function createCommercialVisualProcessor(
             pageNumber,
             pages,
           );
-          reading = scopeCommercialVisualReading(
-            anchored,
-            currentCommercialWeek(job.createdAt ?? now()),
-            commercialDocumentWeekContext([anchored]),
-          );
+          // Retain every source week; consumers select the requested planning period.
+          reading = anchored;
         } catch {
           throw new CommercialAiPermanentError(
             "COMMERCIAL_VISUAL_OUTPUT_INVALID",
