@@ -22,6 +22,12 @@ No new database entity, collection, migration, native capability, provider/model
 - **309 targeted tests across seven files pass**, including actual transactional test Mongo for visual persistence and existing Copilot response integration. Complete local checks pass **4,436 tests / 721 environment skips**, ten strict projects, lint and structure; exact-head push/PR and master CI remain mandatory.
 - Read-only production metadata confirms the latest owner PDF has a confirmed original, five pages and a review-pending processing job. No production job, reading, offer, plan or message is modified by this inspection. No real model request, paid EAS build or physical acceptance is claimed.
 
-Grouped API delivery and a real conversation using the owner's file remain required. Canonical offer application still has its own source/identity/decision checks; this is not a claim that every future commercial write path has completed acceptance. Full V1/M8 and seven-workstream gates remain open.
+PR 372 merged as `ceab2a5`; both exact-head checks and master pass **5,151 / 6**, including API build and native exports. API `dpl_3WFF66C8Yp8FusH5zH5zNW8UDYNy` is delivered after staged/public identity, health/database and private original-access checks; predecessor `88adc4d` remains available for rollback. A real conversation using the owner's file remains required. Canonical offer application still has its own source/identity/decision checks; this is not a claim that every future commercial write path has completed acceptance. Full V1/M8 and seven-workstream gates remain open.
 
 M7 workstreams 3/4 advance; **1/3/4/5/6/7 IN_PROGRESS, 2 CODE_READY** remain unchanged.
+
+## Native follow-up — attachment presentation
+
+The chat attachment retains the existing original-file button and stops mounting the commercial-processing recovery panel under every PDF occurrence. The unchanged documents screen continues to own that recovery interface. Original/source IDs, files, upload and synchronization states, messages, canonical recovery services and mutations are not changed. This also removes those per-occurrence processing-state reads from the chat history.
+
+The existing chat/reply/document suites pass **40 tests**; this low-impact presentation change adds no mirrored component test. Those suites and code inspection are not physical PDF-card, gesture or accessibility acceptance. This native follow-up is outside build 15 and requires a later grouped native delivery; it neither requires an API deployment nor starts an isolated paid EAS build. Workstream 7 advances; global states remain unchanged.
