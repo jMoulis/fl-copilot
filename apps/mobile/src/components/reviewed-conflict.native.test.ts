@@ -1,3 +1,6 @@
+import { nativeConversationConflictFixture } from "../../../../scripts/test-conversation-conflict-fixtures";
+import { ConversationConflict } from "../copilot/conversation-conflict";
+import { applyCopilotRecord } from "../copilot/conversation-repository";
 import { randomUUID } from "node:crypto";
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
@@ -32,7 +35,10 @@ import { applyCommercialPreparation } from "../commercial/week-preparation-repos
 import { applyCommercialPlan } from "../commercial/week-plan-repository";
 import { applyCommercialVersionDecision } from "../commercial/version-decision-repository";
 import { applyCommercialExecution } from "../commercial/execution-repository";
-import { commercialWeekPlanSchema } from "@fl-copilot/domain";
+import {
+  copilotMessageIsDeleted,
+  commercialWeekPlanSchema,
+} from "@fl-copilot/domain";
 import { buildCommercialWeekPlan } from "@fl-copilot/commercial-core";
 import { readWeekPlanContext } from "../commercial/week-plan-context";
 import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
@@ -47,7 +53,13 @@ function KnowledgeRouteForTest({ conflict }: { conflict: SyncConflict }) {
     onResolved: runtime.back,
   });
 }
+function ConversationRouteForTest({ conflict }: { conflict: SyncConflict }) {
+  return createElement(ConversationConflict, {
+    conversationId: conflict.entityId,
+  });
+}
 const kinds = [
+  "CONVERSATION",
   "SETTINGS",
   "FIELD_EVENT",
   "NEED",
@@ -64,6 +76,7 @@ type Kind = (typeof kinds)[number];
 const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
   if (kind === "SETTINGS" || kind === "FIELD_EVENT")
     return nativeStoreConflictFixture(kind);
+  if (kind === "CONVERSATION") return nativeConversationConflictFixture();
   if (kind === "KNOWLEDGE")
     return nativeKnowledgeConflictFixture(":memory:", refusal);
   if (kind === "NEED" || kind === "MEMBERSHIP" || kind === "SUBSTITUTION")
@@ -73,6 +86,7 @@ const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
   return nativeCommercialConflictFixture(kind, ":memory:", refusal);
 };
 const components = {
+  CONVERSATION: ConversationRouteForTest,
   KNOWLEDGE: KnowledgeRouteForTest,
   SETTINGS: StoreContextConflict,
   FIELD_EVENT: StoreEventConflict,
@@ -87,6 +101,7 @@ const components = {
 };
 const component = (kind: Kind) => components[kind];
 const entityTables = {
+  CONVERSATION: "copilot_conversations",
   KNOWLEDGE: "copilot_knowledge",
   SETTINGS: "store_context_settings",
   FIELD_EVENT: "store_product_events",
@@ -96,6 +111,7 @@ const entityTables = {
   COMMERCIAL_EXECUTION: "commercial_execution_tasks",
 };
 const histories = {
+  CONVERSATION: "copilot_conversation_history",
   KNOWLEDGE: "sync_conflicts",
   SETTINGS: "store_context_history",
   FIELD_EVENT: "store_product_event_history",
@@ -109,6 +125,7 @@ const histories = {
   COMMERCIAL_EXECUTION: "commercial_execution_history",
 };
 const readable = {
+  CONVERSATION: "Titre local",
   KNOWLEDGE: "Pratique locale",
   SETTINGS: "Asnières",
   FIELD_EVENT: "Rupture",
@@ -122,6 +139,16 @@ const readable = {
   COMMERCIAL_EXECUTION: "plan version",
 };
 const pulls = {
+  CONVERSATION: (db: OutboxDatabase, storeId: string, payload: unknown) =>
+    applyCopilotRecord(
+      db,
+      {
+        storeId,
+        ownerId: (runtime.session as { user: { id: string } }).user.id,
+      },
+      "copilot_conversation",
+      payload,
+    ),
   KNOWLEDGE: (db: OutboxDatabase, storeId: string, payload: unknown) =>
     applyKnowledgeRecord(
       db,
@@ -199,8 +226,15 @@ vi.mock("expo-crypto", async () => {
 });
 let tree: ReactTestRenderer | undefined;
 const fixtures: Array<Awaited<ReturnType<typeof fixture>>> = [];
-async function setup(kind: Kind, refusal?: "LOCAL" | "REMOTE") {
-  const s = await fixture(kind, refusal);
+async function setup(
+  kind: Kind,
+  refusal?: "LOCAL" | "REMOTE",
+  deletion?: "CONVERSATION" | "MESSAGE",
+) {
+  const s =
+    kind === "CONVERSATION"
+      ? await nativeConversationConflictFixture(":memory:", deletion)
+      : await fixture(kind, refusal);
   fixtures.push(s);
   runtime.database = { sqlite: s.a, deviceId: s.scope.deviceId };
   runtime.session = {
@@ -232,6 +266,51 @@ function deferred() {
   });
   return { promise, resolve };
 }
+for (const deletion of ["CONVERSATION", "MESSAGE"] as const)
+  it.each([true, false])(
+    `native ${deletion} comparison keeps deletion effective with metadata choice %s`,
+    async (local) => {
+      const s = await setup("CONVERSATION", undefined, deletion),
+        repo = new (
+          await import("../copilot/conversation-repository")
+        ).CopilotConversationRepository(s.a, s.scope);
+      if (s.review.kind !== "CONVERSATION") throw Error("WRONG_FIXTURE");
+      const first = (await repo.messages(s.review.local.id)).messages[0]!
+        .entity;
+      expect(
+        copilotMessageIsDeleted(first, (await repo.get(s.review.local.id))!),
+      ).toBe(true);
+      expect(
+        hosts("Text").some((n) =>
+          String(n.props.children).includes(
+            "conservera aussi vos suppressions locales",
+          ),
+        ),
+      ).toBe(true);
+      await act(async () => host("Switch").props.onValueChange(true));
+      await act(async () =>
+        button(
+          local
+            ? "Conserver ma version locale"
+            : "Adopter la version synchronisée",
+        ).props.onPress(),
+      );
+      const after = (await repo.get(s.review.local.id))!;
+      expect(copilotMessageIsDeleted(first, after)).toBe(true);
+      expect(after.title).toBe(
+        local ? s.review.local.title : s.review.remote.title,
+      );
+      expect((await repo.messages(after.id)).messages[0]!.entity).toEqual(
+        first,
+      );
+      expect(runtime.sync).toHaveBeenCalledTimes(1);
+      expect(runtime.back).toHaveBeenCalledTimes(1);
+      expect(
+        s.db.prepare("SELECT sync_state FROM copilot_conversations").get()!
+          .sync_state,
+      ).toBe("PENDING");
+    },
+  );
 it.each(["MEMBERSHIP", "SUBSTITUTION"] as const)(
   "%s manual reactivation needs its own consent, cleared on reread",
   async (kind) => {

@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current M7/M8 increment — 24 October: private conversation metadata and deletion
+
+Keep logical deletion monotone across pull, acknowledgement and explicit metadata choice. Compare the complete current owner/store group and verified cache, bind the reviewed hash and context through commit, retain immutable messages/source references/pending intent, and suppress replay of deleted questions. Expose recovery in synchronization and private conversation history, including ERROR with verified cache. Preserve an independent local comparison capture and exact remote precondition; no universal writer, new model permission or schema. See `../qa/M7_CONVERSATION_CONFLICTS_2026_10_24.md`; exact-head CI, grouped native delivery and physical acceptance remain required. Full V1/M8 and seven workstream states stay open.
+
 ### M8 continuation — retry unreadable local session startup (24 October 2026)
 
 A transient SecureStore read failure is not logout or proof of foreign ownership. Preserve stored credentials, keep unverified private content blocked and offer explicit French retry using the canonical session manager. Release only failed cached restore attempts; retain coalescing and open validated offline content before network renewal completes. Proven foreign/malformed markers remain protected, and late errors cannot clear newer sessions. See `../qa/M8_AUTH_STARTUP_STORAGE_2026_10_24.md` for the reproduced unwanted-clear defects, targeted/full local evidence and physical acceptance limits. No business writer, timer, migration, remote contract or credential/provider change; full V1/M8 remains open.

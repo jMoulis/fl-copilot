@@ -1,3 +1,18 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { MercalysTestDatabase } from "../../../scripts/test-mercalys-sync-fixtures";
+import { receiptReviewDigest } from "../../../scripts/test-receipt-publication-sqlite";
+import { runLocalMigrations } from "../../mobile/src/db/migrations";
+import { CopilotConversationRepository } from "../../mobile/src/copilot/conversation-repository";
+import { MobileSyncService } from "../../mobile/src/sync/sync-service";
+import { ConflictRepository } from "../../mobile/src/sync/conflict-repository";
+import { copilotMessageIsDeleted } from "@fl-copilot/domain";
+import {
+  bootstrapQuerySchema,
+  syncPullQuerySchema,
+} from "@fl-copilot/sync-contracts";
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { createMongoDatabase } from "../src/database/mongo";
@@ -61,6 +76,185 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ],
       };
     }
+    for (const deletion of ["CONVERSATION", "MESSAGE"] as const)
+      it.each([true, false])(
+        `reconciles private metadata without undoing ${deletion} deletion and restores it offline on another device (local=%s)`,
+        async (local) => {
+          const f = chatFixture(randomUUID),
+            scope = { storeId: f.storeId, ownerId: f.ownerId },
+            dir = mkdtempSync(join(tmpdir(), "fl-chat-mongo-")),
+            path = join(dir, "restored.db"),
+            a = new MercalysTestDatabase(),
+            b = new MercalysTestDatabase(),
+            c = new MercalysTestDatabase(new DatabaseSync(path)),
+            push = createMongoSyncPushService(database),
+            pull = createMongoSyncPullService(database),
+            boot = createMongoSyncBootstrapService(database),
+            authority = {
+              ...scope,
+              userId: f.ownerId,
+              deviceId: f.deviceId,
+              storeName: "Test",
+              role: "MANAGER",
+              sessionId: randomUUID(),
+            },
+            transport = {
+              push: (r: SyncPushRequest) =>
+                push.push(r, randomUUID(), f.ownerId),
+              pull: (storeId: string, cursor: string) =>
+                pull.pull(
+                  storeId,
+                  syncPullQuerySchema.parse({ cursor, copilotHistory: "true" }),
+                  f.ownerId,
+                  true,
+                ),
+              bootstrap: () =>
+                boot.bootstrap(
+                  authority,
+                  bootstrapQuerySchema.parse({ copilotHistory: "true" }),
+                  true,
+                ),
+            },
+            sync = (d: MercalysTestDatabase) =>
+              new MobileSyncService(d, transport, {
+                deviceId: f.deviceId,
+                appVersion: "test",
+                copilotHistory: true,
+                copilotOwnerId: f.ownerId,
+              }).sync(f.storeId),
+            ctx = () => ({ deviceId: f.deviceId, commandId: randomUUID() });
+          let cClosed = false;
+          try {
+            for (const d of [a, b, c]) await runLocalMigrations(d);
+            const repoA = new CopilotConversationRepository(
+                a,
+                scope,
+                receiptReviewDigest,
+              ),
+              repoB = new CopilotConversationRepository(
+                b,
+                scope,
+                receiptReviewDigest,
+              ),
+              first = { ...f.message, attachments: [] },
+              second = { ...first, id: randomUUID(), text: "Autre question" };
+            await repoA.save(f.conversation, ctx());
+            await repoA.append(first, ctx());
+            await repoA.append(second, ctx());
+            await sync(a);
+            await sync(b);
+            await repoA.save(
+              { ...f.conversation, title: "Titre autre appareil", version: 2 },
+              ctx(),
+            );
+            await sync(a);
+            await repoB.remove(
+              f.conversation.id,
+              deletion === "MESSAGE" ? first.id : null,
+              ctx(),
+              "2026-10-15T14:00:00.000Z",
+            );
+            await sync(b);
+            expect(
+              await new ConflictRepository(b).listOpenForEntity(
+                f.storeId,
+                "copilot_conversation",
+                f.conversation.id,
+              ),
+            ).toHaveLength(1);
+            await repoA.remove(
+              f.conversation.id,
+              deletion === "MESSAGE" ? second.id : null,
+              ctx(),
+              "2026-10-16T14:00:00.000Z",
+            );
+            await sync(a);
+            await sync(b);
+            const review = await repoB.review(f.conversation.id);
+            expect(review.ready).toBe(true);
+            expect(review.group.remote!.version).toBe(3);
+            expect(
+              copilotMessageIsDeleted(
+                first,
+                (await repoB.get(f.conversation.id))!,
+              ),
+            ).toBe(true);
+            const decision = {
+              ...ctx(),
+              ...scope,
+              reviewHash: review.hash,
+              reviewCaptureId: randomUUID(),
+              canResolve: () => true,
+            };
+            await repoB.resolve(f.conversation.id, local, decision);
+            await sync(b);
+            await sync(c);
+            const resolved = (await repoB.get(f.conversation.id))!;
+            expect(resolved.title).toBe(
+              local ? f.conversation.title : "Titre autre appareil",
+            );
+            expect(copilotMessageIsDeleted(first, resolved)).toBe(true);
+            expect(copilotMessageIsDeleted(second, resolved)).toBe(true);
+            if (deletion === "CONVERSATION")
+              expect(resolved.deletedAt).toBe("2026-10-16T14:00:00.000Z");
+            const db = await database.getDb(),
+              n = await db
+                .collection("copilotConversationHistory")
+                .countDocuments({ conversationId: f.conversation.id });
+            await sync(b);
+            expect(
+              await db
+                .collection("copilotConversationHistory")
+                .countDocuments({ conversationId: f.conversation.id }),
+            ).toBe(n);
+            expect(
+              await db
+                .collection<{ _id: string }>("copilotConversations")
+                .countDocuments({ _id: f.conversation.id }),
+            ).toBe(1);
+            expect(
+              (
+                await new CopilotConversationRepository(c, scope).messages(
+                  f.conversation.id,
+                )
+              ).messages,
+            ).toHaveLength(2);
+            expect(
+              (await new ConflictRepository(b).getById(
+                decision.reviewCaptureId,
+              ))!.remotePayload,
+            ).toEqual(review.group.remote);
+            c.db.close();
+            cClosed = true;
+            const reopened = new DatabaseSync(path);
+            try {
+              const repo = new CopilotConversationRepository(
+                  new MercalysTestDatabase(reopened),
+                  scope,
+                ),
+                restored = (await repo.get(f.conversation.id))!;
+              expect(restored).toEqual(resolved);
+              expect(copilotMessageIsDeleted(first, restored)).toBe(true);
+              expect(copilotMessageIsDeleted(second, restored)).toBe(true);
+              expect(await repo.pendingTurns(f.conversation.id)).toEqual([]);
+            } finally {
+              reopened.close();
+            }
+            const foreign = await boot.bootstrap(
+              { ...authority, userId: randomUUID() },
+              bootstrapQuerySchema.parse({ copilotHistory: "true" }),
+              true,
+            );
+            expect(foreign.entities.copilotConversations).toEqual([]);
+            expect(foreign.entities.copilotMessages).toEqual([]);
+          } finally {
+            a.db.close();
+            b.db.close();
+            if (!cClosed) c.db.close();
+            rmSync(dir, { recursive: true, force: true });
+          }
+        },
+      );
     it("restores compact analytical destinations through bootstrap, incremental pull and paged history only for negotiated clients", async () => {
       const { largeAnalyticalContext } =
         await import("../../../scripts/test-analytics-destination-fixtures");
