@@ -1,5 +1,22 @@
 # M7/M8 — recette native groupée V1, iOS build 14
 
+## Current candidate — iOS 16, 24 October 2026
+
+[EAS build fee9fc9e-0143-403e-801a-7b22f9c53b6a](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/fee9fc9e-0143-403e-801a-7b22f9c53b6a), **0.1.0/build 16**, source `e43dc8539d5dbbecdc18c7bd01b1256c239973fe`; API `8c72dfb` / `dpl_FkhnTQK82vVyENZ5CAth6NGXNhxv`. Remote state is **FINISHED, 24 October at 14:19:50 UTC**. The available 15,761,396-byte archive was read with normal TLS; its actual Info.plist confirms `com.flcopilot.mobile`, `0.1.0`, build `16`. Availability is not installation or acceptance. Exactly one grouped build request was submitted after push/PR/master checks (5,192 / 6 each) and verified archive/Expo compatibility.
+
+Install over the existing app. **Do not uninstall/reset.** Opening schema 61 makes build 15/schema 60 an unsafe downgrade; retain data and use a compatible forward fix. The minimum API after original-backed choices is PR 374 (`12dcfbe` / `dpl_CLJ7A6kX77Yop353mrakTQXmWm27`). The retained older artifacts do not override these compatibility boundaries.
+
+### First focused recipe
+
+1. Attach a commercial PDF in chat and ask to prepare **next week**, prioritizing dramat/prospectus and useful TG ideas. The assistant must read the original without requiring full extraction review or publication. Open its source link.
+2. Ask to retain one precise offer. Review actual page/excerpt, product, future dates and complete terms; confirm in the existing chat card. Discussion/acceptance does not record field execution.
+3. Restart and synchronize: the same choice remains once, in the intended week's preparation. Background extraction may remain pending without blocking the discussion or this choice.
+4. Check streaming, horizontal table scroll, copy/message menu and conversation history. Preserve local content through a network interruption and reconnect.
+
+Then exercise the **real corrected `21102026.xlsx`**, repeat import and quantities/prices, product navigation/save and photo transfer/recovery. Potatoes remain distinct and BIO banana labels the same product. Record the actual installed native version, result and error time; source/CI/available archive alone cannot complete this recipe.
+
+The complete prior V1 recipes below remain in scope, including second-device originals, Android, conflicts, backups, accessibility, performance and the actual recommendation → decision → realization → bilan loop. No human acceptance is recorded by this update.
+
 Chantier actif : **7 — UX et validation**. Aucun scénario ci-dessous n'est déclaré accepté sur appareil par ce document. L'ancien incident d'analyse doit être rejoué sur la version identifiée ; son message historique ne prouve pas une nouvelle régression. Cette recette ne lance ni build supplémentaire ni appel IA automatique.
 
 ## Identifier la version avant de commencer

@@ -1,5 +1,17 @@
 # V1 — current delivery and acceptance gates, 24 October 2026
 
+## Current release supersedes historical version statements below
+
+API **375**, source `8c72dfbd772c638bf91741fe835c71d9080c2316`, production deployment `dpl_FkhnTQK82vVyENZ5CAth6NGXNhxv`, is delivered. Exact final push, PR and master CI each passed **5,192 / 6**; normal public health/Mongo and unauthenticated private-route rejection were checked. Infrastructure probes and a bounded clean log window are not actual-model or owner acceptance.
+
+iOS **0.1.0/build 16**, source `e43dc8539d5dbbecdc18c7bd01b1256c239973fe`, [EAS fee9fc9e](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/fee9fc9e-0143-403e-801a-7b22f9c53b6a), is **FINISHED, 24 October at 14:19:50 UTC**. Its 15,761,396-byte archive was downloaded with normal TLS and its actual Info.plist confirms the expected identifier/version. One grouped request only, after three green source CI runs, compatible SDK 57 patch alignment and exact free archive verification. It is not yet installation or owner acceptance. Build 15 is retained as a historical artifact under the compatibility limits below.
+
+After original-backed commercial records, **do not roll API below PR 374** (`12dcfbe`, `dpl_CLJ7A6kX77Yop353mrakTQXmWm27`). After opening SQLite schema **61**, **do not downgrade to build 15/schema 60**. Preserve the installation, local files and pending commands; recover with a compatible forward-fix binary. Older rollback statements below describe their earlier release context.
+
+The original PDF is delivered directly to the model for discussion, including future planning periods; original-backed offer proposals reuse the canonical choice/validation/plan writers and explicit native confirmation. Extraction remains queued independently and is not a prerequisite. Controlled end-to-end Mongo/SQLite/SDK tests do not establish live conversation quality. The current hardware recipe is [here](M7_GROUPED_IPHONE_ACCEPTANCE.md).
+
+Coverage reconciliation: current photo capture/assignment, existing-library assignment, unlink, withdrawal and local failure review reuse manual services; capture and physical transfer still require hardware acceptance. A lower-level visual repository `save` is not a manual metadata editor, a model tool or permission to import unapproved illustrations. Administrative file ingestion, final PNG/provenance/approval/session gates, exact domain recovery exceptions and the complete V1 gates below remain open. Seven workstreams remain **1/3/4/5/6/7 in progress; 2 code ready**.
+
 This reconciliation follows the complete goal, `AGENTS.md`, the seven-workstream ledger and the arbitrated v1.1 UX pack. It is an execution checklist, not a smaller demonstration scope or a new milestone plan. Historical “pending” entries in the tool inventory must be read against later implementation, not added up as missing features.
 
 ## Identified delivery

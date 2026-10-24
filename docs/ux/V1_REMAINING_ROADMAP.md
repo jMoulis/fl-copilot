@@ -1,5 +1,11 @@
 # Roadmap V1 — état courant et historique des lots
 
+## Current delivery checkpoint — 24 October, original PDF conversation
+
+API 375 (`8c72dfb` / `dpl_FkhnTQK82vVyENZ5CAth6NGXNhxv`) is delivered. iOS `0.1.0/build 16`, source `e43dc85`, [EAS fee9fc9e](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/fee9fc9e-0143-403e-801a-7b22f9c53b6a), is **FINISHED with archive/bundle identity verified**, not installed/accepted. Both exact source CI gates and master passed **5,192 / 6**; one grouped EAS request was made. Original PDF reading and future-week choice proposals now reuse the existing business tools without full-document review. The current physical recipe and compatibility limits are in [the identified acceptance file](../qa/M7_GROUPED_IPHONE_ACCEPTANCE.md).
+
+After schema 61, do not revert to build 15/schema 60 or uninstall/reset. After original-backed choices exist, do not roll API below PR 374. These current limits supersede old rollback statements. The following dated entries retain their historical status; they are not fresh claims of missing features or completed acceptance. All five goal stages and seven workstreams remain in scope; **1/3/4/5/6/7 in progress, 2 code ready**.
+
 ## Activation en validation — offres de l’original dans le chat
 
 La base PR 374 est fusionnée après deux CI exactes vertes, sans nouvelle livraison native. L’activation suivante branche le même outil de création de choix sur l’original remis au modèle, avec identité produit actuelle, dates libres/semaine suivante, conditions complètes et confirmation directe dans le chat. Les tests contrôlés couvrent la proposition privée et le vrai rédacteur/Outbox jusqu’au plan futur ; ils ne remplacent ni une réponse réelle ni l’acceptation sur téléphone. La livraison groupée API/native et les autres portes V1 restent à franchir. L’extraction en arrière-plan reste disponible et n’est plus un préalable. Voir `../qa/M7_ORIGINAL_OFFER_PROPOSALS_2026_10_24.md`.
