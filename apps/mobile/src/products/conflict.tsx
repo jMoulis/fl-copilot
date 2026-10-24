@@ -1,6 +1,6 @@
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { View, Text, Pressable, Switch, ActivityIndicator } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import {
   digestStringAsync,
   CryptoDigestAlgorithm,
@@ -10,74 +10,144 @@ import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import { useSync } from "../sync/sync-provider";
 import type { SyncConflict } from "../sync/conflict-repository";
+import { useReviewedConflict } from "../components/use-reviewed-conflict";
 import { ProductMasterConflictRepository } from "./conflict-repository";
 import { catalogueConflictSummary } from "./conflict-presentation";
 import { colors } from "../design/tokens";
+const digest = (value: string) =>
+  digestStringAsync(CryptoDigestAlgorithm.SHA256, value);
+type Decision = "KEEP_LOCAL" | "ADOPT_REMOTE";
 export function ProductMasterConflict({
   conflict,
 }: {
   conflict: SyncConflict;
 }) {
   const { session } = useAuth(),
-    { sqlite, deviceId } = useLocalDatabase(),
+    { deviceId } = useLocalDatabase(),
+    store = session?.stores[0];
+  if (
+    !session ||
+    store?.storeId !== conflict.storeId ||
+    store.role !== "MANAGER"
+  )
+    return (
+      <Text style={{ color: colors.ink }}>
+        La résolution du référentiel nécessite les droits de responsable du
+        magasin actif.
+      </Text>
+    );
+  return (
+    <CatalogueReview
+      key={`${session.user.id}:${store.storeId}:${store.role}:${deviceId}:${conflict.id}`}
+      conflict={conflict}
+      ownerId={session.user.id}
+    />
+  );
+}
+function CatalogueReview({
+  conflict,
+  ownerId,
+}: {
+  conflict: SyncConflict;
+  ownerId: string;
+}) {
+  const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow } = useSync(),
-    allowed =
-      session?.stores.some(
-        (s) => s.storeId === conflict.storeId && s.role === "MANAGER",
-      ) ?? false;
-  const authority = useRef(allowed);
-  authority.current = allowed;
-  const repository = useMemo(
-    () =>
-      new ProductMasterConflictRepository(sqlite, (s) =>
-        digestStringAsync(CryptoDigestAlgorithm.SHA256, s),
-      ),
-    [sqlite],
-  );
-  const [review, setReview] =
-      useState<
-        Awaited<ReturnType<ProductMasterConflictRepository["review"]>>
-      >(),
-    [decision, setDecision] = useState<"KEEP_LOCAL" | "ADOPT_REMOTE" | null>(
-      null,
+    repository = useMemo(
+      () => new ProductMasterConflictRepository(sqlite, digest),
+      [sqlite],
     ),
-    [compared, setCompared] = useState(false),
-    [extra, setExtra] = useState(false),
-    [localDeletionConfirmed, setLocalDeletionConfirmed] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState<string>();
-  const revision = useRef(0),
-    locked = useRef(false),
-    abort = useRef<AbortController | undefined>(undefined);
-  useFocusEffect(
-    useCallback(() => {
-      const v = ++revision.current;
-      setReview(undefined);
-      setDecision(null);
-      setCompared(false);
-      setExtra(false);
-      setLocalDeletionConfirmed(false);
-      setError(undefined);
-      setBusy(false);
-      if (allowed)
-        void repository
-          .review(conflict.storeId, conflict.id)
-          .then((r) => {
-            if (revision.current === v) setReview(r);
-          })
-          .catch(() => {
-            if (revision.current === v)
-              setError(
-                "Cette comparaison n’est plus disponible. Synchronisez puis rouvrez le conflit ; vos modifications restent conservées.",
-              );
-          });
-      return () => {
-        revision.current++;
-        abort.current?.abort();
-      };
-    }, [repository, conflict.storeId, conflict.id, allowed]),
-  );
-  const reactivate =
+    scope = useMemo(
+      () => ({
+        repository,
+        deviceId,
+        ownerId,
+        storeId: conflict.storeId,
+        conflictId: conflict.id,
+      }),
+      [repository, deviceId, ownerId, conflict.storeId, conflict.id],
+    ),
+    read = useCallback(
+      () => repository.review(conflict.storeId, conflict.id),
+      [repository, conflict.storeId, conflict.id],
+    );
+  const [selection, setSelection] = useState<{
+      hash: string;
+      decision: Decision;
+    } | null>(null),
+    [extraKey, setExtraKey] = useState<string | null>(null),
+    [localDeletionKey, setLocalDeletionKey] = useState<string | null>(null),
+    [completed, setCompleted] = useState(false);
+  const {
+    review,
+    compared,
+    setCompared,
+    busy,
+    reading,
+    error,
+    resolve,
+    reload,
+  } = useReviewedConflict({
+    scope,
+    read,
+    canChoose: (r, local) => {
+      const direction = local ? "KEEP_LOCAL" : "ADOPT_REMOTE",
+        key = `${r.hash}:${direction}`,
+        p = r.policy;
+      const extraRequired = local
+        ? p.reactivateLocal || p.activateLocal
+        : p.reactivateRemote || p.activateRemote || p.remoteDeleted;
+      return (
+        selection?.hash === r.hash &&
+        selection.decision === direction &&
+        (local ? r.canKeep : r.canAdopt) &&
+        (!extraRequired || extraKey === key) &&
+        (!(p.localDeleted && !p.remoteDeleted) || localDeletionKey === key)
+      );
+    },
+    choose: (r, local, lifetime) => {
+      const key = `${r.hash}:${local ? "KEEP_LOCAL" : "ADOPT_REMOTE"}`;
+      return repository.resolve(conflict.storeId, conflict.id, local, {
+        commandId: randomUUID(),
+        deviceId,
+        jobId: randomUUID(),
+        reviewHash: r.hash,
+        reactivateRejected:
+          (local ? r.policy.reactivateLocal : r.policy.reactivateRemote) &&
+          extraKey === key,
+        activateProduct:
+          (local ? r.policy.activateLocal : r.policy.activateRemote) &&
+          extraKey === key,
+        acceptRemoteDeletion:
+          !local && r.policy.remoteDeleted && extraKey === key,
+        confirmLocalDeletionChoice:
+          r.policy.localDeleted &&
+          !r.policy.remoteDeleted &&
+          localDeletionKey === key,
+        ...lifetime,
+      });
+    },
+    errorText: () =>
+      "La comparaison a changé ou la résolution n’a pas été enregistrée. Relisez les versions avant de confirmer.",
+    onSuccess: () => {
+      setCompleted(true);
+      void Promise.resolve()
+        .then(() => syncNow(conflict.storeId))
+        .catch(() => undefined);
+      try {
+        router.back();
+      } catch {
+        /* The committed choice remains available locally. */
+      }
+    },
+  });
+  const decision =
+      selection?.hash === review?.hash ? (selection?.decision ?? null) : null,
+    choiceKey = review && decision ? `${review.hash}:${decision}` : null,
+    extra = choiceKey !== null && extraKey === choiceKey,
+    localDeletionConfirmed =
+      choiceKey !== null && localDeletionKey === choiceKey,
+    reactivate =
       decision === "KEEP_LOCAL"
         ? review?.policy.reactivateLocal
         : decision === "ADOPT_REMOTE"
@@ -98,71 +168,25 @@ export function ProductMasterConflict({
     localDeletionLabel =
       decision === "KEEP_LOCAL"
         ? "Je confirme le maintien de ma suppression malgré la modification synchronisée."
-        : "Je confirme l’annulation de ma suppression et le rétablissement de la version synchronisée.";
-  async function confirm() {
-    if (
-      locked.current ||
-      !review ||
-      !decision ||
+        : "Je confirme l’annulation de ma suppression et le rétablissement de la version synchronisée.",
+    eligible =
+      decision === "KEEP_LOCAL"
+        ? review?.canKeep
+        : decision === "ADOPT_REMOTE"
+          ? review?.canAdopt
+          : false,
+    disabled =
+      busy ||
+      reading ||
+      !!error ||
+      !eligible ||
       !compared ||
-      (needsExtra && !extra) ||
-      (localDeletion && !localDeletionConfirmed) ||
-      !authority.current
-    )
-      return;
-    const v = revision.current,
-      cancel = new AbortController();
-    locked.current = true;
-    abort.current = cancel;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await repository.resolve(
-        conflict.storeId,
-        conflict.id,
-        decision === "KEEP_LOCAL",
-        {
-          commandId: randomUUID(),
-          deviceId,
-          jobId: randomUUID(),
-          reviewHash: review.hash,
-          reactivateRejected: !!reactivate && extra,
-          activateProduct: !!activate && extra,
-          acceptRemoteDeletion: deletion && extra,
-          confirmLocalDeletionChoice: localDeletion && localDeletionConfirmed,
-          canResolve: () => authority.current,
-          signal: cancel.signal,
-        },
-      );
-      if (revision.current === v) {
-        void syncNow(conflict.storeId).catch(() => undefined);
-        router.back();
-      }
-    } catch {
-      if (revision.current === v) {
-        setCompared(false);
-        setDecision(null);
-        setExtra(false);
-        setLocalDeletionConfirmed(false);
-        setError(
-          "La comparaison a changé ou la résolution n’a pas été enregistrée. Relisez les versions avant de confirmer.",
-        );
-        const next = await repository
-          .review(conflict.storeId, conflict.id)
-          .catch(() => undefined);
-        if (revision.current === v) setReview(next);
-      }
-    } finally {
-      locked.current = false;
-      if (abort.current === cancel) abort.current = undefined;
-      if (revision.current === v) setBusy(false);
-    }
-  }
-  if (!allowed)
+      (!!needsExtra && !extra) ||
+      (localDeletion && !localDeletionConfirmed);
+  if (completed)
     return (
-      <Text style={{ color: colors.ink }}>
-        La résolution du référentiel nécessite les droits de responsable du
-        magasin.
+      <Text accessibilityLiveRegion="polite" style={{ color: colors.ink }}>
+        Comparaison enregistrée. Votre choix est conservé sur cet appareil.
       </Text>
     );
   const choice = (
@@ -174,14 +198,14 @@ export function ProductMasterConflict({
       accessibilityRole="radio"
       accessibilityState={{
         checked: decision === value,
-        disabled: busy || !enabled,
+        disabled: busy || reading || !!error || !enabled,
       }}
-      disabled={busy || !enabled}
+      disabled={busy || reading || !!error || !enabled}
       onPress={() => {
-        setDecision(value);
+        setSelection({ hash: review!.hash, decision: value });
         setCompared(false);
-        setExtra(false);
-        setLocalDeletionConfirmed(false);
+        setExtraKey(null);
+        setLocalDeletionKey(null);
       }}
       style={{
         minHeight: 44,
@@ -207,7 +231,7 @@ export function ProductMasterConflict({
         borderRadius: 16,
       }}
     >
-      {!review && !error ? (
+      {reading ? (
         <ActivityIndicator accessibilityLabel="Lecture des versions du référentiel" />
       ) : null}
       {review ? (
@@ -269,10 +293,12 @@ export function ProductMasterConflict({
               style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
             >
               <Switch
-                disabled={busy}
+                disabled={busy || reading || !!error}
                 accessibilityLabel={localDeletionLabel}
                 value={localDeletionConfirmed}
-                onValueChange={setLocalDeletionConfirmed}
+                onValueChange={(value) =>
+                  setLocalDeletionKey(value ? choiceKey : null)
+                }
               />
               <Text style={{ color: colors.ink, flex: 1 }}>
                 {localDeletionLabel}
@@ -284,7 +310,7 @@ export function ProductMasterConflict({
               style={{ flexDirection: "row", gap: 8, alignItems: "center" }}
             >
               <Switch
-                disabled={busy}
+                disabled={busy || reading || !!error}
                 accessibilityLabel={
                   deletion
                     ? "Je confirme l’acceptation de la suppression synchronisée"
@@ -293,7 +319,7 @@ export function ProductMasterConflict({
                       : "Je confirme la réactivation de l’alias refusé"
                 }
                 value={extra}
-                onValueChange={setExtra}
+                onValueChange={(value) => setExtraKey(value ? choiceKey : null)}
               />
               <Text style={{ color: colors.ink, flex: 1 }}>
                 {deletion
@@ -306,7 +332,7 @@ export function ProductMasterConflict({
           ) : null}
           <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
             <Switch
-              disabled={busy || !decision}
+              disabled={busy || reading || !!error || !decision}
               accessibilityLabel="J’ai comparé les deux versions et je confirme mon choix"
               value={compared}
               onValueChange={setCompared}
@@ -317,36 +343,18 @@ export function ProductMasterConflict({
           </View>
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{
-              busy,
-              disabled:
-                busy ||
-                !decision ||
-                !compared ||
-                (!!needsExtra && !extra) ||
-                (localDeletion && !localDeletionConfirmed),
+            accessibilityLabel="Confirmer cette résolution"
+            accessibilityState={{ busy, disabled }}
+            disabled={disabled}
+            onPress={() => {
+              if (decision) void resolve(decision === "KEEP_LOCAL");
             }}
-            disabled={
-              busy ||
-              !decision ||
-              !compared ||
-              (!!needsExtra && !extra) ||
-              (localDeletion && !localDeletionConfirmed)
-            }
-            onPress={() => void confirm()}
             style={{
               minHeight: 44,
               padding: 12,
               borderRadius: 12,
               backgroundColor: colors.forest,
-              opacity:
-                busy ||
-                !decision ||
-                !compared ||
-                (needsExtra && !extra) ||
-                (localDeletion && !localDeletionConfirmed)
-                  ? 0.45
-                  : 1,
+              opacity: disabled ? 0.45 : 1,
             }}
           >
             <Text style={{ color: colors.onAccent, textAlign: "center" }}>
@@ -355,6 +363,20 @@ export function ProductMasterConflict({
           </Pressable>
         </>
       ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Relire la comparaison"
+        disabled={busy || reading}
+        onPress={() => {
+          setSelection(null);
+          setExtraKey(null);
+          setLocalDeletionKey(null);
+          reload();
+        }}
+        style={{ minHeight: 44, padding: 12 }}
+      >
+        <Text style={{ color: colors.forest }}>Relire la comparaison</Text>
+      </Pressable>
       {error ? (
         <Text
           accessibilityLiveRegion="polite"
