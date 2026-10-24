@@ -2,6 +2,8 @@
 
 ## Point courant — 24 octobre 2026
 
+Le [point des portes V1](../qa/V1_CURRENT_GATES_2026_10_24.md) rapproche les corrections de conflits récentes des outils réellement exposés, des versions livrées et des preuves encore nécessaires. Les mentions anciennes « conflits multiples hors référentiel » ne signifient plus que tous leurs services sont absents ; les exceptions de parité et la recette restent ouvertes.
+
 L'ordre et le périmètre complet de la V1 restent ceux convenus pour la présentation du 28 octobre. Les maquettes v1.1 sont arbitrées par `AUDIT.md` et les invariants, pas une nouvelle architecture. **API `4941513` livrée ; iOS build 14 (`7e46885`) terminé et disponible**, regroupant les PR 337–343 après leurs CI exactes. Build 13 est conservé pour retour arrière ; installation et recette utilisateur du build 14 sont encore ouvertes. Lire d'abord le [suivi des sept chantiers](../progress/M7_WORKSTREAM_STATUS.md) et la [recette native courante](../qa/M7_GROUPED_IPHONE_ACCEPTANCE.md).
 
 1. **Données.** Vérifier le réimport corrigé de `21102026.xlsx`, ses identités et sa répétition, puis les quantités/prix sur les journées effectivement disponibles. Le recalcul distant est livré ; les originaux et nombres historiques sont conservés.

@@ -14,6 +14,8 @@ Current native private-history exception (24 October): conversation title/archiv
 
 ## Current reading rule — 24 October 2026
 
+Current exception and delivery gates are reconciled in [`../qa/V1_CURRENT_GATES_2026_10_24.md`](../qa/V1_CURRENT_GATES_2026_10_24.md). Native physical-plan/visual/transcription comparisons do not by themselves add model tools. Permanent catalogue rejections are now projected onto the unchanged pending version without hiding newer edits; see `../qa/M8_CATALOGUE_REJECTION_STATE_2026_10_24.md`.
+
 This is a dated operation inventory, not an assertion that every historical pending adapter is still missing or that every public repository helper should become a model writer. The 11 October introduction describes pre-activation history. The model-facing SDK bindings are in `apps/api/src/copilot/ai-provider.ts`, conditional on trusted capabilities/permissions; native cards and canonical local transactions remain part of execution. Use the later dated entries, source and current seven-workstream ledger together.
 
 The compatible API `4941513` is deployed. Grouped iOS build 14 from `7e46885` is finished/available and includes catalogue capability 2; installation and device acceptance remain unproven. Known tombstone choices and inactive-fiche metadata maintenance are implemented. The next grouped native increment shares reviewed catalogue conflict groups between manual and chat paths: current local aggregate versus the latest complete verified remote baseline, explicit choice and retained snapshots/commands, no abandoned OPEN row. This code is outside build 14 and requires both final CI gates and native acceptance; see `../qa/M7_CATALOGUE_CONFLICT_GROUPS_2026_10_24.md`. The reviewed catalogue/settings/event/need/commercial families now compare bounded complete same-identity groups in code, outside build 14; absent/unverified/reassigned source snapshots remain refused. Domain-specific parity/rejected-command/recovery gaps must still be closed or qualified; do not announce blanket CRUD completion or build a universal last-write-wins repair tool. Technical local-copy/session startup support does not give the model a raw database export or authority to restore a device.
@@ -79,7 +81,7 @@ Operations: `now`, `generateId`, `loadProductEditorSnapshot`, `saveProductEditor
 
 Adapter source: [`product-master-repository.ts`](../../apps/mobile/src/products/product-master-repository.ts). Target: **T20**. `getProduct`/`listIdentifiers`/`listAliases` are reused by active `product.inspect`.
 
-Operations: `upsertProduct`, `upsertIdentifier`, `upsertAlias`, `rememberWasteReceiptAlias`, `retryWasteAliasDeletion`, `delete`, `getProduct`, `listProducts`, `getIdentifier`, `getAlias`, `listIdentifiers`, `listIdentifiersByStore`, `listAliases`, `listAliasesByStore`.
+Operations: `upsertProduct`, `upsertIdentifier`, `upsertAlias`, `rememberWasteReceiptAlias`, `delete`, `getProduct`, `listProducts`, `getIdentifier`, `getAlias`, `listIdentifiers`, `listIdentifiersByStore`, `listAliases`, `listAliasesByStore`.
 
 ### documents.commercial-pdf-capture
 
@@ -703,7 +705,7 @@ PDF local retention preserves the chosen original across reversed before/after o
 
 The new canonical native catalogue conflict repository also powers the manual Synchronisation screen. Live same-entity edits are compared in full, preserving sibling identities and stored observations. Local retention checks current code ownership, normalized active-product/validated-alias ambiguity and parent eligibility. Child parent/source changes are blocked rather than silently reassigned; valid remote adoption can remain available when local dependencies/collisions prevent resending local. Alias confidence comes from the synchronized version on local retention. Separate native consent is required to reverse alias rejection or product inactivity. Latest pull/ack/bootstrap snapshots, current commands, private binding, role, cancellation/rollback and restart replay remain authoritative; sources/plans/observations are not rewritten, and deterministic recomputation stays queued.
 
-Deleted snapshots, absent remote targets, cross-parent/source ownership decisions, oversized complete review and other source/failed-command recovery remain explicit inventory gaps. The previous safe waste-alias deletion retry is retained. Code readiness does not count as grouped API/native delivery or iPhone acceptance.
+Deleted snapshots, absent remote targets, cross-parent/source ownership decisions, oversized complete review and other source/failed-command recovery remain explicit inventory gaps. Historical note: the old waste-alias retry was subsequently removed in PR 356; the same explicit deletion decision now uses the canonical catalogue comparison. Code readiness does not count as grouped API/native delivery or iPhone acceptance.
 
 ## M7 — document retry and failed-command inspection (18 October 2026)
 
