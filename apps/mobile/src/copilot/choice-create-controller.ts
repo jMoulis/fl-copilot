@@ -1,14 +1,11 @@
+import { readCommercialChoiceSource } from "../commercial/choice-source";
 import {
   readCopilotChoiceCreateProposal,
   choiceSaveIntent,
   choiceSaveResultSchema,
   type CopilotMessage,
 } from "@fl-copilot/domain";
-import {
-  commercialChoiceId,
-  projectCommercialSourceOffer,
-} from "@fl-copilot/commercial-core";
-import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
+import { commercialChoiceId } from "@fl-copilot/commercial-core";
 import { ProductMasterRepository } from "../products/product-master-repository";
 import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
 import { CopilotCommercialChoiceRuntime } from "./commercial-choice-runtime";
@@ -73,30 +70,13 @@ export class CopilotChoiceCreateController {
       product = await new ProductMasterRepository(this.db).getProduct(
         content.input.productId,
       ),
-      row = await this.db.getFirstAsync<{ payload_json: string }>(
-        "SELECT payload_json FROM commercial_visual_readings WHERE id=? AND store_id=?",
-        content.input.source.readingId,
-        this.scope.storeId,
-      );
-    let sourceMatches = false;
-    if (row)
-      try {
-        const page = synchronizedCommercialVisualReadingSchema.parse(
-          JSON.parse(row.payload_json),
-        );
-        sourceMatches =
-          page.storeId === this.scope.storeId &&
-          page.status === "READY" &&
-          JSON.stringify(
-            projectCommercialSourceOffer(
-              page,
-              content.input.source.operationIndex,
-              content.input.source.itemIndex,
-            ),
-          ) === JSON.stringify(content.basis.offer);
-      } catch {
-        /* Missing or invalid source never authorizes creation. */
-      }
+      source = await readCommercialChoiceSource(this.db, {
+        ...request.input.draft,
+        storeId: this.scope.storeId,
+      });
+    const sourceMatches =
+      source.offer !== null &&
+      JSON.stringify(source.offer) === JSON.stringify(content.basis.offer);
     const stale =
       !!choice ||
       !sourceMatches ||

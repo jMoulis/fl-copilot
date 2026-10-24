@@ -14,7 +14,8 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
-    "nativewind-env.d.ts"
+    "nativewind-env.d.ts",
+    "../api/src/types/pdfjs-worker.d.ts"
   ],
   "exclude": ["node_modules", "ios", "android"]
 }

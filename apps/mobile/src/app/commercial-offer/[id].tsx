@@ -1,3 +1,4 @@
+import { readCommercialOfferEditorSource } from "@/commercial/choice-source";
 import { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import { Text, TextInput, Alert } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -6,17 +7,13 @@ import {
   CryptoDigestAlgorithm,
   randomUUID,
 } from "expo-crypto";
-import {
-  commercialChoiceId,
-  commercialOfferProposal,
-  commercialChoiceProductUnitMatches,
-} from "@fl-copilot/commercial-core";
-import {
-  commercialOfferChoiceSchema,
-  synchronizedCommercialVisualReadingSchema,
-  type SynchronizedCommercialVisualReading,
-} from "@fl-copilot/sync-contracts";
-import type { Product, CommercialMechanism } from "@fl-copilot/domain";
+import { commercialChoiceProductUnitMatches } from "@fl-copilot/commercial-core";
+import { commercialOfferChoiceSchema } from "@fl-copilot/sync-contracts";
+import type {
+  Product,
+  CommercialMechanism,
+  CopilotSourceOffer,
+} from "@fl-copilot/domain";
 import { commercialMechanismSchema } from "@fl-copilot/domain";
 import { normalizeProductLabel } from "@fl-copilot/domain";
 import { useAuth } from "@/auth/auth-provider";
@@ -51,27 +48,64 @@ export default function CommercialOfferScreen() {
     id,
     operationIndex: op,
     itemIndex: item,
+    choiceId: requestedChoiceId,
   } = useLocalSearchParams<{
     id: string;
     operationIndex: string;
     itemIndex: string;
+    choiceId?: string;
   }>();
   const operationIndex = Number(op),
     itemIndex = Number(item);
   const { session } = useAuth(),
-    storeId = session?.stores[0]?.storeId;
+    storeId = session?.stores[0]?.storeId,
+    ownerId = session?.user.id,
+    role = session?.stores[0]?.role;
   const { sqlite, deviceId } = useLocalDatabase();
   const { syncNow } = useSync();
+  const editorScope = useMemo(
+    () => ({
+      storeId,
+      ownerId,
+      role,
+      sqlite,
+      deviceId,
+      id,
+      requestedChoiceId,
+      operationIndex,
+      itemIndex,
+    }),
+    [
+      storeId,
+      ownerId,
+      role,
+      sqlite,
+      deviceId,
+      id,
+      requestedChoiceId,
+      operationIndex,
+      itemIndex,
+    ],
+  );
+  const currentScope = useRef(editorScope);
+  currentScope.current = editorScope;
+  const activeScope = useRef<
+    { scope: typeof editorScope; controller: AbortController } | undefined
+  >(undefined);
   const choiceIdentity = useRef(""),
-    saving = useRef(false);
+    saving = useRef<{ scope: typeof editorScope; token: symbol } | undefined>(
+      undefined,
+    );
   const initialized = useRef(""),
     editingRef = useRef(true);
   const repository = useMemo(
     () => new CommercialChoiceRepository(sqlite, digest),
     [sqlite],
   );
-  const [reading, setReading] =
-      useState<SynchronizedCommercialVisualReading | null>(null),
+  const [sourceOffer, setSourceOffer] = useState<CopilotSourceOffer | null>(
+      null,
+    ),
+    [sourceAvailable, setSourceAvailable] = useState(true),
     [existing, setExisting] = useState<LocalCommercialChoice | null>(null),
     [products, setProducts] = useState<Product[]>([]),
     [loading, setLoading] = useState(true),
@@ -94,69 +128,63 @@ export default function CommercialOfferScreen() {
     editingRef.current = editing;
   }, [editing]);
   useEffect(() => setConfirmed(false), [productId, start, end, mechanism]);
-  const operation = reading?.reading?.operations[operationIndex],
-    sourceItem = operation?.items[itemIndex];
   useFocusEffect(
     useCallback(() => {
       let active = true;
+      const actor = { scope: editorScope, controller: new AbortController() };
+      activeScope.current = actor;
+      if (saving.current?.scope !== editorScope) saving.current = undefined;
+      setBusy(!!saving.current);
+      const nextKey = `${storeId}:${session?.user.id}:${id}:${requestedChoiceId ?? ""}:${operationIndex}:${itemIndex}`;
+      if (initialized.current !== nextKey) {
+        setLoading(true);
+        setSourceOffer(null);
+        setExisting(null);
+        choiceIdentity.current = "";
+      }
       void (async () => {
-        if (
-          !storeId ||
-          !id ||
-          !Number.isInteger(operationIndex) ||
-          !Number.isInteger(itemIndex)
-        )
-          throw Error("COMMERCIAL_CHOICE_SOURCE_INVALID");
-        const row = await sqlite.getFirstAsync<{ payload_json: string }>(
-          "SELECT payload_json FROM commercial_visual_readings WHERE id=? AND store_id=?",
-          id,
+        if (!storeId || !id) throw Error("COMMERCIAL_CHOICE_SOURCE_INVALID");
+        const loaded = await readCommercialOfferEditorSource(
+          sqlite,
+          storeId,
+          { id, choiceId: requestedChoiceId, operationIndex, itemIndex },
+          (choiceId) => repository.get(storeId, choiceId),
+          digest,
+        );
+        const master = await new ProductMasterRepository(sqlite).listProducts(
           storeId,
         );
-        if (!row) throw Error("COMMERCIAL_CHOICE_SOURCE_INVALID");
-        const r = synchronizedCommercialVisualReadingSchema.parse(
-            JSON.parse(row.payload_json),
-          ),
-          o = r.reading?.operations[operationIndex],
-          i = o?.items[itemIndex];
-        if (!o || i?.kind !== "OFFER")
-          throw Error("COMMERCIAL_CHOICE_SOURCE_INVALID");
-        const source = {
-          sourceDocumentId: r.sourceDocumentId,
-          readingId: r.id,
-          checksum: r.checksum,
-          operationIndex,
-          itemIndex,
-        };
-        const choiceId = await commercialChoiceId(storeId, source, digest);
-        choiceIdentity.current = choiceId;
-        const [saved, master] = await Promise.all([
-          repository.get(storeId, choiceId),
-          new ProductMasterRepository(sqlite).listProducts(storeId),
-        ]);
         if (!active) return;
-        const proposal = commercialOfferProposal(o, i);
-        setReading(r);
+        const { saved, offer, choiceId, sourceAvailable: available } = loaded;
+        choiceIdentity.current = choiceId;
+        const proposal = offer.proposal;
+        setSourceOffer(offer);
+        setSourceAvailable(available);
         setProducts(
           master.map((p) => p.entity).filter((p) => p.status === "ACTIVE"),
         );
-        const key = `${id}:${operationIndex}:${itemIndex}`;
+        const key = `${storeId}:${session?.user.id}:${id}:${requestedChoiceId ?? ""}:${operationIndex}:${itemIndex}`;
         if (initialized.current === key) {
-          if (!editingRef.current) setExisting(saved);
+          if (!editingRef.current) {
+            setExisting(saved);
+            setEditing(false);
+          }
           setLoading(false);
           return;
         }
         initialized.current = key;
         setExisting(saved);
         setProductId(saved?.entity.productId ?? "");
-        setStart(saved?.entity.saleStart ?? proposal.saleStart);
-        setEnd(saved?.entity.saleEnd ?? proposal.saleEnd);
+        setStart(saved?.entity.saleStart ?? proposal.saleStart ?? "");
+        setEnd(saved?.entity.saleEnd ?? proposal.saleEnd ?? "");
         setInitialMechanism(saved?.entity.mechanism ?? proposal.mechanism);
         setMechanism(saved?.entity.mechanism ?? proposal.mechanism);
         setEditPrice(!(saved?.entity.mechanism ?? proposal.mechanism));
         setNote(saved?.entity.note ?? "");
         setSearch(
           (
-            i.fields.find((f) => f.name === "productLabel")?.rawValue ?? i.label
+            offer.itemFields.find((f) => f.name === "productLabel")?.rawValue ??
+            offer.rawProductLabel
           ).split(" ")[0] ?? "",
         );
         setEditing(
@@ -179,28 +207,46 @@ export default function CommercialOfferScreen() {
       });
       return () => {
         active = false;
+        actor.controller.abort();
+        if (activeScope.current === actor) activeScope.current = undefined;
       };
-    }, [id, operationIndex, itemIndex, storeId, sqlite, repository]),
+    }, [
+      editorScope,
+      id,
+      requestedChoiceId,
+      operationIndex,
+      itemIndex,
+      storeId,
+      session?.user.id,
+      sqlite,
+      repository,
+    ]),
   );
   async function save(withdraw = false) {
+    const actor = activeScope.current;
+    const isCurrent = () =>
+      !!actor &&
+      activeScope.current === actor &&
+      !actor.controller.signal.aborted &&
+      currentScope.current === editorScope &&
+      editorScope.role === "MANAGER" &&
+      !!editorScope.ownerId;
+    if (!isCurrent()) return;
+    const assertCurrentScope = () => {
+      if (!isCurrent()) throw Error("COMMERCIAL_CHOICE_SCOPE_CHANGED");
+    };
     if (
       !storeId ||
-      !reading ||
-      !operation ||
-      !sourceItem ||
+      !sourceOffer ||
+      (!sourceAvailable && !withdraw) ||
+      session?.stores[0]?.role !== "MANAGER" ||
       busy ||
       saving.current
     )
       return;
     setIssues({});
     setError(undefined);
-    const source = {
-      sourceDocumentId: reading.sourceDocumentId,
-      readingId: reading.id,
-      checksum: reading.checksum,
-      operationIndex,
-      itemIndex,
-    };
+    const source = sourceOffer.source;
     const now = new Date().toISOString(),
       choiceId = choiceIdentity.current;
     const version =
@@ -214,9 +260,9 @@ export default function CommercialOfferScreen() {
             id: choiceId,
             storeId,
             source,
-            operationKind: operation.kind,
-            operationLabel: operation.label,
-            rawProductLabel: sourceItem.label,
+            operationKind: sourceOffer.operationKind,
+            operationLabel: sourceOffer.operationLabel,
+            rawProductLabel: sourceOffer.rawProductLabel,
             productId,
             saleStart: start,
             saleEnd: end,
@@ -248,11 +294,28 @@ export default function CommercialOfferScreen() {
       setIssues(next);
       return;
     }
-    saving.current = true;
+    const operation = { scope: editorScope, token: Symbol("choice-save") };
+    saving.current = operation;
+    let committed = false;
     setBusy(true);
     try {
-      await repository.save(parsed.data, { commandId: randomUUID(), deviceId });
-      setExisting(await repository.get(storeId, choiceId));
+      const saved = await repository.save(parsed.data, {
+        commandId: randomUUID(),
+        deviceId,
+        assertCurrentScope,
+      });
+      committed = true;
+      if (currentScope.current === editorScope) editingRef.current = false;
+      if (!isCurrent()) return;
+      // The canonical writer returns only after the row, history and Outbox commit.
+      // Show that local receipt immediately; the asynchronous pull supplies remote status.
+      setExisting({
+        entity: saved,
+        remoteVersion: existing?.remoteVersion ?? null,
+        remote: existing?.remote ?? null,
+        syncState: "PENDING",
+        lastErrorCode: null,
+      });
       setInitialMechanism(parsed.data.mechanism);
       setProductId(parsed.data.productId);
       setStart(parsed.data.saleStart);
@@ -262,17 +325,50 @@ export default function CommercialOfferScreen() {
       void syncNow(storeId)
         .then(async () => {
           const latest = await repository.get(storeId, choiceId);
-          if (!editingRef.current) setExisting(latest);
+          if (isCurrent() && !editingRef.current) setExisting(latest);
         })
         .catch(() => undefined);
     } catch (reason) {
+      if (!isCurrent()) return;
       const code = reason instanceof Error ? reason.message : undefined;
       setError(commercialChoiceError(code));
       if (code === "COMMERCIAL_CHOICE_PRODUCT_INVALID")
         setIssues({ productId: commercialChoiceError(code) });
     } finally {
-      saving.current = false;
-      setBusy(false);
+      if (saving.current === operation) {
+        saving.current = undefined;
+        if (
+          currentScope.current === editorScope &&
+          activeScope.current?.scope === editorScope
+        ) {
+          setBusy(false);
+          if (committed && !isCurrent()) {
+            try {
+              const latest = await repository.get(storeId, choiceId);
+              if (
+                currentScope.current === editorScope &&
+                activeScope.current?.scope === editorScope &&
+                !saving.current
+              ) {
+                setExisting(latest);
+                setEditing(false);
+              }
+            } catch {
+              if (
+                currentScope.current === editorScope &&
+                activeScope.current?.scope === editorScope &&
+                !saving.current
+              )
+                setError(
+                  "La sauvegarde locale est confirmée, mais le choix ne peut pas encore être relu. Revenez à la liste pour le retrouver.",
+                );
+            }
+          } else if (!committed && !isCurrent())
+            setError(
+              "La sauvegarde n’a pas été confirmée. Vos saisies restent affichées.",
+            );
+        }
+      }
     }
   }
   const selected = products.find((p) => p.id === productId);
@@ -299,17 +395,15 @@ export default function CommercialOfferScreen() {
   return (
     <AppScreen>
       <AppHeader
-        title={sourceItem?.label ?? "Choisir cette offre"}
-        subtitle={operation?.label}
+        title={sourceOffer?.rawProductLabel ?? "Choisir cette offre"}
+        subtitle={sourceOffer?.operationLabel}
       />
       <SecondaryButton
-        label="Retour au document"
+        label="Retour"
         onPress={() => router.back()}
         disabled={busy}
       />
-      {error ? (
-        <InlineAlert title="Choix non enregistré" message={error} />
-      ) : null}
+      {error ? <InlineAlert title="Choix à vérifier" message={error} /> : null}
       {existing ? (
         <SectionCard
           title={
@@ -350,10 +444,11 @@ export default function CommercialOfferScreen() {
               label="Comparer dans Synchronisation"
               onPress={() => router.push("/sync-center")}
             />
-          ) : !editing ? (
+          ) : !editing && session?.stores[0]?.role === "MANAGER" ? (
             <>
               <SecondaryButton
                 label="Modifier ce choix"
+                disabled={busy || !sourceAvailable}
                 onPress={() => {
                   setInitialMechanism(existing.entity.mechanism);
                   setProductId(existing.entity.productId);
@@ -385,18 +480,26 @@ export default function CommercialOfferScreen() {
           ) : null}
         </SectionCard>
       ) : null}
-      {reading ? (
-        <CommercialOriginalButton sourceDocumentId={reading.sourceDocumentId} />
+      {!sourceAvailable ? (
+        <InlineAlert
+          title="Original à consulter"
+          message="La référence d’origine n’est pas disponible sur cet appareil. Consultez ou synchronisez le PDF original avant de modifier ce choix."
+        />
       ) : null}
-      {operation && sourceItem ? (
+      {sourceOffer ? (
+        <CommercialOriginalButton
+          sourceDocumentId={sourceOffer.source.sourceDocumentId}
+        />
+      ) : null}
+      {sourceOffer ? (
         <SectionCard
           title="Référence du PDF"
-          description={`Page ${reading?.pageNumber}`}
+          description={`Page ${sourceOffer.pageNumber}`}
         >
           <Text selectable className="text-base text-ink">
-            {sourceItem.evidence.map((e) => e.quote).join("\n")}
+            {sourceOffer.itemEvidence.map((e) => e.quote).join("\n")}
           </Text>
-          {[...operation.fields, ...sourceItem.fields]
+          {[...sourceOffer.operationFields, ...sourceOffer.itemFields]
             .filter((f) =>
               [
                 "saleStart",
@@ -415,7 +518,11 @@ export default function CommercialOfferScreen() {
             ))}
         </SectionCard>
       ) : null}
-      {editing && sourceItem && existing?.syncState !== "CONFLICT" ? (
+      {editing &&
+      sourceOffer &&
+      sourceAvailable &&
+      session?.stores[0]?.role === "MANAGER" &&
+      existing?.syncState !== "CONFLICT" ? (
         <>
           <SectionCard title="Produit du magasin">
             {selected ? (
@@ -425,12 +532,14 @@ export default function CommercialOfferScreen() {
                 </Text>
                 <SecondaryButton
                   label="Changer le produit"
+                  disabled={busy}
                   onPress={() => setProductId("")}
                 />
               </>
             ) : (
               <>
                 <TextInput
+                  editable={!busy}
                   accessibilityLabel="Rechercher un produit"
                   value={search}
                   onChangeText={setSearch}
@@ -441,6 +550,7 @@ export default function CommercialOfferScreen() {
                   <SecondaryButton
                     key={p.id}
                     label={p.label}
+                    disabled={busy}
                     onPress={() => setProductId(p.id)}
                   />
                 ))}
@@ -452,6 +562,7 @@ export default function CommercialOfferScreen() {
                 ) : null}
                 <SecondaryButton
                   label="Ouvrir le référentiel produits"
+                  disabled={busy}
                   onPress={() => router.push("/products")}
                 />
               </>
@@ -465,12 +576,14 @@ export default function CommercialOfferScreen() {
           <SectionCard title="Dates de vente">
             <Text className="text-base text-ink">Début</Text>
             <DateSelector
+              disabled={busy}
               value={start}
               onConfirm={setStart}
               issue={issues.saleStart}
             />
             <Text className="text-base text-ink">Fin</Text>
             <DateSelector
+              disabled={busy}
               value={end}
               onConfirm={setEnd}
               issue={issues.saleEnd}
@@ -484,12 +597,14 @@ export default function CommercialOfferScreen() {
                 </Text>
                 <SecondaryButton
                   label="Corriger le mécanisme"
+                  disabled={busy}
                   onPress={() => setEditPrice(true)}
                 />
               </>
             ) : (
               <MechanismEditor
-                key={`${reading?.id}:${existing?.entity.version ?? 0}`}
+                disabled={busy}
+                key={`${choiceIdentity.current}:${existing?.entity.version ?? 0}`}
                 initial={initialMechanism}
                 onChange={setMechanism}
                 issue={issues.mechanism}
@@ -510,6 +625,7 @@ export default function CommercialOfferScreen() {
           <SectionCard title="Confirmer mon choix">
             <SecondaryButton
               label={`${applicable ? "✓ " : ""}Cette opération s’applique à mon magasin`}
+              disabled={busy}
               onPress={() => setApplicable((v) => !v)}
             />
             {issues.applicabilityConfirmed ? (
@@ -519,6 +635,7 @@ export default function CommercialOfferScreen() {
             ) : null}
             <SecondaryButton
               label={`${confirmed ? "✓ " : ""}J’ai vérifié le produit, les dates et le mécanisme`}
+              disabled={busy}
               onPress={() => setConfirmed((v) => !v)}
             />
             {issues.criticalFieldsConfirmed ? (
@@ -527,6 +644,7 @@ export default function CommercialOfferScreen() {
               </Text>
             ) : null}
             <TextInput
+              editable={!busy}
               accessibilityLabel="Note sur ce choix"
               placeholder="Précision ou correction (facultatif)"
               value={note}

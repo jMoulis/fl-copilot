@@ -1,3 +1,4 @@
+import { commercialOfferHref } from "./offer-navigation";
 import { useCallback, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -371,14 +372,9 @@ export function CommercialOfferValidationView({
                   label="Revoir le produit, les dates ou le prix de cette offre"
                   disabled={busy}
                   onPress={() =>
-                    router.push({
-                      pathname: "/commercial-offer/[id]",
-                      params: {
-                        id: c.entity.source.readingId,
-                        operationIndex: String(c.entity.source.operationIndex),
-                        itemIndex: String(c.entity.source.itemIndex),
-                      },
-                    })
+                    router.push(
+                      commercialOfferHref(c.entity.source, c.entity.id),
+                    )
                   }
                 />
               </SectionCard>

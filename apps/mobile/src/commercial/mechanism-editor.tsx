@@ -24,10 +24,12 @@ export function MechanismEditor({
   initial,
   onChange,
   issue,
+  disabled = false,
 }: {
   initial: CommercialMechanism | null;
   onChange(value: unknown): void;
   issue?: string;
+  disabled?: boolean;
 }) {
   const [type, setType] = useState<string>(initial?.type ?? "");
   const [values, setValues] = useState<Record<string, string>>(() =>
@@ -81,6 +83,7 @@ export function MechanismEditor({
       <View key={key} className="gap-1">
         <Text className="text-base text-ink">{label}</Text>
         <TextInput
+          editable={!disabled}
           accessibilityLabel={label}
           keyboardType="decimal-pad"
           value={values[key] ?? ""}
@@ -97,6 +100,7 @@ export function MechanismEditor({
       <View className="gap-2">
         {Object.entries(options).map(([value, label]) => (
           <SecondaryButton
+            disabled={disabled}
             key={value}
             label={`${values[key] === value ? "✓ " : ""}${label}`}
             onPress={() => setValues((old) => ({ ...old, [key]: value }))}
@@ -110,6 +114,7 @@ export function MechanismEditor({
       <Text className="font-semibold text-ink">Mécanisme de l’offre</Text>
       {Object.entries(types).map(([value, label]) => (
         <SecondaryButton
+          disabled={disabled}
           key={value}
           label={`${type === value ? "✓ " : ""}${label}`}
           onPress={() => setType(value)}

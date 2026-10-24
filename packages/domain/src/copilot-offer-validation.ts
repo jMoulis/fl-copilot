@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { commercialValidatedOfferSchema } from "./commercial-validated-offer";
 import { productClassificationAuthoritySchema } from "./copilot-product-mutations";
+import {
+  commercialOriginalOfferSourceSchema,
+  isCommercialOriginalSource,
+  type CommercialOfferChoice,
+} from "./commercial-offer-choice";
 const selection = z
   .array(
     z.strictObject({
@@ -26,12 +31,19 @@ export const offerValidationAuthoritySchema =
       canValidateCommercialOffers: z.boolean(),
       reviewedSources: z
         .array(
-          z.strictObject({
-            choiceId: z.string().uuid(),
-            choiceVersion: z.number().int().positive(),
-            readingId: z.string().uuid(),
-            checksum: z.string().min(1).max(256),
-          }),
+          z.union([
+            z.strictObject({
+              choiceId: z.string().uuid(),
+              choiceVersion: z.number().int().positive(),
+              readingId: z.string().uuid(),
+              checksum: z.string().min(1).max(256),
+            }),
+            z.strictObject({
+              choiceId: z.uuid(),
+              choiceVersion: z.number().int().positive(),
+              source: commercialOriginalOfferSourceSchema,
+            }),
+          ]),
         )
         .min(1)
         .max(25),
@@ -39,6 +51,19 @@ export const offerValidationAuthoritySchema =
 export type OfferValidationAuthority = z.infer<
   typeof offerValidationAuthoritySchema
 >;
+export function offerValidationSourceReviewed(
+  choice: CommercialOfferChoice,
+  review: OfferValidationAuthority["reviewedSources"][number],
+) {
+  if (review.choiceId !== choice.id || review.choiceVersion !== choice.version)
+    return false;
+  return isCommercialOriginalSource(choice.source)
+    ? "source" in review &&
+        JSON.stringify(review.source) === JSON.stringify(choice.source)
+    : "readingId" in review &&
+        review.readingId === choice.source.readingId &&
+        review.checksum === choice.source.checksum;
+}
 export function offerValidationIntent(raw: unknown) {
   return JSON.stringify(offerValidationRequestSchema.parse(raw));
 }

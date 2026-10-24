@@ -69,6 +69,7 @@ it.each([undefined, "1", "2", "3", "1,1", "3,3", "4"])(
         headers: {
           authorization: "Bearer test",
           "x-store-id": storeId,
+          "x-commercial-source-version": "2",
           ...(version ? { "x-copilot-visual-actions": version } : {}),
         },
         payload,

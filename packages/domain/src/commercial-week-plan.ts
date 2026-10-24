@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { commercialWeekPreparationSchema } from "./commercial-week-preparation";
-import { commercialOfferSourceSchema } from "./commercial-offer-choice";
+import {
+  commercialOfferSourceSchema,
+  commercialOriginalOfferSourceSchema,
+} from "./commercial-offer-choice";
 import { commercialMechanismSchema } from "./commercial-mechanisms";
 const id = z.string().uuid(),
   version = z.number().int().positive(),
@@ -58,9 +61,12 @@ export const plannedCommercialOfferSchema = z
     purchaseCondition: z.null(),
     saleStart: date,
     saleEnd: date,
-    sourceReference: commercialOfferSourceSchema
-      .extend({ pageNumber: z.number().int().min(1).max(100) })
-      .strict(),
+    sourceReference: z.union([
+      commercialOfferSourceSchema
+        .extend({ pageNumber: z.number().int().min(1).max(100) })
+        .strict(),
+      commercialOriginalOfferSourceSchema,
+    ]),
     note: z.string().trim().max(1200).nullable(),
     version,
     createdAt: time,

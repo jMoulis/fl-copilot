@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { commercialOfferSourceSchema } from "./commercial-offer-choice";
+import {
+  commercialChoiceSourceSchema,
+  commercialOfferSourceSchema,
+  isCommercialOriginalSource,
+} from "./commercial-offer-choice";
 import {
   commercialVisualEvidenceSchema,
   commercialVisualFieldSchema,
@@ -25,7 +29,7 @@ export const copilotSourceOfferFieldSchema = commercialVisualFieldSchema.extend(
   },
 );
 export const copilotSourceOfferSchema = z.strictObject({
-  source: commercialOfferSourceSchema,
+  source: commercialChoiceSourceSchema,
   pageNumber: z.number().int().min(1).max(100),
   operationKind: z.enum(["DRAMAT", "PROSPECTUS", "BASIC", "OTHER"]),
   operationLabel: z.string().min(1).max(240),
@@ -41,6 +45,11 @@ export const copilotSourceOfferSchema = z.strictObject({
   }),
   validationStatus: z.literal("TO_VALIDATE"),
 });
+export const copilotExtractedSourceOfferSchema =
+  copilotSourceOfferSchema.extend({
+    source: commercialOfferSourceSchema,
+  });
+export type CopilotSourceOffer = z.infer<typeof copilotSourceOfferSchema>;
 export const copilotSourceOffersResultSchema = z.strictObject({
   storeId: z.uuid(),
   input: copilotSourceOffersInputSchema,
@@ -55,7 +64,7 @@ export const copilotSourceOffersResultSchema = z.strictObject({
   warnings: z.array(z.string().max(400)).max(30),
   warningCount: z.number().int().min(0).max(30),
   warningsComplete: z.boolean(),
-  offers: z.array(copilotSourceOfferSchema).max(5),
+  offers: z.array(copilotExtractedSourceOfferSchema).max(5),
   nextOffset: z.number().int().min(0).max(1800).nullable(),
   evidence: z.array(copilotEvidenceSchema).min(1).max(6),
 });
@@ -80,6 +89,7 @@ export function validateSourceOffersResult(
     r.offers.length > input.limit ||
     r.offers.some(
       (o) =>
+        isCommercialOriginalSource(o.source) ||
         o.source.sourceDocumentId !== input.sourceDocumentId ||
         o.source.readingId !== r.readingId ||
         o.source.checksum !== r.checksum ||

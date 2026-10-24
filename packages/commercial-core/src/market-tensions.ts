@@ -4,8 +4,12 @@ import {
   type CommercialWeekPlan,
   type CommercialValidatedOffer,
   type CommercialVisualPageOutput,
+  isCommercialOriginalSource,
 } from "@fl-copilot/domain";
-import { commercialOfferValidationSource } from "./offer-validation";
+import {
+  commercialOfferValidationSource,
+  commercialChoiceSourcePage,
+} from "./offer-validation";
 import {
   commercialItemWeekStatus,
   currentCommercialWeek,
@@ -83,6 +87,16 @@ export function commercialPlanTensions(input: {
   );
   for (const offer of plan.offers) {
     const v = validated.get(offer.validationId);
+    const { pageNumber: _pageNumber, ...extractedReference } =
+      offer.sourceReference;
+    void _pageNumber;
+    const sameReference =
+      JSON.stringify(v?.choice.source) ===
+      JSON.stringify(
+        isCommercialOriginalSource(offer.sourceReference)
+          ? offer.sourceReference
+          : extractedReference,
+      );
     if (
       !v ||
       v.choice.id !== offer.choiceId ||
@@ -90,17 +104,9 @@ export function commercialPlanTensions(input: {
       v.choice.productId !== offer.productId ||
       v.choice.saleStart !== offer.saleStart ||
       v.choice.saleEnd !== offer.saleEnd ||
-      selectedPages.find((p) => p.id === v.choice.source.readingId)
-        ?.pageNumber !== offer.sourceReference.pageNumber ||
-      (
-        [
-          "sourceDocumentId",
-          "readingId",
-          "checksum",
-          "operationIndex",
-          "itemIndex",
-        ] as const
-      ).some((k) => v.choice.source[k] !== offer.sourceReference[k]) ||
+      commercialChoiceSourcePage(v.choice, selectedPages) !==
+        offer.sourceReference.pageNumber ||
+      !sameReference ||
       JSON.stringify(v.choice.mechanism) !==
         JSON.stringify(offer.customerMechanism)
     )
@@ -250,6 +256,7 @@ export function commercialPlanTensions(input: {
       op.items.forEach((item, ii) => {
         const offer = plan.offers.find(
           (o) =>
+            !isCommercialOriginalSource(o.sourceReference) &&
             o.sourceReference.readingId === page.id &&
             o.sourceReference.operationIndex === oi &&
             o.sourceReference.itemIndex === ii,
@@ -260,6 +267,7 @@ export function commercialPlanTensions(input: {
         op.items.filter((i) => i.kind === "OFFER").length === 1
           ? plan.offers.find(
               (o) =>
+                !isCommercialOriginalSource(o.sourceReference) &&
                 o.sourceReference.readingId === page.id &&
                 o.sourceReference.operationIndex === oi,
             )

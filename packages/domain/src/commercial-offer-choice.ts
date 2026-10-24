@@ -19,11 +19,23 @@ export const commercialOfferSourceSchema = z
     itemIndex: z.number().int().min(0).max(59),
   })
   .strict();
+/** An explicitly reviewed excerpt of the real original; never an invented extraction ID. */
+export const commercialOriginalOfferSourceSchema = z.strictObject({
+  kind: z.literal("PDF_ORIGINAL"),
+  sourceDocumentId: z.uuid(),
+  checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  pageNumber: z.number().int().min(1).max(16),
+  excerpt: z.string().trim().min(1).max(1200),
+});
+export const commercialChoiceSourceSchema = z.union([
+  commercialOfferSourceSchema,
+  commercialOriginalOfferSourceSchema,
+]);
 export const commercialOfferChoiceSchema = z
   .object({
     id: z.string().uuid(),
     storeId: z.string().uuid(),
-    source: commercialOfferSourceSchema,
+    source: commercialChoiceSourceSchema,
     operationKind: z.enum(["DRAMAT", "PROSPECTUS", "BASIC", "OTHER"]),
     operationLabel: z.string().trim().min(1).max(240),
     rawProductLabel: z.string().trim().min(1).max(240),
@@ -109,4 +121,15 @@ export const commercialOfferChoiceSchema = z
       });
   });
 export type CommercialOfferSource = z.infer<typeof commercialOfferSourceSchema>;
+export type CommercialChoiceSource = z.infer<
+  typeof commercialChoiceSourceSchema
+>;
+export type CommercialOriginalOfferSource = z.infer<
+  typeof commercialOriginalOfferSourceSchema
+>;
+export function isCommercialOriginalSource(
+  source: CommercialChoiceSource,
+): source is CommercialOriginalOfferSource {
+  return "kind" in source && source.kind === "PDF_ORIGINAL";
+}
 export type CommercialOfferChoice = z.infer<typeof commercialOfferChoiceSchema>;

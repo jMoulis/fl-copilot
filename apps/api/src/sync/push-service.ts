@@ -1,4 +1,13 @@
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
+import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
+import { isCommercialOriginalSource } from "@fl-copilot/domain";
+import { commercialOfferChoiceSchema } from "@fl-copilot/sync-contracts";
+import { AuthError } from "../auth/service";
+import {
+  createCommercialOriginalSourceVerifier,
+  type CommercialOriginalSourceVerifier,
+} from "../commercial/original-source-verification";
+import type { PdfSourceStorage } from "../commercial/pdf-page-processing";
 import type { LayoutIllustrationGenerationService } from "../copilot/layout-illustration-generation";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import {
@@ -90,12 +99,47 @@ export function createMongoSyncPushService(
   now: () => Date = () => new Date(),
   mercalysReader?: PrivateSourceReader,
   illustrationGeneration?: Pick<LayoutIllustrationGenerationService, "apply">,
+  originalSourceStorage?: PdfSourceStorage,
 ): SyncPushService {
   const processedCommands = createMongoProcessedCommandService(database, now);
   const syncChanges = createMongoSyncChangeService(now);
 
   return {
     async push(input, requestId, ownerId) {
+      const supportsOriginals = input.commercialOriginalSources === true;
+      if (
+        !supportsOriginals &&
+        input.commands.some((command) => {
+          const parsed = commercialOfferChoiceSchema.safeParse(command.payload);
+          return (
+            parsed.success && isCommercialOriginalSource(parsed.data.source)
+          );
+        })
+      )
+        throw new AuthError(
+          426,
+          "COMMERCIAL_SOURCE_UPGRADE_REQUIRED",
+          "Mettez l’application à jour pour enregistrer cette référence au PDF. Vos données locales sont conservées.",
+        );
+      if (!supportsOriginals)
+        try {
+          await requireCommercialSourceCompatibility(
+            await database.getDb(),
+            input.storeId,
+            false,
+          );
+        } catch (error) {
+          if (error instanceof AuthError) throw error;
+          return {
+            results: input.commands.map((command) =>
+              retryableResult(command, requestId),
+            ),
+            serverTime: now().toISOString(),
+          };
+        }
+      const verifyOriginal = createCommercialOriginalSourceVerifier(
+        originalSourceStorage,
+      );
       const results: SyncCommandResult[] = [];
       for (const command of input.commands) {
         try {
@@ -151,6 +195,7 @@ export function createMongoSyncPushService(
                 ownerId,
                 mercalysReader,
                 illustrationGeneration,
+                verifyOriginal,
               ),
           );
           if (
@@ -248,6 +293,12 @@ export function createMongoSyncPushService(
             );
           }
         }
+      if (!supportsOriginals)
+        await requireCommercialSourceCompatibility(
+          await database.getDb(),
+          input.storeId,
+          false,
+        );
       return { results, serverTime: now().toISOString() };
     },
   };
@@ -263,6 +314,7 @@ async function applyCommand(
   ownerId?: string,
   mercalysReader?: PrivateSourceReader,
   illustrationGeneration?: Pick<LayoutIllustrationGenerationService, "apply">,
+  verifyOriginal?: CommercialOriginalSourceVerifier,
 ) {
   if (isVisualEntityType(command.entityType))
     return applyVisualCommand(
@@ -309,6 +361,7 @@ async function applyCommand(
       command,
       requestId,
       syncChanges,
+      verifyOriginal,
     );
   if (command.type === "COMMERCIAL_VERSION_DECISION_UPSERT")
     return applyCommercialVersionDecisionCommand(
@@ -394,6 +447,7 @@ async function applyCommand(
       command,
       requestId,
       syncChanges,
+      verifyOriginal,
     );
   if (command.type === "COMMERCIAL_TRANSCRIPTION_REVIEW")
     return applyCommercialReviewCommand(

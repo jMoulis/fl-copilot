@@ -1,3 +1,4 @@
+import { commercialOfferHref } from "@/commercial/offer-navigation";
 import { CommercialVersionDecisionView } from "@/commercial/version-decision-view";
 import { useCallback, useState } from "react";
 import { Text, View } from "react-native";
@@ -263,6 +264,38 @@ export default function CommercialComparisonScreen() {
             <CommercialOriginalButton sourceDocumentId={oldId} />
             <CommercialOriginalButton sourceDocumentId={newId} />
           </SectionCard>
+          {result.originalChoices.length ? (
+            <SectionCard title="Choix liés au PDF original">
+              <Text className="text-sm text-muted">
+                Ces choix restent conservés. La comparaison des extractions ne
+                les rapproche pas automatiquement : consultez les PDF avant de
+                les reporter sur une nouvelle version.
+              </Text>
+              {result.originalChoices.map(({ choice, plans }) => (
+                <View key={choice.entity.id} className="gap-2">
+                  <Text className="text-base text-ink">
+                    {commercialChoiceSummary(choice.entity)}
+                  </Text>
+                  {plans.length ? (
+                    <Text className="text-sm text-muted">
+                      Utilisé dans {plans.length} préparation(s).
+                    </Text>
+                  ) : null}
+                  <SecondaryButton
+                    label="Consulter mon choix conservé"
+                    onPress={() =>
+                      router.push(
+                        commercialOfferHref(
+                          choice.entity.source,
+                          choice.entity.id,
+                        ),
+                      )
+                    }
+                  />
+                </View>
+              ))}
+            </SectionCard>
+          ) : null}
           {display?.map((d) => (
             <SectionCard
               key={d.key}
@@ -313,18 +346,12 @@ export default function CommercialComparisonScreen() {
                     <SecondaryButton
                       label="Revoir mon choix existant"
                       onPress={() =>
-                        router.push({
-                          pathname: "/commercial-offer/[id]",
-                          params: {
-                            id: impact.choice.entity.source.readingId,
-                            operationIndex: String(
-                              impact.choice.entity.source.operationIndex,
-                            ),
-                            itemIndex: String(
-                              impact.choice.entity.source.itemIndex,
-                            ),
-                          },
-                        })
+                        router.push(
+                          commercialOfferHref(
+                            impact.choice.entity.source,
+                            impact.choice.entity.id,
+                          ),
+                        )
                       }
                     />
                   </View>

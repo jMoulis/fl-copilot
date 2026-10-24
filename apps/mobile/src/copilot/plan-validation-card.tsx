@@ -1,3 +1,4 @@
+import { commercialOfferHref } from "../commercial/offer-navigation";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Switch, View } from "react-native";
 import { ChatText as Text } from "./chat-text";
@@ -140,14 +141,9 @@ export function PlanValidationCard({
                 accessibilityRole="button"
                 style={{ minHeight: 44, padding: 12 }}
                 onPress={() =>
-                  router.push({
-                    pathname: "/commercial-offer/[id]",
-                    params: {
-                      id: o.sourceReference.readingId,
-                      operationIndex: o.sourceReference.operationIndex,
-                      itemIndex: o.sourceReference.itemIndex,
-                    },
-                  })
+                  router.push(
+                    commercialOfferHref(o.sourceReference, o.choiceId),
+                  )
                 }
               >
                 <Text

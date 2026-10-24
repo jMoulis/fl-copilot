@@ -7,6 +7,7 @@ import {
   type CommercialValidatedOffer,
   type CommercialVersionDecision,
   type PlannedCommercialOperation,
+  isCommercialOriginalSource,
 } from "@fl-copilot/domain";
 import {
   commercialUuidFromText,
@@ -16,6 +17,7 @@ import {
   commercialPreparationReadiness,
   commercialOfferValidationCurrent,
   commercialOfferValidationSource,
+  commercialChoiceSourcePage,
   commercialValidatedOfferId,
 } from "./offer-validation";
 import type { CommercialComparisonPage } from "./document-version-comparison";
@@ -27,6 +29,12 @@ export type CommercialPlanContext = {
   preferences: readonly CommercialVersionDecision[];
   products: readonly { id: string; label: string; version: number }[];
   pages: readonly CommercialComparisonPage[];
+  /** Current registered/restored original metadata, read by the caller in its store scope. */
+  originalSources?: readonly {
+    sourceDocumentId: string;
+    storeId: string;
+    checksum: string;
+  }[];
   blocked?: readonly string[];
   allocationSources?: unknown;
 };
@@ -144,6 +152,16 @@ export function commercialPlanIssues(
           "Le produit associé n’est plus actif. Revoyez l’offre avant de finaliser.",
       });
     try {
+      if (
+        isCommercialOriginalSource(c.source) &&
+        !ctx.originalSources?.some(
+          (source) =>
+            source.storeId === c.storeId &&
+            source.sourceDocumentId === c.source.sourceDocumentId &&
+            source.checksum === c.source.checksum,
+        )
+      )
+        throw Error("COMMERCIAL_PLAN_ORIGINAL_UNAVAILABLE");
       commercialOfferValidationSource(c, ctx.pages);
     } catch {
       issues.push({
@@ -305,12 +323,13 @@ export async function buildCommercialWeekPlan(
       ),
       offerIds: string[] = [],
       proposals = vs.map((v) => {
-        const page = ctx.pages.find((p) => p.id === v.choice.source.readingId)!;
-        const op = page.reading!.operations[v.choice.source.operationIndex]!;
-        return commercialOfferProposal(
-          op,
-          op.items[v.choice.source.itemIndex]!,
-        );
+        const source = v.choice.source;
+        // No machine-extracted source dates/mechanism are asserted by a page-only reference.
+        if (isCommercialOriginalSource(source))
+          return { saleStart: null, saleEnd: null, mechanism: null };
+        const page = ctx.pages.find((p) => p.id === source.readingId)!;
+        const op = page.reading!.operations[source.operationIndex]!;
+        return commercialOfferProposal(op, op.items[source.itemIndex]!);
       });
     for (const v of vs) {
       const c = v.choice,
@@ -336,8 +355,7 @@ export async function buildCommercialWeekPlan(
         saleEnd: c.saleEnd,
         sourceReference: {
           ...c.source,
-          pageNumber: ctx.pages.find((p) => p.id === c.source.readingId)!
-            .pageNumber,
+          pageNumber: commercialChoiceSourcePage(c, ctx.pages)!,
         },
         note: c.note,
         version: input.version,

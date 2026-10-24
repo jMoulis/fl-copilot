@@ -120,7 +120,7 @@ export async function makeCommercialChoiceFixture(
     operationIndex: 0,
     itemIndex: 0,
   };
-  const choice: CommercialOfferChoice = {
+  const choice: CommercialOfferChoice & { source: typeof source } = {
     id: await commercialChoiceId(storeId, source, digest),
     storeId,
     source,

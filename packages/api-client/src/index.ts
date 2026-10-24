@@ -1207,6 +1207,7 @@ function syncHeaders(accessToken: string, storeId: string) {
 
 function authorizedStoreHeaders(accessToken: string, storeId: string) {
   return {
+    "x-commercial-source-version": "2",
     authorization: `Bearer ${accessToken}`,
     "x-store-id": storeId,
   };

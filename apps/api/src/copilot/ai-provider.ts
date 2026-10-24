@@ -132,6 +132,7 @@ import {
 } from "@fl-copilot/domain";
 import {
   copilotChoiceCreateInputSchema,
+  copilotLegacyChoiceCreateInputSchema,
   copilotChoiceCreatePreviewSchema,
   choiceCreateRequest,
 } from "@fl-copilot/domain";
@@ -2858,7 +2859,7 @@ export function createCopilotAiProvider(
                     commercial_choice_create: tool({
                       description:
                         "Prepare initial retention of one explicitly requested OFFER from commercial_source_offers. Copy the exact returned source coordinates/checksum, identify an unambiguous active product with product_search, and supply only the intended dates, complete mechanism and note. Preserve ceiling operators, thresholds, lots and card scope; ask for missing/ambiguous terms or identity, never invent them. READY is a proposal only: native manager must verify source/product/conditions and store applicability separately before local save. ALREADY_EXISTS means inspect the existing choice, never overwrite or reactivate it. BLOCKED reviews source/units/dates/duplicate; UNAVAILABLE needs source/product synchronization; LIMIT_EXCEEDED uses manual offer review. No plan validation, TG, execution or paid extraction. At most three latest proposals by exact source item.",
-                      inputSchema: copilotChoiceCreateInputSchema,
+                      inputSchema: copilotLegacyChoiceCreateInputSchema,
                       execute: (input) =>
                         executeRead(
                           JSON.stringify(["choice-create", input]),

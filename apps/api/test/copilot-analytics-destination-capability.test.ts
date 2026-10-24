@@ -58,7 +58,10 @@ it.each([undefined, "1", "2", "1,2"])(
         }),
       } as unknown as AuthService,
       database: {
-        getDb: async () => ({}) as Db,
+        getDb: async () =>
+          ({
+            collection: () => ({ findOne: async () => null }),
+          }) as unknown as Db,
         checkHealth: async () => "connected",
         close: async () => {},
       },

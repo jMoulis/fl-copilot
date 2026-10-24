@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import { isCommercialOriginalSource } from "@fl-copilot/domain";
+import {
+  createCommercialOriginalSourceVerifier,
+  type CommercialOriginalSourceVerifier,
+} from "./original-source-verification";
 import {
   commercialOfferChoiceSchema,
   type CommercialOfferChoice,
@@ -8,6 +13,7 @@ import {
   commercialChoiceId,
   commercialChoiceDuplicateKey,
   commercialChoiceSameSource,
+  commercialChoiceWithdrawalPreservesFacts,
 } from "@fl-copilot/commercial-core";
 import type { VisualReadingDocument } from "./visual-reading-store.js";
 import type {
@@ -31,6 +37,7 @@ export async function applyCommercialChoiceCommand(
   command: SyncCommand,
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
+  verifyOriginal: CommercialOriginalSourceVerifier = createCommercialOriginalSourceVerifier(),
 ): Promise<CommandMutationResult> {
   const reject = (code: string, messageFr: string): CommandMutationResult => ({
     resultStatus: "REJECTED",
@@ -56,31 +63,6 @@ export async function applyCommercialChoiceCommand(
     return reject(
       "COMMERCIAL_CHOICE_IDENTITY_INVALID",
       "Le choix ne correspond pas à son extrait source.",
-    );
-  const source = await ctx.database
-    .collection<VisualReadingDocument>("commercialVisualReadings")
-    .findOne(
-      {
-        _id: choice.source.readingId,
-        storeId,
-        sourceDocumentId: choice.source.sourceDocumentId,
-        checksum: choice.source.checksum,
-        status: "READY",
-      },
-      { session: ctx.session },
-    );
-  const operation = source?.reading?.operations[choice.source.operationIndex],
-    item = operation?.items[choice.source.itemIndex];
-  if (
-    !operation ||
-    item?.kind !== "OFFER" ||
-    operation.kind !== choice.operationKind ||
-    operation.label !== choice.operationLabel ||
-    item.label !== choice.rawProductLabel
-  )
-    return reject(
-      "COMMERCIAL_CHOICE_SOURCE_INVALID",
-      "L’offre source est indisponible ou ne correspond pas au choix. Consultez le PDF original.",
     );
   const collection = ctx.database.collection<OfferChoiceDocument>(
     "commercialOfferChoices",
@@ -115,6 +97,55 @@ export async function applyCommercialChoiceCommand(
       "COMMERCIAL_CHOICE_REVISION_INVALID",
       "La révision du choix ne conserve pas son identité et sa source.",
     );
+  const withdrawing = previous && choice.status === "WITHDRAWN";
+  if (
+    withdrawing &&
+    !commercialChoiceWithdrawalPreservesFacts(
+      serializeCommercialChoice(previous),
+      choice,
+    )
+  )
+    return reject(
+      "COMMERCIAL_CHOICE_WITHDRAWAL_CHANGED",
+      "Le retrait doit conserver le produit, les dates et les conditions du choix enregistré.",
+    );
+  if (!withdrawing) {
+    const choiceSource = choice.source;
+    if (isCommercialOriginalSource(choiceSource)) {
+      if (!(await verifyOriginal(ctx.database, storeId, choiceSource)))
+        return reject(
+          "COMMERCIAL_CHOICE_SOURCE_INVALID",
+          "Le PDF original, son empreinte ou sa page ne correspondent pas au choix. Consultez l’original.",
+        );
+    } else {
+      const source = await ctx.database
+        .collection<VisualReadingDocument>("commercialVisualReadings")
+        .findOne(
+          {
+            _id: choiceSource.readingId,
+            storeId,
+            sourceDocumentId: choice.source.sourceDocumentId,
+            checksum: choice.source.checksum,
+            status: "READY",
+          },
+          { session: ctx.session },
+        );
+      const operation =
+          source?.reading?.operations[choiceSource.operationIndex],
+        item = operation?.items[choiceSource.itemIndex];
+      if (
+        !operation ||
+        item?.kind !== "OFFER" ||
+        operation.kind !== choice.operationKind ||
+        operation.label !== choice.operationLabel ||
+        item.label !== choice.rawProductLabel
+      )
+        return reject(
+          "COMMERCIAL_CHOICE_SOURCE_INVALID",
+          "L’offre source est indisponible ou ne correspond pas au choix. Consultez le PDF original.",
+        );
+    }
+  }
   if (choice.status === "RETAINED") {
     const product = await ctx.database
       .collection<{ _id: string; salesUnit: string }>("products")
