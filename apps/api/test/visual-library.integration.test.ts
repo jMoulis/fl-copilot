@@ -151,7 +151,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
                     bootstrapQuerySchema.parse({ visualLibrary: "true" }),
                   ),
               },
-              { deviceId, appVersion: "test", visualLibrary: true },
+              {
+                deviceId,
+                appVersion: "test",
+                visualLibrary: true,
+                copilotOwnerId: f.actorId,
+              },
             ).sync(f.storeId);
           try {
             expect(
@@ -193,7 +198,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               expectedLocalVersion: 1,
               canWrite: true,
             });
-            await synchronize(a, f.deviceId);
+            expect(await synchronize(a, f.deviceId)).toMatchObject({
+              pushed: 1,
+              conflicts: 0,
+              failed: 0,
+            });
             await repoB.save(kind, pending, {
               storeId: f.storeId,
               actorId: f.actorId,
@@ -202,7 +211,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               expectedLocalVersion: 1,
               canWrite: true,
             });
-            await synchronize(b, bDevice);
+            expect(await synchronize(b, bDevice)).toMatchObject({
+              pushed: 0,
+              conflicts: 1,
+              failed: 0,
+            });
             const first = (
                 await new ConflictRepository(b).listOpenForEntity(
                   f.storeId,
