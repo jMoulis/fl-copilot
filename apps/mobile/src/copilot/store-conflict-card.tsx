@@ -296,6 +296,15 @@ export function StoreConflictCard({
               précédentes restent conservées dans l’historique.
             </Text>
           ) : null}
+          {(review.settingsReview?.group.conflicts.length ?? 0) > 1 ? (
+            <Text style={{ color: colors.ink }}>
+              {review.settingsReview!.group.conflicts.length} conflits
+              concernent les mêmes réglages. Votre choix porte sur les réglages
+              locaux actuels et la version synchronisée v
+              {review.remote?.version}. Les versions précédentes restent
+              conservées.
+            </Text>
+          ) : null}
           <Text style={{ fontWeight: "600" }}>Votre version actuelle</Text>
           <Text style={{ color: colors.ink }}>
             {summary(review.current.entity)}

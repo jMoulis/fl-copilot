@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, it, expect } from "vitest";
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
 import { storeContextFixture } from "../../../../scripts/test-store-context-fixtures";
 import { storeContextSettingsSchema } from "@fl-copilot/sync-contracts";
 import {
@@ -71,7 +72,7 @@ async function setup() {
     db,
     tx,
     path,
-    repo: new StoreContextRepository(tx),
+    repo: new StoreContextRepository(tx, receiptReviewDigest),
     ctx: { commandId: randomUUID(), deviceId: randomUUID() },
   };
 }
@@ -151,8 +152,17 @@ it("resolves different-device configurations explicitly and preserves superseded
     remoteVersion: 1,
     remoteEntity: remote,
   });
+  await x.tx.runAsync(
+    "UPDATE store_context_settings SET sync_state='CONFLICT' WHERE id=?",
+    x.settings.id,
+  );
+  const review = await x.repo.review(x.settings.storeId, conflict.id);
   await x.repo.resolve(conflict.id, false, {
     ...x.ctx,
+    storeId: x.settings.storeId,
+    reviewHash: review.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
     commandId: randomUUID(),
   });
   expect((await x.repo.get(x.settings.storeId))?.entity.schoolZone).toBe("B");

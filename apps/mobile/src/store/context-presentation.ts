@@ -6,6 +6,12 @@ export function storeContextError(code: string | undefined) {
   return (
     (
       {
+        STORE_CONTEXT_SOURCE_CHANGED:
+          "La comparaison a changé. Vos réglages sont conservés ; relisez les versions puis confirmez à nouveau votre choix.",
+        STORE_CONTEXT_RESOLUTION_INVALID:
+          "Cette comparaison n’est plus disponible. Les versions et modifications restent conservées dans Synchronisation.",
+        STORE_CONTEXT_FORBIDDEN:
+          "Le contexte de cette comparaison a changé. Rouvrez-la depuis le bon magasin ; aucune version n’a été remplacée.",
         STORE_CONTEXT_RESOLVE_REQUIRED:
           "Les réglages sont en conflit. Comparez les deux configurations dans Synchronisation.",
         STORE_CONTEXT_CHANGED:
