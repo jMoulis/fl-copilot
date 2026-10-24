@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,12 +36,24 @@ import { commercialWeekPlanSchema } from "@fl-copilot/domain";
 import { buildCommercialWeekPlan } from "@fl-copilot/commercial-core";
 import { readWeekPlanContext } from "../commercial/week-plan-context";
 import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
+import { nativeKnowledgeConflictFixture } from "../../../../scripts/test-knowledge-conflict-fixtures";
+import { KnowledgeConflict } from "../copilot/knowledge-conflict";
+import { applyKnowledgeRecord } from "../copilot/knowledge-repository";
+import type { SyncConflict } from "../sync/conflict-repository";
+import type { OutboxDatabase } from "../sync/outbox-repository";
+function KnowledgeRouteForTest({ conflict }: { conflict: SyncConflict }) {
+  return createElement(KnowledgeConflict, {
+    knowledgeId: conflict.entityId,
+    onResolved: runtime.back,
+  });
+}
 const kinds = [
   "SETTINGS",
   "FIELD_EVENT",
   "NEED",
   "MEMBERSHIP",
   "SUBSTITUTION",
+  "KNOWLEDGE",
   "COMMERCIAL_CHOICE",
   "COMMERCIAL_PREPARATION",
   "COMMERCIAL_PLAN",
@@ -51,6 +64,8 @@ type Kind = (typeof kinds)[number];
 const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
   if (kind === "SETTINGS" || kind === "FIELD_EVENT")
     return nativeStoreConflictFixture(kind);
+  if (kind === "KNOWLEDGE")
+    return nativeKnowledgeConflictFixture(":memory:", refusal);
   if (kind === "NEED" || kind === "MEMBERSHIP" || kind === "SUBSTITUTION")
     return nativeNeedConflictFixture(kind, ":memory:", refusal);
   if (kind === "COMMERCIAL_REFERENCE" || kind === "COMMERCIAL_EXECUTION")
@@ -58,6 +73,7 @@ const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
   return nativeCommercialConflictFixture(kind, ":memory:", refusal);
 };
 const components = {
+  KNOWLEDGE: KnowledgeRouteForTest,
   SETTINGS: StoreContextConflict,
   FIELD_EVENT: StoreEventConflict,
   NEED: NeedUnitConflict,
@@ -71,6 +87,7 @@ const components = {
 };
 const component = (kind: Kind) => components[kind];
 const entityTables = {
+  KNOWLEDGE: "copilot_knowledge",
   SETTINGS: "store_context_settings",
   FIELD_EVENT: "store_product_events",
   ...needConflictTables,
@@ -79,6 +96,7 @@ const entityTables = {
   COMMERCIAL_EXECUTION: "commercial_execution_tasks",
 };
 const histories = {
+  KNOWLEDGE: "sync_conflicts",
   SETTINGS: "store_context_history",
   FIELD_EVENT: "store_product_event_history",
   NEED: "need_unit_history",
@@ -91,6 +109,7 @@ const histories = {
   COMMERCIAL_EXECUTION: "commercial_execution_history",
 };
 const readable = {
+  KNOWLEDGE: "Pratique locale",
   SETTINGS: "Asnières",
   FIELD_EVENT: "Rupture",
   NEED: "Besoin local",
@@ -103,6 +122,15 @@ const readable = {
   COMMERCIAL_EXECUTION: "plan version",
 };
 const pulls = {
+  KNOWLEDGE: (db: OutboxDatabase, storeId: string, payload: unknown) =>
+    applyKnowledgeRecord(
+      db,
+      {
+        storeId,
+        ownerId: (runtime.session as { user: { id: string } }).user.id,
+      },
+      payload,
+    ),
   SETTINGS: applyStoreContext,
   FIELD_EVENT: applyStoreProductEvent,
   NEED: applyNeedUnit,
@@ -230,13 +258,64 @@ beforeEach(() => {
   runtime.focused = true;
   runtime.hold = undefined;
   runtime.sync.mockReset().mockResolvedValue(undefined);
-  runtime.back.mockClear();
+  runtime.back.mockReset();
   const error = console.error;
   vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
     if (!String(args[0]).includes("react-test-renderer is deprecated"))
       error(...args);
   });
 });
+it.each(["LOCAL", "REMOTE"] as const)(
+  "manual forgotten practice needs its own confirmation (%s)",
+  async (forgotten) => {
+    const s = await setup("KNOWLEDGE", forgotten),
+      label =
+        forgotten === "REMOTE"
+          ? "Conserver ma version locale"
+          : "Adopter la version synchronisée";
+    await act(async () => host("Switch").props.onValueChange(true));
+    expect(button(label).props.disabled).toBe(true);
+    await act(async () => hosts("Switch")[1]!.props.onValueChange(true));
+    expect(button(label).props.disabled).toBe(false);
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(hosts("Switch").every((n) => n.props.value === false)).toBe(true);
+    await act(async () => host("Switch").props.onValueChange(true));
+    await act(async () => hosts("Switch")[1]!.props.onValueChange(true));
+    await act(async () => button(label).props.onPress());
+    expect(
+      s.db
+        .prepare(
+          "SELECT json_extract(payload_json,'$.status') AS status FROM copilot_knowledge WHERE store_id=?",
+        )
+        .get(s.scope.storeId)!.status,
+    ).toBe("ACTIVE");
+    expect(runtime.back).toHaveBeenCalledTimes(2);
+  },
+);
+it.each(["SYNC_THROW", "ASYNC_REJECT"] as const)(
+  "keeps the private choice committed when list refresh fails (%s)",
+  async (mode) => {
+    const s = await setup("KNOWLEDGE"),
+      before = s.count("sync_conflicts");
+    if (mode === "SYNC_THROW")
+      runtime.back.mockImplementationOnce(() => {
+        throw Error("REFRESH_FAILED");
+      });
+    else
+      runtime.back.mockImplementationOnce(() =>
+        Promise.reject(Error("REFRESH_FAILED")),
+      );
+    await act(async () => host("Switch").props.onValueChange(true));
+    await act(async () =>
+      button("Conserver ma version locale").props.onPress(),
+    );
+    expect(s.count("sync_conflicts")).toBe(before + 1);
+    expect(hosts("Alert").map((n) => n.props.title)).toEqual([
+      "Comparaison enregistrée",
+    ]);
+    expect(runtime.sync).toHaveBeenCalledTimes(1);
+  },
+);
 it.each(["LOCAL", "REMOTE"] as const)(
   "manual withdrawn offer needs a separate confirmation (%s)",
   async (withdrawal) => {
@@ -289,7 +368,7 @@ describe.each(kinds)("%s native comparison", (kind) => {
       action.props.onPress();
     });
     expect(s.count(historyTable)).toBe(before + 1);
-    expect(runtime.back).toHaveBeenCalledTimes(1);
+    expect(runtime.back).toHaveBeenCalledTimes(kind === "KNOWLEDGE" ? 2 : 1);
     expect(runtime.sync).toHaveBeenCalledTimes(1);
   });
   it("shows a targeted stale error, clears consent and requires rereading before another choice", async () => {
@@ -325,7 +404,7 @@ describe.each(kinds)("%s native comparison", (kind) => {
     expect(
       s.db.prepare(`SELECT remote_version FROM ${table}`).get()!.remote_version,
     ).toBe(3);
-    expect(runtime.back).toHaveBeenCalledTimes(1);
+    expect(runtime.back).toHaveBeenCalledTimes(kind === "KNOWLEDGE" ? 2 : 1);
   });
   it.each([
     "OWNER",
@@ -334,6 +413,7 @@ describe.each(kinds)("%s native comparison", (kind) => {
     "DEVICE",
     "BLUR",
     "UNMOUNT",
+    "TARGET",
     ...(kind === "SETTINGS" || kind === "FIELD_EVENT"
       ? []
       : (["ROLE"] as const)),
@@ -381,7 +461,16 @@ describe.each(kinds)("%s native comparison", (kind) => {
           tree = undefined;
         } else
           tree!.update(
-            createElement(component(kind), { conflict: s.review.conflict }),
+            createElement(component(kind), {
+              conflict:
+                mode === "TARGET"
+                  ? {
+                      ...s.review.conflict,
+                      id: randomUUID(),
+                      entityId: randomUUID(),
+                    }
+                  : s.review.conflict,
+            }),
           );
       });
       await act(async () => {
@@ -457,7 +546,11 @@ describe.each(kinds)("%s native comparison", (kind) => {
         .prepare(`SELECT sync_state FROM ${table} WHERE store_id=?`)
         .get(s.scope.storeId)!.sync_state,
     ).toBe("PENDING");
-    expect(hosts("Alert")).toHaveLength(0);
+    if (kind === "KNOWLEDGE")
+      expect(hosts("Alert").map((n) => n.props.title)).toEqual([
+        "Comparaison enregistrée",
+      ]);
+    else expect(hosts("Alert")).toHaveLength(0);
     expect(runtime.back).toHaveBeenCalledTimes(1);
   });
 });

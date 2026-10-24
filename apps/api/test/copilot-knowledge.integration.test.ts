@@ -1,3 +1,6 @@
+import { receiptReviewDigest } from "../../../scripts/test-receipt-publication-sqlite";
+import { OutboxRepository } from "../../mobile/src/sync/outbox-repository";
+import { ConflictRepository } from "../../mobile/src/sync/conflict-repository";
 import { CopilotConversationRepository } from "../../mobile/src/copilot/conversation-repository";
 import { chatFixture } from "../../../scripts/test-chat-fixtures";
 import { randomUUID } from "node:crypto";
@@ -7,7 +10,10 @@ import { runMongoMigrations } from "../src/database/migrations";
 import { createMongoSyncPushService } from "../src/sync/push-service";
 import { createMongoSyncPullService } from "../src/sync/pull-service";
 import { createMongoSyncBootstrapService } from "../src/sync/bootstrap-service";
-import { applyKnowledge } from "../src/copilot/knowledge-store";
+import {
+  applyKnowledge,
+  type KnowledgeDocument,
+} from "../src/copilot/knowledge-store";
 import { createMongoSyncChangeService } from "../src/sync/sync-change-service";
 import { readKnowledge } from "../src/copilot/knowledge-store";
 import { MercalysTestDatabase } from "../../../scripts/test-mercalys-sync-fixtures";
@@ -17,6 +23,7 @@ import { MobileSyncService } from "../../mobile/src/sync/sync-service";
 import {
   bootstrapQuerySchema,
   syncPullQuerySchema,
+  syncPushRequestSchema,
   type SyncPushRequest,
 } from "@fl-copilot/sync-contracts";
 import type { CopilotKnowledge } from "@fl-copilot/domain";
@@ -37,6 +44,206 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       if (db) await db.dropDatabase();
       if (client) await client.close();
     });
+    it.each(["KEEP_LOCAL", "ADOPT_REMOTE"] as const)(
+      "resolves a complete private group and restores the chosen practice on another device (%s)",
+      async (decision) => {
+        const scope = { storeId: randomUUID(), ownerId: randomUUID() },
+          deviceId = randomUUID(),
+          a = new MercalysTestDatabase(),
+          b = new MercalysTestDatabase(),
+          c = new MercalysTestDatabase(),
+          service = {
+            getDb: async () => db,
+            checkHealth: async () => "connected" as const,
+            close: async () => {},
+          },
+          push = createMongoSyncPushService(service),
+          pull = createMongoSyncPullService(service),
+          boot = createMongoSyncBootstrapService(service);
+        const authority = {
+          ...scope,
+          userId: scope.ownerId,
+          sessionId: randomUUID(),
+          deviceId,
+          storeName: "Pilote",
+          role: "MANAGER" as const,
+        };
+        const transport = {
+          push: (r: SyncPushRequest) =>
+            push.push(r, randomUUID(), scope.ownerId),
+          pull: (storeId: string, cursor: string) =>
+            pull.pull(
+              storeId,
+              syncPullQuerySchema.parse({
+                cursor,
+                copilotHistory: "true",
+                copilotKnowledge: "true",
+              }),
+              scope.ownerId,
+            ),
+          bootstrap: () =>
+            boot.bootstrap(
+              authority,
+              bootstrapQuerySchema.parse({
+                copilotHistory: "true",
+                copilotKnowledge: "true",
+              }),
+            ),
+        };
+        const sync = (device: MercalysTestDatabase) =>
+          new MobileSyncService(device, transport, {
+            appVersion: "test",
+            deviceId,
+            copilotHistory: true,
+            copilotKnowledge: true,
+            copilotOwnerId: scope.ownerId,
+          }).sync(scope.storeId);
+        try {
+          for (const device of [a, b, c]) await runLocalMigrations(device);
+          const repoA = new CopilotKnowledgeRepository(
+              a,
+              scope,
+              receiptReviewDigest,
+            ),
+            repoB = new CopilotKnowledgeRepository(
+              b,
+              scope,
+              receiptReviewDigest,
+            ),
+            initial: CopilotKnowledge = {
+              id: randomUUID(),
+              ...scope,
+              scope: "USER_STORE",
+              kind: "OPERATING_PRACTICE",
+              statement: "Pratique initiale",
+              status: "ACTIVE",
+              sourceMessageId: null,
+              confirmedBy: scope.ownerId,
+              version: 1,
+              createdAt: "2026-10-15T12:00:00.000Z",
+              updatedAt: "2026-10-15T12:00:00.000Z",
+            };
+          await repoA.save(initial, { deviceId, commandId: randomUUID() });
+          await sync(a);
+          await sync(b);
+          const remote = {
+              ...initial,
+              version: 2,
+              statement: "Pratique de l’appareil A",
+            },
+            local = {
+              ...initial,
+              version: 2,
+              statement: "Pratique de l’appareil B",
+            };
+          await repoA.save(remote, { deviceId, commandId: randomUUID() });
+          await sync(a);
+          await repoB.save(local, { deviceId, commandId: randomUUID() });
+          const original = (
+            await new OutboxRepository(b).listPending(scope.storeId)
+          ).find((packet) => packet.entityType === "copilot_knowledge")!;
+          await sync(b);
+          const queued = await new OutboxRepository(b).enqueue({
+            ...original,
+            commandId: randomUUID(),
+          });
+          const collision = await push.push(
+            syncPushRequestSchema.parse({
+              syncProtocolVersion: 1,
+              appVersion: "test",
+              deviceId,
+              storeId: scope.storeId,
+              commands: [
+                {
+                  commandId: queued.commandId,
+                  localSequence: queued.localSequence,
+                  type: queued.commandType,
+                  entityType: queued.entityType,
+                  entityId: queued.entityId,
+                  expectedRemoteVersion: queued.expectedRemoteVersion,
+                  createdAt: queued.createdAt,
+                  payload: queued.payload,
+                },
+              ],
+            }),
+            randomUUID(),
+            scope.ownerId,
+          );
+          expect(collision.results[0]).toMatchObject({
+            status: "CONFLICT",
+            remoteVersion: 2,
+          });
+          await new ConflictRepository(b).recordPushConflict(
+            queued,
+            collision.results[0]!,
+          );
+          await b.runAsync(
+            "UPDATE sync_outbox SET status='CONFLICT' WHERE command_id=?",
+            queued.commandId,
+          );
+          const review = await repoB.review(initial.id);
+          expect(review.group.conflicts).toHaveLength(2);
+          expect(review.group.remote).toEqual(remote);
+          expect(review.ready).toBe(true);
+          const ctx = {
+            ...scope,
+            deviceId,
+            commandId: randomUUID(),
+            reviewCaptureId: randomUUID(),
+            reviewHash: review.hash,
+            canResolve: () => true,
+          };
+          await repoB.resolve(initial.id, decision === "KEEP_LOCAL", ctx);
+          await sync(b);
+          await sync(c);
+          const restored = (
+            await new CopilotKnowledgeRepository(c, scope).list()
+          )[0]!;
+          expect(restored.entity).toMatchObject({
+            id: initial.id,
+            ownerId: scope.ownerId,
+            storeId: scope.storeId,
+            version: decision === "KEEP_LOCAL" ? 3 : 2,
+            statement:
+              decision === "KEEP_LOCAL" ? local.statement : remote.statement,
+          });
+          expect(restored.syncState).toBe("SYNCED");
+          const capture = await new ConflictRepository(b).getById(
+            ctx.reviewCaptureId,
+          );
+          expect(capture?.remotePayload).toEqual(remote);
+          expect(capture?.status).toBe(
+            decision === "KEEP_LOCAL" ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          );
+          expect(
+            await new ConflictRepository(b).listOpenForEntity(
+              scope.storeId,
+              "copilot_knowledge",
+              initial.id,
+            ),
+          ).toHaveLength(0);
+          const histories = await db
+            .collection("copilotKnowledgeHistory")
+            .countDocuments({ knowledgeId: initial.id });
+          expect(histories).toBe(decision === "KEEP_LOCAL" ? 3 : 2);
+          await sync(b);
+          expect(
+            await db
+              .collection("copilotKnowledgeHistory")
+              .countDocuments({ knowledgeId: initial.id }),
+          ).toBe(histories);
+          expect(
+            await db
+              .collection<KnowledgeDocument>("copilotKnowledge")
+              .countDocuments({ _id: initial.id }),
+          ).toBe(1);
+        } finally {
+          a.db.close();
+          b.db.close();
+          c.db.close();
+        }
+      },
+    );
     it("syncs once, restores on another device, isolates users/old clients, resolves concurrent edits and stops using forgotten knowledge", async () => {
       const storeId = randomUUID(),
         ownerId = randomUUID(),
@@ -91,7 +298,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await runLocalMigrations(a);
         await runLocalMigrations(b);
         const repo = new CopilotKnowledgeRepository(a, scope),
-          other = new CopilotKnowledgeRepository(b, scope);
+          other = new CopilotKnowledgeRepository(b, scope, receiptReviewDigest);
         const original = chatFixture(randomUUID);
         const conversationRepo = new CopilotConversationRepository(a, scope);
         await conversationRepo.save(
@@ -169,7 +376,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           entity: { statement: "Version appareil B" },
           remote: { statement: "Version appareil A" },
         });
+        const review = await other.review(entry.id);
         await other.resolve(entry.id, true, {
+          ...scope,
+          reviewHash: review.hash,
+          reviewCaptureId: randomUUID(),
+          canResolve: () => true,
           commandId: randomUUID(),
           deviceId,
         });

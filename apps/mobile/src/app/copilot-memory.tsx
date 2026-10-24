@@ -2,7 +2,7 @@ import {
   confirmKnowledgeSuggestion,
   loadKnowledgeSuggestion,
 } from "@/copilot/knowledge-suggestion";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { Text, TextInput, View, Alert } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { randomUUID } from "expo-crypto";
@@ -19,13 +19,15 @@ import {
   InlineAlert,
 } from "@/components/ui";
 import { CopilotKnowledgeRepository } from "@/copilot/knowledge-repository";
+import { KnowledgeConflict } from "@/copilot/knowledge-conflict";
 import { colors } from "@/design/tokens";
 type Entry = Awaited<ReturnType<CopilotKnowledgeRepository["list"]>>[number];
 export default function CopilotMemoryScreen() {
-  const { session } = useAuth();
+  const { session } = useAuth(),
+    { deviceId, accessBinding } = useLocalDatabase();
   return (
     <CopilotMemoryScreenContent
-      key={`${session?.user.id}/${session?.stores[0]?.storeId}`}
+      key={`${session?.user.id}/${session?.stores[0]?.storeId}/${session?.stores[0]?.role}/${deviceId}/${accessBinding?.generation ?? "primary"}`}
     />
   );
 }
@@ -44,6 +46,9 @@ function CopilotMemoryScreenContent() {
         : null,
     [sqlite, storeId, ownerId],
   );
+  const activeList = useRef<{ repo: typeof repo; active: boolean } | null>(
+    null,
+  );
   const [entries, setEntries] = useState<Entry[]>([]),
     [selected, setSelected] = useState<CopilotKnowledge>(),
     [statement, setStatement] = useState(""),
@@ -53,9 +58,22 @@ function CopilotMemoryScreenContent() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>();
+  useLayoutEffect(() => {
+    activeList.current = null;
+    return () => {
+      if (activeList.current?.repo === repo) activeList.current.active = false;
+    };
+  }, [repo]);
+  async function refreshEntries(expected = repo) {
+    const life = activeList.current;
+    if (!expected || !life?.active || life.repo !== expected) return;
+    const rows = await expected.list();
+    if (life.active && activeList.current === life) setEntries(rows);
+  }
   useFocusEffect(
     useCallback(() => {
-      let active = true;
+      const life = { repo, active: true };
+      activeList.current = life;
       if (repo)
         void (async () => {
           const rows = await repo.list();
@@ -71,7 +89,7 @@ function CopilotMemoryScreenContent() {
             params.source && !proposal
               ? await repo.source(params.source)
               : null;
-          if (active) {
+          if (life.active) {
             setEntries(rows);
             if (proposal) {
               const existing = rows.find(
@@ -102,7 +120,7 @@ function CopilotMemoryScreenContent() {
             }
           }
         })().catch(() => {
-          if (active)
+          if (life.active)
             setError(
               params.proposal
                 ? "Cette proposition ne peut pas être ouverte : synchronisez le chat et vérifiez si un message a été corrigé."
@@ -110,7 +128,7 @@ function CopilotMemoryScreenContent() {
             );
         });
       return () => {
-        active = false;
+        life.active = false;
       };
     }, [repo, params.source, params.proposal, sqlite, storeId, ownerId]),
   );
@@ -149,7 +167,11 @@ function CopilotMemoryScreenContent() {
           },
           { commandId: randomUUID(), deviceId },
         );
-      setEntries(await repo.list());
+      if (!activeList.current?.active || activeList.current.repo !== repo)
+        return;
+      await refreshEntries(repo).catch(() => undefined);
+      if (!activeList.current?.active || activeList.current.repo !== repo)
+        return;
       setStatement("");
       setSelected(undefined);
       setSourceId(null);
@@ -162,34 +184,11 @@ function CopilotMemoryScreenContent() {
             : "Pratique confirmée sur cet appareil. Elle sera disponible dans vos autres conversations après synchronisation.",
       );
       void syncNow(storeId)
-        .then(async () => setEntries(await repo.list()))
+        .then(() => refreshEntries(repo))
         .catch(() => undefined);
     } catch {
       setError(
         "Enregistrement impossible. Vérifiez la saisie et les éventuels conflits avant de réessayer.",
-      );
-    } finally {
-      writeLock.current = false;
-      setBusy(false);
-    }
-  }
-  async function resolve(entry: Entry, local: boolean) {
-    if (!repo || !storeId || writeLock.current) return;
-    writeLock.current = true;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await repo.resolve(entry.entity.id, local, {
-        commandId: randomUUID(),
-        deviceId,
-      });
-      setEntries(await repo.list());
-      void syncNow(storeId)
-        .then(async () => setEntries(await repo.list()))
-        .catch(() => undefined);
-    } catch {
-      setError(
-        "La version a changé. Rouvrez la mémoire avant de choisir une résolution.",
       );
     } finally {
       writeLock.current = false;
@@ -298,29 +297,10 @@ function CopilotMemoryScreenContent() {
                 : " · Saisie confirmée"}
             </Text>
             {["CONFLICT", "ERROR"].includes(entry.syncState) ? (
-              <View>
-                {entry.remote ? (
-                  <Text selectable style={{ color: colors.ink }}>
-                    Version synchronisée : {entry.remote.statement}
-                  </Text>
-                ) : null}
-                <SecondaryButton
-                  label="Conserver ma version locale"
-                  disabled={busy}
-                  onPress={() => {
-                    void resolve(entry, true);
-                  }}
-                />
-                {entry.remote ? (
-                  <SecondaryButton
-                    label="Utiliser la version synchronisée"
-                    disabled={busy}
-                    onPress={() => {
-                      void resolve(entry, false);
-                    }}
-                  />
-                ) : null}
-              </View>
+              <KnowledgeConflict
+                knowledgeId={entry.entity.id}
+                onResolved={() => refreshEntries(repo)}
+              />
             ) : entry.entity.status === "ACTIVE" ? (
               <View>
                 <SecondaryButton

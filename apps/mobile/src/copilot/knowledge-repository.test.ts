@@ -1,3 +1,4 @@
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
 import { expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
@@ -117,7 +118,7 @@ it("keeps conflicting versions for human choice and can adopt the synchronized v
     e = record(s);
   try {
     await runLocalMigrations(db);
-    const repo = new CopilotKnowledgeRepository(db, s);
+    const repo = new CopilotKnowledgeRepository(db, s, receiptReviewDigest);
     await repo.save(e, command());
     const remote = {
       ...e,
@@ -132,7 +133,14 @@ it("keeps conflicting versions for human choice and can adopt the synchronized v
     await expect(repo.save({ ...e, version: 2 }, command())).rejects.toThrow(
       "REVIEW",
     );
-    await repo.resolve(e.id, false, command());
+    const review = await repo.review(e.id);
+    await repo.resolve(e.id, false, {
+      ...command(),
+      ...s,
+      reviewHash: review.hash,
+      reviewCaptureId: randomUUID(),
+      canResolve: () => true,
+    });
     expect((await repo.list())[0]).toMatchObject({
       entity: remote,
       syncState: "SYNCED",
