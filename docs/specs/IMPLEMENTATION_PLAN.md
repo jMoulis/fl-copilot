@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current M7/M8 increment — 24 October: visual conflict groups
+
+Review the complete owned visual group and canonical command identities, then resolve its exact cohort through the existing rebase/library writers and visual audit history. Preserve the acknowledged-base semantics of `remote_version`: a newer typed dirty-pull cache is legitimate and still requires explicit review before ordinary edits. Keep binary/provenance/attribution, parent availability, rights and reactivation rules; recheck native scope/cancellation through commit using the shared review hook. See `../qa/M7_VISUAL_CONFLICT_GROUPS_2026_10_24.md`. No new provider, model capability, migration or API runtime policy. Both exact-head CI, grouped native delivery, image-transfer/device acceptance and all full V1/M8 gates remain required.
+
 ## Current M7/M8 increment — 24 October: private advice decision review
 
 Complete the existing private decision writer's group/cache/history-prefix review and hash; recheck authority/cancellation through commit and retain an independent local comparison capture. Keep chosen intent, immutable source and physical execution separate. Read the returned state within the transaction so read failure rolls back rather than falsely failing after commit. Reuse the native comparison hook in chat/sync; preserve draft fields across focus and bound post-send parent refresh. See `../qa/M7_RECOMMENDATION_DECISION_CONFLICTS_2026_10_24.md`. No new model tool, business permission, migration or API runtime behavior. Exact-head CI, grouped delivery, physical acceptance and all complete V1/M8 gates remain required.

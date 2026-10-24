@@ -8,7 +8,10 @@ import {
   type VisualEntityType,
   type VisualAsset,
 } from "@fl-copilot/domain";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  ConflictRepository,
+  reviewConflictVersions,
+} from "../sync/conflict-repository";
 import {
   joinedMutationDatabase,
   type AtomicMutationDatabase,
@@ -136,12 +139,52 @@ export class VisualConflictRepository {
       conflict.remoteVersion !== conflictRemote.version
     )
       throw Error("VISUAL_CONFLICT_SCOPE");
-    const remote =
-      current.remote && current.remote.version > conflictRemote.version
-        ? current.remote
-        : conflictRemote;
     await assertCanonicalVisualId(kind, current.entity);
-    await assertCanonicalVisualId(kind, remote);
+    const group = reviewConflictVersions(
+        await new ConflictRepository(this.db).listOpenForEntity(
+          storeId,
+          kind,
+          current.entity.id,
+        ),
+        (raw) => {
+          const parsed = visualEntitySchemas[kind].safeParse(raw);
+          return parsed.success ? (parsed.data as Entity) : null;
+        },
+        (candidate) =>
+          candidate.id === current.entity.id && candidate.storeId === storeId,
+        current.remote,
+      ),
+      remote = group.remote ?? conflictRemote;
+    let snapshotsValid = group.valid;
+    const owned = (raw: unknown) => {
+      const parsed = visualEntitySchemas[kind].safeParse(raw);
+      return parsed.success &&
+        parsed.data.id === current.entity.id &&
+        parsed.data.storeId === storeId &&
+        parsed.data.updatedBy === actorId
+        ? (parsed.data as Entity)
+        : null;
+    };
+    for (const entry of group.conflicts) {
+      const local = owned(entry.localPayload),
+        parsed = visualEntitySchemas[kind].safeParse(entry.remotePayload);
+      if (!local || !parsed.success) {
+        snapshotsValid = false;
+        continue;
+      }
+      try {
+        await assertCanonicalVisualId(kind, local);
+        await assertCanonicalVisualId(kind, parsed.data as Entity);
+      } catch {
+        snapshotsValid = false;
+      }
+    }
+    try {
+      if (current.remote) await assertCanonicalVisualId(kind, current.remote);
+      await assertCanonicalVisualId(kind, remote);
+    } catch {
+      snapshotsValid = false;
+    }
     const commands = await this.db.getAllAsync<{
       command_id: string;
       status: string;
@@ -155,12 +198,16 @@ export class VisualConflictRepository {
       current.entity.id,
       SUPERSEDED,
     );
-    const open = await this.db.getAllAsync<{ id: string }>(
-      "SELECT id FROM sync_conflicts WHERE store_id=? AND entity_type=? AND entity_id=? AND status='OPEN' ORDER BY id LIMIT 2",
-      storeId,
-      kind,
-      current.entity.id,
-    );
+    let commandsOwned = true;
+    for (const command of commands) {
+      try {
+        const payload = owned(JSON.parse(command.payload_json));
+        if (!payload) commandsOwned = false;
+        else await assertCanonicalVisualId(kind, payload);
+      } catch {
+        commandsOwned = false;
+      }
+    }
     const localParents = await readVisualParents(
       this.db,
       current.entity,
@@ -174,12 +221,9 @@ export class VisualConflictRepository {
       commands.length === 0 ||
       commands.length > 100 ||
       !commands.some((c) => c.command_id === conflict.commandId) ||
-      commands.some(
-        (c) =>
-          c.status === "SYNCING" ||
-          (JSON.parse(c.payload_json) as Entity).updatedBy !== actorId,
-      ) ||
-      open.length !== 1 ||
+      commands.some((c) => c.status === "SYNCING") ||
+      !commandsOwned ||
+      !snapshotsValid ||
       (current.remoteVersion ?? 0) > remote.version ||
       (current.remote?.version === remote.version &&
         JSON.stringify(current.remote) !== JSON.stringify(remote));
@@ -196,7 +240,7 @@ export class VisualConflictRepository {
         current,
         remote,
         commands,
-        open,
+        group,
         parents: [localParents.snapshots, remoteParents.snapshots],
       }),
     );
@@ -206,15 +250,20 @@ export class VisualConflictRepository {
       current,
       remote,
       commands,
+      group,
       hash,
       canKeep: !blocked && canRebase && localParents.clear,
       canAdopt: !blocked,
       reactivateLocal: visualReactivationRequired(remote, current.entity),
       reactivateRemote: visualReactivationRequired(current.entity, remote),
       labels: { ...localParents.labels, ...remoteParents.labels },
-      previews: { local: localParents.preview, remote: remoteParents.preview },
+      previews: {
+        local: localParents.preview,
+        remote: snapshotsValid ? remoteParents.preview : null,
+      },
       reason: blocked
-        ? "La comparaison a changé, appartient à un autre compte ou un envoi est en cours. Synchronisez puis relisez les versions."
+        ? (group.reason ??
+          "La comparaison a changé, appartient à un autre compte, contient une copie non vérifiée ou un envoi est en cours. Relisez les versions avant de décider.")
         : !localParents.clear
           ? "Le choix local dépend d’un produit ou d’un visuel à corriger. La version synchronisée peut être conservée."
           : !canRebase
@@ -238,9 +287,16 @@ export class VisualConflictRepository {
       signal?: AbortSignal;
     },
   ) {
+    const actorId = ctx.actorId,
+      deviceId = ctx.deviceId;
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       const allowed = () => {
-        if (!ctx.canResolve() || ctx.signal?.aborted)
+        if (
+          !ctx.canResolve() ||
+          ctx.signal?.aborted ||
+          ctx.actorId !== actorId ||
+          ctx.deviceId !== deviceId
+        )
           throw Error("VISUAL_CONFLICT_FORBIDDEN");
       };
       allowed();
@@ -251,6 +307,7 @@ export class VisualConflictRepository {
         this.digest,
         this.now,
       ).review(storeId, conflictId, ctx.actorId);
+      allowed();
       if (
         review.hash !== ctx.reviewHash ||
         !(useLocal ? review.canKeep : review.canAdopt)
@@ -288,7 +345,8 @@ export class VisualConflictRepository {
         storeId,
       );
       await applyVisualEntity(tx, storeId, kind, remote);
-      if (useLocal)
+      if (useLocal) {
+        allowed();
         await new VisualLibraryRepository(joinedMutationDatabase(tx)).save(
           kind,
           after,
@@ -298,9 +356,10 @@ export class VisualConflictRepository {
             deviceId: ctx.deviceId,
             commandId: ctx.commandId,
             expectedLocalVersion: remote.version,
-            canWrite: ctx.canResolve(),
+            canWrite: true,
           },
         );
+      }
       await tx.runAsync(
         "INSERT INTO visual_conflict_history(action_id,store_id,entity_type,entity_id,local_json,remote_json,resolved_json,decision,actor_id,created_at,commands_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         ctx.commandId,
@@ -315,13 +374,14 @@ export class VisualConflictRepository {
         at,
         JSON.stringify(review.commands),
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        at,
-        conflictId,
-        storeId,
-      );
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          at,
+          conflict.id,
+          storeId,
+        );
       if (
         after.deletedAt ||
         ("review" in after && after.review.status !== "APPROVED")

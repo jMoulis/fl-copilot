@@ -388,7 +388,7 @@ it("refuses stale comparisons after a newer remote or a changed parent", async (
   }
 });
 
-it("preserves other accounts' pending work, refuses in-flight and multiple-open conflicts", async () => {
+it("preserves other accounts' pending work, refuses in-flight and permits a complete owned group", async () => {
   const s = await setup();
   try {
     expect(
@@ -414,7 +414,7 @@ it("preserves other accounts' pending work, refuses in-flight and multiple-open 
     expect(
       (await s.conflicts.review(s.f.storeId, s.commandId, s.f.actorId))
         .canAdopt,
-    ).toBe(false);
+    ).toBe(true);
   } finally {
     s.close();
   }
