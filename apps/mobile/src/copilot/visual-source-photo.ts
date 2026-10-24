@@ -20,10 +20,9 @@ export async function localVisualSourcePhoto(
     source_type: string;
     original_filename: string | null;
     checksum: string | null;
-    created_at: string;
     deleted_at: string | null;
   }>(
-    "SELECT store_id,source_type,original_filename,checksum,created_at,deleted_at FROM source_documents WHERE id=?",
+    "SELECT store_id,source_type,original_filename,checksum,deleted_at FROM source_documents WHERE id=?",
     expected.sourceDocumentId,
   );
   if (
@@ -32,8 +31,7 @@ export async function localVisualSourcePhoto(
       row.source_type !== "STORE_PHOTO" ||
       row.deleted_at ||
       row.original_filename !== expected.filename ||
-      row.checksum !== expected.checksum ||
-      new Date(row.created_at).toISOString() !== expected.registeredAt)
+      row.checksum !== expected.checksum)
   )
     return null;
   const cached = await db.getFirstAsync<{ manifest_json: string }>(

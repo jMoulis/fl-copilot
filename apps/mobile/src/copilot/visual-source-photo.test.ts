@@ -229,3 +229,27 @@ it("does not admit source paths, fabricated approval or source arguments in the 
     s.db.raw.close();
   }
 });
+it("does not confuse native capture time with the later server registration time", async () => {
+  const s = await visualActionFixture("ASSIGN_SOURCE");
+  try {
+    const capturedAt = new Date(
+      Date.parse(s.sourcePhoto.registeredAt) - 60_000,
+    ).toISOString();
+    s.db.raw
+      .prepare("UPDATE source_documents SET created_at=? WHERE id=?")
+      .run(capturedAt, s.sourcePhoto.sourceDocumentId);
+    expect((await s.controller.open(s.message)).status).toBe("READY");
+    await s.controller.prepareSourcePhoto(s.message);
+    expect(
+      (
+        await s.controller.confirm(
+          s.message,
+          s.state.review!.basisHash,
+          s.consent,
+        )
+      ).status,
+    ).toBe("COMPLETED");
+  } finally {
+    s.db.raw.close();
+  }
+});

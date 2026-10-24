@@ -362,7 +362,7 @@ export class CopilotVisualActionController {
       }
       let result: ReturnType<typeof visualActionResultSchema.parse> | undefined;
       await this.db.withExclusiveTransactionAsync(async (outer) => {
-        await storedProposal(outer, this.scope, message.id);
+        const artifact = await storedProposal(outer, this.scope, message.id);
         result = await runReviewedStoreOperation(
           joinedProductToolDatabase(outer),
           request,
@@ -376,7 +376,6 @@ export class CopilotVisualActionController {
           },
           visualActionResultSchema,
           async (tx, ctx) => {
-            const artifact = await storedProposal(tx, this.scope, message.id);
             if (
               artifact.message.conversationId !== ctx.conversationId ||
               artifact.message.replyToMessageId !== ctx.userMessageId
