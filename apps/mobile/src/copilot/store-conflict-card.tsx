@@ -202,8 +202,10 @@ export function StoreConflictCard({
         const e = commercialWeekPlanSchema.parse(raw);
         return `${commercialPlanSummary(e)}\nNote du brouillon : ${e.preparation.note || "aucune"}`;
       }
-      case "FIELD_EVENT":
-        return storeEventSummary(storeProductEventSchema.parse(raw));
+      case "FIELD_EVENT": {
+        const event = storeProductEventSchema.parse(raw);
+        return `Produit : ${review?.eventReview?.products[event.productId] ?? "Référence non disponible localement"}\n${storeEventSummary(event)}`;
+      }
       case "SETTINGS":
         return storeContextSummary(storeContextSettingsSchema.parse(raw));
       case "NEED":
@@ -303,6 +305,14 @@ export function StoreConflictCard({
               locaux actuels et la version synchronisée v
               {review.remote?.version}. Les versions précédentes restent
               conservées.
+            </Text>
+          ) : null}
+          {(review.eventReview?.group.conflicts.length ?? 0) > 1 ? (
+            <Text style={{ color: colors.ink }}>
+              {review.eventReview!.group.conflicts.length} conflits concernent
+              cette même observation. Votre choix porte sur l’observation locale
+              actuelle et la version synchronisée v{review.remote?.version}. Les
+              versions précédentes restent conservées.
             </Text>
           ) : null}
           <Text style={{ fontWeight: "600" }}>Votre version actuelle</Text>

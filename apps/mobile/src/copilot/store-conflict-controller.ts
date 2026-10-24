@@ -264,10 +264,19 @@ export class CopilotStoreConflictRuntime {
             { commandId, deviceId: ctx.deviceId },
           );
         else if (request.kind === "FIELD_EVENT")
-          await new StoreProductEventRepository(joined).resolve(
+          await new StoreProductEventRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId, capturedAt: appliedAt },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              capturedAt: appliedAt,
+              storeId: ctx.storeId,
+              reviewHash: review.eventReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+            },
           );
         else if (request.kind === "SETTINGS")
           await new StoreContextRepository(joined, this.digest).resolve(

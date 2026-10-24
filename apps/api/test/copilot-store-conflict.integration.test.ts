@@ -121,6 +121,8 @@ describe.skipIf(!uri)(
     it.skipIf(process.env.TEST_MONGODB_TRANSACTIONS !== "true").each([
       ["FIELD_EVENT", "KEEP_LOCAL", "AI"],
       ["FIELD_EVENT", "ADOPT_REMOTE", "AI"],
+      ["FIELD_EVENT", "KEEP_LOCAL", "GROUP"],
+      ["FIELD_EVENT", "ADOPT_REMOTE", "GROUP"],
       ["SETTINGS", "KEEP_LOCAL", "AI"],
       ["SETTINGS", "ADOPT_REMOTE", "FALLBACK"],
       ["SETTINGS", "KEEP_LOCAL", "GROUP"],

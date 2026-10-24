@@ -12,7 +12,10 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  ConflictRepository,
+  reviewConflictVersions,
+} from "../sync/conflict-repository";
 type Row = {
   id: string;
   store_id: string;
@@ -82,8 +85,124 @@ export async function applyStoreProductEvent(
     e.version,
   );
 }
+export async function readStoreEventConflictReview(
+  db: OutboxDatabase,
+  storeId: string,
+  conflictId: string,
+  digest: (s: string) => Promise<string>,
+) {
+  const requested = await new ConflictRepository(db).getById(conflictId);
+  if (
+    !requested ||
+    requested.storeId !== storeId ||
+    requested.entityType !== "store_product_event" ||
+    requested.status !== "OPEN"
+  )
+    throw Error("STORE_EVENT_RESOLUTION_INVALID");
+  const row = await db.getFirstAsync<Row>(
+    "SELECT * FROM store_product_events WHERE id=? AND store_id=?",
+    requested.entityId,
+    storeId,
+  );
+  if (!row) throw Error("STORE_EVENT_RESOLUTION_INVALID");
+  const current = mapped(row),
+    local = current.entity;
+  if (local.id !== requested.entityId || local.storeId !== storeId)
+    throw Error("STORE_EVENT_STORE_INVALID");
+  const conflicts = await new ConflictRepository(db).listOpenForEntity(
+      storeId,
+      "store_product_event",
+      local.id,
+    ),
+    group = reviewConflictVersions(
+      conflicts,
+      (raw) => {
+        const parsed = storeProductEventSchema.safeParse(raw);
+        return parsed.success ? parsed.data : null;
+      },
+      (remote) => remote.id === local.id && remote.storeId === storeId,
+      current.remote,
+    ),
+    remote = group.remote,
+    commands = await db.getAllAsync<{
+      command_id: string;
+      status: string;
+      payload_json: string;
+      expected_remote_version: number | null;
+    }>(
+      "SELECT command_id,status,payload_json,expected_remote_version FROM sync_outbox WHERE store_id=? AND entity_type='store_product_event' AND entity_id=? AND status IN ('PENDING','SYNCING','CONFLICT','FAILED') ORDER BY local_sequence LIMIT 101",
+      storeId,
+      local.id,
+    );
+  const productRows = await db.getAllAsync<{ id: string; label: string }>(
+      "SELECT id,label FROM products WHERE store_id=? AND id IN (?,?) ORDER BY id",
+      storeId,
+      local.productId,
+      remote?.productId ?? local.productId,
+    ),
+    products: Record<string, string> = Object.fromEntries(
+      productRows.map((p) => [p.id, p.label]),
+    );
+  const sameRemoteCapture =
+    !!remote &&
+    conflicts.every((c) => {
+      const parsed = storeProductEventSchema.safeParse(c.remotePayload);
+      return parsed.success && sameStoreEventCapture(parsed.data, remote);
+    }) &&
+    (!current.remote || sameStoreEventCapture(current.remote, remote));
+  const ready =
+      group.valid &&
+      !!remote &&
+      sameRemoteCapture &&
+      current.syncState === "CONFLICT" &&
+      (current.remoteVersion ?? 0) <= remote.version &&
+      commands.length <= 100 &&
+      !commands.some((c) => c.status === "SYNCING"),
+    canKeepLocal =
+      ready &&
+      local.source === "USER" &&
+      remote!.source === "USER" &&
+      local.status === "CLOSED" &&
+      sameStoreEventCapture(local, remote!),
+    canAdoptRemote = ready;
+  const reason =
+    group.reason ??
+    (!sameRemoteCapture
+      ? "La capture initiale des versions synchronisées diffère. Aucune observation n’est réaffectée automatiquement."
+      : !ready
+        ? "Le signalement a changé ou un envoi est en cours. Relisez la comparaison avant de décider."
+        : !canKeepLocal
+          ? "Seule la fin d’une observation magasin déjà clôturée et de capture identique peut être conservée. Vous pouvez adopter la version synchronisée sans la transformer en nouvelle observation."
+          : null);
+  const hash = await digest(
+    JSON.stringify({ row, conflicts, commands, remote, products }),
+  );
+  return {
+    current,
+    group,
+    hash,
+    ready,
+    canKeepLocal,
+    canAdoptRemote,
+    reason,
+    products,
+  };
+}
 export class StoreProductEventRepository {
-  constructor(private db: AtomicMutationDatabase & OutboxDatabase) {}
+  constructor(
+    private db: AtomicMutationDatabase & OutboxDatabase,
+    private digest: (s: string) => Promise<string> = async () => {
+      throw Error("STORE_EVENT_DIGEST_REQUIRED");
+    },
+  ) {}
+  review(storeId: string, conflictId: string) {
+    return readStoreEventConflictReview(
+      this.db,
+      storeId,
+      conflictId,
+      this.digest,
+    );
+  }
   async list(storeId: string) {
     return (
       await this.db.getAllAsync<Row>(
@@ -290,58 +409,55 @@ export class StoreProductEventRepository {
   async resolve(
     conflictId: string,
     useLocal: boolean,
-    ctx: { commandId: string; deviceId: string; capturedAt: string },
+    ctx: {
+      storeId: string;
+      commandId: string;
+      remoteHistoryId: string;
+      deviceId: string;
+      capturedAt: string;
+      reviewHash: string;
+      canResolve: () => boolean;
+      signal?: AbortSignal;
+    },
   ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const c = await new ConflictRepository(tx).getById(conflictId);
-      if (!c || c.entityType !== "store_product_event" || c.status !== "OPEN")
-        throw Error("STORE_EVENT_RESOLUTION_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-        "SELECT * FROM store_product_events WHERE id=? AND store_id=?",
-        c.entityId,
-        c.storeId,
-      );
-      if (!row) throw Error("STORE_EVENT_RESOLUTION_INVALID");
-      const local = mapped(row).entity,
-        parsed = storeProductEventSchema.safeParse(c.remotePayload),
-        remote = parsed.success ? parsed.data : null;
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("STORE_EVENT_FORBIDDEN");
+      const review = await readStoreEventConflictReview(
+          tx,
+          ctx.storeId,
+          conflictId,
+          this.digest,
+        ),
+        local = review.current.entity,
+        remote = review.group.remote;
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("STORE_EVENT_FORBIDDEN");
       if (
-        remote &&
-        (remote.id !== local.id || remote.storeId !== local.storeId)
+        !remote ||
+        review.hash !== ctx.reviewHash ||
+        !(useLocal ? review.canKeepLocal : review.canAdoptRemote)
       )
-        throw Error("STORE_EVENT_STORE_INVALID");
-      if (
-        useLocal &&
-        (!remote ||
-          !sameStoreEventCapture(local, remote) ||
-          local.status !== "CLOSED")
-      )
-        throw Error("STORE_EVENT_IMMUTABLE_CAPTURE");
-      if (!useLocal && !remote) throw Error("STORE_EVENT_REMOTE_MISSING");
-      const pending = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) n FROM sync_outbox WHERE store_id=? AND entity_type='store_product_event' AND entity_id=? AND status='SYNCING'",
-        c.storeId,
-        c.entityId,
-      );
-      if (pending?.n) throw Error("STORE_EVENT_SYNCING");
+        throw Error("STORE_EVENT_SOURCE_CHANGED");
       const sameEnd =
           useLocal &&
-          remote?.status === "CLOSED" &&
+          remote.status === "CLOSED" &&
           local.endedAt === remote.endedAt,
         next =
           useLocal && !sameEnd
-            ? closeStoreProductEvent(remote!, local.endedAt!, ctx.capturedAt)
-            : remote!;
-      await retire(tx, c.storeId, c.entityId);
+            ? closeStoreProductEvent(remote, local.endedAt!, ctx.capturedAt)
+            : remote;
+      await retire(tx, local.storeId, local.id);
       await tx.runAsync(
-        "UPDATE store_product_events SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=?,product_id=? WHERE id=?",
+        "UPDATE store_product_events SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=?,product_id=? WHERE id=? AND store_id=?",
         JSON.stringify(next),
         JSON.stringify(remote),
-        remote!.version,
+        remote.version,
         useLocal && !sameEnd ? "PENDING" : "SYNCED",
         useLocal && !sameEnd ? 1 : 0,
         next.productId,
-        c.entityId,
+        local.id,
+        local.storeId,
       );
       await history(
         tx,
@@ -350,26 +466,44 @@ export class StoreProductEventRepository {
         useLocal ? "RESOLVE_LOCAL" : "RESOLVE_REMOTE",
         ctx.capturedAt,
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='store_product_event' AND entity_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        ctx.capturedAt,
-        c.storeId,
-        c.entityId,
-      );
+      if (
+        !review.group.conflicts.some(
+          (c) =>
+            JSON.stringify(storeProductEventSchema.parse(c.remotePayload)) ===
+            JSON.stringify(remote),
+        )
+      )
+        await history(
+          tx,
+          remote,
+          ctx.remoteHistoryId,
+          "RESOLUTION_REMOTE_BASELINE",
+          ctx.capturedAt,
+        );
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          ctx.capturedAt,
+          conflict.id,
+          local.storeId,
+        );
       if (useLocal && !sameEnd)
         await enqueue(
           tx,
           next,
           ctx,
           "CLOSE_STORE_EVENT",
-          remote!.version,
+          remote.version,
           { endedAt: next.endedAt },
           ctx.capturedAt,
         );
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("STORE_EVENT_FORBIDDEN");
     });
   }
 }
+
 async function history(
   tx: OutboxDatabase,
   e: StoreProductEvent,

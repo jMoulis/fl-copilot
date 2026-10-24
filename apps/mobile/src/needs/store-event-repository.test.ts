@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { it, expect, afterEach } from "vitest";
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
 import { storeEventFixture } from "../../../../scripts/test-store-event-fixtures";
 import {
   storeEventCapturePayload,
@@ -85,7 +86,7 @@ async function setup() {
     db,
     tx,
     path,
-    repo: new StoreProductEventRepository(tx),
+    repo: new StoreProductEventRepository(tx, receiptReviewDigest),
     ctx: {
       commandId: randomUUID(),
       deviceId: randomUUID(),
@@ -306,8 +307,13 @@ it("records a complete conflict snapshot and explicitly rebases only a compatibl
     productId: f.product.id,
     status: "CLOSED",
   });
+  const comparison = await f.repo.review(f.event.storeId, conflicts[0]!.id);
   await f.repo.resolve(conflicts[0]!.id, true, {
     ...f.ctx,
+    storeId: f.event.storeId,
+    reviewHash: comparison.hash,
+    remoteHistoryId: randomUUID(),
+    canResolve: () => true,
     commandId: randomUUID(),
   });
   expect((await f.repo.get(f.event.storeId, f.event.id))?.entity).toMatchObject(

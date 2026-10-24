@@ -1,7 +1,7 @@
 import { useAuth } from "@/auth/auth-provider";
-import { useMemo, useRef, useState, useCallback, useLayoutEffect } from "react";
+import { useMemo, useCallback } from "react";
 import { Text, View, Switch } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import {
   randomUUID,
   digestStringAsync,
@@ -12,6 +12,7 @@ import { useLocalDatabase } from "@/providers/database-provider";
 import { useSync } from "@/sync/sync-provider";
 import { SectionCard, SecondaryButton, InlineAlert } from "@/components/ui";
 import { StoreContextRepository } from "./context-repository";
+import { useReviewedConflict } from "../components/use-reviewed-conflict";
 import { storeContextSummary, storeContextError } from "./context-presentation";
 
 const digest = (s: string) =>
@@ -40,121 +41,51 @@ function StoreContextConflictReview({ conflict }: { conflict: SyncConflict }) {
       [sqlite],
     );
   const scope = useMemo(
-      () => ({
-        repository,
-        deviceId,
-        storeId: conflict.storeId,
-        conflictId: conflict.id,
-      }),
-      [repository, deviceId, conflict.storeId, conflict.id],
-    ),
-    activeScope = useRef<typeof scope | null>(null);
-  useLayoutEffect(() => {
-    activeScope.current = scope;
-    return () => {
-      if (activeScope.current === scope) activeScope.current = null;
-    };
-  }, [scope]);
-  const [review, setReview] =
-      useState<Awaited<ReturnType<StoreContextRepository["review"]>>>(),
-    [compared, setCompared] = useState(false),
-    [busy, setBusy] = useState(false),
-    [reading, setReading] = useState(true),
-    [error, setError] = useState<string>();
-  const revision = useRef(0),
-    live = useRef(false),
-    locked = useRef(false),
-    abort = useRef<AbortController | undefined>(undefined);
-  useFocusEffect(
-    useCallback(() => {
-      const v = ++revision.current;
-      live.current = true;
-      locked.current = false;
-      abort.current = undefined;
-      setReview(undefined);
-      setReading(true);
-      setCompared(false);
-      setBusy(false);
-      setError(undefined);
-      void repository
-        .review(conflict.storeId, conflict.id)
-        .then((next) => {
-          if (live.current && revision.current === v) {
-            setReview(next);
-            setReading(false);
-          }
-        })
-        .catch(() => {
-          if (live.current && revision.current === v) {
-            setReading(false);
-            setError(
-              "La comparaison ne peut pas être lue. Les réglages et modifications restent conservés ; réessayez la lecture.",
-            );
-          }
-        });
-      return () => {
-        live.current = false;
-        revision.current++;
-        abort.current?.abort();
-      };
-    }, [repository, conflict.storeId, conflict.id]),
+    () => ({
+      repository,
+      deviceId,
+      storeId: conflict.storeId,
+      conflictId: conflict.id,
+    }),
+    [repository, deviceId, conflict.storeId, conflict.id],
   );
-  const renderedRevision = revision.current;
-  async function resolve(useLocal: boolean) {
-    if (
-      activeScope.current !== scope ||
-      renderedRevision !== revision.current ||
-      locked.current ||
-      !live.current ||
-      reading ||
-      !!error ||
-      !review?.canResolve ||
-      !compared
-    )
-      return;
-    const v = revision.current,
-      cancel = new AbortController();
-    locked.current = true;
-    abort.current = cancel;
-    setBusy(true);
-    setError(undefined);
-    const current = () =>
-      activeScope.current === scope && live.current && revision.current === v;
-    try {
-      await repository.resolve(conflict.id, useLocal, {
+  const read = useCallback(
+    () => repository.review(conflict.storeId, conflict.id),
+    [repository, conflict.storeId, conflict.id],
+  );
+  const {
+    review,
+    compared,
+    setCompared,
+    busy,
+    reading,
+    error,
+    resolve,
+    reload,
+  } = useReviewedConflict({
+    scope,
+    read,
+    canChoose: (r) => r.canResolve,
+    choose: (r, useLocal, lifetime) =>
+      repository.resolve(conflict.id, useLocal, {
         storeId: conflict.storeId,
         commandId: randomUUID(),
         remoteHistoryId: randomUUID(),
         deviceId,
-        reviewHash: review.hash,
-        canResolve: current,
-        signal: cancel.signal,
-      });
-      if (current()) {
-        void syncNow(conflict.storeId).catch(() => undefined);
-        router.back();
-      }
-    } catch (reason) {
-      if (current()) {
-        setCompared(false);
-        setError(
-          storeContextError(
-            reason instanceof Error ? reason.message : undefined,
-          ),
-        );
-        const next = await repository
-          .review(conflict.storeId, conflict.id)
-          .catch(() => undefined);
-        if (current()) setReview(next);
-      }
-    } finally {
-      if (abort.current === cancel) {
-        abort.current = undefined;
-        locked.current = false;
-        if (current()) setBusy(false);
-      }
-    }
-  }
+        reviewHash: r.hash,
+        ...lifetime,
+      }),
+    errorText: (reason) =>
+      storeContextError(reason instanceof Error ? reason.message : undefined),
+    onSuccess: () => {
+      void syncNow(conflict.storeId).catch(() => undefined);
+      router.back();
+    },
+    readError:
+      "La comparaison ne peut pas être lue. Les réglages et modifications restent conservés ; réessayez la lecture.",
+    reloadError:
+      "La comparaison ne peut pas être relue. Vos réglages sont conservés.",
+  });
   return (
     <>
       {reading ? (
@@ -222,28 +153,7 @@ function StoreContextConflictReview({ conflict }: { conflict: SyncConflict }) {
       <SecondaryButton
         label="Relire la comparaison"
         disabled={busy || reading}
-        onPress={() => {
-          const v = ++revision.current;
-          setReading(true);
-          setCompared(false);
-          setError(undefined);
-          void repository
-            .review(conflict.storeId, conflict.id)
-            .then((next) => {
-              if (live.current && revision.current === v) {
-                setReview(next);
-                setReading(false);
-              }
-            })
-            .catch(() => {
-              if (live.current && revision.current === v) {
-                setReading(false);
-                setError(
-                  "La comparaison ne peut pas être relue. Vos réglages sont conservés.",
-                );
-              }
-            });
-        }}
+        onPress={reload}
       />
     </>
   );
