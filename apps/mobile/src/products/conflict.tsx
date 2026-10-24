@@ -212,6 +212,14 @@ export function ProductMasterConflict({
       ) : null}
       {review ? (
         <>
+          {review.conflicts.length > 1 ? (
+            <Text style={{ color: colors.ink }}>
+              {review.conflicts.length} conflits concernent cette même fiche.
+              Votre choix porte sur la version locale actuelle et la version
+              synchronisée v{review.remote.version}. Les versions précédentes
+              restent conservées dans l’historique.
+            </Text>
+          ) : null}
           <Text style={{ color: colors.ink, fontWeight: "700" }}>
             Votre version actuelle
           </Text>

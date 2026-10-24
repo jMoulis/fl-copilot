@@ -200,6 +200,66 @@ export async function readCatalogueConflictPolicy(
       "Le produit associé doit être actif et sans erreur de synchronisation avant de renvoyer cette identité.";
   return result;
 }
+/** A catalogue decision concerns one current local aggregate and its verified remote
+ * baseline. Older conflict rows remain immutable evidence, not independent edits to replay. */
+export async function readCatalogueConflictGroup(
+  db: OutboxDatabase,
+  storeId: string,
+  kind: CatalogueConflictKind,
+  local: unknown,
+  synchronized: unknown = null,
+) {
+  const entity = catalogueConflictSchemas[kind].parse(local),
+    conflicts = await new ConflictRepository(db).listOpenForEntity(
+      storeId,
+      catalogueConflictTypes[kind],
+      entity.id,
+    ),
+    conflict = conflicts[0] ?? null,
+    parsed = catalogueConflictSchemas[kind].safeParse(conflict?.remotePayload),
+    captured = parsed.success ? parsed.data : null;
+  let remote = captured;
+  const versions = new Map<number, string>();
+  let valid = conflicts.length > 0 && conflicts.length <= 100;
+  for (const entry of conflicts) {
+    const candidate = catalogueConflictSchemas[kind].safeParse(
+      entry.remotePayload,
+    );
+    if (
+      !candidate.success ||
+      candidate.data.version !== entry.remoteVersion ||
+      !catalogueConflictIdentity(kind, entity, candidate.data)
+    ) {
+      valid = false;
+      continue;
+    }
+    const serialized = JSON.stringify(candidate.data),
+      previous = versions.get(candidate.data.version);
+    if (previous !== undefined && previous !== serialized) valid = false;
+    versions.set(candidate.data.version, serialized);
+  }
+  if (synchronized !== null) {
+    const snapshot = catalogueConflictSchemas[kind].safeParse(synchronized);
+    if (
+      !snapshot.success ||
+      !catalogueConflictIdentity(kind, entity, snapshot.data)
+    )
+      valid = false;
+    else {
+      const previous = versions.get(snapshot.data.version);
+      if (previous !== undefined && previous !== JSON.stringify(snapshot.data))
+        valid = false;
+      if (!remote || snapshot.data.version > remote.version)
+        remote = snapshot.data;
+    }
+  }
+  const reason = valid
+    ? null
+    : conflicts.length > 100
+      ? "L’historique dépasse la limite de cette comparaison. Toutes les versions restent conservées."
+      : "Les versions conservées sont incomplètes ou contradictoires. Aucune résolution ne peut être appliquée à cette identité.";
+  return { conflicts, conflict, remote, valid, reason };
+}
 export class ProductMasterConflictRepository {
   constructor(
     private db: OutboxDatabase & AtomicMutationDatabase,
@@ -214,17 +274,25 @@ export class ProductMasterConflictRepository {
     ).find((k) => catalogueConflictTypes[k] === conflict.entityType);
     if (!kind) throw Error("CATALOGUE_CONFLICT_KIND");
     const current = await readCatalogueConflictCurrent(
+      this.db,
+      storeId,
+      kind,
+      conflict.entityId,
+    );
+    if (!current) throw Error("CATALOGUE_CONFLICT_SCOPE");
+    const group = await readCatalogueConflictGroup(
         this.db,
         storeId,
         kind,
-        conflict.entityId,
+        current.entity,
+        current.remote,
       ),
-      remote = catalogueConflictSchemas[kind].parse(conflict.remotePayload);
+      remote = group.remote;
+
     if (
-      !current ||
+      !remote ||
       remote.storeId !== storeId ||
-      remote.id !== conflict.entityId ||
-      remote.version !== conflict.remoteVersion
+      remote.id !== conflict.entityId
     )
       throw Error("CATALOGUE_CONFLICT_SCOPE");
     const commands = await this.db.getAllAsync<{
@@ -238,12 +306,7 @@ export class ProductMasterConflictRepository {
         conflict.entityType,
         conflict.entityId,
       ),
-      open = await this.db.getAllAsync<{ id: string }>(
-        "SELECT id FROM sync_conflicts WHERE store_id=? AND entity_type=? AND entity_id=? AND status='OPEN' ORDER BY id LIMIT 2",
-        storeId,
-        conflict.entityType,
-        conflict.entityId,
-      ),
+      open = group.conflicts,
       policy = await readCatalogueConflictPolicy(
         this.db,
         kind,
@@ -252,7 +315,7 @@ export class ProductMasterConflictRepository {
       );
     const blocked =
       current.syncState !== "CONFLICT" ||
-      open.length !== 1 ||
+      !group.valid ||
       commands.length > 100 ||
       commands.some((c) => c.status === "SYNCING") ||
       (current.remoteVersion ?? 0) > remote.version ||
@@ -276,13 +339,16 @@ export class ProductMasterConflictRepository {
       current,
       remote,
       conflict,
+      conflicts: group.conflicts,
       policy,
       hash,
       canKeep: !blocked && policy.canKeep,
       canAdopt: !blocked && policy.canAdopt,
-      reason: blocked
-        ? "La comparaison a changé ou un envoi est en cours. Synchronisez puis relisez les versions."
-        : policy.reason,
+      reason: !group.valid
+        ? group.reason
+        : blocked
+          ? "La comparaison a changé ou un envoi est en cours. Synchronisez puis relisez les versions."
+          : policy.reason,
     };
   }
   async resolve(
@@ -428,13 +494,14 @@ export class ProductMasterConflictRepository {
         useLocal ? "KEEP_LOCAL" : "ADOPT_REMOTE",
         now,
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
-        conflictId,
-        storeId,
-      );
+      for (const entry of review.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          entry.id,
+          storeId,
+        );
       await queueProductRecomputation(
         tx,
         storeId,

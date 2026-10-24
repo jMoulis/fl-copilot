@@ -4,6 +4,7 @@ import {
 } from "@fl-copilot/domain";
 import {
   readCatalogueConflictCurrent,
+  readCatalogueConflictGroup,
   readCatalogueConflictPolicy,
 } from "../products/conflict-repository";
 import {
@@ -135,12 +136,14 @@ export async function readStoreConflictReview(
     MEMBERSHIP: "need_membership",
     SUBSTITUTION: "product_substitution",
   }[input.kind];
-  const rows = await db.getAllAsync<{ id: string }>(
-    "SELECT id FROM sync_conflicts WHERE store_id=? AND entity_type=? AND entity_id=? AND status='OPEN' ORDER BY created_at DESC,id DESC LIMIT 2",
-    basis.storeId,
-    entityType,
-    basis.entityId,
-  );
+  const rows = isCatalogueConflictKind(input.kind)
+    ? []
+    : await db.getAllAsync<{ id: string }>(
+        "SELECT id FROM sync_conflicts WHERE store_id=? AND entity_type=? AND entity_id=? AND status='OPEN' ORDER BY created_at DESC,id DESC LIMIT 2",
+        basis.storeId,
+        entityType,
+        basis.entityId,
+      );
   const current = await readStoreConflictCurrent(db, content, digest);
   if (
     !current ||
@@ -148,9 +151,20 @@ export async function readStoreConflictReview(
     current.entity.storeId !== basis.storeId
   )
     throw Error("STORE_CONFLICT_LOCAL_UNAVAILABLE");
-  const conflict = rows[0]
-    ? await new ConflictRepository(db).getById(rows[0].id)
+  const catalogueGroup = isCatalogueConflictKind(input.kind)
+    ? await readCatalogueConflictGroup(
+        db,
+        basis.storeId,
+        input.kind,
+        current.entity,
+        current.remote,
+      )
     : null;
+  const conflict = catalogueGroup
+    ? catalogueGroup.conflict
+    : rows[0]
+      ? await new ConflictRepository(db).getById(rows[0].id)
+      : null;
   let status: "READY" | "BLOCKED" | "UNCHANGED" = "READY",
     reason: string | null = null;
   const block = (message: string) => {
@@ -179,7 +193,11 @@ export async function readStoreConflictReview(
                       ? needMembershipSchema
                       : productSubstitutionSchema;
   const parsed = remoteSchema.safeParse(conflict?.remotePayload);
-  const remote = parsed.success ? parsed.data : null;
+  const remote = catalogueGroup
+    ? catalogueGroup.remote
+    : parsed.success
+      ? parsed.data
+      : null;
   const commands = await db.getAllAsync<{
     command_id: string;
     status: string;
@@ -197,16 +215,18 @@ export async function readStoreConflictReview(
         "Le détail du conflit manque. Synchronisez avant de demander une nouvelle comparaison.",
       );
     else status = "UNCHANGED";
-  } else if (rows.length !== 1)
+  } else if (catalogueGroup ? !catalogueGroup.valid : rows.length !== 1)
     block(
-      "Plusieurs conflits concernent cette donnée. Examinez-les dans Synchronisation avant de décider.",
+      catalogueGroup
+        ? catalogueGroup.reason!
+        : "Plusieurs conflits concernent cette donnée. Examinez-les dans Synchronisation avant de décider.",
     );
   else if (
     current.syncState !== "CONFLICT" ||
     !remote ||
     remote.storeId !== basis.storeId ||
     remote.id !== basis.entityId ||
-    conflict.remoteVersion !== remote.version ||
+    (!catalogueGroup && conflict.remoteVersion !== remote.version) ||
     remote.version !== basis.remoteVersion ||
     (await digest(JSON.stringify(remote))) !== basis.remoteHash
   )
@@ -322,7 +342,12 @@ export async function readStoreConflictReview(
       current,
       conflict,
       commands,
-      ...(cataloguePolicy ? { catalogue: cataloguePolicy.snapshots } : {}),
+      ...(cataloguePolicy
+        ? {
+            catalogue: cataloguePolicy.snapshots,
+            conflicts: catalogueGroup?.conflicts,
+          }
+        : {}),
       ...(needPolicy ? { parents: needPolicy.parentSnapshots } : {}),
       ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
       ...(commercialDecisionPolicy
@@ -347,6 +372,7 @@ export async function readStoreConflictReview(
             ? needPolicy.canAdopt
             : !!remote,
     cataloguePolicy,
+    catalogueConflicts: catalogueGroup?.conflicts,
     commercialPolicy,
     commercialDecisionPolicy,
     needPolicy,

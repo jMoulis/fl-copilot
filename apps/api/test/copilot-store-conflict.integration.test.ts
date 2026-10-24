@@ -124,6 +124,12 @@ describe.skipIf(!uri)(
       ["SETTINGS", "KEEP_LOCAL", "AI"],
       ["SETTINGS", "ADOPT_REMOTE", "FALLBACK"],
       ["SETTINGS", "KEEP_LOCAL", "FOREIGN"],
+      ["PRODUCT", "KEEP_LOCAL", "GROUP"],
+      ["PRODUCT", "ADOPT_REMOTE", "GROUP"],
+      ["IDENTIFIER", "KEEP_LOCAL", "GROUP"],
+      ["IDENTIFIER", "ADOPT_REMOTE", "GROUP"],
+      ["ALIAS", "KEEP_LOCAL", "GROUP"],
+      ["ALIAS", "ADOPT_REMOTE", "GROUP"],
       ["PRODUCT", "KEEP_LOCAL", "AI"],
       ["PRODUCT", "ADOPT_REMOTE", "AI"],
       ["IDENTIFIER", "KEEP_LOCAL", "AI"],
@@ -434,6 +440,52 @@ describe.skipIf(!uri)(
               response.results[0]!,
             );
           }
+          if (mode === "GROUP") {
+            const command = await new OutboxRepository(s.a).enqueue({
+              ...r.command,
+              commandId: randomUUID(),
+            });
+            const response = await createMongoSyncPushService({
+              getDb: async () => db,
+              close: async () => {},
+              checkHealth: async () => "connected",
+            }).push(
+              syncPushRequestSchema.parse({
+                syncProtocolVersion: 1,
+                appVersion: "test",
+                deviceId: s.scope.deviceId,
+                storeId: chat.storeId,
+                commands: [
+                  {
+                    commandId: command.commandId,
+                    localSequence: command.localSequence,
+                    type: command.commandType,
+                    entityType: command.entityType,
+                    entityId: command.entityId,
+                    expectedRemoteVersion: command.expectedRemoteVersion,
+                    createdAt: command.createdAt,
+                    payload: command.payload,
+                  },
+                ],
+              }),
+              randomUUID(),
+            );
+            expect(response.results[0]).toMatchObject({
+              status: "CONFLICT",
+              remoteVersion: 2,
+            });
+            await new ConflictRepository(s.a).recordPushConflict(
+              command,
+              response.results[0]!,
+            );
+            await s.a.runAsync(
+              "UPDATE sync_outbox SET status='CONFLICT' WHERE command_id=?",
+              command.commandId,
+            );
+            expect(
+              (await new ConflictRepository(s.a).listOpen(chat.storeId)).length,
+            ).toBe(2);
+          }
           const state = await r.controller.open(card);
           expect(state.status).toBe("READY");
           if (
@@ -491,6 +543,14 @@ describe.skipIf(!uri)(
               )
             ).status,
           ).toBe("COMPLETED");
+          if (mode === "GROUP") {
+            expect(
+              await new ConflictRepository(s.a).listOpen(chat.storeId),
+            ).toHaveLength(0);
+            expect(
+              s.db.prepare("SELECT COUNT(*) n FROM sync_conflicts").get()!.n,
+            ).toBe(2);
+          }
           const commands = (
             await new OutboxRepository(s.a).listPending(chat.storeId)
           ).filter((c) => c.entityType === r.entityType);
