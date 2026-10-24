@@ -1,5 +1,17 @@
 # M7 — suivi des sept chantiers V1
 
+## Livraison groupée disponible — 24 octobre, API 375 et iOS 16
+
+**API livrée :** `8c72dfb`, déploiement `dpl_FkhnTQK82vVyENZ5CAth6NGXNhxv`, production `https://fl-copilot.vercel.app`. Les CI exactes push/PR puis master passent chacune avec **5 192 tests / 6 ignorés**. Le même artefact préparé a été promu ; santé/Mongo et frontières authentifiées vérifiés. Les fenêtres de logs contrôlées ne certifient ni une réponse modèle réelle ni une recette métier.
+
+**Native :** iOS `0.1.0/build 16`, source `e43dc8539d5dbbecdc18c7bd01b1256c239973fe`, [build EAS](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/fee9fc9e-0143-403e-801a-7b22f9c53b6a), **terminé et disponible le 24 octobre à 14:19:50 UTC**. Une seule demande payante groupée, après les CI exactes et master **5 192 / 6** et vérification des 1 808 fichiers de l’archive. Inclut PR 366–370 et 373–376 côté mobile ; PR 371/372 sont des changements serveur. L’archive de 15 761 396 octets a été lue avec TLS normal ; son Info.plist confirme l’app et la version 16. Aucune installation ni acceptation humaine n’est présumée. Le build 15 reste conservé comme historique, sous les limites de compatibilité ci-dessous.
+
+La lecture du PDF et le choix depuis son original n’attendent pas l’extraction/revue complète ; la semaine demandée peut être future. La décision métier reste explicite et utilise les écritures locales/Outbox existantes. Voir [la recette identifiée](../qa/M7_GROUPED_IPHONE_ACCEPTANCE.md).
+
+**Compatibilité :** l’API 374 (`12dcfbe` / `dpl_CLJ7A6kX77Yop353mrakTQXmWm27`) est le minimum de retour arrière après création de choix issus d’originaux. La base locale 61 ne peut pas être rouverte par le build 15/schema 60 : conserver l’app et ses données, puis utiliser une correction native compatible. Ne pas désinstaller ni réinitialiser pour contourner cette limite.
+
+**Sept chantiers : 1/3/4/5/6/7 en cours ; 2 code prêt.** Les recettes physiques, réimport réel, parité par exception, expertise/boucle réelle, Resend, second appareil, mesures/images approuvées et autres portes V1/M8 restent ouvertes. Les points de livraison plus anciens ci-dessous sont historiques.
+
 ## 24 octobre — correctifs SDK 57 avant recette native groupée
 
 Le contrôle gratuit avant EAS a signalé onze dépendances Expo en retard. Elles sont alignées sur les correctifs du même SDK, avec le runtime Metro explicitement compatible avec le routeur. Le contrôle Expo repasse ; les tests existants et les exports iOS/Android passent localement. Aucun build payant n’est encore soumis et aucune recette téléphone n’est présumée. Voir [la QA et les limites](../qa/M8_EXPO57_PATCH_READINESS_2026_10_24.md). La PR 375 est fusionnée (`8c72dfb`), avec contrôles push/PR/master verts, chacun **5 192 / 6** ; son déploiement API est suivi séparément. Cet alignement mobile attend ses propres CI et la livraison native groupée. **1/3/4/5/6/7 en cours ; 2 code prêt.**
