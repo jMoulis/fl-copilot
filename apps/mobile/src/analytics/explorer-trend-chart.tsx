@@ -81,12 +81,22 @@ export function ExplorerTrendChart({
                   : {}),
                 timeZone: "UTC",
               }).format(new Date(b.date + "T12:00:00Z"))
-            : b.date.slice(8);
+            : b.date.slice(8),
+          periodLabel =
+            b.date === b.end
+              ? formatFrenchCalendarDate(b.date)
+              : `Du ${formatFrenchCalendarDate(b.date)} au ${formatFrenchCalendarDate(b.end)}`,
+          measureLabel =
+            period.kind === "range" && period.aggregation === "AVERAGE"
+              ? "moyenne des jours renseignés"
+              : b.monthly
+                ? "cumul renseigné"
+                : "montant renseigné";
         return (
           <Pressable
             key={b.date}
             accessibilityRole="button"
-            accessibilityLabel={`${formatFrenchCalendarDate(b.date)} : ${b.value === null ? "sans donnée" : formatCurrency(b.value)}${b.complete ? "" : " · données incomplètes"}. Ouvrir le détail.`}
+            accessibilityLabel={`${periodLabel} : ${b.value === null ? "sans donnée" : `${measureLabel} ${formatCurrency(b.value)}`}${b.complete ? "" : " · données incomplètes"}. Ouvrir le détail.`}
             onPress={() => onDrill(b.date)}
             style={{
               minWidth: 48,
