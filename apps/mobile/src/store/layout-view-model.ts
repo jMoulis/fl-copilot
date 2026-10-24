@@ -208,9 +208,11 @@ export function layoutError(reason: unknown) {
   if (code.includes("GEOMETRY_BLOCKED"))
     return "Ce plan présente une incompatibilité géométrique. Votre brouillon reste conservé ; ouvrez les éléments signalés avant de choisir la référence.";
   if (code.includes("SOURCE_CHANGED"))
-    return "Le plan a changé depuis votre ouverture. Votre saisie est conservée ; comparez les versions avant de reprendre.";
+    return "La comparaison du plan a changé depuis votre ouverture. Votre saisie est conservée ; comparez les versions avant de reprendre.";
   if (code.includes("RESOLVE") || code.includes("RESOLUTION"))
     return "Ce plan nécessite une comparaison. Votre version reste conservée sur cet appareil.";
+  if (code.includes("AUTHORITY_CHANGED"))
+    return "Le compte, le magasin ou les droits ont changé. Rouvrez le plan avant de reprendre ; vos versions sont conservées.";
   if (code.includes("SYNCING"))
     return "Un envoi du plan est en cours. Attendez sa fin avant de choisir une version.";
   return "L’enregistrement n’a pas abouti. Votre saisie reste visible ; réessayez sans quitter la page.";

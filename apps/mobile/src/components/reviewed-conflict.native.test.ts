@@ -1,3 +1,8 @@
+import { nativeLayoutConflictFixture } from "../../../../scripts/test-layout-conflict-fixtures";
+import { StoreLayoutConflict } from "../store/layout-conflict";
+import { applyStoreLayout } from "../store/layout-repository";
+import { nextLayout } from "../../../../scripts/test-store-layout-fixtures";
+import { storeLayoutSchema } from "@fl-copilot/domain";
 import { nativeRecommendationDecisionConflictFixture } from "../../../../scripts/test-recommendation-decision-conflict-fixtures";
 import { RecommendationDecisionConflict } from "../copilot/recommendation-decision-conflict";
 import { applyDecisionRecord } from "../copilot/decision-repository";
@@ -63,6 +68,7 @@ function ConversationRouteForTest({ conflict }: { conflict: SyncConflict }) {
   });
 }
 const kinds = [
+  "LAYOUT",
   "RECOMMENDATION",
   "CONVERSATION",
   "SETTINGS",
@@ -79,6 +85,7 @@ const kinds = [
 ] as const;
 type Kind = (typeof kinds)[number];
 const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
+  if (kind === "LAYOUT") return nativeLayoutConflictFixture();
   if (kind === "RECOMMENDATION")
     return nativeRecommendationDecisionConflictFixture();
   if (kind === "SETTINGS" || kind === "FIELD_EVENT")
@@ -93,6 +100,7 @@ const fixture = (kind: Kind, refusal?: "LOCAL" | "REMOTE") => {
   return nativeCommercialConflictFixture(kind, ":memory:", refusal);
 };
 const components = {
+  LAYOUT: StoreLayoutConflict,
   RECOMMENDATION: RecommendationDecisionConflict,
   CONVERSATION: ConversationRouteForTest,
   KNOWLEDGE: KnowledgeRouteForTest,
@@ -109,6 +117,7 @@ const components = {
 };
 const component = (kind: Kind) => components[kind];
 const entityTables = {
+  LAYOUT: "store_layouts",
   RECOMMENDATION: "copilot_decisions",
   CONVERSATION: "copilot_conversations",
   KNOWLEDGE: "copilot_knowledge",
@@ -120,6 +129,7 @@ const entityTables = {
   COMMERCIAL_EXECUTION: "commercial_execution_tasks",
 };
 const histories = {
+  LAYOUT: "store_layout_revisions",
   RECOMMENDATION: "sync_conflicts",
   CONVERSATION: "copilot_conversation_history",
   KNOWLEDGE: "sync_conflicts",
@@ -135,6 +145,7 @@ const histories = {
   COMMERCIAL_EXECUTION: "commercial_execution_history",
 };
 const readable = {
+  LAYOUT: "conflit(s) examiné(s)",
   RECOMMENDATION: "Tester sur une TG plus petite.",
   CONVERSATION: "Titre local",
   KNOWLEDGE: "Pratique locale",
@@ -150,6 +161,7 @@ const readable = {
   COMMERCIAL_EXECUTION: "plan version",
 };
 const pulls = {
+  LAYOUT: applyStoreLayout,
   RECOMMENDATION: (db: OutboxDatabase, storeId: string, payload: unknown) =>
     applyDecisionRecord(
       db,
@@ -216,6 +228,14 @@ vi.mock("@/providers/database-provider", () => ({
 }));
 vi.mock("@/sync/sync-provider", () => ({
   useSync: () => ({ syncNow: runtime.sync }),
+}));
+vi.mock("../sync/sync-provider", () => ({
+  useSync: () => ({ syncNow: runtime.sync }),
+}));
+vi.mock("../components/ui", () => ({
+  SectionCard: "Card",
+  SecondaryButton: "Button",
+  InlineAlert: "Alert",
 }));
 vi.mock("@/components/ui", () => ({
   SectionCard: "Card",
@@ -452,15 +472,19 @@ describe.each(kinds)("%s native comparison", (kind) => {
   const table = entityTables[kind],
     historyTable = histories[kind],
     keepLabel =
-      kind === "SETTINGS"
-        ? "Conserver mes réglages locaux"
-        : kind === "FIELD_EVENT"
-          ? "Confirmer mon heure de fin"
-          : "Conserver ma version locale",
+      kind === "LAYOUT"
+        ? "Reprendre ma version comme brouillon"
+        : kind === "SETTINGS"
+          ? "Conserver mes réglages locaux"
+          : kind === "FIELD_EVENT"
+            ? "Confirmer mon heure de fin"
+            : "Conserver ma version locale",
     adoptLabel =
-      kind === "SETTINGS"
-        ? "Adopter les réglages synchronisés"
-        : "Adopter la version synchronisée",
+      kind === "LAYOUT"
+        ? "Utiliser la version synchronisée"
+        : kind === "SETTINGS"
+          ? "Adopter les réglages synchronisés"
+          : "Adopter la version synchronisée",
     pull = pulls[kind];
   it("requires a comparison and accepts a double press only once through the real SQLite writer", async () => {
     const s = await setup(kind),
@@ -483,6 +507,8 @@ describe.each(kinds)("%s native comparison", (kind) => {
     const s = await setup(kind);
     await act(async () => host("Switch").props.onValueChange(true));
     let remote = { ...s.review.remote, version: 3 };
+    if (kind === "LAYOUT")
+      remote = nextLayout(storeLayoutSchema.parse(s.review.remote));
     if (kind === "RECOMMENDATION") {
       const previous = recommendationDecisionSchema.parse(s.review.remote);
       remote = recommendationDecisionSchema.parse({
@@ -668,7 +694,7 @@ describe.each(kinds)("%s native comparison", (kind) => {
         .prepare(`SELECT sync_state FROM ${table} WHERE store_id=?`)
         .get(s.scope.storeId)!.sync_state,
     ).toBe("PENDING");
-    if (kind === "KNOWLEDGE" || kind === "RECOMMENDATION")
+    if (kind === "KNOWLEDGE" || kind === "RECOMMENDATION" || kind === "LAYOUT")
       expect(hosts("Alert").map((n) => n.props.title)).toEqual([
         "Comparaison enregistrée",
       ]);

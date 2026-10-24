@@ -1,3 +1,4 @@
+import { StoreLayoutConflict } from "./layout-conflict";
 import { LayoutComparison } from "./layout-comparison";
 import { Stack, useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -10,7 +11,6 @@ import {
 } from "react-native";
 import { checkStoreLayoutGeometry } from "@fl-copilot/commercial-core";
 import {
-  storeLayoutSchema,
   type StoreLayoutContent,
   type StoreLayout,
   isLayoutDraft,
@@ -70,7 +70,7 @@ export function StoreLayoutPanel({
   onBack,
   onInitialize,
   onAction,
-  onResolve,
+  onConflictResolved,
   onHistory,
   onSync,
 }: {
@@ -83,12 +83,7 @@ export function StoreLayoutPanel({
   onBack: () => void;
   onInitialize: () => Promise<void>;
   onAction: (a: LayoutAction) => Promise<void>;
-  onResolve: (
-    id: string,
-    localRevisionId: string,
-    remoteRevisionId: string,
-    useLocal: boolean,
-  ) => Promise<void>;
+  onConflictResolved: () => void;
   onHistory: (before?: {
     version: number;
     id: string;
@@ -109,11 +104,7 @@ export function StoreLayoutPanel({
     [history, setHistory] = useState<RevisionPage | null>(null),
     [moreHistory, setMoreHistory] = useState(false),
     [historyBusy, setHistoryBusy] = useState(false),
-    [comparison, setComparison] = useState<{
-      conflict: SyncConflict;
-      local: StoreLayout;
-      remote: StoreLayout;
-    } | null>(null),
+    [comparison, setComparison] = useState<SyncConflict | null>(null),
     [panelError, setPanelError] = useState<string>();
   const lock = useRef(false),
     additionScroll = useRef<ScrollView>(null),
@@ -289,23 +280,7 @@ export function StoreLayoutPanel({
               <SecondaryButton
                 label="Comparer les versions du plan"
                 disabled={busy || !!edit}
-                onPress={() => {
-                  const conflict = snapshot.conflicts[0]!,
-                    remote = storeLayoutSchema.safeParse(
-                      conflict.remotePayload,
-                    );
-                  if (
-                    !head ||
-                    !remote.success ||
-                    remote.data.storeId !== head.storeId
-                  ) {
-                    setPanelError(
-                      "La version synchronisée n’est pas disponible. Synchronisez avant de reprendre la comparaison.",
-                    );
-                    return;
-                  }
-                  setComparison({ conflict, local: head, remote: remote.data });
-                }}
+                onPress={() => setComparison(snapshot.conflicts[0]!)}
               />
             </SectionCard>
           ) : null}
@@ -789,58 +764,13 @@ export function StoreLayoutPanel({
             ) : null}
           </>
         ) : comparison ? (
-          <>
-            <Text className="text-muted">
-              Avant : votre version locale. Après : la version synchronisée.
-            </Text>
-            <LayoutComparison
-              before={comparison.local.content}
-              after={comparison.remote.content}
-            />
-            <Text className="text-muted">
-              Conserver votre version crée un nouveau brouillon à examiner. Les
-              deux versions restent dans l’historique.
-            </Text>
-            <PrimaryButton
-              label="Reprendre ma version comme brouillon"
-              loading={busy}
-              disabled={
-                !allowed || head?.revisionId !== comparison.local.revisionId
-              }
-              onPress={() =>
-                void run(
-                  () =>
-                    onResolve(
-                      comparison.conflict.id,
-                      comparison.local.revisionId,
-                      comparison.remote.revisionId,
-                      true,
-                    ),
-                  true,
-                )
-              }
-            />
-            <SecondaryButton
-              label="Utiliser la version synchronisée"
-              disabled={
-                busy ||
-                !allowed ||
-                head?.revisionId !== comparison.local.revisionId
-              }
-              onPress={() =>
-                void run(
-                  () =>
-                    onResolve(
-                      comparison.conflict.id,
-                      comparison.local.revisionId,
-                      comparison.remote.revisionId,
-                      false,
-                    ),
-                  true,
-                )
-              }
-            />
-          </>
+          <StoreLayoutConflict
+            conflict={comparison}
+            onResolved={() => {
+              setComparison(null);
+              onConflictResolved();
+            }}
+          />
         ) : null}
       </BottomSheet>
     </>

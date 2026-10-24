@@ -1,3 +1,4 @@
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -90,7 +91,12 @@ async function setup() {
       actorId: p.updatedBy,
       canWrite: true as const,
     },
-    repo = new StoreLayoutRepository(tx, randomUUID, () => p.updatedAt);
+    repo = new StoreLayoutRepository(
+      tx,
+      randomUUID,
+      () => p.updatedAt,
+      receiptReviewDigest,
+    );
   return { path, db, tx, p, ctx, repo };
 }
 const input = (x: Awaited<ReturnType<typeof setup>>) => ({
@@ -281,15 +287,23 @@ it.each([false, true])(
       localRevisionId: p.revisionId,
       remoteRevisionId: remote.revisionId,
     };
+    const reviewed = await x.repo.review(p.storeId, conflict.id, x.ctx.actorId);
     await expect(
       x.repo.resolve(
         conflict.id,
         { ...choice, remoteRevisionId: randomUUID() },
-        { ...x.ctx, commandId: randomUUID() },
+        {
+          ...x.ctx,
+          commandId: randomUUID(),
+          reviewHash: reviewed.hash,
+          canResolve: () => true,
+        },
       ),
     ).rejects.toThrow("SOURCE_CHANGED");
     await x.repo.resolve(conflict.id, choice, {
       ...x.ctx,
+      reviewHash: reviewed.hash,
+      canResolve: () => true,
       commandId: randomUUID(),
     });
     const head = (await x.repo.get(p.storeId))!;

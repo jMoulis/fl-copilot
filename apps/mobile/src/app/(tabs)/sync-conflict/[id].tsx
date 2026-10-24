@@ -1,3 +1,4 @@
+import { StoreLayoutConflict } from "../../../store/layout-conflict";
 import { ConversationConflict } from "@/copilot/conversation-conflict";
 import { EmailDecisionConflict } from "@/intake/email-decision-conflict";
 import { RecommendationDecisionConflict } from "@/copilot/recommendation-decision-conflict";
@@ -100,16 +101,7 @@ export default function SyncConflictDetailScreen() {
               />
             </SectionCard>
           ) : conflict.entityType === "store_layout" ? (
-            <SectionCard title="Plan et mobilier">
-              <Text className="text-muted">
-                Comparez les mesures et la composition dans le plan du magasin.
-                Les deux versions restent conservées.
-              </Text>
-              <SecondaryButton
-                label="Comparer les plans du magasin"
-                onPress={() => router.push("/store-layout")}
-              />
-            </SectionCard>
+            <StoreLayoutConflict conflict={conflict} />
           ) : conflict.entityType === "store_context_settings" ? (
             <StoreContextConflict conflict={conflict} />
           ) : conflict.entityType === "commercial_execution_task" ? (
