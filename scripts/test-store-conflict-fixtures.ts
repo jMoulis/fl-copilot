@@ -1,3 +1,4 @@
+import { copilotVisualMetadata } from "../packages/domain/src/index";
 import { storeConflictLayoutBasis } from "../packages/domain/src/index";
 import type { z } from "zod";
 import { randomUUID, createHash } from "node:crypto";
@@ -65,6 +66,15 @@ export function storeConflictPreview<
       ...(kind === "ALIAS" ? { alias: remote } : {}),
       ...(kind === "STORE_LAYOUT"
         ? { layout: storeConflictLayoutBasis(remote) }
+        : {}),
+      ...(kind === "VISUAL_ASSET"
+        ? { visualAsset: copilotVisualMetadata(kind, remote) }
+        : {}),
+      ...(kind === "VISUAL_IDENTITY"
+        ? { visualIdentity: copilotVisualMetadata(kind, remote) }
+        : {}),
+      ...(kind === "PRODUCT_VISUAL_LINK"
+        ? { productVisualLink: copilotVisualMetadata(kind, remote) }
         : {}),
     },
     evidence: [

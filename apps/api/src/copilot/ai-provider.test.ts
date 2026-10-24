@@ -6994,3 +6994,156 @@ it("exposes compact physical-plan conflict review only to capability 6", async (
     native.db.close();
   }
 });
+
+it.each(["VISUAL_ASSET", "VISUAL_IDENTITY", "PRODUCT_VISUAL_LINK"] as const)(
+  "exposes %s comparison only to capability 7 without model-controlled rights or winners",
+  async (kind) => {
+    const { nativeVisualChatConflictFixture } =
+      await import("../../../../scripts/test-visual-chat-conflict-fixtures");
+    const native = await nativeVisualChatConflictFixture(kind);
+    try {
+      for (const version of [5, 6, 7] as const) {
+        const f = fixture(),
+          value = structuredClone(native.preview);
+        f.request.storeId = value.basis.storeId;
+        f.request.context = detectCopilotConflicts({
+          batch: scoreCopilotPriorities({
+            storeId: value.basis.storeId,
+            evaluatedAt,
+            candidates: [],
+          }),
+          intents: [],
+        });
+        const read = vi.fn(async () => value);
+        let calls = 0;
+        const transport: typeof fetch = async (_url, init) => {
+          const body = JSON.parse(String(init?.body)),
+            definition = body.tools.find(
+              (t: { name: string }) => t.name === "store_conflict_review",
+            );
+          expect(
+            definition.parameters.properties.kind.enum.includes(kind),
+          ).toBe(version === 7);
+          expect(JSON.stringify(definition.parameters)).not.toMatch(
+            /rightsConfirmed|confirmVisualRights|storeId|actorId|decision|canWrite/,
+          );
+          if (version !== 7) return response();
+          if (calls++ === 0) {
+            const envelope = z
+              .record(z.string(), z.unknown())
+              .parse(await response().json());
+            envelope.output = [
+              {
+                type: "function_call",
+                id: "fc_visual",
+                call_id: "call_visual",
+                name: "store_conflict_review",
+                arguments: JSON.stringify(value.input),
+                status: "completed",
+              },
+            ];
+            return new Response(JSON.stringify(envelope), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return response();
+        };
+        const result = await createCopilotAiProvider(f.config, transport, {
+          daily: vi.fn(),
+          storeConflict: read,
+          storeConflictVersion: version,
+        }).generate(f.request, schema);
+        expect(read).toHaveBeenCalledTimes(version === 7 ? 1 : 0);
+        expect(result.storeConflictPreviews ?? []).toEqual(
+          version === 7 ? [value] : [],
+        );
+      }
+    } finally {
+      native.db.close();
+    }
+  },
+);
+it("reads bounded visual metadata through the SDK only on compatible clients and refuses a foreign adapter result", async () => {
+  const { nativeVisualChatConflictFixture } =
+      await import("../../../../scripts/test-visual-chat-conflict-fixtures"),
+    { copilotVisualLookupResultSchema } = await import("@fl-copilot/domain");
+  const native = await nativeVisualChatConflictFixture("VISUAL_ASSET");
+  try {
+    for (const mode of ["LEGACY", "CURRENT", "FOREIGN"] as const) {
+      const f = fixture(),
+        input = { productId: null, kind: "VISUAL_ASSET", cursor: null },
+        value = copilotVisualLookupResultSchema.parse({
+          input,
+          storeId: native.scope.storeId,
+          observedAt: new Date().toISOString(),
+          sourceScope: "SYNCHRONIZED_METADATA_ONLY",
+          resolution: null,
+          status: "AVAILABLE",
+          product: null,
+          entries: [
+            {
+              kind: "VISUAL_ASSET",
+              metadata: native.preview.basis.visualAsset,
+            },
+          ],
+          nextCursor: null,
+          missingRelatedIds: [],
+          evidence: native.preview.evidence,
+        });
+      f.request.storeId = native.scope.storeId;
+      f.request.context = detectCopilotConflicts({
+        batch: scoreCopilotPriorities({
+          storeId: native.scope.storeId,
+          evaluatedAt,
+          candidates: [],
+        }),
+        intents: [],
+      });
+      const foreign = randomUUID();
+      if (mode === "FOREIGN") value.entries[0]!.metadata.storeId = foreign;
+      const read = vi.fn(async () => value);
+      let calls = 0;
+      const transport: typeof fetch = async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        expect(
+          body.tools.some(
+            (t: { name: string }) => t.name === "product_visuals",
+          ),
+        ).toBe(mode !== "LEGACY");
+        if (mode === "LEGACY") return response();
+        if (calls++ === 0) {
+          const envelope = z
+            .record(z.string(), z.unknown())
+            .parse(await response().json());
+          envelope.output = [
+            {
+              type: "function_call",
+              id: "fc_visual_lookup",
+              call_id: "call_visual_lookup",
+              name: "product_visuals",
+              arguments: JSON.stringify(input),
+              status: "completed",
+            },
+          ];
+          return new Response(JSON.stringify(envelope), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        const outputs = body.input
+          .filter((x: { type: string }) => x.type === "function_call_output")
+          .map((x: { output: string }) => JSON.parse(x.output));
+        expect(outputs.at(-1)?.unavailable === true).toBe(mode === "FOREIGN");
+        expect(JSON.stringify(outputs)).not.toContain(foreign);
+        return response();
+      };
+      await createCopilotAiProvider(f.config, transport, {
+        daily: vi.fn(),
+        visualLibrary: read,
+        storeConflictVersion: mode === "LEGACY" ? 6 : 7,
+      }).generate(f.request, schema);
+      expect(read).toHaveBeenCalledTimes(mode === "LEGACY" ? 0 : 1);
+    }
+  } finally {
+    native.db.close();
+  }
+});

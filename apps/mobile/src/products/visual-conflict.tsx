@@ -1,31 +1,20 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
-import { router, useFocusEffect } from "expo-router";
+import { VisualVersion } from "./visual-conflict-preview";
+export { VisualVersion } from "./visual-conflict-preview";
+import { useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { router } from "expo-router";
 import {
   randomUUID,
   digestStringAsync,
   CryptoDigestAlgorithm,
 } from "expo-crypto";
 import { useReviewedConflict } from "../components/use-reviewed-conflict";
-import type {
-  VisualAsset,
-  VisualEntityMap,
-  VisualEntityType,
-} from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import { useSync } from "../sync/sync-provider";
 import type { SyncConflict } from "../sync/conflict-repository";
-import {
-  InlineAlert,
-  PrimaryButton,
-  SecondaryButton,
-  SectionCard,
-} from "../components/ui";
+import { InlineAlert, PrimaryButton, SecondaryButton } from "../components/ui";
 import { VisualConflictRepository } from "./visual-conflict-repository";
-import { visualConflictSummary } from "./visual-conflict-presentation";
-import { nativeVisualFileStorage } from "./visual-file-storage";
-import { VisualFileCache } from "./visual-file-cache";
 import { colors } from "../design/tokens";
 
 const digestReview = (s: string) =>
@@ -303,89 +292,5 @@ export function VisualReviewCheck({
         {checked ? "☑" : "☐"} {label}
       </Text>
     </Pressable>
-  );
-}
-export function VisualVersion({
-  title,
-  entity,
-  labels,
-  preview,
-}: {
-  title: string;
-  entity: VisualEntityMap[VisualEntityType];
-  labels: Record<string, string>;
-  preview: VisualAsset | null;
-}) {
-  const { sqlite } = useLocalDatabase();
-  const [uri, setUri] = useState<string | null>(),
-    [busy, setBusy] = useState(false);
-  const live = useRef(0);
-  useFocusEffect(
-    useCallback(() => {
-      live.current++;
-      return () => {
-        live.current++;
-      };
-    }, []),
-  );
-  async function open() {
-    if (!preview || busy) return;
-    const run = live.current;
-    setBusy(true);
-    try {
-      const cached = await new VisualFileCache(sqlite)
-        .get(preview.storeId, preview, "PREVIEW")
-        .catch(() => null);
-      const thumbnail = cached?.manifest
-        ? await nativeVisualFileStorage
-            .uri(preview.storeId, "PREVIEW", {
-              contentHash: cached.manifest.preview.contentHash,
-              mimeType: cached.manifest.preview.mimeType,
-              sizeBytes: cached.manifest.preview.sizeBytes,
-            })
-            .catch(() => null)
-        : null;
-      const source =
-        thumbnail ??
-        (await nativeVisualFileStorage
-          .uri(preview.storeId, "SOURCE", preview)
-          .catch(() => null));
-      if (live.current === run) setUri(source);
-    } finally {
-      if (live.current === run) setBusy(false);
-    }
-  }
-  return (
-    <SectionCard title={title}>
-      {visualConflictSummary(entity, labels).map((line, i) => (
-        <Text key={i} className="text-base text-ink">
-          {line}
-        </Text>
-      ))}
-      <Text className="text-sm text-muted">
-        Version {entity.version} ·{" "}
-        {new Date(entity.updatedAt).toLocaleString("fr-FR")}
-      </Text>
-      {preview ? (
-        <SecondaryButton
-          label={busy ? "Lecture…" : "Voir la photo conservée sur cet appareil"}
-          disabled={busy}
-          onPress={() => void open()}
-        />
-      ) : null}
-      {uri ? (
-        <Image
-          source={{ uri }}
-          resizeMode="contain"
-          style={{ width: "100%", height: 180 }}
-          accessibilityLabel="Photo conservée pour comparer les versions"
-        />
-      ) : uri === null ? (
-        <Text className="text-sm text-muted">
-          La photo n’est pas disponible sur cet appareil. Aucune source n’a été
-          supprimée.
-        </Text>
-      ) : null}
-    </SectionCard>
   );
 }

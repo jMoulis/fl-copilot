@@ -1,3 +1,8 @@
+import {
+  copilotVisualKinds,
+  copilotVisualMetadataSchemas,
+  isCopilotVisualKind,
+} from "./copilot-visual-library";
 import { storeLayoutSchema } from "./store-layout";
 import {
   catalogueConflictKinds,
@@ -66,17 +71,19 @@ export function isCommercialConflictKind(kind: string) {
   return (commercialConflictKinds as readonly string[]).includes(kind);
 }
 export function storeConflictArtifactVersion(kind: string) {
-  return kind === "STORE_LAYOUT"
-    ? 6
-    : isCatalogueConflictKind(kind)
-      ? 5
-      : isCommercialDecisionConflictKind(kind)
-        ? 4
-        : isCommercialConflictKind(kind)
-          ? 3
-          : isNeedConflictKind(kind)
-            ? 2
-            : 1;
+  return isCopilotVisualKind(kind)
+    ? 7
+    : kind === "STORE_LAYOUT"
+      ? 6
+      : isCatalogueConflictKind(kind)
+        ? 5
+        : isCommercialDecisionConflictKind(kind)
+          ? 4
+          : isCommercialConflictKind(kind)
+            ? 3
+            : isNeedConflictKind(kind)
+              ? 2
+              : 1;
 }
 export const storeConflictV3InputSchema = z
   .strictObject({
@@ -118,11 +125,24 @@ export const storeConflictV5InputSchema = z
   .refine((v) =>
     v.kind === "SETTINGS" ? v.entityId === null : v.entityId !== null,
   );
-export const storeConflictInputSchema = z
+export const storeConflictV6InputSchema = z
   .strictObject({
     kind: z.enum([
       ...storeConflictV5InputSchema.shape.kind.options,
       "STORE_LAYOUT",
+    ]),
+    entityId: z.uuid().nullable(),
+  })
+  .refine((v) =>
+    ["SETTINGS", "STORE_LAYOUT"].includes(v.kind)
+      ? v.entityId === null
+      : v.entityId !== null,
+  );
+export const storeConflictInputSchema = z
+  .strictObject({
+    kind: z.enum([
+      ...storeConflictV6InputSchema.shape.kind.options,
+      ...copilotVisualKinds,
     ]),
     entityId: z.uuid().nullable(),
   })
@@ -171,6 +191,10 @@ export const storeConflictBasisSchema = z.strictObject({
   identifier: productIdentifierSchema.optional(),
   alias: productAliasSchema.optional(),
   layout: storeConflictLayoutBasisSchema.optional(),
+  visualAsset: copilotVisualMetadataSchemas.VISUAL_ASSET.optional(),
+  visualIdentity: copilotVisualMetadataSchemas.VISUAL_IDENTITY.optional(),
+  productVisualLink:
+    copilotVisualMetadataSchemas.PRODUCT_VISUAL_LINK.optional(),
 });
 export function validateStoreConflictBasis(
   storeId: string,
@@ -194,6 +218,9 @@ export function validateStoreConflictBasis(
     IDENTIFIER: "identifier",
     ALIAS: "alias",
     STORE_LAYOUT: "layout",
+    VISUAL_ASSET: "visualAsset",
+    VISUAL_IDENTITY: "visualIdentity",
+    PRODUCT_VISUAL_LINK: "productVisualLink",
   } as const;
   const entity = basis[fields[input.kind]],
     present = Object.values(fields)
@@ -227,6 +254,7 @@ export const storeConflictProposalSchema = z.strictObject({
     z.literal(4),
     z.literal(5),
     z.literal(6),
+    z.literal(7),
   ]),
   assistantMessageId: z.uuid(),
   input: storeConflictInputSchema,
@@ -264,6 +292,7 @@ export const storeConflictRequestSchema = z.strictObject({
   activateProduct: z.boolean().optional(),
   acceptRemoteDeletion: z.boolean().optional(),
   confirmLocalDeletionChoice: z.boolean().optional(),
+  confirmVisualRights: z.boolean().optional(),
 });
 export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
   .omit({ canManageProducts: true })
@@ -271,6 +300,7 @@ export const storeConflictAuthoritySchema = productClassificationAuthoritySchema
     canCaptureStoreEvents: z.boolean(),
     canManageStoreSettings: z.boolean(),
     canManageStoreLayout: z.boolean().default(false),
+    canManageVisualLibrary: z.boolean().default(false),
     comparisonReviewed: z.boolean(),
     canManageProducts: z.boolean().default(false),
     canManageCommercialChoices: z.boolean().default(false),

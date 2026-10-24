@@ -1,5 +1,7 @@
 # Copilot manual-operation coverage inventory
 
+Current visual metadata/chat comparison (24 October): capability 7 adds a bounded `product_visuals` read and VISUAL_ASSET/VISUAL_IDENTITY/PRODUCT_VISUAL_LINK to the existing `store_conflict_review`. Exact synchronized targets and canonical selected-image/placeholder metadata are discoverable without bytes, URLs, keys or model-owned rights. The native card and transaction reuse the existing visual presentation/repository, complete current group/hash and separate rights/restoration consents. Capabilities/artifacts 1–6 are preserved. See `../qa/M7_COPILOT_VISUAL_LIBRARY_2026_10_24.md`; grouped API-before-native delivery and hardware acceptance remain pending. Image capture/link/edit/retirement tool parity, binary recovery and generation are not established by this increment.
+
 Current physical-plan conversational comparison (24 October): `store_conflict_review` capability 6 adds STORE_LAYOUT with a null target, derived from the authenticated store. The model receives compact canonical revision/reference/action metadata and a complete-plan fingerprint; the native card compares the actual current group and reuses `StoreLayoutRepository.review/resolve`. KEEP creates a draft on the canonical reference, never adopts a reference or confirms measurements; ADOPT sends nothing. Exact anchor/current active packets, private replay and committed card context are verified. Capabilities/artifacts 1–5 remain frozen; no new model tool or global prompt. See `../qa/M7_COPILOT_LAYOUT_CONFLICT_2026_10_24.md`; grouped API-before-native delivery and real pilot acceptance remain pending.
 
 
@@ -17,7 +19,7 @@ Current native private-history exception (24 October): conversation title/archiv
 
 ## Current reading rule — 24 October 2026
 
-Current exception and delivery gates are reconciled in [`../qa/V1_CURRENT_GATES_2026_10_24.md`](../qa/V1_CURRENT_GATES_2026_10_24.md). Visual/transcription comparisons remain native-only; physical-plan comparison is connected separately through capability 6 above, pending grouped delivery. Permanent catalogue rejections are now projected onto the unchanged pending version without hiding newer edits; see `../qa/M8_CATALOGUE_REJECTION_STATE_2026_10_24.md`.
+Current exception and delivery gates are reconciled in [`../qa/V1_CURRENT_GATES_2026_10_24.md`](../qa/V1_CURRENT_GATES_2026_10_24.md). Immutable commercial-transcription comparison remains native-only; physical-plan and visual comparisons are connected through capabilities 6/7 above, pending grouped delivery. Permanent catalogue rejections are now projected onto the unchanged pending version without hiding newer edits; see `../qa/M8_CATALOGUE_REJECTION_STATE_2026_10_24.md`.
 
 This is a dated operation inventory, not an assertion that every historical pending adapter is still missing or that every public repository helper should become a model writer. The 11 October introduction describes pre-activation history. The model-facing SDK bindings are in `apps/api/src/copilot/ai-provider.ts`, conditional on trusted capabilities/permissions; native cards and canonical local transactions remain part of execution. Use the later dated entries, source and current seven-workstream ledger together.
 
