@@ -1,3 +1,4 @@
+import { sourceObjectKey } from "../src/uploads/source-upload-service";
 import { vi } from "vitest";
 import type { Document } from "mongodb";
 import { runCopilotTurn } from "../src/copilot/turn-service";
@@ -67,6 +68,42 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         role: "MANAGER",
         active: true,
       });
+      if (s.input.action === "ASSIGN_SOURCE") {
+        const m = s.sourcePhoto,
+          key = sourceObjectKey(s.f.storeId, {
+            sourceDocumentId: m.sourceDocumentId,
+            sourceType: m.sourceType,
+            filename: m.filename,
+            checksum: m.checksum,
+            sizeBytes: m.sizeBytes,
+            mimeType: m.mimeType,
+          });
+        await db.collection("sourceDocuments").insertOne({
+          _id: m.sourceDocumentId as never,
+          storeId: s.f.storeId,
+          sourceType: m.sourceType,
+          originalFilename: m.filename,
+          checksum: m.checksum,
+          sizeBytes: m.sizeBytes,
+          mimeType: m.mimeType,
+          objectKey: key,
+          createdAt: new Date(m.registeredAt),
+          remoteUploadStatus: "CONFIRMED",
+          deletedAt: null,
+        });
+        await db.collection("sourceUploads").insertOne({
+          storeId: s.f.storeId,
+          userId: s.f.actorId,
+          sourceDocumentId: m.sourceDocumentId,
+          sourceType: m.sourceType,
+          filename: m.filename,
+          checksum: m.checksum,
+          sizeBytes: m.sizeBytes,
+          mimeType: m.mimeType,
+          objectKey: key,
+          status: "CONFIRMED",
+        });
+      }
       const source = [
         { entityType: "product", payload: s.f.product },
         { entityType: "visual_asset", payload: s.f.asset },
@@ -101,7 +138,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(seeded.results.every((r) => r.status === "APPLIED")).toBe(true);
       return { db, push };
     }
-    it.each(["ASSIGN_LIBRARY", "REMOVE_PRODUCT", "REVOKE_CURRENT"] as const)(
+    it.each([
+      "ASSIGN_LIBRARY",
+      "REMOVE_PRODUCT",
+      "REVOKE_CURRENT",
+      "ASSIGN_SOURCE",
+    ] as const)(
       "prepares/confirms %s once, pushes canonical metadata and restores it offline",
       async (action) => {
         const s = await visualActionFixture(action),
@@ -110,7 +152,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           path = join(dir, "other.db");
         let other: VisualTestDatabase | undefined;
         try {
-          const preview = await previewVisualAction(db, s.f.storeId, s.input);
+          const preview = await previewVisualAction(db, s.f.storeId, s.input, {
+            ownerId: s.f.actorId,
+          });
           expect(preview.status).toBe("READY");
           const actualProduct = (
             await readCataloguePreview(db, s.f.storeId, {
@@ -132,6 +176,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           ).toThrow("SCOPE");
           const message = buildVisualActionMessages(s.assistant, [preview])[0]!;
           expect(message).toEqual(s.message);
+          if (action === "ASSIGN_SOURCE")
+            await s.controller.prepareSourcePhoto(message);
           await s.controller.confirm(
             message,
             s.state.review!.basisHash,
@@ -151,21 +197,30 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             appVersion: "test",
             deviceId: s.f.deviceId,
             storeId: s.f.storeId,
-            commands: [
-              {
-                commandId: command.commandId,
-                localSequence: command.localSequence,
-                type: command.commandType,
-                entityType: command.entityType,
-                entityId: command.entityId,
-                expectedRemoteVersion: command.expectedRemoteVersion,
-                createdAt: command.createdAt,
-                payload: command.payload,
-              },
-            ],
+            commands: (action === "ASSIGN_SOURCE"
+              ? (
+                  await new OutboxRepository(s.db).listPending(s.f.storeId)
+                ).filter((c) =>
+                  [
+                    "visual_asset",
+                    "visual_identity",
+                    "product_visual_link",
+                  ].includes(c.entityType),
+                )
+              : [command]
+            ).map((c) => ({
+              commandId: c.commandId,
+              localSequence: c.localSequence,
+              type: c.commandType,
+              entityType: c.entityType,
+              entityId: c.entityId,
+              expectedRemoteVersion: c.expectedRemoteVersion,
+              createdAt: c.createdAt,
+              payload: c.payload,
+            })),
           });
           const sent = await push.push(packet, "action", s.f.actorId);
-          expect(sent.results[0]?.status).toBe("APPLIED");
+          expect(sent.results.every((r) => r.status === "APPLIED")).toBe(true);
           expect(
             (await push.push(packet, "replay", s.f.actorId)).results[0]?.status,
           ).toBe("ALREADY_APPLIED");
@@ -244,6 +299,46 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         }
       },
     );
+    it.each(["FOREIGN_OWNER", "WITHDRAWN", "UPLOAD_BINDING_CHANGED"] as const)(
+      "refuses source-photo metadata on %s without touching product visuals",
+      async (mode) => {
+        const s = await visualActionFixture("ASSIGN_SOURCE");
+        try {
+          const { db } = await seed(s);
+          if (mode === "WITHDRAWN")
+            await db
+              .collection("sourceDocuments")
+              .updateOne(
+                { storeId: s.f.storeId },
+                { $set: { deletedAt: new Date() } },
+              );
+          if (mode === "UPLOAD_BINDING_CHANGED")
+            await db
+              .collection("sourceUploads")
+              .updateOne(
+                { storeId: s.f.storeId },
+                { $set: { checksum: `sha256:${"d".repeat(64)}` } },
+              );
+          const before = await db
+            .collection("productVisualLinks")
+            .find({ storeId: s.f.storeId })
+            .toArray();
+          await expect(
+            previewVisualAction(db, s.f.storeId, s.input, {
+              ownerId: mode === "FOREIGN_OWNER" ? randomUUID() : s.f.actorId,
+            }),
+          ).rejects.toThrow(/STORE_PHOTO_/);
+          expect(
+            await db
+              .collection("productVisualLinks")
+              .find({ storeId: s.f.storeId })
+              .toArray(),
+          ).toEqual(before);
+        } finally {
+          s.db.raw.close();
+        }
+      },
+    );
     it.each([false, true])(
       "persists a genuine server-produced visual card once, or rolls back a forged scope (forged=%s)",
       async (forged) => {
@@ -256,7 +351,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           await db
             .collection<Document & { _id: string }>("copilotMessages")
             .insertOne({ _id: s.chat.message.id, ...s.chat.message });
-          const preview = await previewVisualAction(db, s.f.storeId, s.input),
+          const preview = await previewVisualAction(db, s.f.storeId, s.input, {
+              ownerId: s.f.actorId,
+            }),
             before = await db
               .collection("productVisualLinks")
               .findOne({ storeId: s.f.storeId });

@@ -137,6 +137,71 @@ export async function normalizeStorePhoto(
   }
 }
 
+/** Canonical ownership/binding lookup, shared by visual reads and explicit product-photo previews.
+ * Returns private metadata only to server code; callers must project any model-facing response. */
+export async function readOwnedStorePhotoSource(
+  db: Db,
+  rawScope: { storeId: string; ownerId: string },
+  raw: unknown,
+  signal?: AbortSignal,
+) {
+  const scope = z
+      .strictObject({ storeId: z.uuid(), ownerId: z.uuid() })
+      .parse(rawScope),
+    input = storePhotoReadInputSchema.parse(raw);
+  checkSignal(signal);
+  const [row, upload] = await Promise.all([
+    db.collection<Document & { _id: string }>("sourceDocuments").findOne(
+      {
+        _id: input.sourceDocumentId,
+        storeId: scope.storeId,
+        sourceType: "STORE_PHOTO",
+        remoteUploadStatus: "CONFIRMED",
+        deletedAt: null,
+      },
+      { maxTimeMS: 2000 },
+    ),
+    db.collection("sourceUploads").findOne(
+      {
+        storeId: scope.storeId,
+        userId: scope.ownerId,
+        sourceDocumentId: input.sourceDocumentId,
+        sourceType: "STORE_PHOTO",
+        status: "CONFIRMED",
+      },
+      { maxTimeMS: 2000 },
+    ),
+  ]);
+  checkSignal(signal);
+  if (!row || !upload) throw Error("STORE_PHOTO_UNAVAILABLE");
+  const source = sourceSchema.parse(row),
+    expectedKey = sourceObjectKey(scope.storeId, {
+      sourceDocumentId: source._id,
+      sourceType: "STORE_PHOTO",
+      filename: source.originalFilename,
+      checksum: source.checksum,
+      sizeBytes: source.sizeBytes,
+      mimeType: source.mimeType,
+    });
+  if (
+    source._id !== input.sourceDocumentId ||
+    source.storeId !== scope.storeId ||
+    source.objectKey !== expectedKey ||
+    upload.storeId !== scope.storeId ||
+    upload.userId !== scope.ownerId ||
+    upload.sourceDocumentId !== source._id ||
+    upload.sourceType !== "STORE_PHOTO" ||
+    upload.status !== "CONFIRMED" ||
+    upload.objectKey !== expectedKey ||
+    upload.checksum !== source.checksum ||
+    upload.sizeBytes !== source.sizeBytes ||
+    upload.mimeType !== source.mimeType ||
+    upload.filename !== source.originalFilename
+  )
+    throw Error("STORE_PHOTO_INVALID");
+  return source;
+}
+
 /** Scope is supplied by the authenticated turn, never by model arguments. */
 export async function readStorePhoto(
   db: Db,
@@ -149,59 +214,7 @@ export async function readStorePhoto(
       .strictObject({ storeId: z.uuid(), ownerId: z.uuid() })
       .parse(rawScope),
     input = storePhotoReadInputSchema.parse(raw);
-  const lookup = async () => {
-    checkSignal(signal);
-    const [row, upload] = await Promise.all([
-      db.collection<Document & { _id: string }>("sourceDocuments").findOne(
-        {
-          _id: input.sourceDocumentId,
-          storeId: scope.storeId,
-          sourceType: "STORE_PHOTO",
-          remoteUploadStatus: "CONFIRMED",
-          deletedAt: null,
-        },
-        { maxTimeMS: 2000 },
-      ),
-      db.collection("sourceUploads").findOne(
-        {
-          storeId: scope.storeId,
-          userId: scope.ownerId,
-          sourceDocumentId: input.sourceDocumentId,
-          sourceType: "STORE_PHOTO",
-          status: "CONFIRMED",
-        },
-        { maxTimeMS: 2000 },
-      ),
-    ]);
-    checkSignal(signal);
-    if (!row || !upload) throw Error("STORE_PHOTO_UNAVAILABLE");
-    const source = sourceSchema.parse(row),
-      expectedKey = sourceObjectKey(scope.storeId, {
-        sourceDocumentId: source._id,
-        sourceType: "STORE_PHOTO",
-        filename: source.originalFilename,
-        checksum: source.checksum,
-        sizeBytes: source.sizeBytes,
-        mimeType: source.mimeType,
-      });
-    if (
-      source._id !== input.sourceDocumentId ||
-      source.storeId !== scope.storeId ||
-      source.objectKey !== expectedKey ||
-      upload.storeId !== scope.storeId ||
-      upload.userId !== scope.ownerId ||
-      upload.sourceDocumentId !== source._id ||
-      upload.sourceType !== "STORE_PHOTO" ||
-      upload.status !== "CONFIRMED" ||
-      upload.objectKey !== expectedKey ||
-      upload.checksum !== source.checksum ||
-      upload.sizeBytes !== source.sizeBytes ||
-      upload.mimeType !== source.mimeType ||
-      upload.filename !== source.originalFilename
-    )
-      throw Error("STORE_PHOTO_INVALID");
-    return source;
-  };
+  const lookup = () => readOwnedStorePhotoSource(db, scope, input, signal);
   const source = await lookup(),
     bytes = await readBlob(source.objectKey, source.sizeBytes, signal);
   checkSignal(signal);

@@ -5,6 +5,7 @@ import {
 } from "@fl-copilot/domain";
 import {
   visualActionInputSchema,
+  legacyVisualActionInputSchema,
   visualActionPreviewSchema,
   validateVisualActionPreview,
 } from "@fl-copilot/domain";
@@ -541,6 +542,7 @@ export function createCopilotAiProvider(
     transcriptionReview?(
       input: z.infer<typeof transcriptionReviewInputSchema>,
     ): Promise<z.infer<typeof transcriptionReviewPreviewSchema>>;
+    visualSourceActions?: boolean;
     visualAction?(
       input: z.infer<typeof visualActionInputSchema>,
     ): Promise<z.infer<typeof visualActionPreviewSchema>>;
@@ -1472,12 +1474,33 @@ export function createCopilotAiProvider(
                 ? {
                     product_visual_preview: tool({
                       description:
+                        (reads.visualSourceActions
+                          ? "ASSIGN_SOURCE prepares an exact attached/recent confirmed STORE_PHOTO sourceDocumentId as the product image, only on an explicit request: visualIdentityId=null. Use supplied source IDs, never URLs, fabricated identity or approval. Native review must show the actual photo and separately confirm usage rights. "
+                          : "") +
                         "Prepare an explicit user's product-image choice, never save it: ASSIGN_LIBRARY selects one exact existing visualIdentityId discovered with product_visuals; REMOVE_PRODUCT removes only this product’s association; REVOKE_CURRENT withdraws its currently resolved image for all products. productId is always the exact target; visualIdentityId is null except for assignment. No upload, generation or rights grant. READY creates a native review card; assignment needs viewing the actual local photo, and global withdrawal/restoring a removed association need separate human confirmation. Originals and business figures remain unchanged.",
-                      inputSchema: visualActionInputSchema,
-                      execute: (input) =>
-                        executeRead(
+                      inputSchema: reads.visualSourceActions
+                        ? visualActionInputSchema
+                        : legacyVisualActionInputSchema,
+                      execute: (rawInput) => {
+                        const input = visualActionInputSchema.parse(rawInput);
+                        return executeRead(
                           JSON.stringify(["visual-action-preview", input]),
                           async () => {
+                            if (
+                              input.action === "ASSIGN_SOURCE" &&
+                              (!reads.visualSourceActions ||
+                                ![
+                                  ...(request.attachedSources ?? []),
+                                  ...(request.recentSources ?? []),
+                                ].some(
+                                  (r) =>
+                                    r.sourceDocumentId ===
+                                      input.sourceDocumentId &&
+                                    r.sourceType === "STORE_PHOTO" &&
+                                    r.status === "CONFIRMED",
+                                ))
+                            )
+                              throw Error("STORE_PHOTO_UNAVAILABLE");
                             const result = validateVisualActionPreview(
                               request.storeId,
                               input,
@@ -1497,7 +1520,8 @@ export function createCopilotAiProvider(
                             visualActionPreviews.push(result);
                             return result;
                           },
-                        ),
+                        );
+                      },
                     }),
                   }
                 : {}),

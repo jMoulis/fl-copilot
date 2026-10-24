@@ -7,6 +7,7 @@ import { sourceObjectKey } from "../src/uploads/source-upload-service";
 import {
   normalizeStorePhoto,
   readStorePhoto,
+  readOwnedStorePhotoSource,
   readPrivateStorePhoto,
 } from "../src/copilot/store-photo-reader";
 vi.mock("@vercel/blob", async (original) => ({
@@ -211,4 +212,19 @@ it("cancels before reading and bounds a private stream instead of buffering an o
     "STORE_PHOTO_INVALID",
   );
   expect(cancelled).toHaveBeenCalledOnce();
+});
+
+it("prepares only owned source metadata without retrieving or normalizing pixels", async () => {
+  const f = await fixture();
+  const result = await readOwnedStorePhotoSource(f.db, f.scope, {
+    sourceDocumentId: f.input.sourceDocumentId,
+  });
+  expect(result.checksum).toBe(f.input.checksum);
+  expect(f.read).not.toHaveBeenCalled();
+  f.upload.userId = randomUUID();
+  await expect(
+    readOwnedStorePhotoSource(f.db, f.scope, {
+      sourceDocumentId: f.input.sourceDocumentId,
+    }),
+  ).rejects.toThrow("STORE_PHOTO_UNAVAILABLE");
 });

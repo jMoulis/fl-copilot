@@ -18,11 +18,17 @@ Ordre de poursuite inchangé : données/réimport et recette du binaire → UX a
 
 Les paragraphes datés ci-dessous sont un journal de préparation et de livraison ; « en validation » ou « hors build 13 » y décrit le moment de rédaction. Ils ne remplacent pas ce point courant et ne prouvent pas une validation physique.
 
+## Lot Copilote en validation — 24 octobre : utiliser une photo jointe comme image produit
+
+La capacité visuelle 2 ajoute `ASSIGN_SOURCE` au même outil : un produit exact et une photo du rayon confirmée, jointe ou récemment citée dans cette conversation. Le serveur ne lit que ses métadonnées vérifiées ; aucune image ni autorité ne vient des arguments du modèle. La carte récupère l’original par le service existant, présente réellement la copie et demande séparément les droits d’usage et, si nécessaire, le rétablissement de l’association. Original privé et partage de la copie produit sont distingués.
+
+La transaction manuelle de bibliothèque, l’Outbox et la file de fichiers restent canoniques. Le journal privé lie source/hash/asset ; double appui et redémarrage ne recréent pas la décision. Contexte périmé, original indisponible, révocation et annulation avant commit échouent sans écriture partielle. Pas de modèle de génération ou de fournisseur supplémentaire. Voir [la QA](../qa/M7_COPILOT_ATTACHED_PRODUCT_PHOTO_2026_10_24.md). **Chantiers 1/3/7 avancés ; états inchangés : 1/3/4/5/6/7 en cours, 2 code prêt.** **330 tests ciblés passent**, dont les parcours Mongo et cartes montées ; vérification complète **4 307 / 716**, lint/structure et dix projets stricts verts. CI et livraison groupée API puis native restent distinctes ; hors build 14.
+
 ## Lot Copilote en validation — 24 octobre : reprendre une transcription depuis le chat
 
 Le chat ouvre les comparaisons locales d’un document connu, par pages de dix, avec la même présentation et le même service que l’écran manuel. La première transcription acceptée reste immuable ; seule son adoption explicite est proposée, avec conservation des corrections et commandes refusées. Adoption et résultat privé sont atomiques et rejouables après redémarrage. Aucun nombre de conflits locaux ni décision n’est déduit par le serveur. Deux anciens callbacks de case à cocher sont reproduits puis refusés par le hook commun après changement de document ou relecture.
 
-**366 tests ciblés passent**, dont le parcours Mongo/SQLite réel et les cartes montées. Vérification complète **4 288 tests / 712 ignorés selon l’environnement**, lint/structure et dix projets stricts verts ; CI finales à consigner. Voir [la QA](../qa/M7_COPILOT_TRANSCRIPTION_REVIEW_2026_10_24.md). Livraison API puis native groupée attendue, hors build 14. **Chantiers 1/3/7 avancés ; états inchangés : 1/3/4/5/6/7 en cours, 2 code prêt.** Pas de nouveau build payant, de fournisseur activé ou de recette physique annoncée.
+**366 tests ciblés passent**, dont le parcours Mongo/SQLite réel et les cartes montées. Vérification complète **4 288 tests / 712 ignorés selon l’environnement**, lint/structure et dix projets stricts verts ; PR **362 fusionnée en `b3a2667`**, deux CI exactes **4 994 / 6**, exports iOS/Android verts et branche supprimée ; master vert. Voir [la QA](../qa/M7_COPILOT_TRANSCRIPTION_REVIEW_2026_10_24.md). Livraison API puis native groupée attendue, hors build 14. **Chantiers 1/3/7 avancés ; états inchangés : 1/3/4/5/6/7 en cours, 2 code prêt.** Pas de nouveau build payant, de fournisseur activé ou de recette physique annoncée.
 
 ## Lot Copilote en validation — 24 octobre : choisir et retirer une image dans le chat
 

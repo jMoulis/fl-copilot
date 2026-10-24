@@ -8,6 +8,7 @@ import {
   visualIdFromDigest,
   visualIdMaterial,
   visualEntitySchemas,
+  storePhotoSourceMetadataSchema,
   type VisualEntityType,
   type VisualEntityMap,
 } from "@fl-copilot/domain";
@@ -15,6 +16,7 @@ import {
   visualCollections,
   serializeVisualEntity,
 } from "../products/visual-library-sync.js";
+import { readOwnedStorePhotoSource } from "./store-photo-reader";
 import { readCataloguePreview } from "./catalogue-preview-tool.js";
 const hash = (value: string) =>
   createHash("sha256").update(value).digest("hex");
@@ -23,6 +25,7 @@ export async function previewVisualAction(
   db: Db,
   storeId: string,
   raw: unknown,
+  sourceContext?: { ownerId: string; signal?: AbortSignal },
 ) {
   const input = visualActionInputSchema.parse(raw);
   const catalogue = await readCataloguePreview(db, storeId, {
@@ -82,6 +85,25 @@ export async function previewVisualAction(
     ),
     get("visual_asset", selectedIdentity?.primaryAssetId ?? null),
   ]);
+  let sourcePhoto = null;
+  if (input.action === "ASSIGN_SOURCE" && product) {
+    if (!sourceContext) throw Error("VISUAL_ACTION_SOURCE_UNSUPPORTED");
+    const source = await readOwnedStorePhotoSource(
+      db,
+      { storeId, ownerId: sourceContext.ownerId },
+      { sourceDocumentId: input.sourceDocumentId },
+      sourceContext.signal,
+    );
+    sourcePhoto = storePhotoSourceMetadataSchema.parse({
+      sourceDocumentId: source._id,
+      sourceType: source.sourceType,
+      filename: source.originalFilename,
+      checksum: source.checksum,
+      registeredAt: source.createdAt.toISOString(),
+      mimeType: source.mimeType,
+      sizeBytes: source.sizeBytes,
+    });
+  }
   const basis = await prepareVisualActionBasis(
     storeId,
     input,
@@ -94,6 +116,7 @@ export async function previewVisualAction(
       selectedAsset,
     },
     async (v) => hash(v),
+    sourcePhoto,
   );
   const status =
     catalogue.status === "LIMIT_EXCEEDED"

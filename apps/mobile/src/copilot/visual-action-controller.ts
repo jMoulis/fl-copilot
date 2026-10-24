@@ -16,6 +16,7 @@ import {
 import { assertCanonicalVisualId, nativeVisualId } from "../products/visual-id";
 import {
   assignLibraryVisual,
+  assignCapturedVisual,
   removeProductVisual,
   revokeLibraryVisual,
   assertLibraryVisualCandidate,
@@ -27,6 +28,12 @@ import {
   joinedProductToolDatabase,
 } from "./product-tool-transaction";
 import { verifyPrivateToolRecord } from "./private-tool-record";
+import {
+  localVisualSourcePhoto,
+  type VisualSourcePhotoPort,
+  type PreparedVisualSourcePhoto,
+} from "./visual-source-photo";
+import { withVisualFiles } from "../products/visual-file-lock";
 type Database = OutboxDatabase & AtomicMutationDatabase;
 type Scope = {
   storeId: string;
@@ -40,6 +47,9 @@ async function readLocal(
   scope: Scope,
   input: VisualActionInput,
   hash: Hash,
+  sourcePhoto?: NonNullable<
+    import("@fl-copilot/domain").VisualActionBasis["sourcePhoto"]
+  >,
 ) {
   const db = joinedProductToolDatabase(tx),
     repo = new VisualLibraryRepository(db);
@@ -120,6 +130,9 @@ async function readLocal(
       selectedAsset: selectedAsset?.entity ?? null,
     },
     hash,
+    input.action === "ASSIGN_SOURCE" && sourcePhoto
+      ? await localVisualSourcePhoto(tx, scope, sourcePhoto)
+      : undefined,
   );
   let available = visualActionStatus(input, basis) === "READY";
   try {
@@ -169,12 +182,17 @@ async function storedProposal(tx: OutboxDatabase, scope: Scope, id: string) {
   return artifact;
 }
 export class CopilotVisualActionController {
+  private sourcePhotos = new Map<
+    string,
+    { basisHash: string; prepared: PreparedVisualSourcePhoto }
+  >();
   constructor(
     private db: Database,
     private scope: Scope,
     private hash: Hash,
     private id: () => string,
     private now: () => string = () => new Date().toISOString(),
+    private sourcePhotoPort?: VisualSourcePhotoPort,
   ) {}
   async open(raw: CopilotMessage) {
     const parsed = readVisualActionProposal(raw);
@@ -211,7 +229,17 @@ export class CopilotVisualActionController {
         result.operationId !== message.id ||
         result.userMessageId !== message.replyToMessageId ||
         result.productId !== content.input.productId ||
-        result.action !== content.input.action
+        result.action !== content.input.action ||
+        (content.input.action === "ASSIGN_SOURCE" &&
+          (result.sourceDocumentId !== content.input.sourceDocumentId ||
+            result.sourceChecksum !== content.basis.sourcePhoto?.checksum ||
+            result.assetContentHash !== content.basis.sourcePhoto?.checksum ||
+            result.assetId !==
+              (await nativeVisualId(
+                "visual_asset",
+                this.scope.storeId,
+                result.assetContentHash!,
+              ))))
       )
         throw Error("VISUAL_ACTION_SCOPE_INVALID");
       const request = visualActionRequestSchema.parse(
@@ -225,7 +253,13 @@ export class CopilotVisualActionController {
         review: null,
       };
     }
-    const review = await readLocal(tx, this.scope, content.input, this.hash);
+    const review = await readLocal(
+      tx,
+      this.scope,
+      content.input,
+      this.hash,
+      content.basis.sourcePhoto ?? undefined,
+    );
     const status =
       JSON.stringify(review.basis) !== JSON.stringify(content.basis)
         ? ("STALE" as const)
@@ -234,6 +268,48 @@ export class CopilotVisualActionController {
           : ("READY" as const);
     return { ...artifact, status, result: null, request: null, review };
   }
+  async prepareSourcePhoto(
+    message: CopilotMessage,
+    signal?: AbortSignal,
+    canContinue: () => boolean = () => true,
+  ) {
+    const check = () => {
+      if (
+        signal?.aborted ||
+        !canContinue() ||
+        !this.scope.canManageVisualLibrary
+      )
+        throw Error("VISUAL_ACTION_STALE");
+    };
+    check();
+    const state = await this.open(message);
+    if (
+      state.status !== "READY" ||
+      state.content.input.action !== "ASSIGN_SOURCE" ||
+      !state.review?.basis.sourcePhoto ||
+      !this.sourcePhotoPort
+    )
+      throw Error("VISUAL_ACTION_SOURCE_UNAVAILABLE");
+    return withVisualFiles(this.scope.storeId, async () => {
+      check();
+      const prepared = await this.sourcePhotoPort!.prepare(
+        state.review!.basis.sourcePhoto!,
+        check,
+      );
+      const current = await this.open(message);
+      check();
+      if (
+        current.status !== "READY" ||
+        current.review?.basisHash !== state.review!.basisHash
+      )
+        throw Error("VISUAL_ACTION_STALE");
+      this.sourcePhotos.set(message.id, {
+        basisHash: current.review.basisHash,
+        prepared,
+      });
+      return prepared;
+    });
+  }
   async confirm(
     message: CopilotMessage,
     basisHash: string,
@@ -241,6 +317,7 @@ export class CopilotVisualActionController {
       photoReviewed: boolean;
       confirmGlobalRevoke: boolean;
       restoreAssociation: boolean;
+      rightsConfirmed?: boolean;
     },
     signal?: AbortSignal,
     canContinue: () => boolean = () => true,
@@ -261,107 +338,184 @@ export class CopilotVisualActionController {
     if (state.status !== "READY" || state.review?.basisHash !== basisHash)
       throw Error("VISUAL_ACTION_STALE");
     const { canManageVisualLibrary, ...scope } = this.scope;
-    const result = await runReviewedStoreOperation(
-      this.db,
-      request,
-      {
-        ...scope,
-        canExecute: canManageVisualLibrary,
-        conversationId: message.conversationId,
-        userMessageId: message.replyToMessageId!,
-        authorizedRequestJson: JSON.stringify(request),
-        decisionLevel: "REVIEWED",
-      },
-      visualActionResultSchema,
-      async (tx, ctx) => {
-        const artifact = await storedProposal(tx, this.scope, message.id);
+    const sourceSelection =
+      state.content.input.action === "ASSIGN_SOURCE"
+        ? this.sourcePhotos.get(message.id)
+        : null;
+    const execute = async () => {
+      if (state.content.input.action === "ASSIGN_SOURCE") {
         if (
-          artifact.message.conversationId !== ctx.conversationId ||
-          artifact.message.replyToMessageId !== ctx.userMessageId
+          !sourceSelection ||
+          sourceSelection.basisHash !== basisHash ||
+          !state.review?.basis.sourcePhoto ||
+          !this.sourcePhotoPort
         )
-          throw Error("VISUAL_ACTION_SCOPE_INVALID");
-        const { input } = artifact.content,
-          review = await readLocal(tx, this.scope, input, this.hash);
-        if (
-          !canContinue() ||
-          signal?.aborted ||
-          !review.available ||
-          review.basisHash !== request.basisHash ||
-          JSON.stringify(review.basis) !==
-            JSON.stringify(artifact.content.basis)
-        )
+          throw Error("VISUAL_SOURCE_ORIGINAL_REQUIRED");
+        await this.sourcePhotoPort.verify(
+          state.review.basis.sourcePhoto,
+          sourceSelection.prepared,
+          () => {
+            if (signal?.aborted || !canContinue())
+              throw Error("VISUAL_ACTION_STALE");
+          },
+        );
+      }
+      let result: ReturnType<typeof visualActionResultSchema.parse> | undefined;
+      await this.db.withExclusiveTransactionAsync(async (outer) => {
+        await storedProposal(outer, this.scope, message.id);
+        result = await runReviewedStoreOperation(
+          joinedProductToolDatabase(outer),
+          request,
+          {
+            ...scope,
+            canExecute: canManageVisualLibrary,
+            conversationId: message.conversationId,
+            userMessageId: message.replyToMessageId!,
+            authorizedRequestJson: JSON.stringify(request),
+            decisionLevel: "REVIEWED",
+          },
+          visualActionResultSchema,
+          async (tx, ctx) => {
+            const artifact = await storedProposal(tx, this.scope, message.id);
+            if (
+              artifact.message.conversationId !== ctx.conversationId ||
+              artifact.message.replyToMessageId !== ctx.userMessageId
+            )
+              throw Error("VISUAL_ACTION_SCOPE_INVALID");
+            const { input } = artifact.content,
+              review = await readLocal(
+                tx,
+                this.scope,
+                input,
+                this.hash,
+                artifact.content.basis.sourcePhoto ?? undefined,
+              );
+            if (
+              !canContinue() ||
+              signal?.aborted ||
+              !review.available ||
+              review.basisHash !== request.basisHash ||
+              JSON.stringify(review.basis) !==
+                JSON.stringify(artifact.content.basis)
+            )
+              throw Error("VISUAL_ACTION_STALE");
+            if (
+              ["ASSIGN_LIBRARY", "ASSIGN_SOURCE"].includes(input.action) &&
+              !request.photoReviewed
+            )
+              throw Error("VISUAL_PHOTO_REVIEW_REQUIRED");
+            if (
+              input.action === "REVOKE_CURRENT" &&
+              !request.confirmGlobalRevoke
+            )
+              throw Error("VISUAL_GLOBAL_REVOKE_REQUIRED");
+            if (
+              ["ASSIGN_LIBRARY", "ASSIGN_SOURCE"].includes(input.action) &&
+              review.currentLink?.entity.deletedAt &&
+              !request.restoreAssociation
+            )
+              throw Error("VISUAL_REACTIVATION_REQUIRED");
+            const db = joinedProductToolDatabase(tx),
+              at = this.now(),
+              visualContext = {
+                storeId: ctx.storeId,
+                actorId: ctx.ownerId,
+                deviceId: ctx.deviceId,
+                canWrite: () => canContinue() && !signal?.aborted,
+                id: this.id,
+                now: () => at,
+              };
+            let sourceAsset:
+              Awaited<ReturnType<typeof assignCapturedVisual>> | undefined;
+            if (input.action === "ASSIGN_SOURCE") {
+              if (
+                !request.rightsConfirmed ||
+                !sourceSelection ||
+                !review.product ||
+                !review.basis.sourcePhoto
+              )
+                throw Error("VISUAL_RIGHTS_REQUIRED");
+              sourceAsset = await assignCapturedVisual(
+                db,
+                { product: review.product, link: review.currentLink },
+                sourceSelection.prepared.source,
+                true,
+                visualContext,
+              );
+            } else if (input.action === "ASSIGN_LIBRARY") {
+              if (!review.product || !review.selectedIdentity)
+                throw Error("VISUAL_ACTION_STALE");
+              await assignLibraryVisual(
+                db,
+                { product: review.product, link: review.currentLink },
+                review.selectedIdentity,
+                visualContext,
+              );
+            } else if (input.action === "REMOVE_PRODUCT") {
+              if (!review.product) throw Error("VISUAL_ACTION_STALE");
+              await removeProductVisual(
+                db,
+                { product: review.product, link: review.currentLink },
+                visualContext,
+              );
+            } else {
+              if (!review.currentAsset) throw Error("VISUAL_ACTION_STALE");
+              await revokeLibraryVisual(db, review.currentAsset, visualContext);
+            }
+            const kind =
+                input.action === "REVOKE_CURRENT"
+                  ? "visual_asset"
+                  : "product_visual_link",
+              entityId =
+                input.action === "REVOKE_CURRENT"
+                  ? review.currentAsset!.entity.id
+                  : await nativeVisualId(
+                      "product_visual_link",
+                      ctx.storeId,
+                      input.productId,
+                    ),
+              saved = await new VisualLibraryRepository(db).get(
+                kind,
+                ctx.storeId,
+                entityId,
+              );
+            if (!saved || !canContinue()) throw Error("VISUAL_ACTION_STALE");
+            return {
+              ...request,
+              userMessageId: ctx.userMessageId,
+              appliedAt: at,
+              ...(sourceAsset
+                ? {
+                    sourceDocumentId: input.sourceDocumentId,
+                    sourceChecksum: review.basis.sourcePhoto!.checksum,
+                    assetId: sourceAsset.id,
+                    assetContentHash: sourceAsset.contentHash,
+                  }
+                : {}),
+              action: input.action,
+              productId: input.productId,
+              entityId,
+              version: saved.entity.version,
+              syncState:
+                saved.syncState === "SYNCED"
+                  ? ("SYNCED" as const)
+                  : ("PENDING" as const),
+            };
+          },
+          signal,
+        );
+        if (!canContinue() || signal?.aborted)
           throw Error("VISUAL_ACTION_STALE");
-        if (input.action === "ASSIGN_LIBRARY" && !request.photoReviewed)
-          throw Error("VISUAL_PHOTO_REVIEW_REQUIRED");
-        if (input.action === "REVOKE_CURRENT" && !request.confirmGlobalRevoke)
-          throw Error("VISUAL_GLOBAL_REVOKE_REQUIRED");
-        if (
-          input.action === "ASSIGN_LIBRARY" &&
-          review.currentLink?.entity.deletedAt &&
-          !request.restoreAssociation
-        )
-          throw Error("VISUAL_REACTIVATION_REQUIRED");
-        const db = joinedProductToolDatabase(tx),
-          at = this.now(),
-          visualContext = {
-            storeId: ctx.storeId,
-            actorId: ctx.ownerId,
-            deviceId: ctx.deviceId,
-            canWrite: () => canContinue() && !signal?.aborted,
-            id: this.id,
-            now: () => at,
-          };
-        if (input.action === "ASSIGN_LIBRARY") {
-          if (!review.product || !review.selectedIdentity)
-            throw Error("VISUAL_ACTION_STALE");
-          await assignLibraryVisual(
-            db,
-            { product: review.product, link: review.currentLink },
-            review.selectedIdentity,
-            visualContext,
-          );
-        } else if (input.action === "REMOVE_PRODUCT") {
-          if (!review.product) throw Error("VISUAL_ACTION_STALE");
-          await removeProductVisual(
-            db,
-            { product: review.product, link: review.currentLink },
-            visualContext,
-          );
-        } else {
-          if (!review.currentAsset) throw Error("VISUAL_ACTION_STALE");
-          await revokeLibraryVisual(db, review.currentAsset, visualContext);
-        }
-        const kind =
-            input.action === "REVOKE_CURRENT"
-              ? "visual_asset"
-              : "product_visual_link",
-          entityId =
-            input.action === "REVOKE_CURRENT"
-              ? review.currentAsset!.entity.id
-              : await nativeVisualId(
-                  "product_visual_link",
-                  ctx.storeId,
-                  input.productId,
-                ),
-          saved = await new VisualLibraryRepository(db).get(
-            kind,
-            ctx.storeId,
-            entityId,
-          );
-        if (!saved || !canContinue()) throw Error("VISUAL_ACTION_STALE");
-        return {
-          ...request,
-          userMessageId: ctx.userMessageId,
-          appliedAt: at,
-          action: input.action,
-          productId: input.productId,
-          entityId,
-          version: saved.entity.version,
-          syncState: saved.syncState === "SYNCED" ? "SYNCED" : "PENDING",
-        };
-      },
-      signal,
-    );
-    return { ...state, status: "COMPLETED" as const, result, request };
+      });
+      return {
+        ...state,
+        status: "COMPLETED" as const,
+        result: result!,
+        request,
+      };
+    };
+    return state.content.input.action === "ASSIGN_SOURCE"
+      ? withVisualFiles(this.scope.storeId, execute)
+      : execute();
   }
 }

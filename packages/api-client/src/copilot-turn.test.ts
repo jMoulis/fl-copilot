@@ -902,7 +902,7 @@ it.each([true, false, 2] as const)(
   },
 );
 
-it.each([true, false])(
+it.each([true, false, 2] as const)(
   "advertises visual-action preparation without mutation/consent fields in the request body (%s)",
   async (visualActions) => {
     const transport = vi.fn<typeof fetch>(
@@ -922,7 +922,10 @@ it.each([true, false])(
     );
     const sent = transport.mock.calls[0]![1]!;
     if (visualActions)
-      expect(sent.headers).toHaveProperty("x-copilot-visual-actions", "1");
+      expect(sent.headers).toHaveProperty(
+        "x-copilot-visual-actions",
+        visualActions === 2 ? "2" : "1",
+      );
     else expect(sent.headers).not.toHaveProperty("x-copilot-visual-actions");
     expect(JSON.parse(String(sent.body))).toEqual(input);
   },

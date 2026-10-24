@@ -1,6 +1,14 @@
+import type { PreparedVisualSourcePhoto } from "./visual-source-photo";
 import { visualConflictSummary } from "../products/visual-conflict-presentation";
-import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Switch, Text, View } from "react-native";
+import { useCallback, useMemo, useState, useRef, useLayoutEffect } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  Switch,
+  Text,
+  View,
+  Image,
+} from "react-native";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotVisualActionController } from "./visual-action-controller";
 import { useReviewedConflict } from "../components/use-reviewed-conflict";
@@ -23,6 +31,13 @@ export function VisualActionCard({
     () => ({ message, controller, canConfirm }),
     [message, controller, canConfirm],
   );
+  const [sourceImage, setSourceImage] = useState<{
+    scope: object;
+    review: unknown;
+    prepared: PreparedVisualSourcePhoto;
+  }>();
+  const [rights, setRights] = useState<{ scope: object; review: unknown }>();
+  const imageContext = useRef<unknown>(undefined);
   const [photo, setPhoto] = useState<{ scope: object; review: unknown }>(),
     [global, setGlobal] = useState<{ scope: object; review: unknown }>(),
     [restore, setRestore] = useState<{ scope: object; review: unknown }>(),
@@ -54,10 +69,12 @@ export function VisualActionCard({
       approved(comparison, r) &&
       r.status === "READY" &&
       !!r.review &&
-      (r.content.input.action !== "ASSIGN_LIBRARY" || approved(photo, r)) &&
+      (!["ASSIGN_LIBRARY", "ASSIGN_SOURCE"].includes(r.content.input.action) ||
+        approved(photo, r)) &&
+      (r.content.input.action !== "ASSIGN_SOURCE" || approved(rights, r)) &&
       (r.content.input.action !== "REVOKE_CURRENT" || approved(global, r)) &&
       (!r.review.currentLink?.entity.deletedAt ||
-        r.content.input.action !== "ASSIGN_LIBRARY" ||
+        !["ASSIGN_LIBRARY", "ASSIGN_SOURCE"].includes(r.content.input.action) ||
         approved(restore, r)),
     choose: async (r, _local, lifetime) => {
       if (r.status !== "READY" || !r.review) throw Error("VISUAL_ACTION_STALE");
@@ -66,11 +83,18 @@ export function VisualActionCard({
         r.review.basisHash,
         {
           photoReviewed:
-            r.content.input.action === "ASSIGN_LIBRARY" && approved(photo, r),
+            ["ASSIGN_LIBRARY", "ASSIGN_SOURCE"].includes(
+              r.content.input.action,
+            ) && approved(photo, r),
           confirmGlobalRevoke:
             r.content.input.action === "REVOKE_CURRENT" && approved(global, r),
+          ...(r.content.input.action === "ASSIGN_SOURCE"
+            ? { rightsConfirmed: approved(rights, r) }
+            : {}),
           restoreAssociation:
-            r.content.input.action === "ASSIGN_LIBRARY" &&
+            ["ASSIGN_LIBRARY", "ASSIGN_SOURCE"].includes(
+              r.content.input.action,
+            ) &&
             !!r.review.currentLink?.entity.deletedAt &&
             approved(restore, r),
         },
@@ -89,15 +113,19 @@ export function VisualActionCard({
     action = r?.content.input.action,
     done = completed?.scope === scope || r?.status === "COMPLETED";
   const asset =
-    action === "ASSIGN_LIBRARY"
-      ? review?.selectedAsset?.entity
-      : review?.currentAsset?.entity;
+    action === "ASSIGN_SOURCE"
+      ? null
+      : action === "ASSIGN_LIBRARY"
+        ? review?.selectedAsset?.entity
+        : review?.currentAsset?.entity;
   const identity =
-    action === "ASSIGN_LIBRARY"
-      ? review?.selectedIdentity?.entity
-      : review?.currentIdentity?.entity;
+    action === "ASSIGN_SOURCE"
+      ? null
+      : action === "ASSIGN_LIBRARY"
+        ? review?.selectedIdentity?.entity
+        : review?.currentIdentity?.entity;
   const ready = canConfirm && r?.status === "READY" && !done;
-  const needsPhoto = action === "ASSIGN_LIBRARY",
+  const needsPhoto = action === "ASSIGN_LIBRARY" || action === "ASSIGN_SOURCE",
     needsGlobal = action === "REVOKE_CURRENT",
     needsRestore = needsPhoto && !!review?.currentLink?.entity.deletedAt;
   const allowed =
@@ -105,14 +133,24 @@ export function VisualActionCard({
     state.compared &&
     approved(comparison, r) &&
     (!needsPhoto || approved(photo, r)) &&
+    (action !== "ASSIGN_SOURCE" || approved(rights, r)) &&
     (!needsGlobal || approved(global, r)) &&
     (!needsRestore || approved(restore, r)) &&
     !state.reading &&
     !state.busy &&
     !state.error;
+  const displayedSourceImage = approved(sourceImage, r)
+    ? sourceImage
+    : undefined;
+  useLayoutEffect(() => {
+    imageContext.current = displayedSourceImage;
+    return () => {
+      imageContext.current = undefined;
+    };
+  }, [displayedSourceImage]);
   async function recover() {
     if (
-      !asset ||
+      (action !== "ASSIGN_SOURCE" && !asset) ||
       approved(fetching, r) ||
       approved(photo, r) ||
       !state.isCurrent() ||
@@ -122,15 +160,25 @@ export function VisualActionCard({
     setFetching({ scope, review: r });
     setFileError(undefined);
     try {
-      await requestPreview(asset.id);
+      if (action === "ASSIGN_SOURCE") {
+        const prepared = await controller.prepareSourcePhoto(
+          message,
+          undefined,
+          state.isCurrent,
+        );
+        if (state.isCurrent()) setSourceImage({ scope, review: r, prepared });
+      } else await requestPreview(asset!.id);
       if (state.isCurrent()) setPreviewRun((n) => n + 1);
-    } catch {
+    } catch (error) {
       if (state.isCurrent())
         setFileError({
           scope,
           review: r,
           message:
-            "L’aperçu n’est pas encore disponible. L’original reste conservé ; vous pourrez réessayer après synchronisation.",
+            error instanceof Error &&
+            error.message === "VISUAL_SOURCE_SIZE_LIMIT"
+              ? "Cette photo dépasse les 12 Mio de la bibliothèque produit. Joignez une copie plus légère ; l’original reste conservé et consultable dans le chat."
+              : "L’aperçu n’est pas encore disponible. L’original reste conservé ; vous pourrez réessayer après synchronisation.",
         });
     } finally {
       if (state.isCurrent()) setFetching(undefined);
@@ -174,6 +222,53 @@ export function VisualActionCard({
       ) : null}
       {ready && review ? (
         <>
+          {action === "ASSIGN_SOURCE" ? (
+            <>
+              <Text style={{ color: colors.muted }}>
+                Photo jointe : {review.basis.sourcePhoto?.filename}. L’original
+                restera conservé.
+              </Text>
+              {displayedSourceImage ? (
+                <Image
+                  source={{ uri: displayedSourceImage.prepared.uri }}
+                  resizeMode="contain"
+                  style={{ width: "100%", height: 180 }}
+                  accessibilityLabel="Photo jointe à vérifier pour ce produit"
+                  onLoad={() => {
+                    if (
+                      imageContext.current === displayedSourceImage &&
+                      state.isCurrent()
+                    )
+                      setPhoto({ scope, review: r });
+                  }}
+                  onError={() => {
+                    if (
+                      imageContext.current === displayedSourceImage &&
+                      state.isCurrent()
+                    ) {
+                      setPhoto(undefined);
+                      setSourceImage(undefined);
+                    }
+                  }}
+                />
+              ) : null}
+              <View
+                style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+              >
+                <Switch
+                  accessibilityLabel="Je confirme les droits d’utilisation de cette photo"
+                  value={approved(rights, r)}
+                  onValueChange={(v) =>
+                    setRights(v ? { scope, review: r } : undefined)
+                  }
+                />
+                <Text style={{ color: colors.ink, flex: 1 }}>
+                  Je dispose des droits pour utiliser cette photo comme image
+                  produit.
+                </Text>
+              </View>
+            </>
+          ) : null}
           {identity ? (
             <Text style={{ color: colors.muted }}>
               {visualConflictSummary(identity, {})[1]}
@@ -202,7 +297,11 @@ export function VisualActionCard({
               </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Récupérer l’aperçu de cette image"
+                accessibilityLabel={
+                  action === "ASSIGN_SOURCE"
+                    ? "Préparer la photo jointe"
+                    : "Récupérer l’aperçu de cette image"
+                }
                 disabled={approved(fetching, r) || state.busy}
                 accessibilityState={{
                   disabled: approved(fetching, r) || state.busy,
@@ -217,7 +316,9 @@ export function VisualActionCard({
                 <Text style={{ color: colors.forest }}>
                   {approved(fetching, r)
                     ? "Récupération de l’aperçu…"
-                    : "Récupérer l’aperçu si nécessaire"}
+                    : action === "ASSIGN_SOURCE"
+                      ? "Préparer la photo jointe"
+                      : "Récupérer l’aperçu si nécessaire"}
                 </Text>
               </Pressable>
             </>
@@ -318,6 +419,7 @@ export function VisualActionCard({
       ) : null}
       {!done ? (
         <Pressable
+          accessibilityLabel="Relire les informations"
           accessibilityRole="button"
           disabled={state.reading || state.busy}
           accessibilityState={{ disabled: state.reading || state.busy }}
@@ -328,6 +430,8 @@ export function VisualActionCard({
           }}
           onPress={() => {
             setPhoto(undefined);
+            setSourceImage(undefined);
+            setRights(undefined);
             setGlobal(undefined);
             setRestore(undefined);
             state.reload();

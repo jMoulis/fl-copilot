@@ -291,3 +291,119 @@ it("does not accept a failed native image decode as a viewed photo", async () =>
     s.db.raw.close();
   }
 });
+it.each([false, true])(
+  "requires the actual attached photo and independent usage rights (retired=%s)",
+  async (retired) => {
+    const s = await visualActionFixture("ASSIGN_SOURCE", ":memory:", {
+      retiredAssociation: retired,
+    });
+    runtime.database = { sqlite: s.db };
+    let r: ReactTestRenderer | undefined;
+    const onSaved = vi.fn();
+    try {
+      await act(async () => {
+        r = create(
+          createElement(VisualActionCard, {
+            message: s.message,
+            controller: s.controller,
+            canConfirm: true,
+            onSaved,
+            requestPreview: vi.fn(),
+          }),
+        );
+      });
+      await ready(r!);
+      await compare(r!);
+      expect(button(r!).props.disabled).toBe(true);
+      expect(r!.root.findAllByType(Image)).toHaveLength(0);
+      await act(async () =>
+        r!.root
+          .findByProps({ accessibilityLabel: "Préparer la photo jointe" })
+          .props.onPress(),
+      );
+      await vi.waitFor(async () => {
+        await flush();
+        expect(r!.root.findAllByType(Image)).toHaveLength(1);
+      });
+      await act(async () => r!.root.findByType(Image).props.onLoad());
+      expect(button(r!).props.disabled).toBe(true);
+      await act(async () =>
+        r!.root
+          .findByProps({
+            accessibilityLabel:
+              "Je confirme les droits d’utilisation de cette photo",
+          })
+          .props.onValueChange(true),
+      );
+      if (retired) {
+        expect(button(r!).props.disabled).toBe(true);
+        await act(async () =>
+          r!.root
+            .findByProps({
+              accessibilityLabel:
+                "Je confirme le rétablissement de l’association à une image",
+            })
+            .props.onValueChange(true),
+        );
+      }
+      expect(button(r!).props.disabled).toBe(false);
+      await act(async () => button(r!).props.onPress());
+      await vi.waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+      expect(
+        (await s.controller.open(s.message)).result?.sourceDocumentId,
+      ).toBe(s.sourcePhoto.sourceDocumentId);
+    } finally {
+      if (r) await act(async () => r!.unmount());
+      s.db.raw.close();
+    }
+  },
+);
+it("ignores a retained image-load callback after rereading the source proposal", async () => {
+  const s = await visualActionFixture("ASSIGN_SOURCE");
+  runtime.database = { sqlite: s.db };
+  let r: ReactTestRenderer | undefined;
+  try {
+    await act(async () => {
+      r = create(
+        createElement(VisualActionCard, {
+          message: s.message,
+          controller: s.controller,
+          canConfirm: true,
+          onSaved: vi.fn(),
+          requestPreview: vi.fn(),
+        }),
+      );
+    });
+    await ready(r!);
+    await act(async () =>
+      r!.root
+        .findByProps({ accessibilityLabel: "Préparer la photo jointe" })
+        .props.onPress(),
+    );
+    await vi.waitFor(async () => {
+      await flush();
+      expect(r!.root.findAllByType(Image)).toHaveLength(1);
+    });
+    const staleLoad = r!.root.findByType(Image).props.onLoad;
+    const readButton = r!.root.findByProps({
+      accessibilityLabel: "Relire les informations",
+    });
+    expect(readButton).toBeDefined();
+    await act(async () => readButton!.props.onPress());
+    await ready(r!);
+    await compare(r!);
+    await act(async () =>
+      r!.root
+        .findByProps({
+          accessibilityLabel:
+            "Je confirme les droits d’utilisation de cette photo",
+        })
+        .props.onValueChange(true),
+    );
+    await act(async () => staleLoad());
+    expect(button(r!).props.disabled).toBe(true);
+  } finally {
+    if (r) await act(async () => r!.unmount());
+    s.db.raw.close();
+  }
+});
