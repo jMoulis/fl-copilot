@@ -353,9 +353,13 @@ export async function readAnalyticsQuery(
     sourceType: "KPI" | "COMPARISON" | "DATA_QUALITY" = "KPI",
     analyticsContext?: AnalyticsExplorerContext,
   ) => {
+    // An evidence key is an opaque lookup, not its provenance or a permission.
+    // Keep full SHA-256 in sourceId; shorten repeated model output and retain
+    // the existing fail-closed duplicate-evidence checks for any key collision.
+    const evidenceId = `aq:${createHash("sha256").update(id).digest("hex").slice(0, 32)}`;
     evidence.push(
       copilotEvidenceSchema.parse({
-        id,
+        id: evidenceId,
         sourceId,
         sourceType,
         sourceVersion: null,
@@ -366,7 +370,7 @@ export async function readAnalyticsQuery(
         factKind: sourceType === "DATA_QUALITY" ? "QUALITY" : "DERIVED",
       }),
     );
-    return id;
+    return evidenceId;
   };
   const metricLabels = {
     sales: "CA net (€)",

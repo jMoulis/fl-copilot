@@ -183,6 +183,35 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
     ).toBe(before);
     expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
   });
+  it("keeps analytical evidence keys compact and stable while retaining the full source revision and citable values", async () => {
+    const input = query({
+      includeSalesConcentration: true,
+      includeSalesMeasures: true,
+      referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+    });
+    const r = await readAnalyticsQuery(db, storeId, input);
+    expect(r.evidence.length).toBeGreaterThan(14);
+    expect(new Set(r.evidence.map((e) => e.id)).size).toBe(r.evidence.length);
+    for (const e of r.evidence) {
+      expect(e.id).toMatch(/^aq:[0-9a-f]{32}$/);
+      expect(e.sourceId).toMatch(/^analytics-query\/[0-9a-f]{64}$/);
+      expect(e.id.length).toBeLessThan(e.sourceId.length / 2);
+    }
+    const again = await readAnalyticsQuery(db, storeId, input);
+    expect(again.evidence).toEqual(r.evidence);
+    const current = r.salesConcentration!.current;
+    const fact = r.evidence.find(
+      (e) => e.id === current.evidenceIds.top20SalesSharePercent,
+    )!;
+    expect(
+      renderAnswerText(
+        "{{value:0}} % {{source:0}}",
+        [{ evidenceId: fact.id }],
+        r.evidence,
+      ),
+    ).toContain("66,01 %");
+    expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
+  });
   it("reads stored quantities, preserves units and supplies citable weighted realized-price evidence without asserting TTC", async () => {
     await db.collection("productDailyPerformance").updateMany(
       { storeId, productId: banana },
