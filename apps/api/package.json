@@ -8,7 +8,8 @@
     "dev:ensure-store": "tsx --env-file-if-exists=.env src/development/ensure-store.ts",
     "build": "tsup && node ../../scripts/check-api-bundle.mjs",
     "start": "node --env-file-if-exists=.env dist/runtime.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:visual-pilot": "tsx src/development/visual-pilot-cli.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.91",

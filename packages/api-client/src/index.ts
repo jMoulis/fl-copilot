@@ -862,6 +862,16 @@ export class ApiClient {
     ) as Promise<ImportVerificationResult>;
   }
 
+  /** Canonical bootstrap for an administrative visual review; no authority in caller-supplied rows. */
+  visualLibrarySnapshot(accessToken: string, storeId: string) {
+    return this.request(
+      "/api/v1/sync/bootstrap?visualLibrary=true&rawObservationDays=1",
+      { method: "GET", headers: syncHeaders(accessToken, storeId) },
+      bootstrapResponseSchema,
+      60_000,
+    ) as Promise<BootstrapResponse>;
+  }
+
   initVisualFile(accessToken: string, storeId: string, assetId: string) {
     return this.request(
       "/api/v1/visual-files/init",
