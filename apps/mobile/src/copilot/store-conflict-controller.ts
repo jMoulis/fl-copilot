@@ -1,3 +1,5 @@
+import { storeLayoutSchema } from "@fl-copilot/domain";
+import { StoreLayoutRepository } from "../store/layout-repository";
 import { isCatalogueConflictKind } from "@fl-copilot/domain";
 import { ProductMasterConflictRepository } from "../products/conflict-repository";
 import {
@@ -42,6 +44,7 @@ import {
 } from "./store-conflict-review";
 type Scope = {
   canManageProducts?: boolean;
+  canManageStoreLayout?: boolean;
   canManageCommercialChoices?: boolean;
   canPrepareCommercialWeek?: boolean;
   canValidateCommercialPlan?: boolean;
@@ -59,6 +62,7 @@ function allowed(
   scope: Scope,
   kind: z.infer<typeof storeConflictInputSchema>["kind"],
 ) {
+  if (kind === "STORE_LAYOUT") return !!scope.canManageStoreLayout;
   if (isCatalogueConflictKind(kind)) return !!scope.canManageProducts;
   if (kind === "COMMERCIAL_REFERENCE")
     return !!scope.canManageCommercialReferences;
@@ -145,6 +149,7 @@ export class CopilotStoreConflictRuntime {
       canManageStoreSettings,
       comparisonReviewed,
       canManageProducts,
+      canManageStoreLayout,
       canManageCommercialChoices,
       canPrepareCommercialWeek,
       canValidateCommercialPlan,
@@ -156,6 +161,7 @@ export class CopilotStoreConflictRuntime {
     void canManageStoreSettings;
     void comparisonReviewed;
     void canManageProducts;
+    void canManageStoreLayout;
     void canManageCommercialChoices;
     void canPrepareCommercialWeek;
     void canValidateCommercialPlan;
@@ -174,7 +180,12 @@ export class CopilotStoreConflictRuntime {
       storeConflictResultSchema,
       async (tx, ctx) => {
         const { content } = await proof(tx, ctx, request.operationId),
-          review = await readStoreConflictReview(tx, content, this.digest);
+          review = await readStoreConflictReview(
+            tx,
+            content,
+            this.digest,
+            ctx.ownerId,
+          );
         if (
           review.status !== "READY" ||
           review.conflict?.id !== request.conflictId ||
@@ -208,7 +219,34 @@ export class CopilotStoreConflictRuntime {
           commandId = this.id(),
           appliedAt = this.now(),
           useLocal = request.decision === "KEEP_LOCAL";
-        if (isCatalogueConflictKind(request.kind)) {
+        if (request.kind === "STORE_LAYOUT") {
+          const r = review.layoutReview;
+          if (!r?.remote) throw Error("STORE_CONFLICT_STALE");
+          await new StoreLayoutRepository(
+            joined,
+            this.id,
+            this.now,
+            this.digest,
+          ).resolve(
+            request.conflictId,
+            {
+              useLocal,
+              storeId: ctx.storeId,
+              localRevisionId: storeLayoutSchema.parse(review.current.entity)
+                .revisionId,
+              remoteRevisionId: r.remote.revisionId,
+            },
+            {
+              actorId: ctx.ownerId,
+              deviceId: ctx.deviceId,
+              commandId,
+              canWrite: true,
+              reviewHash: r.hash,
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+            },
+          );
+        } else if (isCatalogueConflictKind(request.kind)) {
           const repository = new ProductMasterConflictRepository(
               joined,
               this.digest,
@@ -480,7 +518,12 @@ export class CopilotStoreConflictController {
         result,
       };
     }
-    const review = await readStoreConflictReview(this.db, content, this.digest);
+    const review = await readStoreConflictReview(
+      this.db,
+      content,
+      this.digest,
+      this.scope.ownerId,
+    );
     return { ...artifact, status: review.status, review, result: null };
   }
   async confirm(

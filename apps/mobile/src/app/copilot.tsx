@@ -396,6 +396,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           deviceId,
           canCaptureStoreEvents,
           canManageStoreSettings,
+          canManageStoreLayout: canManageStoreSettings,
           canManageProducts,
           canManageCommercialChoices: canManageProducts,
           canPrepareCommercialWeek: canManageProducts,
@@ -1138,7 +1139,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 canCaptureStoreEvents ||
                 canManageStoreSettings ||
                 canManageProducts
-                  ? 5
+                  ? 6
                   : false,
               receiptRecovery: canManageProducts,
               receiptCorrection: canManageProducts ? 2 : false,
