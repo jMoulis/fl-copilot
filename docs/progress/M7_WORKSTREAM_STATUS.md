@@ -1,5 +1,9 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — accès visible aux actions d’un message
+
+Le menu natif Copier/Supprimer/Annuler est aussi accessible par un bouton `•••` de 48 points dans le fil, avec libellé d’accessibilité. Appui long, confirmation métier et défilement horizontal des tableaux conservés. Trois reproductions échouent avant ; neuf tests ciblés passent après. Voir [la QA](../qa/M7_CHAT_MESSAGE_ACTIONS_2026_10_24.md). **Hors source du build 15 déjà en cours** ; aucun build payant isolé. Chantier 7 avancé, états globaux inchangés : **1/3/4/5/6/7 en cours, 2 code prêt**. Recette physique et autres alternatives aux gestes restent ouvertes.
+
 ## 24 octobre — statut courant des propositions de mémoire
 
 Le composant du chat conservait une ancienne mention « mémorisée/synchronisée » pendant une relecture ou son échec. La même carte est maintenant liée à la base SQLite, à la proposition et au propriétaire/magasin courants ; statut et contenu non vérifiés sont retirés, payload incohérent et ancien bouton/refus de focus sont refusés. L’éditeur, la confirmation humaine, l’Outbox et les règles d’oubli restent canoniques. **Sept reproductions montées échouaient avant ; neuf passent après**, sans relire sur les rerenders ordinaires. **55 tests mémoire ciblés** et la vérification complète **4 336 / 717**, dix projets stricts, lint/structure passent. Voir [la QA et ses limites](../qa/M7_KNOWLEDGE_SUGGESTION_CONTEXT_2026_10_24.md). Livraison native groupée et recette physique restent ouvertes ; hors build 14, aucun nouveau build payant. **Chantiers 4/7 avancés ; états inchangés : 1/3/4/5/6/7 en cours, 2 code prêt.**

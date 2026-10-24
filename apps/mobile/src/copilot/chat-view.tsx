@@ -256,7 +256,7 @@ export function CopilotChatView({
             ) : (
               <MessageContainer
                 {...(item.role === "USER"
-                  ? { onLongPress, delayLongPress: 450 }
+                  ? { onLongPress, delayLongPress: 450, accessible: false }
                   : {})}
                 style={
                   item.role === "USER"
@@ -326,6 +326,25 @@ export function CopilotChatView({
                     text={copilotImportMessageText(item)}
                     assistant={item.role === "ASSISTANT"}
                   />
+                  {onLongPress ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        item.role === "USER"
+                          ? "Actions de votre message"
+                          : "Actions de la réponse du copilote"
+                      }
+                      accessibilityHint={
+                        item.text.trim()
+                          ? "Ouvre le menu pour copier ou supprimer ce message."
+                          : "Ouvre le menu de suppression de ce message."
+                      }
+                      style={styles.messageActions}
+                      onPress={onLongPress}
+                    >
+                      <Text style={styles.messageActionsLabel}>•••</Text>
+                    </Pressable>
+                  ) : null}
                 </View>
                 {(item.role === "ASSISTANT" &&
                 item.text.includes("copilot-source:")
@@ -528,6 +547,13 @@ const styles = StyleSheet.create({
   },
   assistantMessage: { alignSelf: "stretch", paddingVertical: 4 },
   author: { color: colors.muted, fontSize: 12, marginBottom: 8 },
+  messageActions: {
+    minWidth: 48,
+    minHeight: 48,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  messageActionsLabel: { color: colors.muted, fontSize: 18 },
   message: { color: colors.ink, fontSize: 17, lineHeight: 26 },
   attachment: { color: colors.muted, fontSize: 14, marginTop: 8 },
   footer: { padding: 12, gap: 10, backgroundColor: colors.canvas },
