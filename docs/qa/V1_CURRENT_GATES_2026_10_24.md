@@ -6,7 +6,7 @@ This reconciliation follows the complete goal, `AGENTS.md`, the seven-workstream
 
 - API: `4941513`, deployment `dpl_J8GundEHU4dF1yEg4Fv5XSwyhKzR`. The Resend receiving-key code and catalogue capability 2 are already deployed.
 - Native: iOS 0.1.0/build 14, `7e46885`, EAS `eabbf760-49d8-4161-9e40-e16a63f02403`, FINISHED. Includes PR 337–343. Installation and owner acceptance are unconfirmed; build 13 is retained for rollback.
-- PR 345–357 are merged native corrections outside build 14. PR 356 merged as `70d1be5` after both exact-head checks passed (4,826 tests / 6 skipped, API build and native exports); PR 357 merged as `61b82ee` after both exact-head checks passed (4,838 / 6). PR 358 physical-plan comparison merged as `7f7e205` after both final CI gates passed (4,867 / 6); master CI also passed. The subsequent visual metadata/comparison increment is under verification. Both require grouped API/native delivery. Neither creates another paid build, an API release or physical acceptance.
+- PR 345–357 are merged native corrections outside build 14. PR 356 merged as `70d1be5` after both exact-head checks passed (4,826 tests / 6 skipped, API build and native exports); PR 357 merged as `61b82ee` after both exact-head checks passed (4,838 / 6). PR 358 physical-plan comparison merged as `7f7e205` after both final CI gates passed (4,867 / 6); master CI also passed. PR 359 visual metadata/comparison merged as `fef5e03` after both final CI gates passed (4,905 / 6), with master CI followed separately. The shared visual preview context correction is the subsequent native increment under verification. Both require grouped API/native delivery. Neither creates another paid build, an API release or physical acceptance.
 
 ## Current gates and next evidence
 
