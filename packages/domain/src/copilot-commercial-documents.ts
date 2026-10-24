@@ -2,6 +2,55 @@ import { z } from "zod";
 import { copilotBusinessDateSchema } from "./copilot-context-tools";
 import { copilotEvidenceSchema } from "./copilot-candidate";
 import { commercialVisualEvidenceSchema } from "./commercial-visual-reading";
+export const MAX_COPILOT_PDF_BYTES = 20 * 1024 * 1024;
+export const MAX_COPILOT_PDF_PAGES = 16;
+export const copilotOriginalPdfInputSchema = z.strictObject({
+  sourceDocumentId: z.uuid(),
+});
+/** Metadata only. Original bytes never enter the read journal or saved message. */
+export const copilotOriginalPdfSnapshotSchema = z
+  .strictObject({
+    status: z.literal("AVAILABLE"),
+    source: z.strictObject({
+      sourceDocumentId: z.uuid(),
+      filename: z.string().min(1).max(240),
+      checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      registeredAt: z.iso.datetime(),
+      sizeBytes: z.number().int().positive().max(MAX_COPILOT_PDF_BYTES),
+      pageCount: z.number().int().positive().max(MAX_COPILOT_PDF_PAGES),
+    }),
+    evidence: z.array(copilotEvidenceSchema).length(1),
+  })
+  .superRefine((value, ctx) => {
+    const evidence = value.evidence[0]!;
+    if (
+      evidence.sourceId !== value.source.sourceDocumentId ||
+      evidence.sourceType !== "SOURCE_DOCUMENT" ||
+      evidence.factKind !== "QUALITY" ||
+      evidence.sourceVersion !== null ||
+      evidence.id !==
+        `pdf-original/${value.source.checksum.slice(7)}/${value.source.sourceDocumentId}`
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid original PDF source evidence",
+      });
+  });
+/** Ephemeral server transport, never a persisted or syncable domain entity. */
+export type CopilotOriginalPdfRead = {
+  snapshot: z.infer<typeof copilotOriginalPdfSnapshotSchema>;
+  pdf: Uint8Array;
+};
+/** Source observations, never canonical store figures or approved offer terms. */
+export const copilotPdfObservationsSchema = z
+  .array(
+    z.strictObject({
+      sourceDocumentId: z.uuid(),
+      pageNumber: z.number().int().positive().max(MAX_COPILOT_PDF_PAGES),
+      text: z.string().trim().min(1).max(1200),
+    }),
+  )
+  .max(12);
 export const copilotDocumentsInputSchema = z.strictObject({
   cursor: z
     .strictObject({ createdAt: z.string().datetime(), id: z.string().uuid() })

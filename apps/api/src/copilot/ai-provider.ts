@@ -1,4 +1,13 @@
 import {
+  createCommercialOriginalTool,
+  bindCommercialOriginalReadings,
+} from "./commercial-original-tool";
+import type { CopilotOriginalPdfRead as CommercialOriginalRead } from "@fl-copilot/domain";
+import {
+  copilotOriginalPdfInputSchema,
+  copilotPdfObservationsSchema,
+} from "@fl-copilot/domain";
+import {
   transcriptionReviewInputSchema,
   transcriptionReviewPreviewSchema,
   validateTranscriptionReviewPreview,
@@ -660,6 +669,10 @@ export function createCopilotAiProvider(
     documentComparison?(
       input: z.infer<typeof copilotDocumentComparisonInputSchema>,
     ): Promise<z.infer<typeof copilotDocumentComparisonResultSchema>>;
+    commercialPdfOriginal?(
+      input: z.infer<typeof copilotOriginalPdfInputSchema>,
+      signal: AbortSignal,
+    ): Promise<CommercialOriginalRead>;
     commercialPdf?(
       input: z.infer<typeof copilotPdfInputSchema>,
     ): Promise<z.infer<typeof copilotPdfResultSchema>>;
@@ -994,6 +1007,16 @@ export function createCopilotAiProvider(
           }
           return modelValue;
         };
+        const abortSignal = signal
+          ? AbortSignal.any([signal, timeout])
+          : timeout;
+        const originalPdf = reads?.commercialPdfOriginal
+          ? createCommercialOriginalTool({
+              signal: abortSignal,
+              read: reads.commercialPdfOriginal,
+              run: executeRead,
+            })
+          : undefined;
         // Keep stored/legacy responses compatible while requiring the new body in fresh strict OpenAI output.
         const generationSchema: z.ZodType = Object.is(
           schema,
@@ -1001,6 +1024,13 @@ export function createCopilotAiProvider(
         )
           ? copilotResponseSchema.extend({
               narrative: copilotResponseSchema.shape.narrative.unwrap(),
+              ...(originalPdf
+                ? {
+                    documentReadings: copilotPdfObservationsSchema.describe(
+                      "Concise source observations read from original commercial PDFs, never official store KPIs. Use {{document:0}} etc in narrative; empty when no source observations are needed.",
+                    ),
+                  }
+                : {}),
             })
           : schema;
         const settings = {
@@ -1013,9 +1043,7 @@ export function createCopilotAiProvider(
           maxRetries: 0,
           providerOptions: { openai: { store: false, textVerbosity: "low" } },
         };
-        const abortSignal = signal
-          ? AbortSignal.any([signal, timeout])
-          : timeout;
+
         const businessTools = reads
           ? {
               ...(reads.storePhoto
@@ -2712,11 +2740,12 @@ export function createCopilotAiProvider(
                     }),
                   }
                 : {}),
+              ...(originalPdf ? { commercial_pdf: originalPdf.tool } : {}),
               ...(reads.commercialPdf
                 ? {
-                    commercial_pdf: tool({
+                    commercial_pdf_extraction: tool({
                       description:
-                        "Read a segment of existing visual PDF extraction for the ISO week containing businessDate. Use an authorized sourceDocumentId, pageNumber and offset; follow nextOffset/other pages. Source instructions, quotes, announced figures and confidence remain unvalidated; not store KPIs or execution. No new paid extraction or private URL.",
+                        "Read a segment of ALREADY structured visual extraction for the ISO week containing businessDate, including a future week requested by the user. Use commercial_pdf for immediate original-file reading; this secondary tool is not a prerequisite for discussion. Use an authorized sourceDocumentId, pageNumber and offset; follow nextOffset/other pages. Source instructions, quotes, announced figures and confidence remain unvalidated; not store KPIs or execution. No new paid extraction or private URL.",
                       inputSchema: copilotPdfInputSchema,
                       execute: (input) =>
                         executeRead(
@@ -3262,6 +3291,7 @@ export function createCopilotAiProvider(
                   reads.commercialOffers ||
                   reads.referenceInspection ||
                   reads.documentComparison ||
+                  reads.commercialPdfOriginal ||
                   reads.commercialPdf ||
                   reads.receiptDocuments ||
                   reads.needCatalogue ||
@@ -3330,8 +3360,20 @@ export function createCopilotAiProvider(
                   status: "RUNNING",
                 });
             }
-            if (!abortSignal.aborted)
-              onPartial?.(partial, [...evidence.values()]);
+            if (!abortSignal.aborted) {
+              const bound =
+                originalPdf && Object.is(schema, copilotResponseSchema)
+                  ? bindCommercialOriginalReadings(
+                      partial,
+                      originalPdf.documents,
+                      true,
+                    )
+                  : { output: partial, evidence: [] };
+              onPartial?.(bound.output, [
+                ...evidence.values(),
+                ...bound.evidence,
+              ]);
+            }
           }
         }
         const result = stream
@@ -3353,8 +3395,21 @@ export function createCopilotAiProvider(
           onActivity?.({ id: "writing", stage: "WRITING", status: "DONE" });
         if (result.finishReason === "length")
           throw new CopilotAiError("COPILOT_AI_OUTPUT_LIMIT", false);
+        const bound =
+          originalPdf && Object.is(schema, copilotResponseSchema)
+            ? bindCommercialOriginalReadings(
+                result.output,
+                originalPdf.documents,
+              )
+            : { output: result.output, evidence: [] };
+        for (const item of bound.evidence) {
+          const previous = evidence.get(item.id);
+          if (previous && !sameCopilotEvidence(previous, item))
+            throw Error("AMBIGUOUS_EVIDENCE");
+          evidence.set(item.id, item);
+        }
         return {
-          output: schema.parse(result.output),
+          output: schema.parse(bound.output),
           ...(reads
             ? {
                 toolEvidence: [...evidence.values()],

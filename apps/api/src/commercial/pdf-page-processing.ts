@@ -48,20 +48,25 @@ type PageRecord = CommercialPdfPage & {
   createdAt: Date;
 };
 export interface PdfSourceStorage {
-  read(pathname: string): Promise<Uint8Array | null>;
+  read(
+    pathname: string,
+    options?: { maximumBytes?: number; signal?: AbortSignal },
+  ): Promise<Uint8Array | null>;
 }
 export const privatePdfStorage: PdfSourceStorage = {
-  async read(pathname) {
+  async read(pathname, options) {
     const blob = await get(pathname, {
       access: "private",
       oidcToken: getVercelOidcToken() ?? process.env.VERCEL_OIDC_TOKEN,
+      ...(options?.signal ? { abortSignal: options.signal } : {}),
     });
     if (!blob || blob.statusCode !== 200) return null;
     const chunks: Uint8Array[] = [];
     let size = 0;
     for await (const chunk of blob.stream) {
+      options?.signal?.throwIfAborted();
       size += chunk.byteLength;
-      if (size > 100 * 1024 * 1024)
+      if (size > Math.min(options?.maximumBytes ?? Infinity, 100 * 1024 * 1024))
         throw new CommercialPdfError("PDF_SIZE_LIMIT");
       chunks.push(chunk);
     }

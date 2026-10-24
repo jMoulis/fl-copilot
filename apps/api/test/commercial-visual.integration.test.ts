@@ -128,6 +128,69 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         },
       };
     }
+    it("retains complete future-week source operations instead of filtering them at ingestion", async () => {
+      const s = await seed();
+      const base = provider(() => undefined);
+      const multiweek: CommercialVisualProvider = {
+        model: base.model,
+        async extract(...args) {
+          const result = await base.extract(...args);
+          const output = result.output as {
+            operations: Array<{ label: string; fields: unknown[] }>;
+          };
+          const future = structuredClone(output.operations[0]!);
+          future.label = "DRAMAT SEMAINE FUTURE";
+          future.fields = [
+            {
+              name: "saleStart",
+              rawValue: "2027-01-04",
+              confidence: 1,
+              evidence: [
+                {
+                  pageNumber: 1,
+                  quote: "du 4 au 10 janvier 2027",
+                  region: null,
+                },
+              ],
+            },
+            {
+              name: "saleEnd",
+              rawValue: "2027-01-10",
+              confidence: 1,
+              evidence: [
+                {
+                  pageNumber: 1,
+                  quote: "du 4 au 10 janvier 2027",
+                  region: null,
+                },
+              ],
+            },
+          ];
+          output.operations.push(future);
+          return result;
+        },
+      };
+      const processor = createCommercialVisualProcessor(database, multiweek, {
+        read: async () => s.bytes,
+      });
+      await processor.pending();
+      await processor.process(s.storeId, s.sourceDocumentId, 1);
+      const db = await database.getDb();
+      const row = await db.collection("commercialVisualReadings").findOne({
+        storeId: s.storeId,
+        sourceDocumentId: s.sourceDocumentId,
+        status: "READY",
+      });
+      expect(
+        row?.reading.operations.map((op: { label: string }) => op.label),
+      ).toContain("DRAMAT SEMAINE FUTURE");
+      expect(row?.reading.operations).toHaveLength(2);
+      expect(
+        await db
+          .collection("commercialOfferChoices")
+          .countDocuments({ storeId: s.storeId }),
+      ).toBe(0);
+    });
     it("claims one immutable reading under concurrent delivery, sends original bytes and preserves legacy sources", async () => {
       const s = await seed();
       let calls = 0;
