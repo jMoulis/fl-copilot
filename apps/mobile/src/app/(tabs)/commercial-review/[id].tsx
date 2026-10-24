@@ -1,3 +1,4 @@
+import { CommercialTranscriptionConflict } from "@/commercial/transcription-conflict";
 import {
   readCommercialChoices,
   type LocalCommercialChoice,
@@ -9,7 +10,14 @@ import { CommercialOriginalButton } from "@/commercial/original-button";
 import { CommercialSummaryView } from "@/commercial/summary-view";
 import { captureScreenError } from "@/observability/sentry";
 import { buildCommercialDocumentSummary } from "@fl-copilot/commercial-core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert, Text, TextInput, View } from "react-native";
 import {
   router,
@@ -43,15 +51,82 @@ import {
   BottomSheet,
 } from "@/components/ui";
 export default function CommercialReviewScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const { session } = useAuth();
-  const storeId = session?.stores[0]?.storeId;
+  const { id } = useLocalSearchParams<{ id: string }>(),
+    { session } = useAuth(),
+    { deviceId } = useLocalDatabase(),
+    store = session?.stores[0];
+  if (!session || !store || typeof id !== "string")
+    return (
+      <AppScreen>
+        <InlineAlert
+          title="Document indisponible"
+          message="Ouvrez ce document depuis votre magasin."
+        />
+      </AppScreen>
+    );
+  return (
+    <CommercialReviewContent
+      key={`${session.user.id}:${store.storeId}:${store.role}:${deviceId}:${id}`}
+      id={id}
+      storeId={store.storeId}
+      actorId={session.user.id}
+      role={store.role}
+    />
+  );
+}
+function CommercialReviewContent({
+  id,
+  storeId,
+  actorId,
+  role,
+}: {
+  id: string;
+  storeId: string;
+  actorId: string;
+  role: string;
+}) {
   const { sqlite, deviceId } = useLocalDatabase();
   const { syncNow, status: syncStatus } = useSync();
   const repository = useMemo(
     () => new CommercialReviewRepository(sqlite),
     [sqlite],
   );
+  const scope = useMemo(
+      () => ({ repository, storeId, id, actorId, role, deviceId }),
+      [repository, storeId, id, actorId, role, deviceId],
+    ),
+    committedScope = useRef<object | null>(null),
+    active = useRef(false),
+    focus = useRef(0),
+    reading = useRef(0),
+    lock = useRef(false),
+    selectedKey = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    committedScope.current = scope;
+    return () => {
+      if (committedScope.current === scope) committedScope.current = null;
+    };
+  }, [scope]);
+  useFocusEffect(
+    useCallback(() => {
+      if (committedScope.current !== scope) return;
+      active.current = true;
+      focus.current++;
+      return () => {
+        active.current = false;
+        focus.current++;
+        reading.current++;
+      };
+    }, [scope]),
+  );
+  function currentMutation(target?: string) {
+    const version = focus.current;
+    return () =>
+      active.current &&
+      committedScope.current === scope &&
+      focus.current === version &&
+      (target === undefined || selectedKey.current === target);
+  }
   const [pages, setPages] = useState<CommercialReviewPage[]>([]);
   const [decisions, setDecisions] = useState<
     Awaited<ReturnType<CommercialReviewRepository["decisions"]>>
@@ -70,27 +145,46 @@ export default function CommercialReviewScreen() {
     [enlarged, setEnlarged] = useState(false);
   const [changes, setChanges] = useState<Record<string, string>>({});
   const refresh = useCallback(async () => {
-    if (!storeId || typeof id !== "string") return;
-    const [p, d] = await Promise.all([
-      repository.pages(storeId, id),
-      repository.decisions(storeId),
-    ]);
-    return {
-      p,
-      d,
-      visuals: await readCommercialVisualReadings(sqlite, storeId, id),
-      offerChoices: await readCommercialChoices(sqlite, storeId, id),
-    };
-  }, [repository, storeId, id, sqlite]);
-  const apply = useCallback((data: Awaited<ReturnType<typeof refresh>>) => {
-    if (data) {
+    if (!active.current || committedScope.current !== scope) return;
+    const request = ++reading.current,
+      version = focus.current;
+    const current = () =>
+      active.current &&
+      committedScope.current === scope &&
+      focus.current === version &&
+      reading.current === request;
+    try {
+      const [p, d, visuals, offerChoices] = await Promise.all([
+        repository.pages(storeId, id),
+        repository.decisions(storeId, id),
+        readCommercialVisualReadings(sqlite, storeId, id),
+        readCommercialChoices(sqlite, storeId, id),
+      ]);
+      return current()
+        ? { p, d, visuals, offerChoices, request, version }
+        : undefined;
+    } catch (reason) {
+      if (current()) throw reason;
+    }
+  }, [repository, storeId, id, sqlite, scope]);
+  const apply = useCallback(
+    (data: Awaited<ReturnType<typeof refresh>>) => {
+      if (
+        !active.current ||
+        committedScope.current !== scope ||
+        !data ||
+        data.request !== reading.current ||
+        data.version !== focus.current
+      )
+        return;
       setPages(data.p);
       setDecisions(data.d);
       setVisuals(data.visuals);
       setOfferChoices(data.offerChoices);
-    }
-    setLoading(false);
-  }, []);
+      setLoading(false);
+    },
+    [scope],
+  );
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -110,17 +204,30 @@ export default function CommercialReviewScreen() {
           });
       };
       load();
-      // One local refresh may reveal an acknowledgement before a long sync cycle ends.
-      const timer =
-        syncStatus === "syncing" ? setTimeout(load, 1000) : undefined;
       return () => {
         active = false;
-        if (timer) clearTimeout(timer);
       };
-    }, [refresh, apply, syncStatus]),
+    }, [refresh, apply]),
   );
+  const syncPhase = useRef(syncStatus);
+  useEffect(() => {
+    if (syncPhase.current === syncStatus) return;
+    syncPhase.current = syncStatus;
+    if (!active.current || committedScope.current !== scope) return;
+    void refresh()
+      .then(apply)
+      .catch(() => {
+        if (active.current && committedScope.current === scope)
+          setError(
+            "Les choix n’ont pas pu être relus après la synchronisation. Les informations affichées restent conservées.",
+          );
+      });
+  }, [syncStatus, refresh, apply, scope]);
   const items = useMemo(() => commercialReviewItems(pages), [pages]);
   const item = items[index];
+  useLayoutEffect(() => {
+    selectedKey.current = item?.key ?? null;
+  }, [item?.key]);
   const summary = useMemo(
     () => buildCommercialDocumentSummary(pages, decisions),
     [pages, decisions],
@@ -157,7 +264,6 @@ export default function CommercialReviewScreen() {
       )
     : [];
   const localConflict = choices.find((d) => d.state === "CONFLICT");
-  const remoteChoice = choices.find((d) => d.state === "SYNCED");
   const conflictIndex = items.findIndex((x) =>
     decisions.some(
       (d) =>
@@ -190,9 +296,42 @@ export default function CommercialReviewScreen() {
     setIndex(target);
     setViewSummary(false);
   }
+  function reviewResolved() {
+    const current = currentMutation();
+    if (!current()) return;
+    const reread = () =>
+      refresh()
+        .then(apply)
+        .catch(() => {
+          if (current())
+            setError(
+              "Le choix est enregistré. La relecture locale a échoué ; rouvrez le document.",
+            );
+        });
+    void reread();
+    void Promise.resolve()
+      .then(() => syncNow(storeId))
+      .then(reread, () => undefined);
+  }
+  async function afterSaved(current: () => boolean) {
+    if (!current()) return;
+    try {
+      apply(await refresh());
+    } catch {
+      if (current())
+        setError(
+          "Le choix est enregistré. La relecture locale a échoué ; rouvrez le document.",
+        );
+    }
+    if (current())
+      void Promise.resolve()
+        .then(() => syncNow(storeId))
+        .catch(() => undefined);
+  }
   function confirmReadable() {
     const candidates = summary.bulkEligible.slice(0, 100);
     if (!storeId || busy || !candidates.length) return;
+    const current = currentMutation();
     Alert.alert(
       `Confirmer ${candidates.length} transcriptions ?`,
       "Vous confirmez ensemble les transcriptions source lisibles. Les points à clarifier restent visibles ; aucune offre, application au magasin ou TG n’est validée.",
@@ -201,54 +340,57 @@ export default function CommercialReviewScreen() {
         {
           text: "Confirmer cette série",
           onPress: () => {
+            if (!current() || lock.current) return;
+            lock.current = true;
             setBusy(true);
             setError(undefined);
             void repository
-              .reviewReadableGroup({
-                storeId,
-                sourceDocumentId: id,
-                deviceId,
-                reviewedAt: new Date().toISOString(),
-                entries: candidates.map((item) => ({
-                  pageId: item.page.id,
-                  sourceBlockIndex: item.block.sourceBlockIndex,
-                  id: randomUUID(),
-                  commandId: randomUUID(),
-                })),
-              })
-              .then(refresh)
-              .then(apply)
-              .then(() => {
-                void syncNow(storeId);
-              })
-              .catch(async (reason: unknown) => {
-                if (
+              .reviewReadableGroup(
+                {
+                  storeId,
+                  sourceDocumentId: id,
+                  deviceId,
+                  reviewedAt: new Date().toISOString(),
+                  entries: candidates.map((item) => ({
+                    pageId: item.page.id,
+                    sourceBlockIndex: item.block.sourceBlockIndex,
+                    id: randomUUID(),
+                    commandId: randomUUID(),
+                  })),
+                },
+                { canResolve: current },
+              )
+              .then(() => afterSaved(current))
+              .catch(async (reason) => {
+                if (!current()) return;
+                captureScreenError(reason, "commercial-review");
+                setError(
                   reason instanceof Error &&
-                  reason.message === "COMMERCIAL_GROUP_REVIEW_UNSAFE"
-                ) {
-                  setError(
-                    "Certains choix ont changé. La synthèse va être actualisée ; aucun nouvel élément de cette série n’a été confirmé.",
-                  );
-                  try {
-                    apply(await refresh());
-                  } catch (readError) {
-                    captureScreenError(readError, "commercial-review");
-                  }
-                } else {
-                  captureScreenError(reason, "commercial-review");
-                  setError(
-                    "La série n’a pas pu être confirmée. Les sources restent conservées. Rechargez la synthèse pour réessayer.",
-                  );
+                    reason.message === "COMMERCIAL_GROUP_REVIEW_UNSAFE"
+                    ? "Certains choix ont changé. Relisez la synthèse ; aucun nouvel élément de cette série n’a été confirmé."
+                    : "La série n’a pas pu être confirmée. Les sources et vos choix restent conservés.",
+                );
+                try {
+                  apply(await refresh());
+                } catch {
+                  /* The write error remains visible. */
                 }
               })
-              .finally(() => setBusy(false));
+              .finally(() => {
+                lock.current = false;
+                if (current()) setBusy(false);
+              });
           },
         },
       ],
     );
   }
-  async function submit(decision: "CONFIRMED_TRANSCRIPTION" | "DISMISSED") {
-    if (!storeId || !item || busy || choices.length) return;
+  async function submit(
+    decision: "CONFIRMED_TRANSCRIPTION" | "DISMISSED",
+    current: () => boolean,
+  ) {
+    if (!current() || !item || busy || lock.current || choices.length) return;
+    lock.current = true;
     setBusy(true);
     setError(undefined);
     try {
@@ -280,20 +422,24 @@ export default function CommercialReviewScreen() {
         },
         deviceId,
         randomUUID(),
+        { canResolve: current },
       );
-      apply(await refresh());
-      setEditing(false);
-      void syncNow(storeId);
+      if (current()) setEditing(false);
+      await afterSaved(current);
     } catch (reason) {
-      captureScreenError(reason, "commercial-review");
-      setError(
-        "Votre choix n’a pas pu être enregistré. L’extrait reste à examiner. Réessayez.",
-      );
+      if (current()) {
+        captureScreenError(reason, "commercial-review");
+        setError(
+          "Votre choix n’a pas pu être enregistré. L’extrait et vos corrections restent conservés.",
+        );
+      }
     } finally {
-      setBusy(false);
+      lock.current = false;
+      if (current()) setBusy(false);
     }
   }
   function confirm(decision: "CONFIRMED_TRANSCRIPTION" | "DISMISSED") {
+    const current = currentMutation(item?.key);
     Alert.alert(
       decision === "DISMISSED"
         ? "Écarter cet élément ?"
@@ -305,7 +451,7 @@ export default function CommercialReviewScreen() {
         { text: "Annuler", style: "cancel" },
         {
           text: decision === "DISMISSED" ? "Écarter" : "Confirmer",
-          onPress: () => void submit(decision),
+          onPress: () => void submit(decision, current),
         },
       ],
     );
@@ -450,9 +596,11 @@ export default function CommercialReviewScreen() {
               />
             ))}
             {item.block.fields.map((field, i) => {
-              const correction = choices[0]?.decision.corrections.find(
-                (c) => c.name === field.name,
-              );
+              const correction = (
+                localConflict ??
+                choices.find((choice) => choice.state === "SYNCED") ??
+                choices[0]
+              )?.decision.corrections.find((c) => c.name === field.name);
               const multiple =
                 item.block.fields.filter((f) => f.name === field.name).length >
                 1;
@@ -497,75 +645,48 @@ export default function CommercialReviewScreen() {
                 et son extrait source.
               </Text>
             ) : null}
-            {choices.map((choice) => (
-              <View key={choice.decision.id} className="gap-2">
-                <Text className="font-semibold text-ink">
-                  {choice.state === "SYNCED"
-                    ? "Choix synchronisé"
-                    : "Votre choix local"}
-                </Text>
-                <InlineAlert
-                  title={
-                    choice.decision.decision === "DISMISSED"
-                      ? "Élément écarté"
-                      : "Transcription confirmée"
-                  }
-                  message={
-                    choice.state === "SYNCED"
-                      ? "Choix synchronisé. Aucune offre n’a été publiée."
-                      : choice.state === "CONFLICT"
-                        ? "Un autre choix existe sur le serveur. Comparez-les avant de résoudre le conflit."
-                        : choice.state === "FAILED"
-                          ? "L’enregistrement distant a échoué. Votre choix local reste conservé."
-                          : "Choix enregistré sur cet appareil, à synchroniser."
-                  }
-                />
-                {choice.decision.corrections.map((correction) => (
-                  <Text
-                    key={correction.name}
-                    selectable
-                    className="text-base text-ink"
-                  >
-                    {commercialFieldLabels[correction.name]} :{" "}
-                    {correction.value ?? "Valeur retirée"}
-                  </Text>
-                ))}
-              </View>
-            ))}
-            {localConflict && remoteChoice ? (
-              <SecondaryButton
-                label="Conserver le choix synchronisé"
-                disabled={busy}
-                onPress={() =>
-                  Alert.alert(
-                    "Conserver le choix synchronisé ?",
-                    "Le choix local restera dans l’historique et ne sera plus actif.",
-                    [
-                      { text: "Annuler", style: "cancel" },
-                      {
-                        text: "Conserver",
-                        onPress: () => {
-                          if (!storeId) return;
-                          setBusy(true);
-                          void repository
-                            .useRemoteDecision(
-                              storeId,
-                              localConflict.decision.id,
-                              remoteChoice.decision.id,
-                            )
-                            .then(refresh)
-                            .then(apply)
-                            .catch(() =>
-                              setError(
-                                "Le conflit n’a pas pu être résolu. Vos deux choix restent conservés.",
-                              ),
-                            )
-                            .finally(() => setBusy(false));
-                        },
-                      },
-                    ],
-                  )
-                }
+            {!localConflict
+              ? choices.map((choice) => (
+                  <View key={choice.decision.id} className="gap-2">
+                    <Text className="font-semibold text-ink">
+                      {choice.state === "SYNCED"
+                        ? "Choix synchronisé"
+                        : "Votre choix local"}
+                    </Text>
+                    <InlineAlert
+                      title={
+                        choice.decision.decision === "DISMISSED"
+                          ? "Élément écarté"
+                          : "Transcription confirmée"
+                      }
+                      message={
+                        choice.state === "SYNCED"
+                          ? "Choix synchronisé. Aucune offre n’a été publiée."
+                          : choice.state === "CONFLICT"
+                            ? "Un autre choix existe sur le serveur. Comparez-les avant de résoudre le conflit."
+                            : choice.state === "FAILED"
+                              ? "L’enregistrement distant a échoué. Votre choix local reste conservé."
+                              : "Choix enregistré sur cet appareil, à synchroniser."
+                      }
+                    />
+                    {choice.decision.corrections.map((correction) => (
+                      <Text
+                        key={correction.name}
+                        selectable
+                        className="text-base text-ink"
+                      >
+                        {commercialFieldLabels[correction.name]} :{" "}
+                        {correction.value ?? "Valeur retirée"}
+                      </Text>
+                    ))}
+                  </View>
+                ))
+              : null}
+            {localConflict ? (
+              <CommercialTranscriptionConflict
+                storeId={storeId}
+                localId={localConflict.decision.id}
+                onResolved={reviewResolved}
               />
             ) : null}
             {!choices.length ? (
