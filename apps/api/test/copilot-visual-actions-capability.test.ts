@@ -14,7 +14,7 @@ vi.mock("../src/copilot/ai-provider", async (original) => {
   const m = await original<typeof import("../src/copilot/ai-provider")>();
   return { ...m, createCopilotAiProvider: vi.fn(m.createCopilotAiProvider) };
 });
-it.each([undefined, "1", "2", "1,1"])(
+it.each([undefined, "1", "2", "3", "1,1", "3,3", "4"])(
   "exposes visual-action preparation only for its negotiated capability (%s)",
   async (version) => {
     const storeId = randomUUID(),
@@ -75,8 +75,11 @@ it.each([undefined, "1", "2", "1,1"])(
       });
       expect(result.statusCode).toBe(200);
       const reads = vi.mocked(createCopilotAiProvider).mock.calls[0]![2]!;
-      if (version === "1" || version === "2") {
-        expect(reads.visualSourceActions).toBe(version === "2");
+      if (version === "1" || version === "2" || version === "3") {
+        expect(reads.visualSourceActions).toBe(
+          version === "2" || version === "3",
+        );
+        expect(reads.visualRecoveryActions).toBe(version === "3");
         expect(reads.visualAction).toBeTypeOf("function");
         authorizeStore.mockRejectedValueOnce(Error("FIXTURE_ACCESS_REVOKED"));
         await expect(

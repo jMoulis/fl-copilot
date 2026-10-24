@@ -1,19 +1,21 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import type { VisualEntityType } from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import { useSync } from "../sync/sync-provider";
-import { InlineAlert, PrimaryButton, SecondaryButton } from "../components/ui";
+import { InlineAlert } from "../components/ui";
 import {
   VisualRecoveryRepository,
   type VisualRecoveryAction,
 } from "./visual-recovery-repository";
 import { digestVisualId } from "./visual-id-digest";
-import { VisualReviewCheck, VisualVersion } from "./visual-conflict";
-import { syncFailurePresentation } from "../sync/failure-presentation";
+import {
+  VisualRecoveryChoices,
+  visualRecoverySelectionReady,
+} from "./visual-recovery-choices";
 
 export function VisualRecoveryForm(props: {
   kind: VisualEntityType;
@@ -95,24 +97,14 @@ function ScopedRecovery({
       };
     }, [repo, storeId, owner, allowed, kind, id]),
   );
-  const needsExtra =
-    action === "RETRY_LOCAL"
-      ? review?.retryReactivates
-      : action === "ADOPT_REMOTE"
-        ? review?.adoptReactivates
-        : false;
-  const needsRights =
-    action === "RETRY_LOCAL" &&
-    review &&
-    !review.current.entity.deletedAt &&
-    "provenance" in review.current.entity &&
-    review.current.entity.provenance.type === "USER_UPLOAD";
   const enabled =
     !!review &&
-    !!action &&
-    checked &&
-    (!needsExtra || extra) &&
-    (!needsRights || rights) &&
+    visualRecoverySelectionReady(review, {
+      action,
+      checked,
+      reactivate: extra,
+      rightsConfirmed: rights,
+    }) &&
     !busy &&
     !complete;
   function choose(next: VisualRecoveryAction) {
@@ -212,111 +204,22 @@ function ScopedRecovery({
         />
       ) : null}
       {review && !complete ? (
-        <>
-          <InlineAlert
-            title="Enregistrement refusé"
-            message={
-              syncFailurePresentation(
-                kind,
-                review.commands.filter((c) => c.status === "FAILED").at(-1)
-                  ?.last_error_code ?? null,
-              ).message
-            }
-          />
-          <VisualVersion
-            key={`${review.hash}:local`}
-            title="Choix conservé sur cet appareil"
-            entity={review.current.entity}
-            labels={review.labels}
-            preview={review.preview}
-          />
-          {review.remote ? (
-            <VisualVersion
-              key={`${review.hash}:remote`}
-              title="Version connue à la dernière synchronisation"
-              entity={review.remote}
-              labels={review.labels}
-              preview={"contentHash" in review.remote ? review.remote : null}
-            />
-          ) : null}
-          <Text className="text-base text-muted">{review.reason}</Text>
-          <SecondaryButton
-            label={
-              action === "RETRY_LOCAL"
-                ? "✓ Retenter ce choix"
-                : "Retenter ce choix"
-            }
-            disabled={busy || !review.canRetry}
-            onPress={() => choose("RETRY_LOCAL")}
-          />
-          {review.canAdopt ? (
-            <SecondaryButton
-              label={
-                action === "ADOPT_REMOTE"
-                  ? "✓ Garder la version synchronisée connue"
-                  : "Garder la version synchronisée connue"
-              }
-              disabled={busy}
-              onPress={() => choose("ADOPT_REMOTE")}
-            />
-          ) : null}
-          {kind === "product_visual_link" ? (
-            <SecondaryButton
-              label={
-                action === "REMOVE_LINK"
-                  ? "✓ Retirer cette association"
-                  : "Retirer cette association"
-              }
-              disabled={busy || !review.canRemove}
-              onPress={() => choose("REMOVE_LINK")}
-            />
-          ) : null}
-          {review.canRetire ? (
-            <SecondaryButton
-              label={
-                action === "RETIRE_LOCAL"
-                  ? "✓ Retirer ce choix local"
-                  : "Retirer ce choix local"
-              }
-              disabled={busy}
-              onPress={() => choose("RETIRE_LOCAL")}
-            />
-          ) : null}
-          {action === "REMOVE_LINK" || action === "RETIRE_LOCAL" ? (
-            <Text className="text-base text-muted">
-              Le produit et la photo sont conservés. Le retrait sera contrôlé
-              par le serveur ; une version distante inconnue ne sera pas
-              remplacée automatiquement.
-            </Text>
-          ) : null}
-          {needsExtra ? (
-            <VisualReviewCheck
-              checked={extra}
-              disabled={busy}
-              label="Je confirme la remise en diffusion de cet élément retiré ou supprimé."
-              onPress={() => setExtra(!extra)}
-            />
-          ) : null}
-          {needsRights ? (
-            <VisualReviewCheck
-              checked={rights}
-              disabled={busy}
-              label="Je confirme disposer des droits d’utilisation de cette photo."
-              onPress={() => setRights(!rights)}
-            />
-          ) : null}
-          <VisualReviewCheck
-            checked={checked}
-            disabled={busy || !action}
-            label="J’ai relu ce choix et je confirme cette reprise."
-            onPress={() => setChecked(!checked)}
-          />
-          <PrimaryButton
-            label={busy ? "Enregistrement…" : "Confirmer la reprise"}
-            disabled={!enabled}
-            onPress={() => void confirm()}
-          />
-        </>
+        <VisualRecoveryChoices
+          review={review}
+          selection={{
+            action,
+            checked,
+            reactivate: extra,
+            rightsConfirmed: rights,
+          }}
+          busy={busy}
+          canConfirm={allowed}
+          onAction={choose}
+          onChecked={() => setChecked(!checked)}
+          onReactivate={() => setExtra(!extra)}
+          onRights={() => setRights(!rights)}
+          onConfirm={() => void confirm()}
+        />
       ) : null}
       {error ? (
         <InlineAlert title="Reprise à vérifier" message={error} />

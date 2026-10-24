@@ -5,6 +5,7 @@ import {
 } from "@fl-copilot/domain";
 import {
   visualActionInputSchema,
+  sourceVisualActionInputSchema,
   legacyVisualActionInputSchema,
   visualActionPreviewSchema,
   validateVisualActionPreview,
@@ -543,6 +544,7 @@ export function createCopilotAiProvider(
       input: z.infer<typeof transcriptionReviewInputSchema>,
     ): Promise<z.infer<typeof transcriptionReviewPreviewSchema>>;
     visualSourceActions?: boolean;
+    visualRecoveryActions?: boolean;
     visualAction?(
       input: z.infer<typeof visualActionInputSchema>,
     ): Promise<z.infer<typeof visualActionPreviewSchema>>;
@@ -1474,15 +1476,25 @@ export function createCopilotAiProvider(
                 ? {
                     product_visual_preview: tool({
                       description:
+                        (reads.visualRecoveryActions
+                          ? "REVIEW_RECOVERY prepares on-device review for a known productId (visualIdentityId=null). The device discovers related failures and checks one explicit choice, rights and authority; this is not a failure/absence finding or permission to retry. "
+                          : "") +
                         (reads.visualSourceActions
                           ? "ASSIGN_SOURCE prepares an exact attached/recent confirmed STORE_PHOTO sourceDocumentId as the product image, only on an explicit request: visualIdentityId=null. Use supplied source IDs, never URLs, fabricated identity or approval. Native review must show the actual photo and separately confirm usage rights. "
                           : "") +
                         "Prepare an explicit user's product-image choice, never save it: ASSIGN_LIBRARY selects one exact existing visualIdentityId discovered with product_visuals; REMOVE_PRODUCT removes only this product’s association; REVOKE_CURRENT withdraws its currently resolved image for all products. productId is always the exact target; visualIdentityId is null except for assignment. No upload, generation or rights grant. READY creates a native review card; assignment needs viewing the actual local photo, and global withdrawal/restoring a removed association need separate human confirmation. Originals and business figures remain unchanged.",
-                      inputSchema: reads.visualSourceActions
+                      inputSchema: reads.visualRecoveryActions
                         ? visualActionInputSchema
-                        : legacyVisualActionInputSchema,
+                        : reads.visualSourceActions
+                          ? sourceVisualActionInputSchema
+                          : legacyVisualActionInputSchema,
                       execute: (rawInput) => {
                         const input = visualActionInputSchema.parse(rawInput);
+                        if (
+                          input.action === "REVIEW_RECOVERY" &&
+                          !reads.visualRecoveryActions
+                        )
+                          throw Error("VISUAL_RECOVERY_CLIENT_REQUIRED");
                         return executeRead(
                           JSON.stringify(["visual-action-preview", input]),
                           async () => {
@@ -1511,9 +1523,11 @@ export function createCopilotAiProvider(
                             );
                             if (old >= 0) visualActionPreviews.splice(old, 1);
                             if (
-                              result.status === "READY" &&
-                              visualActionPreviews.filter(
-                                (p) => p.status === "READY",
+                              ["READY", "REVIEW_LOCAL"].includes(
+                                result.status,
+                              ) &&
+                              visualActionPreviews.filter((p) =>
+                                ["READY", "REVIEW_LOCAL"].includes(p.status),
                               ).length >= 3
                             )
                               throw Error("VISUAL_ACTION_LIMIT");

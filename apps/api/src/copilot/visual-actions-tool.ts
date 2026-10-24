@@ -60,16 +60,17 @@ export async function previewVisualAction(
     return e as VisualEntityMap[K];
   }
   const product = catalogue.before;
-  const currentLink = product
-    ? await get(
-        "product_visual_link",
-        visualIdFromDigest(
-          hash(
-            visualIdMaterial("product_visual_link", storeId, input.productId),
+  const currentLink =
+    product && input.action !== "REVIEW_RECOVERY"
+      ? await get(
+          "product_visual_link",
+          visualIdFromDigest(
+            hash(
+              visualIdMaterial("product_visual_link", storeId, input.productId),
+            ),
           ),
-        ),
-      )
-    : null;
+        )
+      : null;
   const [currentIdentity, selectedIdentity] = product
     ? await Promise.all([
         get("visual_identity", currentLink?.visualIdentityId ?? null),
@@ -137,9 +138,11 @@ export async function previewVisualAction(
         value:
           status === "READY"
             ? "Proposition visuelle uniquement : aucun choix enregistré. Confirmation explicite sur l’appareil ; originaux conservés."
-            : status === "UNCHANGED"
-              ? "Aucune association active à retirer dans ce catalogue synchronisé."
-              : "Cette action ne peut pas être préparée avec ces métadonnées synchronisées. Aucune absence ni image indisponible ne vaut autorisation de recréation.",
+            : status === "REVIEW_LOCAL"
+              ? "Demande de revue locale uniquement : l’appareil vérifiera les choix refusés liés à ce produit, leur propriétaire et les actions permises. Aucun état d’erreur ni absence distante n’est confirmé ; aucune reprise ou recréation effectuée."
+              : status === "UNCHANGED"
+                ? "Aucune association active à retirer dans ce catalogue synchronisé."
+                : "Cette action ne peut pas être préparée avec ces métadonnées synchronisées. Aucune absence ni image indisponible ne vaut autorisation de recréation.",
       },
     ],
   });

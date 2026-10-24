@@ -150,7 +150,7 @@ export class ApiClient {
       receiptCorrection?: boolean | 2;
       receiptPublication?: boolean;
       identityReview?: boolean;
-      visualActions?: boolean | 2;
+      visualActions?: boolean | 2 | 3;
       transcriptionReview?: boolean;
       catalogueProposals?: boolean | 2;
       executionProposals?: boolean;
@@ -283,7 +283,11 @@ export class ApiClient {
                 ...(streaming.visualActions
                   ? {
                       "x-copilot-visual-actions":
-                        streaming.visualActions === 2 ? "2" : "1",
+                        streaming.visualActions === 3
+                          ? "3"
+                          : streaming.visualActions === 2
+                            ? "2"
+                            : "1",
                     }
                   : {}),
                 ...(streaming.catalogueProposals

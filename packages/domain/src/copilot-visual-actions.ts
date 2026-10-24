@@ -16,8 +16,20 @@ export const legacyVisualActionInputSchema = z
       ? v.visualIdentityId !== null
       : v.visualIdentityId === null,
   );
+function validVisualAction(v: {
+  action: string;
+  visualIdentityId: string | null;
+  sourceDocumentId?: string;
+}) {
+  return v.action === "ASSIGN_LIBRARY"
+    ? v.visualIdentityId !== null && v.sourceDocumentId === undefined
+    : v.visualIdentityId === null &&
+        (v.action === "ASSIGN_SOURCE"
+          ? !!v.sourceDocumentId
+          : v.sourceDocumentId === undefined);
+}
 /** Capability 2 adds only an exact attached source ID; authority/paths remain native. */
-export const visualActionInputSchema = z
+export const sourceVisualActionInputSchema = z
   .strictObject({
     action: z.enum([
       "ASSIGN_LIBRARY",
@@ -29,14 +41,20 @@ export const visualActionInputSchema = z
     visualIdentityId: z.uuid().nullable(),
     sourceDocumentId: z.uuid().optional(),
   })
-  .refine((v) =>
-    v.action === "ASSIGN_LIBRARY"
-      ? v.visualIdentityId !== null && v.sourceDocumentId === undefined
-      : v.visualIdentityId === null &&
-        (v.action === "ASSIGN_SOURCE"
-          ? !!v.sourceDocumentId
-          : v.sourceDocumentId === undefined),
-  );
+  .refine(validVisualAction);
+/** Capability 3 prepares local failure review; no local record or decision is model-owned. */
+export const visualActionInputSchema = z
+  .strictObject({
+    ...sourceVisualActionInputSchema.shape,
+    action: z.enum([
+      "ASSIGN_LIBRARY",
+      "REMOVE_PRODUCT",
+      "REVOKE_CURRENT",
+      "ASSIGN_SOURCE",
+      "REVIEW_RECOVERY",
+    ]),
+  })
+  .refine(validVisualAction);
 export const visualActionProofSchema = z.strictObject({
   entry: copilotVisualMetadataEntrySchema,
   hash: digest,
@@ -84,6 +102,16 @@ export function validateVisualActionBasis(
       throw Error("VISUAL_ACTION_SOURCE_INVALID");
   } else if (basis.sourcePhoto !== undefined)
     throw Error("VISUAL_ACTION_SOURCE_INVALID");
+  if (
+    input.action === "REVIEW_RECOVERY" &&
+    (basis.currentLink ||
+      basis.currentIdentity ||
+      basis.currentAsset ||
+      basis.selectedIdentity ||
+      basis.selectedAsset ||
+      basis.currentDisplay !== "UNAVAILABLE")
+  )
+    throw Error("VISUAL_RECOVERY_BASIS_INVALID");
   const {
     product,
     currentLink: l,
@@ -184,6 +212,7 @@ export function visualActionStatus(
   input: VisualActionInput,
   b: VisualActionBasis,
 ) {
+  if (input.action === "REVIEW_RECOVERY") return "REVIEW_LOCAL" as const;
   if (
     !b.product ||
     b.product.metadata.deletedAt ||
@@ -217,7 +246,13 @@ export function visualActionStatus(
 export const visualActionPreviewSchema = z.strictObject({
   input: visualActionInputSchema,
   basis: visualActionBasisSchema,
-  status: z.enum(["READY", "UNCHANGED", "UNAVAILABLE", "LIMIT_EXCEEDED"]),
+  status: z.enum([
+    "READY",
+    "REVIEW_LOCAL",
+    "UNCHANGED",
+    "UNAVAILABLE",
+    "LIMIT_EXCEEDED",
+  ]),
   evidence: z.array(copilotEvidenceSchema).min(1).max(2),
 });
 export function validateVisualActionPreview(
@@ -256,7 +291,11 @@ export function readVisualActionProposal(raw: unknown) {
     throw Error("VISUAL_ACTION_PROPOSAL_INVALID");
   const content = visualActionProposalSchema.parse(JSON.parse(message.text));
   validateVisualActionBasis(message.storeId, content.input, content.basis);
-  if (visualActionStatus(content.input, content.basis) !== "READY")
+  if (
+    !["READY", "REVIEW_LOCAL"].includes(
+      visualActionStatus(content.input, content.basis),
+    )
+  )
     throw Error("VISUAL_ACTION_STATE_INVALID");
   return { message, content };
 }
@@ -272,7 +311,7 @@ export const visualActionResultSchema = visualActionRequestSchema
   .extend({
     userMessageId: z.uuid(),
     appliedAt: z.iso.datetime(),
-    action: visualActionInputSchema.shape.action,
+    action: sourceVisualActionInputSchema.shape.action,
     productId: z.uuid(),
     sourceDocumentId: z.uuid().optional(),
     sourceChecksum: z
@@ -301,6 +340,39 @@ export const visualActionResultSchema = visualActionRequestSchema
         v.assetId === undefined &&
         v.assetContentHash === undefined &&
         v.rightsConfirmed === undefined,
+  );
+
+export const visualRecoveryRequestSchema = z.strictObject({
+  operationId: z.uuid(),
+  basisHash: digest,
+  kind: z.enum(["visual_asset", "visual_identity", "product_visual_link"]),
+  entityId: z.uuid(),
+  recoveryAction: z.enum([
+    "RETRY_LOCAL",
+    "REMOVE_LINK",
+    "RETIRE_LOCAL",
+    "ADOPT_REMOTE",
+  ]),
+  comparisonReviewed: z.literal(true),
+  reactivate: z.boolean(),
+  rightsConfirmed: z.boolean(),
+});
+export const visualRecoveryResultSchema = visualRecoveryRequestSchema
+  .extend({
+    action: z.literal("REVIEW_RECOVERY"),
+    productId: z.uuid(),
+    userMessageId: z.uuid(),
+    appliedAt: z.iso.datetime(),
+    version: z.number().int().positive(),
+    syncState: z.enum(["PENDING", "SYNCED"]),
+    retryFileAssetId: z.uuid().nullable(),
+  })
+  .refine(
+    (v) =>
+      v.retryFileAssetId === null ||
+      (v.kind === "visual_asset" &&
+        v.retryFileAssetId === v.entityId &&
+        ["RETRY_LOCAL", "ADOPT_REMOTE"].includes(v.recoveryAction)),
   );
 
 import {
@@ -352,14 +424,15 @@ export async function prepareVisualActionBasis(
       full.product ? hash(catalogueSnapshotIdentity(full.product)) : null,
     ]);
   const p = full.product?.product.entity;
-  const currentDisplay = p
-    ? resolveProductVisual({
-        product: p,
-        links: full.currentLink ? [full.currentLink] : [],
-        identities: full.currentIdentity ? [full.currentIdentity] : [],
-        assets: full.currentAsset ? [full.currentAsset] : [],
-      }).kind
-    : "UNAVAILABLE";
+  const currentDisplay =
+    p && input.action !== "REVIEW_RECOVERY"
+      ? resolveProductVisual({
+          product: p,
+          links: full.currentLink ? [full.currentLink] : [],
+          identities: full.currentIdentity ? [full.currentIdentity] : [],
+          assets: full.currentAsset ? [full.currentAsset] : [],
+        }).kind
+      : "UNAVAILABLE";
   return validateVisualActionBasis(storeId, input, {
     storeId,
     ...(input.action === "ASSIGN_SOURCE"

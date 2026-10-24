@@ -1,7 +1,7 @@
-import { VisualVersion } from "./visual-conflict-preview";
+import { VisualVersion, VisualReviewCheck } from "./visual-conflict-preview";
 export { VisualVersion } from "./visual-conflict-preview";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import { router } from "expo-router";
 import {
   randomUUID,
@@ -15,7 +15,6 @@ import { useSync } from "../sync/sync-provider";
 import type { SyncConflict } from "../sync/conflict-repository";
 import { InlineAlert, PrimaryButton, SecondaryButton } from "../components/ui";
 import { VisualConflictRepository } from "./visual-conflict-repository";
-import { colors } from "../design/tokens";
 
 const digestReview = (s: string) =>
   digestStringAsync(CryptoDigestAlgorithm.SHA256, s);
@@ -261,36 +260,4 @@ function ScopedVisualConflict({
     </View>
   );
 }
-export function VisualReviewCheck({
-  checked,
-  disabled,
-  label,
-  onPress,
-}: {
-  checked: boolean;
-  disabled: boolean;
-  label: string;
-  onPress(): void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityLabel={label}
-      accessibilityState={{ checked, disabled }}
-      disabled={disabled}
-      onPress={onPress}
-      style={{
-        minHeight: 48,
-        padding: 12,
-        borderWidth: 1,
-        borderRadius: 12,
-        borderColor: checked ? colors.forest : colors.line,
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <Text className="text-base text-ink">
-        {checked ? "☑" : "☐"} {label}
-      </Text>
-    </Pressable>
-  );
-}
+export { VisualReviewCheck } from "./visual-conflict-preview";

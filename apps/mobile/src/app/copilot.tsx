@@ -479,7 +479,13 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
-  const { syncNow, emailIntake, lastSyncedAt, originals } = useSync();
+  const {
+    syncNow,
+    emailIntake,
+    lastSyncedAt,
+    originals,
+    visuals: visualFiles,
+  } = useSync();
   const visualSourcePort = useMemo(
     () =>
       originals
@@ -1062,6 +1068,9 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
           onSaved={() => {
             void syncNow(storeId).catch(() => undefined);
           }}
+          retryFile={async (assetId) => {
+            await visualFiles?.retry(assetId);
+          }}
           requestPreview={async (assetId) => {
             await visuals.requestPreview(assetId);
             await syncNow(storeId);
@@ -1233,7 +1242,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               receiptCorrection: canManageProducts ? 2 : false,
               receiptPublication: canManageProducts,
               identityReview: canManageProducts,
-              visualActions: canManageProducts ? 2 : false,
+              visualActions: canManageProducts ? 3 : false,
               transcriptionReview: canManageProducts,
               catalogueProposals: canManageProducts ? 2 : false,
               executionProposals: canDeclareCommercialExecution,
