@@ -123,6 +123,8 @@ describe.skipIf(!uri)(
       ["FIELD_EVENT", "ADOPT_REMOTE", "AI"],
       ["SETTINGS", "KEEP_LOCAL", "AI"],
       ["SETTINGS", "ADOPT_REMOTE", "FALLBACK"],
+      ["SETTINGS", "KEEP_LOCAL", "GROUP"],
+      ["SETTINGS", "ADOPT_REMOTE", "GROUP"],
       ["SETTINGS", "KEEP_LOCAL", "FOREIGN"],
       ["PRODUCT", "KEEP_LOCAL", "GROUP"],
       ["PRODUCT", "ADOPT_REMOTE", "GROUP"],

@@ -9,7 +9,10 @@ import {
   OutboxRepository,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  ConflictRepository,
+  reviewConflictVersions,
+} from "../sync/conflict-repository";
 
 type Row = {
   id: string;
@@ -84,8 +87,89 @@ export async function applyStoreContext(
     choice.version,
   );
 }
+export async function readStoreContextConflictReview(
+  db: OutboxDatabase,
+  storeId: string,
+  conflictId: string,
+  digest: (s: string) => Promise<string>,
+) {
+  const requested = await new ConflictRepository(db).getById(conflictId);
+  if (
+    !requested ||
+    requested.storeId !== storeId ||
+    requested.status !== "OPEN" ||
+    requested.entityType !== "store_context_settings"
+  )
+    throw Error("STORE_CONTEXT_RESOLUTION_INVALID");
+  const row = await db.getFirstAsync<Row>(
+    "SELECT * FROM store_context_settings WHERE id=? AND store_id=?",
+    requested.entityId,
+    storeId,
+  );
+  if (!row) throw Error("STORE_CONTEXT_RESOLUTION_INVALID");
+  const current = mapped(row),
+    local = current.entity;
+  if (local.storeId !== storeId || local.id !== requested.entityId)
+    throw Error("STORE_CONTEXT_SOURCE_CHANGED");
+  const conflicts = await new ConflictRepository(db).listOpenForEntity(
+      storeId,
+      "store_context_settings",
+      local.id,
+    ),
+    group = reviewConflictVersions(
+      conflicts,
+      (raw) => {
+        const result = storeContextSettingsSchema.safeParse(raw);
+        return result.success ? result.data : null;
+      },
+      (remote) =>
+        sameIdentity({ ...local, createdAt: remote.createdAt }, remote),
+      current.remote,
+    ),
+    commands = await db.getAllAsync<{
+      command_id: string;
+      status: string;
+      payload_json: string;
+      expected_remote_version: number | null;
+    }>(
+      "SELECT command_id,status,payload_json,expected_remote_version FROM sync_outbox WHERE store_id=? AND entity_type='store_context_settings' AND entity_id=? AND status IN ('PENDING','SYNCING','CONFLICT','FAILED') ORDER BY local_sequence LIMIT 101",
+      storeId,
+      local.id,
+    );
+  const canResolve =
+    group.valid &&
+    !!group.remote &&
+    current.syncState === "CONFLICT" &&
+    (current.remoteVersion ?? 0) <= group.remote.version &&
+    commands.length <= 100 &&
+    !commands.some((c) => c.status === "SYNCING");
+  const reason =
+    group.reason ??
+    (canResolve
+      ? null
+      : commands.some((c) => c.status === "SYNCING")
+        ? "Un envoi des réglages est en cours. Attendez sa fin avant de comparer."
+        : "Les réglages ont changé ou leur version distante ne peut pas être vérifiée. Relisez la comparaison avant de décider.");
+  const hash = await digest(
+    JSON.stringify({ row, conflicts, commands, remote: group.remote }),
+  );
+  return { current, group, hash, canResolve, reason };
+}
 export class StoreContextRepository {
-  constructor(private db: AtomicMutationDatabase & OutboxDatabase) {}
+  constructor(
+    private db: AtomicMutationDatabase & OutboxDatabase,
+    private digest: (s: string) => Promise<string> = async () => {
+      throw Error("STORE_CONTEXT_DIGEST_REQUIRED");
+    },
+  ) {}
+  review(storeId: string, conflictId: string) {
+    return readStoreContextConflictReview(
+      this.db,
+      storeId,
+      conflictId,
+      this.digest,
+    );
+  }
   async get(storeId: string) {
     const row = await this.db.getFirstAsync<Row>(
       "SELECT p.*,(SELECT last_error_code FROM sync_outbox o WHERE o.store_id=p.store_id AND o.entity_id=p.id AND o.entity_type='store_context_settings' ORDER BY local_sequence DESC LIMIT 1) AS last_error_code FROM store_context_settings p WHERE p.store_id=?",
@@ -163,55 +247,50 @@ export class StoreContextRepository {
   async resolve(
     conflictId: string,
     useLocal: boolean,
-    ctx: { commandId: string; deviceId: string },
+    ctx: {
+      storeId: string;
+      commandId: string;
+      remoteHistoryId: string;
+      deviceId: string;
+      reviewHash: string;
+      canResolve: () => boolean;
+      signal?: AbortSignal;
+    },
   ) {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const conflict = await new ConflictRepository(tx).getById(conflictId);
-      if (
-        !conflict ||
-        conflict.status !== "OPEN" ||
-        conflict.entityType !== "store_context_settings"
-      )
-        throw Error("STORE_CONTEXT_RESOLUTION_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-        "SELECT * FROM store_context_settings WHERE id=? AND store_id=?",
-        conflict.entityId,
-        conflict.storeId,
-      );
-      if (!row) throw Error("STORE_CONTEXT_RESOLUTION_INVALID");
-      const local = mapped(row).entity,
-        parsed = storeContextSettingsSchema.safeParse(conflict.remotePayload);
-      const remote = parsed.success ? parsed.data : null;
-      if (
-        remote &&
-        !sameIdentity({ ...local, createdAt: remote.createdAt }, remote)
-      )
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("STORE_CONTEXT_FORBIDDEN");
+      const review = await readStoreContextConflictReview(
+          tx,
+          ctx.storeId,
+          conflictId,
+          this.digest,
+        ),
+        local = review.current.entity,
+        remote = review.group.remote;
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("STORE_CONTEXT_FORBIDDEN");
+      if (!review.canResolve || review.hash !== ctx.reviewHash || !remote)
         throw Error("STORE_CONTEXT_SOURCE_CHANGED");
-      if (!useLocal && !remote) throw Error("STORE_CONTEXT_REMOTE_MISSING");
-      const syncing = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) AS n FROM sync_outbox WHERE store_id=? AND entity_type='store_context_settings' AND entity_id=? AND status='SYNCING'",
-        local.storeId,
-        local.id,
-      );
-      if (syncing?.n) throw Error("STORE_CONTEXT_SYNCING");
       await retireCommands(tx, local.storeId, local.id);
-      const now = new Date().toISOString();
-      const resolved = useLocal
-        ? storeContextSettingsSchema.parse({
-            ...local,
-            createdAt: remote?.createdAt ?? local.createdAt,
-            version: (remote?.version ?? 0) + 1,
-            updatedAt: now,
-          })
-        : remote!;
+      const now = new Date().toISOString(),
+        resolved = useLocal
+          ? storeContextSettingsSchema.parse({
+              ...local,
+              createdAt: remote.createdAt,
+              version: remote.version + 1,
+              updatedAt: now,
+            })
+          : remote;
       await tx.runAsync(
-        "UPDATE store_context_settings SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=? WHERE id=?",
+        "UPDATE store_context_settings SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state=?,dirty=? WHERE id=? AND store_id=?",
         JSON.stringify(resolved),
-        remote ? JSON.stringify(remote) : null,
-        remote?.version ?? null,
+        JSON.stringify(remote),
+        remote.version,
         useLocal ? "PENDING" : "SYNCED",
         useLocal ? 1 : 0,
         local.id,
+        local.storeId,
       );
       await tx.runAsync(
         "INSERT INTO store_context_history(action_id,settings_id,store_id,payload_json,action,created_at) VALUES(?,?,?,?,?,?)",
@@ -222,13 +301,31 @@ export class StoreContextRepository {
         useLocal ? "RESOLVE_LOCAL" : "RESOLVE_REMOTE",
         now,
       );
-      await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='store_context_settings' AND entity_id=? AND status='OPEN'",
-        useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
-        local.storeId,
-        local.id,
-      );
+      if (
+        !review.group.conflicts.some(
+          (c) =>
+            JSON.stringify(
+              storeContextSettingsSchema.parse(c.remotePayload),
+            ) === JSON.stringify(remote),
+        )
+      )
+        await tx.runAsync(
+          "INSERT INTO store_context_history(action_id,settings_id,store_id,payload_json,action,created_at) VALUES(?,?,?,?,?,?)",
+          ctx.remoteHistoryId,
+          local.id,
+          local.storeId,
+          JSON.stringify(remote),
+          "RESOLUTION_REMOTE_BASELINE",
+          now,
+        );
+      for (const conflict of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          conflict.id,
+          local.storeId,
+        );
       if (useLocal)
         await new OutboxRepository(tx).enqueue({
           commandId: ctx.commandId,
@@ -237,13 +334,16 @@ export class StoreContextRepository {
           commandType: "STORE_CONTEXT_SETTINGS_UPSERT",
           entityType: "store_context_settings",
           entityId: local.id,
-          expectedRemoteVersion: remote?.version ?? null,
+          expectedRemoteVersion: remote.version,
           payload: resolved,
           createdAt: now,
         });
+      if (!ctx.canResolve() || ctx.signal?.aborted)
+        throw Error("STORE_CONTEXT_FORBIDDEN");
     });
   }
 }
+
 async function retireCommands(tx: OutboxDatabase, storeId: string, id: string) {
   await tx.runAsync(
     "UPDATE sync_outbox SET status='FAILED',last_error_code='STORE_CONTEXT_SUPERSEDED' WHERE store_id=? AND entity_type='store_context_settings' AND entity_id=? AND status IN ('PENDING','CONFLICT','FAILED')",

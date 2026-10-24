@@ -270,10 +270,18 @@ export class CopilotStoreConflictRuntime {
             { commandId, deviceId: ctx.deviceId, capturedAt: appliedAt },
           );
         else if (request.kind === "SETTINGS")
-          await new StoreContextRepository(joined).resolve(
+          await new StoreContextRepository(joined, this.digest).resolve(
             request.conflictId,
             useLocal,
-            { commandId, deviceId: ctx.deviceId },
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              storeId: ctx.storeId,
+              reviewHash: review.settingsReview!.hash,
+              remoteHistoryId: this.id(),
+              canResolve: () => allowed(authority, request.kind),
+              signal,
+            },
           );
         else if (request.kind === "NEED")
           await new NeedUnitRepository(joined).resolve(

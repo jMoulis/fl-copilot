@@ -15,7 +15,10 @@ import {
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import { ProductMasterRepository } from "./product-master-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import {
+  ConflictRepository,
+  reviewConflictVersions,
+} from "../sync/conflict-repository";
 import { applyProductMasterChange } from "./apply-product-master";
 import { recordProductMasterRemote } from "./remote-snapshot";
 import { queueProductRecomputation } from "./recomputation";
@@ -214,51 +217,16 @@ export async function readCatalogueConflictGroup(
       storeId,
       catalogueConflictTypes[kind],
       entity.id,
-    ),
-    conflict = conflicts[0] ?? null,
-    parsed = catalogueConflictSchemas[kind].safeParse(conflict?.remotePayload),
-    captured = parsed.success ? parsed.data : null;
-  let remote = captured;
-  const versions = new Map<number, string>();
-  let valid = conflicts.length > 0 && conflicts.length <= 100;
-  for (const entry of conflicts) {
-    const candidate = catalogueConflictSchemas[kind].safeParse(
-      entry.remotePayload,
     );
-    if (
-      !candidate.success ||
-      candidate.data.version !== entry.remoteVersion ||
-      !catalogueConflictIdentity(kind, entity, candidate.data)
-    ) {
-      valid = false;
-      continue;
-    }
-    const serialized = JSON.stringify(candidate.data),
-      previous = versions.get(candidate.data.version);
-    if (previous !== undefined && previous !== serialized) valid = false;
-    versions.set(candidate.data.version, serialized);
-  }
-  if (synchronized !== null) {
-    const snapshot = catalogueConflictSchemas[kind].safeParse(synchronized);
-    if (
-      !snapshot.success ||
-      !catalogueConflictIdentity(kind, entity, snapshot.data)
-    )
-      valid = false;
-    else {
-      const previous = versions.get(snapshot.data.version);
-      if (previous !== undefined && previous !== JSON.stringify(snapshot.data))
-        valid = false;
-      if (!remote || snapshot.data.version > remote.version)
-        remote = snapshot.data;
-    }
-  }
-  const reason = valid
-    ? null
-    : conflicts.length > 100
-      ? "L’historique dépasse la limite de cette comparaison. Toutes les versions restent conservées."
-      : "Les versions conservées sont incomplètes ou contradictoires. Aucune résolution ne peut être appliquée à cette identité.";
-  return { conflicts, conflict, remote, valid, reason };
+  return reviewConflictVersions(
+    conflicts,
+    (raw) => {
+      const result = catalogueConflictSchemas[kind].safeParse(raw);
+      return result.success ? result.data : null;
+    },
+    (remote) => catalogueConflictIdentity(kind, entity, remote),
+    synchronized,
+  );
 }
 export class ProductMasterConflictRepository {
   constructor(

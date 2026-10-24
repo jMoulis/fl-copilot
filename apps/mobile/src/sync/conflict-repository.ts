@@ -145,3 +145,51 @@ function mapRow(row: SyncConflictRow): SyncConflict {
     resolvedAt: row.resolved_at,
   };
 }
+
+/** Read-only version checks. Each domain supplies its own schema/identity policy;
+ * this does not merge fields, grant permission or perform a resolution. */
+export function reviewConflictVersions<
+  T extends { id: string; storeId: string; version: number },
+>(
+  conflicts: SyncConflict[],
+  parse: (raw: unknown) => T | null,
+  sameIdentity: (candidate: T) => boolean,
+  synchronized: unknown = null,
+) {
+  const conflict = conflicts[0] ?? null;
+  let remote: T | null = null,
+    valid = conflicts.length > 0 && conflicts.length <= 100;
+  const versions = new Map<number, string>();
+  for (const entry of conflicts) {
+    const candidate = parse(entry.remotePayload);
+    if (
+      !candidate ||
+      candidate.version !== entry.remoteVersion ||
+      !sameIdentity(candidate)
+    ) {
+      valid = false;
+      continue;
+    }
+    const serialized = JSON.stringify(candidate),
+      previous = versions.get(candidate.version);
+    if (previous !== undefined && previous !== serialized) valid = false;
+    versions.set(candidate.version, serialized);
+    if (!remote || candidate.version > remote.version) remote = candidate;
+  }
+  if (synchronized !== null) {
+    const snapshot = parse(synchronized);
+    if (!snapshot || !sameIdentity(snapshot)) valid = false;
+    else {
+      const previous = versions.get(snapshot.version);
+      if (previous !== undefined && previous !== JSON.stringify(snapshot))
+        valid = false;
+      if (!remote || snapshot.version > remote.version) remote = snapshot;
+    }
+  }
+  const reason = valid
+    ? null
+    : conflicts.length > 100
+      ? "L’historique dépasse la limite de cette comparaison. Toutes les versions restent conservées."
+      : "Les versions conservées sont incomplètes ou contradictoires. Aucune résolution ne peut être appliquée à cette identité.";
+  return { conflicts, conflict, remote, valid, reason };
+}

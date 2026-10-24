@@ -44,7 +44,10 @@ import { storeConflictProposalSchema } from "@fl-copilot/domain";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { ConflictRepository } from "../sync/conflict-repository";
 import { StoreProductEventRepository } from "../needs/store-event-repository";
-import { StoreContextRepository } from "../store/context-repository";
+import {
+  StoreContextRepository,
+  readStoreContextConflictReview,
+} from "../store/context-repository";
 import { joinedProductToolDatabase } from "./product-tool-transaction";
 type Content = z.infer<typeof storeConflictProposalSchema>;
 export async function readStoreConflictCurrent(
@@ -160,8 +163,18 @@ export async function readStoreConflictReview(
         current.remote,
       )
     : null;
-  const conflict = catalogueGroup
-    ? catalogueGroup.conflict
+  const settingsReview =
+    input.kind === "SETTINGS" && rows[0]
+      ? await readStoreContextConflictReview(
+          db,
+          basis.storeId,
+          rows[0].id,
+          digest,
+        )
+      : null;
+  const reviewedGroup = catalogueGroup ?? settingsReview?.group;
+  const conflict = reviewedGroup
+    ? reviewedGroup.conflict
     : rows[0]
       ? await new ConflictRepository(db).getById(rows[0].id)
       : null;
@@ -193,8 +206,8 @@ export async function readStoreConflictReview(
                       ? needMembershipSchema
                       : productSubstitutionSchema;
   const parsed = remoteSchema.safeParse(conflict?.remotePayload);
-  const remote = catalogueGroup
-    ? catalogueGroup.remote
+  const remote = reviewedGroup
+    ? reviewedGroup.remote
     : parsed.success
       ? parsed.data
       : null;
@@ -215,10 +228,10 @@ export async function readStoreConflictReview(
         "Le détail du conflit manque. Synchronisez avant de demander une nouvelle comparaison.",
       );
     else status = "UNCHANGED";
-  } else if (catalogueGroup ? !catalogueGroup.valid : rows.length !== 1)
+  } else if (reviewedGroup ? !reviewedGroup.valid : rows.length !== 1)
     block(
-      catalogueGroup
-        ? catalogueGroup.reason!
+      reviewedGroup
+        ? reviewedGroup.reason!
         : "Plusieurs conflits concernent cette donnée. Examinez-les dans Synchronisation avant de décider.",
     );
   else if (
@@ -226,7 +239,7 @@ export async function readStoreConflictReview(
     !remote ||
     remote.storeId !== basis.storeId ||
     remote.id !== basis.entityId ||
-    (!catalogueGroup && conflict.remoteVersion !== remote.version) ||
+    (!reviewedGroup && conflict.remoteVersion !== remote.version) ||
     remote.version !== basis.remoteVersion ||
     (await digest(JSON.stringify(remote))) !== basis.remoteHash
   )
@@ -250,6 +263,8 @@ export async function readStoreConflictReview(
     block(
       "Un envoi est en cours. Attendez sa fin avant de choisir une version.",
     );
+  if (settingsReview && !settingsReview.canResolve)
+    block(settingsReview.reason!);
   const localEvent =
       input.kind === "FIELD_EVENT"
         ? storeProductEventSchema.parse(current.entity)
@@ -319,7 +334,11 @@ export async function readStoreConflictReview(
     block(
       "L’identité commerciale a changé. Examinez ce conflit dans Synchronisation.",
     );
+  const groupAllowsDecision =
+    (!reviewedGroup || reviewedGroup.valid) &&
+    (!settingsReview || settingsReview.canResolve);
   const canKeepLocal =
+    groupAllowsDecision &&
     !!remote &&
     (cataloguePolicy
       ? cataloguePolicy.canKeep
@@ -348,6 +367,7 @@ export async function readStoreConflictReview(
             conflicts: catalogueGroup?.conflicts,
           }
         : {}),
+      ...(settingsReview ? { settings: settingsReview.hash } : {}),
       ...(needPolicy ? { parents: needPolicy.parentSnapshots } : {}),
       ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
       ...(commercialDecisionPolicy
@@ -362,17 +382,20 @@ export async function readStoreConflictReview(
     remote,
     conflict,
     canKeepLocal,
-    canAdoptRemote: cataloguePolicy
-      ? cataloguePolicy.canAdopt
-      : commercialDecisionPolicy
-        ? commercialDecisionPolicy.canAdopt
-        : commercialPolicy
-          ? commercialPolicy.canAdopt
-          : needPolicy
-            ? needPolicy.canAdopt
-            : !!remote,
+    canAdoptRemote: !groupAllowsDecision
+      ? false
+      : cataloguePolicy
+        ? cataloguePolicy.canAdopt
+        : commercialDecisionPolicy
+          ? commercialDecisionPolicy.canAdopt
+          : commercialPolicy
+            ? commercialPolicy.canAdopt
+            : needPolicy
+              ? needPolicy.canAdopt
+              : !!remote,
     cataloguePolicy,
     catalogueConflicts: catalogueGroup?.conflicts,
+    settingsReview,
     commercialPolicy,
     commercialDecisionPolicy,
     needPolicy,
