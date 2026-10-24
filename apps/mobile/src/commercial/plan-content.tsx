@@ -1,3 +1,4 @@
+import { commercialOfferHref } from "./offer-navigation";
 import { PhysicalAllocationCard } from "./physical-allocation-card";
 import { Text, View } from "react-native";
 import { router } from "expo-router";
@@ -81,16 +82,9 @@ export function CommercialPlanContent({
                   <SecondaryButton
                     label="Revoir le choix actuel de cette offre"
                     onPress={() =>
-                      router.push({
-                        pathname: "/commercial-offer/[id]",
-                        params: {
-                          id: o.sourceReference.readingId,
-                          operationIndex: String(
-                            o.sourceReference.operationIndex,
-                          ),
-                          itemIndex: String(o.sourceReference.itemIndex),
-                        },
-                      })
+                      router.push(
+                        commercialOfferHref(o.sourceReference, o.choiceId),
+                      )
                     }
                   />
                 </View>

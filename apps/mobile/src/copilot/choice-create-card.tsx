@@ -1,3 +1,6 @@
+import { isCommercialOriginalSource } from "@fl-copilot/domain";
+import { CommercialOriginalButton } from "../commercial/original-button";
+import { commercialOfferHref } from "../commercial/offer-navigation";
 import {
   commercialFieldLabels,
   commercialExtraFieldLabels,
@@ -149,27 +152,33 @@ export function ChoiceCreateCard({
                 </Text>
               ))
             : null}
-          <Pressable
-            accessibilityRole="button"
-            style={{ minHeight: 44, padding: 12 }}
-            onPress={() =>
-              router.push({
-                pathname: "/commercial-offer/[id]",
-                params: {
-                  id: state.content.basis.offer.source.readingId,
-                  operationIndex:
-                    state.content.basis.offer.source.operationIndex,
-                  itemIndex: state.content.basis.offer.source.itemIndex,
-                },
-              })
-            }
-          >
-            <Text
-              style={{ color: colors.forest, textDecorationLine: "underline" }}
+          {isCommercialOriginalSource(state.content.basis.offer.source) ? (
+            <CommercialOriginalButton
+              sourceDocumentId={
+                state.content.basis.offer.source.sourceDocumentId
+              }
+              label={`PDF original · page ${state.content.basis.offer.pageNumber}`}
+            />
+          ) : (
+            <Pressable
+              accessibilityRole="button"
+              style={{ minHeight: 44, padding: 12 }}
+              onPress={() =>
+                router.push(
+                  commercialOfferHref(state.content.basis.offer.source),
+                )
+              }
             >
-              Voir l’offre et sa source
-            </Text>
-          </Pressable>
+              <Text
+                style={{
+                  color: colors.forest,
+                  textDecorationLine: "underline",
+                }}
+              >
+                Voir l’offre et sa source
+              </Text>
+            </Pressable>
+          )}
           <Text>
             Retenir cette offre ne valide pas un plan, ne crée pas de TG et ne
             déclare pas une mise en rayon.

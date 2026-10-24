@@ -36,6 +36,7 @@ it("sends only IDs with authenticated store headers and validates reply scope", 
       headers: {
         "content-type": "application/json",
         "x-copilot-analytics-destinations": "2",
+        "x-commercial-source-version": "2",
         authorization: "Bearer test-token",
         "x-store-id": id(4),
       },

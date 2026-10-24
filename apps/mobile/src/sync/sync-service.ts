@@ -91,6 +91,7 @@ export interface MobileSyncServiceOptions {
   commercialReview?: boolean;
   commercialVisual?: boolean;
   commercialChoices?: boolean;
+  commercialOriginalSources?: boolean;
   commercialPreparation?: boolean;
   commercialExecution?: boolean;
   commercialExecutionActuals?: boolean;
@@ -1315,6 +1316,9 @@ export class MobileSyncService {
   ): SyncPushRequest {
     return {
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
+      ...(this.options.commercialOriginalSources
+        ? { commercialOriginalSources: true }
+        : {}),
       ...(this.options.physicalAllocations
         ? { physicalAllocations: true }
         : {}),

@@ -1,10 +1,12 @@
 import { readStoreLayoutScenarioSources } from "../commercial/physical-allocation-sources";
+import { readCommercialOriginalSourceStates } from "../commercial/original-source-verification";
 import { layoutScenarioInput } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
 import {
   copilotPlanReadinessInputSchema,
   copilotPlanReadinessResultSchema,
+  isCommercialOriginalSource,
 } from "@fl-copilot/domain";
 import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
@@ -61,7 +63,9 @@ export async function loadCommercialPlanReadiness(
   if (prep) {
     const readingIds = [
       ...new Set([
-        ...choices.map((c) => c.source.readingId),
+        ...choices.flatMap((c) =>
+          isCommercialOriginalSource(c.source) ? [] : [c.source.readingId],
+        ),
         ...prep.placements.flatMap((p) =>
           p.sourceIdea ? [p.sourceIdea.readingId] : [],
         ),
@@ -159,6 +163,11 @@ export async function loadCommercialPlanReadiness(
         validated,
         preferences,
         pages,
+        originalSources: await readCommercialOriginalSourceStates(
+          db,
+          storeId,
+          choices.map((c) => c.source),
+        ),
       };
       issues = commercialPlanIssues(prep, context).map((i) => ({
         ...i,

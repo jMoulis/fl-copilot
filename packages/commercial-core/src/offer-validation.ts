@@ -4,6 +4,8 @@ import {
   type CommercialOfferChoice,
   type CommercialWeekPreparation,
   type CommercialVersionDecision,
+  type CommercialChoiceSource,
+  isCommercialOriginalSource,
 } from "@fl-copilot/domain";
 import { commercialUuidFromText } from "./offer-choice";
 import { commercialPreparationOfferIssues } from "./week-preparation";
@@ -28,16 +30,25 @@ export function commercialOfferValidationSource(
   choice: CommercialOfferChoice,
   pages: readonly CommercialComparisonPage[],
 ) {
+  const source = choice.source;
+  if (isCommercialOriginalSource(source))
+    return {
+      // No machine-extracted fields or invented confidence. The manager reviews the page.
+      sourceFields: [],
+      evidence: [
+        { pageNumber: source.pageNumber, quote: source.excerpt, region: null },
+      ],
+    };
   const p = pages.find(
     (p) =>
-      p.id === choice.source.readingId &&
+      p.id === source.readingId &&
       p.storeId === choice.storeId &&
       p.sourceDocumentId === choice.source.sourceDocumentId &&
       p.checksum === choice.source.checksum &&
       p.status === "READY",
   );
-  const op = p?.reading?.operations[choice.source.operationIndex],
-    item = op?.items[choice.source.itemIndex];
+  const op = p?.reading?.operations[source.operationIndex],
+    item = op?.items[source.itemIndex];
   if (
     !op ||
     item?.kind !== "OFFER" ||
@@ -53,13 +64,41 @@ export function commercialOfferValidationSource(
     itemEvidence: item.evidence,
   });
 }
+export function commercialChoiceSourcePage(
+  choice: CommercialOfferChoice,
+  pages: readonly CommercialComparisonPage[],
+) {
+  const source = choice.source;
+  return isCommercialOriginalSource(source)
+    ? source.pageNumber
+    : pages.find(
+        (page) =>
+          page.id === source.readingId &&
+          page.storeId === choice.storeId &&
+          page.sourceDocumentId === source.sourceDocumentId &&
+          page.checksum === source.checksum &&
+          page.status === "READY",
+      )?.pageNumber;
+}
 /** Same immutable field/citation projection for source-backed chat review and canonical validation. */
 export function commercialOfferValidationReviewData(offer: {
+  source?: CommercialChoiceSource;
   operationFields: CommercialValidatedOffer["sourceFields"];
   itemFields: CommercialValidatedOffer["sourceFields"];
   operationEvidence: CommercialValidatedOffer["evidence"];
   itemEvidence: CommercialValidatedOffer["evidence"];
 }) {
+  if (offer.source && isCommercialOriginalSource(offer.source))
+    return {
+      sourceFields: [],
+      evidence: [
+        {
+          pageNumber: offer.source.pageNumber,
+          quote: offer.source.excerpt,
+          region: null,
+        },
+      ],
+    };
   const ref = (e: CommercialValidatedOffer["evidence"][number]) => ({
     pageNumber: e.pageNumber,
     quote: e.quote,

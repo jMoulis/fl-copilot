@@ -1038,6 +1038,54 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 53,
+    name: "commercial-choice-original-sources",
+    async up(db) {
+      const choices = db.collection("commercialOfferChoices");
+      const keys = {
+        storeId: 1,
+        "source.readingId": 1,
+        "source.operationIndex": 1,
+        "source.itemIndex": 1,
+      } as const;
+      const legacy = (await choices.listIndexes().toArray()).find(
+        (i) => i.name === "commercial_choice_source",
+      );
+      if (
+        legacy &&
+        (legacy.unique !== true ||
+          JSON.stringify(legacy.key) !== JSON.stringify(keys) ||
+          legacy.partialFilterExpression)
+      )
+        throw Error(
+          "Unexpected commercial source index; preserve it for inspection",
+        );
+      // Create the replacement first, under a different name. Concurrent migrators can
+      // only remove the legacy index, never an already-established replacement.
+      await choices.createIndex(keys, {
+        name: "commercial_choice_extracted_source",
+        unique: true,
+        partialFilterExpression: { "source.readingId": { $type: "string" } },
+      });
+      if (legacy)
+        try {
+          await choices.dropIndex("commercial_choice_source");
+        } catch (error) {
+          if (
+            typeof error !== "object" ||
+            !error ||
+            !("code" in error) ||
+            error.code !== 27
+          )
+            throw error;
+        }
+      await choices.createIndex(
+        { storeId: 1, "source.kind": 1 },
+        { name: "commercial_choice_source_kind" },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

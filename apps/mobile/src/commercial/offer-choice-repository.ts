@@ -2,10 +2,13 @@ import {
   commercialOfferChoiceSchema,
   type CommercialOfferChoice,
 } from "@fl-copilot/sync-contracts";
+import { isCommercialOriginalSource } from "@fl-copilot/domain";
+import { readCommercialChoiceSource } from "./choice-source";
 import {
   commercialChoiceId,
   commercialChoiceDuplicateKey,
   commercialChoiceSameSource,
+  commercialChoiceWithdrawalPreservesFacts,
 } from "@fl-copilot/commercial-core";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import {
@@ -17,7 +20,6 @@ import {
   requireCommercialConflictDecision,
   type CommercialConflictResolutionContext,
 } from "./conflict-review";
-import { readCommercialVisualReadings } from "./visual-repository";
 import {
   mapCommercialChoice as mapped,
   readCommercialChoice,
@@ -72,9 +74,11 @@ export async function applyCommercialChoice(
     choice.id,
     storeId,
     choice.source.sourceDocumentId,
-    choice.source.readingId,
-    choice.source.operationIndex,
-    choice.source.itemIndex,
+    isCommercialOriginalSource(choice.source) ? null : choice.source.readingId,
+    isCommercialOriginalSource(choice.source)
+      ? null
+      : choice.source.operationIndex,
+    isCommercialOriginalSource(choice.source) ? null : choice.source.itemIndex,
     JSON.stringify(choice),
     JSON.stringify(choice),
     choice.version,
@@ -103,8 +107,9 @@ export class CommercialChoiceRepository {
   }
   async save(
     input: CommercialOfferChoice,
-    ctx: { commandId: string; deviceId: string },
+    ctx: { commandId: string; deviceId: string; assertCurrentScope?(): void },
   ) {
+    ctx.assertCurrentScope?.();
     const choice = commercialOfferChoiceSchema.parse(input);
     const id = await commercialChoiceId(
       choice.storeId,
@@ -113,6 +118,7 @@ export class CommercialChoiceRepository {
     );
     if (choice.id !== id) throw Error("COMMERCIAL_CHOICE_IDENTITY_INVALID");
     await this.db.withExclusiveTransactionAsync(async (tx) => {
+      ctx.assertCurrentScope?.();
       const row = await tx.getFirstAsync<Row>(
         "SELECT * FROM commercial_offer_choices WHERE id=? AND store_id=?",
         choice.id,
@@ -130,25 +136,13 @@ export class CommercialChoiceRepository {
         (previous && !commercialChoiceSameSource(previous.entity, choice))
       )
         throw Error("COMMERCIAL_CHOICE_REVISION_INVALID");
-      const readings = await readCommercialVisualReadings(
-        tx,
-        choice.storeId,
-        choice.source.sourceDocumentId,
-      );
-      const reading = readings.find(
-        (r) =>
-          r.id === choice.source.readingId &&
-          r.checksum === choice.source.checksum,
-      );
-      const operation =
-          reading?.reading?.operations[choice.source.operationIndex],
-        item = operation?.items[choice.source.itemIndex];
+      const withdrawing = previous && choice.status === "WITHDRAWN";
       if (
-        item?.kind !== "OFFER" ||
-        operation?.kind !== choice.operationKind ||
-        operation.label !== choice.operationLabel ||
-        item.label !== choice.rawProductLabel
+        withdrawing &&
+        !commercialChoiceWithdrawalPreservesFacts(previous.entity, choice)
       )
+        throw Error("COMMERCIAL_CHOICE_WITHDRAWAL_CHANGED");
+      if (!withdrawing && !(await readCommercialChoiceSource(tx, choice)).offer)
         throw Error("COMMERCIAL_CHOICE_SOURCE_INVALID");
       if (choice.status === "RETAINED") {
         const product = await tx.getFirstAsync<{ id: string }>(
@@ -191,9 +185,15 @@ export class CommercialChoiceRepository {
         choice.id,
         choice.storeId,
         choice.source.sourceDocumentId,
-        choice.source.readingId,
-        choice.source.operationIndex,
-        choice.source.itemIndex,
+        isCommercialOriginalSource(choice.source)
+          ? null
+          : choice.source.readingId,
+        isCommercialOriginalSource(choice.source)
+          ? null
+          : choice.source.operationIndex,
+        isCommercialOriginalSource(choice.source)
+          ? null
+          : choice.source.itemIndex,
         JSON.stringify(choice),
       );
       await tx.runAsync(
@@ -216,6 +216,7 @@ export class CommercialChoiceRepository {
         payload: choice,
         createdAt: choice.updatedAt,
       });
+      ctx.assertCurrentScope?.();
     });
     return choice;
   }

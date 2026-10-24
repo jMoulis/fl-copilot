@@ -1,7 +1,8 @@
 import {
   commercialOfferChoiceSchema,
   type CommercialOfferChoice,
-  type CommercialOfferSource,
+  type CommercialChoiceSource,
+  isCommercialOriginalSource,
   type CommercialVisualPageOutput,
 } from "@fl-copilot/domain";
 import { normalizeCommercialMechanisms } from "./mechanism-normalization";
@@ -9,8 +10,17 @@ import { commercialSourceDate, commercialSourceYear } from "./commercial-week";
 type Digest = (text: string) => Promise<string>;
 export function commercialChoiceIdentityText(
   storeId: string,
-  source: CommercialOfferSource,
+  source: CommercialChoiceSource,
 ) {
+  if (isCommercialOriginalSource(source))
+    return JSON.stringify([
+      "fl-copilot/original-offer-choice.v1",
+      storeId.toLowerCase(),
+      source.sourceDocumentId.toLowerCase(),
+      source.checksum,
+      source.pageNumber,
+      source.excerpt,
+    ]);
   return JSON.stringify([
     "fl-copilot/offer-choice.v1",
     storeId.toLowerCase(),
@@ -21,7 +31,7 @@ export function commercialChoiceIdentityText(
 }
 export async function commercialChoiceId(
   storeId: string,
-  source: CommercialOfferSource,
+  source: CommercialChoiceSource,
   digest: Digest,
 ) {
   return commercialUuidFromText(
@@ -68,6 +78,25 @@ export function commercialChoiceSameSource(
     a.operationLabel === b.operationLabel &&
     a.rawProductLabel === b.rawProductLabel &&
     a.createdAt === b.createdAt
+  );
+}
+/** Withdrawing an existing choice may add a note, but never rewrite its identity or terms. */
+export function commercialChoiceWithdrawalPreservesFacts(
+  before: CommercialOfferChoice,
+  after: CommercialOfferChoice,
+) {
+  const facts = (value: CommercialOfferChoice) => {
+    const { status, version, updatedAt, note, ...rest } =
+      commercialOfferChoiceSchema.parse(value);
+    void status;
+    void version;
+    void updatedAt;
+    void note;
+    return rest;
+  };
+  return (
+    after.status === "WITHDRAWN" &&
+    JSON.stringify(facts(before)) === JSON.stringify(facts(after))
   );
 }
 export function commercialOfferProposal(

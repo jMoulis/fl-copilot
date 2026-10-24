@@ -1,3 +1,4 @@
+import { readCommercialChoiceSource } from "./choice-source";
 import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
   commercialOfferChoiceSchema,
@@ -83,28 +84,9 @@ export async function readCommercialConflictPolicy(
     choices: {} as Record<string, string>,
   };
   const sourceValid = async (choice: CommercialOfferChoice) => {
-    const row = await db.getFirstAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM commercial_visual_readings WHERE id=? AND store_id=? AND length(payload_json)<=1000000",
-      choice.source.readingId,
-      choice.storeId,
-    );
-    result.snapshots.push(row);
-    const reading = row
-        ? synchronizedCommercialVisualReadingSchema.parse(
-            JSON.parse(row.payload_json),
-          )
-        : null,
-      operation = reading?.reading?.operations[choice.source.operationIndex],
-      item = operation?.items[choice.source.itemIndex];
-    return (
-      reading?.status === "READY" &&
-      reading.sourceDocumentId === choice.source.sourceDocumentId &&
-      reading.checksum === choice.source.checksum &&
-      operation?.kind === choice.operationKind &&
-      operation.label === choice.operationLabel &&
-      item?.kind === "OFFER" &&
-      item.label === choice.rawProductLabel
-    );
+    const source = await readCommercialChoiceSource(db, choice);
+    result.snapshots.push(...source.snapshots);
+    return source.offer !== null;
   };
   if (!remote) return result;
   if (kind === "COMMERCIAL_CHOICE") {

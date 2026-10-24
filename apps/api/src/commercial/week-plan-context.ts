@@ -1,5 +1,9 @@
 import { readStoreLayoutScenarioSources } from "./physical-allocation-sources";
-import { layoutScenarioInput } from "@fl-copilot/domain";
+import { readCommercialOriginalSourceStates } from "./original-source-verification";
+import {
+  layoutScenarioInput,
+  isCommercialOriginalSource,
+} from "@fl-copilot/domain";
 import {
   commercialWeekPreparationSchema,
   commercialVersionDecisionSchema,
@@ -104,7 +108,9 @@ export async function loadWeekPlanContext(
     throw Error("COMMERCIAL_PLAN_DEPENDENCIES_PENDING");
   const readingIds = [
     ...new Set([
-      ...choices.map((c) => c.source.readingId),
+      ...choices.flatMap((c) =>
+        isCommercialOriginalSource(c.source) ? [] : [c.source.readingId],
+      ),
       ...plan.preparation.placements.flatMap((p) =>
         p.sourceIdea ? [p.sourceIdea.readingId] : [],
       ),
@@ -143,5 +149,11 @@ export async function loadWeekPlanContext(
       version: p.version,
     })),
     pages,
+    originalSources: await readCommercialOriginalSourceStates(
+      ctx.database,
+      storeId,
+      choices.map((c) => c.source),
+      ctx.session,
+    ),
   };
 }

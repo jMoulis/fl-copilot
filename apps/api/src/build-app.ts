@@ -1,4 +1,5 @@
 import { readCommercialOriginal } from "./copilot/commercial-original-reader";
+import { requireCommercialSourceCompatibility } from "./commercial/source-compatibility";
 import { previewTranscriptionReview } from "./copilot/transcription-review-tool.js";
 import { previewVisualAction } from "./copilot/visual-actions-tool.js";
 import { readVisualLibrary } from "./copilot/visual-library-tool.js";
@@ -636,6 +637,24 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.body.storeId,
         request.body.deviceId,
       );
+      if (request.headers["x-commercial-source-version"] === "2")
+        request.body.commercialOriginalSources = true;
+      const hasCommercialOfferWrite = request.body.commands.some(
+        (command) =>
+          ["commercial_offer_choice", "commercial_validated_offer"].includes(
+            command.entityType,
+          ) ||
+          [
+            "COMMERCIAL_OFFER_CHOICE_UPSERT",
+            "COMMERCIAL_OFFER_VALIDATE",
+          ].includes(command.type),
+      );
+      if (hasCommercialOfferWrite && principal.role !== "MANAGER")
+        throw new AuthError(
+          403,
+          "STORE_ROLE_FORBIDDEN",
+          "Seul le responsable du magasin peut retenir ou valider une offre commerciale.",
+        );
       const hasVisualWrite = request.body.commands.some((c) =>
         isVisualEntityType(c.entityType),
       );
@@ -711,6 +730,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           503,
           "COPILOT_NOT_READY",
           "Le chat du copilote n’est pas encore disponible.",
+        );
+      if (request.headers["x-commercial-source-version"] !== "2")
+        await requireCommercialSourceCompatibility(
+          await dependencies.database.getDb(),
+          storeId,
+          false,
         );
       const streaming = request.headers.accept === "application/x-ndjson";
       const abort = new AbortController();
@@ -2017,6 +2042,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
       const principal = await auth.authorizeStore(accessToken, storeId);
+      if (request.headers["x-commercial-source-version"] === "2")
+        request.query.commercialOriginalSources = "true";
       const presentation = copilotPresentationVersion(
         request.headers["x-copilot-analytics-destinations"],
       );
@@ -2076,6 +2103,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
       }
       const store = await auth.authorizeStore(accessToken, storeId);
+      if (request.headers["x-commercial-source-version"] === "2")
+        request.query.commercialOriginalSources = "true";
       const presentation = copilotPresentationVersion(
         request.headers["x-copilot-analytics-destinations"],
       );

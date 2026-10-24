@@ -2,6 +2,7 @@ import {
   serializeIllustrationGeneration,
   type IllustrationGenerationDocument,
 } from "../copilot/layout-illustration-generation";
+import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
 import {
   serializeLayoutIllustration,
   type LayoutIllustrationDocument,
@@ -759,6 +760,11 @@ export function createMongoSyncBootstrapService(
       if (!response) {
         throw new Error("Bootstrap snapshot transaction did not complete.");
       }
+      await requireCommercialSourceCompatibility(
+        mongoDatabase,
+        store.storeId,
+        query.commercialOriginalSources === "true",
+      );
       return response;
     },
   };

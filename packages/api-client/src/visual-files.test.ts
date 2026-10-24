@@ -129,7 +129,11 @@ it("transfers opaque bytes within the exact manifest bounds without exposing a s
   expect(fetch).toHaveBeenCalledWith(
     `https://api.test.invalid/api/v1/visual-assets/${f.asset.id}/preview`,
     {
-      headers: { authorization: "Bearer token", "x-store-id": f.storeId },
+      headers: {
+        authorization: "Bearer token",
+        "x-store-id": f.storeId,
+        "x-commercial-source-version": "2",
+      },
       redirect: "error",
       signal: expect.any(AbortSignal),
     },

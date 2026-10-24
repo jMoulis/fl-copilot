@@ -5,10 +5,12 @@ import {
   copilotChoiceCreatePreviewSchema,
   choiceCreateRequest,
   commercialOfferChoiceSchema,
+  isCommercialOriginalSource,
 } from "@fl-copilot/domain";
 import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
   projectCommercialSourceOffer,
+  projectCommercialOriginalOffer,
   commercialChoiceId,
   commercialChoiceDuplicateKey,
   commercialChoiceProductUnitMatches,
@@ -53,38 +55,51 @@ export async function previewChoiceCreate(
         },
         { maxTimeMS: 2000 },
       );
-    const row = source
-      ? await db
-          .collection<VisualReadingDocument>("commercialVisualReadings")
-          .findOne(
-            {
-              _id: input.source.readingId,
-              storeId,
-              sourceDocumentId: source._id,
-              checksum: source.checksum,
-              status: "READY",
-            },
-            { maxTimeMS: 2000 },
-          )
-      : null;
+    const choiceSource = input.source;
+    const row =
+      source && !isCommercialOriginalSource(choiceSource)
+        ? await db
+            .collection<VisualReadingDocument>("commercialVisualReadings")
+            .findOne(
+              {
+                _id: choiceSource.readingId,
+                storeId,
+                sourceDocumentId: source._id,
+                checksum: source.checksum,
+                status: "READY",
+              },
+              { maxTimeMS: 2000 },
+            )
+        : null;
     const product = await db
       .collection<ProductDocument>("products")
       .findOne(
         { _id: input.productId, storeId, status: "ACTIVE", deletedAt: null },
         { maxTimeMS: 2000 },
       );
-    if (row && product) {
-      const page = synchronizedCommercialVisualReadingSchema.parse(row);
-      if (page.id !== row._id || page.storeId !== storeId)
+    if (
+      source &&
+      product &&
+      (isCommercialOriginalSource(choiceSource) || row)
+    ) {
+      const page = row
+        ? synchronizedCommercialVisualReadingSchema.parse(row)
+        : null;
+      if (page && (page.id !== row!._id || page.storeId !== storeId))
         throw Error("CHOICE_CREATE_SCOPE");
       try {
         basis = {
           storeId,
-          offer: projectCommercialSourceOffer(
-            page,
-            input.source.operationIndex,
-            input.source.itemIndex,
-          ),
+          offer: isCommercialOriginalSource(choiceSource)
+            ? projectCommercialOriginalOffer({
+                source: choiceSource,
+                ...input.originalDescription!,
+              })
+            : projectCommercialSourceOffer(
+                page!,
+                choiceSource.operationIndex,
+                choiceSource.itemIndex,
+              ),
           product: serializeProductDocument(product),
         };
         const request = choiceCreateRequest(

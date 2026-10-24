@@ -4,6 +4,7 @@ import {
   copilotOfferValidationInputSchema,
   copilotOfferValidationPreviewSchema,
   offerValidationPreviewRequest,
+  isCommercialOriginalSource,
 } from "@fl-copilot/domain";
 import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
@@ -12,6 +13,7 @@ import {
   commercialValidatedOfferSameBusiness,
   commercialChoiceProductUnitMatches,
   projectCommercialSourceOffer,
+  projectCommercialOriginalOffer,
 } from "@fl-copilot/commercial-core";
 import {
   serializeCommercialChoice,
@@ -26,6 +28,7 @@ import {
   type ProductDocument,
 } from "../products/product-master";
 import type { VisualReadingDocument } from "../commercial/visual-reading-store";
+import { readCommercialOriginalSourceStates } from "../commercial/original-source-verification";
 const digest = async (s: string) =>
   createHash("sha256").update(s).digest("hex");
 export async function previewOfferValidation(
@@ -51,7 +54,7 @@ export async function previewOfferValidation(
     typeof copilotOfferValidationPreviewSchema.parse
   >["issue"] = null;
   const selected = choices.map(serializeCommercialChoice);
-  const [products, pages, validationIds] = await Promise.all([
+  const [products, pages, validationIds, originals] = await Promise.all([
     db
       .collection<ProductDocument>("products")
       .find({
@@ -67,7 +70,11 @@ export async function previewOfferValidation(
       .collection<VisualReadingDocument>("commercialVisualReadings")
       .find({
         storeId,
-        _id: { $in: selected.map((c) => c.source.readingId) },
+        _id: {
+          $in: selected.flatMap((c) =>
+            isCommercialOriginalSource(c.source) ? [] : [c.source.readingId],
+          ),
+        },
         status: "READY",
       })
       .maxTimeMS(2000)
@@ -77,6 +84,11 @@ export async function previewOfferValidation(
       selected.map((c) =>
         commercialValidatedOfferId(storeId, c.id, c.version, digest),
       ),
+    ),
+    readCommercialOriginalSourceStates(
+      db,
+      storeId,
+      selected.map((c) => c.source),
     ),
   ]);
   const validations = await db
@@ -102,9 +114,20 @@ export async function previewOfferValidation(
       status = "BLOCKED";
       break;
     }
+    const choiceSource = choice.source;
     const productRow = products.find((p) => p._id === choice.productId),
-      pageRow = pages.find((p) => p._id === choice.source.readingId);
-    if (!productRow || !pageRow) {
+      pageRow = isCommercialOriginalSource(choiceSource)
+        ? undefined
+        : pages.find((p) => p._id === choiceSource.readingId);
+    const sourceAvailable = isCommercialOriginalSource(choiceSource)
+      ? originals.some(
+          (s) =>
+            s.storeId === storeId &&
+            s.sourceDocumentId === choiceSource.sourceDocumentId &&
+            s.checksum === choiceSource.checksum,
+        )
+      : !!pageRow;
+    if (!productRow || !sourceAvailable) {
       issue = {
         choiceId: id,
         label: choice.rawProductLabel,
@@ -114,24 +137,35 @@ export async function previewOfferValidation(
       break;
     }
     const product = serializeProductDocument(productRow),
-      page = synchronizedCommercialVisualReadingSchema.parse(pageRow);
+      page = pageRow
+        ? synchronizedCommercialVisualReadingSchema.parse(pageRow)
+        : null;
     if (
       choice.storeId !== storeId ||
       product.storeId !== storeId ||
-      page.id !== pageRow._id ||
-      page.storeId !== storeId
+      (page && (page.id !== pageRow!._id || page.storeId !== storeId))
     )
       throw Error("OFFER_VALIDATION_SCOPE");
     const validationId = validationIds[selected.findIndex((c) => c.id === id)]!,
       old = validations.find((v) => v._id === validationId),
       validation = old ? serializeValidatedOffer(old) : null;
     try {
-      const source = commercialOfferValidationSource(choice, [page]),
-        offer = projectCommercialSourceOffer(
-          page,
-          choice.source.operationIndex,
-          choice.source.itemIndex,
-        );
+      const source = commercialOfferValidationSource(
+          choice,
+          page ? [page] : [],
+        ),
+        offer = isCommercialOriginalSource(choiceSource)
+          ? projectCommercialOriginalOffer({
+              source: choiceSource,
+              operationKind: choice.operationKind,
+              operationLabel: choice.operationLabel,
+              rawProductLabel: choice.rawProductLabel,
+            })
+          : projectCommercialSourceOffer(
+              page!,
+              choiceSource.operationIndex,
+              choiceSource.itemIndex,
+            );
       if (
         !commercialChoiceProductUnitMatches(choice, product.salesUnit) ||
         (validation &&

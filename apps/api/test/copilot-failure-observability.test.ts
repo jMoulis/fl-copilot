@@ -57,7 +57,10 @@ it.each([false, true])(
     });
     const app = buildApp(parseEnvironment({ NODE_ENV: "test" }), {
       database: {
-        getDb: async () => ({}) as Db,
+        getDb: async () =>
+          ({
+            collection: () => ({ findOne: async () => null }),
+          }) as unknown as Db,
         checkHealth: async () => "connected",
         close: async () => {},
       },

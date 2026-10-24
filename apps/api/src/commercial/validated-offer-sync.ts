@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import { isCommercialOriginalSource } from "@fl-copilot/domain";
+import {
+  createCommercialOriginalSourceVerifier,
+  type CommercialOriginalSourceVerifier,
+} from "./original-source-verification";
 import {
   commercialValidatedOfferSchema,
   type CommercialValidatedOffer,
@@ -33,6 +38,7 @@ export async function applyValidatedOfferCommand(
   command: SyncCommand,
   requestId: string,
   changes: ReturnType<typeof createMongoSyncChangeService>,
+  verifyOriginal: CommercialOriginalSourceVerifier = createCommercialOriginalSourceVerifier(),
 ): Promise<CommandMutationResult> {
   const reject = (code: string, messageFr: string): CommandMutationResult => ({
     resultStatus: "REJECTED",
@@ -110,10 +116,24 @@ export async function applyValidatedOfferCommand(
       "COMMERCIAL_VALIDATION_UNIT_MISMATCH",
       "L’unité du prix ne correspond plus à l’unité de vente du produit. Revoyez l’offre avant de la valider.",
     );
-  const pages = await ctx.database
-    .collection<VisualReadingDocument>("commercialVisualReadings")
-    .find({ _id: choice.source.readingId, storeId }, { session: ctx.session })
-    .toArray();
+  const choiceSource = choice.source;
+  if (
+    isCommercialOriginalSource(choiceSource) &&
+    !(await verifyOriginal(ctx.database, storeId, choiceSource))
+  )
+    return reject(
+      "COMMERCIAL_VALIDATION_SOURCE_INVALID",
+      "Le PDF original ou sa page ne correspondent plus à l’offre.",
+    );
+  const pages = isCommercialOriginalSource(choiceSource)
+    ? []
+    : await ctx.database
+        .collection<VisualReadingDocument>("commercialVisualReadings")
+        .find(
+          { _id: choiceSource.readingId, storeId },
+          { session: ctx.session },
+        )
+        .toArray();
   let source;
   try {
     source = commercialOfferValidationSource(choice, pages);

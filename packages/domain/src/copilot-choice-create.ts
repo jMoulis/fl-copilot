@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   commercialOfferChoiceSchema,
   commercialOfferSourceSchema,
+  commercialChoiceSourceSchema,
+  isCommercialOriginalSource,
 } from "./commercial-offer-choice";
 import { productSchema } from "./products";
 import { copilotSourceOfferSchema } from "./copilot-source-offers";
@@ -9,7 +11,7 @@ import { copilotEvidenceSchema } from "./copilot-candidate";
 import { copilotMessageSchema } from "./copilot-conversation";
 import { choiceSaveRequestSchema } from "./copilot-commercial-choice";
 const fields = commercialOfferChoiceSchema.shape;
-export const copilotChoiceCreateInputSchema = z.strictObject({
+export const copilotLegacyChoiceCreateInputSchema = z.strictObject({
   source: commercialOfferSourceSchema,
   productId: z.uuid(),
   saleStart: fields.saleStart,
@@ -17,6 +19,24 @@ export const copilotChoiceCreateInputSchema = z.strictObject({
   mechanism: z.union(fields.mechanism.options),
   note: fields.note,
 });
+export const copilotChoiceCreateInputSchema =
+  copilotLegacyChoiceCreateInputSchema
+    .extend({
+      source: commercialChoiceSourceSchema,
+      originalDescription: z
+        .strictObject({
+          operationKind: fields.operationKind,
+          operationLabel: fields.operationLabel,
+          rawProductLabel: fields.rawProductLabel,
+        })
+        .optional(),
+    })
+    .refine(
+      (input) =>
+        isCommercialOriginalSource(input.source) ===
+        !!input.originalDescription,
+      "Une référence à l’original exige sa description ; une extraction conserve ses libellés sources.",
+    );
 export const choiceCreateBasisSchema = z.strictObject({
   storeId: z.uuid(),
   offer: copilotSourceOfferSchema,
@@ -33,7 +53,13 @@ export function choiceCreateRequest(
     basis.product.id !== input.productId ||
     basis.product.storeId !== basis.storeId ||
     basis.product.status !== "ACTIVE" ||
-    basis.product.deletedAt
+    basis.product.deletedAt ||
+    (isCommercialOriginalSource(input.source) &&
+      (input.originalDescription?.operationKind !== basis.offer.operationKind ||
+        input.originalDescription?.operationLabel !==
+          basis.offer.operationLabel ||
+        input.originalDescription?.rawProductLabel !==
+          basis.offer.rawProductLabel))
   )
     throw Error("CHOICE_CREATE_SCOPE");
   // Validation scaffold only; the canonical runtime owns the real identity and timestamps.
@@ -53,7 +79,9 @@ export function choiceCreateRequest(
   };
   commercialOfferChoiceSchema.parse({
     ...proposed,
-    id: input.source.readingId,
+    id: isCommercialOriginalSource(input.source)
+      ? "00000000-0000-4000-8000-000000000001"
+      : input.source.readingId,
     storeId: basis.storeId,
     version: 1,
     createdAt: "2000-01-01T00:00:00Z",

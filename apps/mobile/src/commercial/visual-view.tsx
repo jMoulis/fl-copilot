@@ -1,3 +1,5 @@
+import { isCommercialOriginalSource } from "@fl-copilot/domain";
+import { commercialOfferHref } from "./offer-navigation";
 import { commercialChoiceSummary } from "./choice-presentation";
 import type { LocalCommercialChoice } from "./offer-choice-repository";
 import { router } from "expo-router";
@@ -201,16 +203,9 @@ export function CommercialVisualView({
               <SecondaryButton
                 label="Consulter mon choix"
                 onPress={() =>
-                  router.push({
-                    pathname: "/commercial-offer/[id]",
-                    params: {
-                      id: choice.entity.source.readingId,
-                      operationIndex: String(
-                        choice.entity.source.operationIndex,
-                      ),
-                      itemIndex: String(choice.entity.source.itemIndex),
-                    },
-                  })
+                  router.push(
+                    commercialOfferHref(choice.entity.source, choice.entity.id),
+                  )
                 }
               />
             </View>
@@ -251,6 +246,7 @@ export function CommercialVisualView({
                     label={
                       choices.some(
                         (c) =>
+                          !isCommercialOriginalSource(c.entity.source) &&
                           c.entity.source.readingId === page.id &&
                           c.entity.source.operationIndex === operationIndex &&
                           c.entity.source.itemIndex ===

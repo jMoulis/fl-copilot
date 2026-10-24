@@ -1,3 +1,4 @@
+import { commercialOfferHref } from "../commercial/offer-navigation";
 import { isCopilotVisualKind } from "@fl-copilot/domain";
 import { VisualVersion } from "../products/visual-conflict-preview";
 import { visualConflictSummary } from "../products/visual-conflict-presentation";
@@ -421,15 +422,12 @@ export function StoreConflictCard({
           accessibilityRole="button"
           style={{ minHeight: 44, padding: 12 }}
           onPress={() =>
-            router.push({
-              pathname: "/commercial-offer/[id]",
-              params: {
-                id: state.content.basis.choice!.source.readingId,
-                operationIndex:
-                  state.content.basis.choice!.source.operationIndex,
-                itemIndex: state.content.basis.choice!.source.itemIndex,
-              },
-            })
+            router.push(
+              commercialOfferHref(
+                state.content.basis.choice!.source,
+                state.content.basis.choice!.id,
+              ),
+            )
           }
         >
           <Text

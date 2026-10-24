@@ -4,6 +4,7 @@ import {
   offerValidationResultSchema,
   ProductClassificationError,
   type OfferValidationAuthority,
+  offerValidationSourceReviewed,
 } from "@fl-copilot/domain";
 import {
   commercialValidatedOfferId,
@@ -80,10 +81,7 @@ export class CopilotOfferValidationRuntime {
           const reviewed = reviewedSources.find(
             (r) => r.choiceId === ref.choiceId,
           )!;
-          if (
-            reviewed.readingId !== c.entity.source.readingId ||
-            reviewed.checksum !== c.entity.source.checksum
-          )
+          if (!offerValidationSourceReviewed(c.entity, reviewed))
             throw new ProductClassificationError(
               "COMMERCIAL_SOURCE_REVIEW_REQUIRED",
             );
@@ -170,12 +168,8 @@ export class CopilotOfferValidationRuntime {
     if (
       result.validations.some(
         (v) =>
-          !reviewedSources.some(
-            (r) =>
-              r.choiceId === v.entity.choice.id &&
-              r.choiceVersion === v.entity.choice.version &&
-              r.readingId === v.entity.choice.source.readingId &&
-              r.checksum === v.entity.choice.source.checksum,
+          !reviewedSources.some((r) =>
+            offerValidationSourceReviewed(v.entity.choice, r),
           ),
       )
     )

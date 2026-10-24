@@ -16,6 +16,7 @@ import {
   preserveInvalidDatabaseHeader,
   nativeDatabaseRecoveryStorage as storage,
 } from "./database-recovery-native";
+import { localMigrations } from "./migrations";
 import { initialDatabaseLocation } from "./database-recovery";
 const native = vi.hoisted(() => ({
   root: "",
@@ -431,7 +432,7 @@ it("runs the real startup client through preserved header corruption, confirmed 
   ]);
   expect(native.cleared).toBe(0);
   const db = await client.recoverLocalDatabase();
-  expect(db.schemaVersion).toBe(60);
+  expect(db.schemaVersion).toBe(localMigrations.length);
   expect(db.recovery).toBeDefined();
   expect(native.cleared).toBe(1);
   expect(await client.initializeLocalDatabase()).toBe(db);

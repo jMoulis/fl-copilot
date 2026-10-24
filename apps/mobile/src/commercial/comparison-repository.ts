@@ -1,3 +1,4 @@
+import { isCommercialOriginalSource } from "@fl-copilot/domain";
 import { compareCommercialDocumentVersions } from "@fl-copilot/commercial-core";
 import { readCommercialVisualReadings } from "./visual-repository";
 import { readCommercialChoices } from "./offer-choice-repository";
@@ -33,20 +34,36 @@ export async function readCommercialComparison(
     .map((d) => ({
       key: d.key,
       choices: choices
-        .filter((c) =>
-          d.before.some(
-            (o) =>
-              o.readingId === c.entity.source.readingId &&
-              o.operationIndex === c.entity.source.operationIndex &&
-              o.itemIndex === c.entity.source.itemIndex,
-          ),
-        )
+        .filter((c) => {
+          const source = c.entity.source;
+          return (
+            !isCommercialOriginalSource(source) &&
+            d.before.some(
+              (o) =>
+                o.readingId === source.readingId &&
+                o.operationIndex === source.operationIndex &&
+                o.itemIndex === source.itemIndex,
+            )
+          );
+        })
         .map((c) => ({
           choice: c,
           plans: plans.filter((p) =>
             p.offerRefs.some((r) => r.choiceId === c.entity.id),
           ),
         })),
+    }));
+  const originalChoices = choices
+    .filter(
+      (c) =>
+        isCommercialOriginalSource(c.entity.source) &&
+        c.entity.status === "RETAINED",
+    )
+    .map((choice) => ({
+      choice,
+      plans: plans.filter((plan) =>
+        plan.offerRefs.some((ref) => ref.choiceId === choice.entity.id),
+      ),
     }));
   const snapshot = (documentId: string, pages: typeof before) => ({
     documentId,
@@ -56,6 +73,7 @@ export async function readCommercialComparison(
   return {
     comparison,
     impacts,
+    originalChoices,
     sources: {
       before: snapshot(beforeDocumentId, before),
       after: snapshot(afterDocumentId, after),

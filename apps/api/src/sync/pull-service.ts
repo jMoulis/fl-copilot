@@ -1,4 +1,5 @@
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
+import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
 import {
   readableEmailDecisions,
   type EmailDecisionDocument,
@@ -747,6 +748,11 @@ export function createMongoSyncPullService(
         ? Long.fromString(bounded.at(-1)!.sequence)
         : (selected.at(-1)?.sequence ?? afterSequence);
 
+      await requireCommercialSourceCompatibility(
+        mongoDatabase,
+        storeId,
+        query.commercialOriginalSources === "true",
+      );
       return {
         changes: bounded,
         nextCursor: encodeSyncCursor(storeId, nextSequence),

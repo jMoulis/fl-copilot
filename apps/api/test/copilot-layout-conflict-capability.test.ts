@@ -58,6 +58,8 @@ it.each([undefined, "1", "2", "3", "4", "5", "6", "7", "8", "6,5"])(
     const plan = layoutFixture(storeId, ownerId),
       findOne = vi.fn(async () => ({ _id: storeId, ...plan }));
     const collection = vi.fn((name: string) => {
+      if (name === "commercialOfferChoices")
+        return { findOne: async () => null };
       if (name !== "storeLayouts") throw Error("UNEXPECTED_COLLECTION");
       return { findOne };
     });
@@ -78,6 +80,7 @@ it.each([undefined, "1", "2", "3", "4", "5", "6", "7", "8", "6,5"])(
         headers: {
           authorization: "Bearer test",
           "x-store-id": storeId,
+          "x-commercial-source-version": "2",
           ...(version ? { "x-copilot-store-conflicts": version } : {}),
         },
         payload,

@@ -1,3 +1,4 @@
+import { commercialOfferHref } from "../commercial/offer-navigation";
 import {
   commercialFieldLabels,
   commercialExtraFieldLabels,
@@ -160,14 +161,7 @@ export function OfferValidationCard({
                 accessibilityRole="button"
                 style={{ minHeight: 44, padding: 12 }}
                 onPress={() =>
-                  router.push({
-                    pathname: "/commercial-offer/[id]",
-                    params: {
-                      id: e.offer.source.readingId,
-                      operationIndex: e.offer.source.operationIndex,
-                      itemIndex: e.offer.source.itemIndex,
-                    },
-                  })
+                  router.push(commercialOfferHref(e.offer.source, e.choice.id))
                 }
               >
                 <Text

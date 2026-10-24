@@ -917,6 +917,23 @@ CREATE INDEX copilot_layout_illustration_cache_lru ON copilot_layout_illustratio
     sql: `CREATE TABLE copilot_layout_illustration_generations(id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,conversation_id TEXT NOT NULL,preparation_id TEXT NOT NULL,created_at TEXT NOT NULL,payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illustration_generations(store_id,owner_id,preparation_id,created_at DESC,id DESC);`,
   },
+  {
+    version: 61,
+    name: "commercial-choice-original-sources",
+    sql: `CREATE TABLE commercial_offer_choices_next (
+      id TEXT PRIMARY KEY NOT NULL,store_id TEXT NOT NULL,source_document_id TEXT NOT NULL,
+      reading_id TEXT,operation_index INTEGER,item_index INTEGER,
+      payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,
+      sync_state TEXT NOT NULL,dirty INTEGER NOT NULL DEFAULT 1,
+      CHECK ((reading_id IS NULL AND operation_index IS NULL AND item_index IS NULL) OR
+             (reading_id IS NOT NULL AND operation_index IS NOT NULL AND item_index IS NOT NULL)),
+      UNIQUE(store_id,reading_id,operation_index,item_index)
+    );
+    INSERT INTO commercial_offer_choices_next SELECT * FROM commercial_offer_choices;
+    DROP TABLE commercial_offer_choices;
+    ALTER TABLE commercial_offer_choices_next RENAME TO commercial_offer_choices;
+    CREATE INDEX commercial_choices_store ON commercial_offer_choices(store_id,source_document_id);`,
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

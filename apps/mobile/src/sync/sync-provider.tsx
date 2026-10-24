@@ -284,6 +284,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         storeLayouts: true,
         visualLibrary: true,
         physicalAllocations: true,
+        commercialOriginalSources: true,
         needUnits: true,
         needMemberships: true,
         productSubstitutions: true,

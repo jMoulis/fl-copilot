@@ -1,3 +1,4 @@
+import { readCommercialChoiceSource } from "../commercial/choice-source";
 import {
   readCopilotOfferValidationProposal,
   offerValidationReviewedSources,
@@ -9,13 +10,9 @@ import {
   commercialValidatedOfferId,
   commercialValidatedOfferSameBusiness,
   commercialOfferValidationReviewData,
-  projectCommercialSourceOffer,
   commercialChoiceProductUnitMatches,
 } from "@fl-copilot/commercial-core";
-import {
-  synchronizedCommercialVisualReadingSchema,
-  commercialValidatedOfferSchema,
-} from "@fl-copilot/sync-contracts";
+import { commercialValidatedOfferSchema } from "@fl-copilot/sync-contracts";
 import { verifyPrivateToolRecord } from "./private-tool-record";
 import { ProductMasterRepository } from "../products/product-master-repository";
 import { CommercialChoiceRepository } from "../commercial/offer-choice-repository";
@@ -98,11 +95,7 @@ export class CopilotOfferValidationController {
         product = await new ProductMasterRepository(this.db).getProduct(
           e.product.id,
         ),
-        pageRow = await this.db.getFirstAsync<{ payload_json: string }>(
-          "SELECT payload_json FROM commercial_visual_readings WHERE id=? AND store_id=?",
-          e.choice.source.readingId,
-          this.scope.storeId,
-        ),
+        source = await readCommercialChoiceSource(this.db, e.choice),
         validationRow = await this.db.getFirstAsync<{
           payload_json: string;
           sync_state: string;
@@ -119,25 +112,14 @@ export class CopilotOfferValidationController {
         ["ERROR", "CONFLICT"].includes(product.syncState) ||
         JSON.stringify(product.entity) !== JSON.stringify(e.product) ||
         !commercialChoiceProductUnitMatches(e.choice, e.product.salesUnit) ||
-        !pageRow
+        !source.offer
       ) {
         stale = true;
         break;
       }
       try {
-        const page = synchronizedCommercialVisualReadingSchema.parse(
-          JSON.parse(pageRow.payload_json),
-        );
         if (
-          page.status !== "READY" ||
-          page.storeId !== this.scope.storeId ||
-          JSON.stringify(
-            projectCommercialSourceOffer(
-              page,
-              e.choice.source.operationIndex,
-              e.choice.source.itemIndex,
-            ),
-          ) !== JSON.stringify(e.offer) ||
+          JSON.stringify(source.offer) !== JSON.stringify(e.offer) ||
           JSON.stringify(
             validationRow
               ? commercialValidatedOfferSchema.parse(

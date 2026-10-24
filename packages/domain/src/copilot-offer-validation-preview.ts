@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { commercialOfferChoiceSchema } from "./commercial-offer-choice";
+import {
+  commercialOfferChoiceSchema,
+  isCommercialOriginalSource,
+} from "./commercial-offer-choice";
 import { commercialValidatedOfferSchema } from "./commercial-validated-offer";
 import { productSchema } from "./products";
 import { copilotSourceOfferSchema } from "./copilot-source-offers";
@@ -70,12 +73,20 @@ export function offerValidationPreviewRequest(
 export function offerValidationReviewedSources(
   basis: z.infer<typeof offerValidationPreviewBasisSchema>,
 ) {
-  return basis.entries.map((e) => ({
-    choiceId: e.choice.id,
-    choiceVersion: e.choice.version,
-    readingId: e.choice.source.readingId,
-    checksum: e.choice.source.checksum,
-  }));
+  return basis.entries.map((e) =>
+    isCommercialOriginalSource(e.choice.source)
+      ? {
+          choiceId: e.choice.id,
+          choiceVersion: e.choice.version,
+          source: e.choice.source,
+        }
+      : {
+          choiceId: e.choice.id,
+          choiceVersion: e.choice.version,
+          readingId: e.choice.source.readingId,
+          checksum: e.choice.source.checksum,
+        },
+  );
 }
 export const copilotOfferValidationPreviewSchema = z
   .strictObject({

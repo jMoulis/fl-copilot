@@ -4,13 +4,13 @@ import {
 } from "@fl-copilot/sync-contracts";
 import {
   commercialValidatedOfferId,
-  commercialOfferValidationSource,
+  commercialOfferValidationReviewData,
   commercialValidatedOfferSameBusiness,
   commercialOfferValidationCurrent,
   commercialChoiceProductUnitMatches,
 } from "@fl-copilot/commercial-core";
 import { readCommercialChoices } from "./choice-read";
-import { readCommercialVisualReadings } from "./visual-repository";
+import { readCommercialChoiceSource } from "./choice-source";
 import {
   OutboxRepository,
   type OutboxDatabase,
@@ -117,16 +117,13 @@ export class ValidatedOfferRepository {
         if (!product) throw Error("COMMERCIAL_VALIDATION_PRODUCT_INVALID");
         if (!commercialChoiceProductUnitMatches(c.entity, product.sales_unit))
           throw Error("COMMERCIAL_VALIDATION_UNIT_MISMATCH");
-        const pages = await readCommercialVisualReadings(
-          tx,
-          storeId,
-          c.entity.source.sourceDocumentId,
-        );
+        const source = await readCommercialChoiceSource(tx, c.entity);
+        if (!source.offer) throw Error("COMMERCIAL_VALIDATION_SOURCE_INVALID");
         const v = commercialValidatedOfferSchema.parse({
           id: ids[i],
           storeId,
           choice: c.entity,
-          ...commercialOfferValidationSource(c.entity, pages),
+          ...commercialOfferValidationReviewData(source.offer),
           status: "VALIDATED",
           sourceReviewed: true,
           version: 1,

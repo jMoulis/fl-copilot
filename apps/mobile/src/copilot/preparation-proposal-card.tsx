@@ -1,3 +1,4 @@
+import { commercialOfferHref } from "../commercial/offer-navigation";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
 import { ActivityIndicator, Pressable, View } from "react-native";
@@ -136,14 +137,7 @@ export function PreparationProposalCard({
                     </Text>
                     {choice.note ? <Text>{choice.note}</Text> : null}
                     <Link
-                      href={{
-                        pathname: "/commercial-offer/[id]",
-                        params: {
-                          id: choice.source.readingId,
-                          operationIndex: choice.source.operationIndex,
-                          itemIndex: choice.source.itemIndex,
-                        },
-                      }}
+                      href={commercialOfferHref(choice.source, choice.id)}
                       accessibilityLabel={`Consulter l’offre ${choice.rawProductLabel} et son produit associé`}
                       style={{
                         color: colors.forest,

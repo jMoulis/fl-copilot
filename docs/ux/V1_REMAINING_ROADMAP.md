@@ -1,5 +1,11 @@
 # Roadmap V1 — état courant et historique des lots
 
+## Actualisation — 24 octobre : le PDF original précède le workflow commercial
+
+La lecture directe et sourcée de l’original est livrée dans l’API PR 372, puis la confirmation d’upload découplée de l’envoi d’événement dans PR 373 (`276bdcb`). Les nouvelles lectures de documents conservent les semaines futures. Build iOS 15 reste inchangé et sa recette humaine reste ouverte ; les anciennes lectures immuables ne sont pas réécrites.
+
+Le lot en validation permet au choix commercial de citer une page/extrait de l’original, sans créer une fausse extraction ni imposer la revue du document complet. Il prépare la persistance, les migrations et la compatibilité ; l’outil de création du modèle n’est pas encore activé pour ces références. Après livraison de cette base compatible, brancher les propositions réellement issues de la lecture du PDF, puis faire la recette native groupée. Préparer la semaine suivante doit rester naturel ; seuls les vrais doutes métier et les décisions explicites demandent l’intervention du responsable. Ce travail ne réduit ni l’UX complète ni les sept chantiers M7/M8. Voir `../qa/M7_ORIGINAL_OFFER_SELECTION_2026_10_24.md`.
+
 ## Point courant — 24 octobre 2026
 
 Le [point des portes V1](../qa/V1_CURRENT_GATES_2026_10_24.md) rapproche les corrections de conflits récentes des outils réellement exposés, des versions livrées et des preuves encore nécessaires. Les mentions anciennes « conflits multiples hors référentiel » ne signifient plus que tous leurs services sont absents ; les exceptions de parité et la recette restent ouvertes.
