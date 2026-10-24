@@ -1,3 +1,6 @@
+import { receiptReviewDigest } from "../../../../scripts/test-receipt-publication-sqlite";
+import { ConflictRepository } from "../sync/conflict-repository";
+import { OutboxRepository } from "../sync/outbox-repository";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -113,7 +116,11 @@ async function setup(path = ":memory:", fixture = page) {
     "commercial_review_page",
     fixture,
   );
-  return { db, adapter, repo: new CommercialReviewRepository(adapter) };
+  return {
+    db,
+    adapter,
+    repo: new CommercialReviewRepository(adapter, receiptReviewDigest),
+  };
 }
 afterEach(() => {
   for (const db of connections.splice(0)) {
@@ -243,13 +250,45 @@ describe("local commercial extraction review", () => {
       "commercial_review_decision",
       { id: remote.id, storeId, remoteVersion: 1, decision: remote },
     );
+    const actorId = randomUUID();
+    const initial = await repo.reviewConflict(storeId, local.id, actorId);
+    expect(initial.canResolve).toBe(false);
     await expect(
-      repo.useRemoteDecision(storeId, local.id, remote.id),
-    ).rejects.toThrow("COMMERCIAL_REVIEW_RESOLUTION_INVALID");
-    db.prepare(
-      "UPDATE sync_outbox SET status='CONFLICT' WHERE command_id=?",
-    ).run(commandId);
-    await repo.useRemoteDecision(storeId, local.id, remote.id);
+      repo.useRemoteDecision(storeId, local.id, remote.id, {
+        actorId,
+        deviceId,
+        actionId: randomUUID(),
+        reviewHash: initial.hash,
+        canResolve: () => true,
+      }),
+    ).rejects.toThrow();
+    const command = (await new OutboxRepository(adapter).getById(commandId))!;
+    await new ConflictRepository(adapter).recordPushConflict(command, {
+      commandId,
+      status: "CONFLICT",
+      entityId: local.id,
+      entityType: "commercial_review_decision",
+      remoteVersion: 1,
+      remoteEntity: {
+        id: remote.id,
+        storeId,
+        remoteVersion: 1,
+        decision: remote,
+      },
+    });
+    await new OutboxRepository(adapter).markSyncing(commandId);
+    await new OutboxRepository(adapter).markConflict(
+      commandId,
+      "COMMERCIAL_REVIEW_ALREADY_RECORDED",
+    );
+    const reviewed = await repo.reviewConflict(storeId, local.id, actorId);
+    await repo.useRemoteDecision(storeId, local.id, remote.id, {
+      actorId,
+      deviceId,
+      actionId: randomUUID(),
+      reviewHash: reviewed.hash,
+      canResolve: () => true,
+    });
     expect(await repo.decisions(storeId)).toEqual([
       { decision: remote, state: "SYNCED" },
     ]);

@@ -1,3 +1,4 @@
+import { CommercialTranscriptionConflict } from "@/commercial/transcription-conflict";
 import { StoreLayoutConflict } from "../../../store/layout-conflict";
 import { ConversationConflict } from "@/copilot/conversation-conflict";
 import { EmailDecisionConflict } from "@/intake/email-decision-conflict";
@@ -69,7 +70,12 @@ export default function SyncConflictDetailScreen() {
             message="La version de cette donnée a changé pendant la synchronisation. Votre version locale a été conservée."
           />
 
-          {conflict.entityType === "email_intake_decision" ? (
+          {conflict.entityType === "commercial_review_decision" ? (
+            <CommercialTranscriptionConflict
+              storeId={conflict.storeId}
+              localId={conflict.entityId}
+            />
+          ) : conflict.entityType === "email_intake_decision" ? (
             <EmailDecisionConflict key={conflict.id} conflict={conflict} />
           ) : isVisualEntityType(conflict.entityType) ? (
             <VisualLibraryConflict conflict={conflict} />

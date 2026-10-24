@@ -1,4 +1,17 @@
 import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  receiptReviewDigest,
+  ReceiptTestDatabase,
+} from "../../../scripts/test-receipt-publication-sqlite";
+import { runLocalMigrations } from "../../mobile/src/db/migrations";
+import { CommercialReviewRepository } from "../../mobile/src/commercial/review-repository";
+import { MobileSyncService } from "../../mobile/src/sync/sync-service";
+import { OutboxRepository } from "../../mobile/src/sync/outbox-repository";
+import { ConflictRepository } from "../../mobile/src/sync/conflict-repository";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type {
   CommercialReviewPage,
@@ -148,6 +161,185 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         randomUUID(),
       );
     }
+    it("retains the first accepted transcription across a real conflict group, third-device restore and offline reopen", async () => {
+      const f = await seed(),
+        actorId = randomUUID(),
+        aDevice = randomUUID(),
+        bDevice = randomUUID(),
+        dir = mkdtempSync(join(tmpdir(), "fl-transcription-mongo-")),
+        path = join(dir, "restored.db"),
+        a = new ReceiptTestDatabase(new DatabaseSync(":memory:")),
+        b = new ReceiptTestDatabase(new DatabaseSync(":memory:")),
+        c = new ReceiptTestDatabase(new DatabaseSync(path)),
+        pushing = createMongoSyncPushService(database),
+        pulling = createMongoSyncPullService(database),
+        bootstrap = createMongoSyncBootstrapService(database);
+      let cClosed = false;
+      const service = (db: ReceiptTestDatabase, deviceId: string) =>
+        new MobileSyncService(
+          db,
+          {
+            push: (r) => pushing.push(r, randomUUID()),
+            pull: (storeId, cursor) =>
+              pulling.pull(storeId, {
+                cursor,
+                limit: 500,
+                commercialReview: "true",
+              }),
+            bootstrap: (storeId) =>
+              bootstrap.bootstrap(
+                {
+                  storeId,
+                  userId: actorId,
+                  deviceId,
+                  storeName: "Test",
+                  role: "MANAGER",
+                  sessionId: randomUUID(),
+                },
+                { rawObservationDays: 90, commercialReview: "true" },
+              ),
+          },
+          { appVersion: "test", deviceId, commercialReview: true },
+        );
+      try {
+        await registerCommercialReviewPages(
+          database,
+          f.storeId,
+          f.sourceDocumentId,
+        );
+        for (const db of [a, b, c]) await runLocalMigrations(db);
+        const syncA = service(a, aDevice),
+          syncB = service(b, bDevice),
+          syncC = service(c, randomUUID()),
+          repoA = new CommercialReviewRepository(a),
+          repoB = new CommercialReviewRepository(b, receiptReviewDigest),
+          accepted = review(f.page),
+          local = review(f.page, { decision: "DISMISSED", corrections: [] });
+        await syncA.sync(f.storeId);
+        await syncB.sync(f.storeId);
+        await repoA.review(accepted, aDevice, randomUUID());
+        await repoB.review(local, bDevice, randomUUID());
+        expect((await syncA.sync(f.storeId)).pushed).toBe(1);
+        expect((await syncB.sync(f.storeId)).conflicts).toBe(1);
+        const first = (await new ConflictRepository(b).listOpen(f.storeId))[0]!,
+          outbox = new OutboxRepository(b),
+          original = (await outbox.getById(first.commandId!))!,
+          clone = await outbox.enqueue({
+            ...original,
+            commandId: randomUUID(),
+          });
+        await outbox.markSyncing(clone.commandId);
+        const response = await pushing.push(
+          {
+            syncProtocolVersion: 1,
+            appVersion: "test",
+            storeId: f.storeId,
+            deviceId: bDevice,
+            commands: [
+              {
+                commandId: clone.commandId,
+                localSequence: clone.localSequence,
+                type: clone.commandType,
+                entityType: clone.entityType,
+                entityId: clone.entityId,
+                expectedRemoteVersion: null,
+                createdAt: clone.createdAt,
+                payload: clone.payload as SyncCommand["payload"],
+              },
+            ],
+          },
+          "repeat-transcription",
+        );
+        expect(response.results[0]).toMatchObject({
+          status: "CONFLICT",
+          remoteVersion: 1,
+        });
+        await new ConflictRepository(b).recordPushConflict(
+          clone,
+          response.results[0]!,
+        );
+        await outbox.markConflict(
+          clone.commandId,
+          "COMMERCIAL_REVIEW_ALREADY_RECORDED",
+        );
+        const compared = await repoB.reviewConflict(
+            f.storeId,
+            local.id,
+            actorId,
+          ),
+          action = {
+            actorId,
+            deviceId: bDevice,
+            actionId: randomUUID(),
+            reviewHash: compared.hash,
+            canResolve: () => true,
+          };
+        expect(compared.group).toHaveLength(2);
+        expect(compared.canResolve).toBe(true);
+        expect(compared.remote).toEqual(accepted);
+        await repoB.useRemoteDecision(f.storeId, local.id, accepted.id, action);
+        expect((await syncB.sync(f.storeId)).pushed).toBe(0);
+        await syncC.sync(f.storeId);
+        expect(
+          await new CommercialReviewRepository(c).decisions(f.storeId),
+        ).toEqual([{ decision: accepted, state: "SYNCED" }]);
+        expect(await repoB.decisions(f.storeId)).toEqual([
+          { decision: accepted, state: "SYNCED" },
+        ]);
+        expect((await outbox.getById(original.commandId))!.status).toBe(
+          "FAILED",
+        );
+        expect((await outbox.getById(clone.commandId))!.status).toBe("FAILED");
+        expect(await outbox.countActive(f.storeId)).toEqual({
+          pending_count: 0,
+          failed_count: 0,
+        });
+        expect(await new ConflictRepository(b).listOpen(f.storeId)).toEqual([]);
+        await repoB.useRemoteDecision(f.storeId, local.id, accepted.id, action);
+        await syncB.sync(f.storeId);
+        const remoteDb = await database.getDb();
+        expect(
+          await remoteDb
+            .collection("commercialReviewDecisions")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(1);
+        expect(
+          await remoteDb.collection("syncChanges").countDocuments({
+            storeId: f.storeId,
+            entityType: "commercial_review_decision",
+          }),
+        ).toBe(1);
+        for (const name of [
+          "offers",
+          "commercialWeekPlans",
+          "salesObservations",
+          "wasteObservations",
+        ])
+          expect(
+            await remoteDb
+              .collection(name)
+              .countDocuments({ storeId: f.storeId }),
+          ).toBe(0);
+        c.db.close();
+        cClosed = true;
+        const restored = new ReceiptTestDatabase(new DatabaseSync(path));
+        try {
+          expect(
+            await new CommercialReviewRepository(restored).decisions(f.storeId),
+          ).toEqual([{ decision: accepted, state: "SYNCED" }]);
+          expect(
+            await new OutboxRepository(restored).listPending(f.storeId),
+          ).toEqual([]);
+        } finally {
+          restored.db.close();
+        }
+      } finally {
+        a.db.close();
+        b.db.close();
+        if (!cClosed) c.db.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }, 60000);
     it("registers immutable page snapshots exactly once under concurrent delivery", async () => {
       const { storeId, sourceDocumentId, pageId, page } = await seed();
       const db = await database.getDb();
