@@ -1,3 +1,8 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { OutboxRepository } from "../../mobile/src/sync/outbox-repository";
+import { receiptReviewDigest } from "../../../scripts/test-receipt-publication-sqlite";
 import { DatabaseSync } from "node:sqlite";
 import { StoreLayoutRepository } from "../../mobile/src/store/layout-repository";
 import { runLocalMigrations } from "../../mobile/src/db/migrations";
@@ -512,7 +517,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             randomUUID,
             () => p.updatedAt,
           ),
-          repoB = new StoreLayoutRepository(b, randomUUID, () => p.updatedAt),
+          repoB = new StoreLayoutRepository(
+            b,
+            randomUUID,
+            () => p.updatedAt,
+            receiptReviewDigest,
+          ),
           repoFresh = new StoreLayoutRepository(
             fresh,
             randomUUID,
@@ -619,94 +629,199 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       }
     }, 60000);
 
-    it("recovers two SQLite devices through Mongo, retains the rejected intention and synchronizes its explicit rebased draft", async () => {
-      const p = layoutFixture(),
-        a = new Adapter(new DatabaseSync(":memory:")),
-        b = new Adapter(new DatabaseSync(":memory:"));
-      try {
-        await runLocalMigrations(a);
-        await runLocalMigrations(b);
-        const repoA = new StoreLayoutRepository(
-            a,
-            randomUUID,
-            () => p.updatedAt,
-          ),
-          repoB = new StoreLayoutRepository(b, randomUUID, () => p.updatedAt);
-        const ctxA = {
-            commandId: randomUUID(),
-            actorId: p.updatedBy,
-            deviceId: randomUUID(),
-            canWrite: true as const,
-          },
-          ctxB = { ...ctxA, commandId: randomUUID(), deviceId: randomUUID() };
-        const syncA = service(a, ctxA.deviceId, p.updatedBy),
-          syncB = service(b, ctxB.deviceId, p.updatedBy),
-          first = await repoA.save(
-            {
-              storeId: p.storeId,
-              expectedRevisionId: null,
-              action: "SAVE_DRAFT",
-              content: p.content,
+    it.each([true, false])(
+      "resolves the current real plan group through Mongo and restores it on a third SQLite after restart (local=%s)",
+      async (local) => {
+        const p = layoutFixture(),
+          dir = mkdtempSync(join(tmpdir(), "fl-layout-mongo-")),
+          path = join(dir, "restored.db"),
+          a = new Adapter(new DatabaseSync(":memory:")),
+          b = new Adapter(new DatabaseSync(":memory:")),
+          c = new Adapter(new DatabaseSync(path));
+        let cClosed = false;
+        try {
+          for (const device of [a, b, c]) await runLocalMigrations(device);
+          const repoA = new StoreLayoutRepository(
+              a,
+              randomUUID,
+              () => p.updatedAt,
+            ),
+            repoB = new StoreLayoutRepository(
+              b,
+              randomUUID,
+              () => p.updatedAt,
+              receiptReviewDigest,
+            ),
+            ctxA = {
+              commandId: randomUUID(),
+              actorId: p.updatedBy,
+              deviceId: randomUUID(),
+              canWrite: true as const,
             },
-            ctxA,
+            ctxB = { ...ctxA, commandId: randomUUID(), deviceId: randomUUID() },
+            syncA = service(a, ctxA.deviceId, p.updatedBy),
+            syncB = service(b, ctxB.deviceId, p.updatedBy),
+            syncC = service(c, randomUUID(), p.updatedBy),
+            first = await repoA.save(
+              {
+                storeId: p.storeId,
+                expectedRevisionId: null,
+                action: "SAVE_DRAFT",
+                content: p.content,
+              },
+              ctxA,
+            );
+          expect((await syncA.sync(p.storeId)).pushed).toBe(1);
+          await syncB.sync(p.storeId);
+          const change = {
+              storeId: p.storeId,
+              expectedRevisionId: first.revisionId,
+              action: "SAVE_DRAFT" as const,
+              content: {
+                ...p.content,
+                provenance: { kind: "USER" as const, reference: null },
+              },
+            },
+            accepted = await repoA.save(change, {
+              ...ctxA,
+              commandId: randomUUID(),
+            }),
+            rejected = await repoB.save(
+              { ...change, content: p.content },
+              { ...ctxB, commandId: randomUUID() },
+            );
+          expect((await syncA.sync(p.storeId)).pushed).toBe(1);
+          expect((await syncB.sync(p.storeId)).conflicts).toBe(1);
+          const conflict = (
+              await new ConflictRepository(b).listOpen(p.storeId)
+            )[0]!,
+            outbox = new OutboxRepository(b),
+            original = (await outbox.getById(conflict.commandId!))!,
+            clone = await outbox.enqueue({
+              ...original,
+              commandId: randomUUID(),
+            });
+          await outbox.markSyncing(clone.commandId);
+          const collision = await createMongoSyncPushService(database).push(
+            {
+              syncProtocolVersion: 1,
+              appVersion: "test",
+              deviceId: ctxB.deviceId,
+              storeId: p.storeId,
+              commands: [
+                {
+                  commandId: clone.commandId,
+                  localSequence: clone.localSequence,
+                  type: clone.commandType,
+                  entityType: clone.entityType,
+                  entityId: clone.entityId,
+                  expectedRemoteVersion: clone.expectedRemoteVersion,
+                  createdAt: clone.createdAt,
+                  payload:
+                    clone.payload as SyncPushRequest["commands"][number]["payload"],
+                },
+              ],
+            },
+            "second-layout-conflict",
+            p.updatedBy,
           );
-        await syncA.sync(p.storeId);
-        await syncB.sync(p.storeId);
-        expect((await repoB.get(p.storeId))?.entity).toEqual(first);
-        const change = {
-          storeId: p.storeId,
-          expectedRevisionId: first.revisionId,
-          action: "SAVE_DRAFT" as const,
-          content: {
-            ...p.content,
-            provenance: { kind: "USER" as const, reference: null },
-          },
-        };
-        const accepted = await repoA.save(change, {
-            ...ctxA,
-            commandId: randomUUID(),
-          }),
-          rejected = await repoB.save(
-            { ...change, content: p.content },
-            { ...ctxB, commandId: randomUUID() },
+          expect(collision.results[0]).toMatchObject({
+            status: "CONFLICT",
+            remoteVersion: 2,
+          });
+          await new ConflictRepository(b).recordPushConflict(
+            clone,
+            collision.results[0]!,
           );
-        await syncA.sync(p.storeId);
-        expect((await syncB.sync(p.storeId)).conflicts).toBe(1);
-        expect((await repoB.get(p.storeId))?.entity).toEqual(rejected);
-        const conflict = (
-          await new ConflictRepository(b).listOpen(p.storeId)
-        )[0]!;
-        await repoB.resolve(
-          conflict.id,
-          {
-            storeId: p.storeId,
-            useLocal: true,
-            localRevisionId: rejected.revisionId,
-            remoteRevisionId: accepted.revisionId,
-          },
-          { ...ctxB, commandId: randomUUID() },
-        );
-        expect((await syncB.sync(p.storeId)).pushed).toBe(1);
-        await syncA.sync(p.storeId);
-        expect((await repoA.get(p.storeId))?.entity).toEqual(
-          (await repoB.get(p.storeId))?.entity,
-        );
-        expect(
-          (await repoB.history(p.storeId)).some(
-            (r) => r.revision.id === rejected.revisionId && !r.synced,
-          ),
-        ).toBe(true);
-        expect(
-          await (
+          await outbox.markConflict(
+            clone.commandId,
+            "STORE_LAYOUT_VERSION_CONFLICT",
+          );
+          const latest = await repoA.save(
+            { ...change, expectedRevisionId: accepted.revisionId },
+            { ...ctxA, commandId: randomUUID() },
+          );
+          expect((await syncA.sync(p.storeId)).pushed).toBe(1);
+          await syncB.sync(p.storeId);
+          const review = await repoB.review(
+              p.storeId,
+              conflict.id,
+              ctxB.actorId,
+            ),
+            choice = {
+              storeId: p.storeId,
+              useLocal: local,
+              localRevisionId: rejected.revisionId,
+              remoteRevisionId: latest.revisionId,
+            },
+            action = {
+              ...ctxB,
+              commandId: randomUUID(),
+              reviewHash: review.hash,
+              canResolve: () => true,
+            };
+          expect(review.group.conflicts).toHaveLength(2);
+          expect(review.remote).toEqual(latest);
+          expect((await repoB.get(p.storeId))!.remoteVersion).toBe(1);
+          const result = await repoB.resolve(conflict.id, choice, action);
+          expect((await syncB.sync(p.storeId)).pushed).toBe(local ? 1 : 0);
+          await syncA.sync(p.storeId);
+          await syncC.sync(p.storeId);
+          expect((await repoA.get(p.storeId))!.entity).toEqual(result);
+          expect(
+            (await new StoreLayoutRepository(c, randomUUID).get(p.storeId))!
+              .entity,
+          ).toEqual(result);
+          expect(result.version).toBe(local ? 4 : 3);
+          expect(result.content).toEqual(
+            local ? rejected.content : latest.content,
+          );
+          expect(
+            (await repoB.history(p.storeId)).some(
+              (r) => r.revision.id === rejected.revisionId && !r.synced,
+            ),
+          ).toBe(true);
+          expect(await new ConflictRepository(b).listOpen(p.storeId)).toEqual(
+            [],
+          );
+          const count = await (
             await database.getDb()
           )
             .collection("storeLayoutRevisions")
-            .countDocuments({ storeId: p.storeId }),
-        ).toBe(3);
-      } finally {
-        a.db.close();
-        b.db.close();
-      }
-    }, 60000);
+            .countDocuments({ storeId: p.storeId });
+          expect(count).toBe(local ? 4 : 3);
+          await repoB.resolve(conflict.id, choice, action);
+          await syncB.sync(p.storeId);
+          expect(
+            await (
+              await database.getDb()
+            )
+              .collection("storeLayoutRevisions")
+              .countDocuments({ storeId: p.storeId }),
+          ).toBe(count);
+          c.db.close();
+          cClosed = true;
+          const restored = new Adapter(new DatabaseSync(path));
+          try {
+            expect(
+              (await new StoreLayoutRepository(restored, randomUUID).get(
+                p.storeId,
+              ))!.entity,
+            ).toEqual(result);
+            expect(
+              await new OutboxRepository(restored).listPending(p.storeId),
+            ).toEqual([]);
+          } finally {
+            restored.db.close();
+          }
+        } finally {
+          a.db.close();
+          b.db.close();
+          if (!cClosed) c.db.close();
+          rmSync(dir, { recursive: true, force: true });
+        }
+      },
+      60000,
+    );
   },
 );

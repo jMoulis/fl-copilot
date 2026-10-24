@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { router, useFocusEffect } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { createPilotStoreLayout } from "@fl-copilot/commercial-core";
@@ -28,7 +35,7 @@ export default function StoreLayoutScreen() {
     );
   return (
     <StorePlan
-      key={`${store.storeId}:${session.user.id}`}
+      key={`${store.storeId}:${session.user.id}:${store.role}`}
       storeId={store.storeId}
       actorId={session.user.id}
       allowed={store.role === "MANAGER"}
@@ -59,43 +66,64 @@ function StorePlan({
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>();
-  const authority = useRef(allowed);
-  authority.current = allowed;
+  const scope = useMemo(
+      () => ({ repo, actorId, deviceId, allowed }),
+      [repo, actorId, deviceId, allowed],
+    ),
+    committedScope = useRef<object | null>(null),
+    focusRevision = useRef(0);
+  useLayoutEffect(() => {
+    committedScope.current = scope;
+    return () => {
+      if (committedScope.current === scope) committedScope.current = null;
+    };
+  }, [scope]);
   const active = useRef(false),
     reading = useRef(0),
     locked = useRef(false);
   const refresh = useCallback(async () => {
+    if (!active.current || committedScope.current !== scope) return;
     const request = ++reading.current;
-    const head = await repo.get(storeId),
-      [reference, conflicts] = await Promise.all([
-        head?.entity.referenceRevisionId
-          ? repo.getRevision(storeId, head.entity.referenceRevisionId)
-          : Promise.resolve(null),
-        new ConflictRepository(sqlite).listOpen(storeId),
-      ]);
-    if (active.current && reading.current === request) {
-      setSnapshot({
-        head,
-        reference,
-        conflicts: conflicts.filter((c) => c.entityType === "store_layout"),
-      });
-      setLoaded(true);
+    const current = () =>
+      active.current &&
+      committedScope.current === scope &&
+      reading.current === request;
+    try {
+      const head = await repo.get(storeId),
+        [reference, conflicts] = await Promise.all([
+          head?.entity.referenceRevisionId
+            ? repo.getRevision(storeId, head.entity.referenceRevisionId)
+            : Promise.resolve(null),
+          new ConflictRepository(sqlite).listOpen(storeId),
+        ]);
+      if (current()) {
+        setSnapshot({
+          head,
+          reference,
+          conflicts: conflicts.filter((c) => c.entityType === "store_layout"),
+        });
+        setLoaded(true);
+      }
+    } catch (reason) {
+      if (current()) throw reason;
     }
-  }, [repo, sqlite, storeId]);
+  }, [repo, sqlite, storeId, scope]);
   useFocusEffect(
     useCallback(() => {
       active.current = true;
+      focusRevision.current++;
       void refresh().catch(() => {
-        if (active.current)
+        if (active.current && committedScope.current === scope)
           setError(
             "Le plan local n’a pas pu être relu. Les informations déjà affichées restent conservées.",
           );
       });
       return () => {
         active.current = false;
+        focusRevision.current++;
         reading.current++;
       };
-    }, [refresh]),
+    }, [refresh, scope]),
   );
   const syncVersion = useRef(`${lastSyncedAt}:${status}`);
   useEffect(() => {
@@ -104,12 +132,12 @@ function StorePlan({
     syncVersion.current = next;
     if (active.current)
       void refresh().catch(() => {
-        if (active.current)
+        if (active.current && committedScope.current === scope)
           setError("Le plan n’a pas pu être relu après la synchronisation.");
       });
-  }, [refresh, lastSyncedAt, status]);
+  }, [refresh, lastSyncedAt, status, scope]);
   function context() {
-    if (!authority.current || !active.current)
+    if (!allowed || committedScope.current !== scope || !active.current)
       throw Error("STORE_LAYOUT_AUTHORITY_CHANGED");
     return {
       commandId: randomUUID(),
@@ -118,6 +146,14 @@ function StorePlan({
       canWrite: true as const,
     };
   }
+  function mutationCurrent() {
+    const focus = focusRevision.current;
+    return () =>
+      allowed &&
+      committedScope.current === scope &&
+      active.current &&
+      focusRevision.current === focus;
+  }
   async function save(a: LayoutAction) {
     if (locked.current) throw Error("STORE_LAYOUT_SYNCING");
     locked.current = true;
@@ -125,8 +161,11 @@ function StorePlan({
     setError(undefined);
     setNotice(undefined);
     try {
-      const saved = await repo.save({ storeId, ...a }, context());
-      if (active.current) {
+      const current = mutationCurrent();
+      const saved = await repo.save({ storeId, ...a }, context(), {
+        canResolve: current,
+      });
+      if (current()) {
         setSnapshot((prev) => ({
           ...prev,
           head: {
@@ -148,52 +187,37 @@ function StorePlan({
         );
       }
       await refresh().catch(() => {
-        if (active.current)
+        if (active.current && committedScope.current === scope)
           setError(
             "Le plan est enregistré. La relecture locale a échoué ; rouvrez le plan avant une nouvelle modification.",
           );
       });
-      void syncNow(storeId).catch(() => undefined);
+      if (committedScope.current === scope && active.current)
+        void syncNow(storeId).catch(() => undefined);
     } catch (e) {
-      if (active.current) setError(layoutError(e));
+      if (active.current && committedScope.current === scope)
+        setError(layoutError(e));
       throw e;
     } finally {
       locked.current = false;
-      if (active.current) setBusy(false);
+      if (active.current && committedScope.current === scope) setBusy(false);
     }
   }
-  async function resolve(
-    id: string,
-    localRevisionId: string,
-    remoteRevisionId: string,
-    useLocal: boolean,
-  ) {
-    if (locked.current) throw Error("STORE_LAYOUT_SYNCING");
-    locked.current = true;
-    setBusy(true);
+  function conflictResolved() {
+    if (!active.current || committedScope.current !== scope) return;
     setError(undefined);
-    setNotice(undefined);
-    try {
-      await repo.resolve(
-        id,
-        { storeId, localRevisionId, remoteRevisionId, useLocal },
-        context(),
-      );
-      await refresh();
-      if (active.current)
-        setNotice(
-          useLocal
-            ? "Votre version est reprise dans un nouveau brouillon. Examinez-le avant de le choisir comme référence."
-            : "La version synchronisée est utilisée. Votre version locale reste dans l’historique.",
-        );
-      void syncNow(storeId).catch(() => undefined);
-    } catch (e) {
-      if (active.current) setError(layoutError(e));
-      throw e;
-    } finally {
-      locked.current = false;
-      if (active.current) setBusy(false);
-    }
+    setNotice(
+      "Choix enregistré. Les versions et les mesures à préciser restent conservées.",
+    );
+    const reread = () =>
+      refresh().catch(() => {
+        if (active.current && committedScope.current === scope)
+          setError(
+            "Le choix est enregistré. La relecture locale a échoué ; rouvrez le plan.",
+          );
+      });
+    void reread();
+    void syncNow(storeId).then(reread, () => undefined);
   }
   return (
     <AppScreen>
@@ -216,7 +240,7 @@ function StorePlan({
           });
         }}
         onAction={save}
-        onResolve={resolve}
+        onConflictResolved={conflictResolved}
         onHistory={(before) => repo.history(storeId, 20, before)}
       />
     </AppScreen>

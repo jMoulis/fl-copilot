@@ -11,9 +11,24 @@ import {
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import {
   OutboxRepository,
+  notifyOutboxChanged,
   type OutboxDatabase,
 } from "../sync/outbox-repository";
-import { ConflictRepository } from "../sync/conflict-repository";
+import { readStoreLayoutConflict } from "./layout-conflict-review";
+
+export type LayoutMutationLifetime = {
+  canResolve: () => boolean;
+  signal?: AbortSignal;
+};
+function assertCurrent(context?: LayoutMutationLifetime) {
+  if (
+    context &&
+    (context.signal?.aborted ||
+      typeof context.canResolve !== "function" ||
+      !context.canResolve())
+  )
+    throw Error("STORE_LAYOUT_AUTHORITY_CHANGED");
+}
 
 type Row = {
   id: string;
@@ -126,7 +141,19 @@ export class StoreLayoutRepository {
     private db: AtomicMutationDatabase & OutboxDatabase,
     private uuid: () => string,
     private now: () => string = () => new Date().toISOString(),
+    private digest: (value: string) => Promise<string> = async () => {
+      throw Error("STORE_LAYOUT_REVIEW_UNAVAILABLE");
+    },
   ) {}
+  async review(storeId: string, conflictId: string, actorId: string) {
+    return readStoreLayoutConflict(
+      this.db,
+      storeId,
+      conflictId,
+      actorId,
+      this.digest,
+    );
+  }
   async get(storeId: string) {
     const r = await this.db.getFirstAsync<Row>(
       "SELECT * FROM store_layouts WHERE store_id=?",
@@ -182,7 +209,9 @@ export class StoreLayoutRepository {
   async save(
     input: z.input<typeof saveSchema>,
     context: z.input<typeof contextSchema>,
+    lifetime?: LayoutMutationLifetime,
   ) {
+    assertCurrent(lifetime);
     const v = saveSchema.parse(input),
       ctx = contextSchema.parse(context),
       intent = JSON.stringify({ v, ctx });
@@ -196,6 +225,7 @@ export class StoreLayoutRepository {
         ctx.commandId,
       );
       if (replay) {
+        assertCurrent(lifetime);
         if (replay.intent_json !== intent)
           throw Error("STORE_LAYOUT_COMMAND_REUSED");
         result = storeLayoutSchema.parse(JSON.parse(replay.payload_json));
@@ -208,6 +238,8 @@ export class StoreLayoutRepository {
         prev = row ? decode(row).entity : null;
       if (row && ["CONFLICT", "ERROR"].includes(row.sync_state))
         throw Error("STORE_LAYOUT_RESOLVE_REQUIRED");
+      if (row?.dirty && prev?.updatedBy !== ctx.actorId)
+        throw Error("STORE_LAYOUT_AUTHORITY_CHANGED");
       if ((prev?.revisionId ?? null) !== v.expectedRevisionId)
         throw Error("STORE_LAYOUT_SOURCE_CHANGED");
       if (
@@ -244,6 +276,7 @@ export class StoreLayoutRepository {
       );
       if (next.action === "ADOPT_REFERENCE")
         assertStoreLayoutAdoptable(next.content);
+      assertCurrent(lifetime);
       await this.write(tx, next, ctx, prev?.version ?? null);
       await tx.runAsync(
         "INSERT INTO store_layout_operations(command_id,store_id,intent_json,payload_json) VALUES(?,?,?,?)",
@@ -252,6 +285,7 @@ export class StoreLayoutRepository {
         intent,
         JSON.stringify(next),
       );
+      assertCurrent(lifetime);
       result = next;
     });
     return result!;
@@ -294,51 +328,85 @@ export class StoreLayoutRepository {
       localRevisionId: string;
       remoteRevisionId: string;
     },
-    context: z.input<typeof contextSchema>,
+    context: z.input<typeof contextSchema> &
+      LayoutMutationLifetime & {
+        reviewHash: string;
+      },
   ) {
-    const ctx = contextSchema.parse(context);
+    assertCurrent(context);
+    z.strictObject({
+      useLocal: z.boolean(),
+      storeId: z.uuid(),
+      localRevisionId: z.uuid(),
+      remoteRevisionId: z.uuid(),
+    }).parse(choice);
+    z.string().min(1).parse(context.reviewHash);
+    const { reviewHash, canResolve, signal, ...base } = context,
+      ctx = contextSchema.parse(base),
+      intent = JSON.stringify({
+        kind: "STORE_LAYOUT_CONFLICT_CHOICE",
+        conflictId,
+        choice,
+        ctx,
+        reviewHash,
+      });
+    void canResolve;
+    void signal;
+    let result: StoreLayout | undefined;
     await this.db.withExclusiveTransactionAsync(async (tx) => {
-      const conflict = await new ConflictRepository(tx).getById(conflictId);
+      assertCurrent(context);
+      const replay = await tx.getFirstAsync<{
+        intent_json: string;
+        payload_json: string;
+      }>(
+        "SELECT intent_json,payload_json FROM store_layout_operations WHERE command_id=?",
+        ctx.commandId,
+      );
+      if (replay) {
+        if (JSON.parse(replay.intent_json).request !== intent)
+          throw Error("STORE_LAYOUT_COMMAND_REUSED");
+        result = storeLayoutSchema.parse(JSON.parse(replay.payload_json));
+        assertCurrent(context);
+        return;
+      }
+      const review = await readStoreLayoutConflict(
+        tx,
+        choice.storeId,
+        conflictId,
+        ctx.actorId,
+        this.digest,
+      );
+      assertCurrent(context);
       if (
-        !conflict ||
-        conflict.status !== "OPEN" ||
-        conflict.entityType !== "store_layout" ||
-        conflict.storeId !== choice.storeId
-      )
-        throw Error("STORE_LAYOUT_RESOLUTION_INVALID");
-      const row = await tx.getFirstAsync<Row>(
-          "SELECT * FROM store_layouts WHERE store_id=?",
-          choice.storeId,
-        ),
-        remote = storeLayoutSchema.parse(conflict.remotePayload);
-      if (!row) throw Error("STORE_LAYOUT_SOURCE_CHANGED");
-      const local = decode(row),
-        known = local.remote;
-      if (
-        local.entity.revisionId !== choice.localRevisionId ||
-        remote.revisionId !== choice.remoteRevisionId ||
-        remote.storeId !== choice.storeId ||
-        (known &&
-          known.version >= remote.version &&
-          JSON.stringify(known) !== JSON.stringify(remote))
+        review.hash !== reviewHash ||
+        review.local.revisionId !== choice.localRevisionId ||
+        review.remote?.revisionId !== choice.remoteRevisionId
       )
         throw Error("STORE_LAYOUT_SOURCE_CHANGED");
-      const syncing = await tx.getFirstAsync<{ n: number }>(
-        "SELECT COUNT(*) n FROM sync_outbox WHERE store_id=? AND entity_type='store_layout' AND status='SYNCING'",
-        choice.storeId,
-      );
-      if (syncing?.n) throw Error("STORE_LAYOUT_SYNCING");
-      await applyStoreLayoutRevision(tx, choice.storeId, {
-        id: remote.revisionId,
-        storeId: choice.storeId,
-        plan: remote,
-        version: 1,
-      });
-      const now = this.now();
-      await tx.runAsync(
-        "UPDATE sync_outbox SET status='FAILED',last_error_code='STORE_LAYOUT_SUPERSEDED' WHERE store_id=? AND entity_type='store_layout' AND status IN ('PENDING','CONFLICT','FAILED')",
-        choice.storeId,
-      );
+      if (
+        !review.canResolve ||
+        !review.remote ||
+        review.commands.some((c) => c.device_id !== ctx.deviceId)
+      )
+        throw Error("STORE_LAYOUT_RESOLUTION_INVALID");
+      const remote = review.remote,
+        now = this.now();
+      // Capture all examined intentions in the existing immutable revision store.
+      for (const p of review.plans)
+        await applyStoreLayoutRevision(
+          tx,
+          choice.storeId,
+          { id: p.revisionId, storeId: choice.storeId, plan: p, version: 1 },
+          review.group.conflicts.some(
+            (c) => (c.remotePayload as StoreLayout).revisionId === p.revisionId,
+          ) || p.revisionId === remote.revisionId,
+        );
+      for (const c of review.commands)
+        await tx.runAsync(
+          "UPDATE sync_outbox SET status='FAILED',last_error_code='STORE_LAYOUT_SUPERSEDED' WHERE command_id=? AND store_id=?",
+          c.command_id,
+          choice.storeId,
+        );
       await tx.runAsync(
         "UPDATE store_layouts SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state='SYNCED',dirty=0 WHERE store_id=?",
         JSON.stringify(remote),
@@ -346,6 +414,7 @@ export class StoreLayoutRepository {
         remote.version,
         choice.storeId,
       );
+      result = remote;
       if (choice.useLocal) {
         const next = validateStoreLayoutTransition(
           remote,
@@ -355,20 +424,37 @@ export class StoreLayoutRepository {
             parentRevisionId: remote.revisionId,
             restoredFromRevisionId: null,
             action: "SAVE_DRAFT",
-            content: local.entity.content,
+            content: review.local.content,
             version: remote.version + 1,
             updatedBy: ctx.actorId,
             updatedAt: now,
           }),
         );
         await this.write(tx, next, ctx, remote.version);
+        result = next;
       }
+      for (const c of review.group.conflicts)
+        await tx.runAsync(
+          "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE id=? AND store_id=? AND status='OPEN'",
+          choice.useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
+          now,
+          c.id,
+          choice.storeId,
+        );
       await tx.runAsync(
-        "UPDATE sync_conflicts SET status=?,resolved_at=? WHERE store_id=? AND entity_type='store_layout' AND status='OPEN'",
-        choice.useLocal ? "RESOLVED_LOCAL" : "RESOLVED_REMOTE",
-        now,
+        "INSERT INTO store_layout_operations(command_id,store_id,intent_json,payload_json) VALUES(?,?,?,?)",
+        ctx.commandId,
         choice.storeId,
+        JSON.stringify({
+          request: intent,
+          comparedConflictIds: review.group.conflicts.map((c) => c.id),
+          recordedAt: now,
+        }),
+        JSON.stringify(result),
       );
+      assertCurrent(context);
     });
+    notifyOutboxChanged();
+    return result!;
   }
 }
