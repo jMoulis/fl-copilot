@@ -14,7 +14,7 @@ L'ordre et le périmètre complet de la V1 restent ceux convenus pour la présen
 
 Les exceptions techniques, permissions, mesures et recettes encore ouvertes ne sont pas requalifiées en simples finitions. Les sections datées et L1–L11 ci-dessous conservent les étapes depuis le 19 octobre ; leurs anciens états ne sont pas une liste actuelle de fonctions absentes. Le correctif Resend PR 334 est **déjà déployé dans l'API `4941513`** ; son activation de droits et l'original réel restent non validés.
 
-Le build iOS groupé **15**, source `1c3ab72`, est lancé sur EAS (`54b81e24-a020-4343-836f-ecc61b9663b3`) ; sa disponibilité et son installation ne sont pas encore prouvées. Build 14 et sa recette restent conservés. L’alternative visible au menu des messages du chat est préparée **après** cette source : voir `../qa/M7_CHAT_MESSAGE_ACTIONS_2026_10_24.md`. Aucun build payant isolé.
+Le build iOS groupé **15**, source `1c3ab72`, est **terminé et disponible** sur [EAS](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/54b81e24-a020-4343-836f-ecc61b9663b3), archive présente vérifiée le 24/10/2026. Son installation et son acceptation humaine restent non prouvées. Build 14 et sa recette restent conservés. L’alternative visible au menu des messages du chat est préparée **après** cette source : voir `../qa/M7_CHAT_MESSAGE_ACTIONS_2026_10_24.md`. Aucun build payant isolé.
 
 ## Historique des incréments et des critères initiaux
 
