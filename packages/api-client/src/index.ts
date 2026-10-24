@@ -150,6 +150,7 @@ export class ApiClient {
       receiptCorrection?: boolean | 2;
       receiptPublication?: boolean;
       identityReview?: boolean;
+      visualActions?: boolean;
       catalogueProposals?: boolean | 2;
       executionProposals?: boolean;
       fetch?: typeof fetch;
@@ -274,6 +275,9 @@ export class ApiClient {
                   : {}),
                 ...(streaming.identityReview
                   ? { "x-copilot-identity-review": "1" }
+                  : {}),
+                ...(streaming.visualActions
+                  ? { "x-copilot-visual-actions": "1" }
                   : {}),
                 ...(streaming.catalogueProposals
                   ? {

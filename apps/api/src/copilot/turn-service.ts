@@ -1,3 +1,4 @@
+import { buildVisualActionMessages } from "./visual-action-messages.js";
 import { buildStoreLayoutScenarioMessages } from "./store-layout-scenario-messages";
 import { buildStoreLayoutEditMessages } from "./store-layout-edit-messages";
 import { appendFactContext } from "./fact-context";
@@ -447,6 +448,10 @@ export async function runCopilotTurn(
             ...buildIdentityReviewMessages(
               toolParent,
               generation.identityReviews ?? [],
+            ),
+            ...buildVisualActionMessages(
+              toolParent,
+              generation.visualActionPreviews ?? [],
             ),
             ...buildCatalogueProposalMessages(
               toolParent,

@@ -159,5 +159,12 @@ export function useReviewedConflict<R>({
     error,
     resolve,
     reload,
+    isCurrent: () =>
+      activeScope.current === scope &&
+      renderedRevision === revision.current &&
+      live.current &&
+      !locked.current &&
+      !reading &&
+      !error,
   };
 }

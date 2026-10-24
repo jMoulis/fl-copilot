@@ -161,6 +161,21 @@ export async function applyVisualEntity<K extends VisualEntityType>(
   await writeVisual(db, kind, p, serialized, p.version, false);
 }
 
+/** Shared read-only editability check; the writer still rechecks it in its transaction. */
+export function assertVisualRecordWritable(
+  record: LocalVisualRecord<VisualEntityMap[VisualEntityType]> | null,
+  actorId: string,
+) {
+  if (record?.dirty && record.entity.updatedBy !== actorId)
+    throw Error("VISUAL_OWNER_PENDING");
+  if (
+    record &&
+    (["CONFLICT", "ERROR"].includes(record.syncState) ||
+      (record.remote && record.remote.version > (record.remoteVersion ?? 0)))
+  )
+    throw Error("VISUAL_RESOLVE_REQUIRED");
+}
+
 export class VisualLibraryRepository {
   constructor(private db: OutboxDatabase & AtomicMutationDatabase) {}
   async get<K extends VisualEntityType>(kind: K, storeId: string, id: string) {
@@ -201,15 +216,7 @@ export class VisualLibraryRepository {
       if (row && row.store_id !== ctx.storeId)
         throw Error("VISUAL_SCOPE_INVALID");
       const before = row ? mapped(kind, row) : null;
-      if (before?.dirty && before.entity.updatedBy !== ctx.actorId)
-        throw Error("VISUAL_OWNER_PENDING");
-      if (
-        before &&
-        (["CONFLICT", "ERROR"].includes(before.syncState) ||
-          (before.remote &&
-            before.remote.version > (before.remoteVersion ?? 0)))
-      )
-        throw Error("VISUAL_RESOLVE_REQUIRED");
+      assertVisualRecordWritable(before, ctx.actorId);
       if ((before?.entity.version ?? null) !== ctx.expectedLocalVersion)
         throw Error("VISUAL_REVISION_INVALID");
       const p = validateVisualMutation(kind, before?.entity ?? null, raw, ctx);

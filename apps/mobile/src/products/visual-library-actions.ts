@@ -275,6 +275,37 @@ export async function assignCapturedVisual(
   });
   return result!;
 }
+/** Canonical candidate eligibility, shared by manual confirmation and chat review. */
+export function assertLibraryVisualCandidate(
+  identity: LocalVisualRecord<VisualIdentity> | null,
+  asset: LocalVisualRecord<VisualAsset> | null,
+  selected: LocalVisualRecord<VisualIdentity>,
+  actorId: string,
+) {
+  if (
+    !identity ||
+    (identity.dirty && identity.entity.updatedBy !== actorId) ||
+    fingerprint(identity) !== fingerprint(selected) ||
+    identity.entity.deletedAt ||
+    ["CONFLICT", "ERROR"].includes(identity.syncState)
+  )
+    throw Error("VISUAL_SELECTION_CHANGED");
+  if (
+    !asset ||
+    asset.entity.deletedAt ||
+    asset.entity.review.status !== "APPROVED" ||
+    asset.remote?.deletedAt ||
+    ["REJECTED", "REVOKED"].includes(asset.remote?.review.status ?? "") ||
+    ["CONFLICT", "ERROR"].includes(asset.syncState)
+  )
+    throw Error("VISUAL_ASSET_UNAVAILABLE");
+  if (
+    identity.entity.specificity === "PACKAGED_EXACT" &&
+    asset.entity.provenance.type === "AI_GENERATED"
+  )
+    throw Error("VISUAL_SELECTION_INVALID");
+  return { identity, asset };
+}
 export async function assignLibraryVisual(
   db: Database,
   basis: VisualSelectionBasis,
@@ -289,41 +320,25 @@ export async function assignLibraryVisual(
         selected.entity.id,
       ),
       at = ctx.now();
-    if (
-      !identity ||
-      (identity.dirty && identity.entity.updatedBy !== ctx.actorId) ||
-      fingerprint(identity) !== fingerprint(selected) ||
-      identity.entity.deletedAt ||
-      ["CONFLICT", "ERROR"].includes(identity.syncState)
-    )
-      throw Error("VISUAL_SELECTION_CHANGED");
-    const asset = identity.entity.primaryAssetId
+    const asset = identity?.entity.primaryAssetId
       ? await current.repo.get(
           "visual_asset",
           ctx.storeId,
-          identity.entity.primaryAssetId,
+          identity?.entity.primaryAssetId,
         )
       : null;
-    if (
-      !asset ||
-      asset.entity.deletedAt ||
-      asset.entity.review.status !== "APPROVED" ||
-      asset.remote?.deletedAt ||
-      ["REJECTED", "REVOKED"].includes(asset.remote?.review.status ?? "") ||
-      ["CONFLICT", "ERROR"].includes(asset.syncState)
-    )
-      throw Error("VISUAL_ASSET_UNAVAILABLE");
-    if (
-      identity.entity.specificity === "PACKAGED_EXACT" &&
-      asset.entity.provenance.type === "AI_GENERATED"
-    )
-      throw Error("VISUAL_SELECTION_INVALID");
+    const reviewed = assertLibraryVisualCandidate(
+      identity,
+      asset,
+      selected,
+      ctx.actorId,
+    );
     const link = await nextLink(
       ctx,
       at,
       current.link,
       current.product.product.entity.id,
-      identity.entity,
+      reviewed.identity.entity,
       null,
     );
     await current.repo.save(

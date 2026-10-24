@@ -1,13 +1,14 @@
-import type { SQLiteDatabase } from "expo-sqlite";
+import type { OutboxDatabase } from "../sync/outbox-repository";
 
-type WritableDatabase = Pick<
-  SQLiteDatabase,
-  | "execAsync"
-  | "runAsync"
-  | "getFirstAsync"
-  | "getAllAsync"
-  | "withExclusiveTransactionAsync"
->;
+// This queue needs the database methods, not Expo's native module globals.
+type WritableTransaction = OutboxDatabase & {
+  execAsync(sql: string): Promise<void>;
+};
+interface WritableDatabase extends WritableTransaction {
+  withExclusiveTransactionAsync(
+    task: (transaction: WritableTransaction) => Promise<void>,
+  ): Promise<void>;
+}
 type Enqueue = <R>(work: () => Promise<R>) => Promise<R>;
 const configured = new WeakMap<object, Enqueue>();
 /** Also serialize native SQLite backups with the existing application writers. */

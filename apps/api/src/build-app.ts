@@ -1,3 +1,4 @@
+import { previewVisualAction } from "./copilot/visual-actions-tool.js";
 import { readVisualLibrary } from "./copilot/visual-library-tool.js";
 import { layoutIllustrationGenerationPolicySchema } from "@fl-copilot/domain";
 import {
@@ -931,6 +932,20 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         storeId,
                         input,
                         request.headers["x-copilot-layout-preparation"] === "1",
+                      );
+                      await authorize();
+                      return result;
+                    },
+                  }
+                : {}),
+              ...(request.headers["x-copilot-visual-actions"] === "1"
+                ? {
+                    visualAction: async (input) => {
+                      await authorize();
+                      const result = await previewVisualAction(
+                        db,
+                        storeId,
+                        input,
                       );
                       await authorize();
                       return result;

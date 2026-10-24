@@ -16,11 +16,15 @@ export function VisualVersion({
   entity,
   labels,
   preview,
+  onPreviewReady,
+  compact = false,
 }: {
   title: string;
   entity: VisualEntityMap[VisualEntityType];
   labels: Record<string, string>;
   preview: VisualAsset | null;
+  onPreviewReady?: (ready: boolean) => void;
+  compact?: boolean;
 }) {
   const { sqlite } = useLocalDatabase();
   const [uri, setUri] = useState<string | null>(),
@@ -93,17 +97,23 @@ export function VisualVersion({
       }
     }
   }
+  const displayedContext = context.current;
   return (
     <SectionCard title={title}>
-      {visualConflictSummary(entity, labels).map((line, i) => (
+      {(compact
+        ? visualConflictSummary(entity, labels).slice(0, 2)
+        : visualConflictSummary(entity, labels)
+      ).map((line, i) => (
         <Text key={i} className="text-base text-ink">
           {line}
         </Text>
       ))}
-      <Text className="text-sm text-muted">
-        Version {entity.version} ·{" "}
-        {new Date(entity.updatedAt).toLocaleString("fr-FR")}
-      </Text>
+      {!compact ? (
+        <Text className="text-sm text-muted">
+          Version {entity.version} ·{" "}
+          {new Date(entity.updatedAt).toLocaleString("fr-FR")}
+        </Text>
+      ) : null}
       {preview ? (
         <SecondaryButton
           label={busy ? "Lecture…" : "Voir la photo conservée sur cet appareil"}
@@ -117,6 +127,24 @@ export function VisualVersion({
           resizeMode="contain"
           style={{ width: "100%", height: 180 }}
           accessibilityLabel="Photo conservée pour comparer les versions"
+          onError={() => {
+            if (
+              displayedContext &&
+              context.current === displayedContext &&
+              displayedContext.source === source
+            ) {
+              setUri(null);
+              onPreviewReady?.(false);
+            }
+          }}
+          onLoad={() => {
+            if (
+              displayedContext &&
+              context.current === displayedContext &&
+              displayedContext.source === source
+            )
+              onPreviewReady?.(true);
+          }}
         />
       ) : uri === null ? (
         <Text className="text-sm text-muted">

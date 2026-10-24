@@ -106,9 +106,12 @@ export const copilotVisualLookupInputSchema = z
     productId: z.uuid().nullable(),
     kind: z.enum(copilotVisualKinds).nullable(),
     cursor: z.uuid().nullable(),
+    query: z.string().trim().min(1).max(120).nullable().optional(),
   })
-  .refine((v) =>
-    v.productId ? v.kind === null && v.cursor === null : v.kind !== null,
+  .refine(
+    (v) =>
+      (v.productId ? v.kind === null && v.cursor === null : v.kind !== null) &&
+      (!v.query || (!v.productId && v.kind === "VISUAL_IDENTITY")),
   );
 export const copilotVisualMetadataEntrySchema = z.discriminatedUnion("kind", [
   z.strictObject({

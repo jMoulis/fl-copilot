@@ -172,6 +172,14 @@ export async function readVisualLibrary(db: Db, storeId: string, raw: unknown) {
         .find({
           storeId,
           ...(input.cursor ? { _id: { $gt: input.cursor } } : {}),
+          ...(input.query
+            ? {
+                canonicalName: {
+                  $regex: input.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                  $options: "i",
+                },
+              }
+            : {}),
         })
         .maxTimeMS(2000)
         .sort({ _id: 1 })
