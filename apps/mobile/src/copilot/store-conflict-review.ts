@@ -1,4 +1,13 @@
 import {
+  isCopilotVisualKind,
+  copilotVisualTypes,
+  copilotVisualMetadata,
+  copilotVisualBasisFields,
+  visualEntitySchemas,
+} from "@fl-copilot/domain";
+import { VisualLibraryRepository } from "../products/visual-library-repository";
+import { VisualConflictRepository } from "../products/visual-conflict-repository";
+import {
   storeLayoutSchema,
   storeConflictLayoutBasis,
 } from "@fl-copilot/domain";
@@ -68,6 +77,12 @@ export async function readStoreConflictCurrent(
     throw Error("STORE_CONFLICT_DIGEST_REQUIRED");
   },
 ) {
+  if (isCopilotVisualKind(content.input.kind))
+    return new VisualLibraryRepository(joinedProductToolDatabase(db)).get(
+      copilotVisualTypes[content.input.kind],
+      content.basis.storeId,
+      content.basis.entityId,
+    );
   if (isCatalogueConflictKind(content.input.kind))
     return readCatalogueConflictCurrent(
       db,
@@ -145,6 +160,9 @@ export async function readStoreConflictReview(
   );
   const entityType = {
     STORE_LAYOUT: "store_layout",
+    VISUAL_ASSET: "visual_asset",
+    VISUAL_IDENTITY: "visual_identity",
+    PRODUCT_VISUAL_LINK: "product_visual_link",
     PRODUCT: "product",
     IDENTIFIER: "product_identifier",
     ALIAS: "product_alias",
@@ -233,28 +251,39 @@ export async function readStoreConflictReview(
           digest,
         ).review(basis.storeId, rows[0].id, actorId)
       : null;
+  const visualReview =
+    isCopilotVisualKind(input.kind) && rows[0] && actorId
+      ? await new VisualConflictRepository(
+          joinedProductToolDatabase(db),
+          digest,
+        ).review(basis.storeId, rows[0].id, actorId)
+      : null;
   const reviewedGroup =
     catalogueGroup ??
     settingsReview?.group ??
     eventReview?.group ??
     needReview?.group ??
     commercialReview?.group ??
-    layoutReview?.group;
-  const conflict = layoutReview
-    ? layoutReview.anchor
-    : reviewedGroup
-      ? reviewedGroup.conflict
-      : rows[0]
-        ? await new ConflictRepository(db).getById(rows[0].id)
-        : null;
+    layoutReview?.group ??
+    visualReview?.group;
+  const conflict = visualReview
+    ? visualReview.conflict
+    : layoutReview
+      ? layoutReview.anchor
+      : reviewedGroup
+        ? reviewedGroup.conflict
+        : rows[0]
+          ? await new ConflictRepository(db).getById(rows[0].id)
+          : null;
   let status: "READY" | "BLOCKED" | "UNCHANGED" = "READY",
     reason: string | null = null;
   const block = (message: string) => {
     status = "BLOCKED";
     reason = message;
   };
-  const remoteSchema =
-    input.kind === "STORE_LAYOUT"
+  const remoteSchema = isCopilotVisualKind(input.kind)
+    ? visualEntitySchemas[copilotVisualTypes[input.kind]]
+    : input.kind === "STORE_LAYOUT"
       ? storeLayoutSchema
       : isCatalogueConflictKind(input.kind)
         ? catalogueConflictSchemas[input.kind]
@@ -285,6 +314,7 @@ export async function readStoreConflictReview(
       : null;
   const commands =
     layoutReview?.commands ??
+    visualReview?.commands ??
     (await db.getAllAsync<{
       command_id: string;
       status: string;
@@ -351,6 +381,19 @@ export async function readStoreConflictReview(
       layoutReview?.reason ??
         "Le plan ou son contexte a changé. Relisez les versions avant de décider.",
     );
+  if (
+    isCopilotVisualKind(input.kind) &&
+    conflict &&
+    (!visualReview ||
+      (!visualReview.canKeep && !visualReview.canAdopt) ||
+      !remote ||
+      JSON.stringify(copilotVisualMetadata(input.kind, remote)) !==
+        JSON.stringify(basis[copilotVisualBasisFields[input.kind]]))
+  )
+    block(
+      visualReview?.reason ??
+        "Les métadonnées ou leur contexte ont changé. Relisez les deux versions.",
+    );
   if (settingsReview && !settingsReview.canResolve)
     block(settingsReview.reason!);
   if (eventReview && !eventReview.ready) block(eventReview.reason!);
@@ -410,25 +453,27 @@ export async function readStoreConflictReview(
   const canKeepLocal =
     groupAllowsDecision &&
     !!remote &&
-    (layoutReview
-      ? layoutReview.canResolve
-      : cataloguePolicy
-        ? cataloguePolicy.canKeep
-        : commercialDecisionPolicy
-          ? commercialDecisionPolicy.canKeep
-          : commercialPolicy
-            ? commercialPolicy.canKeep
-            : needPolicy
-              ? needPolicy.canKeep
-              : eventReview
-                ? eventReview.canKeepLocal
-                : input.kind === "SETTINGS" ||
-                  (!!localEvent &&
-                    !!remoteEvent &&
-                    localEvent.source === "USER" &&
-                    remoteEvent.source === "USER" &&
-                    localEvent.status === "CLOSED" &&
-                    sameStoreEventCapture(localEvent, remoteEvent)));
+    (visualReview
+      ? visualReview.canKeep
+      : layoutReview
+        ? layoutReview.canResolve
+        : cataloguePolicy
+          ? cataloguePolicy.canKeep
+          : commercialDecisionPolicy
+            ? commercialDecisionPolicy.canKeep
+            : commercialPolicy
+              ? commercialPolicy.canKeep
+              : needPolicy
+                ? needPolicy.canKeep
+                : eventReview
+                  ? eventReview.canKeepLocal
+                  : input.kind === "SETTINGS" ||
+                    (!!localEvent &&
+                      !!remoteEvent &&
+                      localEvent.source === "USER" &&
+                      remoteEvent.source === "USER" &&
+                      localEvent.status === "CLOSED" &&
+                      sameStoreEventCapture(localEvent, remoteEvent)));
   const basisHash = await digest(
     JSON.stringify({
       content,
@@ -441,6 +486,7 @@ export async function readStoreConflictReview(
             conflicts: catalogueGroup?.conflicts,
           }
         : {}),
+      ...(visualReview ? { visual: visualReview.hash } : {}),
       ...(layoutReview ? { layout: layoutReview.hash } : {}),
       ...(settingsReview ? { settings: settingsReview.hash } : {}),
       ...(eventReview ? { event: eventReview.hash } : {}),
@@ -457,19 +503,22 @@ export async function readStoreConflictReview(
     canKeepLocal,
     canAdoptRemote: !groupAllowsDecision
       ? false
-      : cataloguePolicy
-        ? cataloguePolicy.canAdopt
-        : commercialDecisionPolicy
-          ? commercialDecisionPolicy.canAdopt
-          : commercialPolicy
-            ? commercialPolicy.canAdopt
-            : needPolicy
-              ? needPolicy.canAdopt
-              : eventReview
-                ? eventReview.canAdoptRemote
-                : !!remote,
+      : visualReview
+        ? visualReview.canAdopt
+        : cataloguePolicy
+          ? cataloguePolicy.canAdopt
+          : commercialDecisionPolicy
+            ? commercialDecisionPolicy.canAdopt
+            : commercialPolicy
+              ? commercialPolicy.canAdopt
+              : needPolicy
+                ? needPolicy.canAdopt
+                : eventReview
+                  ? eventReview.canAdoptRemote
+                  : !!remote,
     cataloguePolicy,
     catalogueConflicts: catalogueGroup?.conflicts,
+    visualReview,
     layoutReview,
     settingsReview,
     eventReview,

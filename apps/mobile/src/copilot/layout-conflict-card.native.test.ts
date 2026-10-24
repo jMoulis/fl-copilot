@@ -1,3 +1,6 @@
+vi.mock("../products/visual-conflict-preview", () => ({
+  VisualVersion: () => null,
+}));
 import { randomUUID } from "node:crypto";
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";

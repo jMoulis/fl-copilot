@@ -18,7 +18,7 @@ vi.mock("../src/copilot/ai-provider", async (original) => {
     createCopilotAiProvider: vi.fn(module.createCopilotAiProvider),
   };
 });
-it.each([undefined, "1", "2", "3", "4", "5", "6", "7", "6,5"])(
+it.each([undefined, "1", "2", "3", "4", "5", "6", "7", "8", "6,5"])(
   "enables physical-plan comparisons only with the advertised store-conflict version (%s)",
   async (version) => {
     const storeId = randomUUID(),
@@ -84,10 +84,12 @@ it.each([undefined, "1", "2", "3", "4", "5", "6", "7", "6,5"])(
       });
       expect(result.statusCode).toBe(200);
       const reads = vi.mocked(createCopilotAiProvider).mock.calls[0]![2]!;
-      if (version && ["1", "2", "3", "4", "5", "6"].includes(version)) {
+      if (version === "7") expect(reads.visualLibrary).toBeTypeOf("function");
+      else expect(reads.visualLibrary).toBeUndefined();
+      if (version && ["1", "2", "3", "4", "5", "6", "7"].includes(version)) {
         expect(reads.storeConflictVersion).toBe(Number(version));
         expect(reads.storeConflict).toBeTypeOf("function");
-        if (version === "6") {
+        if (version === "6" || version === "7") {
           const result = await reads.storeConflict!({
             kind: "STORE_LAYOUT",
             entityId: null,

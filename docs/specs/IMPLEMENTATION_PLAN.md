@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current M7 increment — 24 October: conversational visual metadata/review
+
+Discover synchronized visual metadata in bounded store-scoped pages/product graphs, using the canonical selected-image resolver. Reuse the native metadata conflict repository and two-version presentation from the existing chat comparison, with exact current-group/full-hash checks, separate upload-rights/restoration decisions and atomic private result/Outbox replay. Negotiate only capability 7; preserve 1–6. See `../qa/M7_COPILOT_VISUAL_LIBRARY_2026_10_24.md`. No binary/model writer, image sourcing/generation, migration or provider spend. Full image CRUD/transfer acceptance and all V1/M8/UX gates remain open; group API before native delivery.
+
 ## Current M7/M8 increment — 24 October: visual conflict groups
 
 Review the complete owned visual group and canonical command identities, then resolve its exact cohort through the existing rebase/library writers and visual audit history. Preserve the acknowledged-base semantics of `remote_version`: a newer typed dirty-pull cache is legitimate and still requires explicit review before ordinary edits. Keep binary/provenance/attribution, parent availability, rights and reactivation rules; recheck native scope/cancellation through commit using the shared review hook. See `../qa/M7_VISUAL_CONFLICT_GROUPS_2026_10_24.md`. No new provider, model capability, migration or API runtime policy. Both exact-head CI, grouped native delivery, image-transfer/device acceptance and all full V1/M8 gates remain required.

@@ -1,3 +1,5 @@
+import { isCopilotVisualKind } from "@fl-copilot/domain";
+import { VisualConflictRepository } from "../products/visual-conflict-repository";
 import { storeLayoutSchema } from "@fl-copilot/domain";
 import { StoreLayoutRepository } from "../store/layout-repository";
 import { isCatalogueConflictKind } from "@fl-copilot/domain";
@@ -45,6 +47,7 @@ import {
 type Scope = {
   canManageProducts?: boolean;
   canManageStoreLayout?: boolean;
+  canManageVisualLibrary?: boolean;
   canManageCommercialChoices?: boolean;
   canPrepareCommercialWeek?: boolean;
   canValidateCommercialPlan?: boolean;
@@ -62,6 +65,7 @@ function allowed(
   scope: Scope,
   kind: z.infer<typeof storeConflictInputSchema>["kind"],
 ) {
+  if (isCopilotVisualKind(kind)) return !!scope.canManageVisualLibrary;
   if (kind === "STORE_LAYOUT") return !!scope.canManageStoreLayout;
   if (isCatalogueConflictKind(kind)) return !!scope.canManageProducts;
   if (kind === "COMMERCIAL_REFERENCE")
@@ -150,6 +154,7 @@ export class CopilotStoreConflictRuntime {
       comparisonReviewed,
       canManageProducts,
       canManageStoreLayout,
+      canManageVisualLibrary,
       canManageCommercialChoices,
       canPrepareCommercialWeek,
       canValidateCommercialPlan,
@@ -162,6 +167,7 @@ export class CopilotStoreConflictRuntime {
     void comparisonReviewed;
     void canManageProducts;
     void canManageStoreLayout;
+    void canManageVisualLibrary;
     void canManageCommercialChoices;
     void canPrepareCommercialWeek;
     void canValidateCommercialPlan;
@@ -197,9 +203,11 @@ export class CopilotStoreConflictRuntime {
           throw Error("STORE_CONFLICT_STALE");
         const reactivation =
           request.decision === "KEEP_LOCAL"
-            ? review.needPolicy?.reactivateLocal ||
+            ? review.visualReview?.reactivateLocal ||
+              review.needPolicy?.reactivateLocal ||
               review.cataloguePolicy?.reactivateLocal
-            : review.needPolicy?.reactivateRemote ||
+            : review.visualReview?.reactivateRemote ||
+              review.needPolicy?.reactivateRemote ||
               review.cataloguePolicy?.reactivateRemote;
         if (reactivation && request.reactivateRejected !== true)
           throw Error("STORE_CONFLICT_REACTIVATION_REQUIRED");
@@ -219,7 +227,23 @@ export class CopilotStoreConflictRuntime {
           commandId = this.id(),
           appliedAt = this.now(),
           useLocal = request.decision === "KEEP_LOCAL";
-        if (request.kind === "STORE_LAYOUT") {
+        if (isCopilotVisualKind(request.kind)) {
+          if (!review.visualReview) throw Error("STORE_CONFLICT_STALE");
+          await new VisualConflictRepository(
+            joined,
+            this.digest,
+            this.now,
+          ).resolve(ctx.storeId, request.conflictId, useLocal, {
+            actorId: ctx.ownerId,
+            commandId,
+            deviceId: ctx.deviceId,
+            reviewHash: review.visualReview.hash,
+            reactivate: request.reactivateRejected,
+            rightsConfirmed: request.confirmVisualRights,
+            canResolve: () => allowed(authority, request.kind),
+            signal,
+          });
+        } else if (request.kind === "STORE_LAYOUT") {
           const r = review.layoutReview;
           if (!r?.remote) throw Error("STORE_CONFLICT_STALE");
           await new StoreLayoutRepository(
@@ -489,6 +513,9 @@ export class CopilotStoreConflictController {
               kind: result.kind,
               basisHash: result.basisHash,
               decision: result.decision,
+              ...(result.confirmVisualRights !== undefined
+                ? { confirmVisualRights: result.confirmVisualRights }
+                : {}),
               ...(result.activateProduct !== undefined
                 ? { activateProduct: result.activateProduct }
                 : {}),
@@ -534,6 +561,7 @@ export class CopilotStoreConflictController {
     signal?: AbortSignal,
     consent: {
       reactivateRejected?: boolean;
+      confirmVisualRights?: boolean;
       retainWithdrawn?: boolean;
       activateProduct?: boolean;
       acceptRemoteDeletion?: boolean;
@@ -542,6 +570,7 @@ export class CopilotStoreConflictController {
   ) {
     const {
       reactivateRejected = false,
+      confirmVisualRights = false,
       retainWithdrawn = false,
       activateProduct = false,
       acceptRemoteDeletion = false,
@@ -593,7 +622,11 @@ export class CopilotStoreConflictController {
         ? { retainWithdrawn }
         : {}),
       ...(state.content.input.kind === "PRODUCT" ? { activateProduct } : {}),
-      ...(isNeedConflictKind(state.content.input.kind) ||
+      ...(isCopilotVisualKind(state.content.input.kind)
+        ? { confirmVisualRights }
+        : {}),
+      ...(isCopilotVisualKind(state.content.input.kind) ||
+      isNeedConflictKind(state.content.input.kind) ||
       state.content.input.kind === "ALIAS"
         ? { reactivateRejected }
         : {}),

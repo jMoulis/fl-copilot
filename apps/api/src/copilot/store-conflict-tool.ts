@@ -1,4 +1,13 @@
 import {
+  copilotVisualTypes,
+  copilotVisualMetadata,
+  isCopilotVisualKind,
+} from "@fl-copilot/domain";
+import {
+  serializeVisualEntity,
+  visualCollections,
+} from "../products/visual-library-sync.js";
+import {
   serializeStoreLayout,
   type StoreLayoutDocument,
 } from "../store-layout-sync.js";
@@ -66,6 +75,17 @@ export async function previewStoreConflict(
 ) {
   z.uuid().parse(storeId);
   const input = storeConflictInputSchema.parse(raw);
+  const visualRow = isCopilotVisualKind(input.kind)
+    ? await db
+        .collection<{ _id: string; storeId: string }>(
+          visualCollections[copilotVisualTypes[input.kind]],
+        )
+        .findOne({ _id: input.entityId!, storeId }, { maxTimeMS: 2000 })
+    : null;
+  const visual =
+    visualRow && isCopilotVisualKind(input.kind)
+      ? serializeVisualEntity(copilotVisualTypes[input.kind], visualRow)
+      : null;
   const layoutRow =
     input.kind === "STORE_LAYOUT"
       ? await db
@@ -175,6 +195,7 @@ export async function previewStoreConflict(
   const event = eventRow ? serializeStoreProductEvent(eventRow) : null,
     settings = settingsRow ? serializeStoreContext(settingsRow) : null,
     entity =
+      visual ??
       layout ??
       event ??
       settings ??
@@ -225,6 +246,15 @@ export async function previewStoreConflict(
     ...(identifier ? { identifier } : {}),
     ...(alias ? { alias } : {}),
     ...(layout ? { layout: storeConflictLayoutBasis(layout) } : {}),
+    ...(visual && input.kind === "VISUAL_ASSET"
+      ? { visualAsset: copilotVisualMetadata(input.kind, visual) }
+      : {}),
+    ...(visual && input.kind === "VISUAL_IDENTITY"
+      ? { visualIdentity: copilotVisualMetadata(input.kind, visual) }
+      : {}),
+    ...(visual && input.kind === "PRODUCT_VISUAL_LINK"
+      ? { productVisualLink: copilotVisualMetadata(input.kind, visual) }
+      : {}),
   });
   return storeConflictPreviewSchema.parse({
     input,
@@ -235,8 +265,9 @@ export async function previewStoreConflict(
         sourceType: "DATA_QUALITY",
         sourceId: entity.id,
         sourceVersion: entity.version,
-        label:
-          input.kind === "STORE_LAYOUT"
+        label: isCopilotVisualKind(input.kind)
+          ? "Comparer les versions du visuel produit"
+          : input.kind === "STORE_LAYOUT"
             ? "Comparer les versions du plan magasin"
             : input.kind === "SETTINGS"
               ? "Comparer les réglages du magasin"

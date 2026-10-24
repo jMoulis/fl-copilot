@@ -1,3 +1,6 @@
+import { isCopilotVisualKind } from "@fl-copilot/domain";
+import { VisualVersion } from "../products/visual-conflict-preview";
+import { visualConflictSummary } from "../products/visual-conflict-presentation";
 import { storeLayoutSchema } from "@fl-copilot/domain";
 import { LayoutComparison } from "../store/layout-comparison";
 import { isCatalogueConflictKind } from "@fl-copilot/domain";
@@ -49,6 +52,7 @@ export function StoreConflictCard({
     ),
     [reviewed, setReviewed] = useState(false),
     [reactivateRejected, setReactivateRejected] = useState(false),
+    [visualRights, setVisualRights] = useState(false),
     [localDeletionConfirmed, setLocalDeletionConfirmed] = useState(false),
     [saving, setSaving] = useState(false),
     [error, setError] = useState<string>();
@@ -69,6 +73,7 @@ export function StoreConflictCard({
     setDecision(null);
     setReviewed(false);
     setReactivateRejected(false);
+    setVisualRights(false);
     setLocalDeletionConfirmed(false);
     setError(undefined);
     return () => {
@@ -83,6 +88,7 @@ export function StoreConflictCard({
       setDecision(null);
       setReviewed(false);
       setReactivateRejected(false);
+      setVisualRights(false);
       setLocalDeletionConfirmed(false);
       setSaving(false);
       setError(undefined);
@@ -109,6 +115,7 @@ export function StoreConflictCard({
       !decision ||
       !reviewed ||
       (reactivationRequired && !reactivateRejected) ||
+      (visualRightsRequired && !visualRights) ||
       (localDeletionRequired && !localDeletionConfirmed)
     )
       return;
@@ -137,6 +144,7 @@ export function StoreConflictCard({
           acceptRemoteDeletion: !!deletionRequired && reactivateRejected,
           confirmLocalDeletionChoice:
             !!localDeletionRequired && localDeletionConfirmed,
+          confirmVisualRights: !!visualRightsRequired && visualRights,
         },
       );
       if (revision.current === v) setState(next);
@@ -144,6 +152,7 @@ export function StoreConflictCard({
       if (revision.current === v) {
         setReviewed(false);
         setReactivateRejected(false);
+        setVisualRights(false);
         setLocalDeletionConfirmed(false);
         setDecision(null);
         setError(
@@ -186,13 +195,26 @@ export function StoreConflictCard({
     activationRequired ||
     retentionRequired ||
     (decision === "KEEP_LOCAL"
-      ? review?.needPolicy?.reactivateLocal ||
+      ? review?.visualReview?.reactivateLocal ||
+        review?.needPolicy?.reactivateLocal ||
         review?.cataloguePolicy?.reactivateLocal
       : decision === "ADOPT_REMOTE"
-        ? review?.needPolicy?.reactivateRemote ||
+        ? review?.visualReview?.reactivateRemote ||
+          review?.needPolicy?.reactivateRemote ||
           review?.cataloguePolicy?.reactivateRemote
         : false);
+  const visualRightsRequired =
+    decision === "KEEP_LOCAL" &&
+    !!review?.visualReview &&
+    !review.visualReview.current.entity.deletedAt &&
+    "provenance" in review.visualReview.current.entity &&
+    review.visualReview.current.entity.provenance.type === "USER_UPLOAD";
   const summary = (raw: unknown) => {
+    if (state && isCopilotVisualKind(state.content.input.kind))
+      return visualConflictSummary(
+        raw as Parameters<typeof visualConflictSummary>[0],
+        review?.visualReview?.labels ?? {},
+      ).join("\n");
     if (state && isCatalogueConflictKind(state.content.input.kind))
       return catalogueConflictSummary(
         state.content.input.kind,
@@ -266,6 +288,7 @@ export function StoreConflictCard({
         setDecision(value);
         setReviewed(false);
         setReactivateRejected(false);
+        setVisualRights(false);
         setLocalDeletionConfirmed(false);
       }}
       style={{
@@ -296,6 +319,9 @@ export function StoreConflictCard({
         {state
           ? {
               STORE_LAYOUT: "Comparer le plan magasin",
+              VISUAL_ASSET: "Comparer l’image produit",
+              VISUAL_IDENTITY: "Comparer l’identité visuelle",
+              PRODUCT_VISUAL_LINK: "Comparer l’image associée au produit",
               PRODUCT: "Comparer la fiche produit",
               IDENTIFIER: "Comparer le code produit",
               ALIAS: "Comparer le libellé associé",
@@ -317,6 +343,24 @@ export function StoreConflictCard({
       ) : null}
       {review ? (
         <>
+          {review.visualReview ? (
+            <>
+              <VisualVersion
+                key={`${review.basisHash}/local`}
+                title="Votre version"
+                entity={review.visualReview.current.entity}
+                labels={review.visualReview.labels}
+                preview={review.visualReview.previews.local}
+              />
+              <VisualVersion
+                key={`${review.basisHash}/remote`}
+                title="Version synchronisée"
+                entity={review.visualReview.remote}
+                labels={review.visualReview.labels}
+                preview={review.visualReview.previews.remote}
+              />
+            </>
+          ) : null}
           {review.layoutReview?.remote ? (
             <>
               <Text style={{ color: colors.ink }}>
@@ -527,26 +571,45 @@ export function StoreConflictCard({
             >
               <Switch
                 accessibilityLabel={
-                  deletionRequired
-                    ? "Je confirme l’acceptation de la suppression synchronisée"
-                    : activationRequired
-                      ? "Je confirme explicitement la remise en activité du produit"
-                      : retentionRequired
-                        ? "Je confirme explicitement de retenir cette offre retirée"
-                        : "Je confirme explicitement la réactivation de cette association rejetée"
+                  review.visualReview
+                    ? "Je confirme explicitement le rétablissement de ce visuel"
+                    : deletionRequired
+                      ? "Je confirme l’acceptation de la suppression synchronisée"
+                      : activationRequired
+                        ? "Je confirme explicitement la remise en activité du produit"
+                        : retentionRequired
+                          ? "Je confirme explicitement de retenir cette offre retirée"
+                          : "Je confirme explicitement la réactivation de cette association rejetée"
                 }
                 disabled={saving}
                 value={reactivateRejected}
                 onValueChange={setReactivateRejected}
               />
               <Text style={{ color: colors.ink, flex: 1 }}>
-                {deletionRequired
-                  ? "Je confirme cette suppression. Ma saisie locale reste conservée sur cet appareil pour traçabilité."
-                  : activationRequired
-                    ? "Je confirme explicitement la remise en activité du produit."
-                    : retentionRequired
-                      ? "Cette offre a été retirée. Je confirme explicitement de la retenir à nouveau."
-                      : "Cette association a été rejetée. Je confirme explicitement sa réactivation."}
+                {review.visualReview
+                  ? "Ce visuel ou son association a été retiré. Je confirme explicitement son rétablissement."
+                  : deletionRequired
+                    ? "Je confirme cette suppression. Ma saisie locale reste conservée sur cet appareil pour traçabilité."
+                    : activationRequired
+                      ? "Je confirme explicitement la remise en activité du produit."
+                      : retentionRequired
+                        ? "Cette offre a été retirée. Je confirme explicitement de la retenir à nouveau."
+                        : "Cette association a été rejetée. Je confirme explicitement sa réactivation."}
+              </Text>
+            </View>
+          ) : null}
+          {visualRightsRequired ? (
+            <View
+              style={{ flexDirection: "row", gap: 10, alignItems: "center" }}
+            >
+              <Switch
+                accessibilityLabel="Je confirme les droits d’utilisation de cette image"
+                value={visualRights}
+                disabled={saving}
+                onValueChange={setVisualRights}
+              />
+              <Text style={{ color: colors.ink, flex: 1 }}>
+                Je confirme les droits d’utilisation de cette image.
               </Text>
             </View>
           ) : null}
@@ -569,6 +632,7 @@ export function StoreConflictCard({
                 !reviewed ||
                 !decision ||
                 (!!reactivationRequired && !reactivateRejected) ||
+                (visualRightsRequired && !visualRights) ||
                 (localDeletionRequired && !localDeletionConfirmed),
               busy: saving,
             }}
@@ -577,6 +641,7 @@ export function StoreConflictCard({
               !reviewed ||
               !decision ||
               (!!reactivationRequired && !reactivateRejected) ||
+              (visualRightsRequired && !visualRights) ||
               (localDeletionRequired && !localDeletionConfirmed)
             }
             onPress={() => void confirm()}
@@ -590,6 +655,7 @@ export function StoreConflictCard({
                 !reviewed ||
                 !decision ||
                 (!!reactivationRequired && !reactivateRejected) ||
+                (visualRightsRequired && !visualRights) ||
                 (localDeletionRequired && !localDeletionConfirmed)
                   ? 0.45
                   : 1,

@@ -166,3 +166,5 @@ export * from "./store-photo";
 export * from "./layout-illustration-generation";
 
 export * from "./copilot-answer-source";
+
+export * from "./copilot-visual-library";

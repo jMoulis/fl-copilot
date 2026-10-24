@@ -1,4 +1,9 @@
 import {
+  copilotVisualLookupInputSchema,
+  validateCopilotVisualLookup,
+  copilotVisualLookupResultSchema,
+} from "@fl-copilot/domain";
+import {
   COPILOT_INITIAL_EVIDENCE_LIMIT,
   COPILOT_TOOL_READ_LIMIT,
   COPILOT_READ_EVIDENCE_LIMIT,
@@ -66,6 +71,7 @@ import {
   storeConflictV3InputSchema,
   storeConflictV4InputSchema,
   storeConflictV5InputSchema,
+  storeConflictV6InputSchema,
   storeConflictPreviewSchema,
   validateStoreConflictBasis,
 } from "@fl-copilot/domain";
@@ -498,7 +504,10 @@ export function createCopilotAiProvider(
     needPreview?(
       input: z.infer<typeof copilotNeedProposalInputSchema>,
     ): Promise<z.infer<typeof copilotNeedPreviewSchema>>;
-    storeConflictVersion?: 1 | 2 | 3 | 4 | 5 | 6;
+    storeConflictVersion?: 1 | 2 | 3 | 4 | 5 | 6 | 7;
+    visualLibrary?(
+      input: unknown,
+    ): Promise<z.infer<typeof copilotVisualLookupResultSchema>>;
     storeConflict?(
       input: z.infer<typeof storeConflictInputSchema>,
     ): Promise<z.infer<typeof storeConflictPreviewSchema>>;
@@ -1153,21 +1162,27 @@ export function createCopilotAiProvider(
                     store_conflict_review: tool({
                       description:
                         "Prepare an explicitly requested conflict comparison for an allowed kind and known entityId (SETTINGS uses null). Discover the target first. Only synchronized data is read here; the device checks its actual conflict. The user chooses and confirms. Refused associations and withdrawn offers need separate reactivation consent; PDF reference decisions keep the selected original; task conflicts keep an existing declaration on its exact plan revision; synchronized learned scores stay protected. No winner or business write is chosen by the model. At most three targets." +
-                        (reads.storeConflictVersion === 6
+                        (reads.storeConflictVersion === 6 ||
+                        reads.storeConflictVersion === 7
                           ? " STORE_LAYOUT uses null: retain qualified measurements; keeping local creates a draft, never adopts a reference."
+                          : "") +
+                        (reads.storeConflictVersion === 7
+                          ? " Visual comparisons retain originals; reactivation and user-upload rights need separate native consent. Discover image IDs with product_visuals."
                           : ""),
                       inputSchema:
-                        reads.storeConflictVersion === 6
+                        reads.storeConflictVersion === 7
                           ? storeConflictInputSchema
-                          : reads.storeConflictVersion === 5
-                            ? storeConflictV5InputSchema
-                            : reads.storeConflictVersion === 4
-                              ? storeConflictV4InputSchema
-                              : reads.storeConflictVersion === 3
-                                ? storeConflictV3InputSchema
-                                : reads.storeConflictVersion === 2
-                                  ? storeConflictV2InputSchema
-                                  : storeConflictLegacyInputSchema,
+                          : reads.storeConflictVersion === 6
+                            ? storeConflictV6InputSchema
+                            : reads.storeConflictVersion === 5
+                              ? storeConflictV5InputSchema
+                              : reads.storeConflictVersion === 4
+                                ? storeConflictV4InputSchema
+                                : reads.storeConflictVersion === 3
+                                  ? storeConflictV3InputSchema
+                                  : reads.storeConflictVersion === 2
+                                    ? storeConflictV2InputSchema
+                                    : storeConflictLegacyInputSchema,
                       execute: (input) =>
                         executeRead(
                           JSON.stringify(["store-conflict", input]),
@@ -2460,6 +2475,25 @@ export function createCopilotAiProvider(
                               throw Error("READ_SCOPE_INVALID");
                             return result;
                           },
+                        ),
+                    }),
+                  }
+                : {}),
+              ...(reads.visualLibrary && reads.storeConflictVersion === 7
+                ? {
+                    product_visuals: tool({
+                      description:
+                        "Read synchronized product-image metadata only. For one product, provide productId with kind/cursor null; this returns its link, identity and referenced images together. Otherwise select one visual kind and cursor (null initially) for ten records per page. Discover exact visual IDs before requesting a comparison. Deleted/rejected/partial metadata is not approval, image content, available local files or current device sync state. No mutation, binary download, external image search or generation.",
+                      inputSchema: copilotVisualLookupInputSchema,
+                      execute: (input) =>
+                        executeRead(
+                          JSON.stringify(["product-visuals", input]),
+                          async () =>
+                            validateCopilotVisualLookup(
+                              request.storeId,
+                              input,
+                              await reads.visualLibrary!(input),
+                            ),
                         ),
                     }),
                   }

@@ -1,3 +1,5 @@
+import { prepareVisualChatReview } from "../../../scripts/test-visual-chat-conflict-fixtures";
+import { previewStoreConflict } from "../src/copilot/store-conflict-tool";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,9 +112,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       },
     ];
     for (const kind of visualConflictKinds)
-      it.each([true, false])(
-        `${kind} resolves a complete real group on its latest pull, restores metadata on another device and reopens offline (local=%s)`,
-        async (local) => {
+      it.each([
+        { local: true, chat: false },
+        { local: false, chat: false },
+        { local: true, chat: true },
+        { local: false, chat: true },
+      ])(
+        `${kind} resolves a complete real group on its latest pull, restores metadata on another device and reopens offline (%j)`,
+        async ({ local, chat }) => {
           const { f, push, db } = await initialize(),
             dir = mkdtempSync(join(tmpdir(), "fl-visual-mongo-")),
             path = join(dir, "restored.db"),
@@ -292,15 +299,61 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             expect(review.remote).toEqual(latest);
             expect(review.canKeep).toBe(true);
             expect(review.canAdopt).toBe(true);
-            const actionId = randomUUID();
-            await conflicts.resolve(f.storeId, first.id, local, {
-              actorId: f.actorId,
-              deviceId: bDevice,
-              commandId: actionId,
-              reviewHash: review.hash,
-              rightsConfirmed: true,
-              canResolve: () => true,
-            });
+            let actionId: string = randomUUID();
+            if (chat) {
+              const copilotKind =
+                kind === "visual_asset"
+                  ? "VISUAL_ASSET"
+                  : kind === "visual_identity"
+                    ? "VISUAL_IDENTITY"
+                    : "PRODUCT_VISUAL_LINK";
+              const preview = await previewStoreConflict(db, f.storeId, {
+                kind: copilotKind,
+                entityId: initial.id,
+              });
+              expect(preview.basis.remoteVersion).toBe(3);
+              const prepared = await prepareVisualChatReview(
+                b,
+                { storeId: f.storeId, ownerId: f.actorId, deviceId: bDevice },
+                copilotKind,
+                latest,
+                preview,
+              );
+              expect(prepared.state.status).toBe("READY");
+              expect(prepared.state.review!.visualReview!.remote).toEqual(
+                latest,
+              );
+              const resolved = await prepared.controller.confirm(
+                prepared.message,
+                prepared.state.review!.basisHash,
+                local ? "KEEP_LOCAL" : "ADOPT_REMOTE",
+                true,
+                undefined,
+                { confirmVisualRights: true },
+              );
+              expect(resolved.status).toBe("COMPLETED");
+              actionId = resolved.result!.commandId;
+              expect(
+                (
+                  await prepared.controller.confirm(
+                    prepared.message,
+                    prepared.state.review!.basisHash,
+                    local ? "KEEP_LOCAL" : "ADOPT_REMOTE",
+                    true,
+                    undefined,
+                    { confirmVisualRights: true },
+                  )
+                ).result,
+              ).toEqual(resolved.result);
+            } else
+              await conflicts.resolve(f.storeId, first.id, local, {
+                actorId: f.actorId,
+                deviceId: bDevice,
+                commandId: actionId,
+                reviewHash: review.hash,
+                rightsConfirmed: true,
+                canResolve: () => true,
+              });
             await synchronize(b, bDevice);
             await synchronize(c, cDevice);
             const chosen = (await repoB.get(kind, f.storeId, initial.id))!,
