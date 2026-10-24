@@ -43,7 +43,10 @@ import {
 import { storeConflictProposalSchema } from "@fl-copilot/domain";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { ConflictRepository } from "../sync/conflict-repository";
-import { StoreProductEventRepository } from "../needs/store-event-repository";
+import {
+  StoreProductEventRepository,
+  readStoreEventConflictReview,
+} from "../needs/store-event-repository";
 import {
   StoreContextRepository,
   readStoreContextConflictReview,
@@ -172,7 +175,17 @@ export async function readStoreConflictReview(
           digest,
         )
       : null;
-  const reviewedGroup = catalogueGroup ?? settingsReview?.group;
+  const eventReview =
+    input.kind === "FIELD_EVENT" && rows[0]
+      ? await readStoreEventConflictReview(
+          db,
+          basis.storeId,
+          rows[0].id,
+          digest,
+        )
+      : null;
+  const reviewedGroup =
+    catalogueGroup ?? settingsReview?.group ?? eventReview?.group;
   const conflict = reviewedGroup
     ? reviewedGroup.conflict
     : rows[0]
@@ -265,6 +278,7 @@ export async function readStoreConflictReview(
     );
   if (settingsReview && !settingsReview.canResolve)
     block(settingsReview.reason!);
+  if (eventReview && !eventReview.ready) block(eventReview.reason!);
   const localEvent =
       input.kind === "FIELD_EVENT"
         ? storeProductEventSchema.parse(current.entity)
@@ -336,7 +350,8 @@ export async function readStoreConflictReview(
     );
   const groupAllowsDecision =
     (!reviewedGroup || reviewedGroup.valid) &&
-    (!settingsReview || settingsReview.canResolve);
+    (!settingsReview || settingsReview.canResolve) &&
+    (!eventReview || eventReview.ready);
   const canKeepLocal =
     groupAllowsDecision &&
     !!remote &&
@@ -348,13 +363,15 @@ export async function readStoreConflictReview(
           ? commercialPolicy.canKeep
           : needPolicy
             ? needPolicy.canKeep
-            : input.kind === "SETTINGS" ||
-              (!!localEvent &&
-                !!remoteEvent &&
-                localEvent.source === "USER" &&
-                remoteEvent.source === "USER" &&
-                localEvent.status === "CLOSED" &&
-                sameStoreEventCapture(localEvent, remoteEvent)));
+            : eventReview
+              ? eventReview.canKeepLocal
+              : input.kind === "SETTINGS" ||
+                (!!localEvent &&
+                  !!remoteEvent &&
+                  localEvent.source === "USER" &&
+                  remoteEvent.source === "USER" &&
+                  localEvent.status === "CLOSED" &&
+                  sameStoreEventCapture(localEvent, remoteEvent)));
   const basisHash = await digest(
     JSON.stringify({
       content,
@@ -368,6 +385,7 @@ export async function readStoreConflictReview(
           }
         : {}),
       ...(settingsReview ? { settings: settingsReview.hash } : {}),
+      ...(eventReview ? { event: eventReview.hash } : {}),
       ...(needPolicy ? { parents: needPolicy.parentSnapshots } : {}),
       ...(commercialPolicy ? { commercial: commercialPolicy.snapshots } : {}),
       ...(commercialDecisionPolicy
@@ -392,10 +410,13 @@ export async function readStoreConflictReview(
             ? commercialPolicy.canAdopt
             : needPolicy
               ? needPolicy.canAdopt
-              : !!remote,
+              : eventReview
+                ? eventReview.canAdoptRemote
+                : !!remote,
     cataloguePolicy,
     catalogueConflicts: catalogueGroup?.conflicts,
     settingsReview,
+    eventReview,
     commercialPolicy,
     commercialDecisionPolicy,
     needPolicy,

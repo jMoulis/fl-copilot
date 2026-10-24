@@ -18,6 +18,10 @@ Ordre de poursuite inchangé : données/réimport et recette du binaire → UX a
 
 Les paragraphes datés ci-dessous sont un journal de préparation et de livraison ; « en validation » ou « hors build 13 » y décrit le moment de rédaction. Ils ne remplacent pas ce point courant et ne prouvent pas une validation physique.
 
+## Lot M7/M8 en validation — 24 octobre : conflits des observations terrain
+
+Quatre cas reproduits confirmaient une ancienne comparaison malgré une version distante plus récente. La revue canonique des événements terrain vérifie maintenant l'épisode initial, tout le groupe et l'empreinte au commit ; elle ne permet de conserver que la fin d'une capture USER identique. Adopter une instruction PDF ne la transforme pas en rupture réelle. Les pages Réglages/Événements partagent désormais leur seule gestion de durée de vie React, avec **22 montages réels/SQLite** et **81 tests ciblés**. Deux scénarios Mongo transactionnels sont ajoutés à la CI. PR 346 est fusionnée ; PR 345–346 et ce lot restent **hors build 14**, sans nouvelle livraison API/EAS propre. Voir [la QA](../qa/M7_STORE_EVENT_CONFLICTS_2026_10_24.md). Les sept états et le périmètre complet V1/M8 restent inchangés.
+
 ## Lot M7/M8 en validation — 24 octobre : conflits des réglages magasin
 
 Trois défauts reproduits permettaient une résolution sur ancienne capture, sur un aperçu antérieur à un pull ou sur une absence distante non vérifiée. Les parcours manuel/chat utilisent maintenant le même aperçu complet avec empreinte et contrôles transactionnels ; les réglages et tout le groupe restent conservés si la décision devient obsolète ou annulée. La page garde le contenu en cas d'échec de relecture et ferme les actions tardives au changement de contexte. **139 tests ciblés** passent, dont **10 montages de la page réelle** et les frontières antérieures du référentiel. Deux cas Mongo transactionnels sont ajoutés à la CI. PR 345 est fusionnée ; ce complément et PR 345 restent **hors build 14**, sans build/déploiement propre. Voir [la QA](../qa/M7_STORE_CONTEXT_CONFLICTS_2026_10_24.md). Les sept états et le périmètre V1/M8 restent inchangés.

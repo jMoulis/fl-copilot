@@ -10,6 +10,12 @@ export function storeEventError(code?: string) {
   return (
     (
       {
+        STORE_EVENT_SOURCE_CHANGED:
+          "La comparaison du signalement a changé. L’observation est conservée ; relisez les versions puis confirmez à nouveau votre choix.",
+        STORE_EVENT_RESOLUTION_INVALID:
+          "Cette comparaison n’est plus disponible. Les observations et modifications restent conservées dans Synchronisation.",
+        STORE_EVENT_FORBIDDEN:
+          "Le contexte de cette comparaison a changé. Rouvrez-la depuis le bon magasin ; aucune observation n’a été remplacée.",
         STORE_EVENT_PRODUCT_INVALID:
           "Ce produit doit être présent dans le magasin actuel. Ses informations de catégorie ou d’unité peuvent rester incomplètes.",
         STORE_EVENT_PARENT_PENDING:
