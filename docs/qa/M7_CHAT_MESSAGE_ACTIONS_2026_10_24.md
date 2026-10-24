@@ -4,7 +4,7 @@
 
 The approved UX roadmap requires a visible alternative to gesture shortcuts. In the actual chat view, deletion of a user or assistant message was reachable only through long press. Copy already had a visible button. This increment adds a labelled 48 × 48 minimum `•••` button to the existing message footer, opening the same native Copy/Delete/Cancel menu. Long press remains available. The host still owns the deletion confirmation and the canonical local writer/Outbox; opening or cancelling the menu does not delete anything.
 
-No message-wide responder wraps assistant tables. Attachment-only messages keep a delete/cancel menu without an empty copy option. The action is absent during generation or when the host provides no deletion handler, matching the existing gesture availability. No new command, model instruction, permission, database model or synchronization policy is introduced.
+No message-wide responder wraps assistant tables. The user bubble's long-press surface explicitly sets `accessible={false}` so it does not group its readable content and labelled child buttons into one accessibility element (the installed React Native Pressable otherwise defaults to accessible). Attachment-only messages keep a delete/cancel menu without an empty copy option. The action is absent during generation or when the host provides no deletion handler, matching the existing gesture availability. No new command, model instruction, permission, database model or synchronization policy is introduced.
 
 ## Verification and limits
 

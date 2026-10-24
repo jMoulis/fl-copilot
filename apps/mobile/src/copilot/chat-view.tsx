@@ -256,7 +256,7 @@ export function CopilotChatView({
             ) : (
               <MessageContainer
                 {...(item.role === "USER"
-                  ? { onLongPress, delayLongPress: 450 }
+                  ? { onLongPress, delayLongPress: 450, accessible: false }
                   : {})}
                 style={
                   item.role === "USER"

@@ -106,6 +106,15 @@ it("opens the existing native menu from a labelled visible 48-point button for e
   for (const [index, button] of buttons().entries()) {
     expect(button.props.accessibilityRole).toBe("button");
     expect(button.props.style).toMatchObject({ minWidth: 48, minHeight: 48 });
+    let ancestor = button.parent;
+    while (ancestor) {
+      if (
+        typeof ancestor.type === "string" &&
+        String(ancestor.type) === "Pressable"
+      )
+        expect(ancestor.props.accessible).toBe(false);
+      ancestor = ancestor.parent;
+    }
     await act(async () => button.props.onPress());
     const [options, choose] = native.sheet.mock.calls.at(-1)!;
     expect(options.options).toEqual(["Copier", "Supprimer", "Annuler"]);
