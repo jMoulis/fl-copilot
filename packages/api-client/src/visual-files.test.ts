@@ -213,3 +213,35 @@ it.each([true, false])(
     }
   },
 );
+it("requests a canonical manager review snapshot with bearer, store and sync version", async () => {
+  const fetch = vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          code: "UNAVAILABLE",
+          messageFr: "Indisponible",
+          retryable: true,
+        }),
+        { status: 503 },
+      ),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await expect(
+    new ApiClient("https://api.test.invalid").visualLibrarySnapshot(
+      "token",
+      f.storeId,
+    ),
+  ).rejects.toBeInstanceOf(ApiClientError);
+  expect(fetch.mock.calls[0]).toBeDefined();
+  const [url, request] = (
+    fetch.mock.calls as unknown as Array<[string, RequestInit]>
+  )[0]!;
+  expect(url).toBe(
+    "https://api.test.invalid/api/v1/sync/bootstrap?visualLibrary=true&rawObservationDays=1",
+  );
+  expect(request.headers).toMatchObject({
+    authorization: "Bearer token",
+    "x-store-id": f.storeId,
+    "x-sync-protocol-version": "1",
+  });
+});
