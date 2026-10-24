@@ -58,8 +58,11 @@ export class ReminderRepository {
     enabled: boolean,
     actionId: string,
     now: string,
+    assertCurrent: () => void = () => {},
   ) {
+    assertCurrent();
     await this.db.withExclusiveTransactionAsync(async (tx) => {
+      assertCurrent();
       await tx.runAsync(
         "INSERT INTO device_reminder_preferences(store_id,enabled,updated_at) VALUES(?,?,?) ON CONFLICT(store_id) DO UPDATE SET enabled=excluded.enabled,updated_at=excluded.updated_at",
         storeId,
@@ -73,6 +76,7 @@ export class ReminderRepository {
         JSON.stringify({ kind: "PREFERENCES", enabled }),
         now,
       );
+      assertCurrent();
     });
     changed();
   }
@@ -91,9 +95,15 @@ export class ReminderRepository {
       notificationId: r.notification_id,
     }));
   }
-  async save(input: CommercialReminder, actionId: string) {
+  async save(
+    input: CommercialReminder,
+    actionId: string,
+    assertCurrent: () => void = () => {},
+  ) {
+    assertCurrent();
     const value = commercialReminderSchema.parse(input);
     await this.db.withExclusiveTransactionAsync(async (tx) => {
+      assertCurrent();
       if (value.enabled) {
         const root = await tx.getFirstAsync<{
           payload_json: string;
@@ -157,6 +167,7 @@ export class ReminderRepository {
         JSON.stringify(value),
         value.updatedAt,
       );
+      assertCurrent();
     });
     changed();
   }

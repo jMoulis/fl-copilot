@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — retour d’erreur et contexte des réglages de rappels
+
+Quatre défauts de l’écran sont reproduits : vérification rejetée sans message, ancien bouton encore actif, activation après changement de propriétaire et liste tardive d’un autre magasin. Le même écran lie maintenant lectures/actions/retours au contexte courant et au focus, conserve les données du bon contexte en cas d’échec, bloque le double appui et nettoie son seul test natif tardif. Les rédacteurs locaux existants peuvent annuler leur transaction si ce contexte se ferme. Aucun changement d’horaire, de modèle, de schéma, de synchronisation métier ni de couche d’agent. Voir [la QA et ses limites](../qa/M8_REMINDER_SETTINGS_2026_10_24.md).
+
+**33 tests ciblés passent**, avec montage de la route, SQLite réel, écritures en attente/rollback et quarante rerenders ordinaires. Contrôle complet local **4 492 / 727**, dix projets TypeScript stricts, lint/structure/format et build API verts ; CI finales encore nécessaires avant fusion. Code hors **build 16 déjà disponible**, destiné à une future livraison native groupée sans EAS isolé. **API 379 livrée**, `c3e55b4` / `dpl_FNXW5Kwo5hSJLuHvMkoPiemtM3nY`, trois CI vertes **5 199 / 6**, santé/Mongo/auth vérifiés ; aucune recette modèle ou téléphone n’est présumée. **1/3/4/5/6/7 en cours ; 2 code prêt**. La correction des associations du vrai réimport, les recettes natives et les autres portes V1 restent ouvertes.
+
 ## 24 octobre — terminer les offres après découverte des outils
 
 Le test SDK du catalogue complet reproduit un arrêt avant la deuxième offre : les huit étapes prévues ne comptaient pas les recherches de définitions. Le même agent conserve ses sept lectures métier et sa réponse finale ; seuls les échanges capables de créer depuis l’original, avec catalogue différé, disposent de trois étapes de métadonnées supplémentaires. Aucun prompt, outil, modèle, dépendance, contrat ou writer ajouté. Les plafonds de données, PDF, tokens et durée ne changent pas ; une huitième lecture métier est toujours refusée.

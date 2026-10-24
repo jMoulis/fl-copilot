@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Linking, Switch, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import {
@@ -26,11 +26,26 @@ import {
 } from "@/components/ui";
 import { formatFrenchCalendarDate } from "@/dates/calendar";
 import { reminderStatusLabel } from "@/reminders/presentation";
+type ReminderContext = {
+  scope: object;
+  current(): boolean;
+  check(): void;
+  load(): Promise<void>;
+};
 export default function ReminderSettings() {
   const { session } = useAuth(),
     storeId = session?.stores[0]?.storeId,
-    { sqlite } = useLocalDatabase(),
+    { sqlite, deviceId } = useLocalDatabase(),
     { refresh, error: runtimeError, available } = useReminders();
+  const ownerId = session?.user.id,
+    scope = useMemo(
+      () => ({ ownerId, storeId, sqlite, deviceId }),
+      [ownerId, storeId, sqlite, deviceId],
+    ),
+    currentScope = useRef(scope),
+    activeContext = useRef<ReminderContext | undefined>(undefined),
+    locked = useRef<ReminderContext | undefined>(undefined);
+  currentScope.current = scope;
   const repo = useMemo(
     () =>
       new ReminderRepository(sqlite, (s) =>
@@ -38,85 +53,171 @@ export default function ReminderSettings() {
       ),
     [sqlite],
   );
-  const [enabled, setEnabled] = useState(false),
-    [rows, setRows] = useState<Awaited<ReturnType<ReminderRepository["list"]>>>(
-      [],
-    ),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState<string>(),
-    [message, setMessage] = useState<string>();
-  const load = useCallback(async () => {
-    if (storeId) {
-      setEnabled(await repo.preferences(storeId));
-      setRows(await repo.list(storeId));
-    }
-  }, [repo, storeId]);
+  const [context, setContext] = useState<ReminderContext>(),
+    [snapshot, setSnapshot] = useState<{
+      scope: object;
+      enabled: boolean;
+      rows: Awaited<ReturnType<ReminderRepository["list"]>>;
+    }>(),
+    [saving, setSaving] = useState<ReminderContext>(),
+    [feedback, setFeedback] = useState<{
+      scope: object;
+      error?: string;
+      message?: string;
+    }>();
+  const ownSnapshot = snapshot?.scope === scope ? snapshot : undefined,
+    enabled = ownSnapshot?.enabled ?? false,
+    rows = ownSnapshot?.rows ?? [],
+    busy = saving?.scope === scope,
+    error = feedback?.scope === scope ? feedback.error : undefined,
+    message = feedback?.scope === scope ? feedback.message : undefined,
+    ready = context?.scope === scope && context.current();
   useFocusEffect(
     useCallback(() => {
-      const read = () =>
-        void load().catch(() =>
-          setError("Les réglages locaux ne peuvent pas être lus."),
-        );
+      if (!scope.storeId || !scope.ownerId) return;
+      let active = true,
+        revision = 0;
+      const current = () => active && currentScope.current === scope;
+      const next: ReminderContext = {
+        scope,
+        current,
+        check: () => {
+          if (!current()) throw Error("REMINDER_CONTEXT_CHANGED");
+        },
+        load: async () => {
+          if (!current()) return;
+          const ticket = ++revision;
+          try {
+            const [value, entries] = await Promise.all([
+              repo.preferences(scope.storeId!),
+              repo.list(scope.storeId!),
+            ]);
+            if (current() && ticket === revision) {
+              setSnapshot({ scope, enabled: value, rows: entries });
+              setFeedback((old) =>
+                old?.scope === scope ? { ...old, error: undefined } : old,
+              );
+            }
+          } catch (caught) {
+            if (current() && ticket === revision)
+              setFeedback({
+                scope,
+                error:
+                  "Les rappels locaux ne peuvent pas être relus. Les réglages déjà affichés sont conservés.",
+              });
+            throw caught;
+          }
+        },
+      };
+      activeContext.current = next;
+      setContext(next);
+      setSaving(undefined);
+      setFeedback({ scope });
+      const read = () => void next.load().catch(() => {});
       read();
-      return subscribeReminderSnapshots(read);
-    }, [load]),
+      const unsubscribe = subscribeReminderSnapshots(read);
+      return () => {
+        active = false;
+        revision++;
+        unsubscribe();
+        if (activeContext.current === next) activeContext.current = undefined;
+      };
+    }, [repo, scope]),
   );
-  async function toggle(value: boolean) {
-    if (!storeId || busy) return;
-    setBusy(true);
-    setError(undefined);
+  async function run(
+    action: (review: ReminderContext) => Promise<void>,
+    failure: string,
+  ) {
+    const review = context;
+    if (
+      !review ||
+      review.scope !== scope ||
+      activeContext.current !== review ||
+      !review.current() ||
+      locked.current === review
+    )
+      return;
+    locked.current = review;
+    setSaving(review);
+    setFeedback({ scope });
     try {
-      if (value && !(await requestReminderPermission()))
-        throw Error(
-          "Notifications refusées. Autorisez-les dans les réglages du téléphone, puis activez les rappels.",
-        );
+      await action(review);
+      review.check();
+      await review.load();
+    } catch (caught) {
+      if (review.current())
+        setFeedback({
+          scope,
+          error:
+            caught instanceof Error && caught.message.startsWith("Autorisez")
+              ? caught.message
+              : failure,
+        });
+    } finally {
+      if (review.current()) setSaving(undefined);
+      if (locked.current === review) locked.current = undefined;
+    }
+  }
+  function toggle(value: boolean) {
+    return run(async (review) => {
+      if (value) {
+        const granted = await requestReminderPermission();
+        review.check();
+        if (!granted)
+          throw Error(
+            "Autorisez les notifications dans les réglages du téléphone, puis activez les rappels.",
+          );
+      }
+      review.check();
       await repo.setEnabled(
-        storeId,
+        storeId!,
         value,
         randomUUID(),
         new Date().toISOString(),
+        review.check,
       );
+      review.check();
       await refresh();
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Réglage impossible.");
-    } finally {
-      setBusy(false);
-    }
+    }, "Les réglages des rappels sont à vérifier. Les intentions enregistrées sont conservées.");
   }
-  async function test() {
-    if (!storeId || busy) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      if (!(await requestReminderPermission()))
+  function test() {
+    return run(async (review) => {
+      const granted = await requestReminderPermission();
+      review.check();
+      if (!granted)
         throw Error(
           "Autorisez les notifications dans les réglages du téléphone.",
         );
       const n = await notificationModule();
-      if (!n) throw Error("Installez le nouveau build.");
-      await n.scheduleNotificationAsync({
-        identifier: `fl-reminder-test-${storeId}`,
-        content: {
-          title: "Test de rappel",
-          body: "Votre rappel local fonctionne. Vous pouvez laisser le téléphone hors connexion.",
-          sound: "default",
-          data: { kind: "COMMERCIAL_REMINDER_TEST", storeId },
-        },
-        trigger: {
-          type: n.SchedulableTriggerInputTypes.DATE,
-          date: new Date(Date.now() + 60000),
-          channelId: "commercial-reminders",
-        },
+      review.check();
+      if (!n) throw Error("NOTIFICATIONS_UNAVAILABLE");
+      const identifier = `fl-reminder-test-${storeId}-${randomUUID()}`;
+      try {
+        await n.scheduleNotificationAsync({
+          identifier,
+          content: {
+            title: "Test de rappel",
+            body: "Votre rappel local fonctionne. Vous pouvez laisser le téléphone hors connexion.",
+            sound: "default",
+            data: { kind: "COMMERCIAL_REMINDER_TEST", storeId },
+          },
+          trigger: {
+            type: n.SchedulableTriggerInputTypes.DATE,
+            date: new Date(Date.now() + 60000),
+            channelId: "commercial-reminders",
+          },
+        });
+      } finally {
+        if (!review.current())
+          await n.cancelScheduledNotificationAsync(identifier);
+      }
+      review.check();
+      setFeedback({
+        scope,
+        message:
+          "Rappel de test programmé dans une minute. Verrouillez le téléphone, éventuellement en mode avion.",
       });
-      setMessage(
-        "Rappel de test programmé dans une minute. Verrouillez le téléphone, éventuellement en mode avion.",
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Test indisponible.");
-    } finally {
-      setBusy(false);
-    }
+    }, "Le rappel de test n’a pas pu être vérifié. Réessayez depuis cet écran.");
   }
   if (!storeId)
     return (
@@ -143,7 +244,7 @@ export default function ReminderSettings() {
           <Switch
             accessibilityLabel="Activer les rappels commerciaux sur ce téléphone"
             value={enabled}
-            disabled={busy || !available}
+            disabled={busy || !available || !ready || !ownSnapshot}
             onValueChange={(v) => void toggle(v)}
           />
         </View>
@@ -165,27 +266,25 @@ export default function ReminderSettings() {
         ) : null}
         <SecondaryButton
           label="Ouvrir les réglages du téléphone"
+          disabled={busy || !ready}
           onPress={() =>
-            void Linking.openSettings().catch(() =>
-              setError(
-                "Les réglages du téléphone ne peuvent pas être ouverts.",
-              ),
-            )
+            void run(async () => {
+              await Linking.openSettings();
+            }, "Les réglages du téléphone ne peuvent pas être ouverts.")
           }
         />
         <SecondaryButton
           label="Tester un rappel dans une minute"
-          disabled={busy || !available}
+          disabled={busy || !available || !ready}
           onPress={() => void test()}
         />
         <SecondaryButton
           label="Vérifier les rappels programmés"
-          disabled={busy}
+          disabled={busy || !ready}
           onPress={() => {
-            setBusy(true);
-            void refresh()
-              .then(load)
-              .finally(() => setBusy(false));
+            void run(async () => {
+              await refresh();
+            }, "La vérification des rappels n’a pas abouti. Les réglages enregistrés sont conservés.");
           }}
         />
       </SectionCard>
@@ -214,7 +313,9 @@ export default function ReminderSettings() {
               </Text>
               <SecondaryButton
                 label="Ouvrir l’opération et modifier le rappel"
-                onPress={() =>
+                onPress={() => {
+                  if (!context || context.scope !== scope || !context.current())
+                    return;
                   router.push({
                     pathname: "/commercial-operation/[id]",
                     params: {
@@ -222,16 +323,16 @@ export default function ReminderSettings() {
                       weekStart: r.weekStart,
                       reminderRevision: r.planRevisionId,
                     },
-                  })
-                }
+                  });
+                }}
               />
               <SecondaryButton
                 label="Désactiver ce rappel"
-                disabled={busy || !r.enabled}
+                disabled={busy || !r.enabled || !ready}
                 onPress={() => {
-                  setBusy(true);
-                  void repo
-                    .save(
+                  void run(async (review) => {
+                    review.check();
+                    await repo.save(
                       {
                         ...r,
                         enabled: false,
@@ -239,15 +340,11 @@ export default function ReminderSettings() {
                         updatedAt: new Date().toISOString(),
                       },
                       randomUUID(),
-                    )
-                    .then(refresh)
-                    .then(load)
-                    .catch(() =>
-                      setError(
-                        "Le rappel n’a pas pu être désactivé. Réessayez.",
-                      ),
-                    )
-                    .finally(() => setBusy(false));
+                      review.check,
+                    );
+                    review.check();
+                    await refresh();
+                  }, "La désactivation du rappel est à vérifier. Son intention locale est conservée.");
                 }}
               />
             </View>
