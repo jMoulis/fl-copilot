@@ -4,7 +4,7 @@
 
 Le [point des portes V1](../qa/V1_CURRENT_GATES_2026_10_24.md) rapproche les corrections de conflits récentes des outils réellement exposés, des versions livrées et des preuves encore nécessaires. Les mentions anciennes « conflits multiples hors référentiel » ne signifient plus que tous leurs services sont absents ; les exceptions de parité et la recette restent ouvertes.
 
-L'ordre et le périmètre complet de la V1 restent ceux convenus pour la présentation du 28 octobre. Les maquettes v1.1 sont arbitrées par `AUDIT.md` et les invariants, pas une nouvelle architecture. **API `4941513` livrée ; iOS build 14 (`7e46885`) terminé et disponible**, regroupant les PR 337–343 après leurs CI exactes. Build 13 est conservé pour retour arrière ; installation et recette utilisateur du build 14 sont encore ouvertes. Lire d'abord le [suivi des sept chantiers](../progress/M7_WORKSTREAM_STATUS.md) et la [recette native courante](../qa/M7_GROUPED_IPHONE_ACCEPTANCE.md).
+L'ordre et le périmètre complet de la V1 restent ceux convenus pour la présentation du 28 octobre. Les maquettes v1.1 sont arbitrées par `AUDIT.md` et les invariants, pas une nouvelle architecture. **API `4bbbeb1` livrée ; iOS build 14 (`7e46885`) terminé et disponible**, regroupant les PR 337–343 après leurs CI exactes. Build 13 est conservé pour retour arrière ; installation et recette utilisateur du build 14 sont encore ouvertes. Lire d'abord le [suivi des sept chantiers](../progress/M7_WORKSTREAM_STATUS.md) et la [recette native courante](../qa/M7_GROUPED_IPHONE_ACCEPTANCE.md).
 
 1. **Données.** Vérifier le réimport corrigé de `21102026.xlsx`, ses identités et sa répétition, puis les quantités/prix sur les journées effectivement disponibles. Le recalcul distant est livré ; les originaux et nombres historiques sont conservés.
 2. **UX.** Valider les cinq domaines et les parcours détaillés sur le binaire identifié : fidélité visuelle, densité, clavier/formulaires, feuilles/retours, filtres/scroll, chat naturel/streaming/tableaux/sources. Le code compilé ne vaut pas recette physique.
@@ -13,6 +13,8 @@ L'ordre et le périmètre complet de la V1 restent ceux convenus pour la présen
 5. **M8/livraison.** Exercer réseau/hors connexion/redémarrage/conflits/migrations/copies et sauvegardes/restaurations, ainsi que performances, sécurité, accessibilité, notifications et observabilité iOS/Android. Identifier versions compatibles/retour arrière et consigner la recette pilote avant de déclarer la V1 achevée.
 
 Les exceptions techniques, permissions, mesures et recettes encore ouvertes ne sont pas requalifiées en simples finitions. Les sections datées et L1–L11 ci-dessous conservent les étapes depuis le 19 octobre ; leurs anciens états ne sont pas une liste actuelle de fonctions absentes. Le correctif Resend PR 334 est **déjà déployé dans l'API `4941513`** ; son activation de droits et l'original réel restent non validés.
+
+Le build iOS groupé **15**, source `1c3ab72`, est lancé sur EAS (`54b81e24-a020-4343-836f-ecc61b9663b3`) ; sa disponibilité et son installation ne sont pas encore prouvées. Build 14 et sa recette restent conservés. L’alternative visible au menu des messages du chat est préparée **après** cette source : voir `../qa/M7_CHAT_MESSAGE_ACTIONS_2026_10_24.md`. Aucun build payant isolé.
 
 ## Historique des incréments et des critères initiaux
 
