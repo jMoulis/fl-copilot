@@ -1,5 +1,13 @@
 # Audit UX et arbitrages V1 — 19 octobre 2026
 
+## Arbitrage complémentaire — 24 octobre : PDF dans la conversation
+
+Le retour de Julien précise la séparation entre lecture et action métier. Joindre un PDF doit permettre au copilote de lire immédiatement son original dès l’envoi terminé, de discuter de toute période demandée et de préparer la semaine suivante. La revue d’une extraction et la semaine courante ne sont pas des prérequis à cette discussion. Les validations canoniques restent liées à l’enregistrement des offres, décisions et réalisations ; une lecture IA du document ne devient pas un indicateur officiel du magasin.
+
+Dans le fil, la pièce jointe donne accès à l’original. Le panneau de suivi/reprise du traitement commercial appartient à l’espace Documents commerciaux, où il reste accessible ; il ne doit pas être remonté sous chaque occurrence de PDF dans l’historique et laisser croire qu’une analyse métier doit être validée avant la réponse. Le traitement en arrière-plan existant et les parcours d’enregistrement gardent leurs propres états. Cet arbitrage ne clôture ni le parcours réel discussion → action ni la recette native.
+
+## Référence historique de l’audit initial
+
 Référence de code examinée : `824cf4c2262b611606d5bea4f927d8d3dfafab65` (PR 273). Les onze textes du ZIP v1.1 (README et specs 00–09) et ses trois planches ont été lus/inspectés. Cet audit ne modifie pas l’application et ne vaut pas recette du binaire installé.
 
 ## Conclusion

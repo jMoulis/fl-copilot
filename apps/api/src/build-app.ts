@@ -251,9 +251,11 @@ import { getVercelOidcToken } from "./vercel-request-context.js";
 import { createMongoWasteReceiptArithmeticValidationService } from "./uploads/waste-receipt-arithmetic-validation.js";
 import { createMongoWasteReceiptDraftReader } from "./uploads/waste-receipt-draft.js";
 import { createMongoWasteReceiptProductMatchingService } from "./uploads/waste-receipt-product-matching.js";
+import { createCommercialUploadDispatch } from "./uploads/commercial-upload-dispatch.js";
 
 type AppDependencies = {
   database: DatabaseService;
+  waitUntil?: (task: Promise<void>) => void;
   importClassifier?: ReturnType<typeof createImportClassifier>;
   copilotContext?: (
     storeId: string,
@@ -403,7 +405,17 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       ),
       createMongoWasteReceiptProductMatchingService(dependencies.database),
       createMongoWasteReceiptDraftReader(dependencies.database),
-      commercialWorkflows?.dispatch,
+      commercialWorkflows
+        ? createCommercialUploadDispatch(
+            commercialWorkflows.dispatch,
+            dependencies.waitUntil,
+            (failure) =>
+              app.log.warn(
+                failure,
+                "Commercial processing dispatch is pending",
+              ),
+          )
+        : undefined,
     );
   const sourceOriginals =
     dependencies.sourceOriginals ??

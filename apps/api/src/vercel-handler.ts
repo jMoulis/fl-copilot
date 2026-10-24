@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import "./observability.js";
+import { waitUntil } from "@vercel/functions";
 import { buildApp } from "./build-app.js";
 import { parseEnvironment } from "./config.js";
 import { createMongoDatabase } from "./database/mongo.js";
@@ -7,7 +8,7 @@ import { runWithVercelOidcToken } from "./vercel-request-context.js";
 
 const config = parseEnvironment(process.env);
 const database = createMongoDatabase(config);
-const app = buildApp(config, { database });
+const app = buildApp(config, { database, waitUntil });
 let readiness: Promise<void> | undefined;
 
 export default async function handler(
