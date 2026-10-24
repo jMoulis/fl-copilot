@@ -1,5 +1,11 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — terminer les offres après découverte des outils
+
+Le test SDK du catalogue complet reproduit un arrêt avant la deuxième offre : les huit étapes prévues ne comptaient pas les recherches de définitions. Le même agent conserve ses sept lectures métier et sa réponse finale ; seuls les échanges capables de créer depuis l’original, avec catalogue différé, disposent de trois étapes de métadonnées supplémentaires. Aucun prompt, outil, modèle, dépendance, contrat ou writer ajouté. Les plafonds de données, PDF, tokens et durée ne changent pas ; une huitième lecture métier est toujours refusée.
+
+**255 tests ciblés passent**, y compris vrai transport SDK/SSE contrôlé, trois offres séquentielles et appel excédentaire bloqué. Contrôle complet local **4 478 / 727**, dix projets TypeScript stricts, lint/structure/format et build API verts. Voir [la QA et ses limites](../qa/M7_ORIGINAL_OFFER_DISCOVERY_2026_10_24.md). Code en validation, API compatible à livrer après les contrôles ; le **build 16 disponible suffit**, aucun nouveau build EAS. Recette réelle et autres portes V1/M8 ouvertes ; **1/3/4/5/6/7 en cours, 2 code prêt**. La PR 378 est fusionnée (`9a43e34`) après les deux CI exactes **5 195 / 6**, sans livraison native de son libellé ; sa branche est supprimée.
+
 ## 24 octobre — périodes agrégées annoncées dans l’Explorer
 
 Le composant réel annonçait une colonne mensuelle comme sa seule première date. Il indique désormais les bornes effectives du groupe et distingue cumul renseigné et moyenne des jours renseignés. Trois reproductions échouent avant la correction ; **25 tests ciblés** et le contrôle local **4 474 / 727** passent, avec les mêmes valeurs, distinction absent/zéro et navigation/historique. Aucune formule, donnée, permission, API ou instruction IA changée. Voir [la QA et ses limites](../qa/M8_EXPLORER_AGGREGATE_LABELS_2026_10_24.md).

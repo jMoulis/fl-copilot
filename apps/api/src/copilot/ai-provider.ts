@@ -29,6 +29,7 @@ import {
   COPILOT_INITIAL_EVIDENCE_LIMIT,
   COPILOT_TOOL_READ_LIMIT,
   COPILOT_ORIGINAL_CHOICE_TOOL_READ_LIMIT,
+  COPILOT_ORIGINAL_CHOICE_DISCOVERY_STEP_ALLOWANCE,
   COPILOT_READ_EVIDENCE_LIMIT,
 } from "./generation-limits";
 import {
@@ -3290,7 +3291,11 @@ export function createCopilotAiProvider(
             }
           : businessTools;
         const maxSteps = originalChoiceWorkflow
-          ? readLimit + 1
+          ? readLimit +
+            1 +
+            (discoverTools
+              ? COPILOT_ORIGINAL_CHOICE_DISCOVERY_STEP_ALLOWANCE
+              : 0)
           : discoverTools
             ? 6
             : reads

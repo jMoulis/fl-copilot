@@ -680,197 +680,270 @@ it.each([
   },
 );
 
-it("finishes three explicitly requested original offers with real product resolutions even when the model calls tools serially", async () => {
-  const f = fixture(),
-    data = await import("../../../../scripts/test-choice-create-fixtures").then(
-      (m) => m.choiceCreateFixture(storeId),
-    ),
-    { projectCommercialOriginalOffer } =
-      await import("@fl-copilot/commercial-core");
-  const specifications = [
-    { label: "AVOCAT PIECE", amount: 2.5, unit: "PIECE" },
-    { label: "TOMATE VRAC", amount: 1.99, unit: "KG" },
-    { label: "BANANE VRAC", amount: 1.49, unit: "KG" },
-  ] as const;
-  const excerpts = specifications.map(
-    (p) => `S44 ${p.label} ${p.amount} EUR/${p.unit}`,
-  );
-  f.file.pdf = commercialPdfFixture(["Semaine 44 2026", excerpts.join(" ; ")]);
-  f.file.snapshot.source.checksum = `sha256:${createHash("sha256").update(f.file.pdf).digest("hex")}`;
-  f.file.snapshot.source.sizeBytes = f.file.pdf.length;
-  f.file.snapshot.evidence[0]!.id = `pdf-original/${f.file.snapshot.source.checksum.slice(7)}/${f.sourceDocumentId}`;
-  const products = specifications.map((p) => ({
-    ...data.basis.product,
-    id: randomUUID(),
-    label: p.label,
-    salesUnit: p.unit,
-  }));
-  const inputs = specifications.map((p, i) => ({
-    source: {
-      kind: "PDF_ORIGINAL",
-      sourceDocumentId: f.sourceDocumentId,
-      pageNumber: 2,
-      excerpt: excerpts[i],
-    },
-    originalDescription: {
-      operationKind: "PROSPECTUS",
-      operationLabel: "Prospectus S44",
-      rawProductLabel: p.label,
-    },
-    productId: products[i]!.id,
-    saleStart: "2026-10-26",
-    saleEnd: "2026-11-01",
-    mechanism: {
-      type: "FIXED_PRICE",
-      amount: p.amount,
-      currency: "EUR",
-      unit: p.unit,
-    },
-    note: null,
-  }));
-  const productSearch = vi.fn(async (input: { label: string | null }) => {
-    const product = products.find((p) => p.label === input.label)!;
-    return {
-      status: "COMPLETE_CATALOG" as const,
-      state: "AUTO_MATCH" as const,
-      matchedProductId: product.id,
-      candidateCount: 1,
-      hasMoreCandidates: false,
-      candidates: [
-        {
-          product,
-          basis: "CANONICAL_LABEL" as const,
-          score: 1,
-          reasons: ["Libellé exact"],
-        },
-      ],
-      missingIdentifiers: [],
-      evidence: [],
-    };
-  });
-  const choiceCreate = vi.fn(
-    async (
-      input: Parameters<
-        NonNullable<
-          NonNullable<
-            Parameters<typeof createCopilotAiProvider>[2]
-          >["choiceCreate"]
-        >
-      >[0],
-    ) => {
-      expect(input.source).toHaveProperty(
-        "checksum",
-        f.file.snapshot.source.checksum,
-      );
-      if (!("kind" in input.source)) throw Error("ORIGINAL_REQUIRED");
-      return copilotChoiceCreatePreviewSchema.parse({
-        input,
-        status: "READY",
-        existingChoice: null,
-        basis: {
-          storeId,
-          product: products.find((p) => p.id === input.productId),
-          offer: projectCommercialOriginalOffer({
-            source: input.source,
-            ...input.originalDescription!,
-          }),
-        },
-        evidence: [
+it.each([
+  { discover: false, streaming: false, excessRead: false },
+  { discover: false, streaming: true, excessRead: false },
+  { discover: true, streaming: false, excessRead: false },
+  { discover: true, streaming: true, excessRead: false },
+  { discover: true, streaming: false, excessRead: true },
+])(
+  "finishes three serial original offers with bounded discovery (discovery $discover, stream $streaming, excess $excessRead)",
+  async ({ discover, streaming, excessRead }) => {
+    const f = fixture(),
+      data =
+        await import("../../../../scripts/test-choice-create-fixtures").then(
+          (m) => m.choiceCreateFixture(storeId),
+        ),
+      { projectCommercialOriginalOffer } =
+        await import("@fl-copilot/commercial-core");
+    const specifications = [
+      { label: "AVOCAT PIECE", amount: 2.5, unit: "PIECE" },
+      { label: "TOMATE VRAC", amount: 1.99, unit: "KG" },
+      { label: "BANANE VRAC", amount: 1.49, unit: "KG" },
+    ] as const;
+    const excerpts = specifications.map(
+      (p) => `S44 ${p.label} ${p.amount} EUR/${p.unit}`,
+    );
+    f.file.pdf = commercialPdfFixture([
+      "Semaine 44 2026",
+      excerpts.join(" ; "),
+    ]);
+    f.file.snapshot.source.checksum = `sha256:${createHash("sha256").update(f.file.pdf).digest("hex")}`;
+    f.file.snapshot.source.sizeBytes = f.file.pdf.length;
+    f.file.snapshot.evidence[0]!.id = `pdf-original/${f.file.snapshot.source.checksum.slice(7)}/${f.sourceDocumentId}`;
+    const products = specifications.map((p) => ({
+      ...data.basis.product,
+      id: randomUUID(),
+      label: p.label,
+      salesUnit: p.unit,
+    }));
+    const inputs = specifications.map((p, i) => ({
+      source: {
+        kind: "PDF_ORIGINAL",
+        sourceDocumentId: f.sourceDocumentId,
+        pageNumber: 2,
+        excerpt: excerpts[i],
+      },
+      originalDescription: {
+        operationKind: "PROSPECTUS",
+        operationLabel: "Prospectus S44",
+        rawProductLabel: p.label,
+      },
+      productId: products[i]!.id,
+      saleStart: "2026-10-26",
+      saleEnd: "2026-11-01",
+      mechanism: {
+        type: "FIXED_PRICE",
+        amount: p.amount,
+        currency: "EUR",
+        unit: p.unit,
+      },
+      note: null,
+    }));
+    const productSearch = vi.fn(async (input: { label: string | null }) => {
+      const product = products.find((p) => p.label === input.label)!;
+      return {
+        status: "COMPLETE_CATALOG" as const,
+        state: "AUTO_MATCH" as const,
+        matchedProductId: product.id,
+        candidateCount: 1,
+        hasMoreCandidates: false,
+        candidates: [
           {
-            id: `proposal/${input.productId}`,
-            sourceType: "DATA_QUALITY",
-            sourceId: f.sourceDocumentId,
-            sourceVersion: null,
-            label: "Choix proposé",
-            value: "À confirmer",
-            factKind: "QUALITY",
+            product,
+            basis: "CANONICAL_LABEL" as const,
+            score: 1,
+            reasons: ["Libellé exact"],
           },
         ],
-      });
-    },
-  );
-  const batch = scoreCopilotPriorities({
-      storeId,
-      evaluatedAt,
-      candidates: [priorityFixture("three-offers")],
-    }),
-    request: CopilotGenerationRequest = {
-      requestId: randomUUID(),
-      storeId,
-      context: detectCopilotConflicts({ batch, intents: [] }),
-      userQuestion: "Prépare ces trois offres pour la semaine prochaine",
+        missingIdentifiers: [],
+        evidence: [],
+      };
+    });
+    const choiceCreate = vi.fn(
+      async (
+        input: Parameters<
+          NonNullable<
+            NonNullable<
+              Parameters<typeof createCopilotAiProvider>[2]
+            >["choiceCreate"]
+          >
+        >[0],
+      ) => {
+        expect(input.source).toHaveProperty(
+          "checksum",
+          f.file.snapshot.source.checksum,
+        );
+        if (!("kind" in input.source)) throw Error("ORIGINAL_REQUIRED");
+        return copilotChoiceCreatePreviewSchema.parse({
+          input,
+          status: "READY",
+          existingChoice: null,
+          basis: {
+            storeId,
+            product: products.find((p) => p.id === input.productId),
+            offer: projectCommercialOriginalOffer({
+              source: input.source,
+              ...input.originalDescription!,
+            }),
+          },
+          evidence: [
+            {
+              id: `proposal/${input.productId}`,
+              sourceType: "DATA_QUALITY",
+              sourceId: f.sourceDocumentId,
+              sourceVersion: null,
+              label: "Choix proposé",
+              value: "À confirmer",
+              factKind: "QUALITY",
+            },
+          ],
+        });
+      },
+    );
+    const batch = scoreCopilotPriorities({
+        storeId,
+        evaluatedAt,
+        candidates: [priorityFixture("three-offers")],
+      }),
+      request: CopilotGenerationRequest = {
+        requestId: randomUUID(),
+        storeId,
+        context: detectCopilotConflicts({ batch, intents: [] }),
+        userQuestion: "Prépare ces trois offres pour la semaine prochaine",
+      };
+    const unusedReads = {
+      period: vi.fn(),
+      productChanges: vi.fn(),
+      commercialDocuments: vi.fn(),
+      commercialPlan: vi.fn(),
+      recommendationDecisions: vi.fn(),
+      fieldEvents: vi.fn(),
+      receiptDocuments: vi.fn(),
     };
-  let calls = 0;
-  const transport = vi.fn<typeof fetch>(async (_url, init) => {
-    const body = JSON.parse(String(init?.body)),
-      step = calls++;
-    if (step < 7) {
-      const index = Math.floor((step - 1) / 2),
-        name =
-          step === 0
-            ? "commercial_pdf"
-            : step % 2 === 1
-              ? "product_search"
-              : "commercial_choice_create",
-        input =
-          step === 0
-            ? { sourceDocumentId: f.sourceDocumentId }
-            : step % 2 === 1
-              ? { label: products[index]!.label, identifiers: [] }
-              : inputs[index];
+    const planned = [
+      ...(discover
+        ? [{ name: "find_tools", input: { query: "commercial_pdf" } }]
+        : []),
+      {
+        name: "commercial_pdf",
+        input: { sourceDocumentId: f.sourceDocumentId },
+      },
+      ...products.flatMap((product, i) => [
+        ...(discover && i === 0
+          ? [{ name: "find_tools", input: { query: "product_search" } }]
+          : []),
+        {
+          name: "product_search",
+          input: { label: product.label, identifiers: [] },
+        },
+        ...(discover && i === 0
+          ? [
+              {
+                name: "find_tools",
+                input: { query: "commercial_choice_create" },
+              },
+            ]
+          : []),
+        { name: "commercial_choice_create", input: inputs[i] },
+      ]),
+    ];
+    let calls = 0;
+    const transport = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)),
+        step = calls++;
+      if (step < planned.length) {
+        const { name, input } = planned[step]!;
+        expect(body.tool_choice).not.toBe("none");
+        expect(body.tools.map((t: { name: string }) => t.name)).toContain(name);
+        return envelope(
+          [
+            {
+              type: "function_call",
+              name,
+              id: `fc_${step}`,
+              call_id: `call_${step}`,
+              arguments: JSON.stringify(input),
+              status: "completed",
+            },
+            ...(excessRead && step === planned.length - 1
+              ? [
+                  {
+                    type: "function_call",
+                    name: "product_search",
+                    id: "fc_excess",
+                    call_id: "call_excess",
+                    arguments: JSON.stringify({
+                      label: "EXCESS QUERY",
+                      identifiers: [],
+                    }),
+                    status: "completed",
+                  },
+                ]
+              : []),
+          ],
+          streaming,
+        );
+      }
+      expect(body.tool_choice).toBe("none");
+      if (excessRead) {
+        const denied = body.input.find(
+          (item: { type?: string; call_id?: string }) =>
+            item.type === "function_call_output" &&
+            item.call_id === "call_excess",
+        );
+        expect(typeof denied?.output).toBe("string");
+        expect(JSON.parse(denied.output)).toMatchObject({ unavailable: true });
+      }
       return envelope(
         [
           {
-            type: "function_call",
-            name,
-            id: `fc_${step}`,
-            call_id: `call_${step}`,
-            arguments: JSON.stringify(input),
+            id: "msg_three_offers",
+            type: "message",
+            role: "assistant",
             status: "completed",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  ...answer,
+                  narrative: "Les offres sont prêtes pour ta confirmation.",
+                  documentReadings: [],
+                }),
+                annotations: [],
+              },
+            ],
           },
         ],
-        false,
+        streaming,
       );
-    }
-    expect(body.tool_choice).toBeDefined();
-    return envelope(
-      [
-        {
-          id: "msg_three_offers",
-          type: "message",
-          role: "assistant",
-          status: "completed",
-          content: [
-            {
-              type: "output_text",
-              text: JSON.stringify({
-                ...answer,
-                narrative: "Les offres sont prêtes pour ta confirmation.",
-                documentReadings: [],
-              }),
-              annotations: [],
-            },
-          ],
-        },
-      ],
-      false,
+    });
+    const config = parseEnvironment({
+      NODE_ENV: "test",
+      OPENAI_API_KEY: "sk-test-only-not-a-real-secret",
+      COPILOT_AI_MODEL: "test-model",
+      COPILOT_AI_TIMEOUT_MS: "4000",
+    });
+    const partial = vi.fn();
+    const result = await createCopilotAiProvider(config, transport, {
+      ...(discover ? unusedReads : {}),
+      daily: vi.fn(),
+      commercialPdfOriginal: f.read,
+      choiceCreateVersion: 2,
+      choiceCreate,
+      productSearch,
+    }).generate(
+      request,
+      copilotResponseSchema,
+      undefined,
+      streaming ? partial : undefined,
     );
-  });
-  const config = parseEnvironment({
-    NODE_ENV: "test",
-    OPENAI_API_KEY: "sk-test-only-not-a-real-secret",
-    COPILOT_AI_MODEL: "test-model",
-    COPILOT_AI_TIMEOUT_MS: "4000",
-  });
-  const result = await createCopilotAiProvider(config, transport, {
-    daily: vi.fn(),
-    commercialPdfOriginal: f.read,
-    choiceCreateVersion: 2,
-    choiceCreate,
-    productSearch,
-  }).generate(request, copilotResponseSchema);
-  expect(calls).toBe(8);
-  expect(productSearch).toHaveBeenCalledTimes(3);
-  expect(choiceCreate).toHaveBeenCalledTimes(3);
-  expect(result.choiceCreates).toHaveLength(3);
-});
+    if (streaming) expect(partial).toHaveBeenCalled();
+    expect(calls).toBe(discover ? 11 : 8);
+    for (const read of Object.values(unusedReads))
+      expect(read).not.toHaveBeenCalled();
+    expect(productSearch).toHaveBeenCalledTimes(3);
+    expect(choiceCreate).toHaveBeenCalledTimes(3);
+    expect(result.choiceCreates).toHaveLength(3);
+  },
+);
