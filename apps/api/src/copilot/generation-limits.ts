@@ -5,6 +5,8 @@ export const COPILOT_TOOL_READ_LIMIT = 5;
 // One original + three product resolutions + three reviewed offer proposals.
 // Only original-choice-capable turns receive this workflow allowance.
 export const COPILOT_ORIGINAL_CHOICE_TOOL_READ_LIMIT = 7;
+// Native deferred lookup can discover the PDF, product and offer tools separately.
+export const COPILOT_ORIGINAL_CHOICE_DISCOVERY_STEP_ALLOWANCE = 3;
 export const COPILOT_READ_EVIDENCE_LIMIT = 20 * 3 * 4 + 1;
 export const COPILOT_TOOL_EVIDENCE_LIMIT =
   Math.max(COPILOT_TOOL_READ_LIMIT, COPILOT_ORIGINAL_CHOICE_TOOL_READ_LIMIT) *

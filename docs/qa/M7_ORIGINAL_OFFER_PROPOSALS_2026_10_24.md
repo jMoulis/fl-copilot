@@ -12,6 +12,8 @@ The native card shows the proposed business facts, the original excerpt and its 
 
 ## Workflow budget
 
+The initial eight-step allowance described below applies to eager catalogues. The subsequent deferred-discovery correction is tracked separately in [its QA](M7_ORIGINAL_OFFER_DISCOVERY_2026_10_24.md); it is not yet a claim of that API delivery.
+
 The old allowance of five total tool calls, three/four distinct reads and four steps can interrupt a three-offer request before the final proposal. Original-choice-capable turns now have a bounded allowance of **seven reads and eight steps**, derived from one original, three product resolutions and three offer proposals plus the final answer. Other turns retain their previous allowances. Response evidence bounds cover the maximum; configured byte, PDF, output-token and timeout limits remain unchanged. No model/provider change or paid test is implied.
 
 ## Observed local evidence
