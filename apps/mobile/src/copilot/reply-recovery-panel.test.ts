@@ -26,8 +26,9 @@ vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
 }));
 vi.mock("../components/ui", () => ({
-  BottomSheet: () => null,
-  MenuRow: () => null,
+  BottomSheet: (props: Record<string, unknown>) =>
+    createElement("BottomSheet", props),
+  MenuRow: (props: Record<string, unknown>) => createElement("MenuRow", props),
 }));
 vi.mock("./chat-view", () => ({
   CopilotChatView: (props: Record<string, unknown>) =>
@@ -107,6 +108,7 @@ async function setup(
     reply: unknown;
     publish(): Promise<void>;
   }) => void,
+  onOpenMercalys?: () => void,
 ) {
   db = new DatabaseSync(":memory:");
   const a = new Adapter(db),
@@ -190,6 +192,7 @@ async function setup(
     scopeKey: f.storeId + f.ownerId,
     onConversations: vi.fn(),
     externalMessageRevision: 0,
+    onOpenMercalys,
   };
   await act(async () => {
     renderer = create(createElement(CopilotLocalChatPanel, props));
@@ -561,3 +564,36 @@ it("does not acknowledge an answer dated before its question", async () => {
     x.request,
   ]);
 });
+
+it.each([true, false])(
+  "offers Mercalys intake only when the host supplies it, dismissing the iOS sheet before opening the picker: %s",
+  async (allowed) => {
+    const open = vi.fn();
+    const x = await setup("LOST", undefined, allowed ? open : undefined);
+    const before = await x.controller.open(x.f.conversation.id),
+      calls = x.ask.mock.calls.length;
+    if (!allowed) {
+      expect(view().onAttach).toBeUndefined();
+      expect(renderer!.root.findAllByType("MenuRow" as ElementType)).toEqual(
+        [],
+      );
+    } else {
+      await act(async () => view().onAttach());
+      const sheet = () =>
+          renderer!.root.findByType("BottomSheet" as ElementType),
+        row = renderer!.root
+          .findAllByType("MenuRow" as ElementType)
+          .find(
+            (node) => node.props.title === "Importer et traiter : XLSX / ZIP",
+          )!;
+      expect(sheet().props.visible).toBe(true);
+      await act(async () => row.props.onPress());
+      expect(open).not.toHaveBeenCalled();
+      expect(sheet().props.visible).toBe(false);
+      await act(async () => sheet().props.onDismiss());
+      expect(open).toHaveBeenCalledTimes(1);
+    }
+    expect(x.ask).toHaveBeenCalledTimes(calls);
+    expect(await x.controller.open(x.f.conversation.id)).toEqual(before);
+  },
+);

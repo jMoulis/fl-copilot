@@ -1,5 +1,9 @@
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — import Mercalys et capacités annoncées dans le chat
+
+Le dernier dialogue réel niait l’import depuis la conversation, alors que le parcours XLSX/ZIP et la publication sûre existent. La clause obsolète distingue maintenant l’entrée native du modèle en lecture seule ; aucune nouvelle permission, outil ou instruction globale ajoutée. Le menu n’est plus proposé sans le rôle responsable. **298 tests ciblés** passent, dont fermeture de la feuille iOS avant ouverture de l’entrée et absence d’appel IA ou de mutation au seul choix de fichier. Voir [la QA et ses limites](../qa/M7_MERCALYS_CHAT_GUIDANCE_2026_10_24.md). Une évaluation distincte sur 88 journées réelles confirme les huit valeurs quantité/prix du dernier exemple ; elle ne vaut pas recette complète. **Livraisons API/native groupées et nouvelle réponse réelle encore attendues ; hors build 15 pour la visibilité du menu.** Chantiers 3/4/7 avancés ; états inchangés : **1/3/4/5/6/7 en cours, 2 code prêt**.
+
 ## 24 octobre — lecture des offres sans cycle de modification
 
 Le cycle Metro entre comparaison, politique, contexte du plan et dépôt d’offres est supprimé : la lecture exacte et limitée au magasin réutilise `choice-read.ts`, sans créer de module ni de writer. Les 114 tests ciblés passent, dont le refus d’une offre devenue conflictuelle sans écriture partielle ; le même parcours local charge sans cet avertissement. Voir [la QA et ses limites](../qa/M8_COMMERCIAL_SOURCE_IMPORT_CYCLE_2026_10_24.md). Cela ne démontre pas la cause des anciens crashs. **Hors build 15**, livraison native groupée attendue, aucune livraison API ni build payant isolé. Chantiers 1/6/7 avancés ; états globaux inchangés : **1/3/4/5/6/7 en cours, 2 code prêt**.
