@@ -17,6 +17,7 @@ const runtime = vi.hoisted(() => ({
   issues: [] as WastePublicationIssue[],
   dirty: vi.fn(),
   write: vi.fn(),
+  select: vi.fn(),
   publish: vi.fn(),
   validate: vi.fn(),
   aliases: vi.fn(),
@@ -81,6 +82,7 @@ vi.mock("./waste-receipt-repository", () => ({
       return runtime.detail;
     }
     updateLineValues = runtime.write;
+    selectProductCandidate = runtime.select;
   },
 }));
 vi.mock("./waste-receipt-publication", () => ({
@@ -143,6 +145,7 @@ beforeEach(() => {
   runtime.issues = [];
   runtime.dirty.mockReset();
   runtime.write.mockReset().mockResolvedValue(undefined);
+  runtime.select.mockReset().mockResolvedValue(undefined);
   runtime.publish.mockReset();
   runtime.validate.mockReset().mockImplementation(async () => runtime.issues);
   runtime.aliases.mockReset().mockResolvedValue([]);
@@ -269,7 +272,7 @@ it("keeps the correction list progressive and opens the exact repeated source oc
   expect(runtime.write).not.toHaveBeenCalled();
 });
 
-it("keeps folding and issue navigation disabled during an explicit save, then closes the saved line and clears only its draft", async () => {
+it("keeps folding and issue navigation disabled during an explicit save, then keeps the saved line open and clears only its draft", async () => {
   await mount();
   await click("Examiner PRODUIT 0");
   await act(async () => inputs("Montant (€)")[0]!.props.onChangeText("0"));
@@ -295,8 +298,84 @@ it("keeps folding and issue navigation disabled during an explicit save, then cl
   expect(button("Examiner PRODUIT 1").props.disabled).toBe(true);
   expect(inputs("Montant (€)")[0]!.props.editable).toBe(false);
   await act(async () => finish());
-  expect(inputs("Libellé")).toHaveLength(0);
+  expect(inputs("Libellé")).toHaveLength(1);
+  expect(inputs("Montant (€)")[0]!.props.value).toBe("0");
+  expect(button("Replier PRODUIT 0").props.disabled).toBe(false);
   expect(runtime.write).toHaveBeenCalledTimes(1);
   expect(runtime.write.mock.lastCall?.[2].totalPrice).toBe("0");
   expect(runtime.dirty.mock.lastCall).toEqual([false, false]);
+});
+
+it("keeps repeated occurrences accessible after saving without saving another occurrence's draft", async () => {
+  runtime.detail!.lines[1]!.line.rawLabel = "PRODUIT 0";
+  runtime.write.mockImplementation(async () => {
+    runtime.detail = {
+      ...runtime.detail!,
+      lines: runtime.detail!.lines.map((draft, index) =>
+        index === 0
+          ? { ...draft, line: { ...draft.line, totalPrice: "0", version: 2 } }
+          : draft,
+      ),
+    };
+  });
+  await mount();
+  await click("Examiner PRODUIT 0");
+  await click("Suivante");
+  await act(async () => inputs("Montant (€)")[0]!.props.onChangeText("7"));
+  await click("Précédente");
+  await act(async () => inputs("Montant (€)")[0]!.props.onChangeText("0"));
+  await click("Enregistrer la ligne");
+  expect(inputs("Libellé")).toHaveLength(1);
+  expect(inputs("Montant (€)")[0]!.props.value).toBe("0");
+  await click("Suivante");
+  expect(inputs("Montant (€)")[0]!.props.value).toBe("7");
+  expect(runtime.write).toHaveBeenCalledTimes(1);
+  expect(runtime.write.mock.lastCall?.[1]).toBe("line-0");
+  expect(runtime.publish).not.toHaveBeenCalled();
+});
+
+it("keeps the group open after product confirmation so the next source occurrence can be reviewed", async () => {
+  const first = runtime.detail!.lines[0]!;
+  first.line.matchedProductId = "11111111-1111-4111-8111-111111111111";
+  runtime.detail!.lines[1]!.line.rawLabel = first.line.rawLabel;
+  runtime.issues = [
+    {
+      lineId: first.line.id,
+      lineIndex: first.line.sourceLineIndex,
+      field: "product",
+      message: "Produit à confirmer",
+    },
+  ];
+  runtime.publish.mockRejectedValue(
+    new WastePublicationValidationError(runtime.issues),
+  );
+  runtime.select.mockImplementation(async () => {
+    runtime.detail = {
+      ...runtime.detail!,
+      lines: runtime.detail!.lines.map((draft, index) =>
+        index === 0
+          ? {
+              ...draft,
+              line: { ...draft.line, matchStatus: "MATCHED", version: 2 },
+            }
+          : draft,
+      ),
+    };
+    runtime.issues = [];
+  });
+  await mount();
+  await click("Valider la casse");
+  await click("Examiner PRODUIT 0");
+  await click("Reconfirmer le produit associé");
+  expect(inputs("Libellé")).toHaveLength(1);
+  await click("Suivante");
+  expect(inputs("Libellé")).toHaveLength(1);
+  expect(runtime.select).toHaveBeenCalledExactlyOnceWith(
+    runtime.detail!.receipt.id,
+    first.line.id,
+    first.line.matchedProductId,
+    first.line.version,
+  );
+  expect(runtime.write).not.toHaveBeenCalled();
+  expect(runtime.publish).toHaveBeenCalledTimes(1);
 });

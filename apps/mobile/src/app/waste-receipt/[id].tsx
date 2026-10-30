@@ -1011,12 +1011,6 @@ function LineGroup({
   const issueCount = issues.filter((i) =>
     lines.some((d) => d.line.id === i.lineId),
   ).length;
-  async function changed() {
-    const ok = await onChanged();
-    if (ok)
-      onOpenLine((current) => (current === activeLineId ? undefined : current));
-    return ok;
-  }
   return (
     <ReceiptReviewGroup
       onLayout={onLayout}
@@ -1034,7 +1028,7 @@ function LineGroup({
           draft={draft}
           receiptId={receiptId}
           repository={repository}
-          onChanged={changed}
+          onChanged={onChanged}
           onMessage={onMessage}
           onError={onError}
           issues={issues}
