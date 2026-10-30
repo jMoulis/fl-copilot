@@ -1,3 +1,7 @@
+# 30 octobre — choisir la semaine du document
+
+Deuxième lot du programme correctif : la lecture commerciale choisit par défaut la semaine identifiable du document et permet de sélectionner une autre semaine, y compris future. Le choix reste lié au document pendant les retours au premier plan. La carte de préparation affiche le numéro ISO et l’année ; la description locale de l’outil rappelle la semaine demandée, sans nouvelle règle globale. Tests natifs montés vendredi/dimanche et contrôles SDK ; code en vérification, recette réelle du dialogue et livraison groupée encore ouvertes. [QA et limites](../qa/M7_COMMERCIAL_PLANNING_WEEK_2026_10_30.md). La PR 382 porte le lot Analyses précédent ; aucune recette téléphone n’est présumée.
+
 # 30 octobre — priorité aux comparaisons utiles
 
 Le propriétaire remplace la poursuite automatique de la V1 par un programme correctif : Analyses, semaine réellement préparée, validation fluide des tickets/conflits, puis simplification du copilote. Le goal précédent est supprimé. Premier lot : couverture séparée ventes/casse, N−1 sur mêmes semaines ISO/jours pour les quatre granularités, comparaison indicative sur paires renseignées et rattrapage des projections historiques via les services existants. Aucun nouvel outil IA, modèle de données ou workflow d’import. Voir [la QA et ses limites](../qa/M8_ANALYTICS_RETAIL_COMPARISONS_2026_10_30.md). Code en vérification, non livré ; aucune recette téléphone ni clôture des sept chantiers n’est déclarée.

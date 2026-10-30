@@ -5,7 +5,10 @@ import { ActivityIndicator, Pressable, View } from "react-native";
 import { ChatText as Text } from "./chat-text";
 import type { CopilotMessage } from "@fl-copilot/domain";
 import type { CopilotPreparationProposalController } from "./preparation-proposal-controller";
-import { commercialMechanismDescription } from "@fl-copilot/commercial-core";
+import {
+  commercialMechanismDescription,
+  currentCommercialWeek,
+} from "@fl-copilot/commercial-core";
 import { colors } from "../design/tokens";
 const date = (v: string) =>
   new Intl.DateTimeFormat("fr-FR", {
@@ -30,6 +33,11 @@ export function PreparationProposalCard({
   const locked = useRef(false),
     alive = useRef(true),
     abort = useRef<AbortController | undefined>(undefined);
+  const week = state
+    ? currentCommercialWeek(
+        new Date(`${state.content.input.weekStart}T12:00:00Z`),
+      )
+    : undefined;
   useEffect(() => {
     alive.current = true;
     let active = true;
@@ -92,7 +100,8 @@ export function PreparationProposalCard({
       {state ? (
         <>
           <Text style={{ fontWeight: "600" }}>
-            Semaine du {date(state.content.input.weekStart)}
+            Semaine {week?.number} · {week?.year} · du{" "}
+            {date(state.content.input.weekStart)}
           </Text>
           {state.content.input.create ? (
             <View style={{ gap: 4 }}>

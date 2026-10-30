@@ -10,6 +10,7 @@ import {
   commercialItemWeekStatus,
   commercialDeadlineThisWeek,
   commercialDocumentWeekContext,
+  commercialDocumentWeek,
   withParentYear,
   commercialChoiceWithinWeek,
 } from "@fl-copilot/commercial-core";
@@ -17,6 +18,7 @@ import { useState, useCallback } from "react";
 import { Text, View, AppState } from "react-native";
 import type { SynchronizedCommercialVisualReading } from "@fl-copilot/sync-contracts";
 import { SectionCard, InlineAlert, SecondaryButton } from "@/components/ui";
+import { DateSelector } from "../components/date-selector";
 import {
   commercialFieldLabels,
   commercialExtraFieldLabels,
@@ -42,10 +44,14 @@ export function CommercialVisualView({
   choices?: LocalCommercialChoice[];
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [week, setWeek] = useState(() => currentCommercialWeek());
+  const [today, setToday] = useState(() => currentCommercialWeek());
+  const [selection, setSelection] = useState<{
+    sourceId: string;
+    date: string;
+  }>();
   useFocusEffect(
     useCallback(() => {
-      const refresh = () => setWeek(currentCommercialWeek());
+      const refresh = () => setToday(currentCommercialWeek());
       refresh();
       const timer = setInterval(refresh, 60000);
       const subscription = AppState.addEventListener("change", (state) => {
@@ -58,6 +64,15 @@ export function CommercialVisualView({
     }, []),
   );
   const ready = readings.filter((r) => r.status === "READY" && r.reading);
+  const sourceId = readings[0]?.sourceDocumentId ?? "";
+  const documentWeek = commercialDocumentWeek(
+    ready.map((page) => page.reading!),
+  );
+  const selectedDate =
+    selection?.sourceId === sourceId ? selection.date : undefined;
+  const week = selectedDate
+    ? currentCommercialWeek(new Date(`${selectedDate}T12:00:00Z`))
+    : (documentWeek ?? today);
   const documentContext = commercialDocumentWeekContext(
     ready.map((page) => page.reading!),
   );
@@ -155,9 +170,23 @@ export function CommercialVisualView({
   return (
     <>
       <SectionCard
-        title={`Semaine ${week.number} · ${week.year}`}
+        title={`Semaine à préparer · ${week.number} · ${week.year}`}
         description={`Du ${week.start.split("-").reverse().join("/")} au ${week.end.split("-").reverse().join("/")}`}
       >
+        <DateSelector
+          key={sourceId}
+          value={week.start}
+          label="Semaine à préparer"
+          description="Choisissez un jour de la semaine souhaitée, y compris une semaine à venir. La date d’import ne limite pas les offres."
+          triggerLabel="Changer de semaine"
+          onConfirm={(date) => setSelection({ sourceId, date })}
+        />
+        {!selectedDate && !documentWeek ? (
+          <Text className="text-sm text-warning">
+            La semaine principale du document n’est pas identifiée. Choisissez
+            la semaine que vous préparez.
+          </Text>
+        ) : null}
         <Text className="text-sm text-muted">
           Seules les offres dont la période concerne cette semaine sont
           présentées. Aucune opération n’est validée pour votre magasin.
