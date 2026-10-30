@@ -216,9 +216,9 @@ export function withParentYear(item: Entry, parent: Entry): Entry {
 }
 // Only unscoped TG ideas may use the explicitly cited document header.
 // An offer must always keep its own commercial period.
-export function commercialDocumentWeekContext(
+export function commercialDocumentWeek(
   readings: readonly CommercialVisualPageOutput[],
-): Entry {
+): CommercialWeek | undefined {
   const headers = readings
     .flatMap((r) => r.operations)
     .flatMap((o) => values(o, "documentDate"));
@@ -238,6 +238,12 @@ export function commercialDocumentWeekContext(
   });
   const keys = [...new Set(contexts.map((c) => `${c.year}:${c.number}`))];
   const context = keys.length === 1 ? contexts[0] : undefined;
+  return context;
+}
+export function commercialDocumentWeekContext(
+  readings: readonly CommercialVisualPageOutput[],
+): Entry {
+  const context = commercialDocumentWeek(readings);
   // Derived calendar context is used only by this projection, never persisted as source text.
   return {
     fields: context
