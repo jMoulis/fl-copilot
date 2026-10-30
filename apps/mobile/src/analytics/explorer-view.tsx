@@ -336,6 +336,7 @@ export function ExplorerContent({
                   }}
                 >
                   <Text style={{ color, fontWeight: "700", fontSize: 13 }}>
+                    {c.status === "PARTIAL" ? "Indicatif · " : ""}
                     {percent !== null
                       ? formatSignedPercentage(percent)
                       : c.absoluteDifference !== null
@@ -347,12 +348,25 @@ export function ExplorerContent({
                   Sur {data.comparedDays} jours{" "}
                   {data.mode === "EXPLICIT"
                     ? "de la période citée"
-                    : "clos comparables · N−1"}
+                    : "clos renseignés équivalents · N−1"}
                 </Text>
+                <Text style={{ color: colors.muted, fontSize: 12 }}>
+                  {formatCurrency(c.currentValue)} contre{" "}
+                  {formatCurrency(c.referenceValue)} en référence
+                </Text>
+                {c.status === "PARTIAL" ? (
+                  <Text style={{ color: colors.warning, fontSize: 12 }}>
+                    Données partielles : l’écart porte uniquement sur les jours
+                    équivalents renseignés des deux côtés, pas nécessairement
+                    sur tout le cumul affiché.
+                  </Text>
+                ) : null}
               </View>
             ) : (
               <Text style={{ color: colors.warning, fontSize: 12 }}>
-                Comparaison indisponible · voir la couverture
+                {data.reference === null
+                  ? "Aucune période équivalente disponible en N−1"
+                  : "Pas de journée close renseignée des deux côtés pour comparer"}
               </Text>
             )}
           </>
@@ -401,7 +415,7 @@ export function ExplorerContent({
                   {data.comparedDays > 1 ? "s" : ""}
                   {data.mode === "EXPLICIT"
                     ? " sur la période citée"
-                    : " clos comparable"}
+                    : " clos renseigné équivalent"}
                   {data.mode !== "EXPLICIT" && data.comparedDays > 1 ? "s" : ""}
                 </Text>
                 <Text style={{ color: colors.ink }}>
@@ -433,12 +447,10 @@ export function ExplorerContent({
                 Référence :{" "}
                 {data.mode === "EXPLICIT"
                   ? "période explicitement demandée"
-                  : explorerLabel(data.reference)}
+                  : "jours équivalents N−1"}
                 {period.kind === "range"
                   ? " · aucun alignement ISO supposé"
-                  : period.kind === "month" || period.kind === "year"
-                    ? " · calendrier civil, sans alignement des jours de semaine"
-                    : " · mêmes jours de semaine"}
+                  : " · mêmes semaines ISO et mêmes jours de semaine"}
               </Text>
             ) : null}
             {data.mode === "EXPLICIT" ? (
@@ -455,14 +467,33 @@ export function ExplorerContent({
             ) : null}
             {data.referenceRange ? (
               <Text style={{ color: colors.muted, fontSize: 12 }}>
-                {formatFrenchCalendarDate(data.referenceRange.start)} –{" "}
-                {formatFrenchCalendarDate(data.referenceRange.end)}
+                {formatFrenchCalendarDate(
+                  c?.referencePeriod?.start ?? data.referenceRange.start,
+                )}{" "}
+                –{" "}
+                {formatFrenchCalendarDate(
+                  c?.referencePeriod?.end ?? data.referenceRange.end,
+                )}
+              </Text>
+            ) : null}
+            {data.warnings.includes("NO_ISO_EQUIVALENT") ? (
+              <Text style={{ color: colors.warning }}>
+                Certaines journées n’ont pas d’équivalent de même semaine ISO en
+                N−1. Elles ne sont pas incluses dans l’écart.
               </Text>
             ) : null}
             {view.metric === "wasteCost" ? (
               <Text style={{ color: colors.muted }}>
                 Coût d’achat connu et estimé selon les données disponibles,
                 distinct de la valeur au prix de vente.
+              </Text>
+            ) : null}
+            {view.metric === "waste" || view.metric === "wasteCost" ? (
+              <Text style={{ color: colors.muted }}>
+                Casse enregistrée sur la période. Les dates Mercalys peuvent
+                correspondre au déchargement de l’appareil plutôt qu’au jour du
+                bipage. Une journée sans enregistrement ne signifie pas une
+                journée sans casse.
               </Text>
             ) : null}
           </DetailsDisclosure>

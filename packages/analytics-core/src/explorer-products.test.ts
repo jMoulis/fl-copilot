@@ -86,7 +86,7 @@ it("shares exact query arithmetic and filters current category/nature/identity w
     }).analysis.total,
   ).toBeNull();
 });
-it("retains the same observed product universe on both sides and refuses an absent product-day instead of a false baseline", () => {
+it("retains the observed universe and labels a baseline missing a product as partial", () => {
   const r = analyzeExplorerProducts({
     ...base,
     points: [
@@ -95,7 +95,7 @@ it("retains the same observed product universe on both sides and refuses an abse
       point(ids[0], "2025-10-16", "5"),
     ],
   });
-  expect(r.analysis.comparison).toBeNull();
+  expect(r.analysis.comparison).toMatchObject({ status: "PARTIAL" });
   expect(r.analysis.total).toBe("30.00");
   expect(
     r.contributors.find((p) => p.productId === ids[0])?.analysis.comparison

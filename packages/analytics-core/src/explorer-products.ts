@@ -13,7 +13,7 @@ import {
 import {
   compareExplorerPeriod,
   explorerRange,
-  explorerReference,
+  explorerReferenceRange,
   type ExplorerPeriod,
 } from "./explorer-period";
 import { sumAvailableCurrency } from "./formulas";
@@ -71,8 +71,7 @@ export function analyzeExplorerProducts(input: {
     products.set(p.id, p);
   }
   const range = explorerRange(input.period),
-    ref = explorerReference(input.period),
-    rr = ref ? explorerRange(ref) : null;
+    rr = explorerReferenceRange(input.period);
   const selected: AnalyticsQueryPoint[] = [],
     seen = new Set<string>();
   const queryFilters = {

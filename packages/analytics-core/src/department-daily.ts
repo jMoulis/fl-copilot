@@ -6,6 +6,7 @@ import type {
 } from "./product-daily";
 
 export const DEPARTMENT_DAILY_FORMULA_VERSION = "department-daily-v1";
+export const DEPARTMENT_COVERAGE_REVISION = "source-channels-v2|";
 
 export interface DepartmentDailyPerformanceInput {
   readonly storeId: string;
@@ -54,33 +55,42 @@ export function buildDepartmentDailyPerformance(
 ): DepartmentDailyPerformance {
   validateProductPerformances(input);
 
+  // A waste-only product is not a missing sale, and a sale-only product is
+  // not a missing waste record. Missing fields within either source still count.
+  const sales = input.productPerformances.filter(
+    (p) => p.availability.salesValue.inputCount > 0,
+  );
+  const waste = input.productPerformances.filter(
+    (p) => p.availability.wasteSalesValue.inputCount > 0,
+  );
+
   const salesValue = aggregateCurrencyMetric(
-    input.productPerformances,
+    sales,
     (performance) => performance.sales.salesValue,
     (performance) => performance.availability.salesValue,
   );
   const salesPurchaseValue = aggregateCurrencyMetric(
-    input.productPerformances,
+    sales,
     (performance) => performance.sales.purchaseValue,
     (performance) => performance.availability.salesPurchaseValue,
   );
   const salesMarginValue = aggregateCurrencyMetric(
-    input.productPerformances,
+    sales,
     (performance) => performance.sales.marginValue,
     (performance) => performance.availability.salesMarginValue,
   );
   const wastePurchaseValueKnown = aggregateCurrencyMetric(
-    input.productPerformances,
+    waste,
     (performance) => performance.waste.purchaseValueKnown,
     (performance) => performance.availability.wastePurchaseValueKnown,
   );
   const wastePurchaseValueEstimated = aggregateCurrencyMetric(
-    input.productPerformances,
+    waste,
     (performance) => performance.waste.purchaseValueEstimated,
     (performance) => performance.availability.wastePurchaseValueEstimated,
   );
   const wasteSalesValue = aggregateCurrencyMetric(
-    input.productPerformances,
+    waste,
     (performance) => performance.waste.salesValue,
     (performance) => performance.availability.wasteSalesValue,
   );
@@ -133,6 +143,7 @@ export function buildDepartmentDailyPerformance(
       ),
     ),
     inputRevision:
+      DEPARTMENT_COVERAGE_REVISION +
       buildInputRevision(input.productPerformances) +
       (input.incompleteSources?.sales ? "|unresolved-source:sales" : "") +
       (input.incompleteSources?.waste ? "|unresolved-source:waste" : ""),

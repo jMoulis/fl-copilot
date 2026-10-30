@@ -16,7 +16,7 @@ import {
   EXPLORER_PRODUCT_LIMITS,
   type AnalyticsQueryPoint,
   explorerRange,
-  explorerReference,
+  explorerReferenceRange,
   parseDecimal,
   wastePurchaseCost,
   type ExplorerPeriod,
@@ -98,8 +98,7 @@ export class ExplorerRepository {
     analyticsExplorerMetricSchema.parse(metric);
     filters = analyticsExplorerFiltersSchema.parse(filters);
     const range = explorerRange(period),
-      reference = explorerReference(period),
-      rr = reference ? explorerRange(reference) : range;
+      rr = explorerReferenceRange(period) ?? range;
     let result:
       | (ReturnType<typeof compareExplorerPeriod> & {
           filters: AnalyticsExplorerFilters;

@@ -1,5 +1,6 @@
 import {
   buildDepartmentDailyPerformance,
+  DEPARTMENT_COVERAGE_REVISION,
   buildProductDailyPerformance,
   type DepartmentDailyPerformance,
   type ProductDailyPerformanceInput,
@@ -374,6 +375,69 @@ export function createMongoRemoteAnalyticsConfirmationService(
     createMongoRemoteAnalyticsRepository(database),
     now,
   );
+}
+
+/** Opportunistic derived-cache upgrade during the existing sync maintenance.
+ * Bound each pass; never republish sources or replace a concurrently refreshed row. */
+export async function refreshDepartmentCoverage(
+  database: DatabaseService,
+  storeId?: string,
+  now: () => Date = () => new Date(),
+) {
+  const db = await database.getDb();
+  const collection = db.collection<DepartmentDailyPerformanceDocument>(
+    "departmentDailyPerformance",
+  );
+  const prefix = new RegExp(
+    `^${DEPARTMENT_COVERAGE_REVISION.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+  );
+  const rows = await collection
+    .find({
+      ...(storeId ? { storeId } : {}),
+      inputRevision: { $not: prefix },
+    })
+    .sort({ date: -1, _id: 1 })
+    .limit(16)
+    .toArray();
+  const repository = createMongoRemoteAnalyticsRepository(database);
+  const deadline = Date.now() + 1_000;
+  let refreshed = 0,
+    examined = 0;
+  for (const row of rows) {
+    if (examined++ && Date.now() >= deadline) break;
+    const productPerformances = await repository.loadProductDays(
+      row.storeId,
+      row.date,
+    );
+    // A bootstrap may have only the department cache. Keep it until its inputs exist.
+    if (productPerformances.length < row.performance.productCount) continue;
+    const performance = buildDepartmentDailyPerformance({
+      storeId: row.storeId,
+      businessDate: row.date,
+      productPerformances,
+      incompleteSources: await repository.loadDepartmentSourceCompleteness(
+        row.storeId,
+        row.date,
+      ),
+      computedAt: now().toISOString(),
+    });
+    const result = await collection.updateOne(
+      {
+        _id: row._id,
+        storeId: row.storeId,
+        inputRevision: row.inputRevision,
+      },
+      {
+        $set: {
+          performance,
+          inputRevision: performance.inputRevision,
+          computedAt: new Date(performance.computedAt),
+        },
+      },
+    );
+    refreshed += result.modifiedCount;
+  }
+  return refreshed;
 }
 
 function mapProduct(document: ProductDocument): Product {

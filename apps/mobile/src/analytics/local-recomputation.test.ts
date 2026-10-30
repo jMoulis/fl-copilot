@@ -5,6 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runLocalMigrations } from "../db/migrations";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
+import { buildProductDailyPerformance } from "@fl-copilot/analytics-core";
+import { productDailyGoldenFixture } from "../../../../packages/test-fixtures/src/product-daily";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import {
   LocalAnalyticsRecomputationScheduler,
@@ -475,6 +477,143 @@ describe("local analytics recomputation", () => {
     });
     database.close();
   });
+});
+
+it("refreshes legacy source-channel coverage offline without republishing and skips incomplete bootstraps", async () => {
+  const { adapter, database } = await openDatabase();
+  const day = productDailyGoldenFixture.businessDate,
+    storeId = productDailyGoldenFixture.product.storeId;
+  const sales = buildProductDailyPerformance({
+    ...productDailyGoldenFixture,
+    wasteObservations: [],
+  });
+  const waste = {
+    ...buildProductDailyPerformance({
+      ...productDailyGoldenFixture,
+      salesObservations: [],
+    }),
+    productId: "88888888-8888-4888-8888-888888888888",
+  };
+  for (const p of [sales, waste]) {
+    database
+      .prepare(
+        "INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at,sync_state,dirty) VALUES(?,?,'Produit test','FRUIT','BULK','KG','ACTIVE',1,?,?,'SYNCED',0)",
+      )
+      .run(p.productId, storeId, now, now);
+    database
+      .prepare(
+        "INSERT INTO product_daily_performance(id,store_id,product_id,business_date,payload_json,origin,formula_version,input_revision,computed_at) VALUES(?,?,?,?,?,'LOCAL','product-daily-v1',?,?)",
+      )
+      .run(
+        p.productId,
+        storeId,
+        p.productId,
+        day,
+        JSON.stringify(p),
+        p.inputRevision,
+        now,
+      );
+  }
+  const legacy = {
+    storeId,
+    date: day,
+    sales: { salesValue: "60.50" },
+    productCount: 2,
+  };
+  for (const [id, store, count] of [
+    ["legacy", storeId, 2],
+    ["foreign", "other-store", 2],
+    ["bootstrap", "bootstrap-store", 2],
+  ] as const) {
+    database
+      .prepare(
+        "INSERT INTO department_daily_performance(id,store_id,business_date,payload_json,origin,formula_version,input_revision,computed_at) VALUES(?,?,?,?,'LOCAL','department-daily-v1','legacy',?)",
+      )
+      .run(
+        id,
+        store,
+        day,
+        JSON.stringify({ ...legacy, storeId: store, productCount: count }),
+        now,
+      );
+  }
+  const beforeProducts = database
+    .prepare("SELECT * FROM product_daily_performance ORDER BY id")
+    .all();
+  const scheduler = new LocalAnalyticsRecomputationScheduler(
+    adapter,
+    new SQLiteProductDateRecomputer(adapter, () => now),
+  );
+  await scheduler.process(storeId);
+  const payload = JSON.parse(
+    (
+      database
+        .prepare(
+          "SELECT payload_json FROM department_daily_performance WHERE store_id=?",
+        )
+        .get(storeId) as { payload_json: string }
+    ).payload_json,
+  );
+  expect(payload.sales.salesValue).toBe("60.50");
+  expect(payload.availability.salesValue).toMatchObject({
+    status: "AVAILABLE",
+    inputCount: 1,
+  });
+  expect(payload.availability.wasteSalesValue).toMatchObject({
+    status: "AVAILABLE",
+    inputCount: 1,
+  });
+  expect(
+    database
+      .prepare("SELECT * FROM product_daily_performance ORDER BY id")
+      .all(),
+  ).toEqual(beforeProducts);
+  const after = database
+    .prepare("SELECT * FROM department_daily_performance ORDER BY id")
+    .all();
+  await scheduler.process(storeId);
+  await scheduler.process("bootstrap-store");
+  expect(
+    database
+      .prepare("SELECT * FROM department_daily_performance ORDER BY id")
+      .all(),
+  ).toEqual(after);
+  expect(database.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual({
+    n: 0,
+  });
+  expect(database.prepare("SELECT COUNT(*) n FROM local_jobs").get()).toEqual({
+    n: 0,
+  });
+  database.close();
+});
+
+it("does not turn a deferred historical cache refresh into a failed accepted calculation", async () => {
+  const { adapter, database } = await openDatabase();
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    await enqueueAnalyticsRecomputationJob(adapter, {
+      jobId: "accepted",
+      storeId: "store-1",
+      scopes: [{ productId: "p", businessDate: "2026-10-23" }],
+      createdAt: now,
+    });
+    const scheduler = new LocalAnalyticsRecomputationScheduler(adapter, {
+      async recomputeProduct() {},
+      async recomputeDepartment() {},
+      async refreshDepartmentCoverage() {
+        throw Error("damaged derived cache");
+      },
+    });
+    await expect(scheduler.process("store-1")).resolves.toMatchObject({
+      completedJobs: 1,
+      failedJobs: 0,
+    });
+    expect(jobState(database, "accepted")?.status).toBe("COMPLETED");
+    expect(warn).toHaveBeenCalledWith("ANALYTICS_COVERAGE_REFRESH_DEFERRED");
+  } finally {
+    warn.mockRestore();
+    database.close();
+  }
 });
 
 async function openDatabase() {
