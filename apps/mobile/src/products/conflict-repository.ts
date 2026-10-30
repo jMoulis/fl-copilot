@@ -281,8 +281,21 @@ export class ProductMasterConflictRepository {
         current.entity,
         remote,
       );
+    // A canonical acknowledgement can install the verified remote row while an
+    // older conflict remains OPEN. Only explicit adoption may close that history;
+    // the badge alone must not leave two identical verified versions unresolvable.
+    const settled =
+      current.syncState === "SYNCED" &&
+      !current.dirty &&
+      current.remoteVersion === remote.version &&
+      current.snapshot?.operation === "UPSERT" &&
+      current.snapshot.version === remote.version &&
+      !remote.deletedAt &&
+      JSON.stringify(current.entity) === JSON.stringify(remote) &&
+      JSON.stringify(current.remote) === JSON.stringify(remote) &&
+      commands.every((command) => command.status === "CONFLICT");
     const blocked =
-      current.syncState !== "CONFLICT" ||
+      (current.syncState !== "CONFLICT" && !settled) ||
       !group.valid ||
       commands.length > 100 ||
       commands.some((c) => c.status === "SYNCING") ||
@@ -310,13 +323,17 @@ export class ProductMasterConflictRepository {
       conflicts: group.conflicts,
       policy,
       hash,
-      canKeep: !blocked && policy.canKeep,
+      canKeep: !blocked && !settled && policy.canKeep,
       canAdopt: !blocked && policy.canAdopt,
       reason: !group.valid
         ? group.reason
         : blocked
-          ? "La comparaison a changé ou un envoi est en cours. Synchronisez puis relisez les versions."
-          : policy.reason,
+          ? commands.some((command) => command.status === "SYNCING")
+            ? "Un envoi de cette fiche est en cours. Attendez sa fin puis relisez la comparaison."
+            : "L’état local ou la version synchronisée a changé. Synchronisez puis relisez les versions avant de choisir."
+          : settled
+            ? "La fiche correspond déjà à la version synchronisée. Adoptez cette version pour clôturer l’ancien conflit, sans créer une nouvelle modification."
+            : policy.reason,
     };
   }
   async resolve(

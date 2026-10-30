@@ -485,3 +485,182 @@ it.each(["KEEP_LOCAL", "ADOPT_REMOTE"] as const)(
     }
   },
 );
+
+it.each(["PRODUCT", "IDENTIFIER", "ALIAS"] as const)(
+  "can explicitly close an old %s conflict after the canonical remote row is already synchronized",
+  async (kind) => {
+    const s = await nativeCatalogueConflictFixture(kind);
+    try {
+      const r = s.review;
+      await applyProductMasterChange(
+        s.a,
+        s.scope.storeId,
+        {
+          entityType: r.entityType,
+          entityId: r.remote.id,
+          entityVersion: r.remote.version,
+          operation: "UPSERT",
+          entity: r.remote,
+        },
+        r.local.version,
+      );
+      const repo = new ProductMasterConflictRepository(
+        s.a,
+        receiptReviewDigest,
+      );
+      const review = await repo.review(s.scope.storeId, r.conflict.id);
+      expect(review.current.syncState).toBe("SYNCED");
+      expect(review.current.entity).toEqual(review.remote);
+      expect(review.canKeep).toBe(false);
+      expect(review.canAdopt).toBe(true);
+      const observations = s.db
+        .prepare("SELECT * FROM sales_observations")
+        .all();
+      await repo.resolve(s.scope.storeId, r.conflict.id, false, {
+        commandId: randomUUID(),
+        deviceId: s.scope.deviceId,
+        jobId: randomUUID(),
+        reviewHash: review.hash,
+        canResolve: () => true,
+      });
+      expect(
+        await new ConflictRepository(s.a).listOpen(s.scope.storeId),
+      ).toHaveLength(0);
+      expect(s.count("product_master_conflict_history")).toBe(1);
+      expect(
+        await new OutboxRepository(s.a).listPending(s.scope.storeId),
+      ).toHaveLength(0);
+      expect(s.db.prepare("SELECT * FROM sales_observations").all()).toEqual(
+        observations,
+      );
+    } finally {
+      s.db.close();
+    }
+  },
+);
+
+it.each([
+  "DIRTY",
+  "MISSING_SNAPSHOT",
+  "EDITED_LOCAL",
+  "PENDING",
+  "SYNCING",
+  "FAILED",
+  "NEWER_BASE",
+] as const)(
+  "does not close an apparently settled conflict with unverified local state (%s)",
+  async (mode) => {
+    const s = await nativeCatalogueConflictFixture("PRODUCT");
+    try {
+      const r = s.review;
+      await applyProductMasterChange(
+        s.a,
+        s.scope.storeId,
+        {
+          entityType: r.entityType,
+          entityId: r.remote.id,
+          entityVersion: r.remote.version,
+          operation: "UPSERT",
+          entity: r.remote,
+        },
+        r.local.version,
+      );
+      if (mode === "DIRTY")
+        await s.a.runAsync(
+          "UPDATE products SET dirty=1 WHERE id=?",
+          r.remote.id,
+        );
+      if (mode === "MISSING_SNAPSHOT")
+        await s.a.runAsync(
+          "DELETE FROM product_master_remote_snapshots WHERE entity_id=?",
+          r.remote.id,
+        );
+      if (mode === "EDITED_LOCAL")
+        await s.a.runAsync(
+          "UPDATE products SET label='ANOTHER LOCAL VALUE' WHERE id=?",
+          r.remote.id,
+        );
+      if (mode === "NEWER_BASE")
+        await s.a.runAsync(
+          "UPDATE products SET remote_version=3 WHERE id=?",
+          r.remote.id,
+        );
+      if (["PENDING", "SYNCING", "FAILED"].includes(mode))
+        await s.a.runAsync(
+          "UPDATE sync_outbox SET status=? WHERE command_id=?",
+          mode,
+          r.command.commandId,
+        );
+      const repo = new ProductMasterConflictRepository(
+        s.a,
+        receiptReviewDigest,
+      );
+      const review = await repo.review(s.scope.storeId, r.conflict.id);
+      const before = ["products", "sync_outbox", "sync_conflicts"].map(
+        (table) => s.db.prepare(`SELECT * FROM ${table}`).all(),
+      );
+      expect(review.canKeep).toBe(false);
+      expect(review.canAdopt).toBe(false);
+      await expect(
+        repo.resolve(s.scope.storeId, r.conflict.id, false, {
+          commandId: randomUUID(),
+          deviceId: s.scope.deviceId,
+          jobId: randomUUID(),
+          reviewHash: review.hash,
+          canResolve: () => true,
+        }),
+      ).rejects.toThrow();
+      expect(
+        ["products", "sync_outbox", "sync_conflicts"].map((table) =>
+          s.db.prepare(`SELECT * FROM ${table}`).all(),
+        ),
+      ).toEqual(before);
+      expect(s.count("product_master_conflict_history")).toBe(0);
+    } finally {
+      s.db.close();
+    }
+  },
+);
+
+it("invalidates settled adoption if a new local command appears after comparison", async () => {
+  const s = await nativeCatalogueConflictFixture("PRODUCT");
+  try {
+    const r = s.review;
+    await applyProductMasterChange(
+      s.a,
+      s.scope.storeId,
+      {
+        entityType: r.entityType,
+        entityId: r.remote.id,
+        entityVersion: r.remote.version,
+        operation: "UPSERT",
+        entity: r.remote,
+      },
+      r.local.version,
+    );
+    const repo = new ProductMasterConflictRepository(s.a, receiptReviewDigest);
+    const review = await repo.review(s.scope.storeId, r.conflict.id);
+    expect(review.canAdopt).toBe(true);
+    await new OutboxRepository(s.a).enqueue({
+      ...r.command,
+      commandId: randomUUID(),
+      payload: { ...r.remote, version: 3 },
+      expectedRemoteVersion: 2,
+    });
+    await expect(
+      repo.resolve(s.scope.storeId, r.conflict.id, false, {
+        commandId: randomUUID(),
+        deviceId: s.scope.deviceId,
+        jobId: randomUUID(),
+        reviewHash: review.hash,
+        canResolve: () => true,
+      }),
+    ).rejects.toThrow();
+    expect(s.count("product_master_conflict_history")).toBe(0);
+    expect(
+      await new ConflictRepository(s.a).listOpen(s.scope.storeId),
+    ).toHaveLength(1);
+  } finally {
+    s.db.close();
+  }
+});
