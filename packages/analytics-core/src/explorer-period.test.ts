@@ -4,6 +4,7 @@ import {
   explorerPeriodFromDate,
   explorerRange,
   explorerReference,
+  explorerReferenceRange,
   shiftExplorerPeriod,
   explorerDays,
   compareExplorerPeriod,
@@ -95,7 +96,7 @@ describe("Explorer calendar and comparable coverage", () => {
       expected: 7,
     });
   });
-  it("does not compare different missing-day masks even when both totals and sample sizes look similar", () => {
+  it("compares the intersection of equivalent days and labels an incomplete period", () => {
     const r = compareExplorerPeriod({
       period: { kind: "week", year: 2026, week: 42 },
       today: "2026-10-19",
@@ -105,11 +106,16 @@ describe("Explorer calendar and comparable coverage", () => {
         ...points("2025-10-13", ["1", "2", null, "4", "5", "6", "7"]),
       ],
     });
-    expect(r.comparison).toBeNull();
+    expect(r.comparison).toMatchObject({
+      currentValue: "230",
+      referenceValue: "23",
+      status: "PARTIAL",
+    });
+    expect(r.comparedDays).toBe(5);
     expect(r.comparisonStatus).toBe("partial");
     expect(r.total).toBe("260.00");
   });
-  it("keeps partial monetary values but refuses to upgrade them to exact comparison", () => {
+  it("keeps a usable partial monetary comparison explicitly indicative", () => {
     const r = compareExplorerPeriod({
       period: { kind: "day", date: "2026-10-15" },
       today: "2026-10-19",
@@ -121,7 +127,11 @@ describe("Explorer calendar and comparable coverage", () => {
     });
     expect(r.total).toBe("12.31");
     expect(r.coverage.partial).toBe(1);
-    expect(r.comparison).toBeNull();
+    expect(r.comparison).toMatchObject({
+      currentValue: "12.31",
+      referenceValue: "4",
+      status: "PARTIAL",
+    });
   });
   it("preserves zero/negative amounts and never produces an infinite percent", () => {
     const r = compareExplorerPeriod({
@@ -136,14 +146,18 @@ describe("Explorer calendar and comparable coverage", () => {
     expect(r.comparison?.absoluteDifference).toBe("-12.31");
     expect(r.comparison?.percentageDifference).toBeNull();
   });
-  it("does not silently normalize leap-year civil periods or pretend week 53 has a counterpart", () => {
+  it("uses an ISO-aligned leap-month range and does not invent a week 53 counterpart", () => {
     const r = compareExplorerPeriod({
       period: { kind: "month", year: 2024, month: 2 },
       today: "2026-10-19",
       kpiId: "sales",
       points: [],
     });
-    expect(r.comparisonStatus).toBe("not_comparable");
+    expect(r.comparisonStatus).toBe("missing_baseline");
+    expect(r.referenceRange).toEqual({
+      start: "2023-02-02",
+      end: "2023-03-02",
+    });
     const w = compareExplorerPeriod({
       period: { kind: "week", year: 2020, week: 53 },
       today: "2026-10-19",
@@ -174,33 +188,32 @@ describe("Explorer calendar and comparable coverage", () => {
     ).toThrow();
   });
 });
-it("matches elapsed civil dates instead of shifting March by leap-day ordinal", () => {
-  const current = explorerDays({ start: "2025-01-01", end: "2025-03-01" }).map(
-      (businessDate) => ({
-        businessDate,
-        value: "1",
-        status: "AVAILABLE" as const,
-      }),
-    ),
-    ref = explorerDays({ start: "2024-01-01", end: "2024-03-01" }).map(
-      (businessDate) => ({
-        businessDate,
-        value: businessDate === "2024-02-29" ? "999" : "1",
-        status: "AVAILABLE" as const,
-      }),
-    );
+it("aligns month and elapsed-year days by ISO week/weekday, including leap years", () => {
+  const period = { kind: "year" as const, year: 2025 };
+  const range = explorerReferenceRange(period)!;
+  const current = points(
+    "2025-01-01",
+    Array.from({ length: 60 }, () => "1"),
+  );
+  const ref = points(
+    range.start,
+    Array.from({ length: 60 }, () => "2"),
+  );
   const r = compareExplorerPeriod({
-    period: { kind: "year", year: 2025 },
+    period,
     today: "2025-03-02",
     kpiId: "sales",
     points: [...current, ...ref],
   });
   expect(r.comparedDays).toBe(60);
-  expect(r.comparison?.referenceValue).toBe("60");
+  expect(r.comparison?.referenceValue).toBe("120");
   expect(r.comparisonDates.at(-1)).toEqual({
     current: "2025-03-01",
-    reference: "2024-03-01",
+    reference: "2024-03-02",
   });
+  expect(
+    explorerReferenceRange({ kind: "month", year: 2026, month: 10 }),
+  ).toEqual({ start: "2025-10-02", end: "2025-11-01" });
 });
 
 it("keeps zero and negative chart amounts distinct from missing daily and monthly bins", () => {

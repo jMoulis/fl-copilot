@@ -680,12 +680,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => {
-    if (
-      !defaultStoreId ||
-      !hasLocalSession ||
-      !state.pendingLocalCalculationCount
-    )
-      return;
+    if (!defaultStoreId || !hasLocalSession) return;
     void localAnalytics.process(defaultStoreId).catch((error) => {
       captureLocalOperationFailure(error, "synchronization");
     });

@@ -1,3 +1,7 @@
+# 30 octobre — priorité aux comparaisons utiles
+
+Le propriétaire remplace la poursuite automatique de la V1 par un programme correctif : Analyses, semaine réellement préparée, validation fluide des tickets/conflits, puis simplification du copilote. Le goal précédent est supprimé. Premier lot : couverture séparée ventes/casse, N−1 sur mêmes semaines ISO/jours pour les quatre granularités, comparaison indicative sur paires renseignées et rattrapage des projections historiques via les services existants. Aucun nouvel outil IA, modèle de données ou workflow d’import. Voir [la QA et ses limites](../qa/M8_ANALYTICS_RETAIL_COMPARISONS_2026_10_30.md). Code en vérification, non livré ; aucune recette téléphone ni clôture des sept chantiers n’est déclarée.
+
 # M7 — suivi des sept chantiers V1
 
 ## 24 octobre — retour d’erreur et contexte des réglages de rappels

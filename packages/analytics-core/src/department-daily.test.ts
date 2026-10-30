@@ -53,6 +53,88 @@ function productPerformances() {
 }
 
 describe("DepartmentDailyPerformance builder", () => {
+  it("qualifies each source channel without treating waste-only products as missing sales", () => {
+    const sale = buildProductDailyPerformance({
+      ...productDailyGoldenFixture,
+      salesObservations: [productDailyGoldenFixture.salesObservations[0]],
+      wasteObservations: [],
+    });
+    const waste = {
+      ...buildProductDailyPerformance({
+        ...productDailyGoldenFixture,
+        salesObservations: [],
+      }),
+      productId: "88888888-8888-4888-8888-888888888888",
+    };
+    const result = buildDepartmentDailyPerformance({
+      storeId: STORE_ID,
+      businessDate: BUSINESS_DATE,
+      productPerformances: [sale, waste],
+      computedAt: COMPUTED_AT,
+    });
+    expect(result.sales).toMatchObject({
+      salesValue: "42.00",
+      marginValue: "17.00",
+    });
+    expect(result.waste.salesValue).toBe("5.20");
+    expect(result.availability.salesValue).toMatchObject({
+      status: "AVAILABLE",
+      inputCount: 1,
+      missingInputCount: 0,
+    });
+    expect(result.availability.salesMarginValue.status).toBe("AVAILABLE");
+    expect(result.availability.wasteSalesValue).toMatchObject({
+      status: "AVAILABLE",
+      inputCount: 1,
+      missingInputCount: 0,
+    });
+    expect(result.productCount).toBe(2);
+    expect(result.sourceLineageIds).toEqual(
+      [
+        ...new Set([...sale.sourceLineageIds, ...waste.sourceLineageIds]),
+      ].sort(),
+    );
+  });
+
+  it("does not turn an absent channel into zero or hide missing values in an existing sale", () => {
+    const sale = buildProductDailyPerformance({
+      ...productDailyGoldenFixture,
+      wasteObservations: [],
+      salesObservations: productDailyGoldenFixture.salesObservations.map(
+        (o, i) => ({
+          ...o,
+          salesValue: i === 0 ? "0" : null,
+        }),
+      ),
+    });
+    const result = buildDepartmentDailyPerformance({
+      storeId: STORE_ID,
+      businessDate: BUSINESS_DATE,
+      productPerformances: [sale],
+      computedAt: COMPUTED_AT,
+    });
+    expect(result.sales.salesValue).toBe("0.00");
+    expect(result.availability.salesValue.status).toBe("PARTIAL");
+    expect(result.waste.salesValue).toBeNull();
+    expect(result.availability.wasteSalesValue).toMatchObject({
+      status: "UNAVAILABLE",
+      inputCount: 0,
+    });
+    const pending = buildDepartmentDailyPerformance({
+      storeId: STORE_ID,
+      businessDate: BUSINESS_DATE,
+      productPerformances: [
+        buildProductDailyPerformance({
+          ...productDailyGoldenFixture,
+          wasteObservations: [],
+        }),
+      ],
+      computedAt: COMPUTED_AT,
+      incompleteSources: { sales: true, waste: false },
+    });
+    expect(pending.availability.salesValue.status).toBe("PARTIAL");
+  });
+
   it("aggregates product money values without aggregating incompatible quantities", () => {
     const result = buildDepartmentDailyPerformance({
       storeId: STORE_ID,

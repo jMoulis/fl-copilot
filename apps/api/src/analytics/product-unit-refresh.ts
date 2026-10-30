@@ -4,6 +4,7 @@ import type { DatabaseService } from "../database/types";
 import {
   createMongoRemoteAnalyticsRepository,
   RemoteAnalyticsConfirmationService,
+  refreshDepartmentCoverage,
 } from "./remote-confirmation";
 
 /** Internal derived-work marker, never accepted from a Product DTO or synchronized as an entity. */
@@ -221,7 +222,9 @@ export async function advanceProductUnitRefresh(
   now?: () => Date,
 ) {
   try {
-    return await refreshProductUnits(database, storeId, now);
+    const result = await refreshProductUnits(database, storeId, now);
+    await refreshDepartmentCoverage(database, storeId, now);
+    return result;
   } catch {
     console.warn("PRODUCT_ANALYTICS_REFRESH_DEFERRED");
     return { processed: 0, remaining: true };

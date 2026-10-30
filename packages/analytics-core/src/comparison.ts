@@ -130,7 +130,7 @@ export function compareYearOverYear(input: {
   readonly history: readonly DatedKpiValue[];
 }): ComparisonResult {
   validatePoint(input.current);
-  const referenceDate = previousYearDate(input.current.businessDate);
+  const referenceDate = previousIsoYearDate(input.current.businessDate);
   const reference = referenceDate
     ? historyByDate(input.history).get(referenceDate)
     : undefined;
@@ -138,8 +138,8 @@ export function compareYearOverYear(input: {
     kpiId: input.kpiId,
     mode: "YEAR_OVER_YEAR",
     method: referenceDate
-      ? `same calendar date in previous year (${referenceDate})`
-      : "same calendar date in previous year unavailable for leap day",
+      ? `same ISO week in previous ISO year, same weekday (${referenceDate})`
+      : "same ISO week unavailable in previous ISO year",
     currentPoints: [input.current],
     referencePoints: reference ? [reference] : [],
     currentAggregation: "SUM",
@@ -433,15 +433,25 @@ function addUtcDays(date: string, days: number): string {
   return formatBusinessDate(parsed);
 }
 
-function previousYearDate(date: string): string | null {
+/** Retail N−1: same ISO week and weekday, never a civil anniversary. */
+export function previousIsoYearDate(date: string): string | null {
   const parsed = parseBusinessDate(date);
-  const year = parsed.getUTCFullYear() - 1;
-  const month = parsed.getUTCMonth();
-  const day = parsed.getUTCDate();
-  const candidate = new Date(Date.UTC(year, month, day));
-  return candidate.getUTCMonth() === month && candidate.getUTCDate() === day
-    ? formatBusinessDate(candidate)
-    : null;
+  const weekday = (parsed.getUTCDay() + 6) % 7;
+  parsed.setUTCDate(parsed.getUTCDate() + 3 - weekday);
+  const year = parsed.getUTCFullYear();
+  const first = new Date(Date.UTC(year, 0, 4));
+  first.setUTCDate(first.getUTCDate() + 3 - ((first.getUTCDay() + 6) % 7));
+  const week = 1 + Math.round((parsed.getTime() - first.getTime()) / 604800000);
+  const candidate = new Date(Date.UTC(year - 1, 0, 4));
+  candidate.setUTCDate(
+    candidate.getUTCDate() +
+      3 -
+      ((candidate.getUTCDay() + 6) % 7) +
+      (week - 1) * 7,
+  );
+  if (candidate.getUTCFullYear() !== year - 1) return null;
+  candidate.setUTCDate(candidate.getUTCDate() - 3 + weekday);
+  return formatBusinessDate(candidate);
 }
 
 function weekday(date: string): number {

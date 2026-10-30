@@ -1,3 +1,5 @@
+> **Owner arbitration — 30 October 2026:** Default retail N−1 compares the same ISO week and weekday, including the days selected through month/year exploration. Display the actual reference dates. Explicit custom/source periods retain their requested meaning. Sales and margin coverage is independent of waste capture; a waste-only product is not a missing sale. Missing fields in real sales and unresolved source lines remain qualified. Comparable recorded closed-day pairs may yield an explicitly indicative partial comparison instead of hiding every delta. Keep paired comparison totals distinct from the selected period's total. Mercalys waste dates may represent handheld unloading; describe recorded waste and never fabricate a scan/loss date. See `../qa/M8_ANALYTICS_RETAIL_COMPARISONS_2026_10_30.md`.
+
 # KPI & Analytics Engine Functional Specification
 
 **Product:** Fruits & Vegetables Copilot  

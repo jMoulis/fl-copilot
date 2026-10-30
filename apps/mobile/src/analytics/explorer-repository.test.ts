@@ -134,7 +134,10 @@ it("refuses corrupt scope and preserves explicit unavailable/partial values", as
         "2026-10-19",
       );
     expect(r.total).toBe("10.01");
-    expect(r.comparison).toBeNull();
+    expect(r.comparison).toMatchObject({
+      status: "PARTIAL",
+      referenceValue: "5",
+    });
     insert(db, store, "2026-10-16", "999", "AVAILABLE", randomUUID());
     await expect(
       repo.load(

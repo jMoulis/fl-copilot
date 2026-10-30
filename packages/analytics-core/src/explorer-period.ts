@@ -5,7 +5,11 @@ import {
   type AnalyticsExplorerGranularity,
 } from "@fl-copilot/domain";
 import type { DatePeriod, DatedKpiValue } from "./comparison";
-import { compareCustomReference } from "./comparison";
+import {
+  compareCustomReference,
+  previousIsoYearDate,
+  type ComparisonResult,
+} from "./comparison";
 import { calculateCalendarPeriodComparison } from "./calendar-period-comparison";
 import { sumAvailableCurrency } from "./formulas";
 export type ExplorerPeriod = AnalyticsExplorerPeriod;
@@ -89,11 +93,8 @@ export function explorerReference(p: ExplorerPeriod): ExplorerPeriod | null {
         ? { ...p, current: p.reference, reference: null }
         : null;
     if (p.kind === "day") {
-      const w = isoWeekOf(p.date);
-      return {
-        kind: "day",
-        date: addExplorerDays(weekMonday(w.year - 1, w.week), w.weekday),
-      };
+      const date = previousIsoYearDate(p.date);
+      return date ? { kind: "day", date } : null;
     }
     if (p.kind === "week") {
       const ref = { ...p, year: p.year - 1 };
@@ -104,6 +105,17 @@ export function explorerReference(p: ExplorerPeriod): ExplorerPeriod | null {
   } catch {
     return null;
   }
+}
+/** The reference of a civil month/year may extend outside its civil anniversary. */
+export function explorerReferenceRange(p: ExplorerPeriod): DatePeriod | null {
+  if (p.kind === "range") return p.reference;
+  const dates = explorerDays(explorerRange(p))
+    .flatMap((date) => {
+      const reference = previousIsoYearDate(date);
+      return reference ? [reference] : [];
+    })
+    .sort();
+  return dates.length ? { start: dates[0]!, end: dates.at(-1)! } : null;
 }
 export function explorerDays(r: DatePeriod) {
   const a: string[] = [];
@@ -142,9 +154,8 @@ export function compareExplorerPeriod(input: {
     );
   const range = explorerRange(input.period),
     reference = explorerReference(input.period),
-    refRange = reference ? explorerRange(reference) : null,
+    refRange = explorerReferenceRange(input.period),
     currentDates = explorerDays(range),
-    refDates = refRange ? explorerDays(refRange) : [],
     map = new Map<string, DatedKpiValue>();
   for (const p of input.points) {
     copilotBusinessDateSchema.parse(p.businessDate);
@@ -177,55 +188,62 @@ export function compareExplorerPeriod(input: {
       ).length,
       expected: current.length,
     };
-  // For the current civil month/year retain the same elapsed date span, not a made-up weekday-normalised month.
-  const pairs = currentDates.flatMap((date, i) => {
-    const civil = input.period.kind === "month" || input.period.kind === "year";
-    const candidate =
-      civil && refRange
-        ? `${refRange.start.slice(0, 4)}-${date.slice(5)}`
-        : refDates[i];
-    const other =
-      candidate && copilotBusinessDateSchema.safeParse(candidate).success
-        ? candidate
-        : undefined;
+  const pairs = currentDates.flatMap((date) => {
+    const other = previousIsoYearDate(date);
     return date < input.today && other && other < input.today
       ? [{ current: point(date), reference: point(other) }]
       : [];
   });
   const available = pairs.filter(
     (p) =>
-      p.current.status === "AVAILABLE" &&
+      p.current.status !== "UNAVAILABLE" &&
       p.current.value !== null &&
-      p.reference.status === "AVAILABLE" &&
+      p.reference.status !== "UNAVAILABLE" &&
       p.reference.value !== null,
   );
   const eligible = currentDates.filter((d) => d < input.today).length;
-  const differentFullCivilPeriod =
-    (input.period.kind === "month" || input.period.kind === "year") &&
-    range.end < input.today &&
-    currentDates.length !== refDates.length;
   const comparable =
     !!reference &&
     pairs.length > 0 &&
     pairs.length === eligible &&
     available.length === pairs.length &&
-    !differentFullCivilPeriod;
-  const comparison = comparable
+    available.every(
+      (p) =>
+        p.current.status === "AVAILABLE" && p.reference.status === "AVAILABLE",
+    );
+  const rawComparison = available.length
     ? compareCustomReference({
         kpiId: input.kpiId,
         currentPoints: available.map((p) => p.current),
         referencePoints: available.map((p) => p.reference),
         aggregation: "SUM",
         referenceMethod:
-          input.period.kind === "week" || input.period.kind === "day"
-            ? "same ISO week-year N-1, same weekday"
-            : "same civil period N-1; same elapsed calendar dates; no weekday normalization",
+          "same ISO week-year N-1, same weekday; paired recorded closed days",
       })
     : null;
+  const comparison: ComparisonResult | null =
+    rawComparison && !comparable
+      ? {
+          ...rawComparison,
+          status: "PARTIAL",
+          qualityScore: Math.min(
+            rawComparison.qualityScore,
+            available.length / eligible,
+          ),
+          warnings: [
+            ...new Set([
+              ...rawComparison.warnings,
+              "PARTIAL_CURRENT" as const,
+              "PARTIAL_REFERENCE" as const,
+            ]),
+          ],
+        }
+      : rawComparison;
   return {
     mode: "DEFAULT" as const,
     sourceBasis: null,
-    warnings: [] as string[],
+    warnings:
+      pairs.length < eligible ? ["NO_ISO_EQUIVALENT"] : ([] as string[]),
     range,
     reference,
     referenceRange: refRange,
@@ -233,17 +251,15 @@ export function compareExplorerPeriod(input: {
     coverage,
     points: current,
     comparison,
-    comparedDays: comparable ? pairs.length : 0,
-    comparisonDates: comparable
-      ? pairs.map((p) => ({
-          current: p.current.businessDate,
-          reference: p.reference.businessDate,
-        }))
-      : [],
+    comparedDays: available.length,
+    comparisonDates: available.map((p) => ({
+      current: p.current.businessDate,
+      reference: p.reference.businessDate,
+    })),
     comparisonStatus:
-      !reference || differentFullCivilPeriod
+      !reference || !refRange
         ? ("not_comparable" as const)
-        : !pairs.length || !available.length
+        : !available.length
           ? ("missing_baseline" as const)
           : !comparable
             ? ("partial" as const)

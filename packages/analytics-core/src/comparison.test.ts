@@ -149,7 +149,10 @@ describe("comparison engine", () => {
       compareYearOverYear({
         kpiId: "sales_value",
         current,
-        history: [available("2025-09-23", "100.00")],
+        history: [
+          available("2025-09-24", "100.00"),
+          available("2025-09-23", "999.00"),
+        ],
       }),
     ).toMatchObject({
       referenceValue: "100.00",

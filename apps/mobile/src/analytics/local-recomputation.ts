@@ -1,5 +1,6 @@
 import {
   buildDepartmentDailyPerformance,
+  DEPARTMENT_COVERAGE_REVISION,
   buildProductDailyPerformance,
   serializeDepartmentDailyPerformance,
   serializeProductDailyPerformance,
@@ -22,6 +23,10 @@ export interface ProductDateScope {
 }
 
 export interface ProductDateRecomputer {
+  refreshDepartmentCoverage?(
+    storeId: string,
+    yieldToInterface: () => Promise<void>,
+  ): Promise<void>;
   recomputeProduct(storeId: string, scope: ProductDateScope): Promise<void>;
   /** Optional bounded atomic batch; uses the same canonical per-product formula. */
   recomputeProducts?(
@@ -301,6 +306,16 @@ export class LocalAnalyticsRecomputationScheduler {
       }
     }
 
+    try {
+      await this.recomputer.refreshDepartmentCoverage?.(
+        storeId,
+        yieldToInterface,
+      );
+    } catch {
+      // A damaged derived cache must not block accepted jobs or network sync.
+      // Its old revision remains available for a later attempt.
+      console.warn("ANALYTICS_COVERAGE_REFRESH_DEFERRED");
+    }
     return {
       attemptedJobs: rows.length,
       completedJobs,
@@ -322,6 +337,32 @@ export class SQLiteProductDateRecomputer implements ProductDateRecomputer {
     private readonly database: RecomputationDatabase,
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
+
+  /** Refresh derived history in small transactions; no import, source write or network. */
+  async refreshDepartmentCoverage(
+    storeId: string,
+    yieldToInterface: () => Promise<void>,
+  ) {
+    for (;;) {
+      const rows = await this.database.getAllAsync<{ business_date: string }>(
+        `SELECT business_date FROM department_daily_performance
+         WHERE store_id=? AND input_revision NOT LIKE ?
+         AND (SELECT COUNT(*) FROM product_daily_performance p
+              WHERE p.store_id=department_daily_performance.store_id
+              AND p.business_date=department_daily_performance.business_date)
+             >= COALESCE(json_extract(payload_json,'$.productCount'),1)
+         ORDER BY business_date DESC LIMIT 10`,
+        storeId,
+        `${DEPARTMENT_COVERAGE_REVISION}%`,
+      );
+      if (!rows.length) return;
+      for (const row of rows) {
+        await this.recomputeDepartment(storeId, row.business_date);
+        await yieldToInterface();
+      }
+      notifyOutboxChanged();
+    }
+  }
 
   async recomputeProduct(storeId: string, scope: ProductDateScope) {
     await this.recomputeProducts(storeId, [scope]);
