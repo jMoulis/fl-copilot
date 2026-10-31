@@ -25,12 +25,15 @@ const dailyFields = {
   id: "Identifiant de la projection journalière",
   date: "Date métier YYYY-MM-DD ; casse enregistrée parfois décalée",
   sales: "CA net EUR Decimal128 ou null ; base HT/TTC non confirmée",
+  salesCost:
+    "Montant d’achat des ventes EUR Decimal128 ou null ; pas un tarif fournisseur ni un PA unitaire. Pour un coût moyen, apparier montant et quantité sur les mêmes jours et unité ; base fiscale source non confirmée",
   margin: "Marge EUR Decimal128 ou null, pas un taux",
   waste: "Casse au prix de vente EUR Decimal128 ou null",
   wasteCostKnown: "Casse au coût d’achat connu EUR Decimal128 ou null",
   wasteCostEstimated:
     "Casse au coût d’achat estimé EUR Decimal128 ou null ; distinct du coût connu",
   salesStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
+  salesCostStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
   marginStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
   wasteStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
   wasteCostKnownStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
@@ -393,6 +396,7 @@ function sourcePipeline(
   };
   for (const [name, value, availability] of [
     ["sales", "sales.salesValue", "salesValue"],
+    ["salesCost", "sales.purchaseValue", "salesPurchaseValue"],
     ["margin", "sales.marginValue", "salesMarginValue"],
     ["waste", "waste.salesValue", "wasteSalesValue"],
     ["wasteCostKnown", "waste.purchaseValueKnown", "wastePurchaseValueKnown"],
@@ -688,6 +692,7 @@ export async function readMongoExploration(
       });
       for (const metric of [
         "sales",
+        "salesCost",
         "margin",
         "waste",
         "wasteCostKnown",

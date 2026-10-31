@@ -189,6 +189,101 @@ describe.skipIf(!uri)(
         costEstimated: "0.68",
       });
     });
+    it("pairs recorded purchase amounts with only the same available quantity days, retaining partial coverage and scalar citations", async () => {
+      const collection = db.collection<Document & { _id: string }>(
+        "productDailyPerformance",
+      );
+      for (const [date, amount, state] of [
+        ["2026-10-01", "0.02", "AVAILABLE"],
+        ["2026-10-02", "0.04", "PARTIAL"],
+        ["2026-10-03", "999", "UNAVAILABLE"],
+      ]) {
+        await collection.updateOne(
+          { storeId, date },
+          {
+            $set: {
+              "performance.sales.purchaseValue": amount,
+              "performance.availability.salesPurchaseValue.status": state,
+            },
+          },
+        );
+      }
+      const paired = await aggregate([
+        {
+          $match: {
+            quantityUnit: "KG",
+            quantityStatus: "AVAILABLE",
+            salesCostStatus: "AVAILABLE",
+          },
+        },
+        {
+          $group: {
+            _id: "$productId",
+            cost: { $sum: "$salesCost" },
+            quantity: { $sum: "$quantity" },
+          },
+        },
+        { $set: { averageCost: { $divide: ["$cost", "$quantity"] } } },
+      ]);
+      expect(paired.status).toBe("AVAILABLE");
+      expect(paired.rows).toEqual([
+        { _id: productId, cost: "0.02", quantity: "0.01", averageCost: "2" },
+      ]);
+      expect(paired.sourceCoverage).toMatchObject({
+        salesCost_AVAILABLE: 1,
+        salesCost_PARTIAL: 1,
+        salesCost_UNAVAILABLE: 1,
+      });
+      const evidence = paired.evidence.find(
+        (e) => e.label === "Résultat 1 · averageCost",
+      )!;
+      expect(
+        renderAnswerText(
+          "{{value:0}} {{source:0}}",
+          [{ evidenceId: evidence.id }],
+          paired.evidence,
+        ),
+      ).toContain("2");
+      const all = await aggregate([
+        { $group: { _id: null, cost: { $sum: "$salesCost" } } },
+      ]);
+      expect(all.rows).toEqual([{ _id: null, cost: "0.06" }]);
+    });
+    it("preserves missing purchase amounts as null and exposes recorded department costs independently of sales availability", async () => {
+      expect(
+        (
+          await aggregate([
+            { $group: { _id: null, cost: { $sum: "$salesCost" } } },
+          ])
+        ).rows,
+      ).toEqual([{ _id: null, cost: null }]);
+      const document = row("2026-10-01", null, null);
+      document.performance.formulaVersion = "department-daily-v1";
+      await db
+        .collection<Document & { _id: string }>("departmentDailyPerformance")
+        .insertOne({
+          ...document,
+          performance: {
+            ...document.performance,
+            sales: { ...document.performance.sales, purchaseValue: "0" },
+            availability: {
+              ...document.performance.availability,
+              salesPurchaseValue: { status: "AVAILABLE" },
+            },
+          },
+        });
+      const result = await readMongoExploration(db, storeId, {
+        action: "GET",
+        collection: "departmentDailyPerformance",
+        id: document._id,
+      });
+      expect(result.rows[0]).toMatchObject({
+        sales: null,
+        salesStatus: "UNAVAILABLE",
+        salesCost: "0",
+        salesCostStatus: "AVAILABLE",
+      });
+    });
     it("never reveals raw fields or foreign records through list/get/filter, and joins only the current store catalogue", async () => {
       const list = await readMongoExploration(db, storeId, {
         action: "LIST",
