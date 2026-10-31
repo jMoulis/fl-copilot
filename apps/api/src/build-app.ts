@@ -679,7 +679,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           c.entityType.startsWith("copilot_") || c.type.startsWith("COPILOT_"),
       ) ||
       hasLayoutWrite ||
-      hasVisualWrite
+      hasVisualWrite ||
+      request.body.commands.some(
+        (c) =>
+          c.entityType === "document_archive" ||
+          c.type === "DOCUMENT_ARCHIVE_SET",
+      )
         ? syncPush.push(request.body, request.id, principal.userId)
         : syncPush.push(request.body, request.id));
       if (
@@ -2055,7 +2060,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.headers["x-copilot-analytics-destinations"],
       );
       try {
-        return request.query.copilotHistory === "true"
+        return request.query.copilotHistory === "true" ||
+          request.query.documentArchives === "true"
           ? await syncPull.pull(
               storeId,
               request.query,

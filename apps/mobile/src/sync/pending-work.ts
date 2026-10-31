@@ -27,7 +27,7 @@ export async function readPendingWork(
     count: number;
     last_error_code: string | null;
   }>(
-    `SELECT COUNT(*) AS count,MAX(last_error_code) AS last_error_code FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING') AND ((entity_type NOT GLOB 'copilot_*' AND entity_type!='email_intake_decision') OR json_extract(payload_json,'$.ownerId')=?)`,
+    `SELECT COUNT(*) AS count,MAX(last_error_code) AS last_error_code FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING') AND ((entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('email_intake_decision','document_archive')) OR json_extract(payload_json,'$.ownerId')=?)`,
     storeId,
     ownerId ?? null,
   );

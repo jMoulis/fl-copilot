@@ -227,6 +227,11 @@ export function SyncProvider({ children }: PropsWithChildren) {
           withAccessToken((token) =>
             api.emailIntakeDecisionPage(token, storeId, cursor),
           ),
+        documentArchiveHistory: (storeId, cursor) =>
+          withAccessToken(
+            (token) => api.documentArchiveHistory(token, storeId, cursor),
+            session?.user.id,
+          ),
         push: (request) =>
           withAccessToken((token) => api.pushSync(token, request)),
         pull: (storeId, cursor) =>
@@ -265,10 +270,17 @@ export function SyncProvider({ children }: PropsWithChildren) {
               true,
               true,
               true,
+              true,
             ),
           ),
       },
       {
+        documentArchives: true,
+        documentArchivesAllowed: (storeId) =>
+          emailReadSession.current?.user.id === session?.user.id &&
+          emailReadSession.current?.stores.some(
+            (store) => store.storeId === storeId,
+          ) === true,
         appVersion: Constants.expoConfig?.version ?? "0.0.0",
         deviceId: database.deviceId,
         commercialReview: true,
@@ -642,6 +654,12 @@ export function SyncProvider({ children }: PropsWithChildren) {
             setState({ ...snapshot, status: deriveStatus(snapshot) });
             return summary;
           } catch (error) {
+            if (
+              !currentScope() &&
+              error instanceof Error &&
+              error.message === "DOCUMENT_ARCHIVE_SCOPE_CHANGED"
+            )
+              return undefined;
             captureLocalOperationFailure(error, "synchronization");
             if (!currentScope()) return undefined;
             snapshotRequest.current++;
@@ -1154,7 +1172,7 @@ async function readLocalSyncSnapshot(
         SELECT COUNT(*) AS conflict_count
         FROM sync_conflicts
         WHERE store_id = ? AND status = 'OPEN'
-          AND ((entity_type NOT GLOB 'copilot_*' AND entity_type!='email_intake_decision') OR
+          AND ((entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('email_intake_decision','document_archive')) OR
             (json_extract(local_payload_json,'$.ownerId')=? AND
              (remote_payload_json='null' OR json_extract(remote_payload_json,'$.ownerId')=?)))
       `,

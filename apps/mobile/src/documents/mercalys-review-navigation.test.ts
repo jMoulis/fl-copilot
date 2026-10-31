@@ -16,6 +16,8 @@ import type { MercalysBatchInput, MercalysBatchItem } from "@fl-copilot/domain";
 import type { ComponentProps } from "react";
 
 const ports = vi.hoisted(() => ({
+  visibility: vi.fn().mockResolvedValue([]),
+  archiveSet: vi.fn(),
   recent: vi.fn(),
   page: vi.fn(),
   get: vi.fn(),
@@ -106,6 +108,12 @@ vi.mock("./mercalys-batch-publication", () => ({
   MercalysBatchPublication: class {
     preview = ports.preview;
     confirm = ports.confirm;
+  },
+}));
+vi.mock("./document-archive-repository", () => ({
+  DocumentArchiveRepository: class {
+    list = ports.visibility;
+    set = ports.archiveSet;
   },
 }));
 vi.mock("./mercalys-archive-repository", () => ({
@@ -436,12 +444,13 @@ function batchFixture() {
   return items;
 }
 let fileBusy: ((busy: boolean) => void) | undefined;
-function panel() {
+function panel(patch: Partial<ComponentProps<typeof MercalysBatchPanel>> = {}) {
   return createElement(MercalysBatchPanel, {
     db: {} as ComponentProps<typeof MercalysBatchPanel>["db"],
     storeId: "store",
     ownerId: "owner",
     pick: vi.fn(),
+    ...patch,
     renderReview: (asset, close, reportBusy, changed) => {
       fileBusy = reportBusy;
       return createElement(
@@ -593,4 +602,67 @@ it("reprepares only the changed file after a committed mapping/publication, once
     "item-0",
     expect.any(AbortSignal),
   );
+});
+
+it("archives and restores lots/files through the retained list without publishing, rereading bytes or leaving the modal", async () => {
+  batchFixture();
+  let entries: unknown[] = [];
+  ports.visibility.mockImplementation(async () => entries);
+  ports.archiveSet.mockImplementation(
+    async (id: string, targetKind: string, archived: boolean) => {
+      entries = entries.filter((e) => (e as { id: string }).id !== id);
+      entries.push({
+        id,
+        targetKind,
+        archived,
+        storeId: "store",
+        ownerId: "owner",
+        version: 1,
+        updatedAt: at,
+      });
+      return true;
+    },
+  );
+  await act(async () => {
+    renderer = create(
+      panel({ archiveContext: { deviceId: "device", canWrite: () => true } }),
+    );
+  });
+  const action = async (label: string) =>
+    act(async () => {
+      const n = renderer!.root.findAll(
+        (node) =>
+          String(node.type) === "UI" && node.props.accessibilityLabel === label,
+      )[0]!;
+      n.props.onPress();
+    });
+  const filter = async (label: string) =>
+    act(async () => {
+      const n = renderer!.root.findAll(
+        (node) =>
+          String(node.type) === "Pressable" &&
+          node.props.accessibilityLabel === label,
+      )[0]!;
+      n.props.onPress();
+    });
+  await action("Archiver 21102026.zip");
+  expect(text(renderer!.root)).not.toContain("21102026.zip");
+  await filter("Imports : Archivés");
+  expect(ports.archives).toHaveBeenLastCalledWith(undefined, true);
+  expect(text(renderer!.root)).toContain("21102026.zip");
+  await action("Restaurer 21102026.zip");
+  await filter("Imports : Actifs");
+  await openBatch();
+  const reads = ports.page.mock.calls.length;
+  await action("Archiver export-0.xlsx");
+  expect(text(renderer!.root)).not.toContain("export-0.xlsx");
+  expect(ports.page).toHaveBeenCalledTimes(reads);
+  await filter("Fichiers : Archivés");
+  expect(ports.page).toHaveBeenLastCalledWith("batch", -1, 20, true);
+  expect(text(renderer!.root)).toContain("export-0.xlsx");
+  await action("Restaurer export-0.xlsx");
+  await filter("Fichiers : Actifs");
+  expect(text(renderer!.root)).toContain("export-0.xlsx");
+  expect(ports.confirm).not.toHaveBeenCalled();
+  expect(ports.prepare).not.toHaveBeenCalled();
 });

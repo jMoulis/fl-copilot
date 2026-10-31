@@ -934,6 +934,11 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     ALTER TABLE commercial_offer_choices_next RENAME TO commercial_offer_choices;
     CREATE INDEX commercial_choices_store ON commercial_offer_choices(store_id,source_document_id);`,
   },
+  {
+    version: 62,
+    name: "personal-document-archives",
+    sql: "CREATE TABLE document_archives(id TEXT NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,target_kind TEXT NOT NULL,archived INTEGER NOT NULL CHECK(archived IN (0,1)),payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,pending_command_id TEXT,PRIMARY KEY(store_id,owner_id,id)); CREATE INDEX document_archives_visibility ON document_archives(store_id,owner_id,target_kind,archived,id);",
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

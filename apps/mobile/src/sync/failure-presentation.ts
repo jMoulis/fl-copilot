@@ -1,5 +1,6 @@
 const labels: Record<string, string> = {
   product: "Produit",
+  document_archive: "Rangement des documents",
   product_identifier: "Code produit",
   product_alias: "Libellé produit",
   mercalys_publication: "Publication Mercalys",

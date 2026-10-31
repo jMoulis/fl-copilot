@@ -1,3 +1,6 @@
+import { DocumentArchiveRepository } from "../../documents/document-archive-repository";
+import { DocumentArchiveControl } from "../../documents/document-archive-control";
+import type { DocumentArchive } from "@fl-copilot/domain";
 import { CommercialOriginalButton } from "../../commercial/original-button";
 import { CommercialAnalysisRecoveryPanel } from "../../commercial/analysis-recovery-panel";
 import { WeeklySubstitutesView } from "../../commercial/substitute-view";
@@ -82,7 +85,7 @@ function StoreWeekScreen() {
           sync.lastSyncedAt,
           syncStatus,
         ]);
-  const { sqlite } = useLocalDatabase();
+  const { sqlite, deviceId } = useLocalDatabase();
   const storeId = session?.stores[0]?.storeId;
   const canRetryUpload = useRef({
       allowed: false,
@@ -103,6 +106,15 @@ function StoreWeekScreen() {
     () => new CommercialReviewRepository(sqlite),
     [sqlite],
   );
+  const archiveRepository = useMemo(
+    () =>
+      new DocumentArchiveRepository(sqlite, {
+        storeId: storeId ?? "",
+        ownerId: session?.user.id ?? "",
+      }),
+    [sqlite, storeId, session?.user.id],
+  );
+  const [archiveEntries, setArchiveEntries] = useState<DocumentArchive[]>([]);
   const [preparation, setPreparation] = useState(false);
   const [preparationLoaded, setPreparationLoaded] = useState(false);
   const [query, setQuery] = useState("");
@@ -132,23 +144,32 @@ function StoreWeekScreen() {
   const [message, setMessage] = useState<string>();
   const [error, setError] = useState<string>();
   const rows = useMemo(
-    () => commercialDocumentRows(documents, reviewPages, reviewDecisions, jobs),
-    [documents, reviewPages, reviewDecisions, jobs],
+    () =>
+      commercialDocumentRows(
+        documents,
+        reviewPages,
+        reviewDecisions,
+        jobs,
+        archiveEntries,
+      ),
+    [documents, reviewPages, reviewDecisions, jobs, archiveEntries],
   );
   const visible = useMemo(
     () => commercialDocumentPage(rows, query, filter, page),
     [rows, query, filter, page],
   );
   const readDocuments = useCallback(async () => {
-    if (!storeId) return { items: [], jobs: {}, pages: [], decisions: [] };
-    const [items, jobs, pages, decisions] = await Promise.all([
+    if (!storeId)
+      return { items: [], jobs: {}, pages: [], decisions: [], archives: [] };
+    const [items, jobs, pages, decisions, archives] = await Promise.all([
       repository.listDocuments(storeId, "WEEKLY_COMMERCIAL_PDF"),
       repository.listCommercialPdfUploadJobs(storeId),
       reviews.pages(storeId),
       reviews.decisions(storeId),
+      archiveRepository.list(),
     ]);
-    return { items, jobs, pages, decisions };
-  }, [repository, reviews, storeId]);
+    return { items, jobs, pages, decisions, archives };
+  }, [repository, reviews, storeId, archiveRepository]);
   const refreshDocuments = useCallback(async () => {
     if (!focusedForUpload.current) return;
     const version = ++readGeneration.current;
@@ -156,13 +177,28 @@ function StoreWeekScreen() {
       const result = await readDocuments();
       if (version !== readGeneration.current || !focusedForUpload.current)
         return;
+      setArchiveEntries(result.archives);
       setDocuments(result.items);
       setJobs(result.jobs);
       setReviewPages(result.pages);
       setReviewDecisions(result.decisions);
       setReadError(undefined);
       if (focusSource.current) {
-        const index = result.items.findIndex(
+        const archived = result.archives.some(
+          (a) =>
+            a.id === focusSource.current &&
+            a.targetKind === "COMMERCIAL_DOCUMENT" &&
+            a.archived,
+        );
+        setFilter(archived ? "ARCHIVED" : "ALL");
+        const candidates = commercialDocumentRows(
+          result.items,
+          result.pages,
+          result.decisions,
+          result.jobs,
+          result.archives,
+        ).filter((row) => row.archived === archived);
+        const index = candidates.findIndex(
           (item) => item.id === focusSource.current,
         );
         changePage(Math.max(0, Math.floor(index / 10)));
@@ -318,7 +354,8 @@ function StoreWeekScreen() {
             value={filter}
             options={
               [
-                { value: "ALL", label: "Tous" },
+                { value: "ALL", label: "Actifs" },
+                { value: "ARCHIVED", label: "Archivés" },
                 { value: "PENDING", label: "En attente" },
                 { value: "RESULTS", label: "Résultats reçus" },
                 { value: "ATTENTION", label: "À vérifier" },
@@ -355,6 +392,7 @@ function StoreWeekScreen() {
               summary,
               upload: state,
               attention,
+              archived,
             }) => (
               <SectionCard key={sourceId} title={title}>
                 <View className="gap-2">
@@ -388,6 +426,29 @@ function StoreWeekScreen() {
                       }
                     />
                   ) : null}
+                  <DocumentArchiveControl
+                    repository={archiveRepository}
+                    access={{
+                      deviceId,
+                      canWrite: () =>
+                        focusedForUpload.current &&
+                        canRetryUpload.current.storeId === storeId &&
+                        canRetryUpload.current.ownerId === session?.user.id,
+                      onChanged: () => {
+                        if (storeId)
+                          void syncNow(storeId).catch(() => undefined);
+                      },
+                    }}
+                    id={sourceId}
+                    targetKind="COMMERCIAL_DOCUMENT"
+                    archived={archived}
+                    name={title}
+                    disabled={busy || !!readError}
+                    onChanged={async () => {
+                      focusSource.current = undefined;
+                      await refreshDocuments();
+                    }}
+                  />
                   {document?.remoteUploadStatus === "CONFIRMED" ? (
                     <CommercialAnalysisRecoveryPanel
                       sourceDocumentId={sourceId}

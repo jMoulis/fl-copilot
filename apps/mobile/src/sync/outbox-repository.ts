@@ -113,7 +113,7 @@ function assertChanged(result: SQLiteRunResult, transition: string) {
 }
 
 export const ACTIVE_FAILED_OUTBOX_SQL =
-  "status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','EMAIL_INTAKE_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED','COMMERCIAL_REVIEW_SUPERSEDED')";
+  "status='FAILED' AND COALESCE(last_error_code,'') NOT IN ('COPILOT_KNOWLEDGE_SUPERSEDED','COPILOT_DECISION_SUPERSEDED','EMAIL_INTAKE_DECISION_SUPERSEDED','COMMERCIAL_CHOICE_SUPERSEDED','COMMERCIAL_PREPARATION_SUPERSEDED','COMMERCIAL_EXECUTION_SUPERSEDED','STORE_CONTEXT_SUPERSEDED','STORE_LAYOUT_SUPERSEDED','NEED_UNIT_SUPERSEDED','NEED_MEMBERSHIP_SUPERSEDED','PRODUCT_SUBSTITUTION_SUPERSEDED','STORE_EVENT_SUPERSEDED','COMMERCIAL_PLAN_SUPERSEDED','COMMERCIAL_VERSION_DECISION_SUPERSEDED','PRODUCT_MASTER_CONFLICT_SUPERSEDED','VISUAL_LIBRARY_SUPERSEDED','COMMERCIAL_VALIDATION_SUPERSEDED','COMMERCIAL_REVIEW_SUPERSEDED','DOCUMENT_ARCHIVE_SUPERSEDED')";
 
 export class OutboxRepository {
   constructor(
@@ -126,7 +126,7 @@ export class OutboxRepository {
       pending_count: number | null;
       failed_count: number | null;
     }>(
-      `SELECT SUM(CASE WHEN status IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending_count,SUM(CASE WHEN ${ACTIVE_FAILED_OUTBOX_SQL} THEN 1 ELSE 0 END) AS failed_count FROM sync_outbox WHERE store_id=? AND ((entity_type NOT GLOB 'copilot_*' AND entity_type!='email_intake_decision') OR json_extract(payload_json,'$.ownerId')=?)`,
+      `SELECT SUM(CASE WHEN status IN ('PENDING','SYNCING') THEN 1 ELSE 0 END) AS pending_count,SUM(CASE WHEN ${ACTIVE_FAILED_OUTBOX_SQL} THEN 1 ELSE 0 END) AS failed_count FROM sync_outbox WHERE store_id=? AND ((entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('email_intake_decision','document_archive')) OR json_extract(payload_json,'$.ownerId')=?)`,
       storeId,
       ownerId ?? null,
     );
@@ -193,7 +193,11 @@ export class OutboxRepository {
     return row ? mapRow(row) : null;
   }
 
-  async listPending(storeId: string, limit = MAX_PENDING_COMMANDS) {
+  async listPending(
+    storeId: string,
+    limit = MAX_PENDING_COMMANDS,
+    ownerId?: string,
+  ) {
     if (!Number.isInteger(limit) || limit < 1 || limit > MAX_PENDING_COMMANDS) {
       throw new Error(
         `Pending Outbox limit must be between 1 and ${MAX_PENDING_COMMANDS}.`,
@@ -203,6 +207,7 @@ export class OutboxRepository {
       `
         SELECT * FROM sync_outbox
         WHERE store_id = ? AND status = 'PENDING'
+          AND (? IS NULL OR (entity_type NOT GLOB 'copilot_*' AND entity_type NOT IN ('email_intake_decision','document_archive')) OR json_extract(payload_json,'$.ownerId')=?)
           AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link','mercalys_publication','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','product_alias','commercial_offer_choice','commercial_week_preparation','commercial_execution_task','store_context_settings','store_layout','need_unit','need_membership','product_substitution','store_product_event','commercial_week_plan','commercial_version_decision') OR NOT EXISTS (
             SELECT 1 FROM sync_outbox prior
             WHERE prior.store_id = sync_outbox.store_id
@@ -218,6 +223,8 @@ export class OutboxRepository {
         LIMIT ?
       `,
       storeId,
+      ownerId ?? null,
+      ownerId ?? null,
       limit,
     );
     return rows.map(mapRow);
@@ -234,7 +241,7 @@ export class OutboxRepository {
     }>(
       `SELECT command_id,entity_type,entity_id,local_sequence,last_error_code FROM sync_outbox
        WHERE store_id=? AND ${ACTIVE_FAILED_OUTBOX_SQL} AND local_sequence>?
-       AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution') OR
+       AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','document_archive') OR
          (? IS NOT NULL AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.ownerId')=?
           AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.storeId')=?))
        AND (entity_type NOT IN ('visual_asset','visual_identity','product_visual_link') OR

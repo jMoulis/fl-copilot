@@ -1,4 +1,11 @@
 import { colors } from "../design/tokens";
+import { DocumentArchiveRepository } from "./document-archive-repository";
+import {
+  DocumentArchiveControl,
+  ArchiveViewFilter,
+  type DocumentArchiveAccess,
+} from "./document-archive-control";
+import type { DocumentArchive } from "@fl-copilot/domain";
 import { captureLocalOperationFailure } from "../observability/sentry";
 import { localOperationFailureMessage } from "../observability/local-operation-failure";
 import {
@@ -13,7 +20,14 @@ import {
   extractRetainedMercalysZip,
   nativeMercalysZipStorage,
 } from "./mercalys-zip-capture";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   Modal,
   Platform,
@@ -64,7 +78,9 @@ export function MercalysBatchPanel({
   pickZip,
   renderReview,
   disabled = false,
+  archiveContext,
 }: {
+  archiveContext?: DocumentArchiveAccess;
   db: OutboxDatabase & AtomicMutationDatabase;
   storeId: string;
   ownerId: string;
@@ -86,11 +102,59 @@ export function MercalysBatchPanel({
     () => new MercalysBatchRepository(db, { storeId, ownerId, conversationId }),
     [db, storeId, ownerId, conversationId],
   );
+  const currentRepo = useRef(repo);
+  currentRepo.current = repo;
   const archiveRepo = useMemo(
     () =>
       new MercalysArchiveRepository(db, { storeId, ownerId, conversationId }),
     [db, storeId, ownerId, conversationId],
   );
+  const archiveEnabled = archiveContext !== undefined;
+  const visibilityRepo = useMemo(
+    () =>
+      archiveEnabled
+        ? new DocumentArchiveRepository(db, { storeId, ownerId })
+        : null,
+    [db, storeId, ownerId, archiveEnabled],
+  );
+  const [visibility, setVisibility] = useState<DocumentArchive[]>([]);
+  const [visibilityReady, setVisibilityReady] = useState(!archiveContext);
+  const [visibilityError, setVisibilityError] = useState(false);
+  const [historyArchived, setHistoryArchived] = useState(false),
+    [itemsArchived, setItemsArchived] = useState(false);
+  const historyArchivedRef = useRef(historyArchived),
+    itemsArchivedRef = useRef(itemsArchived);
+  historyArchivedRef.current = historyArchived;
+  itemsArchivedRef.current = itemsArchived;
+  const visibilityCurrent = useRef(visibilityRepo);
+  visibilityCurrent.current = visibilityRepo;
+  const visibilityById = useMemo(
+    () => new Map(visibility.map((a) => [a.id, a])),
+    [visibility],
+  );
+  const isArchived = useCallback(
+    (id: string, kind: DocumentArchive["targetKind"]) => {
+      const entry = visibilityById.get(id);
+      return entry?.targetKind === kind && entry.archived;
+    },
+    [visibilityById],
+  );
+  const readVisibility = useCallback(async () => {
+    if (!visibilityRepo) return;
+    try {
+      const rows = await visibilityRepo.list();
+      if (alive.current && visibilityCurrent.current === visibilityRepo) {
+        setVisibility(rows);
+        setVisibilityReady(true);
+        setVisibilityError(false);
+      }
+    } catch {
+      if (alive.current && visibilityCurrent.current === visibilityRepo) {
+        setVisibilityReady(false);
+        setVisibilityError(true);
+      }
+    }
+  }, [visibilityRepo]);
   const [archives, setArchives] = useState<
     Awaited<ReturnType<MercalysArchiveRepository["recent"]>>["archives"]
   >([]);
@@ -172,22 +236,38 @@ export function MercalysBatchPanel({
   const alive = useRef(true),
     locked = useRef(false),
     abort = useRef<AbortController | undefined>(undefined);
-  async function loadRecent(older = false) {
+  async function loadRecent(
+    older = false,
+    visibilityMode = historyArchivedRef.current,
+  ) {
     const last = older ? batches.at(-1) : undefined;
     const page = await repo.recent(
       last ? { createdAt: last.createdAt, id: last.id } : undefined,
+      archiveContext ? visibilityMode : undefined,
     );
-    if (alive.current) {
+    if (
+      alive.current &&
+      currentRepo.current === repo &&
+      historyArchivedRef.current === visibilityMode
+    ) {
       setBatches((old) => (older ? [...old, ...page.batches] : page.batches));
       setMoreBatches(page.hasMore);
     }
   }
-  async function loadArchives(older = false) {
+  async function loadArchives(
+    older = false,
+    visibilityMode = historyArchivedRef.current,
+  ) {
     const last = older ? archives.at(-1) : undefined;
     const page = await archiveRepo.recent(
       last ? { id: last.id, createdAt: last.createdAt } : undefined,
+      archiveContext ? visibilityMode : undefined,
     );
-    if (alive.current) {
+    if (
+      alive.current &&
+      currentRepo.current === repo &&
+      historyArchivedRef.current === visibilityMode
+    ) {
       setArchives((old) =>
         older ? [...old, ...page.archives] : page.archives,
       );
@@ -219,16 +299,26 @@ export function MercalysBatchPanel({
       await automaticallyPublish(result.batchId, signal);
     }
   }
-  async function load(batchId: string, older = false) {
+  async function load(
+    batchId: string,
+    older = false,
+    visibilityMode = activeRef.current === batchId
+      ? itemsArchivedRef.current
+      : false,
+  ) {
     const page = await repo.page(
       batchId,
       older ? (items.at(-1)?.position ?? -1) : -1,
+      20,
+      archiveContext ? visibilityMode : undefined,
     );
     const committed = await repo.publications(batchId);
     if (alive.current) {
       if (activeRef.current !== batchId) {
         setQuery("");
         setItemFilter("ALL");
+        itemsArchivedRef.current = false;
+        setItemsArchived(false);
         setToolsOpen(false);
       }
       setPublications(committed);
@@ -242,36 +332,54 @@ export function MercalysBatchPanel({
   }
   useEffect(() => {
     alive.current = true;
-    void archiveRepo
-      .recent()
-      .then((page) => {
-        if (alive.current) {
-          setArchives(page.archives);
-          setMoreArchives(page.hasMore);
+    const mode = historyArchivedRef.current;
+    void Promise.all([
+      archiveRepo.recent(undefined, archiveEnabled ? mode : undefined),
+      repo.recent(undefined, archiveEnabled ? mode : undefined),
+    ])
+      .then(([archivePage, batchPage]) => {
+        if (
+          alive.current &&
+          currentRepo.current === repo &&
+          historyArchivedRef.current === mode
+        ) {
+          setArchives(archivePage.archives);
+          setMoreArchives(archivePage.hasMore);
+          setBatches(batchPage.batches);
+          setMoreBatches(batchPage.hasMore);
         }
       })
       .catch(() => {
         if (alive.current)
-          setError("Les archives conservées ne peuvent pas être ouvertes.");
-      });
-    void repo
-      .recent()
-      .then((page) => {
-        if (alive.current) {
-          setBatches(page.batches);
-          setMoreBatches(page.hasMore);
-        }
-      })
-      .catch(() => {
-        if (alive.current)
-          setError("Les lots locaux ne peuvent pas être ouverts.");
+          setError("Les imports conservés ne peuvent pas être ouverts.");
       });
     return () => {
       alive.current = false;
       abort.current?.abort();
       reviewDone.current?.();
     };
-  }, [repo, archiveRepo]);
+  }, [repo, archiveRepo, archiveEnabled]);
+  useEffect(() => {
+    void readVisibility();
+  }, [readVisibility, archiveContext?.revision]);
+  function control(
+    id: string,
+    kind: DocumentArchive["targetKind"],
+    name: string,
+  ) {
+    return visibilityRepo && archiveContext ? (
+      <DocumentArchiveControl
+        repository={visibilityRepo}
+        access={archiveContext}
+        id={id}
+        targetKind={kind}
+        name={name}
+        archived={isArchived(id, kind)}
+        disabled={busy || disabled || !visibilityReady}
+        onChanged={readVisibility}
+      />
+    ) : null;
+  }
   async function run(work: (signal: AbortSignal) => Promise<void>) {
     if (locked.current || disabled) return;
     locked.current = true;
@@ -316,8 +424,21 @@ export function MercalysBatchPanel({
     }
   }
   const visibleItems = useMemo(
-    () => filterBatchItems(items, publications, query, itemFilter),
-    [items, publications, query, itemFilter],
+    () =>
+      filterBatchItems(items, publications, query, itemFilter).filter(
+        (item) =>
+          !archiveEnabled ||
+          isArchived(item.id, "MERCALYS_ITEM") === itemsArchived,
+      ),
+    [
+      items,
+      publications,
+      query,
+      itemFilter,
+      isArchived,
+      itemsArchived,
+      archiveEnabled,
+    ],
   );
   const activeBatch = batches.find((batch) => batch.id === active);
   const activeArchive = archives.find((archive) => archive.batchId === active);
@@ -333,14 +454,19 @@ export function MercalysBatchPanel({
       ? activeArchive.outcome.retainedCount
       : undefined);
   const historyTerm = historyQuery.trim().toLocaleLowerCase("fr-FR");
-  const visibleArchives = archives.filter((a) =>
-    `${a.filename} ${new Date(a.createdAt).toLocaleString("fr-FR")}`
-      .toLocaleLowerCase("fr-FR")
-      .includes(historyTerm),
+  const visibleArchives = archives.filter(
+    (a) =>
+      (!archiveEnabled ||
+        isArchived(a.batchId, "MERCALYS_BATCH") === historyArchived) &&
+      `${a.filename} ${new Date(a.createdAt).toLocaleString("fr-FR")}`
+        .toLocaleLowerCase("fr-FR")
+        .includes(historyTerm),
   );
   const archiveIds = new Set(archives.map((a) => a.id));
   const visibleBatches = batches.filter(
     (b) =>
+      (!archiveEnabled ||
+        isArchived(b.id, "MERCALYS_BATCH") === historyArchived) &&
       (!b.archiveId || !archiveIds.has(b.archiveId)) &&
       `${b.files.map((f) => f.filename).join(" ")} ${new Date(b.createdAt).toLocaleString("fr-FR")}`
         .toLocaleLowerCase("fr-FR")
@@ -417,6 +543,42 @@ export function MercalysBatchPanel({
         ) : null}
       </SectionCard>
       <SectionCard title="Imports récents">
+        {archiveContext ? (
+          <>
+            <ArchiveViewFilter
+              label="Imports"
+              archived={historyArchived}
+              disabled={busy || disabled}
+              onChange={(value) => {
+                if (locked.current || disabled) return;
+                historyArchivedRef.current = value;
+                setHistoryArchived(value);
+                void run(async () => {
+                  await Promise.all([
+                    loadRecent(false, value),
+                    loadArchives(false, value),
+                  ]);
+                });
+              }}
+            />
+            <Text className="text-sm text-muted">
+              Le rangement est personnel. Archiver conserve les fichiers, les
+              chiffres publiés et les traitements demandés.
+            </Text>
+            {visibilityError ? (
+              <>
+                <InlineAlert
+                  title="Rangement indisponible"
+                  message="Les fichiers restent consultables. Relisez le rangement avant de le modifier."
+                />
+                <SecondaryButton
+                  label="Relire le rangement"
+                  onPress={() => void readVisibility()}
+                />
+              </>
+            ) : null}
+          </>
+        ) : null}
         <TextInput
           accessibilityLabel="Rechercher un import par nom ou date"
           placeholder="Nom du ZIP, du fichier ou date d’import"
@@ -427,57 +589,72 @@ export function MercalysBatchPanel({
           className="min-h-12 rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink"
         />
         {visibleArchives.map((a) => (
-          <Pressable
-            key={a.id}
-            accessibilityRole="button"
-            accessibilityLabel={`Ouvrir ${a.filename}, importé le ${new Date(a.createdAt).toLocaleString("fr-FR")}`}
-            disabled={busy || disabled}
-            onPress={() =>
-              void run(async (signal) => {
-                if (a.outcome.status === "PROCESSED" && a.outcome.retainedCount)
-                  await load(a.batchId);
-                else await processArchive(a.id, signal);
-              })
-            }
-            className="min-h-16 gap-1 rounded-xl border border-line p-4"
-          >
-            <Text className="font-semibold text-ink">{a.filename} ›</Text>
-            <Text className="text-sm text-muted">
-              Importé le {new Date(a.createdAt).toLocaleString("fr-FR")}
-            </Text>
-            <Text className="text-sm text-muted">
-              {a.outcome.status === "PROCESSED"
-                ? `${a.outcome.retainedCount} fichiers · ${a.outcome.failures.length} erreurs d’extraction${a.outcome.ignored.length ? ` · ${a.outcome.ignored.length} ignorés` : ""}`
-                : a.outcome.status === "FAILED"
-                  ? archiveError(a.outcome.code)
-                  : "Archive conservée · lecture à reprendre"}
-            </Text>
-          </Pressable>
+          <View key={a.id} className="gap-2">
+            <Pressable
+              key={a.id}
+              accessibilityRole="button"
+              accessibilityLabel={`Ouvrir ${a.filename}, importé le ${new Date(a.createdAt).toLocaleString("fr-FR")}`}
+              disabled={busy || disabled}
+              onPress={() =>
+                void run(async (signal) => {
+                  if (
+                    a.outcome.status === "PROCESSED" &&
+                    a.outcome.retainedCount
+                  )
+                    await load(a.batchId);
+                  else await processArchive(a.id, signal);
+                })
+              }
+              className="min-h-16 gap-1 rounded-xl border border-line p-4"
+            >
+              <Text className="font-semibold text-ink">{a.filename} ›</Text>
+              <Text className="text-sm text-muted">
+                Importé le {new Date(a.createdAt).toLocaleString("fr-FR")}
+              </Text>
+              <Text className="text-sm text-muted">
+                {a.outcome.status === "PROCESSED"
+                  ? `${a.outcome.retainedCount} fichiers · ${a.outcome.failures.length} erreurs d’extraction${a.outcome.ignored.length ? ` · ${a.outcome.ignored.length} ignorés` : ""}`
+                  : a.outcome.status === "FAILED"
+                    ? archiveError(a.outcome.code)
+                    : "Archive conservée · lecture à reprendre"}
+              </Text>
+            </Pressable>
+            {control(a.batchId, "MERCALYS_BATCH", a.filename)}
+          </View>
         ))}
         {visibleBatches.map((batch) => (
-          <Pressable
-            key={batch.id}
-            accessibilityRole="button"
-            disabled={busy || disabled}
-            onPress={() => void run(async () => load(batch.id))}
-            className="min-h-16 gap-1 rounded-xl border border-line p-4"
-          >
-            <Text className="font-semibold text-ink">
-              {batch.files.length === 1
-                ? batch.files[0]!.filename
-                : `${batch.files.length} fichiers XLSX`}{" "}
-              ›
-            </Text>
-            <Text className="text-sm text-muted">
-              Importé le {new Date(batch.createdAt).toLocaleString("fr-FR")}
-            </Text>
-          </Pressable>
+          <View key={batch.id} className="gap-2">
+            <Pressable
+              key={batch.id}
+              accessibilityRole="button"
+              disabled={busy || disabled}
+              onPress={() => void run(async () => load(batch.id))}
+              className="min-h-16 gap-1 rounded-xl border border-line p-4"
+            >
+              <Text className="font-semibold text-ink">
+                {batch.files.length === 1
+                  ? batch.files[0]!.filename
+                  : `${batch.files.length} fichiers XLSX`}{" "}
+                ›
+              </Text>
+              <Text className="text-sm text-muted">
+                Importé le {new Date(batch.createdAt).toLocaleString("fr-FR")}
+              </Text>
+            </Pressable>
+            {control(
+              batch.id,
+              "MERCALYS_BATCH",
+              batch.files.length === 1 ? batch.files[0]!.filename : "ce lot",
+            )}
+          </View>
         ))}
         {!visibleArchives.length && !visibleBatches.length ? (
           <Text className="text-sm text-muted">
             {historyTerm
               ? "Aucun import chargé ne correspond à cette recherche."
-              : "Vos prochains imports apparaîtront ici."}
+              : historyArchived
+                ? "Aucun import archivé."
+                : "Vos prochains imports apparaîtront ici. Les imports rangés restent accessibles dans Archivés."}
           </Text>
         ) : null}
         {moreArchives ? (
@@ -684,6 +861,20 @@ export function MercalysBatchPanel({
           ) : null}
           {active ? (
             <View className="gap-3">
+              {control(active, "MERCALYS_BATCH", batchTitle)}
+              {archiveContext ? (
+                <ArchiveViewFilter
+                  label="Fichiers"
+                  archived={itemsArchived}
+                  disabled={busy || disabled}
+                  onChange={(value) => {
+                    if (locked.current || disabled) return;
+                    itemsArchivedRef.current = value;
+                    setItemsArchived(value);
+                    void run(async () => load(active, false, value));
+                  }}
+                />
+              ) : null}
               <TextInput
                 accessibilityLabel="Rechercher un fichier du lot par nom"
                 placeholder="Rechercher un fichier"
@@ -753,75 +944,84 @@ export function MercalysBatchPanel({
             </View>
           ) : null}
           {visibleItems.map((item) => (
-            <Pressable
-              key={item.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Ouvrir le fichier ${item.filename}`}
-              disabled={busy || disabled}
-              onPress={() =>
-                void run(async (signal) => {
-                  const asset = {
-                    name: item.filename,
-                    uri: await repo.retainedLocation(item.batchId, item.id),
-                    expectedChecksum: item.checksum,
-                  };
-                  reviewChanged.current = false;
-                  await new Promise<void>((resolve) => {
-                    reviewDone.current = resolve;
-                    setReviewAsset(asset);
-                  });
-                  if (!alive.current || signal.aborted) return;
-                  // Refresh this item in place: keep loaded pages, search, filters and list position.
-                  let refreshed = item;
-                  if (reviewChanged.current) {
-                    const current = await repo.get(item.batchId, item.id);
-                    await repo.refresh(item.batchId, item.id, current.version);
-                    refreshed = await service.prepare(
-                      item.batchId,
-                      item.id,
-                      signal,
+            <View key={item.id} className="gap-2">
+              <Pressable
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Ouvrir le fichier ${item.filename}`}
+                disabled={busy || disabled}
+                onPress={() =>
+                  void run(async (signal) => {
+                    const asset = {
+                      name: item.filename,
+                      uri: await repo.retainedLocation(item.batchId, item.id),
+                      expectedChecksum: item.checksum,
+                    };
+                    reviewChanged.current = false;
+                    await new Promise<void>((resolve) => {
+                      reviewDone.current = resolve;
+                      setReviewAsset(asset);
+                    });
+                    if (!alive.current || signal.aborted) return;
+                    // Refresh this item in place: keep loaded pages, search, filters and list position.
+                    let refreshed = item;
+                    if (reviewChanged.current) {
+                      const current = await repo.get(item.batchId, item.id);
+                      await repo.refresh(
+                        item.batchId,
+                        item.id,
+                        current.version,
+                      );
+                      refreshed = await service.prepare(
+                        item.batchId,
+                        item.id,
+                        signal,
+                      );
+                    }
+                    const committed = await repo.publications(item.batchId);
+                    if (!alive.current || signal.aborted) return;
+                    setItems((old) =>
+                      old.map((row) =>
+                        row.id === refreshed.id ? refreshed : row,
+                      ),
                     );
-                  }
-                  const committed = await repo.publications(item.batchId);
-                  if (!alive.current || signal.aborted) return;
-                  setItems((old) =>
-                    old.map((row) =>
-                      row.id === refreshed.id ? refreshed : row,
-                    ),
-                  );
-                  setPublications(committed);
-                  setPublicationPlan(undefined);
-                  setPublicationReport((old) =>
-                    old?.filter((r) => r.itemId !== item.id),
-                  );
-                })
-              }
-              className="min-h-16 gap-2 rounded-xl border border-line p-4"
-            >
-              <Text className="font-semibold text-ink">{item.filename} ›</Text>
-              <Text
-                className={
-                  publicationStatus(item, publications)
-                    ? "font-semibold text-forest"
-                    : "text-muted"
+                    setPublications(committed);
+                    setPublicationPlan(undefined);
+                    setPublicationReport((old) =>
+                      old?.filter((r) => r.itemId !== item.id),
+                    );
+                  })
                 }
+                className="min-h-16 gap-2 rounded-xl border border-line p-4"
               >
-                {publicationStatus(item, publications) ?? status(item)}
-              </Text>
-              {(publicationReport ?? publicationPlan?.items)?.find(
-                (r) =>
-                  r.itemId === item.id &&
-                  (r.status === "BLOCKED" || r.status === "FAILED"),
-              ) ? (
-                <Text className="text-sm text-warning">
-                  {publicationIssue(
-                    (publicationReport ?? publicationPlan?.items)?.find(
-                      (r) => r.itemId === item.id,
-                    )?.code,
-                  )}
+                <Text className="font-semibold text-ink">
+                  {item.filename} ›
                 </Text>
-              ) : null}
-            </Pressable>
+                <Text
+                  className={
+                    publicationStatus(item, publications)
+                      ? "font-semibold text-forest"
+                      : "text-muted"
+                  }
+                >
+                  {publicationStatus(item, publications) ?? status(item)}
+                </Text>
+                {(publicationReport ?? publicationPlan?.items)?.find(
+                  (r) =>
+                    r.itemId === item.id &&
+                    (r.status === "BLOCKED" || r.status === "FAILED"),
+                ) ? (
+                  <Text className="text-sm text-warning">
+                    {publicationIssue(
+                      (publicationReport ?? publicationPlan?.items)?.find(
+                        (r) => r.itemId === item.id,
+                      )?.code,
+                    )}
+                  </Text>
+                ) : null}
+              </Pressable>
+              {control(item.id, "MERCALYS_ITEM", item.filename)}
+            </View>
           ))}
           {active && more ? (
             <SecondaryButton

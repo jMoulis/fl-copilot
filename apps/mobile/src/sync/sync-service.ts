@@ -1,3 +1,4 @@
+import { applyDocumentArchive } from "../documents/document-archive-repository";
 import { applyIllustrationGenerationRecord } from "../copilot/layout-illustration-generation-repository";
 import { applyLayoutIllustrationRecord } from "../copilot/layout-illustration-repository";
 import {
@@ -52,6 +53,10 @@ import {
 } from "./outbox-repository";
 
 export interface SyncTransport {
+  documentArchiveHistory?(
+    storeId: string,
+    cursor?: string,
+  ): Promise<SyncPullResponse>;
   bootstrap(storeId: string): Promise<BootstrapResponse>;
   illustrationGenerationHistoryPage?(
     storeId: string,
@@ -88,6 +93,8 @@ export interface SyncSummary extends PushSummary, PullSummary {
 }
 
 export interface MobileSyncServiceOptions {
+  documentArchives?: boolean;
+  documentArchivesAllowed?(storeId: string): boolean;
   commercialReview?: boolean;
   commercialVisual?: boolean;
   commercialChoices?: boolean;
@@ -173,6 +180,7 @@ export class MobileSyncService {
   async bootstrap(storeId: string) {
     await this.waitForActiveCycle(storeId);
     await this.bootstrapUnlocked(storeId);
+    await this.adoptDocumentArchives(storeId);
   }
 
   async push(storeId: string) {
@@ -415,6 +423,7 @@ export class MobileSyncService {
     ) {
       await this.bootstrapUnlocked(storeId);
     }
+    await this.adoptDocumentArchives(storeId);
     const pulled = await this.pullUnlocked(storeId);
     return {
       ...pushed,
@@ -640,6 +649,59 @@ export class MobileSyncService {
     }
   }
 
+  private async adoptDocumentArchives(storeId: string) {
+    if (!this.options.documentArchives) return;
+    const ownerId = this.options.copilotOwnerId;
+    const allowed = () =>
+      this.options.documentArchivesAllowed?.(storeId) ?? true;
+    if (!ownerId || !this.transport.documentArchiveHistory || !allowed())
+      throw Error("DOCUMENT_ARCHIVE_SCOPE_CHANGED");
+    const key = "document-archives:" + storeId + ":" + ownerId;
+    const marker = await this.database.getFirstAsync<{ value: string }>(
+      "SELECT value FROM app_metadata WHERE key=?",
+      key,
+    );
+    if (marker?.value === "complete") return;
+    let cursor = marker?.value;
+    for (let pageIndex = 0; pageIndex < 20; pageIndex++) {
+      if (!allowed()) throw Error("DOCUMENT_ARCHIVE_SCOPE_CHANGED");
+      const page = await this.withRetry(() =>
+        this.transport.documentArchiveHistory!(storeId, cursor),
+      );
+      if (!page.documentArchives)
+        throw Error("DOCUMENT_ARCHIVE_SERVICE_UNAVAILABLE");
+      if (page.hasMore && page.nextCursor === cursor)
+        throw Error("DOCUMENT_ARCHIVE_HISTORY_INVALID");
+      await this.database.withExclusiveTransactionAsync(async (tx) => {
+        if (!allowed()) throw Error("DOCUMENT_ARCHIVE_SCOPE_CHANGED");
+        for (const change of page.changes) {
+          if (
+            change.entityType !== "document_archive" ||
+            change.operation !== "UPSERT" ||
+            !change.entity ||
+            typeof change.entity !== "object" ||
+            !("id" in change.entity) ||
+            change.entity.id !== change.entityId ||
+            !("version" in change.entity) ||
+            change.entity.version !== change.entityVersion
+          )
+            throw Error("DOCUMENT_ARCHIVE_ENVELOPE_INVALID");
+          await applyDocumentArchive(tx, { storeId, ownerId }, change.entity);
+        }
+        await tx.runAsync(
+          "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+          key,
+          page.hasMore ? page.nextCursor : "complete",
+          this.now(),
+        );
+        if (!allowed()) throw Error("DOCUMENT_ARCHIVE_SCOPE_CHANGED");
+      });
+      if (!page.hasMore) return;
+      cursor = page.nextCursor;
+    }
+    throw Error("DOCUMENT_ARCHIVE_HISTORY_PENDING");
+  }
+
   private async pushUnlocked(storeId: string): Promise<PushSummary> {
     const summary = { pushed: 0, conflicts: 0, failed: 0 };
     const deferred = new Set<string>();
@@ -647,7 +709,7 @@ export class MobileSyncService {
       const commands = await new OutboxRepository(
         this.database,
         this.now,
-      ).listPending(storeId);
+      ).listPending(storeId, undefined, this.options.copilotOwnerId);
       const ownedCommands = commands.filter((c) =>
         isVisualEntityType(c.entityType)
           ? typeof c.payload === "object" &&
@@ -655,7 +717,8 @@ export class MobileSyncService {
             "updatedBy" in c.payload &&
             c.payload.updatedBy === this.options.copilotOwnerId
           : (!c.entityType.startsWith("copilot_") &&
-              c.entityType !== "email_intake_decision") ||
+              c.entityType !== "email_intake_decision" &&
+              c.entityType !== "document_archive") ||
             (typeof c.payload === "object" &&
               c.payload !== null &&
               "ownerId" in c.payload &&
@@ -711,7 +774,7 @@ export class MobileSyncService {
         const next = await new OutboxRepository(
           this.database,
           this.now,
-        ).listPending(storeId);
+        ).listPending(storeId, undefined, this.options.copilotOwnerId);
         if (next.some((c) => c.entityType === "mercalys_publication")) {
           retry -= 1;
           continue;
@@ -811,6 +874,36 @@ export class MobileSyncService {
           result.status === "APPLIED" ||
           result.status === "ALREADY_APPLIED"
         ) {
+          if (command.entityType === "document_archive") {
+            const ownerId = this.options.copilotOwnerId;
+            if (
+              !ownerId ||
+              !(this.options.documentArchivesAllowed?.(storeId) ?? true)
+            )
+              throw Error("DOCUMENT_ARCHIVE_SCOPE_CHANGED");
+            if (
+              !result.remoteEntity ||
+              typeof result.remoteEntity !== "object" ||
+              !("id" in result.remoteEntity) ||
+              result.remoteEntity.id !== command.entityId ||
+              !("version" in result.remoteEntity) ||
+              result.remoteEntity.version !== result.remoteVersion
+            )
+              throw Error("DOCUMENT_ARCHIVE_ENVELOPE_INVALID");
+            await applyDocumentArchive(
+              transaction,
+              { storeId, ownerId },
+              result.remoteEntity,
+              command.commandId,
+            );
+            await transaction.runAsync(
+              "UPDATE sync_outbox SET status='FAILED',last_error_code='DOCUMENT_ARCHIVE_SUPERSEDED' WHERE store_id=? AND entity_type='document_archive' AND entity_id=? AND local_sequence<? AND status IN ('PENDING','FAILED') AND json_extract(payload_json,'$.ownerId')=?",
+              storeId,
+              command.entityId,
+              command.localSequence,
+              ownerId,
+            );
+          }
           if (
             typeof result.remoteVersion === "number" &&
             ["product", "product_identifier", "product_alias"].includes(
@@ -1297,6 +1390,13 @@ export class MobileSyncService {
       const page = await this.withRetry(() =>
         this.transport.pull(storeId, cursor as string),
       );
+      if (this.options.documentArchives && !page.documentArchives)
+        throw Error("DOCUMENT_ARCHIVE_SERVICE_UNAVAILABLE");
+      if (
+        this.options.documentArchives &&
+        !(this.options.documentArchivesAllowed?.(storeId) ?? true)
+      )
+        throw Error("DOCUMENT_ARCHIVE_SCOPE_CHANGED");
       await applyPullPage(
         this.database,
         storeId,

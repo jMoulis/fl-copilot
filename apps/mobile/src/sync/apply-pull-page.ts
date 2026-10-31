@@ -1,3 +1,4 @@
+import { applyDocumentArchive } from "../documents/document-archive-repository";
 import { isVisualEntityType, visualEntitySchemas } from "@fl-copilot/domain";
 import { applyVisualEntity } from "../products/visual-library-repository";
 import {
@@ -44,6 +45,25 @@ export async function applyPullPage(
 ) {
   await database.withExclusiveTransactionAsync(async (transaction) => {
     for (const change of page.changes) {
+      if (change.entityType === "document_archive") {
+        if (
+          !ownerId ||
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("DOCUMENT_ARCHIVE_ENVELOPE_INVALID");
+        await applyDocumentArchive(
+          transaction,
+          { storeId, ownerId },
+          change.entity,
+        );
+        continue;
+      }
       if (
         change.entityType === "copilot_conversation" ||
         change.entityType === "copilot_message" ||
