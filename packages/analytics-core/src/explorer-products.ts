@@ -1,5 +1,8 @@
 import {
   analyticsExplorerFiltersSchema,
+  analyticsProductListSchema,
+  defaultAnalyticsProductList,
+  type AnalyticsProductList,
   type AnalyticsExplorerFilters,
   type AnalyticsExplorerMetric,
 } from "@fl-copilot/domain";
@@ -49,9 +52,13 @@ export function analyzeExplorerProducts(input: {
   products: readonly AnalyticsQueryProduct[];
   points: readonly AnalyticsQueryPoint[];
   offset?: number;
+  productList?: AnalyticsProductList;
   expectedProductIds?: readonly string[];
 }) {
   const filters = analyticsExplorerFiltersSchema.parse(input.filters);
+  const list = analyticsProductListSchema.parse(
+    input.productList ?? defaultAnalyticsProductList(),
+  );
   if (
     input.products.length > EXPLORER_PRODUCT_LIMITS.products ||
     input.points.length > EXPLORER_PRODUCT_LIMITS.points
@@ -158,15 +165,47 @@ export function analyzeExplorerProducts(input: {
         : sumAvailableCurrency(values).value;
     return amount === null ? [] : [{ productId, points, amount }];
   });
-  ranked.sort(
-    (a, b) =>
-      parseDecimal(b.amount).value.comparedTo(parseDecimal(a.amount).value) ||
-      a.productId.localeCompare(b.productId),
-  );
-  const pageOffset = ranked.length
+  // Compute per-product comparisons only when the requested list needs them.
+  // Keep the default amount ranking cheap and never sort just the visible page.
+  const analyses = new Map<string, ReturnType<typeof analyze>>();
+  const needsComparison = list.trend !== "ALL" || list.sort !== "AMOUNT";
+  if (needsComparison)
+    for (const p of ranked) analyses.set(p.productId, analyze(p.points, 1));
+  const difference = (id: string) =>
+    analyses.get(id)?.comparison?.absoluteDifference ?? null;
+  const filtered = ranked.filter((p) => {
+    if (list.trend === "ALL") return true;
+    const value = difference(p.productId);
+    if (list.trend === "UNAVAILABLE") return value === null;
+    if (value === null) return false;
+    const sign = parseDecimal(value).value.comparedTo(0);
+    return list.trend === "DOWN" ? sign < 0 : sign > 0;
+  });
+  const sortValue = (p: (typeof ranked)[number]) =>
+    list.sort === "AMOUNT"
+      ? p.amount
+      : list.sort === "DIFFERENCE"
+        ? difference(p.productId)
+        : (analyses.get(p.productId)?.comparison?.percentageDifference ?? null);
+  filtered.sort((a, b) => {
+    const av = sortValue(a),
+      bv = sortValue(b);
+    if (av === null || bv === null)
+      return av === bv
+        ? a.productId.localeCompare(b.productId)
+        : av === null
+          ? 1
+          : -1;
+    const order = parseDecimal(av).value.comparedTo(parseDecimal(bv).value);
+    return (
+      (list.direction === "ASC" ? order : -order) ||
+      a.productId.localeCompare(b.productId)
+    );
+  });
+  const pageOffset = filtered.length
     ? Math.min(
         offset,
-        Math.floor((ranked.length - 1) / EXPLORER_PRODUCT_LIMITS.pageSize) *
+        Math.floor((filtered.length - 1) / EXPLORER_PRODUCT_LIMITS.pageSize) *
           EXPLORER_PRODUCT_LIMITS.pageSize,
       )
     : 0;
@@ -188,18 +227,18 @@ export function analyzeExplorerProducts(input: {
         ),
       }))
       .sort((a, b) => a.label.localeCompare(b.label, "fr")),
-    contributors: ranked
+    contributors: filtered
       .slice(pageOffset, pageOffset + EXPLORER_PRODUCT_LIMITS.pageSize)
       .map((p) => ({
         productId: p.productId,
         label: products.get(p.productId)?.label ?? "Produit à identifier",
         category: products.get(p.productId)?.category ?? "UNKNOWN",
-        analysis: analyze(p.points, 1),
+        analysis: analyses.get(p.productId) ?? analyze(p.points, 1),
       })),
-    totalContributors: ranked.length,
+    totalContributors: filtered.length,
     offset: pageOffset,
     nextOffset:
-      pageOffset + EXPLORER_PRODUCT_LIMITS.pageSize < ranked.length
+      pageOffset + EXPLORER_PRODUCT_LIMITS.pageSize < filtered.length
         ? pageOffset + EXPLORER_PRODUCT_LIMITS.pageSize
         : null,
   };

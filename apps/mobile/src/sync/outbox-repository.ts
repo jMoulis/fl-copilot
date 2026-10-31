@@ -238,8 +238,13 @@ export class OutboxRepository {
       entity_id: string;
       local_sequence: number;
       last_error_code: string | null;
+      conversation_id: string | null;
+      parent_deleted: string | null;
     }>(
-      `SELECT command_id,entity_type,entity_id,local_sequence,last_error_code FROM sync_outbox
+      `SELECT command_id,entity_type,entity_id,local_sequence,last_error_code,
+       json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.conversationId') AS conversation_id,
+       (SELECT json_extract(CASE WHEN json_valid(p.payload_json) THEN p.payload_json ELSE '{}' END,'$.deletedAt') FROM copilot_conversations p WHERE p.id=json_extract(CASE WHEN json_valid(sync_outbox.payload_json) THEN sync_outbox.payload_json ELSE '{}' END,'$.conversationId') AND p.store_id=sync_outbox.store_id AND p.owner_id=json_extract(CASE WHEN json_valid(sync_outbox.payload_json) THEN sync_outbox.payload_json ELSE '{}' END,'$.ownerId')) AS parent_deleted
+       FROM sync_outbox
        WHERE store_id=? AND ${ACTIVE_FAILED_OUTBOX_SQL} AND local_sequence>?
        AND (entity_type NOT IN ('copilot_conversation','copilot_message','copilot_knowledge','copilot_decision','copilot_layout_illustration_generation','copilot_layout_illustration','email_intake_decision','copilot_execution_link','copilot_action_execution','document_archive') OR
          (? IS NOT NULL AND json_extract(CASE WHEN json_valid(payload_json) THEN payload_json ELSE '{}' END,'$.ownerId')=?
@@ -259,6 +264,12 @@ export class OutboxRepository {
     );
     return {
       items: rows.slice(0, 20).map((row) => ({
+        ...(row.entity_type === "email_intake_decision" && row.conversation_id
+          ? {
+              conversationId: row.conversation_id,
+              parentDeleted: !!row.parent_deleted,
+            }
+          : {}),
         commandId: row.command_id,
         entityType: row.entity_type,
         entityId: row.entity_id,

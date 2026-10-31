@@ -690,3 +690,71 @@ function insertAnalyticsFixture(database: DatabaseSync) {
     );
   `);
 }
+
+it("explicitly resumes only failed projections, retains attempts and payload, and rolls back a revoked context", async () => {
+  const { retryFailedAnalyticsJobs } = await import("./local-recomputation");
+  const { readPendingWork } = await import("../sync/pending-work");
+  const { adapter, database } = await openDatabase();
+  const storeId = "00000000-0000-4000-8000-000000000001",
+    productId = "00000000-0000-4000-8000-000000000002";
+  try {
+    await enqueueAnalyticsRecomputationJob(adapter, {
+      jobId: "failed",
+      storeId,
+      scopes: [{ productId, businessDate: "2026-10-31" }],
+      createdAt: now,
+    });
+    await adapter.runAsync(
+      "UPDATE local_jobs SET status='FAILED',attempt_count=3,last_error='SQLite Error code 5: database is locked' WHERE id='failed'",
+    );
+    await adapter.runAsync(
+      "INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,created_at,updated_at) VALUES('source','SOURCE_UPLOAD_AND_REGISTER',?,'FAILED',1,?,?)",
+      JSON.stringify({ storeId }),
+      now,
+      now,
+    );
+    const before = await adapter.getFirstAsync(
+      "SELECT * FROM local_jobs WHERE id='failed'",
+    );
+    let checks = 0;
+    await expect(
+      retryFailedAnalyticsJobs(adapter, storeId, () => ++checks < 2),
+    ).rejects.toThrow("SCOPE_CHANGED");
+    expect(
+      await adapter.getFirstAsync("SELECT * FROM local_jobs WHERE id='failed'"),
+    ).toEqual(before);
+    expect(
+      (await readPendingWork(adapter, storeId)).find((x) => x.retryAction),
+    ).toMatchObject({
+      code: "ANALYTICS_SQLITE_BUSY",
+      retryAction: "ANALYTICS_RECOMPUTE",
+    });
+    expect(await retryFailedAnalyticsJobs(adapter, storeId, () => true)).toBe(
+      1,
+    );
+    expect(jobState(database, "failed")).toMatchObject({
+      status: "RETRY",
+      attempt_count: 3,
+      last_error: "SQLite Error code 5: database is locked",
+    });
+    expect(
+      await adapter.getFirstAsync(
+        "SELECT status FROM local_jobs WHERE id='source'",
+      ),
+    ).toEqual({ status: "FAILED" });
+    const scheduler = new LocalAnalyticsRecomputationScheduler(adapter, {
+      recomputeProduct: async () => {},
+      recomputeDepartment: async () => {},
+    });
+    expect(await scheduler.process(storeId)).toMatchObject({
+      completedJobs: 1,
+      failedJobs: 0,
+    });
+    expect(jobState(database, "failed")).toMatchObject({
+      status: "COMPLETED",
+      attempt_count: 4,
+    });
+  } finally {
+    database.close();
+  }
+});

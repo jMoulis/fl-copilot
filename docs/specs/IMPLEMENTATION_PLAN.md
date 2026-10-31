@@ -1,5 +1,10 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current corrective increment — 31 October: product trends and scoped sync recovery
+
+Reuse the canonical Explorer comparisons for product-only trend filtering and decimal amount/difference/percentage ordering before pagination. Retain category/period/metric totals and same-ISO comparison, missing/zero semantics, bounded reads, local history/scroll and old view-state compatibility. Route every registered private command with the authenticated principal, including standalone email decisions, without weakening deleted-conversation access. Provide explicit local projection retry and retained-audit retirement of a refused email intent from a locally deleted conversation; never fabricate server acknowledgement or undo source/publication/jobs. See `../qa/M8_ANALYTICS_PRODUCT_TRENDS_SYNC_2026_10_31.md`. No migration, dependency, AI tool or prompt; grouped API before native acceptance.
+
+
 ## Current corrective increment — 31 October: reversible personal document archives
 
 Archive/restore commercial PDFs, Mercalys batches/ZIPs and batch items through one personal visibility metadata entity, scoped by authenticated owner and store. SQLite migration 62, atomic Outbox intents and the canonical push/pull service retain sources, published observations, jobs, provenance, source links and duplicate detection. Use server commit order only for this reversible preference, never for business conflicts. Backfill personal markers through bounded canonical history, independently of an existing main cursor; filter before UI pagination and preserve processor working sets. See `../qa/M8_DOCUMENT_ARCHIVES_2026_10_31.md`. API capability must be released before the grouped native build, which also includes PR 386. Native acceptance, actual persil resolution and remaining corrective/V1 gates are still open; no reset framework, model tool or instruction expansion.

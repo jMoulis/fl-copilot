@@ -10,12 +10,37 @@ import { syncFailurePresentation } from "./failure-presentation";
 import { useSync } from "./sync-provider";
 import { isVisualEntityType } from "@fl-copilot/domain";
 import { z } from "zod";
+import type { AtomicMutationDatabase } from "./atomic-local-mutation";
+import { retryFailedAnalyticsJobs } from "../analytics/local-recomputation";
+import { retireDeletedConversationEmailDecision } from "../intake/email-decision-repository";
 export function SyncRecoveryPanel() {
   const { sqlite } = useLocalDatabase(),
     { session } = useAuth(),
-    { syncNow, status, lastSyncedAt, failedCount } = useSync();
+    { syncNow, status, lastSyncedAt, failedCount, pendingDetails } = useSync();
+  const focused = useRef(false),
+    locked = useRef(false),
+    authority = useRef({ sqlite, session });
+  authority.current = { sqlite, session };
+  const [retryError, setRetryError] = useState<string>(),
+    [retryBusy, setRetryBusy] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = true;
+      if (!locked.current) setRetryBusy(false);
+      return () => {
+        focused.current = false;
+      };
+    }, []),
+  );
   const store = session?.stores[0];
   if (!store || !session) return null;
+  const canWrite = () =>
+    focused.current &&
+    authority.current.sqlite === sqlite &&
+    authority.current.session?.user.id === session.user.id &&
+    authority.current.session?.stores.some(
+      (s) => s.storeId === store.storeId,
+    ) === true;
   return (
     <View key={`${store.storeId}/${session.user.id}`} className="gap-6">
       <SourceUploadRecoveryPanel
@@ -26,8 +51,51 @@ export function SyncRecoveryPanel() {
         refreshKey={`${status}/${lastSyncedAt}`}
         disabled={status === "syncing"}
       />
+      {pendingDetails?.some(
+        (item) => item.retryAction === "ANALYTICS_RECOMPUTE",
+      ) ? (
+        <SectionCard title="Reprendre le calcul local">
+          <Text className="text-sm text-muted">
+            Les sources et les chiffres déjà calculés sont conservés. Seuls les
+            calculs locaux en échec seront relancés.
+          </Text>
+          <SecondaryButton
+            label="Reprendre les calculs en échec"
+            loading={retryBusy}
+            disabled={retryBusy || status === "syncing"}
+            onPress={() => {
+              if (locked.current || !canWrite()) return;
+              locked.current = true;
+              setRetryBusy(true);
+              setRetryError(undefined);
+              void (async () => {
+                try {
+                  await retryFailedAnalyticsJobs(
+                    sqlite,
+                    store.storeId,
+                    canWrite,
+                  );
+                  if (canWrite()) await syncNow(store.storeId);
+                } catch {
+                  if (canWrite())
+                    setRetryError(
+                      "La reprise n’a pas abouti. Les sources sont conservées ; consultez le code du calcul en échec.",
+                    );
+                } finally {
+                  locked.current = false;
+                  if (canWrite()) setRetryBusy(false);
+                }
+              })();
+            }}
+          />
+          {retryError ? (
+            <InlineAlert title="Calcul local" message={retryError} />
+          ) : null}
+        </SectionCard>
+      ) : null}
       <FailedCommands
         db={sqlite}
+        canWrite={canWrite}
         storeId={store.storeId}
         ownerId={session.user.id}
         revision={`${status}/${lastSyncedAt}/${failedCount}`}
@@ -40,8 +108,10 @@ function FailedCommands({
   storeId,
   ownerId,
   revision: refreshKey,
+  canWrite,
 }: {
-  db: OutboxDatabase;
+  db: OutboxDatabase & AtomicMutationDatabase;
+  canWrite(): boolean;
   storeId: string;
   ownerId: string;
   revision: string;
@@ -53,6 +123,39 @@ function FailedCommands({
     revision = useRef(0),
     locked = useRef(false),
     focused = useRef(false);
+  const actionContext = useRef({ db, storeId, ownerId, canWrite });
+  actionContext.current = { db, storeId, ownerId, canWrite };
+  const [actionError, setActionError] = useState<string>();
+  const retire = async (commandId: string) => {
+    if (locked.current || !focused.current || !canWrite()) return;
+    locked.current = true;
+    setBusy(true);
+    setActionError(undefined);
+    const captured = actionContext.current;
+    const valid = () =>
+      focused.current &&
+      actionContext.current.db === captured.db &&
+      actionContext.current.ownerId === captured.ownerId &&
+      actionContext.current.storeId === captured.storeId &&
+      actionContext.current.canWrite();
+    try {
+      await retireDeletedConversationEmailDecision(
+        db,
+        { storeId, ownerId },
+        commandId,
+        valid,
+      );
+      if (valid()) await read(revision.current);
+    } catch {
+      if (valid())
+        setActionError(
+          "L’envoi n’a pas été écarté. Relisez les refus ; la conversation doit être supprimée sur cet appareil et l’envoi doit toujours être refusé.",
+        );
+    } finally {
+      locked.current = false;
+      if (valid()) setBusy(false);
+    }
+  };
   const read = useCallback(
     async (version: number, after = 0) => {
       const next = await new OutboxRepository(db).listFailures(
@@ -117,7 +220,15 @@ function FailedCommands({
           item.entityType,
           item.code,
         );
-        const target = examinationTarget(item.entityType, item.entityId);
+        const target =
+          item.entityType === "email_intake_decision" &&
+          !item.parentDeleted &&
+          z.uuid().safeParse(item.conversationId).success
+            ? {
+                label: "Examiner l’email dans sa conversation",
+                path: `/copilot?conversationId=${item.conversationId}`,
+              }
+            : examinationTarget(item.entityType, item.entityId);
         return (
           <View
             key={item.commandId}
@@ -133,6 +244,22 @@ function FailedCommands({
             <Text selectable className="text-sm text-muted">
               Référence : {item.commandId}
             </Text>
+            {item.entityType === "email_intake_decision" &&
+            item.parentDeleted &&
+            item.code === "COPILOT_HISTORY_ACCESS_INVALID" ? (
+              <>
+                <Text className="text-sm text-muted">
+                  La conversation a été supprimée. Vous pouvez écarter cet
+                  ancien envoi ; les originaux et l’historique restent
+                  conservés.
+                </Text>
+                <SecondaryButton
+                  label="Écarter cet ancien envoi"
+                  disabled={busy}
+                  onPress={() => void retire(item.commandId)}
+                />
+              </>
+            ) : null}
             {target ? (
               <SecondaryButton
                 label={target.label}
@@ -142,6 +269,9 @@ function FailedCommands({
           </View>
         );
       })}
+      {actionError ? (
+        <InlineAlert title="Envoi conservé" message={actionError} />
+      ) : null}
       <SecondaryButton
         label="Actualiser les refus"
         disabled={busy}

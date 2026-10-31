@@ -38,6 +38,7 @@ import {
 } from "./products/visual-file-service";
 import { registerVisualFileRoutes } from "./products/visual-file-routes";
 import {
+  isChatType,
   serializeChatForClient,
   copilotPresentationVersion,
 } from "./copilot/conversation-store";
@@ -675,8 +676,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "Seul le responsable du magasin peut modifier le plan physique.",
         );
       const result = await (request.body.commands.some(
-        (c) =>
-          c.entityType.startsWith("copilot_") || c.type.startsWith("COPILOT_"),
+        (c) => isChatType(c.entityType) || c.type.startsWith("COPILOT_"),
       ) ||
       hasLayoutWrite ||
       hasVisualWrite ||

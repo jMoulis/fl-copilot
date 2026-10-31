@@ -4,6 +4,7 @@ export interface PendingWorkGroup {
   count: number;
   state: string;
   code: string | null;
+  retryAction?: "ANALYTICS_RECOMPUTE";
 }
 export async function readPendingWork(
   db: OutboxDatabase,
@@ -47,6 +48,10 @@ export async function readPendingWork(
         ]
       : []),
     ...jobs.map((j) => ({
+      ...(j.type === "ANALYTICS_RECOMPUTE_PRODUCT_DATES" &&
+      j.status === "FAILED"
+        ? { retryAction: "ANALYTICS_RECOMPUTE" as const }
+        : {}),
       label:
         j.type === "EMAIL_INTAKE_PROCESS"
           ? "Traitement des fichiers reçus par email"
@@ -83,9 +88,17 @@ export async function readPendingWork(
                   ? "Échec à examiner"
                   : "En attente",
       code:
-        j.last_error && /^[A-Z][A-Z0-9_]{2,90}$/.test(j.last_error)
-          ? j.last_error
-          : null,
+        j.type === "ANALYTICS_RECOMPUTE_PRODUCT_DATES" && j.status === "FAILED"
+          ? /database (?:is )?locked|SQLITE_BUSY|SQLITE_LOCKED/i.test(
+              j.last_error ?? "",
+            )
+            ? "ANALYTICS_SQLITE_BUSY"
+            : /^[A-Z][A-Z0-9_]{2,90}$/.test(j.last_error ?? "")
+              ? j.last_error
+              : "ANALYTICS_LOCAL_CALCULATION_FAILED"
+          : j.last_error && /^[A-Z][A-Z0-9_]{2,90}$/.test(j.last_error)
+            ? j.last_error
+            : null,
     })),
   ];
 }

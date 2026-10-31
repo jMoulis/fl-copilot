@@ -229,3 +229,84 @@ it("ranks daily means by means rather than sums and keeps a declared observed un
   expect(day.analysis.coverage.partial).toBe(1);
   expect(day.analysis.total).toBe("10");
 });
+
+it("ranks the whole product selection by decline before pagination without changing totals", () => {
+  const catalogue = Array.from({ length: 25 }, (_, i) => ({
+    ...products[0],
+    id: `00000000-0000-4000-8000-${String(i + 100).padStart(12, "0")}`,
+  }));
+  const points = catalogue.flatMap((p, i) => [
+    point(p.id, "2026-10-15", String(100 - i)),
+    point(p.id, "2025-10-16", "100"),
+  ]);
+  const input = { ...base, products: catalogue, points };
+  const all = analyzeExplorerProducts(input);
+  const down = analyzeExplorerProducts({
+    ...input,
+    productList: { trend: "DOWN", sort: "DIFFERENCE", direction: "ASC" },
+  });
+  expect(down.contributors[0].productId).toBe(catalogue[24].id);
+  expect(down.contributors.at(-1)?.productId).toBe(catalogue[5].id);
+  expect(down.totalContributors).toBe(24);
+  expect(down.nextOffset).toBe(20);
+  expect(down.analysis).toEqual(all.analysis);
+  const next = analyzeExplorerProducts({
+    ...input,
+    offset: 20,
+    productList: { trend: "DOWN", sort: "DIFFERENCE", direction: "ASC" },
+  });
+  expect(next.contributors.map((p) => p.productId)).toEqual(
+    catalogue
+      .slice(1, 5)
+      .reverse()
+      .map((p) => p.id),
+  );
+  expect(
+    analyzeExplorerProducts({
+      ...input,
+      productList: { trend: "DOWN", sort: "DIFFERENCE", direction: "DESC" },
+    }).contributors[0].productId,
+  ).toBe(catalogue[1].id);
+});
+
+it("distinguishes missing comparisons, stable zero, zero reference and percentage ranking", () => {
+  const catalogue = Array.from({ length: 5 }, (_, i) => ({
+    ...products[0],
+    id: `00000000-0000-4000-8000-${String(i + 200).padStart(12, "0")}`,
+  }));
+  const points = [
+    point(catalogue[0].id, "2026-10-15", "10200"),
+    point(catalogue[0].id, "2025-10-16", "10000"),
+    point(catalogue[1].id, "2026-10-15", "20"),
+    point(catalogue[1].id, "2025-10-16", "10"),
+    point(catalogue[2].id, "2026-10-15", "5"),
+    point(catalogue[2].id, "2025-10-16", "0"),
+    point(catalogue[3].id, "2026-10-15", "0"),
+    point(catalogue[3].id, "2025-10-16", "0"),
+    point(catalogue[4].id, "2026-10-15", "99"),
+  ];
+  const input = { ...base, products: catalogue, points };
+  const euro = analyzeExplorerProducts({
+    ...input,
+    productList: { trend: "UP", sort: "DIFFERENCE", direction: "DESC" },
+  });
+  expect(euro.contributors.map((p) => p.productId)).toEqual(
+    catalogue.slice(0, 3).map((p) => p.id),
+  );
+  for (const direction of ["ASC", "DESC"] as const) {
+    const percent = analyzeExplorerProducts({
+      ...input,
+      productList: { trend: "UP", sort: "PERCENTAGE", direction },
+    });
+    expect(percent.contributors.at(-1)?.productId).toBe(catalogue[2].id);
+    expect(percent.contributors[0].productId).toBe(
+      catalogue[direction === "DESC" ? 1 : 0].id,
+    );
+  }
+  expect(
+    analyzeExplorerProducts({
+      ...input,
+      productList: { trend: "UNAVAILABLE", sort: "AMOUNT", direction: "DESC" },
+    }).contributors.map((p) => p.productId),
+  ).toEqual([catalogue[4].id]);
+});

@@ -241,3 +241,30 @@ it("keeps the full-department shortcut and truthful empty explanation for a filt
     rendered!.root.findAllByType("Alert" as never)[0]!.props.message,
   ).toContain("cette sélection");
 });
+
+it("preserves product ordering through drill/back and reads legacy frames without options", () => {
+  const start = initialExplorerView("2026-10-23");
+  const list = {
+    trend: "DOWN" as const,
+    sort: "DIFFERENCE" as const,
+    direction: "ASC" as const,
+  };
+  const changed = explorerViewSchema.parse({
+    ...start,
+    frame: { ...start.frame, productList: list, detailsOffset: 20 },
+  });
+  const child = drillExplorerScope(changed, {
+    ...changed.frame.filters,
+    productId: "00000000-0000-4000-8000-000000000002",
+  });
+  expect(child.frame.productList).toEqual(list);
+  expect(child.frame.detailsOffset).toBe(0);
+  expect(backExplorerView(child)).toEqual(changed);
+  expect(explorerViewSchema.parse(start).frame.productList).toBeUndefined();
+  expect(
+    explorerViewSchema.safeParse({
+      ...changed,
+      frame: { ...changed.frame, productList: { ...list, sort: "arbitrary" } },
+    }).success,
+  ).toBe(false);
+});

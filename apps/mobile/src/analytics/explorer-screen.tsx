@@ -186,6 +186,7 @@ function StoreExplorer({
         view.metric,
         view.frame.filters,
         view.frame.detailsOffset,
+        view.frame.productList,
       ])
     : "";
   useFocusEffect(
@@ -202,6 +203,7 @@ function StoreExplorer({
           tradingToday(),
           view.frame.filters,
           view.frame.detailsOffset,
+          view.frame.productList,
         ),
         repo.latestDate(storeId),
       ])
@@ -403,6 +405,17 @@ function StoreExplorer({
             {data ? (
               <ExplorerBreakdown
                 data={data}
+                productList={view.frame.productList}
+                onProductList={(productList) =>
+                  change({
+                    ...current.current!,
+                    frame: {
+                      ...current.current!.frame,
+                      productList,
+                      detailsOffset: 0,
+                    },
+                  })
+                }
                 visuals={visuals}
                 storeId={storeId}
                 onCategory={(category) =>
