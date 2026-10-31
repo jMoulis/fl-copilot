@@ -481,3 +481,49 @@ it("allows explicit adoption of an already synchronized product while keeping se
     await new OutboxRepository(s.a).listPending(s.scope.storeId),
   ).toHaveLength(0);
 });
+
+it.each(["SYNCED", "PENDING", "ERROR"] as const)(
+  "rereads and explicitly adopts a verified product despite a stale %s flag and timestamp",
+  async (state) => {
+    const s = await setup("PRODUCT"),
+      r = s.review;
+    await applyProductMasterChange(
+      s.a,
+      s.scope.storeId,
+      {
+        entityType: r.entityType,
+        entityId: r.remote.id,
+        entityVersion: r.remote.version,
+        operation: "UPSERT",
+        entity: r.remote,
+      },
+      r.local.version,
+    );
+    await s.a.runAsync(
+      "UPDATE products SET sync_state=?,dirty=1,updated_at='2026-10-24T12:00:00.000Z' WHERE id=?",
+      state,
+      r.remote.id,
+    );
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(button("Conserver ma version locale").props.disabled).toBe(true);
+    expect(button("Adopter la version synchronisée").props.disabled).toBe(
+      false,
+    );
+    expect(s.count("product_master_conflict_history")).toBe(0);
+    await act(async () =>
+      button("Adopter la version synchronisée").props.onPress(),
+    );
+    expect(button("Confirmer cette résolution").props.disabled).toBe(true);
+    await compare();
+    await confirm();
+    expect(s.count("product_master_conflict_history")).toBe(1);
+    expect(await current(s)).toMatchObject({
+      entity: r.remote,
+      syncState: "SYNCED",
+      dirty: false,
+    });
+    expect(
+      await new OutboxRepository(s.a).listPending(s.scope.storeId),
+    ).toHaveLength(0);
+  },
+);
