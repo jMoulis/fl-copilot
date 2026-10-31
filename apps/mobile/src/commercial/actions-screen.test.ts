@@ -274,3 +274,50 @@ it("ignores local-calculation counters but rereads the retained week when return
   await render();
   expect(runtime.readPlan).toHaveBeenCalledTimes(2);
 });
+
+it("makes preparation visible before activity and selects next ISO week from today, not a retained historical week", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date("2026-12-27T18:00:00Z"));
+    await new ActionsViewRepository(runtime.sqlite, runtime.scope).save(
+      initialActionsView("2025-10-01"),
+    );
+    await render();
+    const nodes = rendered!.root.findAll(
+      (n) => n.type === CopilotActivityPanel || n.props.title === "Préparation",
+    );
+    expect(nodes[0]!.props.title).toBe("Préparation");
+    const next = rendered!.root
+      .findAllByType("SecondaryButton" as never)
+      .find((n) => n.props.label === "Préparer la semaine prochaine")!;
+    await act(() => next.props.onPress());
+    expect(date().props.value).toBe("2026-12-28");
+    expect(runtime.push.mock.lastCall?.[0]).toEqual({
+      pathname: "/week-preparation",
+      params: { weekStart: "2026-12-28" },
+    });
+    const preparation = rendered!.root
+      .findAllByType("MenuRow" as never)
+      .find((n) => n.props.title === "Préparation")!;
+    await act(() => preparation.props.onPress());
+    expect(runtime.push.mock.lastCall?.[0]).toEqual({
+      pathname: "/week-preparation",
+      params: { weekStart: "2026-12-28" },
+    });
+    expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
+    await act(() => rendered!.unmount());
+    rendered = undefined;
+    await render();
+    expect(date().props.value).toBe("2026-12-28");
+    vi.setSystemTime(new Date("2026-12-28T18:00:00Z"));
+    await act(() =>
+      rendered!.root
+        .findAllByType("SecondaryButton" as never)
+        .find((n) => n.props.label === "Préparer la semaine prochaine")!
+        .props.onPress(),
+    );
+    expect(date().props.value).toBe("2027-01-04");
+  } finally {
+    vi.useRealTimers();
+  }
+});

@@ -17,7 +17,10 @@ import {
   initialActionsView,
   type ActionsView,
 } from "../../../commercial/actions-view";
-import { tradingToday } from "../../../dates/calendar";
+import {
+  formatFrenchCalendarDate,
+  tradingToday,
+} from "../../../dates/calendar";
 import { DetailsDisclosure } from "../../../components/dashboard";
 import { DateSelector } from "../../../components/date-selector";
 import {
@@ -215,6 +218,24 @@ function StoreActions({
           />
         </View>
 
+        <Text className="text-center text-sm text-muted">
+          Du {formatFrenchCalendarDate(week.start)} au{" "}
+          {formatFrenchCalendarDate(week.end)}
+        </Text>
+        <SecondaryButton
+          label="Préparer la semaine prochaine"
+          onPress={() => {
+            const weekStart = addExplorerDays(
+              initialActionsView().weekStart,
+              7,
+            );
+            selected(weekStart);
+            router.push({
+              pathname: "/week-preparation",
+              params: { weekStart },
+            });
+          }}
+        />
         {week.start !== initialActionsView().weekStart ? (
           <SecondaryButton
             label="Revenir à cette semaine"
@@ -231,6 +252,36 @@ function StoreActions({
           />
         </>
       ) : null}
+      <SectionCard title="Préparer la semaine">
+        <MenuRow
+          title="Préparation"
+          description="Offres, affiches et mises en avant de la semaine sélectionnée."
+          icon="calendar-outline"
+          onPress={() =>
+            router.push({
+              pathname: "/week-preparation",
+              params: { weekStart: week.start },
+            })
+          }
+        />
+        <MenuRow
+          title="Plan et historique"
+          description="Retrouver les choix validés et leurs versions."
+          icon="checkmark-done-outline"
+          onPress={() =>
+            router.push({
+              pathname: "/commercial-plan",
+              params: { weekStart: week.start },
+            })
+          }
+        />
+        <MenuRow
+          title="Documents commerciaux"
+          description="Consulter les originaux et leurs analyses."
+          icon="document-text-outline"
+          onPress={() => router.push("/week")}
+        />
+      </SectionCard>
       <CopilotActivityPanel
         db={sqlite}
         storeId={storeId}
@@ -265,36 +316,6 @@ function StoreActions({
           message="Préparez cette semaine depuis vos documents ou avec le copilote. Une recommandation acceptée ne constitue pas une réalisation."
         />
       )}
-      <SectionCard title="Préparer la semaine">
-        <MenuRow
-          title="Préparation"
-          description="Offres, affiches et mises en avant de la semaine sélectionnée."
-          icon="calendar-outline"
-          onPress={() =>
-            router.push({
-              pathname: "/week-preparation",
-              params: { weekStart: week.start },
-            })
-          }
-        />
-        <MenuRow
-          title="Plan et historique"
-          description="Retrouver les choix validés et leurs versions."
-          icon="checkmark-done-outline"
-          onPress={() =>
-            router.push({
-              pathname: "/commercial-plan",
-              params: { weekStart: week.start },
-            })
-          }
-        />
-        <MenuRow
-          title="Documents commerciaux"
-          description="Consulter les originaux et leurs analyses."
-          icon="document-text-outline"
-          onPress={() => router.push("/week")}
-        />
-      </SectionCard>
       <DetailsDisclosure title="Casse, imports et gestion du magasin">
         <MenuRow
           title="Casse"

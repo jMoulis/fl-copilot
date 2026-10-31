@@ -181,6 +181,15 @@ export function CommercialVisualView({
           triggerLabel="Changer de semaine"
           onConfirm={(date) => setSelection({ sourceId, date })}
         />
+        <SecondaryButton
+          label={`Ouvrir la préparation · semaine ${week.number} · ${week.year}`}
+          onPress={() =>
+            router.push({
+              pathname: "/week-preparation",
+              params: { weekStart: week.start },
+            })
+          }
+        />
         {!selectedDate && !documentWeek ? (
           <Text className="text-sm text-warning">
             La semaine principale du document n’est pas identifiée. Choisissez

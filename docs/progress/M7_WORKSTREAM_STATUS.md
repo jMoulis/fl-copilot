@@ -1,3 +1,9 @@
+# 31 octobre — accès direct à la semaine préparée
+
+Le propriétaire accepte les tests demandés du build 20 : filtres/tris des produits dans Analyses, reprise des calculs locaux et classement de l’ancien refus email. Cette acceptation ciblée ne clôture pas la V1.
+
+Suite du programme correctif : la préparation était difficile à retrouver. Actions expose désormais la préparation avant le suivi et un raccourci vers la semaine prochaine, calculée depuis la date métier de Paris, même après consultation d’une ancienne semaine. Le lecteur commercial ouvre le brouillon de la semaine réellement affichée, y compris future. Aucun nouveau workflow d’import, outil ou instruction IA ; aucune écriture métier au simple accès. [QA et limites](../qa/M7_WEEK_PREPARATION_ENTRY_2026_10_31.md). Code en vérification ; hors build 20, livraison native groupée et recette réelle du document encore ouvertes. **1/3/4/5/6/7 en cours ; 2 code prêt.**
+
 # 31 octobre — baisses produits et reprise ciblée des erreurs
 
 Le propriétaire confirme le **conflit persil résolu** ; la version installée n’est pas visible dans sa capture. Ajout demandé dans Analyses : Tous/En baisse/En hausse/Sans comparaison, tri montant/écart €/évolution %, ordre explicite et conservation du contexte. Le classement porte sur toute la sélection avant pagination, sans changer les totaux ni inventer des comparaisons.
