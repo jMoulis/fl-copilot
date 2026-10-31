@@ -7547,6 +7547,123 @@ it.each([false, true])(
   },
 );
 
+it.each([false, true])(
+  "keeps the Mongo dictionary visible in a large deferred catalogue and can read purchase amounts without the selling-price calculator (streaming %s)",
+  async (streaming) => {
+    const f = fixture();
+    const { readMongoExploration } = await import("./mongo-read-tool");
+    const pipeline = JSON.stringify([
+      {
+        $match: {
+          label: "BANANE VRAC",
+          quantityUnit: "KG",
+          quantityStatus: "AVAILABLE",
+          salesCostStatus: "AVAILABLE",
+        },
+      },
+      {
+        $group: {
+          _id: "$productId",
+          cost: { $sum: "$salesCost" },
+          quantity: { $sum: "$quantity" },
+        },
+      },
+      { $set: { averageCost: { $divide: ["$cost", "$quantity"] } } },
+    ]);
+    const mongoRead = vi.fn(async (input) =>
+      readMongoExploration(
+        {
+          collection: () => ({
+            aggregate: () => ({
+              next: async () => ({
+                rows: [{ cost: "2.4", quantity: "2", averageCost: "1.2" }],
+                coverage: [{ inputRows: 1 }],
+              }),
+            }),
+          }),
+        } as never,
+        storeId,
+        input,
+      ),
+    );
+    const analyticsQuery = vi.fn();
+    let requests = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const i = requests++;
+      const names = body.tools.map((t: { name: string }) => t.name);
+      if (i === 0) {
+        expect(names.sort()).toEqual([
+          "conversation_history",
+          "find_tools",
+          "mongo_list",
+          "request_information",
+        ]);
+        expect(
+          body.tools.find((t: { name: string }) => t.name === "mongo_list")
+            .description,
+        ).toContain("purchase costs / prix d’achat");
+      }
+      if (i === 1)
+        expect(JSON.stringify(body.input)).toContain("salesCostStatus");
+      if (i === 2) {
+        expect(names).toContain("mongo_aggregate");
+        expect(
+          body.tools.find((t: { name: string }) => t.name === "mongo_aggregate")
+            .description,
+        ).toContain("weighted mean purchase cost");
+      }
+      const calls =
+        i === 0
+          ? [
+              {
+                name: "mongo_list",
+                input: {
+                  collection: null,
+                  period: null,
+                  afterId: null,
+                  limit: 20,
+                },
+              },
+            ]
+          : i === 1
+            ? [{ name: "find_tools", input: { query: "mongo_aggregate" } }]
+            : i === 2
+              ? [
+                  {
+                    name: "mongo_aggregate",
+                    input: {
+                      collection: "productDailyPerformance",
+                      period: { start: "2026-10-01", end: "2026-10-31" },
+                      pipeline,
+                    },
+                  },
+                ]
+              : undefined;
+      return streaming
+        ? discoverySse(calls)
+        : calls
+          ? discoveryResponse(calls)
+          : response();
+    };
+    const result = await createCopilotAiProvider(
+      f.config,
+      transport,
+      discoveryReads({ mongoRead, analyticsQuery }),
+    ).generate(f.request, schema, undefined, streaming ? vi.fn() : undefined);
+    expect(requests).toBe(4);
+    expect(analyticsQuery).not.toHaveBeenCalled();
+    expect(mongoRead).toHaveBeenCalledTimes(2);
+    expect(
+      result.toolEvidence?.find((e) => e.label === "Résultat 1 · averageCost")
+        ?.value,
+    ).toBe("1.2");
+    expect(result.factTrace?.reads.map((r) => r.read.kind)).toEqual([
+      "MONGO",
+      "MONGO",
+    ]);
+  },
+);
 it("discovers, aggregates and inspects through scoped Mongo reads before a final answer, replacing the two J-7-only tools", async () => {
   const f = fixture();
   const { readMongoExploration } = await import("./mongo-read-tool");
