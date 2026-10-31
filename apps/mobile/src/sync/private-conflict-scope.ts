@@ -14,6 +14,7 @@ export function canDisplayConflict(
       "copilot_decision",
       "copilot_layout_illustration",
       "email_intake_decision",
+      "document_archive",
       "copilot_execution_link",
       "copilot_action_execution",
     ].includes(c.entityType)

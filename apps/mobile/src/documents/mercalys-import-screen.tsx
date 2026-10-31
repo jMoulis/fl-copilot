@@ -1,3 +1,4 @@
+import { useIsFocused } from "expo-router";
 import { SourceOriginalButton } from "./source-original-button";
 import { SourceUploadRecoveryPanel } from "./source-upload-recovery-panel";
 import { MercalysBatchPanel } from "./mercalys-batch-panel";
@@ -131,9 +132,18 @@ export function MercalysImportScreen({
   const [reviewSourceIndex, setReviewSourceIndex] = useState<number>();
   const { sqlite, deviceId } = useLocalDatabase();
   const { session } = useAuth();
-  const { syncNow } = useSync();
+  const { syncNow, lastSyncedAt } = useSync();
   const storeId = session?.stores[0]?.storeId;
   const actorUserId = session?.user.id;
+  const archiveFocused = useIsFocused();
+  const archiveAuthority = useRef({
+    session,
+    archiveFocused,
+    sqlite,
+    deviceId,
+  });
+  archiveAuthority.current = { session, archiveFocused, sqlite, deviceId };
+
   const repository = useMemo(
     () => new ProductMasterRepository(sqlite),
     [sqlite],
@@ -693,10 +703,23 @@ export function MercalysImportScreen({
       ) : null}
       {!retainedAsset && storeId && actorUserId && hasNativeFilePicker ? (
         <MercalysBatchPanel
-          key={`${storeId}/${actorUserId}`}
+          key={`${storeId}/${actorUserId}/${conversationId ?? "manual"}`}
           db={sqlite}
           storeId={storeId}
           ownerId={actorUserId}
+          archiveContext={{
+            deviceId,
+            revision: String(archiveFocused) + ":" + String(lastSyncedAt),
+            canWrite: () =>
+              archiveAuthority.current.archiveFocused &&
+              archiveAuthority.current.sqlite === sqlite &&
+              archiveAuthority.current.deviceId === deviceId &&
+              archiveAuthority.current.session?.user.id === actorUserId &&
+              archiveAuthority.current.session?.stores[0]?.storeId === storeId,
+            onChanged: () => {
+              void syncNow(storeId).catch(() => undefined);
+            },
+          }}
           conversationId={conversationId}
           onDiscuss={onDiscuss}
           onBusyChange={setBatchBusy}

@@ -13,6 +13,8 @@ import WeekScreen from "../app/(tabs)/week";
 
 const runtime = vi.hoisted(() => ({
   documents: vi.fn(),
+  archives: vi.fn(),
+  archiveSet: vi.fn(),
   job: vi.fn(),
   jobs: vi.fn(),
   pages: vi.fn(),
@@ -57,6 +59,12 @@ vi.mock("../providers/database-provider", () => ({
   useLocalDatabase: () => ({ sqlite: runtime.db }),
 }));
 vi.mock("../sync/sync-provider", () => ({ useSync: () => useContext(Sync) }));
+vi.mock("./document-archive-repository", () => ({
+  DocumentArchiveRepository: class {
+    list = runtime.archives;
+    set = runtime.archiveSet;
+  },
+}));
 vi.mock("./source-document-repository", () => ({
   SourceDocumentRepository: class {
     listDocuments = runtime.documents;
@@ -199,6 +207,8 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ canceled: true });
   runtime.capture.mockReset();
+  runtime.archives.mockReset().mockResolvedValue([]);
+  runtime.archiveSet.mockReset().mockResolvedValue(true);
   runtime.documents.mockReset().mockResolvedValue([document(1)]);
   runtime.job.mockReset().mockResolvedValue(null);
   runtime.jobs.mockReset().mockResolvedValue({});
@@ -437,4 +447,65 @@ it("discards a delayed result after blur instead of replacing a newer focused sn
     finish([document(99)]);
   });
   expect(text()).not.toContain("Document 99.pdf");
+});
+
+it("archives only the list entry, restores it from Archivés and retains the canonical source link", async () => {
+  const d = document(1);
+  const entry = {
+    id: d.id,
+    storeId: "store",
+    ownerId: "owner",
+    targetKind: "COMMERCIAL_DOCUMENT",
+    archived: true,
+    version: 1,
+    updatedAt: d.updatedAt,
+  };
+  runtime.documents.mockResolvedValue([d, document(2)]);
+  runtime.archives.mockResolvedValue([entry]);
+  await render();
+  expect(text()).not.toContain("Document 1.pdf");
+  expect(text()).toContain("Document 2.pdf");
+  await act(async () => nodes("Segments")[0]!.props.onChange("ARCHIVED"));
+  expect(text()).toContain("Document 1.pdf");
+  expect(text()).not.toContain("Document 2.pdf");
+  expect(nodes("Original")[0]?.props.sourceDocumentId).toBe(d.id);
+  runtime.archiveSet.mockImplementationOnce(async () => {
+    runtime.archives.mockResolvedValue([]);
+    return true;
+  });
+  await act(async () => button("Restaurer").props.onPress());
+  expect(runtime.archiveSet).toHaveBeenCalledWith(
+    d.id,
+    "COMMERCIAL_DOCUMENT",
+    false,
+    expect.objectContaining({ canWrite: expect.any(Function) }),
+  );
+  await act(async () => nodes("Segments")[0]!.props.onChange("ALL"));
+  expect(text()).toContain("Document 1.pdf");
+  expect(runtime.capture).not.toHaveBeenCalled();
+});
+it("reveals an archived exact duplicate without silently restoring it or creating another source", async () => {
+  const d = document(1);
+  runtime.documents.mockResolvedValue([d]);
+  runtime.archives.mockResolvedValue([
+    {
+      id: d.id,
+      storeId: "store",
+      ownerId: "owner",
+      targetKind: "COMMERCIAL_DOCUMENT",
+      archived: true,
+      version: 1,
+      updatedAt: d.updatedAt,
+    },
+  ]);
+  runtime.picker.getDocumentAsync.mockResolvedValue({
+    canceled: false,
+    assets: [{ uri: "file:///same.pdf", name: "same.pdf" }],
+  });
+  runtime.capture.mockResolvedValue({ document: d, duplicate: true });
+  await render();
+  await act(async () => button("Importer un PDF").props.onPress());
+  expect(nodes("Segments")[0]!.props.value).toBe("ARCHIVED");
+  expect(text()).toContain("Document 1.pdf");
+  expect(runtime.archiveSet).not.toHaveBeenCalled();
 });

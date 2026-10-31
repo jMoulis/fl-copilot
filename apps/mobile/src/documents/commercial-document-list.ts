@@ -2,12 +2,12 @@ import {
   buildCommercialDocumentSummary,
   type SummaryDecision,
 } from "@fl-copilot/commercial-core";
-import type { LocalSourceDocument } from "@fl-copilot/domain";
+import type { DocumentArchive, LocalSourceDocument } from "@fl-copilot/domain";
 import type { CommercialReviewPage } from "@fl-copilot/sync-contracts";
 import { commercialPdfUploadPresentation } from "./commercial-pdf-upload";
 
 export type CommercialDocumentFilter =
-  "ALL" | "PENDING" | "RESULTS" | "ATTENTION";
+  "ALL" | "PENDING" | "RESULTS" | "ATTENTION" | "ARCHIVED";
 type UploadJobs = Record<
   string,
   { status: string; last_error: string | null } | null
@@ -17,6 +17,7 @@ export function commercialDocumentRows(
   pages: CommercialReviewPage[],
   decisions: SummaryDecision[],
   jobs: UploadJobs,
+  archives: readonly DocumentArchive[] = [],
 ) {
   const grouped = new Map<string, CommercialReviewPage[]>();
   for (const page of pages) {
@@ -31,12 +32,18 @@ export function commercialDocumentRows(
       .filter((id) => !known.has(id))
       .map((id) => ({ id, document: null })),
   ];
+  const archivedSources = new Set(
+    archives
+      .filter((a) => a.targetKind === "COMMERCIAL_DOCUMENT" && a.archived)
+      .map((a) => a.id),
+  );
   return sources.map(({ id, document }) => {
     const received = grouped.get(id) ?? [],
       job = jobs[id] ?? null;
     return {
       id,
       document,
+      archived: archivedSources.has(id),
       pages: received,
       title:
         document?.originalFilename ??
@@ -71,10 +78,13 @@ export function commercialDocumentPage(
   const term = searchable(query);
   const filtered = rows.filter(
     (row) =>
-      (filter === "ALL" ||
-        (filter === "RESULTS" && row.pages.length > 0) ||
-        (filter === "ATTENTION" && row.attention) ||
-        (filter === "PENDING" && !row.pages.length && !row.attention)) &&
+      (filter === "ARCHIVED"
+        ? row.archived
+        : !row.archived &&
+          (filter === "ALL" ||
+            (filter === "RESULTS" && row.pages.length > 0) ||
+            (filter === "ATTENTION" && row.attention) ||
+            (filter === "PENDING" && !row.pages.length && !row.attention))) &&
       searchable(
         [
           row.title,

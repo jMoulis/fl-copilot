@@ -26,6 +26,7 @@ const p = vi.hoisted(() => ({
   changed: vi.fn(),
   read: vi.fn(),
 }));
+vi.mock("expo-router", () => ({ useIsFocused: () => true }));
 vi.mock("react-native", () => ({
   StyleSheet: { create: (value: unknown) => value },
   Text: "Text",

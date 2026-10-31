@@ -295,9 +295,9 @@ export class MercalysBatchRepository {
     });
     return `Analyse les imports publiés de ${labels.join(" ; ")}. Fais ressortir les résultats, les évolutions comparables et les actions utiles au rayon à partir des périodes disponibles.`;
   }
-  async recent(after?: { createdAt: string; id: string }) {
+  async recent(after?: { createdAt: string; id: string }, archived?: boolean) {
     const rows = await this.db.getAllAsync<{ request_json: string }>(
-      "SELECT request_json FROM mercalys_intake_batches WHERE store_id=? AND owner_id=? AND (? IS NULL OR conversation_id=?) AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",
+      "SELECT request_json FROM mercalys_intake_batches WHERE store_id=? AND owner_id=? AND (? IS NULL OR conversation_id=?) AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) AND (? IS NULL OR COALESCE((SELECT archived FROM document_archives a WHERE a.store_id=mercalys_intake_batches.store_id AND a.owner_id=mercalys_intake_batches.owner_id AND a.id=mercalys_intake_batches.id AND a.target_kind='MERCALYS_BATCH'),0)=?) ORDER BY created_at DESC,id DESC LIMIT 11",
       this.scope.storeId,
       this.scope.ownerId,
       this.scope.conversationId ?? null,
@@ -306,6 +306,8 @@ export class MercalysBatchRepository {
       after?.createdAt ?? null,
       after?.createdAt ?? null,
       after?.id ?? null,
+      archived === undefined ? null : Number(archived),
+      archived === undefined ? null : Number(archived),
     );
     const batches = rows
       .slice(0, 10)
@@ -343,7 +345,7 @@ export class MercalysBatchRepository {
       );
     });
   }
-  async page(batchId: string, after = -1, limit = 20) {
+  async page(batchId: string, after = -1, limit = 20, archived?: boolean) {
     await this.owned(this.db, batchId);
     if (
       !Number.isInteger(after) ||
@@ -354,9 +356,13 @@ export class MercalysBatchRepository {
     )
       throw Error("MERCALYS_BATCH_PAGE_INVALID");
     const rows = await this.db.getAllAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM mercalys_intake_items WHERE batch_id=? AND position>? ORDER BY position LIMIT ?",
+      "SELECT payload_json FROM mercalys_intake_items WHERE batch_id=? AND position>? AND (? IS NULL OR COALESCE((SELECT archived FROM document_archives a WHERE a.store_id=? AND a.owner_id=? AND a.id=mercalys_intake_items.id AND a.target_kind='MERCALYS_ITEM'),0)=?) ORDER BY position LIMIT ?",
       batchId,
       after,
+      archived === undefined ? null : Number(archived),
+      this.scope.storeId,
+      this.scope.ownerId,
+      archived === undefined ? null : Number(archived),
       limit + 1,
     );
     const items = rows

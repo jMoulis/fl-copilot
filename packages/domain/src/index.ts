@@ -172,3 +172,4 @@ export * from "./copilot-visual-library";
 export * from "./copilot-visual-actions";
 
 export * from "./copilot-transcription-review";
+export * from "./document-archive";

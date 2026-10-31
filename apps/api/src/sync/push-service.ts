@@ -1,3 +1,4 @@
+import { applyDocumentArchiveCommand } from "../document-archive-sync";
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
 import { isCommercialOriginalSource } from "@fl-copilot/domain";
@@ -180,6 +181,7 @@ export function createMongoSyncPushService(
               entityId: command.entityId,
               ...(isChatType(command.entityType) ||
               command.entityType === "store_layout" ||
+              command.entityType === "document_archive" ||
               isVisualEntityType(command.entityType)
                 ? { ownerId }
                 : {}),
@@ -316,6 +318,19 @@ async function applyCommand(
   illustrationGeneration?: Pick<LayoutIllustrationGenerationService, "apply">,
   verifyOriginal?: CommercialOriginalSourceVerifier,
 ) {
+  if (
+    command.entityType === "document_archive" ||
+    command.type === "DOCUMENT_ARCHIVE_SET"
+  )
+    return applyDocumentArchiveCommand(
+      context,
+      storeId,
+      ownerId,
+      command,
+      requestId,
+      syncChanges,
+      now,
+    );
   if (isVisualEntityType(command.entityType))
     return applyVisualCommand(
       context,

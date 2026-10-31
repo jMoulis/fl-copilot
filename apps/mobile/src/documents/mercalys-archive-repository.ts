@@ -116,9 +116,9 @@ export class MercalysArchiveRepository {
     });
     return this.get(id);
   }
-  async recent(after?: { createdAt: string; id: string }) {
+  async recent(after?: { createdAt: string; id: string }, archived?: boolean) {
     const rows = await this.db.getAllAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM mercalys_intake_archives WHERE store_id=? AND owner_id=? AND (? IS NULL OR json_extract(request_json, '$.conversationId')=?) AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) ORDER BY created_at DESC,id DESC LIMIT 11",
+      "SELECT payload_json FROM mercalys_intake_archives WHERE store_id=? AND owner_id=? AND (? IS NULL OR json_extract(request_json, '$.conversationId')=?) AND (? IS NULL OR created_at<? OR (created_at=? AND id<?)) AND (? IS NULL OR COALESCE((SELECT archived FROM document_archives a WHERE a.store_id=mercalys_intake_archives.store_id AND a.owner_id=mercalys_intake_archives.owner_id AND a.id=json_extract(mercalys_intake_archives.request_json,'$.batchId') AND a.target_kind='MERCALYS_BATCH'),0)=?) ORDER BY created_at DESC,id DESC LIMIT 11",
       this.scope.storeId,
       this.scope.ownerId,
       this.scope.conversationId ?? null,
@@ -127,6 +127,8 @@ export class MercalysArchiveRepository {
       after?.createdAt ?? null,
       after?.createdAt ?? null,
       after?.id ?? null,
+      archived === undefined ? null : Number(archived),
+      archived === undefined ? null : Number(archived),
     );
     const archives = rows
       .slice(0, 10)

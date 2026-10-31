@@ -65,7 +65,7 @@ it("upgrades v60 atomically with every legacy payload, history, dirty state and 
     expect(snapshot()).toEqual(before);
     db.execAsync = exec;
     await runLocalMigrations(db);
-    expect(await getLocalSchemaVersion(db)).toBe(61);
+    expect(await getLocalSchemaVersion(db)).toBe(62);
     expect(snapshot()).toEqual(before);
     db.raw.close();
     db = new VisualTestDatabase(new DatabaseSync(path));

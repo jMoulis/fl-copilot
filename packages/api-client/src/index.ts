@@ -475,6 +475,7 @@ export class ApiClient {
     emailIntake = false,
     layoutIllustrations = false,
     layoutIllustrationGenerations = false,
+    documentArchives = false,
   ) {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
@@ -509,12 +510,32 @@ export class ApiClient {
     if (copilotActionExecutions) query.set("copilotActionExecutions", "true");
     if (mercalysPublications) query.set("mercalysPublications", "true");
     if (mercalysRecordUpdates) query.set("mercalysRecordUpdates", "true");
+    if (documentArchives) query.set("documentArchives", "true");
     if (cursor) query.set("cursor", cursor);
     if (limit !== undefined) query.set("limit", String(limit));
     const encodedQuery = query.toString();
     const suffix = encodedQuery ? `?${encodedQuery}` : "";
     return this.request(
       `/api/v1/sync/pull${suffix}`,
+      { method: "GET", headers: syncHeaders(accessToken, storeId) },
+      syncPullResponseSchema,
+      60_000,
+    ) as Promise<SyncPullResponse>;
+  }
+
+  documentArchiveHistory(
+    accessToken: string,
+    storeId: string,
+    cursor?: string,
+  ) {
+    const query = new URLSearchParams({
+      documentArchives: "true",
+      documentArchiveHistory: "true",
+      limit: "100",
+    });
+    if (cursor) query.set("cursor", cursor);
+    return this.request(
+      "/api/v1/sync/pull?" + query.toString(),
       { method: "GET", headers: syncHeaders(accessToken, storeId) },
       syncPullResponseSchema,
       60_000,

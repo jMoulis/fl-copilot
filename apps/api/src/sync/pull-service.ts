@@ -1,3 +1,8 @@
+import {
+  documentArchiveKey,
+  serializeDocumentArchive,
+  type DocumentArchiveDocument,
+} from "../document-archive-sync";
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
 import {
@@ -145,12 +150,22 @@ export function createMongoSyncPullService(
         : Long.ZERO;
       if (query.commercialReview === "true")
         await registerCommercialReviewPages(database, storeId);
-      await advanceProductUnitRefresh(database, storeId, now);
+      if (query.documentArchiveHistory !== "true")
+        await advanceProductUnitRefresh(database, storeId, now);
       const mongoDatabase = await database.getDb();
       const page = await mongoDatabase
         .collection<SyncChangeDocument>("syncChanges")
         .find(
-          { storeId, sequence: { $gt: afterSequence } },
+          {
+            storeId,
+            sequence: { $gt: afterSequence },
+            ...(query.documentArchiveHistory === "true"
+              ? {
+                  entityType: "document_archive",
+                  payloadRevision: ownerId ?? "",
+                }
+              : {}),
+          },
           { promoteLongs: false },
         )
         .sort({ sequence: 1 })
@@ -168,6 +183,29 @@ export function createMongoSyncPullService(
         storeId,
         selected,
       );
+      const archiveEntities = new Map<string, DocumentArchiveDocument>();
+      if (query.documentArchives === "true" && ownerId) {
+        const keys = [
+          ...new Set(
+            selected
+              .filter(
+                (change) =>
+                  change.entityType === "document_archive" &&
+                  change.payloadRevision === ownerId,
+              )
+              .map((change) =>
+                documentArchiveKey(storeId, ownerId, change.entityId),
+              ),
+          ),
+        ];
+        if (keys.length) {
+          const rows = await mongoDatabase
+            .collection<DocumentArchiveDocument>("documentArchives")
+            .find({ _id: { $in: keys }, storeId, ownerId })
+            .toArray();
+          for (const row of rows) archiveEntities.set(row.id, row);
+        }
+      }
       const privateEntities = new Map<
         string,
         import("../copilot/conversation-store").ChatRecordDocument
@@ -234,6 +272,10 @@ export function createMongoSyncPullService(
         selected
           .filter(
             (change) =>
+              (change.entityType !== "document_archive" ||
+                (query.documentArchives === "true" &&
+                  !!ownerId &&
+                  change.payloadRevision === ownerId)) &&
               (query.visualLibrary === "true" ||
                 !isVisualEntityType(change.entityType)) &&
               (query.mercalysPublications === "true" ||
@@ -317,6 +359,21 @@ export function createMongoSyncPullService(
                 entityVersion: entity.version,
                 operation: change.operation,
                 entity,
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "document_archive") {
+              const row = archiveEntities.get(change.entityId);
+              if (!row) throw Error("DOCUMENT_ARCHIVE_RECORD_MISSING");
+              if (change.operation !== "UPSERT")
+                throw Error("DOCUMENT_ARCHIVE_OPERATION_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                entityVersion: row.version,
+                operation: change.operation,
+                entity: serializeDocumentArchive(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }
@@ -748,12 +805,16 @@ export function createMongoSyncPullService(
         ? Long.fromString(bounded.at(-1)!.sequence)
         : (selected.at(-1)?.sequence ?? afterSequence);
 
-      await requireCommercialSourceCompatibility(
-        mongoDatabase,
-        storeId,
-        query.commercialOriginalSources === "true",
-      );
+      if (query.documentArchiveHistory !== "true")
+        await requireCommercialSourceCompatibility(
+          mongoDatabase,
+          storeId,
+          query.commercialOriginalSources === "true",
+        );
       return {
+        ...(query.documentArchives === "true"
+          ? { documentArchives: true as const }
+          : {}),
         changes: bounded,
         nextCursor: encodeSyncCursor(storeId, nextSequence),
         hasMore: hasMore || truncated,

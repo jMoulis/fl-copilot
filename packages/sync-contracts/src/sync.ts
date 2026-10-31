@@ -82,6 +82,8 @@ export const syncChangeEnvelopeSchema = z.object({
 export type SyncChangeEnvelope = z.infer<typeof syncChangeEnvelopeSchema>;
 
 export const syncPullQuerySchema = z.object({
+  documentArchives: z.enum(["true", "false"]).optional(),
+  documentArchiveHistory: z.enum(["true", "false"]).optional(),
   visualLibrary: z.enum(["true", "false"]).optional(),
   commercialReview: z.enum(["true", "false"]).optional(),
   commercialVisual: z.enum(["true", "false"]).optional(),
@@ -123,6 +125,7 @@ export const syncPullQuerySchema = z.object({
 export type SyncPullQuery = z.infer<typeof syncPullQuerySchema>;
 
 export const syncPullResponseSchema = z.object({
+  documentArchives: z.literal(true).optional(),
   changes: z.array(syncChangeEnvelopeSchema),
   nextCursor: nonEmptyStringSchema,
   hasMore: z.boolean(),

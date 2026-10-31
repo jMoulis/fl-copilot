@@ -1,5 +1,10 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current corrective increment — 31 October: reversible personal document archives
+
+Archive/restore commercial PDFs, Mercalys batches/ZIPs and batch items through one personal visibility metadata entity, scoped by authenticated owner and store. SQLite migration 62, atomic Outbox intents and the canonical push/pull service retain sources, published observations, jobs, provenance, source links and duplicate detection. Use server commit order only for this reversible preference, never for business conflicts. Backfill personal markers through bounded canonical history, independently of an existing main cursor; filter before UI pagination and preserve processor working sets. See `../qa/M8_DOCUMENT_ARCHIVES_2026_10_31.md`. API capability must be released before the grouped native build, which also includes PR 386. Native acceptance, actual persil resolution and remaining corrective/V1 gates are still open; no reset framework, model tool or instruction expansion.
+
+
 ## Current M7 increment — 24 October: conversational visual metadata/review
 
 Discover synchronized visual metadata in bounded store-scoped pages/product graphs, using the canonical selected-image resolver. Reuse the native metadata conflict repository and two-version presentation from the existing chat comparison, with exact current-group/full-hash checks, separate upload-rights/restoration decisions and atomic private result/Outbox replay. Negotiate only capability 7; preserve 1–6. See `../qa/M7_COPILOT_VISUAL_LIBRARY_2026_10_24.md`. No binary/model writer, image sourcing/generation, migration or provider spend. Full image CRUD/transfer acceptance and all V1/M8/UX gates remain open; group API before native delivery.
