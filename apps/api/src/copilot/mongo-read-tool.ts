@@ -13,7 +13,10 @@ const productFields = {
   category: "Catégorie actuelle, pas historique",
   nature: "Nature actuelle : BULK/PACKAGED/UNKNOWN",
   salesUnit: "Unité actuelle : KG/PIECE/PACK/UNKNOWN",
-  status: "Statut courant ACTIVE/INACTIVE/TO_REVIEW",
+  status:
+    "Statut courant ACTIVE/INACTIVE/TO_REVIEW ; distinct de la suppression logique",
+  deletedAt:
+    "Date de suppression logique ou null ; filtrer null pour le catalogue non supprimé",
   version: "Version du produit",
 };
 const dailyFields = {
@@ -374,6 +377,7 @@ function sourcePipeline(
           nature: 1,
           salesUnit: 1,
           status: 1,
+          deletedAt: { $ifNull: ["$deletedAt", null] },
           version: 1,
         },
       },

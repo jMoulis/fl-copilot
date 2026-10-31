@@ -267,6 +267,41 @@ describe.skipIf(!uri)(
         ),
       ).toBe(true);
     });
+    it("exposes logical deletion independently of ACTIVE status, allowing active-catalogue counts without hiding history", async () => {
+      await db
+        .collection<Document & { _id: string }>("products")
+        .updateOne(
+          { _id: productId },
+          { $set: { deletedAt: "2026-10-20T10:00:00Z" } },
+        );
+      const get = await readMongoExploration(db, storeId, {
+        action: "GET",
+        collection: "products",
+        id: productId,
+      });
+      expect(get.rows[0]).toMatchObject({
+        status: "ACTIVE",
+        deletedAt: "2026-10-20T10:00:00Z",
+      });
+      expect(
+        (
+          await aggregate(
+            [
+              { $match: { status: "ACTIVE", deletedAt: null } },
+              { $count: "products" },
+            ],
+            "products",
+          )
+        ).rows,
+      ).toEqual([]);
+      expect(
+        (
+          await aggregate([
+            { $group: { _id: null, sales: { $sum: "$sales" } } },
+          ])
+        ).rows[0]!.sales,
+      ).toBe("0.3");
+    });
     it("does not confuse a missing product with an empty department and guards inconsistent embedded tenants", async () => {
       await db
         .collection<Document & { _id: string }>("productDailyPerformance")
