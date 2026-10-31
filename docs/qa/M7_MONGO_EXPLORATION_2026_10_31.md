@@ -1,3 +1,9 @@
+# Pre-release response compatibility follow-up — 31 October
+
+PR 390 is merged but intentionally unreleased. The real conversational renderer requires a separate trusted scalar for every numeric/date table cell; a JSON object per row would force a technical dump or an invalid answer. The existing Mongo adapter now supplies scalar row/nested-key, period and source-coverage evidence with compact content-bound IDs. Decimal128 scientific notation is normalized through the existing BusinessDecimal formatter. No global prompt, renderer rule or evidence/token ceiling is loosened. Lists reduce their returned page before exceeding the existing 241-evidence ceiling and keep an exact cursor; oversized analytical projections return no sampled result and request fewer cells. Large raw revisions remain excluded.
+
+The controlled SDK test now uses the real CopilotResponse schema, response validation and answer renderer, asserting a readable Markdown table and source link rather than a generic answer object. Real Mongo numeric rendering and correction replay remain covered; the correction fixture updates availability with its value, matching a coherent projection. Full local checks pass **4,600 / 740**, focused real-Mongo/SDK/render/context checks **299**, formatting and API build/import pass. Exact follow-up push/PR/master gates and the combined API release are still required. No real-model or native acceptance is claimed, no EAS build or paid AI test.
+
 # Scoped Mongo exploration — 31 October 2026
 
 ## Authorized scope

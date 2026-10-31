@@ -1,6 +1,8 @@
+import { BusinessDecimal } from "@fl-copilot/analytics-core";
 import { createHash } from "node:crypto";
 import { Decimal128, MongoServerError, type Db, type Document } from "mongodb";
 import { z } from "zod";
+import { COPILOT_READ_EVIDENCE_LIMIT } from "./generation-limits";
 import {
   copilotEvidenceSchema,
   copilotMongoReadInputSchema,
@@ -67,7 +69,7 @@ export const mongoReadResultSchema = z.strictObject({
   hasMore: z.boolean(),
   nextAfterId: z.string().nullable(),
   sourceCoverage: z.record(z.string(), z.unknown()).nullable(),
-  evidence: z.array(copilotEvidenceSchema).max(21),
+  evidence: z.array(copilotEvidenceSchema).max(COPILOT_READ_EVIDENCE_LIMIT),
 });
 export type MongoReadResult = z.infer<typeof mongoReadResultSchema>;
 const stages = new Set([
@@ -493,7 +495,9 @@ function jsonValue(value: unknown, depth = 0): unknown {
   if (value instanceof Decimal128) {
     const text = value.toString();
     if (/NaN|Infinity/.test(text)) invalid("Résultat numérique non fini.");
-    return text;
+    const plain = new BusinessDecimal(text).toFixed();
+    if (plain.length > 2000) invalid("Résultat numérique trop long.");
+    return plain;
   }
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -510,6 +514,26 @@ function jsonValue(value: unknown, depth = 0): unknown {
       Object.entries(value).map(([k, v]) => [k, jsonValue(v, depth + 1)]),
     );
   invalid("Résultat non sérialisable.");
+}
+function scalarValues(
+  value: unknown,
+  path = "",
+): Array<{ path: string; value: string | number | null }> {
+  if (value && typeof value === "object")
+    return Object.entries(value).flatMap(([k, v]) =>
+      scalarValues(v, path ? `${path}.${k}` : k),
+    );
+  return [
+    {
+      path,
+      value:
+        typeof value === "boolean"
+          ? value
+            ? "Oui"
+            : "Non"
+          : (value as string | number | null),
+    },
+  ];
 }
 export async function readMongoExploration(
   db: Db,
@@ -529,7 +553,7 @@ export async function readMongoExploration(
     hasMore = false,
     nextAfterId: string | null = null,
   ): MongoReadResult => {
-    const values = jsonValue(rows) as Document[];
+    let values = jsonValue(rows) as Document[];
     if (values.some((row) => JSON.stringify(row).length > 9000))
       return result(
         "LIMIT_EXCEEDED",
@@ -543,6 +567,34 @@ export async function readMongoExploration(
         "LIMIT_EXCEEDED",
         "Résultat trop volumineux ; réduire la projection ou le périmètre.",
       );
+    const context = scalarValues({
+      ...("period" in input && input.period ? { period: input.period } : {}),
+      ...(sourceCoverage ? { coverage: sourceCoverage } : {}),
+    });
+    const contextHash = createHash("sha256")
+      .update(JSON.stringify(context))
+      .digest("hex")
+      .slice(0, 16);
+    if (input.collection !== null) {
+      const max = COPILOT_READ_EVIDENCE_LIMIT - 1 - context.length;
+      let leaves = 0,
+        count = 0;
+      for (const row of values) {
+        leaves += scalarValues(row).length;
+        if (leaves > max) break;
+        count++;
+      }
+      if (count !== values.length) {
+        if (input.action !== "LIST" || count === 0)
+          return result(
+            "LIMIT_EXCEEDED",
+            "Trop de cellules à sourcer ; réduire les colonnes ou le nombre de résultats.",
+          );
+        values = values.slice(0, count);
+        hasMore = true;
+        nextAfterId = String(values.at(-1)!.id);
+      }
+    }
     const evidence = [
       {
         id: `mongo-read/${digest}/scope`,
@@ -558,17 +610,30 @@ export async function readMongoExploration(
         }),
         factKind: "QUALITY" as const,
       },
-      ...(input.collection === null ? [] : values).map((row, i) => ({
-        id: `mongo-read/${digest}/${createHash("sha256").update(JSON.stringify(row)).digest("hex")}/${i}`,
-        sourceType: "KPI" as const,
+      ...context.map((cell, j) => ({
+        id: `mongo/${digest.slice(0, 16)}/${contextHash}/context/${j}`,
+        sourceType: "DATA_QUALITY" as const,
         sourceId: `${storeId}/mongo-read/${digest}`,
         sourceVersion: null,
-        label: `Lecture ${input.collection ?? "catalogue de collections"} · résultat ${i + 1}`,
-        value: JSON.stringify(row),
+        label: `Périmètre · ${cell.path}`,
+        value: cell.value,
         detail:
-          "Lecture exploratoire ; requête et couverture dans le résultat. Ne certifie ni un indicateur officiel ni une causalité.",
-        factKind: "DERIVED" as const,
+          "Période demandée ou couverture des entrées avant filtres utilisateur ; pas une couverture certifiée de chaque groupe.",
+        factKind: "QUALITY" as const,
       })),
+      ...(input.collection === null ? [] : values).flatMap((row, i) =>
+        scalarValues(row).map((cell, j) => ({
+          id: `mongo/${digest.slice(0, 16)}/${createHash("sha256").update(JSON.stringify(row)).digest("hex").slice(0, 16)}/${i}/${j}`,
+          sourceType: "KPI" as const,
+          sourceId: `${storeId}/mongo-read/${digest}`,
+          sourceVersion: null,
+          label: `Résultat ${i + 1} · ${cell.path}`,
+          value: cell.value,
+          detail:
+            "Lecture exploratoire ; requête et couverture dans le résultat. Ne certifie ni un indicateur officiel ni une causalité.",
+          factKind: "DERIVED" as const,
+        })),
+      ),
     ];
     return mongoReadResultSchema.parse({
       input,

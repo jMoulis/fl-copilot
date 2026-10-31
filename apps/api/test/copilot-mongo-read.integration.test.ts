@@ -150,10 +150,16 @@ describe.skipIf(!uri)(
       expect(
         renderAnswerText(
           "{{value:0}} {{source:0}}",
-          [{ evidenceId: result.evidence[1]!.id }],
+          [
+            {
+              evidenceId: result.evidence.find(
+                (e) => e.label === "Résultat 1 · sales",
+              )!.id,
+            },
+          ],
           result.evidence,
         ),
-      ).toContain("copilot-source:");
+      ).toContain("0,3");
     });
     it("pairs sales and quantities within explicit units and keeps known versus estimated waste costs separate", async () => {
       const r = await aggregate([
@@ -178,7 +184,7 @@ describe.skipIf(!uri)(
       expect(r.rows[0]).toMatchObject({
         sales: "0.3",
         quantity: "0.03",
-        price: "1E+1",
+        price: "10",
         costKnown: "0.24",
         costEstimated: "0.68",
       });
@@ -235,6 +241,7 @@ describe.skipIf(!uri)(
             $set: {
               "performance.sales.salesValue": "5.00",
               "performance.inputRevision": "corrected",
+              "performance.availability.salesValue.status": "AVAILABLE",
             },
           },
         );
