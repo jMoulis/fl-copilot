@@ -173,3 +173,4 @@ export * from "./copilot-visual-actions";
 
 export * from "./copilot-transcription-review";
 export * from "./document-archive";
+export * from "./copilot-mongo-read";

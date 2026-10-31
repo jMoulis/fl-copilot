@@ -1,3 +1,9 @@
+# 31 October — MongoDB analytical exploration
+
+Three generic model tools (`mongo_list`, `mongo_get`, `mongo_aggregate`) read documented server-projected views of the existing products, productDailyPerformance and departmentDailyPerformance collections. Discovery gives grain/fields/operators; bounded model pipelines supply filters, grouping, expressions, ordering and counts. Exact store scope, field privacy, Decimal128 conversion, null-only sums and quantity-unit checks are enforced by the server. No credentials, arbitrary code/collections/joins, mutation or raw source/publication double counting. The model can query recorded known and estimated waste costs separately, in addition to CA/margin/waste/quantities.
+
+When this adapter is supplied, `analytics_daily` and `analytics_product_changes` disappear from the model catalogue; their canonical internal readers remain for legacy callers and historical fact replay. `analytics_period` and `analytics_query` remain the authoritative KPI/formula tools pending parity evaluation. No global prompt addition, agent, model/provider change, new collection, business writer or native capability is introduced. Existing overall read/time/input budgets remain; the exploratory adapter receives enough steps to discover/read/answer within them. Mongo queries join the existing private fact trace/replay rather than fabricating unchanged advice. See `../qa/M7_MONGO_EXPLORATION_2026_10_31.md` for test evidence and explicit limits. API delivery and real response acceptance remain separate.
+
 # Copilot manual-operation coverage inventory
 
 ## Current verified wiring and delivery boundary — 24 October

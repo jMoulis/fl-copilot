@@ -1,3 +1,9 @@
+# Approved analytical read arbitration — 31 October 2026
+
+The owner explicitly approved model-authored MongoDB read exploration (`list`, `get`, `aggregate`) to replace over-specialized analytical access. This narrowly supersedes the blanket prohibition of model-generated database reads in §97 for the three documented public views only. It does not authorize unrestricted collections, database credentials, writes or private conversation/account access. The authenticated server fixes the store and projects safe fields before the user pipeline; arbitrary code, cross-collection stages and unbounded work are denied.
+
+The first increment exposes products and canonical product/department daily performance, with exact Decimal128 conversion, independent availability, known/estimated waste costs, explicit units and source/query provenance. Raw imports and published observations are not added together. Missing-only sums remain null. The validated shared KPI tools remain authoritative for official comparisons, Pareto and paired quantity/price calculations; exploratory pipelines do not certify their own formulas. Existing local-first writes, confirmation, Outbox/sync, immutable sources and recommendation/execution separation are unchanged. See `../qa/M7_MONGO_EXPLORATION_2026_10_31.md`.
+
 # AI Copilot & Recommendation Engine Functional Specification
 
 **Product:** Fruits & Vegetables Copilot  

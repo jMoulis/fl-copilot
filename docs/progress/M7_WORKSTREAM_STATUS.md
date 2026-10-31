@@ -1,3 +1,7 @@
+# 31 octobre — exploration MongoDB en lecture seule
+
+Le propriétaire autorise le copilote à composer ses requêtes de lecture. Premier périmètre : catalogue et projections journalières produit/rayon, via trois outils génériques et un seul adaptateur. Le serveur fixe le magasin et les champs visibles, impose temps/volume/opérateurs, convertit les montants en décimaux, préserve les sommes inconnues et contrôle les unités. Les deux outils J−7 disparaissent du catalogue modèle compatible ; les calculateurs officiels restent. Requêtes et résultats rejoignent la preuve privée existante pour une relecture ultérieure. Aucune écriture métier, nouvelle collection, migration, instruction globale ou changement de fournisseur. [QA et limites](../qa/M7_MONGO_EXPLORATION_2026_10_31.md). Tests contrôlés/locaux en vérification ; CI et livraison API encore requises, aucune réponse réelle présumée. **Chantier 4 avancé ; 1/3/4/5/6/7 en cours ; 2 code prêt.** L’accès semaine PR 389 est fusionné mais attend un lot natif ; recette commerciale, casse et clôture V1 restent ouvertes.
+
 # 31 octobre — accès direct à la semaine préparée
 
 Le propriétaire accepte les tests demandés du build 20 : filtres/tris des produits dans Analyses, reprise des calculs locaux et classement de l’ancien refus email. Cette acceptation ciblée ne clôture pas la V1.

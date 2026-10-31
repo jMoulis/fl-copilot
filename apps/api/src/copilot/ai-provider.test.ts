@@ -7546,3 +7546,101 @@ it.each([false, true])(
     }
   },
 );
+
+it("discovers, aggregates and inspects through scoped Mongo reads before a final answer, replacing the two J-7-only tools", async () => {
+  const f = fixture();
+  const { readMongoExploration } = await import("./mongo-read-tool");
+  const activity = vi.fn();
+  const requests = [
+    {
+      action: "LIST" as const,
+      collection: null,
+      period: null,
+      afterId: null,
+      limit: 20,
+    },
+    {
+      action: "AGGREGATE" as const,
+      collection: "products" as const,
+      period: null,
+      pipeline: '[{"$count":"products"}]',
+    },
+    {
+      action: "GET" as const,
+      collection: "products" as const,
+      id: "known-product",
+    },
+  ];
+  const dictionary = await readMongoExploration(
+    {} as never,
+    storeId,
+    requests[0],
+  );
+  const mongoRead = vi.fn(async (input) => ({
+    ...dictionary,
+    input,
+    rows: input.action === "LIST" ? dictionary.rows : [{ value: "3" }],
+    evidence: dictionary.evidence.slice(0, 1),
+  }));
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    const names = body.tools.map((t: { name: string }) => t.name);
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "mongo_list",
+        "mongo_get",
+        "mongo_aggregate",
+        "analytics_period",
+        "analytics_query",
+      ]),
+    );
+    expect(names).not.toContain("analytics_daily");
+    expect(names).not.toContain("analytics_product_changes");
+    const i = calls++;
+    if (i === 3) return response();
+    const { action, ...input } = requests[i]!;
+    const name =
+      action === "LIST"
+        ? "mongo_list"
+        : action === "GET"
+          ? "mongo_get"
+          : "mongo_aggregate";
+    const envelope = z
+      .record(z.string(), z.unknown())
+      .parse(await response().json());
+    envelope.output = [
+      {
+        type: "function_call",
+        id: `fc_mongo_${i}`,
+        call_id: `mongo_${i}`,
+        name,
+        arguments: JSON.stringify(input),
+        status: "completed",
+      },
+    ];
+    return new Response(JSON.stringify(envelope), {
+      headers: { "content-type": "application/json" },
+    });
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    productChanges: vi.fn(),
+    period: vi.fn(),
+    analyticsQuery: vi.fn(),
+    mongoRead,
+  }).generate(f.request, schema, undefined, undefined, activity);
+  expect(mongoRead.mock.calls.map(([input]) => input)).toEqual(requests);
+  expect(calls).toBe(4);
+  expect(result.output).toEqual({ answer: "Vérifier les ventes." });
+  expect(result.factTrace?.reads.map((r) => r.read.kind)).toEqual([
+    "MONGO",
+    "MONGO",
+    "MONGO",
+  ]);
+  expect(
+    activity.mock.calls
+      .filter(([a]) => a.status === "RUNNING")
+      .every(([a]) => a.stage === "ANALYTICS"),
+  ).toBe(true);
+});

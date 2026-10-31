@@ -1,3 +1,4 @@
+import { copilotMongoReadInputSchema } from "./copilot-mongo-read";
 import { copilotProductSearchInputSchema } from "./copilot-product-search";
 import { copilotEventsReadInputSchema } from "./copilot-store-tools";
 import { z } from "zod";
@@ -11,6 +12,10 @@ import { recommendationTrackingInputSchema } from "./copilot-recommendation-deci
 import { copilotEvidenceSchema } from "./copilot-candidate";
 export const factReadSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("LATEST"), input: z.null() }),
+  z.strictObject({
+    kind: z.literal("MONGO"),
+    input: copilotMongoReadInputSchema,
+  }),
   z.strictObject({ kind: z.literal("DAILY"), input: dailyReadInputSchema }),
   z.strictObject({
     kind: z.literal("PERIOD"),
@@ -65,6 +70,7 @@ export const recommendationContextResultSchema = z
       .array(
         z.enum([
           "LATEST",
+          "MONGO",
           "DAILY",
           "PERIOD",
           "PRODUCT_CHANGES",
