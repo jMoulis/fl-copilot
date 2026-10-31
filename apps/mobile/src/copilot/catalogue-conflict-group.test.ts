@@ -630,8 +630,74 @@ it.each([
   },
 );
 
+it.each(["PRODUCT", "IDENTIFIER", "ALIAS"] as const)(
+  "adopts the acknowledged identical %s from a pre-snapshot installation without fabricating a cache on read",
+  async (kind) => {
+    const s = await nativeCatalogueConflictFixture(kind);
+    try {
+      const r = s.review;
+      await applyProductMasterChange(
+        s.a,
+        s.scope.storeId,
+        {
+          entityType: r.entityType,
+          entityId: r.remote.id,
+          entityVersion: r.remote.version,
+          operation: "UPSERT",
+          entity: r.remote,
+        },
+        r.local.version,
+      );
+      await s.a.runAsync(
+        "DELETE FROM product_master_remote_snapshots WHERE entity_id=?",
+        r.remote.id,
+      );
+      const repo = new ProductMasterConflictRepository(
+        s.a,
+        receiptReviewDigest,
+      );
+      const before = await repo.review(s.scope.storeId, r.conflict.id);
+      expect(before.current.snapshot).toBeNull();
+      expect(before.canKeep).toBe(false);
+      expect(before.canAdopt).toBe(true);
+      expect(
+        s.db
+          .prepare(
+            "SELECT COUNT(*) n FROM product_master_remote_snapshots WHERE entity_id=?",
+          )
+          .get(r.remote.id)!.n,
+      ).toBe(0);
+      await repo.resolve(s.scope.storeId, r.conflict.id, false, {
+        commandId: randomUUID(),
+        deviceId: s.scope.deviceId,
+        jobId: randomUUID(),
+        reviewHash: before.hash,
+        canResolve: () => true,
+      });
+      expect(
+        await new ConflictRepository(s.a).listOpen(s.scope.storeId),
+      ).toHaveLength(0);
+      expect(
+        await new OutboxRepository(s.a).listPending(s.scope.storeId),
+      ).toHaveLength(0);
+      expect(s.count("product_master_conflict_history")).toBe(1);
+      expect(
+        s.db
+          .prepare(
+            "SELECT version,operation FROM product_master_remote_snapshots WHERE entity_id=?",
+          )
+          .get(r.remote.id),
+      ).toEqual({ version: r.remote.version, operation: "UPSERT" });
+    } finally {
+      s.db.close();
+    }
+  },
+);
+
 it.each([
-  "MISSING_SNAPSHOT",
+  "MISSING_SNAPSHOT_DIRTY",
+  "MISSING_SNAPSHOT_METADATA",
+  "MISSING_SNAPSHOT_UNACKNOWLEDGED",
   "PENDING",
   "SYNCING",
   "FAILED",
@@ -654,9 +720,24 @@ it.each([
         },
         r.local.version,
       );
-      if (mode === "MISSING_SNAPSHOT")
+      if (mode.startsWith("MISSING_SNAPSHOT"))
         await s.a.runAsync(
           "DELETE FROM product_master_remote_snapshots WHERE entity_id=?",
+          r.remote.id,
+        );
+      if (mode === "MISSING_SNAPSHOT_DIRTY")
+        await s.a.runAsync(
+          "UPDATE products SET dirty=1 WHERE id=?",
+          r.remote.id,
+        );
+      if (mode === "MISSING_SNAPSHOT_METADATA")
+        await s.a.runAsync(
+          "UPDATE products SET updated_at='2026-10-25T12:00:00.000Z' WHERE id=?",
+          r.remote.id,
+        );
+      if (mode === "MISSING_SNAPSHOT_UNACKNOWLEDGED")
+        await s.a.runAsync(
+          "UPDATE products SET remote_version=NULL WHERE id=?",
           r.remote.id,
         );
       if (mode === "NEWER_BASE")

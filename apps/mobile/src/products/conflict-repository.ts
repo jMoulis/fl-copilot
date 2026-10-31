@@ -285,18 +285,24 @@ export class ProductMasterConflictRepository {
     // Explicit remote adoption is safe against the verified acknowledged snapshot
     // when every outstanding command is already in CONFLICT. Preserve the whole
     // local row in history; never resend it merely to repair an obsolete badge.
-    const recoverable =
-      current.remoteVersion === remote.version &&
-      current.snapshot?.operation === "UPSERT" &&
-      current.snapshot.version === remote.version &&
-      !remote.deletedAt &&
-      JSON.stringify(current.remote) === JSON.stringify(remote) &&
-      commands.every((command) => command.status === "CONFLICT");
-    const settled =
-      recoverable &&
+    const acknowledgedCopy =
       current.syncState === "SYNCED" &&
       !current.dirty &&
+      current.remoteVersion === remote.version &&
       JSON.stringify(current.entity) === JSON.stringify(remote);
+    const verifiedSnapshot =
+      current.snapshot?.operation === "UPSERT" &&
+      current.snapshot.version === remote.version &&
+      JSON.stringify(current.remote) === JSON.stringify(remote);
+    // Pre-v42 installations have no snapshot for unchanged acknowledged rows.
+    // Their exact clean row and the retained server response can prove the same
+    // version. Reading never fabricates a snapshot; explicit adoption records it.
+    const recoverable =
+      current.remoteVersion === remote.version &&
+      !remote.deletedAt &&
+      (verifiedSnapshot || (!current.snapshot && acknowledgedCopy)) &&
+      commands.every((command) => command.status === "CONFLICT");
+    const settled = recoverable && acknowledgedCopy;
     const blocked =
       (current.syncState !== "CONFLICT" && !recoverable) ||
       !group.valid ||
