@@ -540,9 +540,164 @@ it.each(["PRODUCT", "IDENTIFIER", "ALIAS"] as const)(
 );
 
 it.each([
-  "DIRTY",
-  "MISSING_SNAPSHOT",
-  "EDITED_LOCAL",
+  ["SYNCED", "metadata"],
+  ["PENDING", "metadata"],
+  ["ERROR", "metadata"],
+  ["SYNCED", "label"],
+  ["PENDING", "label"],
+  ["ERROR", "label"],
+] as const)(
+  "allows only explicit remote adoption when the %s row retains a different %s after acknowledgement",
+  async (state, field) => {
+    const s = await nativeCatalogueConflictFixture("PRODUCT");
+    try {
+      const r = s.review;
+      await applyProductMasterChange(
+        s.a,
+        s.scope.storeId,
+        {
+          entityType: r.entityType,
+          entityId: r.remote.id,
+          entityVersion: r.remote.version,
+          operation: "UPSERT",
+          entity: r.remote,
+        },
+        r.local.version,
+      );
+      // Same visible fields/version as the phone report, but a different local
+      // timestamp and state. No command is pending or sending this local row.
+      await s.a.runAsync(
+        "UPDATE products SET sync_state=?,dirty=1,updated_at='2026-10-24T12:00:00.000Z' WHERE id=?",
+        state,
+        r.remote.id,
+      );
+      if (field === "label")
+        await s.a.runAsync(
+          "UPDATE products SET label='LOCAL DIFFERENT LABEL' WHERE id=?",
+          r.remote.id,
+        );
+      const repo = new ProductMasterConflictRepository(
+        s.a,
+        receiptReviewDigest,
+      );
+      const before = await repo.review(s.scope.storeId, r.conflict.id);
+      expect(before.canKeep).toBe(false);
+      expect(before.canAdopt).toBe(true);
+      expect(
+        await new ConflictRepository(s.a).listOpen(s.scope.storeId),
+      ).toHaveLength(1);
+      expect(s.count("product_master_conflict_history")).toBe(0);
+      await repo.resolve(s.scope.storeId, r.conflict.id, false, {
+        commandId: randomUUID(),
+        deviceId: s.scope.deviceId,
+        jobId: randomUUID(),
+        reviewHash: before.hash,
+        canResolve: () => true,
+      });
+      const after = await repo
+        .review(s.scope.storeId, r.conflict.id)
+        .catch(() => null);
+      expect(after).toBeNull();
+      expect(
+        await new ConflictRepository(s.a).listOpen(s.scope.storeId),
+      ).toHaveLength(0);
+      const history = s.db
+        .prepare(
+          "SELECT local_json,remote_json FROM product_master_conflict_history",
+        )
+        .get()!;
+      expect(JSON.parse(history.local_json as string)).toEqual(
+        before.current.entity,
+      );
+      expect(JSON.parse(history.remote_json as string)).toEqual(before.remote);
+      expect(
+        await new OutboxRepository(s.a).listPending(s.scope.storeId),
+      ).toHaveLength(0);
+      expect(
+        s.db
+          .prepare(
+            "SELECT sync_state,dirty,updated_at FROM products WHERE id=?",
+          )
+          .get(r.remote.id),
+      ).toEqual({
+        sync_state: "SYNCED",
+        dirty: 0,
+        updated_at: r.remote.updatedAt,
+      });
+    } finally {
+      s.db.close();
+    }
+  },
+);
+
+it.each(["PRODUCT", "IDENTIFIER", "ALIAS"] as const)(
+  "adopts the acknowledged identical %s from a pre-snapshot installation without fabricating a cache on read",
+  async (kind) => {
+    const s = await nativeCatalogueConflictFixture(kind);
+    try {
+      const r = s.review;
+      await applyProductMasterChange(
+        s.a,
+        s.scope.storeId,
+        {
+          entityType: r.entityType,
+          entityId: r.remote.id,
+          entityVersion: r.remote.version,
+          operation: "UPSERT",
+          entity: r.remote,
+        },
+        r.local.version,
+      );
+      await s.a.runAsync(
+        "DELETE FROM product_master_remote_snapshots WHERE entity_id=?",
+        r.remote.id,
+      );
+      const repo = new ProductMasterConflictRepository(
+        s.a,
+        receiptReviewDigest,
+      );
+      const before = await repo.review(s.scope.storeId, r.conflict.id);
+      expect(before.current.snapshot).toBeNull();
+      expect(before.canKeep).toBe(false);
+      expect(before.canAdopt).toBe(true);
+      expect(
+        s.db
+          .prepare(
+            "SELECT COUNT(*) n FROM product_master_remote_snapshots WHERE entity_id=?",
+          )
+          .get(r.remote.id)!.n,
+      ).toBe(0);
+      await repo.resolve(s.scope.storeId, r.conflict.id, false, {
+        commandId: randomUUID(),
+        deviceId: s.scope.deviceId,
+        jobId: randomUUID(),
+        reviewHash: before.hash,
+        canResolve: () => true,
+      });
+      expect(
+        await new ConflictRepository(s.a).listOpen(s.scope.storeId),
+      ).toHaveLength(0);
+      expect(
+        await new OutboxRepository(s.a).listPending(s.scope.storeId),
+      ).toHaveLength(0);
+      expect(s.count("product_master_conflict_history")).toBe(1);
+      expect(
+        s.db
+          .prepare(
+            "SELECT version,operation FROM product_master_remote_snapshots WHERE entity_id=?",
+          )
+          .get(r.remote.id),
+      ).toEqual({ version: r.remote.version, operation: "UPSERT" });
+    } finally {
+      s.db.close();
+    }
+  },
+);
+
+it.each([
+  "MISSING_SNAPSHOT_DIRTY",
+  "MISSING_SNAPSHOT_METADATA",
+  "MISSING_SNAPSHOT_UNACKNOWLEDGED",
   "PENDING",
   "SYNCING",
   "FAILED",
@@ -565,19 +720,24 @@ it.each([
         },
         r.local.version,
       );
-      if (mode === "DIRTY")
-        await s.a.runAsync(
-          "UPDATE products SET dirty=1 WHERE id=?",
-          r.remote.id,
-        );
-      if (mode === "MISSING_SNAPSHOT")
+      if (mode.startsWith("MISSING_SNAPSHOT"))
         await s.a.runAsync(
           "DELETE FROM product_master_remote_snapshots WHERE entity_id=?",
           r.remote.id,
         );
-      if (mode === "EDITED_LOCAL")
+      if (mode === "MISSING_SNAPSHOT_DIRTY")
         await s.a.runAsync(
-          "UPDATE products SET label='ANOTHER LOCAL VALUE' WHERE id=?",
+          "UPDATE products SET dirty=1 WHERE id=?",
+          r.remote.id,
+        );
+      if (mode === "MISSING_SNAPSHOT_METADATA")
+        await s.a.runAsync(
+          "UPDATE products SET updated_at='2026-10-25T12:00:00.000Z' WHERE id=?",
+          r.remote.id,
+        );
+      if (mode === "MISSING_SNAPSHOT_UNACKNOWLEDGED")
+        await s.a.runAsync(
+          "UPDATE products SET remote_version=NULL WHERE id=?",
           r.remote.id,
         );
       if (mode === "NEWER_BASE")

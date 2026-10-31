@@ -281,21 +281,30 @@ export class ProductMasterConflictRepository {
         current.entity,
         remote,
       );
-    // A canonical acknowledgement can install the verified remote row while an
-    // older conflict remains OPEN. Only explicit adoption may close that history;
-    // the badge alone must not leave two identical verified versions unresolvable.
-    const settled =
+    // An OPEN conflict can outlive the local state/metadata it described.
+    // Explicit remote adoption is safe against the verified acknowledged snapshot
+    // when every outstanding command is already in CONFLICT. Preserve the whole
+    // local row in history; never resend it merely to repair an obsolete badge.
+    const acknowledgedCopy =
       current.syncState === "SYNCED" &&
       !current.dirty &&
       current.remoteVersion === remote.version &&
+      JSON.stringify(current.entity) === JSON.stringify(remote);
+    const verifiedSnapshot =
       current.snapshot?.operation === "UPSERT" &&
       current.snapshot.version === remote.version &&
+      JSON.stringify(current.remote) === JSON.stringify(remote);
+    // Pre-v42 installations have no snapshot for unchanged acknowledged rows.
+    // Their exact clean row and the retained server response can prove the same
+    // version. Reading never fabricates a snapshot; explicit adoption records it.
+    const recoverable =
+      current.remoteVersion === remote.version &&
       !remote.deletedAt &&
-      JSON.stringify(current.entity) === JSON.stringify(remote) &&
-      JSON.stringify(current.remote) === JSON.stringify(remote) &&
+      (verifiedSnapshot || (!current.snapshot && acknowledgedCopy)) &&
       commands.every((command) => command.status === "CONFLICT");
+    const settled = recoverable && acknowledgedCopy;
     const blocked =
-      (current.syncState !== "CONFLICT" && !settled) ||
+      (current.syncState !== "CONFLICT" && !recoverable) ||
       !group.valid ||
       commands.length > 100 ||
       commands.some((c) => c.status === "SYNCING") ||
@@ -323,17 +332,30 @@ export class ProductMasterConflictRepository {
       conflicts: group.conflicts,
       policy,
       hash,
-      canKeep: !blocked && !settled && policy.canKeep,
+      canKeep:
+        !blocked &&
+        current.syncState === "CONFLICT" &&
+        !settled &&
+        policy.canKeep,
       canAdopt: !blocked && policy.canAdopt,
       reason: !group.valid
         ? group.reason
         : blocked
           ? commands.some((command) => command.status === "SYNCING")
             ? "Un envoi de cette fiche est en cours. Attendez sa fin puis relisez la comparaison."
-            : "L’état local ou la version synchronisée a changé. Synchronisez puis relisez les versions avant de choisir."
+            : commands.length > 100
+              ? "Trop de modifications concernent cette fiche pour les résoudre ensemble. Aucune version n’a été remplacée."
+              : (current.remoteVersion ?? 0) > remote.version
+                ? "Une version plus récente de cette fiche est déjà connue sur cet appareil. La version présentée ne peut pas la remplacer."
+                : current.syncState !== "CONFLICT" &&
+                    commands.some((command) => command.status !== "CONFLICT")
+                  ? "Une modification de cette fiche reste à envoyer ou en erreur. Consultez son état dans Synchronisation avant de résoudre l’ancien conflit."
+                  : "La copie synchronisée de cette fiche n’est pas vérifiée pour la version présentée. Aucune version n’a été remplacée."
           : settled
             ? "La fiche correspond déjà à la version synchronisée. Adoptez cette version pour clôturer l’ancien conflit, sans créer une nouvelle modification."
-            : policy.reason,
+            : current.syncState !== "CONFLICT"
+              ? "Un ancien conflit reste ouvert sur cette fiche. Vous pouvez adopter la version synchronisée ; votre copie locale sera conservée dans l’historique de résolution."
+              : policy.reason,
     };
   }
   async resolve(

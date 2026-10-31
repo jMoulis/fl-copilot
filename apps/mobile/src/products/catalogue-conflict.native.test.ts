@@ -446,38 +446,94 @@ it("rejects an old rendered confirmation callback after rereading", async () => 
   expect(snapshot(s)).toEqual(before);
 });
 
-it("allows explicit adoption of an already synchronized product while keeping separate confirmation", async () => {
-  const s = await setup("PRODUCT"),
-    r = s.review;
-  await applyProductMasterChange(
-    s.a,
-    s.scope.storeId,
-    {
-      entityType: r.entityType,
-      entityId: r.remote.id,
-      entityVersion: r.remote.version,
-      operation: "UPSERT",
+it.each([false, true])(
+  "allows explicit adoption of an already synchronized product while keeping separate confirmation (legacy=%s)",
+  async (legacy) => {
+    const s = await setup("PRODUCT"),
+      r = s.review;
+    await applyProductMasterChange(
+      s.a,
+      s.scope.storeId,
+      {
+        entityType: r.entityType,
+        entityId: r.remote.id,
+        entityVersion: r.remote.version,
+        operation: "UPSERT",
+        entity: r.remote,
+      },
+      r.local.version,
+    );
+    if (legacy)
+      await s.a.runAsync(
+        "DELETE FROM product_master_remote_snapshots WHERE entity_id=?",
+        r.remote.id,
+      );
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(button("Conserver ma version locale").props.disabled).toBe(true);
+    expect(button("Adopter la version synchronisée").props.disabled).toBe(
+      false,
+    );
+    expect(button("Confirmer cette résolution").props.disabled).toBe(true);
+    await act(async () =>
+      button("Adopter la version synchronisée").props.onPress(),
+    );
+    expect(button("Confirmer cette résolution").props.disabled).toBe(true);
+    await compare();
+    await confirm();
+    expect(s.count("product_master_conflict_history")).toBe(1);
+    expect(
+      s.db
+        .prepare("SELECT COUNT(*) n FROM sync_conflicts WHERE status='OPEN'")
+        .get()!.n,
+    ).toBe(0);
+    expect(
+      await new OutboxRepository(s.a).listPending(s.scope.storeId),
+    ).toHaveLength(0);
+  },
+);
+
+it.each(["SYNCED", "PENDING", "ERROR"] as const)(
+  "rereads and explicitly adopts a verified product despite a stale %s flag and timestamp",
+  async (state) => {
+    const s = await setup("PRODUCT"),
+      r = s.review;
+    await applyProductMasterChange(
+      s.a,
+      s.scope.storeId,
+      {
+        entityType: r.entityType,
+        entityId: r.remote.id,
+        entityVersion: r.remote.version,
+        operation: "UPSERT",
+        entity: r.remote,
+      },
+      r.local.version,
+    );
+    await s.a.runAsync(
+      "UPDATE products SET sync_state=?,dirty=1,updated_at='2026-10-24T12:00:00.000Z' WHERE id=?",
+      state,
+      r.remote.id,
+    );
+    await act(async () => button("Relire la comparaison").props.onPress());
+    expect(button("Conserver ma version locale").props.disabled).toBe(true);
+    expect(button("Adopter la version synchronisée").props.disabled).toBe(
+      false,
+    );
+    expect(s.count("product_master_conflict_history")).toBe(0);
+    await act(async () =>
+      button("Adopter la version synchronisée").props.onPress(),
+    );
+    expect(button("Confirmer cette résolution").props.disabled).toBe(true);
+    await compare();
+    await confirm();
+    expect(s.count("product_master_conflict_history")).toBe(1);
+    expect(await current(s)).toMatchObject({
       entity: r.remote,
-    },
-    r.local.version,
-  );
-  await act(async () => button("Relire la comparaison").props.onPress());
-  expect(button("Conserver ma version locale").props.disabled).toBe(true);
-  expect(button("Adopter la version synchronisée").props.disabled).toBe(false);
-  expect(button("Confirmer cette résolution").props.disabled).toBe(true);
-  await act(async () =>
-    button("Adopter la version synchronisée").props.onPress(),
-  );
-  expect(button("Confirmer cette résolution").props.disabled).toBe(true);
-  await compare();
-  await confirm();
-  expect(s.count("product_master_conflict_history")).toBe(1);
-  expect(
-    s.db
-      .prepare("SELECT COUNT(*) n FROM sync_conflicts WHERE status='OPEN'")
-      .get()!.n,
-  ).toBe(0);
-  expect(
-    await new OutboxRepository(s.a).listPending(s.scope.storeId),
-  ).toHaveLength(0);
-});
+      syncState: "SYNCED",
+      dirty: false,
+    });
+    expect(
+      await new OutboxRepository(s.a).listPending(s.scope.storeId),
+    ).toHaveLength(0);
+  },
+);
