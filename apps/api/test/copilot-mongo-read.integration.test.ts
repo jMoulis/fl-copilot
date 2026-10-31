@@ -81,6 +81,9 @@ describe.skipIf(!uri)(
       await Promise.all([
         db.collection<Document & { _id: string }>("products").deleteMany({}),
         db
+          .collection<Document & { _id: string }>("departmentDailyPerformance")
+          .deleteMany({}),
+        db
           .collection<Document & { _id: string }>("productDailyPerformance")
           .deleteMany({}),
       ]);
@@ -301,6 +304,23 @@ describe.skipIf(!uri)(
           ])
         ).rows[0]!.sales,
       ).toBe("0.3");
+    });
+    it("reads a department day with a real-sized technical revision without exposing that audit or exhausting the result budget", async () => {
+      const document = row("2026-10-01", "12.34", null);
+      document.performance.formulaVersion = "department-daily-v1";
+      document.performance.inputRevision = "audit-".repeat(5000);
+      await db
+        .collection<Document & { _id: string }>("departmentDailyPerformance")
+        .insertOne(document);
+      const r = await readMongoExploration(db, storeId, {
+        action: "GET",
+        collection: "departmentDailyPerformance",
+        id: document._id,
+      });
+      expect(r.status).toBe("AVAILABLE");
+      expect(r.rows[0]).toMatchObject({ sales: "12.34", computedAt: null });
+      expect(JSON.stringify(r)).not.toContain("audit-");
+      expect(r.rows[0]).not.toHaveProperty("revision");
     });
     it("does not confuse a missing product with an empty department and guards inconsistent embedded tenants", async () => {
       await db

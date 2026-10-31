@@ -33,7 +33,8 @@ const dailyFields = {
   wasteStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
   wasteCostKnownStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
   wasteCostEstimatedStatus: "AVAILABLE/PARTIAL/UNAVAILABLE",
-  revision: "Révision des entrées de la projection",
+  computedAt:
+    "Date de calcul de la projection (ISO) ou null, pas une date de vente",
 };
 export const mongoReadDictionary = {
   products: { grain: "Un produit du catalogue courant", fields: productFields },
@@ -386,7 +387,7 @@ function sourcePipeline(
     _id: 0,
     id: "$_id",
     date: 1,
-    revision: "$performance.inputRevision",
+    computedAt: { $ifNull: ["$performance.computedAt", null] },
   };
   for (const [name, value, availability] of [
     ["sales", "sales.salesValue", "salesValue"],
