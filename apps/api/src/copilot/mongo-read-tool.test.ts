@@ -10,8 +10,88 @@ import {
 } from "./mongo-read-tool";
 import { factReadFromTool } from "./fact-context";
 import { readActivityStage } from "./read-activity";
+import { renderAnswerText } from "./answer-text";
+import { COPILOT_READ_EVIDENCE_LIMIT } from "./generation-limits";
 const storeId = "11111111-1111-4111-8111-111111111111";
 const period = { start: "2026-10-01", end: "2026-10-31" };
+it("supplies scalar cell/date/coverage evidence for the real narrative renderer, including nested group keys", async () => {
+  const db = {
+    collection: () => ({
+      aggregate: () => ({
+        next: async () => ({
+          rows: [
+            {
+              _id: { label: "BANANE", unit: "KG" },
+              sales: "12.34",
+              quantity: "2",
+            },
+          ],
+          coverage: [{ inputRows: 2 }],
+        }),
+      }),
+    }),
+  } as unknown as Db;
+  const r = await readMongoExploration(db, storeId, {
+    action: "AGGREGATE",
+    collection: "productDailyPerformance",
+    period,
+    pipeline: "[]",
+  });
+  const labels = [
+    "Résultat 1 · _id.label",
+    "Résultat 1 · sales",
+    "Résultat 1 · quantity",
+    "Périmètre · period.start",
+    "Périmètre · coverage.inputRows",
+  ];
+  const facts = labels.map((label) => ({
+    evidenceId: r.evidence.find((e) => e.label === label)!.id,
+  }));
+  const text = renderAnswerText(
+    "| Produit | CA | Quantité |\n| --- | --- | --- |\n| {{value:0}} | {{value:1}} € | {{value:2}} kg |\nDepuis {{value:3}}, {{value:4}} entrées consultées. {{source:1}}",
+    facts,
+    r.evidence,
+  );
+  expect(text).toContain("| BANANE | 12,34 € | 2 kg |");
+  expect(text).toContain("Depuis 2026-10-01, 2 entrées consultées.");
+  expect(text).toContain("copilot-source:");
+  expect(text).not.toContain('"sales"');
+});
+it("keeps the existing evidence ceiling by paging lists and refusing an oversized analytical result without sampled figures", async () => {
+  const rows = Array.from({ length: 20 }, (_, i) => ({
+    id: `row-${i}`,
+    ...Object.fromEntries(
+      Array.from({ length: 20 }, (_, j) => [`field${j}`, j]),
+    ),
+  }));
+  const db = {
+    collection: () => ({
+      aggregate: () => ({
+        next: async () => ({ rows, coverage: [{ inputRows: 20 }] }),
+      }),
+    }),
+  } as unknown as Db;
+  const list = await readMongoExploration(db, storeId, {
+    action: "LIST",
+    collection: "products",
+    period: null,
+    afterId: null,
+    limit: 20,
+  });
+  expect(list.status).toBe("AVAILABLE");
+  expect(list.evidence.length).toBeLessThanOrEqual(COPILOT_READ_EVIDENCE_LIMIT);
+  expect(list.rows.length).toBeLessThan(20);
+  expect(list.hasMore).toBe(true);
+  expect(list.nextAfterId).toBe(list.rows.at(-1)!.id);
+  const aggregate = await readMongoExploration(db, storeId, {
+    action: "AGGREGATE",
+    collection: "products",
+    period: null,
+    pipeline: "[]",
+  });
+  expect(aggregate.status).toBe("LIMIT_EXCEEDED");
+  expect(aggregate.rows).toEqual([]);
+});
 it.each([
   "$out",
   "$merge",

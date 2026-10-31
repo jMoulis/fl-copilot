@@ -7571,17 +7571,28 @@ it("discovers, aggregates and inspects through scoped Mongo reads before a final
       id: "known-product",
     },
   ];
-  const dictionary = await readMongoExploration(
-    {} as never,
-    storeId,
-    requests[0],
-  );
-  const mongoRead = vi.fn(async (input) => ({
-    ...dictionary,
-    input,
-    rows: input.action === "LIST" ? dictionary.rows : [{ value: "3" }],
-    evidence: dictionary.evidence.slice(0, 1),
-  }));
+  const { copilotResponseSchema } = await import("@fl-copilot/domain");
+  const { validateCopilotResponse } = await import("./response-service");
+  const { renderAnswerText } = await import("./answer-text");
+  const proofs = new Map<string, string>();
+  const mongoRead = vi.fn(async (input) => {
+    const db = {
+      collection: () => ({
+        aggregate: () => ({
+          next: async () => ({
+            rows:
+              input.action === "GET"
+                ? [{ id: input.id, label: "BANANE" }]
+                : [{ products: 3 }],
+            coverage: [{ inputRows: 3 }],
+          }),
+        }),
+      }),
+    };
+    const result = await readMongoExploration(db as never, storeId, input);
+    for (const e of result.evidence) proofs.set(e.label, e.id);
+    return result;
+  });
   let calls = 0;
   const transport: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
@@ -7598,7 +7609,22 @@ it("discovers, aggregates and inspects through scoped Mongo reads before a final
     expect(names).not.toContain("analytics_daily");
     expect(names).not.toContain("analytics_product_changes");
     const i = calls++;
-    if (i === 3) return response();
+    if (i === 3)
+      return response(
+        JSON.stringify({
+          language: "fr-FR",
+          summary: "Voici les données consultées.",
+          facts: [
+            { evidenceId: proofs.get("Résultat 1 · label") },
+            { evidenceId: proofs.get("Résultat 1 · products") },
+          ],
+          narrative:
+            "| Élément | Valeur |\n| --- | --- |\n| Produit consulté | {{value:0}} |\n| Catalogue | {{value:1}} |\n{{source:1}}",
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        }),
+      );
     const { action, ...input } = requests[i]!;
     const name =
       action === "LIST"
@@ -7629,10 +7655,22 @@ it("discovers, aggregates and inspects through scoped Mongo reads before a final
     period: vi.fn(),
     analyticsQuery: vi.fn(),
     mongoRead,
-  }).generate(f.request, schema, undefined, undefined, activity);
+  }).generate(f.request, copilotResponseSchema, undefined, undefined, activity);
   expect(mongoRead.mock.calls.map(([input]) => input)).toEqual(requests);
   expect(calls).toBe(4);
-  expect(result.output).toEqual({ answer: "Vérifier les ventes." });
+  const verified = validateCopilotResponse(result.output, {
+    ...f.request,
+    evidence: result.toolEvidence,
+  });
+  const text = renderAnswerText(
+    verified.narrative!,
+    verified.facts,
+    result.toolEvidence!,
+  );
+  expect(text).toContain("| Catalogue | 3 |");
+  expect(text).toContain("| Produit consulté | BANANE |");
+  expect(text).toContain("copilot-source:");
+  expect(text).not.toContain('"products":');
   expect(result.factTrace?.reads.map((r) => r.read.kind)).toEqual([
     "MONGO",
     "MONGO",
