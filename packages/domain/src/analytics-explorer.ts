@@ -41,6 +41,19 @@ export type AnalyticsExplorerMetric = z.infer<
   typeof analyticsExplorerMetricSchema
 >;
 
+/** Local product-list presentation. Does not change the analytical universe. */
+export const analyticsProductListSchema = z.strictObject({
+  trend: z.enum(["ALL", "DOWN", "UP", "UNAVAILABLE"]),
+  sort: z.enum(["AMOUNT", "DIFFERENCE", "PERCENTAGE"]),
+  direction: z.enum(["ASC", "DESC"]),
+});
+export type AnalyticsProductList = z.infer<typeof analyticsProductListSchema>;
+export const defaultAnalyticsProductList = (): AnalyticsProductList => ({
+  trend: "ALL",
+  sort: "AMOUNT",
+  direction: "DESC",
+});
+
 /** Presentation filters; classification is the current catalogue, not historical inference. */
 export const analyticsExplorerFiltersSchema = z.strictObject({
   category: productCategorySchema.nullable().default(null),

@@ -5,6 +5,7 @@ import {
   emptyExplorerFilters,
   type AnalyticsExplorerFilters,
   type AnalyticsExplorerMetric,
+  type AnalyticsProductList,
   copilotBusinessDateSchema,
 } from "@fl-copilot/domain";
 import {
@@ -93,6 +94,7 @@ export class ExplorerRepository {
     today: string,
     filters: AnalyticsExplorerFilters = emptyExplorerFilters(),
     offset = 0,
+    productList?: AnalyticsProductList,
   ) {
     z.uuid().parse(storeId);
     analyticsExplorerMetricSchema.parse(metric);
@@ -269,6 +271,7 @@ export class ExplorerRepository {
           );
         }
         details = analyzeExplorerProducts({
+          productList,
           expectedProductIds,
           storeId,
           period,

@@ -1,13 +1,22 @@
 import { Text, View, Pressable } from "react-native";
 import { explorerHasFilters } from "@fl-copilot/analytics-core";
-import type { AnalyticsExplorerFilters } from "@fl-copilot/domain";
+import {
+  defaultAnalyticsProductList,
+  type AnalyticsProductList,
+  type AnalyticsExplorerFilters,
+} from "@fl-copilot/domain";
 import { InlineAlert, SecondaryButton } from "../components/ui";
-import { DetailsDisclosure, IconButton } from "../components/dashboard";
+import {
+  DetailsDisclosure,
+  IconButton,
+  SegmentedControl,
+} from "../components/dashboard";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { colors } from "../design/tokens";
 import {
   formatCurrency,
   formatSignedCurrency,
+  formatSignedPercentage,
 } from "../today/today-priority-presentation";
 import type { ExplorerRepository } from "./explorer-repository";
 import {
@@ -56,8 +65,12 @@ export function ExplorerBreakdown({
   onPage,
   visuals,
   storeId,
+  productList = defaultAnalyticsProductList(),
+  onProductList,
 }: {
   data: Data;
+  productList?: AnalyticsProductList;
+  onProductList?: (value: AnalyticsProductList) => void;
   onCategory: (c: NonNullable<AnalyticsExplorerFilters["category"]>) => void;
   onProduct: (id: string) => void;
   onOpenProduct: (id: string) => void;
@@ -77,10 +90,10 @@ export function ExplorerBreakdown({
       <Text style={{ color: colors.ink }}>{explorerScopeLabel(data)}</Text>
       <DetailsDisclosure title="Comprendre cette répartition">
         <Text style={{ color: colors.muted }}>
-          Classement par montant décroissant, selon le catalogue actuel. Des
-          produits ou journées sans montant restent inconnus, jamais à zéro. Ce
-          détail peut différer du total du rayon si les sources sont
-          incomplètes.
+          Classement selon les options choisies, sur l’ensemble des produits de
+          la sélection et selon le catalogue actuel. Des produits ou journées
+          sans montant restent inconnus, jamais à zéro. Ce détail peut différer
+          du total du rayon si les sources sont incomplètes.
         </Text>
       </DetailsDisclosure>
       {data.detailsUnavailable ? (
@@ -127,6 +140,67 @@ export function ExplorerBreakdown({
                 </Pressable>
               ))
             : null}
+          {onProductList ? (
+            <View style={{ gap: 10 }}>
+              <SegmentedControl
+                label="Évolution des produits"
+                value={productList.trend}
+                options={
+                  [
+                    { value: "ALL", label: "Tous" },
+                    { value: "DOWN", label: "En baisse" },
+                    { value: "UP", label: "En hausse" },
+                    { value: "UNAVAILABLE", label: "Sans comparaison" },
+                  ] as const
+                }
+                onChange={(trend) =>
+                  onProductList({
+                    ...productList,
+                    trend,
+                    ...(trend === "DOWN" || trend === "UP"
+                      ? {
+                          sort: "DIFFERENCE",
+                          direction: trend === "DOWN" ? "ASC" : "DESC",
+                        }
+                      : {}),
+                  })
+                }
+              />
+              <SegmentedControl
+                label="Trier les produits par"
+                value={productList.sort}
+                options={
+                  [
+                    { value: "AMOUNT", label: "Montant €" },
+                    { value: "DIFFERENCE", label: "Écart €" },
+                    { value: "PERCENTAGE", label: "Évolution %" },
+                  ] as const
+                }
+                onChange={(sort) => onProductList({ ...productList, sort })}
+              />
+              <SecondaryButton
+                label={
+                  productList.trend === "DOWN" && productList.sort !== "AMOUNT"
+                    ? productList.direction === "ASC"
+                      ? "Plus fortes baisses d’abord"
+                      : "Plus faibles baisses d’abord"
+                    : productList.direction === "DESC"
+                      ? "Du plus grand au plus petit"
+                      : "Du plus petit au plus grand"
+                }
+                accessibilityLabel="Inverser l’ordre des produits"
+                onPress={() =>
+                  onProductList({
+                    ...productList,
+                    direction: productList.direction === "ASC" ? "DESC" : "ASC",
+                  })
+                }
+              />
+              <Text style={{ color: colors.muted, fontSize: 12 }}>
+                Écarts sur les jours comparables renseignés.
+              </Text>
+            </View>
+          ) : null}
           {details.contributors.map((p) => (
             <View
               key={p.productId}
@@ -200,12 +274,19 @@ export function ExplorerBreakdown({
                       {formatSignedCurrency(
                         p.analysis.comparison.absoluteDifference!,
                       )}{" "}
+                      {p.analysis.comparison.percentageDifference !== null
+                        ? `· ${formatSignedPercentage(p.analysis.comparison.percentageDifference)} `
+                        : "· pourcentage indisponible "}
                       sur {p.analysis.comparedDays} jours{" "}
                       {data.mode === "EXPLICIT"
                         ? "de la période citée"
                         : "clos comparables · N−1"}
                     </Text>
-                  ) : null}
+                  ) : (
+                    <Text style={{ color: colors.muted, fontSize: 12 }}>
+                      Comparaison indisponible
+                    </Text>
+                  )}
                 </View>
                 <Ionicons
                   name="chevron-forward"
@@ -225,13 +306,13 @@ export function ExplorerBreakdown({
           ))}
           {!details.contributors.length ? (
             <Text style={{ color: colors.muted }}>
-              Aucun montant produit renseigné sur cette période.
+              Aucun produit ne correspond à cette sélection sur la période.
             </Text>
           ) : (
             <Text style={{ color: colors.muted }}>
               Produits {details.offset + 1} à{" "}
               {details.offset + details.contributors.length} sur{" "}
-              {details.totalContributors} renseignés
+              {details.totalContributors} correspondants
             </Text>
           )}
           {details.offset > 0 ? (

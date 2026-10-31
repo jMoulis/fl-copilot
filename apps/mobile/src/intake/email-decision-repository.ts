@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { copilotConversationSchema } from "@fl-copilot/domain";
+import type { EmailIntakeDatabase } from "./email-intake-cache";
 import {
   emailIntakeDecisionSchema,
   emailIntakeReceiptSchema,
@@ -396,4 +398,90 @@ export class EmailDecisionRepository {
     });
     notifyOutboxChanged();
   }
+}
+
+/** Retain a refused decision and its sources as audit, without replaying a deleted chat. */
+export async function retireDeletedConversationEmailDecision(
+  db: EmailIntakeDatabase,
+  scope: { storeId: string; ownerId: string },
+  commandId: string,
+  canWrite: () => boolean,
+) {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    if (!canWrite()) throw Error("EMAIL_INTAKE_DECISION_SCOPE_INVALID");
+    const row = await tx.getFirstAsync<{
+      entity_id: string;
+      payload_json: string;
+    }>(
+      "SELECT entity_id,payload_json FROM sync_outbox WHERE command_id=? AND store_id=? AND entity_type='email_intake_decision' AND status='FAILED' AND last_error_code='COPILOT_HISTORY_ACCESS_INVALID'",
+      commandId,
+      scope.storeId,
+    );
+    if (!row) throw Error("EMAIL_INTAKE_DECISION_REVIEW_CHANGED");
+    const decision = emailIntakeDecisionSchema.parse(
+      JSON.parse(row.payload_json),
+    );
+    scoped(decision, scope);
+    if (decision.id !== row.entity_id || decision.actionId !== commandId)
+      throw Error("EMAIL_INTAKE_DECISION_SCOPE_INVALID");
+    const parent = await tx.getFirstAsync<{
+      payload_json: string;
+      remote_payload_json: string | null;
+      remote_version: number | null;
+    }>(
+      "SELECT payload_json,remote_payload_json,remote_version FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
+      decision.conversationId,
+      scope.storeId,
+      scope.ownerId,
+    );
+    // Stopping this retained local intent is an explicit owner action, not a
+    // server acknowledgement. A local deletion need not await its remote cache.
+    if (
+      !parent ||
+      (!parent.remote_payload_json && parent.remote_version !== null)
+    )
+      throw Error("EMAIL_INTAKE_CONVERSATION_DELETION_UNVERIFIED");
+    for (const [raw, remote] of [
+      [parent.payload_json, false],
+      [parent.remote_payload_json, true],
+    ] as const) {
+      if (raw === null) continue;
+      const p = copilotConversationSchema.parse(JSON.parse(raw));
+      if (
+        p.id !== decision.conversationId ||
+        p.storeId !== scope.storeId ||
+        p.ownerId !== scope.ownerId ||
+        (!remote && (!p.deletedAt || p.status !== "ARCHIVED")) ||
+        (remote && p.version !== parent.remote_version)
+      )
+        throw Error("EMAIL_INTAKE_CONVERSATION_DELETION_UNVERIFIED");
+    }
+    const retained = await tx.getFirstAsync<{
+      payload_json: string;
+      sync_state: string;
+      remote_version: number | null;
+    }>(
+      "SELECT payload_json,sync_state,remote_version FROM email_intake_decisions WHERE id=? AND store_id=? AND owner_id=?",
+      decision.id,
+      scope.storeId,
+      scope.ownerId,
+    );
+    if (
+      !retained ||
+      retained.sync_state !== "ERROR" ||
+      retained.remote_version !== null ||
+      JSON.stringify(
+        emailIntakeDecisionSchema.parse(JSON.parse(retained.payload_json)),
+      ) !== JSON.stringify(decision)
+    )
+      throw Error("EMAIL_INTAKE_DECISION_REVIEW_CHANGED");
+    const changed = await tx.runAsync(
+      "UPDATE sync_outbox SET last_error_code='EMAIL_INTAKE_DECISION_SUPERSEDED' WHERE command_id=? AND status='FAILED' AND last_error_code='COPILOT_HISTORY_ACCESS_INVALID'",
+      commandId,
+    );
+    if (Number(changed.changes) !== 1)
+      throw Error("EMAIL_INTAKE_DECISION_REVIEW_CHANGED");
+    if (!canWrite()) throw Error("EMAIL_INTAKE_DECISION_SCOPE_INVALID");
+  });
+  notifyOutboxChanged();
 }

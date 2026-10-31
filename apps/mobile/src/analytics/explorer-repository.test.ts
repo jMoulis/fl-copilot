@@ -169,6 +169,7 @@ it("restores period, metric, drill history and exact scroll after file-backed re
         scroll: 421,
         chartScroll: 83,
         detailsOffset: 20,
+        productList: { trend: "DOWN", sort: "DIFFERENCE", direction: "ASC" },
         filters: { category: "FRUIT", nature: "BULK", productId: null },
       },
     };

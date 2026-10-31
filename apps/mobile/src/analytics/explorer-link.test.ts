@@ -20,6 +20,7 @@ it("opens an explicit native selection and restores the previous period, filters
       scroll: 432,
       chartScroll: 151,
       detailsOffset: 20,
+      productList: { trend: "DOWN", sort: "DIFFERENCE", direction: "ASC" },
     },
   };
   const href = explorerHref({

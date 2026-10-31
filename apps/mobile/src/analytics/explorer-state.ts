@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   analyticsExplorerMetricSchema,
+  analyticsProductListSchema,
   analyticsExplorerFiltersSchema,
   emptyExplorerFilters,
   analyticsExplorerPeriodSchema,
@@ -22,6 +23,7 @@ const frame = z
     anchor: copilotBusinessDateSchema,
     filters: analyticsExplorerFiltersSchema.default(emptyExplorerFilters),
     chartScroll: z.number().min(0).max(10000000).default(0),
+    productList: analyticsProductListSchema.optional(),
     detailsOffset: z.number().int().min(0).max(10000).default(0),
     scroll: z.number().min(0).max(10000000),
   })
@@ -65,6 +67,7 @@ export function changeExplorerGranularity(
       chartScroll: 0,
       detailsOffset: 0,
       filters: s.frame.filters,
+      productList: s.frame.productList,
       period: explorerPeriodFromDate(kind, s.frame.anchor),
       anchor: s.frame.anchor,
       scroll: 0,
@@ -103,6 +106,7 @@ export function shiftExplorerView(s: ExplorerView, n: number): ExplorerView {
       chartScroll: 0,
       detailsOffset: 0,
       filters: s.frame.filters,
+      productList: s.frame.productList,
     },
     history: [],
   };
@@ -137,6 +141,7 @@ export function drillExplorerView(s: ExplorerView, date: string): ExplorerView {
       chartScroll: 0,
       detailsOffset: 0,
       filters: s.frame.filters,
+      productList: s.frame.productList,
       period,
       anchor: date,
       scroll: 0,

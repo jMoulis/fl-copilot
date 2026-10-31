@@ -1139,3 +1139,90 @@ it.each(["owner", "role", "abort", "lease", "foreign", "commit", "rollback"])(
     }
   },
 );
+
+it.each(["verified", "active", "no-cache", "foreign", "cancelled"])(
+  "retains a refused email decision and its originals while retiring only an explicitly deleted-chat intent (%s)",
+  async (mode) => {
+    const { retireDeletedConversationEmailDecision } =
+      await import("./email-decision-repository");
+    const f = await fixture();
+    try {
+      await f.cache.storePage(f.scope, f.page);
+      const decision = await new EmailDecisionRepository(f.cache).decide(
+        {
+          conversationId: f.scope.conversationId,
+          receiptId: f.receipt.id,
+          choice: "DISMISS",
+          files: [],
+        },
+        { actionId: randomUUID(), deviceId: randomUUID() },
+      );
+      await f.db.runAsync(
+        "UPDATE email_intake_decisions SET sync_state='ERROR'",
+      );
+      await f.db.runAsync(
+        "UPDATE sync_outbox SET status='FAILED',last_error_code='COPILOT_HISTORY_ACCESS_INVALID'",
+      );
+      const parent = {
+        ...f.chat.conversation,
+        status: "ARCHIVED",
+        deletedAt: "2026-10-24T15:00:00.000Z",
+        version: 2,
+        updatedAt: "2026-10-24T15:00:00.000Z",
+      };
+      await f.db.runAsync(
+        "UPDATE copilot_conversations SET payload_json=?,remote_payload_json=?,remote_version=?,sync_state='SYNCED',dirty=0",
+        JSON.stringify(mode === "active" ? f.chat.conversation : parent),
+        mode === "no-cache" ? null : JSON.stringify(parent),
+        mode === "no-cache" ? null : 2,
+      );
+      const decisionBefore = await f.db.getFirstAsync(
+        "SELECT * FROM email_intake_decisions",
+      );
+      const receiptBefore = await f.db.getAllAsync(
+        "SELECT * FROM email_intake_receipts",
+      );
+      let checks = 0;
+      const task = retireDeletedConversationEmailDecision(
+        f.db,
+        mode === "foreign" ? { ...f.scope, ownerId: randomUUID() } : f.scope,
+        decision.actionId,
+        () => mode !== "cancelled" || ++checks < 2,
+      );
+      if (mode === "verified" || mode === "no-cache") {
+        await task;
+        expect(
+          (
+            await new OutboxRepository(f.db).listFailures(
+              f.scope.storeId,
+              f.scope.ownerId,
+            )
+          ).items,
+        ).toEqual([]);
+        expect(
+          await f.db.getFirstAsync(
+            "SELECT status,last_error_code FROM sync_outbox",
+          ),
+        ).toEqual({
+          status: "FAILED",
+          last_error_code: "EMAIL_INTAKE_DECISION_SUPERSEDED",
+        });
+      } else {
+        await expect(task).rejects.toThrow(/EMAIL_/);
+        expect(
+          await f.db.getFirstAsync("SELECT last_error_code FROM sync_outbox"),
+        ).toEqual({ last_error_code: "COPILOT_HISTORY_ACCESS_INVALID" });
+      }
+      expect(
+        await f.db.getFirstAsync("SELECT * FROM email_intake_decisions"),
+      ).toEqual(decisionBefore);
+      expect(
+        await f.db.getAllAsync("SELECT * FROM email_intake_receipts"),
+      ).toEqual(receiptBefore);
+      expect(f.api.download).not.toHaveBeenCalled();
+      expect(f.files.receive).not.toHaveBeenCalled();
+    } finally {
+      f.db.raw.close();
+    }
+  },
+);

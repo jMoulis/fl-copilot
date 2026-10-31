@@ -146,6 +146,37 @@ export async function enqueueAnalyticsRecomputationJob(
   return payload;
 }
 
+/** Explicit retry of retained deterministic projections, never business publications. */
+export async function retryFailedAnalyticsJobs(
+  database: RecomputationDatabase,
+  storeId: string,
+  canWrite: () => boolean,
+) {
+  let count = 0;
+  await database.withExclusiveTransactionAsync(async (tx) => {
+    if (!canWrite()) throw Error("ANALYTICS_RETRY_SCOPE_CHANGED");
+    const rows = await tx.getAllAsync<{ id: string; payload_json: string }>(
+      "SELECT id,payload_json FROM local_jobs WHERE type=? AND status='FAILED' AND json_extract(payload_json,'$.storeId')=? LIMIT 100",
+      ANALYTICS_RECOMPUTE_JOB_TYPE,
+      storeId,
+    );
+    for (const row of rows) {
+      parsePayload(row.payload_json, storeId);
+      const result = await tx.runAsync(
+        "UPDATE local_jobs SET status='RETRY',next_attempt_at=NULL,updated_at=? WHERE id=? AND type=? AND status='FAILED' AND payload_json=?",
+        new Date().toISOString(),
+        row.id,
+        ANALYTICS_RECOMPUTE_JOB_TYPE,
+        row.payload_json,
+      );
+      count += Number(result.changes);
+    }
+    if (!canWrite()) throw Error("ANALYTICS_RETRY_SCOPE_CHANGED");
+  });
+  if (count) notifyOutboxChanged();
+  return count;
+}
+
 const activeRecomputations = new WeakMap<
   OutboxDatabase,
   Map<string, Promise<AnalyticsRecomputationRun>>
