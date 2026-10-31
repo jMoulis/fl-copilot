@@ -7,6 +7,7 @@ import { COMMERCIAL_VISUAL_SCHEMA_VERSION } from "@fl-copilot/domain";
 import { CommercialVisualView } from "./visual-view";
 
 const runtime = vi.hoisted(() => ({
+  push: vi.fn(),
   active: undefined as ((state: string) => void) | undefined,
 }));
 vi.mock("react-native", () => ({
@@ -20,7 +21,7 @@ vi.mock("react-native", () => ({
   },
 }));
 vi.mock("expo-router", () => ({
-  router: { push: vi.fn() },
+  router: { push: runtime.push },
   useFocusEffect: (callback: () => () => void) =>
     useEffect(callback, [callback]),
 }));
@@ -36,6 +37,7 @@ vi.mock("@/dates/calendar", () => import("../dates/calendar"));
 
 let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
+  runtime.push.mockReset();
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-23T18:00:00Z"));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -142,4 +144,32 @@ it("offers an explicit future-week selector when the document header is uncertai
   });
   expect(title()).toContain("44");
   expect(picker().props.value).toBe("2026-10-26");
+});
+
+// The navigation must follow the selected source period, never import time.
+it("opens the preparation for the document week, then the explicit future week and a replacement document", async () => {
+  const page = source();
+  const open = async () => {
+    const button = tree!.root
+      .findAll((n) => String(n.type) === "Button")
+      .find((n) => n.props.label.startsWith("Ouvrir la préparation"))!;
+    await act(() => button.props.onPress());
+    return runtime.push.mock.lastCall?.[0];
+  };
+  await act(() => {
+    tree = create(createElement(CommercialVisualView, { readings: [page] }));
+  });
+  expect(await open()).toEqual({
+    pathname: "/week-preparation",
+    params: { weekStart: "2026-10-26" },
+  });
+  await act(() => picker().props.onConfirm("2026-11-03"));
+  expect(await open()).toEqual({
+    pathname: "/week-preparation",
+    params: { weekStart: "2026-11-02" },
+  });
+  await act(() => {
+    tree!.update(createElement(CommercialVisualView, { readings: [source()] }));
+  });
+  expect((await open()).params.weekStart).toBe("2026-10-26");
 });

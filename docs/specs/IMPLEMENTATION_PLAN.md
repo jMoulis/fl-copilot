@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current corrective increment — 31 October: find the intended preparation week
+
+Reuse Actions presentation state and the canonical ISO week/date functions. Expose preparation before activity, open next week from the Paris business date rather than a retained historical selection, and carry the commercial reader's selected week into the existing preparation route. Preserve source-derived defaults, explicit future dates, original reading/approval separation, private local view persistence and business writers. No new model tool, schema or workflow. See `../qa/M7_WEEK_PREPARATION_ENTRY_2026_10_31.md`; code checks and grouped native acceptance remain separate.
+
 ## Current corrective increment — 31 October: product trends and scoped sync recovery
 
 Reuse the canonical Explorer comparisons for product-only trend filtering and decimal amount/difference/percentage ordering before pagination. Retain category/period/metric totals and same-ISO comparison, missing/zero semantics, bounded reads, local history/scroll and old view-state compatibility. Route every registered private command with the authenticated principal, including standalone email decisions, without weakening deleted-conversation access. Provide explicit local projection retry and retained-audit retirement of a refused email intent from a locally deleted conversation; never fabricate server acknowledgement or undo source/publication/jobs. See `../qa/M8_ANALYTICS_PRODUCT_TRENDS_SYNC_2026_10_31.md`. No migration, dependency, AI tool or prompt; grouped API before native acceptance.
