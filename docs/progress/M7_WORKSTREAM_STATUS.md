@@ -38,6 +38,12 @@ Le propriétaire remplace la poursuite automatique de la V1 par un programme cor
 
 # M7 — suivi des sept chantiers V1
 
+## 24 octobre — citations du PDF sans répéter les passages
+
+La conversation active montre un tableau qui répète des observations entières avant plusieurs liens Source. La reproduction confirme que le formateur injectait systématiquement texte et lien. Le lien seul devient le cas normal ; l’insertion d’un passage/chiffre reste explicite, avec la même preuve de lecture de l’original. Deux descriptions locales précisent ce contrat ; aucun outil, agent, modèle, prompt global, schéma ou writer ajouté. Chiffres officiels, références invalides, plafonds et validations métier restent protégés. Voir [la QA](../qa/M7_DOCUMENT_CITATION_PROSE_2026_10_24.md).
+
+**271 tests ciblés passent**, dont transport SDK/SSE contrôlé, références partielles et garde des chiffres ; contrôle complet local **4 498 / 727**, dix projets stricts, lint/structure/format et build API verts. Code API en validation, non encore livré ; **aucun nouveau build EAS nécessaire**, build 16 compatible. La PR 380 est fusionnée (`b79be54`), trois CI **5 213 / 6**, branche supprimée et changements natifs en attente d’un futur lot. Le Mac verrouillé et la console Atlas demandant une reconnexion limitent les vérifications physiques/sauvegardes ; aucune absence de sauvegarde n’est déduite de ce défaut d’accès. **1/3/4/5/6/7 en cours ; 2 code prêt**. La V1 complète et sa recette humaine restent ouvertes.
+
 ## 24 octobre — retour d’erreur et contexte des réglages de rappels
 
 Quatre défauts de l’écran sont reproduits : vérification rejetée sans message, ancien bouton encore actif, activation après changement de propriétaire et liste tardive d’un autre magasin. Le même écran lie maintenant lectures/actions/retours au contexte courant et au focus, conserve les données du bon contexte en cas d’échec, bloque le double appui et nettoie son seul test natif tardif. Les rédacteurs locaux existants peuvent annuler leur transaction si ce contexte se ferme. Aucun changement d’horaire, de modèle, de schéma, de synchronisation métier ni de couche d’agent. Voir [la QA et ses limites](../qa/M8_REMINDER_SETTINGS_2026_10_24.md).
