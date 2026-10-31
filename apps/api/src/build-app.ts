@@ -1,3 +1,4 @@
+import { readMongoExploration } from "./copilot/mongo-read-tool";
 import { readCommercialOriginal } from "./copilot/commercial-original-reader";
 import { requireCommercialSourceCompatibility } from "./commercial/source-compatibility";
 import { previewTranscriptionReview } from "./copilot/transcription-review-tool.js";
@@ -866,6 +867,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                       ),
                   }
                 : {}),
+              mongoRead: async (input) => {
+                await authorize();
+                const result = await readMongoExploration(db, storeId, input);
+                await authorize();
+                return result;
+              },
               analyticsQuery: async (input) => {
                 await authorize();
                 const result = await readAnalyticsQuery(db, storeId, input);

@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current M7 corrective increment — 31 October: model-authored MongoDB reads
+
+The owner approves generic read exploration over safe existing canonical views, replacing the two J-7-only model tools while retaining official KPI readers. Shared strict inputs, one scoped read adapter, bounded Mongo expressions, decimal/null/unit protection, existing evidence and private fact replay; no collection/migration, native schema, provider change or business write. See `../qa/M7_MONGO_EXPLORATION_2026_10_31.md` and the approved narrow arbitration in the AI functional spec. Both exact-head CI gates, merged-master validation and explicit API release precede real chat acceptance; no EAS build is required.
+
 ## Current corrective increment — 31 October: find the intended preparation week
 
 Reuse Actions presentation state and the canonical ISO week/date functions. Expose preparation before activity, open next week from the Paris business date rather than a retained historical selection, and carry the commercial reader's selected week into the existing preparation route. Preserve source-derived defaults, explicit future dates, original reading/approval separation, private local view persistence and business writers. No new model tool, schema or workflow. See `../qa/M7_WEEK_PREPARATION_ENTRY_2026_10_31.md`; code checks and grouped native acceptance remain separate.

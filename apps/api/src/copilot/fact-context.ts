@@ -1,3 +1,4 @@
+import { readMongoExploration } from "./mongo-read-tool";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db, ClientSession } from "mongodb";
@@ -46,30 +47,32 @@ export function factReadFromTool(key: string, result: unknown) {
     .array(z.unknown())
     .parse(JSON.parse(key));
   const read =
-    kind === "period"
-      ? {
-          kind: "PERIOD",
-          input: {
-            ...(input as object),
-            metrics: (
-              result as { coverage: Array<{ metric: string }> }
-            ).coverage.map((c) => c.metric),
-          },
-        }
-      : kind === "daily"
-        ? { kind: "DAILY", input: { businessDate: input } }
-        : kind === "products"
-          ? {
-              kind: "PRODUCT_CHANGES",
-              input: { businessDate: input, metric, direction },
-            }
-          : kind === "events"
-            ? { kind: "EVENTS", input }
-            : kind === "commercial-plan"
-              ? { kind: "PLAN", input }
-              : kind === "product-search"
-                ? { kind: "PRODUCT_SEARCH", input }
-                : null;
+    kind === "mongo"
+      ? { kind: "MONGO", input }
+      : kind === "period"
+        ? {
+            kind: "PERIOD",
+            input: {
+              ...(input as object),
+              metrics: (
+                result as { coverage: Array<{ metric: string }> }
+              ).coverage.map((c) => c.metric),
+            },
+          }
+        : kind === "daily"
+          ? { kind: "DAILY", input: { businessDate: input } }
+          : kind === "products"
+            ? {
+                kind: "PRODUCT_CHANGES",
+                input: { businessDate: input, metric, direction },
+              }
+            : kind === "events"
+              ? { kind: "EVENTS", input }
+              : kind === "commercial-plan"
+                ? { kind: "PLAN", input }
+                : kind === "product-search"
+                  ? { kind: "PRODUCT_SEARCH", input }
+                  : null;
   return read
     ? factReadSnapshotSchema.parse({ read, digest: factDigest(result) })
     : null;
@@ -150,6 +153,8 @@ async function replay(
   read: z.infer<typeof factReadSchema>,
 ) {
   switch (read.kind) {
+    case "MONGO":
+      return readMongoExploration(db, storeId, read.input);
     case "LATEST":
       return readLatestDepartmentEvidence(db, storeId);
     case "DAILY":
@@ -236,6 +241,7 @@ export async function readRecommendationContext(
     SOURCE_UNAVAILABLE: "Conseil d’origine indisponible",
   };
   const kinds = {
+    MONGO: "Lecture exploratoire MongoDB",
     LATEST: "derniers chiffres du rayon",
     DAILY: "chiffres quotidiens",
     PERIOD: "chiffres sur la période",
