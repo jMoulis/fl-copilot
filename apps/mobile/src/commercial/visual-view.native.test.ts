@@ -173,3 +173,36 @@ it("opens the preparation for the document week, then the explicit future week a
   });
   expect((await open()).params.weekStart).toBe("2026-10-26");
 });
+
+it("uses the intended Actions week before document defaults, while allowing a later manual choice", async () => {
+  await act(() => {
+    tree = create(
+      createElement(CommercialVisualView, {
+        readings: [source()],
+        initialWeekStart: "2026-11-02",
+      }),
+    );
+  });
+  expect(picker().props.value).toBe("2026-11-02");
+  expect(title()).toContain("45");
+  await act(() => picker().props.onConfirm("2026-11-10"));
+  expect(picker().props.value).toBe("2026-11-09");
+  expect(title()).toContain("46");
+});
+it.each(["2026-02-30", "2026-11-03", "untrusted"])(
+  "ignores an invalid intended week %s without modifying source data",
+  async (initialWeekStart) => {
+    const page = source(),
+      before = JSON.stringify(page);
+    await act(() => {
+      tree = create(
+        createElement(CommercialVisualView, {
+          readings: [page],
+          initialWeekStart,
+        }),
+      );
+    });
+    expect(picker().props.value).toBe("2026-10-26");
+    expect(JSON.stringify(page)).toBe(before);
+  },
+);

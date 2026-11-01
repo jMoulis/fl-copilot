@@ -1,4 +1,7 @@
-import { isCommercialOriginalSource } from "@fl-copilot/domain";
+import {
+  isCommercialOriginalSource,
+  contextWeekQuerySchema,
+} from "@fl-copilot/domain";
 import { commercialOfferHref } from "./offer-navigation";
 import { commercialChoiceSummary } from "./choice-presentation";
 import type { LocalCommercialChoice } from "./offer-choice-repository";
@@ -39,9 +42,11 @@ const kinds: Record<string, string> = {
 export function CommercialVisualView({
   readings,
   choices = [],
+  initialWeekStart,
 }: {
   readings: SynchronizedCommercialVisualReading[];
   choices?: LocalCommercialChoice[];
+  initialWeekStart?: string;
 }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [today, setToday] = useState(() => currentCommercialWeek());
@@ -70,9 +75,16 @@ export function CommercialVisualView({
   );
   const selectedDate =
     selection?.sourceId === sourceId ? selection.date : undefined;
+  const intendedWeek = contextWeekQuerySchema.safeParse({
+    weekStart: initialWeekStart,
+  });
   const week = selectedDate
     ? currentCommercialWeek(new Date(`${selectedDate}T12:00:00Z`))
-    : (documentWeek ?? today);
+    : intendedWeek.success
+      ? currentCommercialWeek(
+          new Date(`${intendedWeek.data.weekStart}T12:00:00Z`),
+        )
+      : (documentWeek ?? today);
   const documentContext = commercialDocumentWeekContext(
     ready.map((page) => page.reading!),
   );

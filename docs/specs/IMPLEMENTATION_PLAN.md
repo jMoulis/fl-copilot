@@ -1,3 +1,7 @@
+## Current corrective increment — 1 November: native context recipe
+
+Refresh the existing scoped conversation menu after successful synchronization and preserve an explicit Actions week through document list, summary and preparation/plan navigation. Reuse lastSyncedAt, weekStart and shared Monday validation; manual visual-reader selection remains authoritative. No new persistence/tool/writer or guessed document period. See `../qa/M7_NATIVE_CONTEXT_RECIPE_2026_11_01.md` for actual simulator checks and unverified gestures/acceptance. Group native delivery; no EAS/model request.
+
 ## Owner refinement — 1 November: confirmed Mercalys tax basis
 
 Sales and realized selling prices are TTC; purchase amounts/costs are HT. Replace the old unknown basis in analytical tool metadata and evidence, without changing numeric formulas, imported margin, unit/coverage rules or global guidance. Preserve legacy snapshots. See `../qa/M7_COPILOT_TAX_BASIS_2026_11_01.md`. Workstream 4 advances; release and real-chat acceptance remain distinct.

@@ -51,7 +51,10 @@ import {
   BottomSheet,
 } from "@/components/ui";
 export default function CommercialReviewScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>(),
+  const { id, weekStart } = useLocalSearchParams<{
+      id: string;
+      weekStart?: string;
+    }>(),
     { session } = useAuth(),
     { deviceId } = useLocalDatabase(),
     store = session?.stores[0];
@@ -68,6 +71,7 @@ export default function CommercialReviewScreen() {
     <CommercialReviewContent
       key={`${session.user.id}:${store.storeId}:${store.role}:${deviceId}:${id}`}
       id={id}
+      weekStart={typeof weekStart === "string" ? weekStart : undefined}
       storeId={store.storeId}
       actorId={session.user.id}
       role={store.role}
@@ -76,11 +80,13 @@ export default function CommercialReviewScreen() {
 }
 function CommercialReviewContent({
   id,
+  weekStart,
   storeId,
   actorId,
   role,
 }: {
   id: string;
+  weekStart?: string;
   storeId: string;
   actorId: string;
   role: string;
@@ -464,7 +470,15 @@ function CommercialReviewContent({
       />
       <SecondaryButton
         label="Retour aux documents"
-        onPress={() => discardEdits(() => router.replace("/week" as Href))}
+        onPress={() =>
+          discardEdits(() =>
+            router.replace(
+              weekStart
+                ? { pathname: "/week", params: { weekStart } }
+                : ("/week" as Href),
+            ),
+          )
+        }
       />
       <CommercialOriginalButton sourceDocumentId={id} />
       {error ? (
@@ -485,7 +499,11 @@ function CommercialReviewContent({
       ) : null}
       {viewSummary && visuals.length && !legacy ? (
         <>
-          <CommercialVisualView readings={visuals} choices={offerChoices} />
+          <CommercialVisualView
+            readings={visuals}
+            choices={offerChoices}
+            initialWeekStart={weekStart}
+          />
           <SecondaryButton
             label="Consulter les extraits et choix précédents"
             onPress={() => setLegacy(true)}

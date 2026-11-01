@@ -279,7 +279,12 @@ function StoreActions({
           title="Documents commerciaux"
           description="Consulter les originaux et leurs analyses."
           icon="document-text-outline"
-          onPress={() => router.push("/week")}
+          onPress={() =>
+            router.push({
+              pathname: "/week",
+              params: { weekStart: week.start },
+            })
+          }
         />
       </SectionCard>
       <CopilotActivityPanel
