@@ -1,3 +1,9 @@
+## Approved UX refinement — 1 November 2026: recommencer la préparation
+
+Open a native modal from weekly preparation, PDF review, or an exact-duplicate import result. Preserve the explicit Monday–Sunday selection and allow adjacent-week navigation. Two labelled switches choose empty draft and/or fresh PDF analysis; show the selected filename, with a collapsed searchable eight-entry PDF picker. Reuse the source chosen from document detail even beyond the recent list. Warn before leaving unsaved preparation fields, and restore the parent form's clean baseline so returning rereads the actual cleared revision.
+
+Before committing, show a confirmation with week dates/year, selected PDF, draft choice/TG counts and AI-credit consequence. Fetch analysis availability only on this explicit review action. No confirmation means no business mutation or model request. Changed account/role, week/options, stale draft, failed enqueue or interrupted local transaction must not partially clear the draft. Show queued-local state separately from service acceptance; do not claim a new analysis succeeded from dispatch. Offer “Restaurer le brouillon précédent” while its exact cleared revision remains current. Existing validated plans/execution and originals remain outside this action.
+
 # UX Flows & Screen Specification — Native Offline-First Expo
 
 **Product:** Fruits & Vegetables Copilot  

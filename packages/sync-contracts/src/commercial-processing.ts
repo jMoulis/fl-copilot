@@ -16,6 +16,7 @@ export const commercialProcessingReviewSchema = z.strictObject({
   state: processingState,
   messageFr: z.string().min(1).max(600),
   canResume: z.boolean(),
+  canRestart: z.boolean().optional(),
   notBefore: z.string().datetime().nullable(),
   stages: z
     .array(
@@ -39,6 +40,7 @@ export const commercialProcessingReviewSchema = z.strictObject({
 });
 export const commercialProcessingResumeSchema = z.strictObject({
   operationId: z.uuid(),
+  mode: z.literal("RESTART").optional(),
   basisHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
 export const commercialProcessingRequestedSchema = z.strictObject({

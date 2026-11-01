@@ -13,6 +13,7 @@ import {
 } from "expo-crypto";
 import {
   currentCommercialWeek,
+  currentCommercialAnalysisPages,
   commercialWeekPreparationId,
   commercialChoiceWithinWeek,
   commercialPreparationOfferIssues,
@@ -126,9 +127,11 @@ export default function WeekPreparationScreen() {
         ]);
         if (!active) return;
         setChoices(records);
-        const pages = rows.map((r) =>
-            synchronizedCommercialVisualReadingSchema.parse(
-              JSON.parse(r.payload_json),
+        const pages = currentCommercialAnalysisPages(
+            rows.map((r) =>
+              synchronizedCommercialVisualReadingSchema.parse(
+                JSON.parse(r.payload_json),
+              ),
             ),
           ),
           documents = [...new Set(pages.map((p) => p.sourceDocumentId))];
@@ -328,6 +331,40 @@ export default function WeekPreparationScreen() {
         disabled={busy}
         onPress={() => router.back()}
       />
+      {session?.stores[0]?.role === "MANAGER" ? (
+        <SecondaryButton
+          label="Recommencer la préparation"
+          disabled={busy || !loaded}
+          onPress={() => {
+            const open = () => {
+              setCapacity(
+                saved?.entity.tgCapacity == null
+                  ? ""
+                  : String(saved.entity.tgCapacity),
+              );
+              setRefs(saved?.entity.offerRefs ?? []);
+              setPlacements(saved?.entity.placements ?? []);
+              setNote(saved?.entity.note ?? "");
+              setPhysicalAllocation(saved?.entity.physicalAllocation);
+              dirty.current = false;
+              router.push({
+                pathname: "/commercial-restart",
+                params: { weekStart: week.start },
+              });
+            };
+            if (unsavedChanges)
+              Alert.alert(
+                "Quitter sans enregistrer ?",
+                "Tes saisies non enregistrées ne seront pas conservées.",
+                [
+                  { text: "Annuler", style: "cancel" },
+                  { text: "Continuer", onPress: open },
+                ],
+              );
+            else open();
+          }}
+        />
+      ) : null}
       {!loaded ? <Text>Lecture de la préparation…</Text> : null}
       {error ? (
         <InlineAlert title="Préparation à vérifier" message={error} />

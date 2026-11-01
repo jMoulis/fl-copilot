@@ -2,7 +2,10 @@ import {
   serializeIllustrationGeneration,
   type IllustrationGenerationDocument,
 } from "../copilot/layout-illustration-generation";
-import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
+import {
+  requireCommercialSourceCompatibility,
+  requireCommercialAnalysisCompatibility,
+} from "../commercial/source-compatibility";
 import {
   serializeLayoutIllustration,
   type LayoutIllustrationDocument,
@@ -760,6 +763,11 @@ export function createMongoSyncBootstrapService(
       if (!response) {
         throw new Error("Bootstrap snapshot transaction did not complete.");
       }
+      await requireCommercialAnalysisCompatibility(
+        mongoDatabase,
+        store.storeId,
+        query.commercialAnalysisRevisions === "true",
+      );
       await requireCommercialSourceCompatibility(
         mongoDatabase,
         store.storeId,

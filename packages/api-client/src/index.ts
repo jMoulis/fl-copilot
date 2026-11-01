@@ -460,6 +460,8 @@ export class ApiClient {
     const query = new URLSearchParams();
     if (commercialReview) query.set("commercialReview", "true");
     if (commercialVisual) query.set("commercialVisual", "true");
+    if (commercialVisual || commercialReview)
+      query.set("commercialAnalysisRevisions", "true");
     if (commercialChoices) query.set("commercialChoices", "true");
     if (commercialPreparation) query.set("commercialPreparation", "true");
     if (commercialVersions) query.set("commercialVersions", "true");
@@ -561,6 +563,8 @@ export class ApiClient {
       query.set("rawObservationDays", String(rawObservationDays));
     if (commercialReview) query.set("commercialReview", "true");
     if (commercialVisual) query.set("commercialVisual", "true");
+    if (commercialVisual || commercialReview)
+      query.set("commercialAnalysisRevisions", "true");
     if (commercialChoices) query.set("commercialChoices", "true");
     if (commercialPreparation) query.set("commercialPreparation", "true");
     if (commercialVersions) query.set("commercialVersions", "true");

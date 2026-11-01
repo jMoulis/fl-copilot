@@ -16,6 +16,7 @@ const jobSchema = z.strictObject({
   ownerId: z.uuid(),
   sourceDocumentId: z.uuid(),
   checksum: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  mode: z.literal("RESTART").optional(),
   basisHash: z.string().regex(/^[a-f0-9]{64}$/),
 });
 type JobRow = {
@@ -104,6 +105,7 @@ export class CommercialAnalysisRecoveryRepository {
     id: string,
     basisHash: string,
     authority: { canResume(): boolean; signal?: AbortSignal },
+    mode?: "RESTART",
   ) {
     const check = () => {
       authority.signal?.throwIfAborted();
@@ -114,7 +116,11 @@ export class CommercialAnalysisRecoveryRepository {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       check();
       const review = await this.cachedIn(tx, storeId, id);
-      if (!review || review.basisHash !== basisHash || !review.canResume)
+      if (
+        !review ||
+        review.basisHash !== basisHash ||
+        !(mode === "RESTART" ? review.canRestart : review.canResume)
+      )
         throw Error("COMMERCIAL_ANALYSIS_REVIEW_CHANGED");
       const active = await tx.getAllAsync<JobRow>(
         "SELECT id,payload_json,status,attempt_count,last_error FROM local_jobs WHERE type='COMMERCIAL_ANALYSIS_RESUME' AND json_extract(payload_json,'$.storeId')=? AND json_extract(payload_json,'$.ownerId')=? AND json_extract(payload_json,'$.sourceDocumentId')=? AND status IN ('PENDING','RETRY','RUNNING') ORDER BY rowid DESC LIMIT 2",
@@ -143,7 +149,7 @@ export class CommercialAnalysisRecoveryRepository {
           payload.checksum !== review.checksum
         )
           throw Error("COMMERCIAL_ANALYSIS_SCOPE_CHANGED");
-        if (payload.basisHash === basisHash) {
+        if (payload.basisHash === basisHash && payload.mode === mode) {
           check();
           result = { jobId: existing.id, queued: false };
           return;
@@ -159,6 +165,7 @@ export class CommercialAnalysisRecoveryRepository {
           sourceDocumentId: id,
           checksum: review.checksum,
           basisHash,
+          ...(mode ? { mode } : {}),
         }),
         timestamp = this.now();
       await tx.runAsync(
@@ -250,6 +257,7 @@ export class CommercialAnalysisRecoveryQueue {
           await this.transport.resume(storeId, payload.sourceDocumentId, {
             operationId: payload.operationId,
             basisHash: payload.basisHash,
+            ...(payload.mode ? { mode: payload.mode } : {}),
           }),
         );
         if (

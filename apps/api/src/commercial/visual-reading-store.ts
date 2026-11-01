@@ -4,8 +4,9 @@ import {
 } from "@fl-copilot/sync-contracts";
 export type VisualReadingDocument = Omit<
   SynchronizedCommercialVisualReading,
-  "status"
+  "status" | "analysisRevision"
 > & {
+  analysisRevision?: number | null;
   _id: string;
   status: string;
   attemptCount?: number;

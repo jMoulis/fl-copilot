@@ -42,6 +42,10 @@ export const synchronizedCommercialVisualReadingSchema = z.object({
   checksum: z.string().min(1),
   pageNumber: z.number().int().min(1).max(100),
   pageCount: z.number().int().min(1).max(100),
+  analysisRevision: z.preprocess(
+    (v) => (v === null ? undefined : v),
+    z.number().int().positive().optional(),
+  ),
   schemaVersion: z.literal(COMMERCIAL_VISUAL_SCHEMA_VERSION),
   model: z.string().min(1),
   remoteVersion: z.literal(1),

@@ -1,3 +1,9 @@
+## Owner arbitration — 1 November 2026: restarting preparation and PDF analysis
+
+“Recommencer la préparation” has independent explicit choices: empty the selected week's draft (selected references, TG assignments/capacity, note, draft allocation) and request a fresh analysis of one existing PDF. Show the exact week, filename, affected counts, preservation scope and AI credit consequence before confirmation. This never withdraws retained source choices, validated offers/plans or declared execution. Preserve the prior draft in history; allow restoration on the originating device, including after restart, only while the cleared revision is unchanged and ordinary dependency/permission checks still pass. Already requested analysis continues independently of draft restoration.
+
+Reimporting an exact duplicate keeps one source and offers a direct restart entry. A fresh analysis is a separate immutable extraction generation, not another source or silent replay. Keep prior usable page sets until a complete newer generation is received; historical IDs/citations/decisions stay readable. Do not restart a live or still runnable pipeline, bypass provider backoff or automatically retain/validate new extracted offers. Explicit fresh analysis remains distinct from resuming interrupted work and archiving list entries. A pending local request is not server acceptance or a completed analysis.
+
 # Commercial Planning & Promotion Engine Functional Specification
 
 **Product:** Fruits & Vegetables Copilot  
