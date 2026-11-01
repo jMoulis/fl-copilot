@@ -1,3 +1,7 @@
+# 1er novembre — consignes analytiques et contexte allégés
+
+Regroupement des règles répétées de provenance/historique/pièces jointes et raccourcissement des descriptions analytiques. Mongo reste l'entrée d'exploration ; les deux calculateurs partagés gardent comparaisons officielles, prix réalisés, Pareto et audit de publication. Aucun nouvel outil, suppression de lecteur historique, changement de budget ou d'orchestration. [Audit et validation](../qa/M7_ANALYSIS_GUIDANCE_CLEANUP_2026_11_01.md). Livraison API groupée et qualité réelle à confirmer ; aucun build EAS. **Chantier 4 avancé ; 1/3/4/5/6/7 en cours ; 2 code prêt.**
+
 # 1er novembre — entrée Mercalys exclusivement dans Actions
 
 Nouvel arbitrage du propriétaire : retirer aussi l’ouverture de l’import classique depuis le chat. Suppression du menu/callback Mercalys, de l’écran intégré, de son état et du résumé de lots. Les anciennes cartes deviennent du texte passif ; les lots conservés restent visibles depuis Actions → Imports Mercalys. Aucune donnée ou publication supprimée. **292 tests ciblés passent**, incluant montage natif et accès aux anciens lots ; contrôles complets/CI encore requis. [QA et limites](../qa/M7_MERCALYS_ACTIONS_ONLY_2026_11_01.md). Hors build 20, à grouper avec PR 389/394 ; alignement du descriptif serveur au prochain lot API, sans déploiement ni build EAS isolé. **Chantiers 3/7 avancés ; 1/3/4/5/6/7 en cours ; 2 code prêt.**

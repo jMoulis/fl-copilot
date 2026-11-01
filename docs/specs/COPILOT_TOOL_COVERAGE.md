@@ -1,3 +1,7 @@
+# 1 November — analytical catalogue cleanup audit
+
+The active Mongo-enabled catalogue already excludes `analytics_daily` and `analytics_product_changes`; their internal readers remain necessary for historical replay. Retain `analytics_query` for official breakdown/comparison/ranking/Pareto/paired selling prices and `analytics_period` for totals, waste/net-sales ratios and publication audits. Neither is an equivalent replacement for the other or for exploratory Mongo pipelines. The cleanup reduces repeated global context/provenance instructions and analytical descriptions, clarifying discovery without adding a routing layer or changing tool schemas/execution. See `../qa/M7_ANALYSIS_GUIDANCE_CLEANUP_2026_11_01.md` for measurements and acceptance limits.
+
 # 1 November — Mercalys entry only in Actions
 
 The owner removes the remaining Mercalys entry from chat entirely. Manual intake is in Actions → Imports Mercalys, not the attachment menu or an embedded screen. Historical references stay passive and the existing Actions repository includes those retained conversation-owned batches. This supersedes the Fichiers shortcut described in the prior simplification below. No source/publication deletion, change to other attachments or new tool. See `../qa/M7_MERCALYS_ACTIONS_ONLY_2026_11_01.md` for checks and pending grouped native/server instruction delivery.

@@ -1,3 +1,7 @@
+# Current M7 increment — analytical guidance cleanup, 1 November 2026
+
+Consolidate repeated provenance/context restrictions in the existing system instructions and shorten analytical descriptions without changing permissions, formulas, tools, budgets or discovery. Mongo is the primary exploration entry; keep shared official KPI/comparison calculators until their distinct coverage and citation semantics have parity. Preserve historical replay readers. See `../qa/M7_ANALYSIS_GUIDANCE_CLEANUP_2026_11_01.md`. Group API delivery with the pending Actions-only instruction; no isolated native build or claim of actual-model acceptance.
+
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
 ## Owner refinement — 1 November: Mercalys only under Actions

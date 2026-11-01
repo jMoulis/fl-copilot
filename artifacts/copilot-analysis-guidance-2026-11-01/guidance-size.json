@@ -1,0 +1,52 @@
+{
+  "global": {
+    "before": {
+      "characters": 6177,
+      "words": 819
+    },
+    "after": {
+      "characters": 4310,
+      "words": 553
+    }
+  },
+  "mongo_list": {
+    "before": {
+      "characters": 671,
+      "words": 97
+    },
+    "after": {
+      "characters": 467,
+      "words": 64
+    }
+  },
+  "mongo_aggregate": {
+    "before": {
+      "characters": 1405,
+      "words": 192
+    },
+    "after": {
+      "characters": 1213,
+      "words": 158
+    }
+  },
+  "analytics_query": {
+    "before": {
+      "characters": 2384,
+      "words": 331
+    },
+    "after": {
+      "characters": 1618,
+      "words": 205
+    }
+  },
+  "analytics_period": {
+    "before": {
+      "characters": 1082,
+      "words": 154
+    },
+    "after": {
+      "characters": 960,
+      "words": 130
+    }
+  }
+}
