@@ -1,3 +1,9 @@
+import {
+  legacyStoreContext,
+  storeContextSettingsSchema,
+} from "@fl-copilot/domain";
+import type { StoreContextDocument } from "../src/store-context-sync";
+import { readCopilotStoreSettings } from "../src/copilot/store-settings-tool";
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
@@ -133,5 +139,138 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ).entities.storeContextSettings,
       ).toHaveLength(1);
     }, 20000);
+    it("negotiates merchandising on all sync paths and preserves it through legacy writes, retries and conflicts", async () => {
+      const s = {
+        ...storeContextFixture(),
+        merchandising: {
+          activeTgCount: 2,
+          implantation: "Deux îlots",
+          circulation: "Allée centrale ; TG1 en premier",
+          zones: [
+            {
+              id: randomUUID(),
+              label: "TG1",
+              kind: "TG" as const,
+              active: true,
+              position: "Première du parcours",
+              heat: "HOT" as const,
+              note: "Passage déclaré",
+            },
+          ],
+        },
+      };
+      const push = createMongoSyncPushService(database),
+        r = { ...request(s), storeMerchandising: true };
+      expect((await push.push(r, "new")).results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { merchandising: s.merchandising },
+      });
+      const oldReplay = await push.push(
+        { ...r, storeMerchandising: false },
+        "old-replay",
+      );
+      expect(oldReplay.results[0]?.status).toBe("ALREADY_APPLIED");
+      expect(oldReplay.results[0]?.remoteEntity).not.toHaveProperty(
+        "merchandising",
+      );
+      const capableReplay = await push.push(r, "new-replay");
+      expect(capableReplay.results[0]?.remoteEntity).toHaveProperty(
+        "merchandising",
+        s.merchandising,
+      );
+      const oldEdit = legacyStoreContext({ ...s, city: "Paris", version: 2 });
+      expect(
+        (await push.push(request(oldEdit, 1), "old-edit")).results[0]
+          ?.remoteEntity,
+      ).not.toHaveProperty("merchandising");
+      const saved = await (
+        await database.getDb()
+      )
+        .collection<StoreContextDocument>("storeContextSettings")
+        .findOne({ _id: s.storeId });
+      expect(saved).toMatchObject({
+        version: 2,
+        city: "Paris",
+        merchandising: s.merchandising,
+      });
+      const conflict = await push.push(
+        { ...request({ ...s, version: 2 }, 1), storeMerchandising: true },
+        "conflict",
+      );
+      expect(conflict.results[0]).toMatchObject({
+        status: "CONFLICT",
+        remoteEntity: { merchandising: s.merchandising },
+      });
+      const pull = createMongoSyncPullService(database),
+        old = await pull.pull(s.storeId, { limit: 500, storeContext: "true" });
+      expect(
+        old.changes.every(
+          (c) => !Object.hasOwn(c.entity as object, "merchandising"),
+        ),
+      ).toBe(true);
+      const current = await pull.pull(s.storeId, {
+        limit: 500,
+        storeContext: "true",
+        storeMerchandising: "true",
+      });
+      expect(current.changes[0]?.entity).toHaveProperty(
+        "merchandising",
+        s.merchandising,
+      );
+      const auth = {
+        storeId: s.storeId,
+        storeName: "Test",
+        role: "MANAGER",
+        userId: randomUUID(),
+        sessionId: randomUUID(),
+        deviceId: randomUUID(),
+      };
+      const boot = createMongoSyncBootstrapService(database);
+      const legacy = await boot.bootstrap(auth, {
+        rawObservationDays: 90,
+        storeContext: "true",
+      });
+      expect(legacy.entities.storeMerchandising).toBeUndefined();
+      expect(legacy.entities.storeContextSettings?.[0]).not.toHaveProperty(
+        "merchandising",
+      );
+      const capable = await boot.bootstrap(auth, {
+        rawObservationDays: 90,
+        storeContext: "true",
+        storeMerchandising: "true",
+      });
+      expect(capable.entities.storeMerchandising).toBe(true);
+      expect(capable.entities.storeContextSettings?.[0]).toHaveProperty(
+        "merchandising",
+        s.merchandising,
+      );
+      const read = await readCopilotStoreSettings(
+        await database.getDb(),
+        s.storeId,
+        {},
+      );
+      expect(read.settings?.merchandising).toEqual(s.merchandising);
+      expect(read.settings).not.toHaveProperty("position");
+      expect(read.evidence[0]?.value).toContain("2 TG actives F&L");
+      expect(read.evidence[0]?.value).toContain("déclarés");
+      await push.push(
+        {
+          ...request(
+            {
+              ...storeContextSettingsSchema.parse(current.changes[0]!.entity),
+              version: 3,
+              merchandising: null,
+            },
+            2,
+          ),
+          storeMerchandising: true,
+        },
+        "clear",
+      );
+      expect(
+        (await readCopilotStoreSettings(await database.getDb(), s.storeId, {}))
+          .settings?.merchandising,
+      ).toBeNull();
+    }, 30000);
   },
 );

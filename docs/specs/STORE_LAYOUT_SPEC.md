@@ -1,3 +1,11 @@
+## Owner arbitration — 1 November 2026: declared merchandising zones
+
+Users may qualify named TGs, island faces and other department locations as HOT, INTERMEDIATE, COLD or UNKNOWN, with optional position and observation. These are manager-declared commercial observations, not measured footfall or a ranking inferred from sales. UNKNOWN is not COLD. They inform weekly TG/counter-promotion advice with circulation and available analytics, without requiring measured geometry.
+
+The minimal context is stored in the existing versioned store settings: optional merchandising context, active produce-TG count (null unknown, zero explicit), implantation/family notes, main circulation and up to 32 distinct stable named locations. Known active TG locations must not exceed a declared count; incomplete location lists do not establish a complete physical inventory. Non-TG locations have no active-TG flag. These semantic location IDs/text are not automatically physical furniture/surface IDs or validated geometric allocation targets. No parallel geometry or new collection is created.
+
+Pilot facts explicitly supplied by Julien: two TGs are for fruits and vegetables; TG1 is first encountered; the main customer route is the central aisle between the two islands. The third physical TG is not counted as a produce TG. TG2's exact position and heat classifications remain unspecified. These statements guide acceptance; they are not hardcoded application defaults or evidence of an actual synchronized write.
+
 ## Owner arbitration — 1 November 2026: minimum context for weekly strategy
 
 Weekly commercial advice first needs active TGs and their positions, department/family implantation and the declared habitual main customer circulation. This is store-owned reusable context. Physical furniture count is not active TG availability; neither flow nor active status may be inferred from coordinates. Detailed dimensions/2D editing remain separate and must not block qualitative strategy. The existing layout has physical inventory/geometry, not active flags or circulation; these missing fields require an explicit backward-compatible canonical contract before implementation, not text hidden in geometry labels or private conversation memory.

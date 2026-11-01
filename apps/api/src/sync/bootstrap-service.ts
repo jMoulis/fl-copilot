@@ -1,3 +1,4 @@
+import { legacyStoreContext } from "@fl-copilot/domain";
 import {
   serializeIllustrationGeneration,
   type IllustrationGenerationDocument,
@@ -668,8 +669,13 @@ export function createMongoSyncBootstrapService(
                   : {}),
                 ...(query.storeContext === "true"
                   ? {
-                      storeContextSettings: contextSettings.map(
-                        serializeStoreContext,
+                      ...(query.storeMerchandising === "true"
+                        ? { storeMerchandising: true }
+                        : {}),
+                      storeContextSettings: contextSettings.map((row) =>
+                        query.storeMerchandising === "true"
+                          ? serializeStoreContext(row)
+                          : legacyStoreContext(serializeStoreContext(row)),
                       ),
                     }
                   : {}),

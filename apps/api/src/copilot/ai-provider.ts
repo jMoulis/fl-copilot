@@ -2316,7 +2316,7 @@ export function createCopilotAiProvider(
                 ? {
                     store_settings: tool({
                       description:
-                        "Lire les réglages synchronisés du magasin : commune, code postal, zone scolaire et mode de localisation, sans coordonnées GPS. Ne modifie aucun réglage.",
+                        "Lire le contexte synchronisé du magasin : commune/calendrier et repères merchandising déclarés (TG actives F&L, implantation, circulation, zones chaudes/intermédiaires/froides). Réutiliser ces repères pour les conseils TG et contre-promos sans imposer un plan mesuré. Une qualification utilisateur n’est pas une fréquentation mesurée ou une causalité ; inconnue n’est pas froide, inventaire physique n’est pas capacité active. Aucun GPS ni modification de réglage.",
                       inputSchema: copilotStoreSettingsInputSchema,
                       execute: (input) =>
                         executeRead(

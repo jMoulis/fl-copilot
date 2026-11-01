@@ -1,3 +1,7 @@
+import {
+  legacyStoreContext,
+  storeContextSettingsSchema,
+} from "@fl-copilot/domain";
 import { applyDocumentArchiveCommand } from "../document-archive-sync";
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
@@ -270,6 +274,15 @@ export function createMongoSyncPushService(
       ) {
         await advanceProductUnitRefresh(database, input.storeId, now);
       }
+      if (!input.storeMerchandising)
+        for (const result of results)
+          if (
+            result.entityType === "store_context_settings" &&
+            result.remoteEntity
+          )
+            result.remoteEntity = legacyStoreContext(
+              storeContextSettingsSchema.parse(result.remoteEntity),
+            );
       if (!input.physicalAllocations)
         for (const result of results)
           if (

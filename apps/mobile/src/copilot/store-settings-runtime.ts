@@ -93,6 +93,9 @@ export class CopilotStoreSettingsRuntime {
             country: "FR",
             timezone: "Europe/Paris",
             schoolZone: input.schoolZone,
+            ...(before?.entity.merchandising !== undefined
+              ? { merchandising: before.entity.merchandising }
+              : {}),
             locationMode,
             position,
             version: (before?.entity.version ?? 0) + 1,

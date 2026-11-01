@@ -1124,6 +1124,56 @@ it("refreshes bootstrap once when upgrading an existing cursor to store context 
   database.close();
 });
 
+it("adopts merchandising once on an existing cursor, advertises capable pushes and rejects an old API before advancing the cursor", async () => {
+  const { adapter, database } = temporaryDatabase();
+  await runLocalMigrations(adapter);
+  database
+    .prepare(
+      "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES (?, ?,1)",
+    )
+    .run(storeId, "old-cursor");
+  const snapshot = bootstrapResponse();
+  snapshot.entities.storeContextSettings = [];
+  snapshot.entities.storeMerchandising = true;
+  let bootstraps = 0;
+  const transport = {
+    bootstrap: async () => {
+      bootstraps++;
+      return snapshot;
+    },
+    push: async () => ({ results: [], serverTime: new Date().toISOString() }),
+    pull: async () => emptyPull("new-cursor"),
+  };
+  const service = new MobileSyncService(adapter, transport, {
+    appVersion: "test",
+    deviceId,
+    storeContext: true,
+    storeMerchandising: true,
+    maxRetries: 0,
+  });
+  await service.sync(storeId);
+  await service.sync(storeId);
+  expect(bootstraps).toBe(1);
+  expect(
+    database
+      .prepare("SELECT value FROM app_metadata WHERE key=?")
+      .get(`store-merchandising:${storeId}`),
+  ).toEqual({ value: "1" });
+  database
+    .prepare("DELETE FROM app_metadata WHERE key=?")
+    .run(`store-merchandising:${storeId}`);
+  delete snapshot.entities.storeMerchandising;
+  await expect(service.sync(storeId)).rejects.toThrow(
+    "STORE_MERCHANDISING_UPGRADE_REQUIRED",
+  );
+  expect(
+    database
+      .prepare("SELECT cursor FROM sync_inbox_state WHERE store_id=?")
+      .get(storeId),
+  ).toEqual({ cursor: "new-cursor" });
+  database.close();
+});
+
 it("refreshes bootstrap once when upgrading an existing cursor to need-unit catalogue settings", async () => {
   const { adapter, database } = temporaryDatabase();
   await runLocalMigrations(adapter);

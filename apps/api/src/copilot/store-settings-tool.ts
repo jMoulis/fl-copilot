@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db } from "mongodb";
 import {
+  storeMerchandisingSummary,
   copilotStoreSettingsInputSchema,
   copilotStoreSettingsResultSchema,
   copilotVisibleStoreSettingsSchema,
@@ -48,7 +49,7 @@ export async function readCopilotStoreSettings(
         sourceVersion: settings?.version ?? null,
         label: "Réglages synchronisés du magasin",
         value: settings
-          ? `Commune : ${settings.city} ; code postal ${settings.postalCode} ; pays France ; fuseau ${settings.timezone}. Zone scolaire : ${settings.schoolZone ?? "non précisée"}. Localisation configurée ${settings.locationMode === "CITY" ? "par commune" : "par un point enregistré, dont les coordonnées sont masquées"}. Révision ${settings.version}, mise à jour ${settings.updatedAt}. Il s'agit des réglages synchronisés du magasin, pas de la position actuelle du téléphone, d'une preuve d'adresse ou d'horaires d'ouverture. D'éventuelles modifications locales non synchronisées sont inconnues. Consulter store_week pour les sources météo/calendrier ; la configuration seule ne prouve ni météo, ni fréquentation, ni résultat commercial.`
+          ? `Commune : ${settings.city} ; code postal ${settings.postalCode} ; pays France ; fuseau ${settings.timezone}. Zone scolaire : ${settings.schoolZone ?? "non précisée"}. Localisation configurée ${settings.locationMode === "CITY" ? "par commune" : "par un point enregistré, dont les coordonnées sont masquées"}. Révision ${settings.version}, mise à jour ${settings.updatedAt}. ${storeMerchandisingSummary(settings.merchandising)} Il s'agit des réglages synchronisés du magasin, pas de la position actuelle du téléphone, d'une preuve d'adresse ou d'horaires d'ouverture. D'éventuelles modifications locales non synchronisées sont inconnues. Consulter store_week pour les sources météo/calendrier ; la configuration seule ne prouve ni météo, ni fréquentation, ni résultat commercial.`
           : "Aucun réglage synchronisé disponible pour ce magasin. Une configuration locale non synchronisée peut exister. Demander la commune, le code postal ou la zone scolaire seulement si nécessaire à la question ; ne pas inventer la localisation. Les chiffres déjà disponibles restent utilisables.",
         factKind: "QUALITY",
       },

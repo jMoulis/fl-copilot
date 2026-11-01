@@ -13,6 +13,7 @@ export const copilotVisibleStoreSettingsSchema = z.strictObject({
   timezone: fields.timezone,
   schoolZone: fields.schoolZone,
   locationMode: fields.locationMode,
+  merchandising: fields.merchandising,
   version: fields.version,
   createdAt: fields.createdAt,
   updatedAt: fields.updatedAt,

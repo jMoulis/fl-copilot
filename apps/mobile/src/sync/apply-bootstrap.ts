@@ -299,6 +299,16 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.storeMerchandising === true) {
+      if (!bootstrap.entities.storeContextSettings)
+        throw Error("STORE_MERCHANDISING_BOOTSTRAP_INVALID");
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `store-merchandising:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
     for (const prep of bootstrap.entities.storeContextSettings ?? [])
       await applyStoreContext(transaction, storeId, prep);
     if (bootstrap.entities.storeContextSettings)
@@ -507,6 +517,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialExecutionTasks",
     "commercialExecutionActuals",
     "storeContextSettings",
+    "storeMerchandising",
     "physicalAllocations",
     "storeLayouts",
     "storeLayoutRevisions",

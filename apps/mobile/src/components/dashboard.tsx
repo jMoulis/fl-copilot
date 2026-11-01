@@ -47,11 +47,13 @@ export function SegmentedControl<K extends string>({
   value,
   onChange,
   label,
+  disabled = false,
 }: {
   options: readonly { value: K; label: string }[];
   value: string;
   onChange(value: K): void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <View
@@ -65,7 +67,8 @@ export function SegmentedControl<K extends string>({
           accessibilityRole="radio"
           aria-checked={value === option.value}
           accessibilityLabel={`${label} : ${option.label}`}
-          accessibilityState={{ checked: value === option.value }}
+          accessibilityState={{ checked: value === option.value, disabled }}
+          disabled={disabled}
           onPress={() => onChange(option.value)}
           className="min-h-12 flex-1 justify-center px-1 py-1"
         >

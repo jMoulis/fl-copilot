@@ -1,3 +1,9 @@
+import { MerchandisingEditor } from "@/store/merchandising-editor";
+import {
+  merchandisingDraft,
+  merchandisingValue,
+  type MerchandisingDraft,
+} from "@/store/merchandising-draft";
 import { useUnsavedForm } from "@/components/use-unsaved-form";
 import { captureStorePosition } from "@/store/position";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -40,9 +46,10 @@ export default function StoreSettingsScreen() {
     store = session?.stores[0];
   return store && session ? (
     <StoreSettingsEditor
-      key={`${store.storeId}:${session.user.id}`}
+      key={`${store.storeId}:${session.user.id}:${store.role}`}
       storeId={store.storeId}
       storeName={store.name}
+      canManage={store.role === "MANAGER"}
     />
   ) : (
     <AppScreen>
@@ -57,9 +64,11 @@ export default function StoreSettingsScreen() {
 function StoreSettingsEditor({
   storeId,
   storeName,
+  canManage,
 }: {
   storeId: string;
   storeName: string;
+  canManage: boolean;
 }) {
   const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow } = useSync();
@@ -76,6 +85,7 @@ function StoreSettingsEditor({
     [error, setError] = useState<string>(),
     [notice, setNotice] = useState<string>(),
     [issues, setIssues] = useState<Record<string, string>>({});
+  const [merchandising, setMerchandising] = useState<MerchandisingDraft>();
   const busy = activity !== null;
   const baseline = useRef<string | undefined>(undefined);
   const readGeneration = useRef(0);
@@ -85,6 +95,7 @@ function StoreSettingsEditor({
     schoolZone,
     pointMode,
     position,
+    merchandising,
   ]);
   const dirty =
     saved !== undefined &&
@@ -103,6 +114,7 @@ function StoreSettingsEditor({
       schoolZone: c?.schoolZone ?? (c ? null : ("C" as const)),
       pointMode: c?.locationMode === "POINT",
       position: c?.position ?? null,
+      merchandising: merchandisingDraft(c?.merchandising),
     };
     baseline.current = JSON.stringify([
       values.city,
@@ -110,6 +122,7 @@ function StoreSettingsEditor({
       values.schoolZone,
       values.pointMode,
       values.position,
+      values.merchandising,
     ]);
     dirtyRef.current = false;
     setSaved(s);
@@ -118,6 +131,7 @@ function StoreSettingsEditor({
     setZone(values.schoolZone);
     setPointMode(values.pointMode);
     setPosition(values.position);
+    setMerchandising(values.merchandising);
   }, []);
   const load = useCallback(
     async (replace = false, active: () => boolean = () => true) => {
@@ -185,13 +199,14 @@ function StoreSettingsEditor({
     ]);
   }
   function changeTown(value: string, field: "city" | "postalCode") {
+    dirtyRef.current = true;
     if (field === "city") setCity(value);
     else setPostalCode(value);
     setPosition(null);
     setZone(null);
   }
   async function locate() {
-    if (busy) return;
+    if (!canManage || busyRef.current) return;
     setError(undefined);
     if (!nativeLocation) {
       setError(
@@ -237,7 +252,8 @@ function StoreSettingsEditor({
     }
   }
   async function save() {
-    if (!storeId || busy || saved === undefined) return;
+    if (!storeId || !canManage || busyRef.current || saved === undefined)
+      return;
     setError(undefined);
     setIssues({});
     const now = new Date().toISOString(),
@@ -251,6 +267,9 @@ function StoreSettingsEditor({
         schoolZone,
         locationMode: pointMode ? "POINT" : "CITY",
         position: pointMode ? position : null,
+        ...(merchandising === undefined
+          ? {}
+          : { merchandising: merchandisingValue(merchandising) }),
         version:
           (saved?.syncState === "ERROR"
             ? (saved.remoteVersion ?? 0)
@@ -263,14 +282,19 @@ function StoreSettingsEditor({
       for (const issue of parsed.error.issues) {
         const field = String(issue.path[0]);
         fields[field] =
-          (
-            {
-              city: "Saisissez la commune du magasin.",
-              postalCode: "Saisissez un code postal français à cinq chiffres.",
-              position:
-                "Relevez la position du magasin ou utilisez la localisation par commune.",
-            } as Record<string, string>
-          )[field] ?? "Vérifiez ce réglage avant de l’enregistrer.";
+          field === "merchandising"
+            ? issue.code === "custom"
+              ? issue.message
+              : "Vérifie le nombre de TG (de 0 à 128), les noms et les repères des emplacements."
+            : ((
+                {
+                  city: "Saisissez la commune du magasin.",
+                  postalCode:
+                    "Saisissez un code postal français à cinq chiffres.",
+                  position:
+                    "Relevez la position du magasin ou utilisez la localisation par commune.",
+                } as Record<string, string>
+              )[field] ?? "Vérifiez ce réglage avant de l’enregistrer.");
       }
       setIssues(fields);
       return;
@@ -360,12 +384,21 @@ function StoreSettingsEditor({
           Modifications non enregistrées
         </Text>
       ) : null}
+      <MerchandisingEditor
+        value={merchandising}
+        onChange={(next) => {
+          dirtyRef.current = true;
+          setMerchandising(next);
+        }}
+        disabled={!canManage || busy || saved === undefined}
+        issue={issues.merchandising}
+      />
       <SectionCard title="Commune du magasin">
         <Text className="text-muted">Commune</Text>
         <TextInput
           accessibilityLabel="Commune du magasin"
           value={city}
-          editable={!busy && saved !== undefined}
+          editable={canManage && !busy && saved !== undefined}
           onChangeText={(v) => changeTown(v, "city")}
           maxLength={120}
           className={`rounded-xl border p-3 text-ink ${issues.city ? "border-danger" : "border-line"}`}
@@ -379,7 +412,7 @@ function StoreSettingsEditor({
         <TextInput
           accessibilityLabel="Code postal"
           value={postalCode}
-          editable={!busy && saved !== undefined}
+          editable={canManage && !busy && saved !== undefined}
           onChangeText={(v) => changeTown(v, "postalCode")}
           keyboardType="number-pad"
           maxLength={5}
@@ -403,7 +436,7 @@ function StoreSettingsEditor({
           <Switch
             accessibilityLabel="Utiliser une position précise du magasin"
             value={pointMode}
-            disabled={busy || saved === undefined}
+            disabled={!canManage || busy || saved === undefined}
             onValueChange={(value) => {
               setPointMode(value);
               if (!value) setPosition(null);
@@ -423,7 +456,7 @@ function StoreSettingsEditor({
                   ? "Relevé…"
                   : "Relever ma position au magasin"
               }
-              disabled={busy || saved === undefined}
+              disabled={!canManage || busy || saved === undefined}
               onPress={() => void locate()}
             />
             <Text className="text-ink">
@@ -459,8 +492,8 @@ function StoreSettingsEditor({
                 disabled: busy || saved === undefined,
               }}
               aria-checked={schoolZone === zone}
-              aria-disabled={busy || saved === undefined}
-              disabled={busy || saved === undefined}
+              aria-disabled={!canManage || busy || saved === undefined}
+              disabled={!canManage || busy || saved === undefined}
               onPress={() => setZone(zone)}
               className={`min-h-12 items-center justify-center rounded-xl border px-4 py-3 ${schoolZone === zone ? "border-forest bg-forest-soft" : "border-line bg-surface"}`}
             >
@@ -489,7 +522,10 @@ function StoreSettingsEditor({
                 : "Enregistrer les réglages du magasin"
         }
         disabled={
-          busy || saved === undefined || saved?.syncState === "CONFLICT"
+          !canManage ||
+          busy ||
+          saved === undefined ||
+          saved?.syncState === "CONFLICT"
         }
         onPress={() => void save()}
       />

@@ -1,3 +1,4 @@
+import { preserveStoreMerchandising } from "@fl-copilot/domain";
 import {
   storeContextSettingsSchema,
   type StoreContextSettings,
@@ -36,10 +37,10 @@ export async function applyStoreContextCommand(
   )
     return reject(
       "STORE_CONTEXT_INVALID",
-      "Vérifiez la commune, le code postal et la localisation du magasin.",
+      "Vérifiez les réglages et les repères merchandising du magasin.",
     );
-  const plan = parsed.data,
-    id = plan.storeId;
+  let plan = parsed.data;
+  const id = plan.storeId;
   const collection = ctx.database.collection<StoreContextDocument>(
       "storeContextSettings",
     ),
@@ -47,6 +48,7 @@ export async function applyStoreContextCommand(
       { _id: id, storeId },
       { session: ctx.session },
     );
+  plan = preserveStoreMerchandising(plan, previous);
   if ((command.expectedRemoteVersion ?? null) !== (previous?.version ?? null))
     return {
       resultStatus: "CONFLICT",
