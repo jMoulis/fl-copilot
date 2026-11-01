@@ -1,3 +1,7 @@
+# Current M7 increment — weekly preparation return, 1 November 2026
+
+Refresh an untouched draft when returning after chat/sync updates; retain unsaved fields and let the canonical revision guard reject stale writes. Reuse existing form comparison/readers without a background loop or writer. Show the selected week dates/year before saving. Verify four TG draft persistence and the existing original-backed offer/second-device/future-plan flow separately; see `../qa/M7_WEEK_PREPARATION_REFRESH_2026_11_01.md`. Group pending native/API work; real model and device acceptance remain open.
+
 # Current M7 increment — analytical guidance cleanup, 1 November 2026
 
 Consolidate repeated provenance/context restrictions in the existing system instructions and shorten analytical descriptions without changing permissions, formulas, tools, budgets or discovery. Mongo is the primary exploration entry; keep shared official KPI/comparison calculators until their distinct coverage and citation semantics have parity. Preserve historical replay readers. See `../qa/M7_ANALYSIS_GUIDANCE_CLEANUP_2026_11_01.md`. Group API delivery with the pending Actions-only instruction; no isolated native build or claim of actual-model acceptance.

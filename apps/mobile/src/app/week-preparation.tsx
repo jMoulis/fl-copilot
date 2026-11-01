@@ -1,3 +1,4 @@
+import { formatFrenchCalendarDate } from "@/dates/calendar";
 import { PhysicalAllocationCard } from "@/commercial/physical-allocation-card";
 import { contextWeekQuerySchema } from "@fl-copilot/domain";
 import { CommercialPlanValidationView } from "@/commercial/plan-validation-view";
@@ -88,6 +89,28 @@ export default function WeekPreparationScreen() {
   const [validationGeneration, setValidationGeneration] = useState(0);
   const initialized = useRef(false),
     saving = useRef(false);
+  const unsavedChanges =
+    JSON.stringify({
+      tgCapacity:
+        capacity.trim() === ""
+          ? null
+          : /^\d+$/.test(capacity.trim())
+            ? Number(capacity)
+            : "invalid",
+      offerRefs: refs,
+      placements,
+      note: note.trim(),
+      physicalAllocation,
+    }) !==
+    JSON.stringify({
+      tgCapacity: saved?.entity.tgCapacity ?? null,
+      offerRefs: saved?.entity.offerRefs ?? [],
+      placements: saved?.entity.placements ?? [],
+      note: saved?.entity.note ?? "",
+      physicalAllocation: saved?.entity.physicalAllocation,
+    });
+  const dirty = useRef(false);
+  dirty.current = unsavedChanges;
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -134,7 +157,7 @@ export default function WeekPreparationScreen() {
           );
         });
         setIdeas(found);
-        if (!initialized.current) {
+        if (!initialized.current || !dirty.current) {
           setSaved(record);
           setCapacity(
             record?.entity.tgCapacity === null || !record
@@ -294,32 +317,11 @@ export default function WeekPreparationScreen() {
       setBusy(false);
     }
   }
-  const unsavedChanges =
-    !!saved &&
-    JSON.stringify({
-      tgCapacity:
-        capacity.trim() === ""
-          ? null
-          : /^\d+$/.test(capacity.trim())
-            ? Number(capacity)
-            : "invalid",
-      offerRefs: refs,
-      placements,
-      note: note.trim(),
-      physicalAllocation,
-    }) !==
-      JSON.stringify({
-        tgCapacity: saved.entity.tgCapacity,
-        offerRefs: saved.entity.offerRefs,
-        placements: saved.entity.placements,
-        note: saved.entity.note,
-        physicalAllocation: saved.entity.physicalAllocation,
-      });
   return (
     <AppScreen>
       <AppHeader
-        title={`Préparer ma semaine ${week.number}`}
-        subtitle="Choisissez vos offres et vos TG. Cette préparation reste un brouillon, sans validation finale ni action exécutée."
+        title={`Préparer ma semaine ${week.number} · ${week.year}`}
+        subtitle={`Du ${formatFrenchCalendarDate(week.start)} au ${formatFrenchCalendarDate(week.end)}. Choisissez vos offres et vos TG. Cette préparation reste un brouillon, sans validation finale ni action exécutée.`}
       />
       <SecondaryButton
         label="Retour à Ma semaine"
