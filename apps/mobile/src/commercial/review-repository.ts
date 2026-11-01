@@ -1,3 +1,4 @@
+import { currentCommercialAnalysisPages } from "@fl-copilot/commercial-core";
 import { z } from "zod";
 import { ConflictRepository } from "../sync/conflict-repository";
 import {
@@ -126,8 +127,10 @@ export class CommercialReviewRepository {
       `SELECT payload_json FROM commercial_review_pages WHERE store_id = ? ${sourceDocumentId ? "AND source_document_id = ?" : ""} ORDER BY source_document_id,page_number`,
       ...(sourceDocumentId ? [storeId, sourceDocumentId] : [storeId]),
     );
-    return rows.map((row) =>
-      commercialReviewPageSchema.parse(JSON.parse(row.payload_json)),
+    return currentCommercialAnalysisPages(
+      rows.map((row) =>
+        commercialReviewPageSchema.parse(JSON.parse(row.payload_json)),
+      ),
     );
   }
   async decisions(storeId: string, sourceDocumentId?: string) {
@@ -248,8 +251,10 @@ export class CommercialReviewRepository {
         input.storeId,
         input.sourceDocumentId,
       );
-      const pages = rows.map((row) =>
-        commercialReviewPageSchema.parse(JSON.parse(row.payload_json)),
+      const pages = currentCommercialAnalysisPages(
+        rows.map((row) =>
+          commercialReviewPageSchema.parse(JSON.parse(row.payload_json)),
+        ),
       );
       const decisionRows = await tx.getAllAsync<{
         payload_json: string;

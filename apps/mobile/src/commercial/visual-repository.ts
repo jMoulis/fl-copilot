@@ -1,3 +1,4 @@
+import { currentCommercialAnalysisPages } from "@fl-copilot/commercial-core";
 import {
   synchronizedCommercialVisualReadingSchema,
   type SynchronizedCommercialVisualReading,
@@ -43,9 +44,11 @@ export async function readCommercialVisualReadings(
     storeId,
     sourceDocumentId,
   );
-  return rows.map((row) =>
-    synchronizedCommercialVisualReadingSchema.parse(
-      JSON.parse(row.payload_json),
+  return currentCommercialAnalysisPages(
+    rows.map((row) =>
+      synchronizedCommercialVisualReadingSchema.parse(
+        JSON.parse(row.payload_json),
+      ),
     ),
   );
 }

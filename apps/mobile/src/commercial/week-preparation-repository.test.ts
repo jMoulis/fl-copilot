@@ -222,3 +222,132 @@ describe("offline weekly preparation", () => {
     ).toEqual({ n: 2 });
   });
 });
+
+import { restartCommercialPreparation } from "./restart-preparation";
+import { commercialReviewFixture } from "../../../../scripts/test-commercial-processing-fixtures";
+it("clears only the confirmed week's draft with prior audit, survives restart, and preserves choices/validated plans", async () => {
+  const x = await setup();
+  await x.repo.save(x.plan, { commandId: randomUUID(), deviceId: x.deviceId });
+  const beforeChoices = x.db
+    .prepare("SELECT * FROM commercial_offer_choices")
+    .all();
+  const context = {
+    storeId: x.f.storeId,
+    ownerId: randomUUID(),
+    deviceId: x.deviceId,
+    weekStart: x.plan.weekStart,
+    canChange: () => true,
+  };
+  const cleared = await restartCommercialPreparation(
+    x.tx,
+    testChoiceDigest,
+    randomUUID,
+    { context, previous: x.plan, resetDraft: true },
+  );
+  expect(cleared).toMatchObject({
+    version: 2,
+    placements: [],
+    offerRefs: [],
+    tgCapacity: null,
+    note: "",
+    physicalAllocation: null,
+  });
+  expect(x.db.prepare("SELECT * FROM commercial_offer_choices").all()).toEqual(
+    beforeChoices,
+  );
+  const baseline = x.db
+    .prepare(
+      "SELECT payload_json FROM commercial_preparation_history WHERE action='BEFORE_RESET'",
+    )
+    .get() as { payload_json: string };
+  expect(JSON.parse(baseline.payload_json)).toEqual(x.plan);
+  x.db.close();
+  const reopened = new DatabaseSync(x.path);
+  dbs.push(reopened);
+  expect(
+    (
+      await new CommercialPreparationRepository(
+        new Adapter(reopened),
+        testChoiceDigest,
+      ).get(x.f.storeId, x.plan.weekStart)
+    )?.entity,
+  ).toEqual(cleared);
+});
+it("rolls back the entire reset when analysis cannot be queued, authority changes, or the reviewed draft is stale", async () => {
+  const x = await setup();
+  await x.repo.save(x.plan, { commandId: randomUUID(), deviceId: x.deviceId });
+  const context = {
+    storeId: x.f.storeId,
+    ownerId: randomUUID(),
+    deviceId: x.deviceId,
+    weekStart: x.plan.weekStart,
+    canChange: () => true,
+  };
+  const reviewed = { ...commercialReviewFixture(), canRestart: true };
+  const before = () => [
+    x.db.prepare("SELECT * FROM commercial_week_preparations").all(),
+    x.db.prepare("SELECT * FROM commercial_preparation_history").all(),
+    x.db.prepare("SELECT * FROM sync_outbox").all(),
+    x.db.prepare("SELECT * FROM local_jobs").all(),
+  ];
+  const original = before();
+  await expect(
+    restartCommercialPreparation(x.tx, testChoiceDigest, randomUUID, {
+      context,
+      previous: x.plan,
+      resetDraft: true,
+      analysis: reviewed,
+    }),
+  ).rejects.toThrow();
+  expect(before()).toEqual(original);
+  await expect(
+    restartCommercialPreparation(x.tx, testChoiceDigest, randomUUID, {
+      context,
+      previous: { ...x.plan, version: 99 },
+      resetDraft: true,
+    }),
+  ).rejects.toThrow("COMMERCIAL_RESTART_CHANGED");
+  let checks = 0;
+  await expect(
+    restartCommercialPreparation(x.tx, testChoiceDigest, randomUUID, {
+      context: { ...context, canChange: () => ++checks < 3 },
+      previous: x.plan,
+      resetDraft: true,
+    }),
+  ).rejects.toThrow("COMMERCIAL_RESTART_FORBIDDEN");
+  expect(before()).toEqual(original);
+});
+
+import { commercialPlanFixture } from "../../../../scripts/test-commercial-plan-fixtures";
+import { applyCommercialPlan } from "./week-plan-repository";
+it("leaves an already validated plan, its revisions and materialized offers unchanged when clearing the working draft", async () => {
+  const x = await setup(),
+    f = await commercialPlanFixture();
+  await applyCommercialChoice(x.tx, f.storeId, f.choice);
+  await applyCommercialPreparation(x.tx, f.storeId, f.preparation);
+  await applyCommercialPlan(x.tx, f.storeId, f.plan);
+  const tables = [
+    "commercial_week_plans",
+    "commercial_plan_revisions",
+    "commercial_offer_choices",
+    "commercial_validated_offers",
+    "offers",
+    "commercial_operations",
+    "action_executions",
+  ];
+  const snapshots = () =>
+    tables.map((table) => x.db.prepare(`SELECT * FROM ${table}`).all());
+  const before = snapshots();
+  await restartCommercialPreparation(x.tx, testChoiceDigest, randomUUID, {
+    context: {
+      storeId: f.storeId,
+      ownerId: randomUUID(),
+      deviceId: x.deviceId,
+      weekStart: f.preparation.weekStart,
+      canChange: () => true,
+    },
+    previous: f.preparation,
+    resetDraft: true,
+  });
+  expect(snapshots()).toEqual(before);
+});

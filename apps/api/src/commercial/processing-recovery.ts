@@ -28,6 +28,9 @@ type RecoveryRequest = {
   deviceId: string;
   checksum: string;
   requestJson: string;
+  analysisRevision?: number;
+  previousJob?: unknown;
+  previousVisualJob?: unknown;
   stages: CommercialProcessingStage[];
   status: "PENDING" | "DISPATCHED" | "DELIVERY_FAILED";
   requestedAt: Date;
@@ -86,6 +89,7 @@ export async function inspectCommercialProcessing(
           checksum: 1,
           objectKey: 1,
           pipelineVersion: 1,
+          analysisRevision: 1,
           status: 1,
           stage: 1,
           attemptCount: 1,
@@ -126,6 +130,7 @@ export async function inspectCommercialProcessing(
                 model: job.aiModel ?? options.model,
                 schemaVersion:
                   job.aiSchemaVersion ?? COMMERCIAL_AI_SCHEMA_VERSION,
+                analysisRevision: job.analysisRevision ?? null,
               },
             },
             {
@@ -168,6 +173,7 @@ export async function inspectCommercialProcessing(
           sourceDocumentId: 1,
           checksum: 1,
           parserVersion: 1,
+          analysisRevision: 1,
           model: 1,
           schemaVersion: 1,
           pageCount: 1,
@@ -183,6 +189,7 @@ export async function inspectCommercialProcessing(
           $match: {
             storeId,
             sourceDocumentId: id,
+            analysisRevision: visual?.analysisRevision ?? null,
             model: visual?.model ?? options.model,
             schemaVersion:
               visual?.schemaVersion ?? COMMERCIAL_VISUAL_SCHEMA_VERSION,
@@ -420,7 +427,11 @@ export function createCommercialProcessingRecovery(
               "COMMERCIAL_ANALYSIS_STATE_CHANGED",
               "L’état a changé. Actualisez-le avant de reprendre l’analyse.",
             );
-          if (!current.review.canResume)
+          if (
+            !(input.mode === "RESTART"
+              ? current.review.canRestart
+              : current.review.canResume)
+          )
             throw new AuthError(
               409,
               "COMMERCIAL_ANALYSIS_RESUME_BLOCKED",
@@ -428,6 +439,60 @@ export function createCommercialProcessingRecovery(
             );
           await authorize();
           const timestamp = now();
+          const restart = input.mode === "RESTART";
+          const revision = restart
+            ? (current.snapshot.job?.analysisRevision ?? 0) + 1
+            : current.snapshot.job?.analysisRevision;
+          const previousJob = restart
+            ? await db
+                .collection<{ _id: string }>("commercialDocumentJobs")
+                .findOne({ _id: id, storeId }, { session })
+            : undefined;
+          const previousVisualJob = restart
+            ? await db
+                .collection<{ _id: string }>("commercialVisualJobs")
+                .findOne({ _id: id, storeId }, { session })
+            : undefined;
+          if (restart) {
+            await db
+              .collection<{ _id: string }>("commercialDocumentJobs")
+              .updateOne(
+                { _id: id, storeId },
+                {
+                  $set: {
+                    analysisRevision: revision,
+                    status: "TEXT_READY",
+                    stage: "AI_EXTRACTION",
+                    aiModel: options.model,
+                    aiSchemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+                    nextAiAttemptAt: null,
+                    updatedAt: timestamp,
+                  },
+                },
+                { session },
+              );
+            await db
+              .collection<{ _id: string }>("commercialVisualJobs")
+              .updateOne(
+                { _id: id, storeId },
+                {
+                  $set: {
+                    _id: id,
+                    storeId,
+                    sourceDocumentId: id,
+                    checksum: current.review.checksum,
+                    parserVersion: current.snapshot.job!.parserVersion,
+                    pageCount: current.snapshot.job!.pageCount,
+                    model: options.model,
+                    schemaVersion: COMMERCIAL_VISUAL_SCHEMA_VERSION,
+                    analysisRevision: revision,
+                    status: "PENDING",
+                    createdAt: timestamp,
+                  },
+                },
+                { upsert: true, session },
+              );
+          }
           await db
             .collection<{ _id: string; storeId: string }>(
               "commercialDocumentJobs",
@@ -445,7 +510,9 @@ export function createCommercialProcessingRecovery(
               ...actor,
               checksum: current.review.checksum,
               requestJson,
-              stages: current.eligible,
+              stages: restart ? ["AI", "VISUAL"] : current.eligible,
+              ...(revision ? { analysisRevision: revision } : {}),
+              ...(restart ? { previousJob, previousVisualJob } : {}),
               status: "PENDING",
               dispatchAttempts: 0,
               requestedAt: timestamp,
@@ -567,7 +634,11 @@ export function createCommercialProcessingRecovery(
         options,
         now(),
       );
-      if (request.checksum !== current.review.checksum)
+      if (
+        request.checksum !== current.review.checksum ||
+        (request.analysisRevision ?? 0) !==
+          (current.snapshot.job?.analysisRevision ?? 0)
+      )
         return [] as CommercialProcessingStage[];
       return current.eligible.filter((stage) => request.stages.includes(stage));
     },

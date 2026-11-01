@@ -21,6 +21,7 @@ import {
 } from "./visual-provider.js";
 import { createMongoSyncChangeService } from "../sync/sync-change-service.js";
 type VisualJob = {
+  analysisRevision?: number | null;
   _id: string;
   storeId: string;
   sourceDocumentId: string;
@@ -116,6 +117,7 @@ export function createCommercialVisualProcessor(
             sourceDocumentId: job._id,
             schemaVersion: job.schemaVersion,
             model: job.model,
+            analysisRevision: job.analysisRevision ?? null,
           })
           .toArray();
         const pages = Array.from(
@@ -139,12 +141,14 @@ export function createCommercialVisualProcessor(
             (row) => row.status === "READY" || row.status === "FAILED",
           )
         )
-          await db
-            .collection<VisualJob>("commercialVisualJobs")
-            .updateOne(
-              { _id: job._id, storeId: job.storeId },
-              { $set: { status: "COMPLETE" } },
-            );
+          await db.collection<VisualJob>("commercialVisualJobs").updateOne(
+            {
+              _id: job._id,
+              storeId: job.storeId,
+              analysisRevision: job.analysisRevision ?? null,
+            },
+            { $set: { status: "COMPLETE" } },
+          );
         if (pages.length)
           pending.push({
             storeId: job.storeId,
@@ -177,6 +181,7 @@ export function createCommercialVisualProcessor(
         pageNumber,
         schemaVersion: job.schemaVersion,
         model: job.model,
+        analysisRevision: job.analysisRevision ?? null,
       };
       const records = db.collection<VisualReadingDocument>(
         "commercialVisualReadings",

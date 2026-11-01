@@ -1,3 +1,4 @@
+import { readCurrentCommercialVisualPages } from "../commercial/current-visual-readings";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db } from "mongodb";
@@ -7,9 +8,7 @@ import {
   copilotPdfInputSchema,
   copilotPdfResultSchema,
   copilotEvidenceSchema,
-  COMMERCIAL_VISUAL_SCHEMA_VERSION,
 } from "@fl-copilot/domain";
-import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
   currentCommercialWeek,
   commercialDocumentWeekContext,
@@ -136,50 +135,17 @@ export async function readCommercialPdf(db: Db, storeId: string, raw: unknown) {
   const week = currentCommercialWeek(
     new Date(`${input.businessDate}T12:00:00Z`),
   );
-  const readings = db.collection<{
-    _id: string;
-    storeId: string;
-    sourceDocumentId: string;
-    pageNumber: number;
-    updatedAt: Date;
-  }>("commercialVisualReadings");
-  const filter = {
+  const coherentPages = await readCurrentCommercialVisualPages(
+    db,
     storeId,
-    sourceDocumentId: source._id,
-    checksum: source.checksum,
-    schemaVersion: COMMERCIAL_VISUAL_SCHEMA_VERSION,
-    status: "READY",
-  };
-  const rawPage = await readings
-    .find({ ...filter, pageNumber: input.pageNumber })
-    .sort({ updatedAt: -1, _id: -1 })
-    .maxTimeMS(2000)
-    .limit(1)
-    .next();
-  const page = rawPage
-    ? synchronizedCommercialVisualReadingSchema.parse(rawPage)
-    : null;
-  if (
-    page &&
-    (page.id !== rawPage!._id ||
-      page.storeId !== storeId ||
-      page.sourceDocumentId !== source._id ||
-      page.checksum !== source.checksum ||
-      page.pageNumber !== input.pageNumber)
-  )
+    source._id,
+    source.checksum,
+  );
+  const page =
+    coherentPages.find((p) => p.pageNumber === input.pageNumber) ?? null;
+  if (page && page.checksum !== source.checksum)
     throw Error("COPILOT_PDF_SCOPE_INVALID");
-  const headerRow =
-    page && input.pageNumber !== 1
-      ? await readings
-          .find({ ...filter, pageNumber: 1, model: page.model })
-          .sort({ updatedAt: -1, _id: -1 })
-          .maxTimeMS(2000)
-          .limit(1)
-          .next()
-      : rawPage;
-  const header = headerRow
-    ? synchronizedCommercialVisualReadingSchema.parse(headerRow)
-    : null;
+  const header = coherentPages.find((p) => p.pageNumber === 1) ?? null;
   if (
     header &&
     (header.storeId !== storeId ||

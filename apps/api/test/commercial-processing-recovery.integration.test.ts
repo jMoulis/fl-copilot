@@ -1,3 +1,18 @@
+import {
+  mongoMigrations,
+  runMongoMigrations,
+} from "../src/database/migrations";
+import { createHash } from "node:crypto";
+import { registerCommercialReviewPages } from "../src/commercial/review-sync";
+import { readCurrentCommercialVisualPages } from "../src/commercial/current-visual-readings";
+import { createMongoSyncPullService } from "../src/sync/pull-service";
+import {
+  applyCommercialVisualReading,
+  readCommercialVisualReadings,
+} from "../../mobile/src/commercial/visual-repository";
+import { VisualTestDatabase } from "../../../scripts/test-visual-sqlite";
+import { DatabaseSync } from "node:sqlite";
+import { runLocalMigrations } from "../../mobile/src/db/migrations";
 import { randomUUID } from "node:crypto";
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { parseEnvironment } from "../src/config";
@@ -359,5 +374,291 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       ).toEqual(page);
       expect(provider.extract).not.toHaveBeenCalled();
     });
+    it("reanalyses the same retained original once, preserves old generations, and synchronizes only coherent fresh results", async () => {
+      const f = await fixture(),
+        { storeId, _id: id } = f.s.source;
+      const bytes = new TextEncoder().encode(
+          "synthetic private PDF, no provider call",
+        ),
+        checksum = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+      await f
+        .c("sourceDocuments")
+        .updateOne({ _id: id }, { $set: { checksum } });
+      await f.c("commercialDocumentJobs").updateOne(
+        { _id: id },
+        {
+          $set: {
+            checksum,
+            status: "TO_VALIDATE",
+            stage: "DRAFT_REVIEW",
+            aiModel: f.s.model,
+            aiSchemaVersion: f.s.aiSchema,
+          },
+        },
+      );
+      await f
+        .c("commercialDocumentPages")
+        .updateMany({ storeId }, { $set: { checksum } });
+      const empty = {
+        operations: [],
+        tgIdeas: [],
+        otherInformation: [],
+        warnings: [],
+      };
+      for (const pageNumber of [1, 2]) {
+        await f.c("commercialDocumentAiPages").insertOne({
+          _id: randomUUID(),
+          storeId,
+          sourceDocumentId: id,
+          checksum,
+          parserVersion: f.s.job!.parserVersion,
+          pageNumber,
+          model: f.s.model,
+          schemaVersion: f.s.aiSchema,
+          status: "DRAFT_READY",
+          draft: { blocks: [], warnings: [], issues: [] },
+        });
+        const readingId = randomUUID();
+        await f.c("commercialVisualReadings").insertOne({
+          _id: readingId,
+          id: readingId,
+          storeId,
+          sourceDocumentId: id,
+          checksum,
+          pageNumber,
+          pageCount: 2,
+          model: f.s.model,
+          schemaVersion: f.s.visualSchema,
+          remoteVersion: 1,
+          status: "READY",
+          reading: empty,
+          errorCode: null,
+        });
+      }
+      await f.c("commercialVisualJobs").insertOne({
+        _id: id,
+        storeId,
+        sourceDocumentId: id,
+        checksum,
+        parserVersion: f.s.job!.parserVersion,
+        pageCount: 2,
+        model: f.s.model,
+        schemaVersion: f.s.visualSchema,
+        status: "COMPLETE",
+      });
+      await registerCommercialReviewPages(database, storeId);
+      const oldVisual = await f
+        .c("commercialVisualReadings")
+        .find({ storeId })
+        .sort({ pageNumber: 1 })
+        .toArray();
+      const oldAi = await f
+        .c("commercialDocumentAiPages")
+        .find({ storeId })
+        .toArray();
+      const original = await f.c("sourceDocuments").findOne({ _id: id });
+      const review = await f.service.review(storeId, id);
+      expect(review.canRestart).toBe(true);
+      const input = {
+        operationId: randomUUID(),
+        basisHash: review.basisHash,
+        mode: "RESTART" as const,
+      };
+      await f.service.request(storeId, id, input, f.actor, f.authorize);
+      await f.service.request(storeId, id, input, f.actor, f.authorize);
+      expect(f.dispatch).toHaveBeenCalledTimes(1);
+      await expect(
+        f.service.request(
+          storeId,
+          id,
+          { ...input, operationId: randomUUID() },
+          f.actor,
+          f.authorize,
+        ),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(await f.service.work(storeId, id, input.operationId)).toEqual([
+        "AI",
+        "VISUAL",
+      ]);
+      const aiCall = vi.fn(async () => ({
+        output: { blocks: [], warnings: [] },
+        responseId: "synthetic",
+        resolvedModel: f.s.model,
+        usage: { inputTokens: 0, outputTokens: 0 },
+      }));
+      const visualCall = vi.fn(async () => ({
+        output: empty,
+        responseId: "synthetic",
+        usage: { inputTokens: 0, outputTokens: 0 },
+      }));
+      const ai = createCommercialAiDraftProcessor(
+        database,
+        { model: f.s.model, extract: aiCall },
+        () => processingTime,
+      );
+      const visual = createCommercialVisualProcessor(
+        database,
+        { model: f.s.model, extract: visualCall },
+        { read: async () => bytes },
+        () => processingTime,
+      );
+      await ai.manifest(storeId, id, false);
+      await visual.pending({ storeId, sourceDocumentId: id });
+      expect(
+        (
+          await readCurrentCommercialVisualPages(f.db, storeId, id, checksum)
+        ).map((p) => p.id),
+      ).toEqual(oldVisual.map((p) => p.id));
+      await ai.extractPage(storeId, id, 1);
+      await visual.process(storeId, id, 1);
+      expect(
+        (
+          await readCurrentCommercialVisualPages(f.db, storeId, id, checksum)
+        ).map((p) => p.id),
+      ).toEqual(oldVisual.map((p) => p.id));
+      await ai.extractPage(storeId, id, 2);
+      await ai.finalize(storeId, id);
+      await visual.process(storeId, id, 2);
+      await visual.pending({ storeId, sourceDocumentId: id });
+      await registerCommercialReviewPages(database, storeId);
+      await ai.extractPage(storeId, id, 1);
+      await visual.process(storeId, id, 1);
+      expect(aiCall).toHaveBeenCalledTimes(2);
+      expect(visualCall).toHaveBeenCalledTimes(2);
+      expect(await f.c("sourceDocuments").findOne({ _id: id })).toEqual(
+        original,
+      );
+      expect(await f.c("sourceDocuments").countDocuments({ storeId })).toBe(1);
+      expect(
+        await f
+          .c("commercialDocumentAiPages")
+          .find({ storeId, analysisRevision: null })
+          .toArray(),
+      ).toEqual(oldAi);
+      expect(
+        await f
+          .c("commercialVisualReadings")
+          .find({ storeId, analysisRevision: null })
+          .sort({ pageNumber: 1 })
+          .toArray(),
+      ).toEqual(oldVisual);
+      expect(
+        await f.c("commercialReviewPages").countDocuments({ storeId }),
+      ).toBe(4);
+      const pull = createMongoSyncPullService(database);
+      await expect(
+        pull.pull(storeId, { limit: 200, commercialVisual: "true" }),
+      ).rejects.toMatchObject({
+        publicCode: "COMMERCIAL_ANALYSIS_UPGRADE_REQUIRED",
+      });
+      await expect(
+        pull.pull(
+          storeId,
+          { limit: 200, documentArchiveHistory: "true" },
+          f.actor.userId,
+        ),
+      ).resolves.toMatchObject({ changes: [] });
+      const pulled = await pull.pull(storeId, {
+        limit: 200,
+        commercialVisual: "true",
+        commercialReview: "true",
+        commercialAnalysisRevisions: "true",
+      });
+      const local = new VisualTestDatabase(new DatabaseSync(":memory:"));
+      try {
+        await runLocalMigrations(local);
+        for (const change of pulled.changes.filter(
+          (c) => c.entityType === "commercial_visual_reading",
+        ))
+          await applyCommercialVisualReading(local, storeId, change.entity);
+        expect(
+          (await readCommercialVisualReadings(local, storeId, id)).map(
+            (p) => p.analysisRevision,
+          ),
+        ).toEqual([1, 1]);
+      } finally {
+        local.raw.close();
+      }
+      expect((await f.service.review(storeId, id)).state).toBe("READY");
+      const record = await f
+        .c("commercialDocumentRecoveryRequests")
+        .findOne({ _id: input.operationId });
+      expect(record?.previousJob).toMatchObject({ status: "TO_VALIDATE" });
+      expect(record?.previousVisualJob).toMatchObject({ status: "COMPLETE" });
+    });
+    it("upgrades existing immutable extraction indexes without changing a single legacy record", async () => {
+      const db = (await database.getDb()).client.db(
+        `flc_revision_migrate_${randomUUID().replaceAll("-", "")}`,
+      );
+      try {
+        await runMongoMigrations(
+          db,
+          mongoMigrations.filter((m) => [14, 15, 16].includes(m.version)),
+        );
+        for (const name of [
+          "commercialDocumentAiPages",
+          "commercialVisualReadings",
+          "commercialReviewPages",
+        ]) {
+          const row = {
+            _id: randomUUID(),
+            storeId: randomUUID(),
+            sourceDocumentId: randomUUID(),
+            parserVersion: "p",
+            schemaVersion: "s",
+            model: "m",
+            pageNumber: 1,
+          };
+          await db.collection<{ _id: string }>(name).insertOne(row);
+        }
+        const before = await Promise.all(
+          [
+            "commercialDocumentAiPages",
+            "commercialVisualReadings",
+            "commercialReviewPages",
+          ].map((name) =>
+            db
+              .collection<import("mongodb").Document & { _id: string }>(name)
+              .find()
+              .toArray(),
+          ),
+        );
+        await runMongoMigrations(
+          db,
+          mongoMigrations.filter((m) => [14, 15, 16, 54].includes(m.version)),
+        );
+        await mongoMigrations.find((m) => m.version === 54)!.up(db);
+        const after = await Promise.all(
+          [
+            "commercialDocumentAiPages",
+            "commercialVisualReadings",
+            "commercialReviewPages",
+          ].map((name) =>
+            db
+              .collection<import("mongodb").Document & { _id: string }>(name)
+              .find()
+              .toArray(),
+          ),
+        );
+        expect(after).toEqual(before);
+        for (const [index, name] of [
+          "commercialDocumentAiPages",
+          "commercialVisualReadings",
+          "commercialReviewPages",
+        ].entries()) {
+          const row = before[index]![0]!;
+          await db
+            .collection<import("mongodb").Document & { _id: string }>(name)
+            .insertOne({ ...row, _id: randomUUID(), analysisRevision: 1 });
+          await expect(
+            db
+              .collection<import("mongodb").Document & { _id: string }>(name)
+              .insertOne({ ...row, _id: randomUUID(), analysisRevision: 1 }),
+          ).rejects.toMatchObject({ code: 11000 });
+        }
+      } finally {
+        await db.dropDatabase();
+      }
+    }, 30_000);
   },
 );

@@ -130,6 +130,7 @@ function StoreWeekScreen() {
     [sqlite, storeId, session?.user.id],
   );
   const [archiveEntries, setArchiveEntries] = useState<DocumentArchive[]>([]);
+  const [duplicateSourceId, setDuplicateSourceId] = useState<string>();
   const [preparation, setPreparation] = useState(false);
   const [preparationLoaded, setPreparationLoaded] = useState(false);
   const [query, setQuery] = useState("");
@@ -265,6 +266,7 @@ function StoreWeekScreen() {
         },
         repository,
       );
+      setDuplicateSourceId(result.duplicate ? result.document.id : undefined);
       setMessage(
         result.duplicate
           ? "Ce PDF est déjà enregistré. Aucune nouvelle copie n’a été ajoutée."
@@ -315,6 +317,21 @@ function StoreWeekScreen() {
       </View>
       {message ? (
         <InlineAlert title="Document enregistré" message={message} />
+      ) : null}
+      {duplicateSourceId && session?.stores[0]?.role === "MANAGER" ? (
+        <SecondaryButton
+          label="Recommencer avec ce PDF"
+          disabled={busy}
+          onPress={() =>
+            router.push({
+              pathname: "/commercial-restart",
+              params: {
+                sourceDocumentId: duplicateSourceId,
+                ...(weekStart ? { weekStart } : {}),
+              },
+            })
+          }
+        />
       ) : null}
       {error ? <InlineAlert title="Import impossible" message={error} /> : null}
       {readError ? (

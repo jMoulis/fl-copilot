@@ -24,6 +24,7 @@ export type ProcessingSnapshot = {
     checksum: string;
     objectKey?: string;
     pipelineVersion?: string;
+    analysisRevision?: number;
     status: string;
     stage: string;
     attemptCount?: number;
@@ -45,6 +46,7 @@ export type ProcessingSnapshot = {
     checksum: string;
     parserVersion: string;
     model: string;
+    analysisRevision?: number;
     schemaVersion: string;
     pageCount: number;
     status?: string;
@@ -281,6 +283,19 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
     state,
     stages: steps,
     canResume,
+    canRestart:
+      s.enabled &&
+      valid &&
+      steps[0]!.state === "READY" &&
+      !active &&
+      elapsed(cooldown, now) &&
+      elapsed(notBefore, now) &&
+      !!total &&
+      ["TO_VALIDATE", "AI_FAILED"].includes(job!.status) &&
+      s.aiPages.length === total &&
+      s.aiPages.every((p) => ["DRAFT_READY", "FAILED"].includes(p.status)) &&
+      s.visualPages.length === total &&
+      s.visualPages.every((p) => ["READY", "FAILED"].includes(p.status)),
     messageFr,
     notBefore: notBefore?.toISOString() ?? null,
     eligible,

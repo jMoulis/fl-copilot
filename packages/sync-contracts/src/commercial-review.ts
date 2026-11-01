@@ -12,6 +12,10 @@ export const commercialReviewPageSchema = z.object({
   checksum: z.string().min(1),
   pageNumber: z.number().int().min(1).max(100),
   pageCount: z.number().int().min(1).max(100),
+  analysisRevision: z.preprocess(
+    (v) => (v === null ? undefined : v),
+    z.number().int().positive().optional(),
+  ),
   originalFilename: z.string().nullable(),
   remoteVersion: z.literal(1),
   blocks: z

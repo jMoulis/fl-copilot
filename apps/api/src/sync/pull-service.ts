@@ -4,7 +4,10 @@ import {
   type DocumentArchiveDocument,
 } from "../document-archive-sync";
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
-import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
+import {
+  requireCommercialSourceCompatibility,
+  requireCommercialAnalysisCompatibility,
+} from "../commercial/source-compatibility";
 import {
   readableEmailDecisions,
   type EmailDecisionDocument,
@@ -805,12 +808,18 @@ export function createMongoSyncPullService(
         ? Long.fromString(bounded.at(-1)!.sequence)
         : (selected.at(-1)?.sequence ?? afterSequence);
 
-      if (query.documentArchiveHistory !== "true")
+      if (query.documentArchiveHistory !== "true") {
+        await requireCommercialAnalysisCompatibility(
+          mongoDatabase,
+          storeId,
+          query.commercialAnalysisRevisions === "true",
+        );
         await requireCommercialSourceCompatibility(
           mongoDatabase,
           storeId,
           query.commercialOriginalSources === "true",
         );
+      }
       return {
         ...(query.documentArchives === "true"
           ? { documentArchives: true as const }

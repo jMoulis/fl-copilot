@@ -1,3 +1,7 @@
+## Owner refinement — 1 November: restart a commercial preparation safely
+
+Before the next grouped binary, let a manager explicitly empty the selected week's DRAFT and/or request a fresh analysis of the same retained PDF. Reuse the preparation writer/history and durable analysis-resume queue, composing local intents atomically. Preserve original/identity, retained choices, validations, plans, execution and KPI data. New extraction generations keep immutable old results and source links, without changing parser/model provenance or reuploading bytes. Only terminal, inactive analyses can restart after existing cooldown/backoff; no paid tests or hidden reset framework. See `../qa/M7_COMMERCIAL_RESTART_2026_11_01.md`. Workstreams 3/7 advance; API migration/compatibility must precede grouped native delivery and physical acceptance.
+
 ## Current corrective increment — 1 November: native context recipe
 
 Refresh the existing scoped conversation menu after successful synchronization and preserve an explicit Actions week through document list, summary and preparation/plan navigation. Reuse lastSyncedAt, weekStart and shared Monday validation; manual visual-reader selection remains authoritative. No new persistence/tool/writer or guessed document period. See `../qa/M7_NATIVE_CONTEXT_RECIPE_2026_11_01.md` for actual simulator checks and unverified gestures/acceptance. Group native delivery; no EAS/model request.

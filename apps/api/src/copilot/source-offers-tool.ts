@@ -1,12 +1,11 @@
+import { readCurrentCommercialVisualPages } from "../commercial/current-visual-readings";
 import { createHash } from "node:crypto";
-import type { Db, Document } from "mongodb";
+import type { Db } from "mongodb";
 import {
   copilotSourceOffersInputSchema,
   copilotSourceOffersResultSchema,
   validateSourceOffersResult,
-  COMMERCIAL_VISUAL_SCHEMA_VERSION,
 } from "@fl-copilot/domain";
-import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
   currentCommercialWeek,
   commercialEntryWeekStatus,
@@ -33,33 +32,17 @@ export async function readSourceOffers(db: Db, storeId: string, raw: unknown) {
       },
       { maxTimeMS: 2000 },
     );
-  const row = source
-    ? await db
-        .collection<Document & { _id: string }>("commercialVisualReadings")
-        .find({
+  const page = source
+    ? ((
+        await readCurrentCommercialVisualPages(
+          db,
           storeId,
-          sourceDocumentId: source._id,
-          checksum: source.checksum,
-          pageNumber: input.pageNumber,
-          schemaVersion: COMMERCIAL_VISUAL_SCHEMA_VERSION,
-          status: "READY",
-        })
-        .sort({ updatedAt: -1, _id: -1 })
-        .maxTimeMS(2000)
-        .limit(1)
-        .next()
+          source._id,
+          source.checksum,
+        )
+      ).find((p) => p.pageNumber === input.pageNumber) ?? null)
     : null;
-  const page = row
-    ? synchronizedCommercialVisualReadingSchema.parse(row)
-    : null;
-  if (
-    page &&
-    (page.id !== row!._id ||
-      page.storeId !== storeId ||
-      page.sourceDocumentId !== input.sourceDocumentId ||
-      page.checksum !== source!.checksum ||
-      page.pageNumber !== input.pageNumber)
-  )
+  if (page && page.checksum !== source!.checksum)
     throw Error("SOURCE_OFFERS_SCOPE_INVALID");
   const offers: ReturnType<
     typeof copilotSourceOffersResultSchema.parse

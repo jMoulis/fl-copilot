@@ -36,6 +36,7 @@ export async function registerCommercialReviewPages(
       parserVersion: string;
       aiModel: string;
       aiSchemaVersion: string;
+      analysisRevision?: number;
     }>("commercialDocumentJobs")
     .find({
       storeId,
@@ -59,6 +60,7 @@ export async function registerCommercialReviewPages(
         model: job.aiModel,
         schemaVersion: job.aiSchemaVersion,
         status: "DRAFT_READY",
+        analysisRevision: job.analysisRevision ?? null,
       })
       .toArray();
     const source = await db
@@ -74,6 +76,9 @@ export async function registerCommercialReviewPages(
         pageCount: job.pageCount,
         originalFilename: source?.originalFilename ?? null,
         remoteVersion: 1,
+        ...(job.analysisRevision
+          ? { analysisRevision: job.analysisRevision }
+          : {}),
         blocks: page.draft.blocks,
         warnings: page.draft.warnings,
         issues: page.draft.issues,

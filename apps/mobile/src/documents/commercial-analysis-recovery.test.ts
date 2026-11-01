@@ -365,3 +365,54 @@ it("repairs a malformed presentation cache using a fresh verified read without a
   await f.repo.save(f.storeId, f.id, f.review);
   expect(await f.repo.cached(f.storeId, f.id)).toEqual(f.review);
 });
+
+it("queues an explicit new analysis once, persists RESTART through transport and never substitutes resume authority", async () => {
+  const f = await fixture(),
+    reviewed = { ...f.review, canResume: false, canRestart: true };
+  await f.repo.save(f.storeId, f.id, reviewed);
+  await expect(
+    f.repo.queue(f.storeId, f.ownerId, f.id, reviewed.basisHash, authority),
+  ).rejects.toThrow("COMMERCIAL_ANALYSIS_REVIEW_CHANGED");
+  const first = await f.repo.queue(
+    f.storeId,
+    f.ownerId,
+    f.id,
+    reviewed.basisHash,
+    authority,
+    "RESTART",
+  );
+  expect(
+    await f.repo.queue(
+      f.storeId,
+      f.ownerId,
+      f.id,
+      reviewed.basisHash,
+      authority,
+      "RESTART",
+    ),
+  ).toEqual({ ...first, queued: false });
+  const resume = vi.fn(async (_store, id, payload) => ({
+    operationId: payload.operationId,
+    sourceDocumentId: id,
+    status: "REQUESTED" as const,
+  }));
+  await new CommercialAnalysisRecoveryQueue(f.a, { resume }).process(
+    f.storeId,
+    f.ownerId,
+  );
+  expect(resume).toHaveBeenCalledTimes(1);
+  expect(resume.mock.calls[0]![2]).toMatchObject({
+    mode: "RESTART",
+    basisHash: reviewed.basisHash,
+  });
+  expect(
+    await f.repo.queue(
+      f.storeId,
+      f.ownerId,
+      f.id,
+      reviewed.basisHash,
+      authority,
+      "RESTART",
+    ),
+  ).toEqual({ ...first, queued: false });
+});

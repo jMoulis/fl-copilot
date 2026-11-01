@@ -1086,6 +1086,62 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 54,
+    name: "commercial-analysis-revisions",
+    async up(db) {
+      for (const [name, keys] of [
+        [
+          "commercialDocumentAiPages",
+          {
+            storeId: 1,
+            sourceDocumentId: 1,
+            parserVersion: 1,
+            schemaVersion: 1,
+            model: 1,
+            pageNumber: 1,
+          },
+        ],
+        [
+          "commercialReviewPages",
+          { storeId: 1, sourceDocumentId: 1, pageNumber: 1 },
+        ],
+        [
+          "commercialVisualReadings",
+          {
+            storeId: 1,
+            sourceDocumentId: 1,
+            schemaVersion: 1,
+            model: 1,
+            pageNumber: 1,
+          },
+        ],
+      ] as const) {
+        const collection = db.collection(name);
+        const old = (await collection.listIndexes().toArray()).find(
+          (i) => JSON.stringify(i.key) === JSON.stringify(keys),
+        );
+        if (old && (!old.unique || old.partialFilterExpression))
+          throw Error("Unexpected commercial analysis index");
+        await collection.createIndex(
+          { ...keys, analysisRevision: 1 },
+          { unique: true, name: "commercial_analysis_revision" },
+        );
+        if (old)
+          try {
+            await collection.dropIndex(old.name!);
+          } catch (error) {
+            if (
+              !error ||
+              typeof error !== "object" ||
+              !("code" in error) ||
+              error.code !== 27
+            )
+              throw error;
+          }
+      }
+    },
+  },
 ];
 
 export async function runMongoMigrations(

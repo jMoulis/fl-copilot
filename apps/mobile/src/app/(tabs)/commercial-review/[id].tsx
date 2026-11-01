@@ -481,6 +481,23 @@ function CommercialReviewContent({
         }
       />
       <CommercialOriginalButton sourceDocumentId={id} />
+      {role === "MANAGER" ? (
+        <SecondaryButton
+          label="Recommencer à partir de ce PDF"
+          onPress={() =>
+            discardEdits(() =>
+              router.push({
+                pathname: "/commercial-restart",
+                params: {
+                  sourceDocumentId: id,
+                  ...(weekStart ? { weekStart } : {}),
+                },
+              }),
+            )
+          }
+        />
+      ) : null}
+
       {error ? (
         <InlineAlert title="Examen indisponible" message={error} />
       ) : null}

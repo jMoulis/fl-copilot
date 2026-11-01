@@ -1,3 +1,4 @@
+import { readCurrentCommercialVisualPages } from "../commercial/current-visual-readings";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db, Document } from "mongodb";
@@ -5,9 +6,7 @@ import {
   copilotDocumentComparisonInputSchema,
   copilotDocumentComparisonResultSchema,
   validateDocumentComparisonResult,
-  COMMERCIAL_VISUAL_SCHEMA_VERSION,
 } from "@fl-copilot/domain";
-import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
   compareCommercialDocumentVersions,
   commercialComparisonPeriodCoverage,
@@ -42,40 +41,15 @@ export async function loadCommercialComparisonOriginal(
   const source = sourceSchema.parse(row);
   if (source._id !== documentId || source.storeId !== storeId)
     throw Error("DOCUMENT_COMPARISON_SCOPE");
-  const rows = await db
-    .collection<Document & { _id: string }>("commercialVisualReadings")
-    .aggregate<Document & { _id: string }>(
-      [
-        {
-          $match: {
-            storeId,
-            sourceDocumentId: documentId,
-            checksum: source.checksum,
-            schemaVersion: COMMERCIAL_VISUAL_SCHEMA_VERSION,
-            status: { $in: ["READY", "FAILED"] },
-          },
-        },
-        { $sort: { updatedAt: -1, _id: -1 } },
-        { $group: { _id: "$pageNumber", reading: { $first: "$$ROOT" } } },
-        { $replaceRoot: { newRoot: "$reading" } },
-        { $sort: { pageNumber: 1 } },
-        { $limit: 17 },
-      ],
-      { maxTimeMS: 2000 },
-    )
-    .toArray();
-  if (rows.length > 16) return { source, pages: [], limited: true };
-  const pages = rows.map((r) => {
-    const p = synchronizedCommercialVisualReadingSchema.parse(r);
-    if (
-      p.id !== r._id ||
-      p.storeId !== storeId ||
-      p.sourceDocumentId !== documentId ||
-      p.checksum !== source.checksum
-    )
-      throw Error("DOCUMENT_COMPARISON_SCOPE");
-    return p;
-  });
+  const pages = await readCurrentCommercialVisualPages(
+    db,
+    storeId,
+    documentId,
+    source.checksum,
+  );
+  if (pages.some((p) => p.checksum !== source.checksum))
+    throw Error("DOCUMENT_COMPARISON_SCOPE");
+  if (pages.length > 16) return { source, pages: [], limited: true };
   const count = pages.reduce(
     (n, p) =>
       n +

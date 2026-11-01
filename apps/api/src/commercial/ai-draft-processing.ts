@@ -21,6 +21,7 @@ import {
 } from "./ai-provider.js";
 
 type Job = {
+  analysisRevision?: number | null;
   _id: string;
   storeId: string;
   sourceDocumentId: string;
@@ -41,6 +42,7 @@ type Page = CommercialPdfPage & {
   parserVersion: string;
 };
 type DraftPage = {
+  analysisRevision?: number | null;
   _id: string;
   storeId: string;
   sourceDocumentId: string;
@@ -218,6 +220,7 @@ export function createCommercialAiDraftProcessor(
         parserVersion: job.parserVersion,
         schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
         model: provider.model,
+        analysisRevision: job.analysisRevision ?? null,
       };
       const drafts = db.collection<DraftPage>("commercialDocumentAiPages");
       const existing = await drafts.findOne(identity);
@@ -509,6 +512,7 @@ export function createCommercialAiDraftProcessor(
           parserVersion: job.parserVersion,
           schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
           model: job.aiModel,
+          analysisRevision: job.analysisRevision ?? null,
         })
         .toArray();
       const failed = pages.some((page) => page.status === "FAILED");
@@ -536,6 +540,7 @@ export function createCommercialAiDraftProcessor(
           _id: sourceDocumentId,
           storeId,
           stage: "AI_EXTRACTION",
+          analysisRevision: job.analysisRevision ?? null,
           status: { $in: ["TEXT_READY", "PROCESSING"] },
         },
         {
@@ -580,8 +585,20 @@ async function recoverLegacyBudgetFailures(
     .sort({ createdAt: 1 })
     .limit(100)
     .toArray();
+  const currentJobs = await db
+    .collection<Job>("commercialDocumentJobs")
+    .find({ _id: { $in: [...new Set(legacy.map((p) => p.sourceDocumentId))] } })
+    .toArray();
   const sources = new Map<string, DraftPage>();
   for (const page of legacy) {
+    const current = currentJobs.find(
+      (j) => j._id === page.sourceDocumentId && j.storeId === page.storeId,
+    );
+    if (
+      !current ||
+      (current.analysisRevision ?? 0) !== (page.analysisRevision ?? 0)
+    )
+      continue;
     await pages.updateOne(
       {
         _id: page._id,
@@ -609,6 +626,7 @@ async function recoverLegacyBudgetFailures(
       sourceDocumentId: page.sourceDocumentId,
       model,
       parserVersion: page.parserVersion,
+      analysisRevision: page.analysisRevision ?? null,
       schemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
       status: "FAILED",
     });
@@ -619,6 +637,7 @@ async function recoverLegacyBudgetFailures(
         storeId: page.storeId,
         aiModel: model,
         aiSchemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
+        analysisRevision: page.analysisRevision ?? null,
         stage: "AI_EXTRACTION",
         status: "AI_FAILED",
       },

@@ -190,3 +190,34 @@ it("finalizes fully received pages without rerunning providers and never resumes
   s.visualPages[0]!.hasResult = false;
   expect(commercialProcessingPolicy(s, now).eligible).not.toContain("VISUAL");
 });
+
+it("never offers a new paid run while pending, retrying or missing pages can still execute", () => {
+  const s = commercialProcessingFixture();
+  s.job!.status = "TO_VALIDATE";
+  s.job!.stage = "DRAFT_REVIEW";
+  s.aiPages = [1, 2].map((pageNumber) => ({
+    _id: String(pageNumber),
+    pageNumber,
+    checksum: s.source.checksum,
+    status: "DRAFT_READY",
+    hasResult: true,
+  }));
+  s.visualPages = [1, 2].map((pageNumber) => ({
+    _id: String(pageNumber),
+    pageNumber,
+    checksum: s.source.checksum,
+    status: "READY",
+    hasResult: true,
+  }));
+  expect(commercialProcessingPolicy(s, processingTime).canRestart).toBe(true);
+  s.visualPages.pop();
+  expect(commercialProcessingPolicy(s, processingTime).canRestart).toBe(false);
+  s.visualPages.push({
+    _id: "2",
+    pageNumber: 2,
+    checksum: s.source.checksum,
+    status: "RETRY",
+    hasResult: false,
+  });
+  expect(commercialProcessingPolicy(s, processingTime).canRestart).toBe(false);
+});
