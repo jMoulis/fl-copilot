@@ -103,6 +103,7 @@ export interface MobileSyncServiceOptions {
   commercialExecution?: boolean;
   commercialExecutionActuals?: boolean;
   storeContext?: boolean;
+  storeMerchandising?: boolean;
   storeLayouts?: boolean;
   visualLibrary?: boolean;
   physicalAllocations?: boolean;
@@ -239,6 +240,12 @@ export class MobileSyncService {
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
           `store-layouts:${storeId}`,
+        )
+      : true;
+    const storeMerchandisingAdopted = this.options.storeMerchandising
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `store-merchandising:${storeId}`,
         )
       : true;
     const storeContextAdopted = this.options.storeContext
@@ -397,6 +404,7 @@ export class MobileSyncService {
       !validationAdopted ||
       !versionsAdopted ||
       !storeContextAdopted ||
+      !storeMerchandisingAdopted ||
       !visualsAdopted ||
       !layoutsAdopted ||
       !physicalAllocationsAdopted ||
@@ -437,6 +445,11 @@ export class MobileSyncService {
     const snapshot = await this.withRetry(() =>
       this.transport.bootstrap(storeId),
     );
+    if (
+      this.options.storeMerchandising &&
+      snapshot.entities.storeMerchandising !== true
+    )
+      throw Error("STORE_MERCHANDISING_UPGRADE_REQUIRED");
     await applyBootstrap(
       this.database,
       storeId,
@@ -1416,6 +1429,7 @@ export class MobileSyncService {
   ): SyncPushRequest {
     return {
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
+      ...(this.options.storeMerchandising ? { storeMerchandising: true } : {}),
       ...(this.options.commercialOriginalSources
         ? { commercialOriginalSources: true }
         : {}),

@@ -1,3 +1,4 @@
+import { legacyStoreContext } from "@fl-copilot/domain";
 import {
   documentArchiveKey,
   serializeDocumentArchive,
@@ -522,7 +523,10 @@ export function createMongoSyncPullService(
                 entityId: change.entityId,
                 operation: change.operation,
                 entityVersion: row.version,
-                entity: serializeStoreContext(row),
+                entity:
+                  query.storeMerchandising === "true"
+                    ? serializeStoreContext(row)
+                    : legacyStoreContext(serializeStoreContext(row)),
                 changedAt: change.changedAt.toISOString(),
               };
             }

@@ -4438,3 +4438,10 @@ Private account/store/identity/source, commands, reviewed versions and cancellat
 ## Visual comparison image lifetime — 24 October 2026
 
 The shared manual/chat image preview is scoped to the committed local database, full selected visual metadata and current focus. A new source clears the prior image/loading state before paint; late reads and retained callbacks cannot display the prior source. Cache and native file checks retain their existing verification. Consultation neither downloads nor mutates sources or business conflict decisions. See `../qa/M8_VISUAL_PREVIEW_CONTEXT_2026_10_24.md`; hardware focus/decoding/gesture acceptance remains open.
+
+
+## Owner arbitration — 1 November 2026: minimum merchandising context
+
+Mon magasin contains a compact merchandising section: active F&L TG count, implantation/family notes and main customer circulation. Named TG/face/area locations are optional behind a disclosure; only one location editor is expanded at a time. Each has an optional position, declared hot/intermediate/cold/unknown qualification and reason; TG activity is explicit active/inactive/unknown. Unknown fields are not prefilled from sales, coordinates or pilot assumptions. No detailed 2D drawing or dimensions are prerequisites.
+
+The existing save action persists the complete settings revision locally and synchronizes it. New fields participate in dirty-form protection, stale-baseline checks and readable whole-record conflict comparison. Save errors retain typed values; helper roles can read but cannot change the context. No save silently adopts a weekly commercial plan, changes furniture or records execution. The Copilot reuses the saved declarations in all authorized store conversations; local unsynchronized changes remain qualified.

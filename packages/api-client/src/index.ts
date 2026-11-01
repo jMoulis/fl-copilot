@@ -470,7 +470,10 @@ export class ApiClient {
     if (commercialExecution) query.set("commercialExecution", "true");
     if (commercialExecutionActuals)
       query.set("commercialExecutionActuals", "true");
-    if (storeContext) query.set("storeContext", "true");
+    if (storeContext) {
+      query.set("storeContext", "true");
+      query.set("storeMerchandising", "true");
+    }
     if (storeLayouts) query.set("storeLayouts", "true");
     if (physicalAllocations) query.set("physicalAllocations", "true");
     if (visualLibrary) query.set("visualLibrary", "true");
@@ -573,7 +576,10 @@ export class ApiClient {
     if (commercialExecution) query.set("commercialExecution", "true");
     if (commercialExecutionActuals)
       query.set("commercialExecutionActuals", "true");
-    if (storeContext) query.set("storeContext", "true");
+    if (storeContext) {
+      query.set("storeContext", "true");
+      query.set("storeMerchandising", "true");
+    }
     if (storeLayouts) query.set("storeLayouts", "true");
     if (physicalAllocations) query.set("physicalAllocations", "true");
     if (visualLibrary) query.set("visualLibrary", "true");

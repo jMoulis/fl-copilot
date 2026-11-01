@@ -660,6 +660,17 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "STORE_ROLE_FORBIDDEN",
           "Seul le responsable peut approuver les visuels du magasin.",
         );
+      const hasStoreContextWrite = request.body.commands.some(
+        (c) =>
+          c.entityType === "store_context_settings" ||
+          c.type === "STORE_CONTEXT_SETTINGS_UPSERT",
+      );
+      if (hasStoreContextWrite && principal.role !== "MANAGER")
+        throw new AuthError(
+          403,
+          "STORE_ROLE_FORBIDDEN",
+          "Seul le responsable du magasin peut modifier les réglages et repères merchandising.",
+        );
       const hasLayoutWrite = request.body.commands.some(
         (c) =>
           c.entityType === "store_layout" || c.type === "STORE_LAYOUT_UPSERT",

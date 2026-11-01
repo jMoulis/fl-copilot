@@ -1,6 +1,8 @@
+import { storeMerchandisingSummary } from "@fl-copilot/domain";
 import type { StoreContextSettings } from "@fl-copilot/sync-contracts";
 export function storeContextSummary(s: StoreContextSettings) {
-  return `${s.city} · ${s.postalCode}\nVacances : ${s.schoolZone ? `zone ${s.schoolZone}` : "zone non précisée"}\n${s.locationMode === "CITY" ? "Localisation par commune" : `Position du magasin : ${s.position?.latitude}, ${s.position?.longitude}`}`;
+  const summary = `${s.city} · ${s.postalCode}\nVacances : ${s.schoolZone ? `zone ${s.schoolZone}` : "zone non précisée"}\n${s.locationMode === "CITY" ? "Localisation par commune" : `Position du magasin : ${s.position?.latitude}, ${s.position?.longitude}`}`;
+  return `${summary}\n${storeMerchandisingSummary(s.merchandising)}${s.merchandising?.zones.length ? "\n" + s.merchandising.zones.map((zone) => `${zone.label} : ${zone.position ?? "position non renseignée"} · ${zone.note ?? "sans observation complémentaire"}`).join("\n") : ""}`;
 }
 export function storeContextError(code: string | undefined) {
   return (

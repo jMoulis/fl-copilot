@@ -199,3 +199,78 @@ it("refuses an editor's stale baseline atomically, retaining the current setting
   await x.repo.save(corrected, { ...x.ctx, commandId: randomUUID() }, first);
   expect((await x.repo.get(x.settings.storeId))!.entity).toEqual(corrected);
 });
+
+it("retains merchandising through an unrelated local edit, legacy acknowledgement and restart; explicit clearing remains deliberate", async () => {
+  const x = await setup();
+  const merchandising = {
+    activeTgCount: 2,
+    implantation: "Deux îlots",
+    circulation: "Allée centrale, TG1 en premier",
+    zones: [
+      {
+        id: randomUUID(),
+        label: "TG1",
+        kind: "TG" as const,
+        active: true,
+        position: "Première du parcours",
+        heat: "COLD" as const,
+        note: "Observation déclarée",
+      },
+    ],
+  };
+  await x.repo.save({ ...x.settings, merchandising }, x.ctx);
+  await applyStoreContext(
+    x.tx,
+    x.settings.storeId,
+    { ...x.settings, merchandising },
+    1,
+  );
+  await x.repo.save(
+    { ...x.settings, city: "Paris", version: 2 },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  expect((await x.repo.get(x.settings.storeId))!.entity.merchandising).toEqual(
+    merchandising,
+  );
+  const pending = await new OutboxRepository(x.tx).listPending(
+    x.settings.storeId,
+  );
+  expect(pending.at(-1)!.payload).toMatchObject({ merchandising });
+  await applyStoreContext(
+    x.tx,
+    x.settings.storeId,
+    { ...x.settings, city: "Paris", version: 2 },
+    2,
+  );
+  expect((await x.repo.get(x.settings.storeId))!.entity.merchandising).toEqual(
+    merchandising,
+  );
+  x.db.close();
+  const db = new DatabaseSync(x.path);
+  dbs.push(db);
+  const repo = new StoreContextRepository(new Adapter(db));
+  expect((await repo.get(x.settings.storeId))!.entity.merchandising).toEqual(
+    merchandising,
+  );
+  await repo.save(
+    { ...x.settings, merchandising: null, version: 3 },
+    { ...x.ctx, commandId: randomUUID() },
+  );
+  expect((await repo.get(x.settings.storeId))!.entity.merchandising).toBeNull();
+});
+
+it("does not invent remote merchandising when a legacy snapshot arrives while a local edit is unsynchronized", async () => {
+  const x = await setup();
+  const merchandising = {
+    activeTgCount: 2,
+    implantation: null,
+    circulation: "Allée centrale",
+    zones: [],
+  };
+  await x.repo.save({ ...x.settings, merchandising }, x.ctx);
+  await applyStoreContext(x.tx, x.settings.storeId, x.settings);
+  const current = await x.repo.get(x.settings.storeId);
+  expect(current?.entity.merchandising).toEqual(merchandising);
+  expect(current?.remote).not.toHaveProperty("merchandising");
+  expect(current?.syncState).toBe("PENDING");
+});
