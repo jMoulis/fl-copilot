@@ -1,3 +1,7 @@
+# 1er novembre — retour vers la préparation de semaine
+
+Le formulaire restait sur son premier brouillon après une modification dans le chat ou une réception synchronisée. Reproduction montée sur SQLite, puis rafraîchissement au retour seulement si aucune saisie n'est en cours ; les modifications locales restent conservées et le rédacteur canonique refuse un écrasement périmé. Année et dates visibles dès l'ouverture. Quatre TG sauvegardées/retrouvées et parcours original → deux offres → autre SQLite → plan futur vérifiés séparément ; aucune recette modèle/humaine présumée. [QA](../qa/M7_WEEK_PREPARATION_REFRESH_2026_11_01.md). Vérification visuelle locale bloquée par le Mac verrouillé ; livraison native groupée après CI. **Chantiers 3/7 avancés ; 1/3/4/5/6/7 en cours, 2 code prêt.**
+
 # 1er novembre — consignes analytiques et contexte allégés
 
 Regroupement des règles répétées de provenance/historique/pièces jointes et raccourcissement des descriptions analytiques. Mongo reste l'entrée d'exploration ; les deux calculateurs partagés gardent comparaisons officielles, prix réalisés, Pareto et audit de publication. Aucun nouvel outil, suppression de lecteur historique, changement de budget ou d'orchestration. [Audit et validation](../qa/M7_ANALYSIS_GUIDANCE_CLEANUP_2026_11_01.md). Livraison API groupée et qualité réelle à confirmer ; aucun build EAS. **Chantier 4 avancé ; 1/3/4/5/6/7 en cours ; 2 code prêt.**
