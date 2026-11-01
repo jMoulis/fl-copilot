@@ -230,7 +230,7 @@ it("recovers a confirmed catalogue selection after database reopen without repea
     rmSync(dir, { recursive: true, force: true });
   }
 });
-it("keeps draft/attachments, creates unique references with cached semantic category, publishes offline and restarts without duplicates", async () => {
+it("keeps draft/attachments, creates unique references without AI category assistance, publishes offline and restarts without duplicates", async () => {
   const dir = mkdtempSync(join(tmpdir(), "fl-chat-import-")),
     path = join(dir, "native.db"),
     s = await chatImportFixture(path);
@@ -254,11 +254,11 @@ it("keeps draft/attachments, creates unique references with cached semantic cate
         .prepare("SELECT category,nature,sales_unit FROM products WHERE id!=?")
         .get(s.productId),
     ).toMatchObject({
-      category: "FRUIT",
+      category: "UNKNOWN",
       nature: "UNKNOWN",
       sales_unit: "UNKNOWN",
     });
-    expect(s.calls()).toBe(1);
+    expect(s.calls()).toBe(0);
     const commands = count(s, "sync_outbox");
     s.db.close();
     const reopened = new DatabaseSync(path),
@@ -270,7 +270,7 @@ it("keeps draft/attachments, creates unique references with cached semantic cate
       expect(
         Number(reopened.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n),
       ).toBe(commands);
-      expect(s.calls()).toBe(1);
+      expect(s.calls()).toBe(0);
     } finally {
       reopened.close();
     }
@@ -283,39 +283,6 @@ it("keeps draft/attachments, creates unique references with cached semantic cate
     rmSync(dir, { recursive: true, force: true });
   }
 });
-it.each(["OFFLINE", "FOREIGN_LABEL", "LOW_CONFIDENCE"])(
-  "continues publication with UNKNOWN category when assistance cannot establish it (%s)",
-  async (mode) => {
-    const s = await chatImportFixture();
-    try {
-      const f = await s.add();
-      s.deps.classify = async (labels) => {
-        if (mode === "OFFLINE") throw Error("private provider info");
-        return {
-          model: "test",
-          suggestions: [
-            {
-              label: mode === "FOREIGN_LABEL" ? "injected" : labels[0]!,
-              category: "FRUIT",
-              confidence: mode === "LOW_CONFIDENCE" ? 0.5 : 1,
-              reason: "test",
-            },
-          ],
-        };
-      };
-      expect((await s.controller.run(f.message)).items[0]?.status).toBe(
-        "PUBLISHED",
-      );
-      expect(
-        s.db
-          .prepare("SELECT category FROM products WHERE id!=?")
-          .get(s.productId)!.category,
-      ).toBe("UNKNOWN");
-    } finally {
-      s.db.close();
-    }
-  },
-);
 it.each(["PERMISSION", "DELETED", "SOURCE", "OWNER", "COMMIT", "CANCEL"])(
   "refuses or rolls back automatic business writes (%s)",
   async (mode) => {
@@ -480,7 +447,7 @@ it("asks only about fuzzy identities, persists an explicit choice and continues 
     s.db.close();
   }
 });
-it("fills only UNKNOWN fields on existing matched products and keeps manually classified fields", async () => {
+it("fills only literal source fields without inventing a category or replacing a known unit", async () => {
   const s = await chatImportFixture();
   try {
     await s.a.runAsync(
@@ -493,7 +460,11 @@ it("fills only UNKNOWN fields on existing matched products and keeps manually cl
       s.db
         .prepare("SELECT category,nature,sales_unit FROM products WHERE id=?")
         .get(s.productId),
-    ).toMatchObject({ category: "FRUIT", nature: "BULK", sales_unit: "PIECE" });
+    ).toMatchObject({
+      category: "UNKNOWN",
+      nature: "BULK",
+      sales_unit: "PIECE",
+    });
     const version = s.db
       .prepare("SELECT version FROM products WHERE id=?")
       .get(s.productId)!.version;
@@ -607,7 +578,7 @@ it("records private outcome metadata once with real source periods for later dia
     s.db.close();
   }
 });
-it("pools semantic work across distinct daily files rather than calling the model per workbook", async () => {
+it("processes retained distinct daily files without any model assistance", async () => {
   const s = await chatImportFixture();
   try {
     const a = await s.add({
@@ -645,40 +616,71 @@ it("pools semantic work across distinct daily files rather than calling the mode
       "PUBLISHED",
       "PUBLISHED",
     ]);
-    expect(s.calls()).toBe(1);
+    expect(s.calls()).toBe(0);
     expect(count(s, "products")).toBe(3);
     await s.controller.run(message);
-    expect(s.calls()).toBe(1);
+    expect(s.calls()).toBe(0);
     expect(count(s, "sales_observations")).toBe(4);
   } finally {
     s.db.close();
   }
 });
-it("reserves a model attempt before interruption and does not charge that request again on resume", async () => {
+it("preserves source-bound historical assistance without requesting a new classification", async () => {
   const s = await chatImportFixture();
   try {
-    const f = await s.add(),
-      abort = new AbortController();
-    let calls = 0;
-    s.deps.classify = async () => {
-      calls++;
-      abort.abort();
-      throw Error("interrupted provider");
+    const f = await s.add({ unknownLabel: "POIRE TEST" });
+    const item = await s.batches.get(f.batch.id, f.batch.files[0]!.id);
+    const historical = {
+      labelsHash: await s.deps.digest(JSON.stringify(["POIRE TEST"])),
+      attemptedCount: 1,
+      result: {
+        model: "historical-model",
+        suggestions: [
+          {
+            label: "POIRE TEST",
+            category: "FRUIT" as const,
+            confidence: 0.99,
+            reason: "Retained original result",
+          },
+        ],
+      },
     };
-    await expect(s.controller.run(f.message, abort.signal)).rejects.toThrow();
-    expect(count(s, "products")).toBe(1);
-    expect(
-      (await s.batches.get(f.batch.id, f.batch.files[0]!.id)).assistance
-        ?.attemptedCount,
-    ).toBe(1);
+    await s.batches.saveAssistance(
+      f.batch.id,
+      item.id,
+      item.version,
+      historical,
+    );
     expect((await s.controller.run(f.message)).items[0]?.status).toBe(
       "PUBLISHED",
     );
-    expect(calls).toBe(1);
+    expect((await s.batches.get(f.batch.id, item.id)).assistance).toEqual(
+      historical,
+    );
+    expect(s.calls()).toBe(0);
   } finally {
     s.db.close();
   }
 });
+it("does not start model assistance or create a classification attempt for retained imports", async () => {
+  const s = await chatImportFixture();
+  try {
+    const f = await s.add();
+    s.deps.classify = async () => {
+      throw Error("AI must not be called");
+    };
+    expect((await s.controller.run(f.message)).items[0]?.status).toBe(
+      "PUBLISHED",
+    );
+    expect(
+      (await s.batches.get(f.batch.id, f.batch.files[0]!.id)).assistance,
+    ).toBeUndefined();
+    expect(s.calls()).toBe(0);
+  } finally {
+    s.db.close();
+  }
+});
+
 it("prepares a newly unambiguous reference after an earlier partial preparation without replaying the old subset", async () => {
   const s = await chatImportFixture();
   try {

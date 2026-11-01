@@ -12,7 +12,6 @@ import {
   copilotMessageIsDeleted,
   readCopilotImportReference,
   importAutomationResultSchema,
-  validateImportClassification,
   importSourceClassification,
   copilotImportResolutionChoiceSchema,
   mercalysProductTargetBlocker,
@@ -63,7 +62,6 @@ type Dependencies = {
   digest(s: string): Promise<string>;
   read(uri: string): Promise<Uint8Array<ArrayBuffer>>;
   checksum(bytes: Uint8Array<ArrayBuffer>): Promise<string>;
-  classify(labels: string[], signal?: AbortSignal): Promise<unknown>;
 };
 export async function importManifestHash(
   batch: Awaited<ReturnType<MercalysBatchRepository["header"]>>,
@@ -271,57 +269,20 @@ export class CopilotMercalysImportController {
       labels = new Map<string, Set<string>>(),
       originalLabels = new Map<string, Set<string>>(),
       failed = new Map<string, string>();
-    let attempted = 0;
-    const candidates: Array<{
-        label: string;
-        identifiers: Array<{ type: string; value: string }>;
-      }> = [],
-      cached: Assistance[] = [];
-    const initial = await this.catalog(this.db);
+    const cached: Assistance[] = [];
     for (const item of batch.files) {
       const state = await this.batches(this.db, message.conversationId).get(
         batch.id,
         item.id,
       );
-      attempted += state.assistance?.attemptedCount ?? 0;
       if (state.assistance?.result) cached.push(state.assistance.result);
       if (signal?.aborted) throw Error("IMPORT_CANCELLED");
       try {
-        const { summary, continuation } = await this.preparation(
+        const { summary } = await this.preparation(
           this.db,
           message,
         ).readValidated(batch.id, item.id, signal);
-        const publishedIndexes = new Set(
-          continuation?.publication.records
-            .filter((r) => r.status === "PUBLISHED")
-            .map((r) => r.sourceIndex) ?? [],
-        );
         if (summary.lines.length > 2000) throw Error("IMPORT_REVIEW_LIMIT");
-        for (const resolution of buildMercalysProductResolutions(summary))
-          if (
-            resolution.canCreate &&
-            resolution.identifiers.every(
-              (i) =>
-                !initial.catalog.identifiers.some(
-                  (e) => e.type === i.type && e.value === i.value,
-                ),
-            )
-          )
-            candidates.push({
-              label: resolution.label,
-              identifiers: resolution.identifiers,
-            });
-        for (const line of summary.lines)
-          if (
-            line.match.state === "AUTO_MATCH" &&
-            !publishedIndexes.has(line.record.sourceIndex) &&
-            initial.catalog.products.some(
-              (p) =>
-                p.id === line.match.matchedProductId &&
-                p.category === "UNKNOWN",
-            )
-          )
-            candidates.push({ label: line.record.rawLabel, identifiers: [] });
         for (const { record } of summary.lines)
           for (const [type, value] of [
             ["ITM8", record.itm8],
@@ -369,19 +330,7 @@ export class CopilotMercalysImportController {
       allowPartialPublication: reference.policyVersion === 2,
       failed,
       originalLabels,
-      classificationBudget: { remaining: Math.max(0, 200 - attempted) },
       ambiguous,
-      classificationLabels: [
-        ...new Set(
-          candidates
-            .filter((c) =>
-              c.identifiers.every(
-                (i) => !ambiguous.has(`${i.type}:${i.value}`),
-              ),
-            )
-            .map((c) => c.label),
-        ),
-      ].sort(),
       cachedClassification: cached.length
         ? {
             model: [...new Set(cached.map((c) => c.model))]
@@ -393,62 +342,6 @@ export class CopilotMercalysImportController {
     };
   }
 
-  private async assistance(
-    message: CopilotMessage,
-    item: MercalysBatchItem,
-    labels: string[],
-    budget: { remaining: number },
-    cached: Assistance | null,
-    signal?: AbortSignal,
-  ) {
-    labels = [...new Set(labels)]
-      .filter((label) => !cached?.suggestions.some((s) => s.label === label))
-      .sort();
-    if (!labels.length) return cached;
-    const labelsHash = await this.deps.digest(JSON.stringify(labels));
-    if (item.assistance?.labelsHash === labelsHash) return cached;
-    let result: Assistance | null = cached;
-    const selected = labels.slice(0, budget.remaining),
-      attemptedCount = (item.assistance?.attemptedCount ?? 0) + selected.length;
-    // Reserve before external work: interrupted/provider-failed requests are not silently charged again on restart.
-    await this.proof(this.db, message);
-    await this.batches(this.db, message.conversationId).saveAssistance(
-      item.batchId,
-      item.id,
-      item.version,
-      { labelsHash, result: null, attemptedCount },
-    );
-    budget.remaining -= selected.length;
-    try {
-      const suggestions: Assistance["suggestions"] = [
-          ...(cached?.suggestions ?? []),
-        ],
-        models = new Set<string>(cached ? [cached.model] : []);
-      for (let i = 0; i < selected.length; i += 50) {
-        if (signal?.aborted) throw Error("IMPORT_CANCELLED");
-        await this.proof(this.db, message);
-        const part = validateImportClassification(
-          await this.deps.classify(selected.slice(i, i + 50), signal),
-          selected.slice(i, i + 50),
-        );
-        suggestions.push(...part.suggestions);
-        models.add(part.model);
-      }
-      // Cache is bounded per item; larger lists remain UNKNOWN rather than being silently sampled.
-      if (models.size && suggestions.length <= 2000)
-        result = { model: [...models].join(",").slice(0, 160), suggestions };
-    } catch {
-      if (signal?.aborted) throw Error("IMPORT_CANCELLED");
-    }
-    await this.proof(this.db, message);
-    await this.batches(this.db, message.conversationId).saveAssistance(
-      item.batchId,
-      item.id,
-      item.version + 1,
-      { labelsHash, result, attemptedCount },
-    );
-    return result;
-  }
   private catalogBasis(
     records: Awaited<
       ReturnType<CopilotMercalysImportController["catalog"]>
@@ -745,23 +638,8 @@ export class CopilotMercalysImportController {
   ): Promise<ImportReport> {
     const preflight = await this.preflight(message, signal),
       results: ImportReport["items"] = [];
-    onProgress?.("Classification des références nouvelles ou incomplètes…");
-    const anchor = preflight.batch.files.find(
-      (f) => !preflight.failed.has(f.id),
-    );
-    const classification = anchor
-      ? await this.assistance(
-          message,
-          await this.batches(this.db, message.conversationId).get(
-            preflight.batch.id,
-            anchor.id,
-          ),
-          preflight.classificationLabels,
-          preflight.classificationBudget,
-          preflight.cachedClassification,
-          signal,
-        )
-      : preflight.cachedClassification;
+    // Historical classifications remain source-bound; no new AI classification is requested.
+    const classification = preflight.cachedClassification;
     for (const file of preflight.batch.files) {
       if (signal?.aborted) throw Error("IMPORT_CANCELLED");
       await this.proof(this.db, message);

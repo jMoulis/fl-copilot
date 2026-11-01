@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { TextInput, View } from "react-native";
-import { ChatText as Text } from "./chat-text";
+import { Text, TextInput, View } from "react-native";
 import {
   mercalysProductTargetBlocker,
   searchMercalysProductTargets,

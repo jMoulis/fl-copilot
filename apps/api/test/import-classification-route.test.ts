@@ -3,15 +3,13 @@ import { randomUUID } from "node:crypto";
 import { buildApp } from "../src/build-app";
 import { parseEnvironment } from "../src/config";
 import { AuthError, type AuthService } from "../src/auth/service";
-it("authenticates current manager scope before/after the bounded read-only model adapter and hides provider errors", async () => {
+it("retires import classification for installed clients without calling any model, retaining manager authentication", async () => {
   const storeId = randomUUID(),
     ownerId = randomUUID(),
-    getDb = vi.fn(),
-    classify = vi.fn(async () => ({ model: "test", suggestions: [] }));
-  let role = "MANAGER",
-    revoked = false;
+    getDb = vi.fn();
+  let role = "MANAGER";
   const authorizeStore = vi.fn(async (token: string, id: string) => {
-    if (token !== "valid" || id !== storeId || revoked)
+    if (token !== "valid" || id !== storeId)
       throw new AuthError(403, "FORBIDDEN", "Non autorisé.");
     return {
       storeId,
@@ -29,7 +27,6 @@ it("authenticates current manager scope before/after the bounded read-only model
       close: async () => {},
     },
     auth: { authorizeStore } as unknown as AuthService,
-    importClassifier: classify,
   });
   try {
     const send = (
@@ -49,25 +46,19 @@ it("authenticates current manager scope before/after the bounded read-only model
     const headers = { authorization: "Bearer valid", "x-store-id": storeId };
     role = "STAFF";
     expect((await send(headers)).statusCode).toBe(403);
-    expect(classify).not.toHaveBeenCalled();
     role = "MANAGER";
     expect(
       (await send(headers, { labels: ["Poire"], storeId: randomUUID() }))
         .statusCode,
     ).toBe(400);
-    expect((await send(headers)).statusCode).toBe(200);
-    expect(classify).toHaveBeenCalledOnce();
-    expect(getDb).not.toHaveBeenCalled();
-    classify.mockImplementationOnce(async () => {
-      revoked = true;
-      return { model: "test", suggestions: [] };
+    const retired = await send(headers);
+    expect(retired.statusCode).toBe(410);
+    expect(retired.json()).toMatchObject({
+      code: "IMPORT_CLASSIFICATION_RETIRED",
+      retryable: false,
     });
-    expect((await send(headers)).statusCode).toBe(503);
-    revoked = false;
-    classify.mockRejectedValueOnce(Error("provider credential private"));
-    const error = await send(headers);
-    expect(error.statusCode).toBe(503);
-    expect(error.body).not.toContain("private");
+    expect(getDb).not.toHaveBeenCalled();
+    expect(authorizeStore).toHaveBeenCalledWith("valid", storeId);
   } finally {
     await app.close();
   }

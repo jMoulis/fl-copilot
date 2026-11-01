@@ -566,7 +566,7 @@ it("does not acknowledge an answer dated before its question", async () => {
 });
 
 it.each([true, false])(
-  "offers Mercalys intake only when the host supplies it, dismissing the iOS sheet before opening the picker: %s",
+  "offers Mercalys intake only when the host supplies it, dismissing the iOS sheet before opening the ordinary importer: %s",
   async (allowed) => {
     const open = vi.fn();
     const x = await setup("LOST", undefined, allowed ? open : undefined);
@@ -583,9 +583,7 @@ it.each([true, false])(
           renderer!.root.findByType("BottomSheet" as ElementType),
         row = renderer!.root
           .findAllByType("MenuRow" as ElementType)
-          .find(
-            (node) => node.props.title === "Importer et traiter : XLSX / ZIP",
-          )!;
+          .find((node) => node.props.title === "Ouvrir les imports Mercalys")!;
       expect(sheet().props.visible).toBe(true);
       await act(async () => row.props.onPress());
       expect(open).not.toHaveBeenCalled();

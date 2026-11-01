@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Current corrective increment — 1 November: simplify Mercalys intake
+
+The owner prioritizes removing the parallel conversational import path. Reuse the existing manual importer from chat, retain read-only historical reference links, retire paid semantic import classification and preserve the separately authorized email intake without model assistance. No new tools/agents, data model, provider or writer. This narrowly supersedes earlier T23 direct-chat manual-import expansion, not source retention or ordinary imports. See `../qa/M7_MERCALYS_SIMPLIFICATION_2026_11_01.md`. Release the compatible API after exact-head/master CI; group native UI acceptance with PR 389. Continue auditing actual redundancy before expanding other M7 modules.
+
 ## Current M7 corrective increment — 31 October: model-authored MongoDB reads
 
 The owner approves generic read exploration over safe existing canonical views, replacing the two J-7-only model tools while retaining official KPI readers. Shared strict inputs, one scoped read adapter, bounded Mongo expressions, decimal/null/unit protection, existing evidence and private fact replay; no collection/migration, native schema, provider change or business write. See `../qa/M7_MONGO_EXPLORATION_2026_10_31.md` and the approved narrow arbitration in the AI functional spec. Both exact-head CI gates, merged-master validation and explicit API release precede real chat acceptance; no EAS build is required.
