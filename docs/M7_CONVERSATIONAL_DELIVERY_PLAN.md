@@ -1,3 +1,7 @@
+## Current owner arbitration — 1 November 2026
+
+Mercalys intake is Actions-only (earlier chat-import reference journeys below are superseded). The pense-bête supports weekly merchandising strategy: evaluate enseigne themed TGs, Dramat/prospectus/permanent/degressive lots, discuss presentations and optional counter-promotions using available store figures and expertise, then explicitly save the agreed plan. No extraction/transcription-validation workflow before advice. The reusable minimum store context is active TGs/positions, department implantation and declared habitual circulation, separate from measured 2D feasibility. See the owner arbitration in `specs/COMMERCIAL_PLANNING_AND_PROMOTION_ENGINE_FUNCTIONAL_SPEC.md` and the first-increment [QA/remaining gates](qa/M7_COMMERCIAL_STRATEGY_ENTRY_2026_11_01.md). The full V1 and seven workstreams remain unchanged.
+
 # M7 — Primary conversational Copilot delivery plan
 
 **Approved product direction:** 11 October 2026. **Language:** French in the application; English specifications. **Owner:** Julien. This plan updates the original M7 scope without changing React Native/Expo, SQLite local-first, Fastify/Vercel, MongoDB, private Blob or the shared deterministic engines.

@@ -1,6 +1,7 @@
 import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
+import { CommercialReviewRepository } from "./review-repository";
 import CommercialReviewScreen from "../app/(tabs)/commercial-review/[id]";
 import { nativeCommercialTranscriptionFixture } from "../../../../scripts/test-commercial-transcription-fixtures";
 const runtime = vi.hoisted(() => ({
@@ -41,6 +42,9 @@ vi.mock("@/commercial/offer-choice-repository", () => ({
   readCommercialChoices: async () => [],
 }));
 vi.mock("@/commercial/visual-view", () => ({ CommercialVisualView: "Visual" }));
+vi.mock("@/commercial/strategy-entry", () => ({
+  CommercialStrategyEntry: "Strategy",
+}));
 vi.mock("@/commercial/summary-view", () => ({
   CommercialSummaryView: "Summary",
 }));
@@ -104,7 +108,7 @@ function deferred() {
   });
   return { promise, resolve };
 }
-async function setup(normal = false) {
+async function setup(normal = false, showDetails = true) {
   const s = await nativeCommercialTranscriptionFixture(
     ":memory:",
     normal ? 0.99 : 0.8,
@@ -127,6 +131,8 @@ async function setup(normal = false) {
   await act(async () => {
     tree = create(createElement(CommercialReviewScreen));
   });
+  if (showDetails)
+    await act(async () => hosts("Strategy")[0]!.props.onDetails());
   return s;
 }
 async function openItem(s: Fixture) {
@@ -293,4 +299,21 @@ it("rejects a retained group confirmation from a closed native focus", async () 
   expect(await s.repository.decisions(s.scope.storeId)).toEqual([]);
   expect(s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n).toBe(0);
   expect(runtime.sync).not.toHaveBeenCalled();
+});
+
+it("opens on strategy without reading extraction pages or showing review controls, then loads details on request", async () => {
+  const spy = vi.spyOn(CommercialReviewRepository.prototype, "pages");
+  const s = await setup(true, false);
+  expect(hosts("Strategy")[0]!.props.sourceDocumentId).toBe(
+    s.page.sourceDocumentId,
+  );
+  expect(hosts("Summary")).toHaveLength(0);
+  expect(spy).not.toHaveBeenCalled();
+  expect(
+    hosts("Button").some((n) => String(n.props.label).includes("Recommencer")),
+  ).toBe(false);
+  await act(async () => hosts("Strategy")[0]!.props.onDetails());
+  expect(spy).toHaveBeenCalled();
+  expect(hosts("Summary")).toHaveLength(1);
+  spy.mockRestore();
 });

@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { CommercialStrategyEntry } from "@/commercial/strategy-entry";
 import { CommercialTranscriptionConflict } from "@/commercial/transcription-conflict";
 import {
   readCommercialChoices,
@@ -58,7 +60,7 @@ export default function CommercialReviewScreen() {
     { session } = useAuth(),
     { deviceId } = useLocalDatabase(),
     store = session?.stores[0];
-  if (!session || !store || typeof id !== "string")
+  if (!session || !store || !z.uuid().safeParse(id).success)
     return (
       <AppScreen>
         <InlineAlert
@@ -138,6 +140,7 @@ function CommercialReviewContent({
     Awaited<ReturnType<CommercialReviewRepository["decisions"]>>
   >([]);
   const [viewSummary, setViewSummary] = useState(true);
+  const [details, setDetails] = useState(false);
   const [visuals, setVisuals] = useState<SynchronizedCommercialVisualReading[]>(
     [],
   );
@@ -151,7 +154,7 @@ function CommercialReviewContent({
     [enlarged, setEnlarged] = useState(false);
   const [changes, setChanges] = useState<Record<string, string>>({});
   const refresh = useCallback(async () => {
-    if (!active.current || committedScope.current !== scope) return;
+    if (!details || !active.current || committedScope.current !== scope) return;
     const request = ++reading.current,
       version = focus.current;
     const current = () =>
@@ -172,7 +175,7 @@ function CommercialReviewContent({
     } catch (reason) {
       if (current()) throw reason;
     }
-  }, [repository, storeId, id, sqlite, scope]);
+  }, [repository, storeId, id, sqlite, scope, details]);
   const apply = useCallback(
     (data: Awaited<ReturnType<typeof refresh>>) => {
       if (
@@ -465,7 +468,7 @@ function CommercialReviewContent({
   return (
     <AppScreen key={viewSummary ? "summary" : (item?.key ?? "pending")}>
       <AppHeader
-        title={viewSummary ? "Synthèse commerciale" : "Consulter un extrait"}
+        title={viewSummary ? "Préparer ma semaine" : "Consulter un extrait"}
         subtitle={pages[0]?.originalFilename ?? "Communication commerciale"}
       />
       <SecondaryButton
@@ -481,7 +484,7 @@ function CommercialReviewContent({
         }
       />
       <CommercialOriginalButton sourceDocumentId={id} />
-      {role === "MANAGER" ? (
+      {details && role === "MANAGER" ? (
         <SecondaryButton
           label="Recommencer à partir de ce PDF"
           onPress={() =>
@@ -498,23 +501,39 @@ function CommercialReviewContent({
         />
       ) : null}
 
+      {viewSummary ? (
+        <CommercialStrategyEntry
+          key={`${id}:${weekStart ?? "next"}`}
+          sourceDocumentId={id}
+          storeId={storeId}
+          ownerId={actorId}
+          initialWeekStart={weekStart}
+          onDetails={() => setDetails(true)}
+        />
+      ) : null}
+      {details && viewSummary ? (
+        <SecondaryButton
+          label="Masquer les informations du document"
+          onPress={() => setDetails(false)}
+        />
+      ) : null}
       {error ? (
         <InlineAlert title="Examen indisponible" message={error} />
       ) : null}
-      {loading ? (
+      {details && loading ? (
         <InlineAlert
           title="Lecture locale…"
           message="Chargement des extraits enregistrés sur cet appareil."
         />
       ) : null}
-      {!loading && !pages.length ? (
+      {details && !loading && !pages.length ? (
         <EmptyState
           title="Analyse en attente"
           message="Synchronisez après l’analyse du document. Les extraits seront ensuite disponibles hors connexion."
           icon="document-text-outline"
         />
       ) : null}
-      {viewSummary && visuals.length && !legacy ? (
+      {details && viewSummary && visuals.length && !legacy ? (
         <>
           <CommercialVisualView
             readings={visuals}
@@ -527,13 +546,13 @@ function CommercialReviewContent({
           />
         </>
       ) : null}
-      {viewSummary && legacy && visuals.length ? (
+      {details && viewSummary && legacy && visuals.length ? (
         <SecondaryButton
           label="Revenir à la lecture visuelle"
           onPress={() => setLegacy(false)}
         />
       ) : null}
-      {pages.length && viewSummary && (!visuals.length || legacy) ? (
+      {details && pages.length && viewSummary && (!visuals.length || legacy) ? (
         <CommercialSummaryView
           summary={summary}
           busy={busy}
