@@ -1337,10 +1337,27 @@ it("enriches only server-owned destinations after upgrading a projected history 
         largeAnalyticalContext(),
       ]),
     };
-    await applyCopilotRecord(a, f, "copilot_message", rich);
+    const oldClientProjection = {
+      ...rich,
+      answerSources: rich.answerSources.map(({ chart, ...source }) => {
+        void chart;
+        return source;
+      }),
+    };
+    await applyCopilotRecord(a, f, "copilot_message", oldClientProjection);
+    await applyCopilotRecord(a, f, "copilot_message", rich); // upgrade restores the server-owned chart
+    await applyCopilotRecord(a, f, "copilot_message", oldClientProjection); // old response cannot erase chart
     await applyCopilotRecord(a, f, "copilot_message", base); // older projection cannot erase metadata
     for (const altered of [
       { answerSources: [{ ...rich.answerSources[0]!, value: "changed" }] },
+      {
+        answerSources: [
+          {
+            ...rich.answerSources[0]!,
+            chart: { ...rich.answerSources[0]!.chart, title: "Changed chart" },
+          },
+        ],
+      },
       { text: "changed" },
       { ownerId: randomUUID() },
       {
