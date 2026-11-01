@@ -21,6 +21,7 @@ const runtime = vi.hoisted(() => ({
   decisions: vi.fn(),
   contextMounts: 0,
   push: vi.fn(),
+  params: {} as { weekStart?: string },
   db: {},
   picker: { getDocumentAsync: vi.fn() },
   capture: vi.fn(),
@@ -35,6 +36,7 @@ const initialSync = () => ({
 const Sync = createContext(initialSync());
 vi.mock("expo-router", () => ({
   router: { push: runtime.push },
+  useLocalSearchParams: () => runtime.params,
   useIsFocused: () => useContext(Focus),
 }));
 vi.mock("react-native", () => ({
@@ -202,6 +204,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   sync = initialSync();
   runtime.contextMounts = 0;
+  runtime.params = {};
   runtime.push.mockReset();
   runtime.picker.getDocumentAsync
     .mockReset()
@@ -508,4 +511,33 @@ it("reveals an archived exact duplicate without silently restoring it or creatin
   expect(nodes("Segments")[0]!.props.value).toBe("ARCHIVED");
   expect(text()).toContain("Document 1.pdf");
   expect(runtime.archiveSet).not.toHaveBeenCalled();
+});
+
+it("keeps the explicitly selected Actions week when opening a synchronized commercial document", async () => {
+  runtime.params = { weekStart: "2026-11-02" };
+  runtime.pages.mockResolvedValue([page("document-1")]);
+  await render();
+  await act(async () => button("Voir la synthèse commerciale").props.onPress());
+  expect(runtime.push).toHaveBeenLastCalledWith({
+    pathname: "/commercial-review/[id]",
+    params: { id: "document-1", weekStart: "2026-11-02" },
+  });
+  await act(async () =>
+    button("Contexte et préparation de la semaine").props.onPress(),
+  );
+  await act(async () =>
+    button("Préparer mon plan de semaine et mes TG").props.onPress(),
+  );
+  expect(runtime.push).toHaveBeenLastCalledWith({
+    pathname: "/week-preparation",
+    params: { weekStart: "2026-11-02" },
+  });
+  await act(async () =>
+    button("Voir mon plan de semaine validé").props.onPress(),
+  );
+  expect(runtime.push).toHaveBeenLastCalledWith({
+    pathname: "/commercial-plan",
+    params: { weekStart: "2026-11-02" },
+  });
+  expect(runtime.capture).not.toHaveBeenCalled();
 });

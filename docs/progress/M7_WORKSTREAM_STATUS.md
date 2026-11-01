@@ -1,3 +1,7 @@
+# 1er novembre — recette simulateur et contexte conservé
+
+Expo Go authentifié : synchronisation terminée sans attente/conflit/erreur, catalogue/fiche, comparaison ISO et filtre baisses contrôlés, original semaine 45 lisible dans Aperçu. Deux défauts reproduits : liste des conversations périmée après bootstrap et semaine perdue entre Actions et synthèse. Réutilisation du signal de fin de sync et du paramètre weekStart existants ; source et actions conservées. Le rejeu montre la bonne semaine et ses offres. [Preuves et limites](../qa/M7_NATIVE_CONTEXT_RECIPE_2026_11_01.md). Gestes/tableaux/graphiques et dernière navigation restent non acceptés dans cette recette ; pas de build EAS ou requête IA. **Chantiers 3/4/7 avancés ; 1/3/4/5/6/7 en cours, 2 code prêt.**
+
 # 1er novembre — bases TTC/HT confirmées
 
 Le propriétaire confirme ventes TTC et achats HT. Correction du dictionnaire Mongo, des descriptifs des outils et des preuves/prix moyens structurés ; les anciennes réserves provenaient de ces sorties. Aucun changement des montants, formules, marge importée, unités ou consignes globales. Anciennes mesures lisibles. [QA et limites](../qa/M7_COPILOT_TAX_BASIS_2026_11_01.md). **Chantier 4 avancé ; 1/3/4/5/6/7 en cours, 2 code prêt.** Livraison API après contrôles ; ancien historique inchangé, recette conversationnelle à confirmer.

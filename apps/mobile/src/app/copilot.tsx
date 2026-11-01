@@ -1506,7 +1506,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     return () => {
       alive = false;
     };
-  }, [repo]);
+  }, [repo, lastSyncedAt]);
   const refreshMenu = useCallback(() => {
     setMenu(true);
     setError(undefined);

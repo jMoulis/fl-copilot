@@ -304,6 +304,14 @@ it("makes preparation visible before activity and selects next ISO week from tod
       pathname: "/week-preparation",
       params: { weekStart: "2026-12-28" },
     });
+    const documents = rendered!.root
+      .findAllByType("MenuRow" as never)
+      .find((n) => n.props.title === "Documents commerciaux")!;
+    await act(() => documents.props.onPress());
+    expect(runtime.push.mock.lastCall?.[0]).toEqual({
+      pathname: "/week",
+      params: { weekStart: "2026-12-28" },
+    });
     expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
     await act(() => rendered!.unmount());
     rendered = undefined;

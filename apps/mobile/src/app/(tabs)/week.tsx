@@ -18,10 +18,18 @@ import type { CommercialReviewPage } from "@fl-copilot/sync-contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, type ScrollView } from "react-native";
 import { colors } from "../../design/tokens";
-import { router, type Href, useIsFocused } from "expo-router";
+import {
+  router,
+  type Href,
+  useIsFocused,
+  useLocalSearchParams,
+} from "expo-router";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import { randomUUID } from "expo-crypto";
-import type { LocalSourceDocument } from "@fl-copilot/domain";
+import {
+  contextWeekQuerySchema,
+  type LocalSourceDocument,
+} from "@fl-copilot/domain";
 import { useSync } from "../../sync/sync-provider";
 import { useAuth } from "../../auth/auth-provider";
 import { useLocalDatabase } from "../../providers/database-provider";
@@ -71,6 +79,13 @@ export default function WeekScreen() {
   );
 }
 function StoreWeekScreen() {
+  const params = useLocalSearchParams<{ weekStart?: string }>();
+  const requestedWeek = contextWeekQuerySchema.safeParse({
+    weekStart: params.weekStart,
+  });
+  const weekStart = requestedWeek.success
+    ? requestedWeek.data.weekStart
+    : undefined;
   const focused = useIsFocused();
   const { session } = useAuth();
   const sync = useSync();
@@ -422,7 +437,14 @@ function StoreWeekScreen() {
                     <PrimaryButton
                       label="Voir la synthèse commerciale"
                       onPress={() =>
-                        router.push(`/commercial-review/${sourceId}` as Href)
+                        router.push(
+                          typeof weekStart === "string"
+                            ? {
+                                pathname: "/commercial-review/[id]",
+                                params: { id: sourceId, weekStart },
+                              }
+                            : (`/commercial-review/${sourceId}` as Href),
+                        )
                       }
                     />
                   ) : null}
@@ -550,11 +572,23 @@ function StoreWeekScreen() {
         >
           <SecondaryButton
             label="Préparer mon plan de semaine et mes TG"
-            onPress={() => router.push("/week-preparation")}
+            onPress={() =>
+              router.push(
+                weekStart
+                  ? { pathname: "/week-preparation", params: { weekStart } }
+                  : "/week-preparation",
+              )
+            }
           />
           <SecondaryButton
             label="Voir mon plan de semaine validé"
-            onPress={() => router.push("/commercial-plan")}
+            onPress={() =>
+              router.push(
+                weekStart
+                  ? { pathname: "/commercial-plan", params: { weekStart } }
+                  : "/commercial-plan",
+              )
+            }
           />
           <SecondaryButton
             label="Comparer un PDF corrigé"
@@ -565,7 +599,7 @@ function StoreWeekScreen() {
           {storeId ? (
             <WeeklySubstitutesView
               storeId={storeId}
-              weekStart={currentCommercialWeek().start}
+              weekStart={weekStart ?? currentCommercialWeek().start}
             />
           ) : null}
         </View>
