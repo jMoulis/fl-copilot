@@ -1,3 +1,7 @@
+## Owner refinement — 1 November: charts from existing numerical reads
+
+analytics_query optionally returns a server-calculated chart evidence snapshot for the normal facts/source protocol. Bounded bars and daily lines support monetary values, coherent recorded quantities and paired realized selling prices. Inferred N-1 references at analytics_query/analytics_period tool entry match ISO weekdays; explicit CUSTOM periods are preserved. This adds no model tool, writer, prompt section or collection. Current stored source metadata remains backward readable; native charts require the next grouped binary. See `../qa/M7_COPILOT_CHARTS_2026_11_01.md` for limits and verification.
+
 # 1 November — analytical catalogue cleanup audit
 
 The active Mongo-enabled catalogue already excludes `analytics_daily` and `analytics_product_changes`; their internal readers remain necessary for historical replay. Retain `analytics_query` for official breakdown/comparison/ranking/Pareto/paired selling prices and `analytics_period` for totals, waste/net-sales ratios and publication audits. Neither is an equivalent replacement for the other or for exploratory Mongo pipelines. The cleanup reduces repeated global context/provenance instructions and analytical descriptions, clarifying discovery without adding a routing layer or changing tool schemas/execution. See `../qa/M7_ANALYSIS_GUIDANCE_CLEANUP_2026_11_01.md` for measurements and acceptance limits.

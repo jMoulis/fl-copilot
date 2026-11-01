@@ -178,3 +178,26 @@ it("rejects impossible result coverage", async () => {
       false,
     );
 });
+
+it("retains the resolved ISO period in new fact snapshots without rewriting historical civil reads", () => {
+  const input = {
+    productId: null,
+    currentPeriod: { start: "2026-10-01", end: "2026-10-30" },
+    referencePeriod: { start: "2025-10-01", end: "2025-10-30" },
+    aggregation: "SUM",
+    metrics: ["sales"],
+  };
+  const referencePeriod = { start: "2025-10-02", end: "2025-10-31" };
+  const snapshot = factReadFromTool(JSON.stringify(["period", input]), {
+    currentPeriod: input.currentPeriod,
+    referencePeriod,
+    coverage: [{ metric: "sales" }],
+  });
+  expect(snapshot?.read).toMatchObject({
+    kind: "PERIOD",
+    input: { referencePeriod },
+  });
+  expect(factReadSchema.parse({ kind: "PERIOD", input }).input).toMatchObject({
+    referencePeriod: input.referencePeriod,
+  });
+});

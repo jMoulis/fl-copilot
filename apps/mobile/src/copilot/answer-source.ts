@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   copilotAnswerSourceSchema,
+  chartMatchesContext,
   copilotAnswerSourcesSchema,
   readAnalyticsDestination,
 } from "@fl-copilot/domain";
@@ -23,13 +24,13 @@ export function readAnswerSource(
     analyticsDestinations === undefined
   )
     return source;
-  return {
-    ...source,
-    analyticsContext: readAnalyticsDestination(
-      analyticsDestinations,
-      source.analyticsIndex,
-    ),
-  };
+  const analyticsContext = readAnalyticsDestination(
+    analyticsDestinations,
+    source.analyticsIndex,
+  );
+  if (source.chart && !chartMatchesContext(source.chart, analyticsContext))
+    throw Error("ANSWER_CHART_SCOPE_INVALID");
+  return { ...source, analyticsContext };
 }
 
 export function formatSourcePublication(value: string | null) {

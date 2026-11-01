@@ -54,6 +54,11 @@ export function factReadFromTool(key: string, result: unknown) {
             kind: "PERIOD",
             input: {
               ...(input as object),
+              // Persist the actual resolved scope; old stored civil reads keep their original replay.
+              currentPeriod: (result as { currentPeriod: unknown })
+                .currentPeriod,
+              referencePeriod: (result as { referencePeriod: unknown })
+                .referencePeriod,
               metrics: (
                 result as { coverage: Array<{ metric: string }> }
               ).coverage.map((c) => c.metric),

@@ -180,6 +180,7 @@ export const periodAnalysisInputSchema = z
   .strictObject({
     productId: z.string().uuid().nullable(),
     currentPeriod: copilotAnalysisPeriodSchema,
+    referenceMode: z.enum(["ISO_YEAR", "CUSTOM"]).optional(),
     referencePeriod: copilotAnalysisPeriodSchema.nullable(),
     aggregation: z.enum(["SUM", "AVERAGE"]),
     metrics: z

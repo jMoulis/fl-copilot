@@ -1316,16 +1316,48 @@ it("enriches only server-owned destinations after upgrading a projected history 
           value: "Qualification conservée",
           sourceId: "canonical",
           sourceType: "KPI",
+          analyticsIndex: 0,
+          chart: {
+            version: 1,
+            type: "BARS",
+            title: "CA cité",
+            unit: "EUR",
+            labels: ["Pomme"],
+            series: [
+              {
+                label: "Actuel",
+                period: { start: "2026-10-01", end: "2026-10-15" },
+                points: [{ value: "12.30", status: "PARTIAL" }],
+              },
+            ],
+          },
         },
       ],
       analyticsDestinations: packAnalyticsDestinations([
         largeAnalyticalContext(),
       ]),
     };
-    await applyCopilotRecord(a, f, "copilot_message", rich);
+    const oldClientProjection = {
+      ...rich,
+      answerSources: rich.answerSources.map(({ chart, ...source }) => {
+        void chart;
+        return source;
+      }),
+    };
+    await applyCopilotRecord(a, f, "copilot_message", oldClientProjection);
+    await applyCopilotRecord(a, f, "copilot_message", rich); // upgrade restores the server-owned chart
+    await applyCopilotRecord(a, f, "copilot_message", oldClientProjection); // old response cannot erase chart
     await applyCopilotRecord(a, f, "copilot_message", base); // older projection cannot erase metadata
     for (const altered of [
       { answerSources: [{ ...rich.answerSources[0]!, value: "changed" }] },
+      {
+        answerSources: [
+          {
+            ...rich.answerSources[0]!,
+            chart: { ...rich.answerSources[0]!.chart, title: "Changed chart" },
+          },
+        ],
+      },
       { text: "changed" },
       { ownerId: randomUUID() },
       {
@@ -1352,6 +1384,13 @@ it("enriches only server-owned destinations after upgrading a projected history 
         restored.entity.answerSources,
       ).value,
     ).toBe("Qualification conservée");
+    expect(
+      readAnswerSource(
+        "ref:0",
+        restored.entity.analyticsDestinations,
+        restored.entity.answerSources,
+      ).chart,
+    ).toEqual(rich.answerSources[0]!.chart);
     expect(restored.syncState).toBe("SYNCED");
     expect(
       db.prepare("SELECT count(*) AS n FROM sync_outbox").get(),

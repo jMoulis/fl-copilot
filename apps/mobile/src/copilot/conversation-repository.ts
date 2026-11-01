@@ -116,7 +116,27 @@ export async function applyCopilotRecord(
       (!before || !after || JSON.stringify(before) === JSON.stringify(after)) &&
       (!previousSources ||
         !nextSources ||
-        JSON.stringify(previousSources) === JSON.stringify(nextSources));
+        (previousSources.length === nextSources.length &&
+          previousSources.every((source, i) => {
+            const { chart: previousChart, ...previousSource } = source;
+            const { chart: nextChart, ...nextSource } = nextSources[i]!;
+            return (
+              JSON.stringify(previousSource) === JSON.stringify(nextSource) &&
+              (!previousChart ||
+                !nextChart ||
+                JSON.stringify(previousChart) === JSON.stringify(nextChart))
+            );
+          })));
+    // Old clients strip this optional source field. Upgrade can enrich it, never change or erase it.
+    if (sameMessage && previousSources && nextSources)
+      e = {
+        ...e,
+        answerSources: nextSources.map((source, i) =>
+          !source.chart && previousSources[i]?.chart
+            ? { ...source, chart: previousSources[i]!.chart }
+            : source,
+        ),
+      } as CopilotMessage;
     if (sameMessage && previousSources && !nextSources)
       e = { ...e, answerSources: previousSources } as CopilotMessage;
     // An older projected response cannot erase an already-restored destination.
