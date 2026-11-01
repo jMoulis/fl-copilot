@@ -1,3 +1,7 @@
+# 1 November — owner-approved Mercalys simplification
+
+The previous native direct-chat Mercalys import programme below is superseded for new manual intake: Fichiers opens the existing importer rather than creating an automatic chat import. Historical cards only open retained imports and never run processing on mount. No model-callable Mercalys import tool existed to remove. Paid semantic category assistance is retired across current native/email callers and the API; installed clients receive an authenticated nonretryable 410. Preserve immutable sources, assistance history, canonical publication/reconciliation, private links and explicit discussion handoff. The separately authorized email processing remains, with deterministic/source-bound enrichment and existing identity decisions. Analytical Mongo reads, PDF original reading, memory and useful domain actions are unaffected. See `../qa/M7_MERCALYS_SIMPLIFICATION_2026_11_01.md` for the dependency audit and delivery limits.
+
 # 31 October — MongoDB analytical exploration
 
 Purchase-cost acceptance follow-up: `mongo_list` stays immediately visible even in the large deferred catalogue so the model can inspect existing fields before declaring purchase costs absent. Its description and `mongo_aggregate` advertise purchase amounts/paired mean costs; `analytics_query` clarifies that its realized prices are selling prices and routes purchase reads to Mongo. No extra tool or global prompt. See `../qa/M7_PURCHASE_TOOL_DISCOVERY_2026_10_31.md` for actual-data diagnosis and controlled SDK scope.

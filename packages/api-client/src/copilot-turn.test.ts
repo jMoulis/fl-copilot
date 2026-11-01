@@ -536,32 +536,6 @@ it("cancels a scoped private-history recovery read when its conversation is left
   );
   expect(transport.mock.calls[0]![1]!.signal!.aborted).toBe(true);
 });
-it("sends only bounded labels to authenticated import classification with cancellation", async () => {
-  const transport = vi.fn(
-    async () =>
-      new Response(JSON.stringify({ model: "test", suggestions: [] })),
-  );
-  vi.stubGlobal("fetch", transport);
-  const signal = new AbortController().signal;
-  await new ApiClient("https://test.invalid").importClassification(
-    "test-token",
-    id(4),
-    { labels: ["Poire"] },
-    signal,
-  );
-  expect(transport).toHaveBeenCalledWith(
-    "https://test.invalid/api/v1/copilot/import-classification",
-    expect.objectContaining({
-      method: "POST",
-      body: JSON.stringify({ labels: ["Poire"] }),
-      signal,
-      headers: expect.objectContaining({
-        authorization: "Bearer test-token",
-        "x-store-id": id(4),
-      }),
-    }),
-  );
-});
 
 it("advertises catalogue receipt correction v2 explicitly without adding model mutation authority to the body", async () => {
   const transport = vi.fn<typeof fetch>(

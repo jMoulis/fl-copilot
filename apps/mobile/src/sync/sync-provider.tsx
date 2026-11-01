@@ -469,17 +469,6 @@ export function SyncProvider({ children }: PropsWithChildren) {
             read: (uri) =>
               readNativeEmailProcessingBytes(uri, 20 * 1024 * 1024),
             checksum: async (bytes) => sourceOriginalHash(bytes),
-            classify: (labels, abort) =>
-              withAccessToken(
-                (token) =>
-                  api.importClassification(
-                    token,
-                    message.storeId,
-                    { labels },
-                    abort,
-                  ),
-                message.ownerId,
-              ),
           },
         ).run(message, signal),
     });

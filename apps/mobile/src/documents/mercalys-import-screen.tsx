@@ -8,7 +8,7 @@ import {
   localOperationFailureCode,
   localOperationFailureMessage,
 } from "../observability/local-operation-failure";
-import { MercalysImportProductPicker } from "../copilot/mercalys-import-product-picker";
+import { MercalysImportProductPicker } from "./mercalys-import-product-picker";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,

@@ -773,14 +773,13 @@ function LocalChatPanel({
         ) : null}
         {onOpenMercalys ? (
           <Text style={{ padding: 12, color: colors.muted, lineHeight: 22 }}>
-            Les références uniques sont créées et les lignes sans ambiguïté sont
-            publiées automatiquement, sans attendre les autres produits. Les
-            doutes et les remplacements vous seront demandés ici.
+            Importez vos ventes et votre casse dans l’écran Mercalys, puis
+            revenez ici pour les analyser avec le copilote.
           </Text>
         ) : null}
         {onOpenMercalys ? (
           <MenuRow
-            title="Importer et traiter : XLSX / ZIP"
+            title="Ouvrir les imports Mercalys"
             description="Plusieurs fichiers XLSX ou une archive ZIP"
             icon="documents-outline"
             onPress={() => {

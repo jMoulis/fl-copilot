@@ -1,3 +1,7 @@
+# Approved Mercalys intake simplification — 1 November 2026
+
+The owner withdraws the requirement for a parallel direct-chat Mercalys import workflow and paid category inference during intake. The chat opens the ordinary native importer and discusses published observations. Historical references/results remain retained and readable; opening a message does not authorize processing or publication. Authorized email reception remains a separate shared ingestion path without semantic model calls. Preserve original files, canonical identity/reconciliation, local transactions/Outbox and explicit decisions. This supersedes earlier direct-chat manual-import automation requirements only; analytical exploration, original PDF reading, memory and useful domain actions remain in scope. See `../qa/M7_MERCALYS_SIMPLIFICATION_2026_11_01.md`.
+
 # Approved analytical read arbitration — 31 October 2026
 
 The owner explicitly approved model-authored MongoDB read exploration (`list`, `get`, `aggregate`) to replace over-specialized analytical access. This narrowly supersedes the blanket prohibition of model-generated database reads in §97 for the three documented public views only. It does not authorize unrestricted collections, database credentials, writes or private conversation/account access. The authenticated server fixes the store and projects safe fields before the user pipeline; arbitrary code, cross-collection stages and unbounded work are denied.

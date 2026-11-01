@@ -78,12 +78,7 @@ import {
 } from "@fl-copilot/domain";
 import { previewStoreConflict } from "./copilot/store-conflict-tool.js";
 import { previewReceiptRecovery } from "./copilot/receipt-recovery-tool.js";
-import {
-  importClassificationRequestSchema,
-  importClassificationResultSchema,
-  validateImportClassification,
-} from "@fl-copilot/domain";
-import { createImportClassifier } from "./copilot/import-classification-provider.js";
+import { importClassificationRequestSchema } from "@fl-copilot/domain";
 import { readPriceScenario } from "./copilot/price-scenario-tool.js";
 import { readImplantationScenario } from "./copilot/implantation-tool.js";
 import { inspectCommercialReference } from "./copilot/reference-inspection-tool.js";
@@ -259,7 +254,6 @@ import { createCommercialUploadDispatch } from "./uploads/commercial-upload-disp
 type AppDependencies = {
   database: DatabaseService;
   waitUntil?: (task: Promise<void>) => void;
-  importClassifier?: ReturnType<typeof createImportClassifier>;
   copilotContext?: (
     storeId: string,
     parent: CopilotMessage,
@@ -1776,7 +1770,6 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     {
       schema: {
         body: importClassificationRequestSchema,
-        response: { 200: importClassificationResultSchema },
       },
     },
     async (request) => {
@@ -1797,31 +1790,13 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "STORE_ACCESS_DENIED",
           "Cette action demande les droits responsable.",
         );
-      try {
-        const result = validateImportClassification(
-          await (
-            dependencies.importClassifier ?? createImportClassifier(config)
-          )(request.body),
-          request.body.labels,
-        );
-        if (
-          (await auth.authorizeStore(token.slice(7), storeId)).role !==
-          "MANAGER"
-        )
-          throw new AuthError(
-            403,
-            "STORE_ACCESS_DENIED",
-            "Cette action demande les droits responsable.",
-          );
-        return result;
-      } catch {
-        throw new AuthError(
-          503,
-          "IMPORT_CLASSIFICATION_UNAVAILABLE",
-          "La classification reste à compléter ; l’import des chiffres peut continuer.",
-          true,
-        );
-      }
+      // Compatibility boundary for installed clients; never call a model for import classification.
+      throw new AuthError(
+        410,
+        "IMPORT_CLASSIFICATION_RETIRED",
+        "La classification IA des imports est désactivée. Utilisez les imports Mercalys ; les chiffres peuvent être importés sans catégorie.",
+        false,
+      );
     },
   );
   app.get(
