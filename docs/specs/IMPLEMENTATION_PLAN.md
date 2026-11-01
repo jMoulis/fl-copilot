@@ -1,3 +1,7 @@
+## Owner refinement — 1 November: collaborative conversation
+
+Replace existing conversational guidance after the owner-approved real-chat audit: respect declared field context and uncertainty, continue the prior proposal on a brief go-ahead, use relevant available reads and ask consequential questions. Explain the existing PDF observation-plus-source placeholder accurately; do not add an agent, tool or automatic writer. Global instructions stay no longer than before. See `../qa/M7_COPILOT_CONVERSATION_POSTURE_2026_11_01.md`; combine API delivery with PR 398, keeping real-model acceptance separate from controlled transport checks.
+
 ## Owner refinement — 1 November: sourced charts and comparable N-1
 
 Reuse the existing analytics_query, canonical ISO-weekday comparison and persisted source protocol for bounded native bar/trend charts. Optional chart presentation requests never authorize model-authored values/code. Monetary/quantity/realized-price snapshots preserve coverage and units; explicit CUSTOM periods and historical replay remain intact. No new tool/agent/writer/storage model. See `../qa/M7_COPILOT_CHARTS_2026_11_01.md`. Compatible API and grouped native delivery require their normal exact-head checks; physical acceptance remains separate.
