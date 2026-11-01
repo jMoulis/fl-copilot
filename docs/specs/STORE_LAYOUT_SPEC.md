@@ -1,3 +1,7 @@
+## Owner arbitration — 1 November 2026: minimum context for weekly strategy
+
+Weekly commercial advice first needs active TGs and their positions, department/family implantation and the declared habitual main customer circulation. This is store-owned reusable context. Physical furniture count is not active TG availability; neither flow nor active status may be inferred from coordinates. Detailed dimensions/2D editing remain separate and must not block qualitative strategy. The existing layout has physical inventory/geometry, not active flags or circulation; these missing fields require an explicit backward-compatible canonical contract before implementation, not text hidden in geometry labels or private conversation memory.
+
 # Store plan and furniture specification
 
 Product decisions confirmed with Julien on 19 October 2026. This specification governs M7-T27/T28 and the store settings entry for physical layout. It replaces the earlier assumption that each chat should supply its own complete furniture geometry. The detailed interaction rules below remain to be implemented and accepted on the native app. This specification does not change the canonical native, local-first or synchronization architecture.
