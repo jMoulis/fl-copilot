@@ -1,3 +1,4 @@
+import { copilotChartRequestSchema } from "./copilot-chart";
 import { z } from "zod";
 import { copilotAnalysisPeriodSchema } from "./copilot-context-tools";
 import { productCategorySchema, productNatureSchema } from "./products";
@@ -5,6 +6,8 @@ import { productCategorySchema, productNatureSchema } from "./products";
 export const copilotAnalyticsQuerySchema = z
   .strictObject({
     currentPeriod: copilotAnalysisPeriodSchema,
+    referenceMode: z.enum(["ISO_YEAR", "CUSTOM"]).optional(),
+    chart: copilotChartRequestSchema.optional(),
     referencePeriod: copilotAnalysisPeriodSchema.nullable(),
     groupBy: z.enum(["PRODUCT", "CATEGORY", "NATURE", "DAY", "TOTAL"]),
     metrics: z
@@ -47,6 +50,42 @@ export const copilotAnalyticsQuerySchema = z
     limit: z.number().int().min(1).max(20),
   })
   .superRefine((v, c) => {
+    if (
+      v.chart &&
+      (v.metrics.length !== 1 ||
+        (v.chart.measure !== "CURRENT" && !v.referencePeriod))
+    )
+      c.addIssue({
+        code: "custom",
+        message: "Charts require one metric and a reference for comparison",
+      });
+    if (
+      v.chart &&
+      (v.chart.value ?? "AMOUNT") !== "AMOUNT" &&
+      (!v.includeSalesMeasures ||
+        v.groupBy !== "PRODUCT" ||
+        v.metrics[0] !== "sales" ||
+        v.chart.measure === "CHANGE")
+    )
+      c.addIssue({
+        code: "custom",
+        message:
+          "Quantity/realized-price charts require PRODUCT sales with includeSalesMeasures; CURRENT or CURRENT_REFERENCE only",
+      });
+    if (
+      v.chart?.type === "LINE" &&
+      (((v.chart.value ?? "AMOUNT") === "AMOUNT"
+        ? v.groupBy !== "TOTAL"
+        : v.groupBy !== "PRODUCT" || v.filters.productIds?.length !== 1) ||
+        v.chart.measure === "CHANGE" ||
+        Date.parse(v.currentPeriod.end) - Date.parse(v.currentPeriod.start) >
+          30 * 86400000)
+    )
+      c.addIssue({
+        code: "custom",
+        message:
+          "Trend charts require TOTAL amounts or one PRODUCT quantity/price, CURRENT or CURRENT_REFERENCE and at most 31 days",
+      });
     if (
       v.includeSalesConcentration &&
       (v.groupBy !== "PRODUCT" ||

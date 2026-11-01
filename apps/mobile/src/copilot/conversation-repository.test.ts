@@ -1316,6 +1316,21 @@ it("enriches only server-owned destinations after upgrading a projected history 
           value: "Qualification conservée",
           sourceId: "canonical",
           sourceType: "KPI",
+          analyticsIndex: 0,
+          chart: {
+            version: 1,
+            type: "BARS",
+            title: "CA cité",
+            unit: "EUR",
+            labels: ["Pomme"],
+            series: [
+              {
+                label: "Actuel",
+                period: { start: "2026-10-01", end: "2026-10-15" },
+                points: [{ value: "12.30", status: "PARTIAL" }],
+              },
+            ],
+          },
         },
       ],
       analyticsDestinations: packAnalyticsDestinations([
@@ -1352,6 +1367,13 @@ it("enriches only server-owned destinations after upgrading a projected history 
         restored.entity.answerSources,
       ).value,
     ).toBe("Qualification conservée");
+    expect(
+      readAnswerSource(
+        "ref:0",
+        restored.entity.analyticsDestinations,
+        restored.entity.answerSources,
+      ).chart,
+    ).toEqual(rich.answerSources[0]!.chart);
     expect(restored.syncState).toBe("SYNCED");
     expect(
       db.prepare("SELECT count(*) AS n FROM sync_outbox").get(),

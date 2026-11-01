@@ -1,3 +1,4 @@
+import { resolveCopilotComparison } from "@fl-copilot/analytics-core";
 import {
   copilotMongoReadInputSchema,
   copilotMongoListInputSchema,
@@ -1872,19 +1873,23 @@ export function createCopilotAiProvider(
                 ? {
                     analytics_query: tool({
                       description:
-                        "Calculate official CA, margin and waste breakdowns/comparisons, rankings, realized selling prices and Pareto with shared deterministic formulas. For other data exploration or purchase costs / prix d’achat use mongo_list/mongo_aggregate. Filter by literal name substring (singular keyword), known product IDs or current category/nature; group PRODUCT/CATEGORY/NATURE/DAY/TOTAL. Metrics: sales (net CA), margin (euros), waste (sales value); SUM or available-day AVERAGE. Reference periods are independent; DAY accepts no reference. Optional having filters one numeric condition; sort current/reference/change/percent or GROUP labels/dates. All groups rank before pagination. Set unused filters/reference/having to null, initial offset zero, usually limit ten; follow nextOffset when useful. A name filter selects an analytical set, not a validated product identity. Partial values remain useful with one coverage qualifier; EMPTY/unresolved IDs/limits do not prove zero activity. Taxonomy is current, not historical. includeSalesConcentration requires PRODUCT, sales only, SUM, having null: measures the complete observed cohort before pagination, first-fifth CA share and minimum count reaching eighty percent, independently per period; do not assume 20/80. includeSalesMeasures requires PRODUCT, sales and limit at most ten: quantity totals (even with AVERAGE) and weighted realized selling prices have separate evidence. Prices pair compatible quantities/sales on matching complete days, not daily-price averages or shelf-price history; HT/TTC is unconfirmed. No mixed-unit aggregation, margin-rate average or writes.",
+                        "Calculate official CA, margin and waste breakdowns/comparisons, rankings, realized selling prices and Pareto with shared deterministic formulas. For other data exploration or purchase costs / prix d’achat use mongo_list/mongo_aggregate. Filter by literal name substring (singular keyword), known product IDs or current category/nature; group PRODUCT/CATEGORY/NATURE/DAY/TOTAL. Metrics: sales (net CA), margin (euros), waste (sales value); SUM or available-day AVERAGE. N-1 uses matching ISO weekdays automatically for civil anniversaries; referenceMode CUSTOM preserves an explicitly requested civil/custom reference. DAY accepts no reference. Optional having filters one numeric condition; sort current/reference/change/percent or GROUP labels/dates. All groups rank before pagination. Set unused filters/reference/having to null, initial offset zero, usually limit ten; follow nextOffset when useful. A name filter selects an analytical set, not a validated product identity. Partial values remain useful with one coverage qualifier; EMPTY/unresolved IDs/limits do not prove zero activity. Taxonomy is current, not historical. includeSalesConcentration requires PRODUCT, sales only, SUM, having null: measures the complete observed cohort before pagination, first-fifth CA share and minimum count reaching eighty percent, independently per period; do not assume 20/80. includeSalesMeasures requires PRODUCT, sales and limit at most ten: quantity totals (even with AVERAGE) and weighted realized selling prices have separate evidence. Prices pair compatible quantities/sales on matching complete days, not daily-price averages or shelf-price history; HT/TTC is unconfirmed. Optional chart {type:BARS|LINE, measure:CURRENT|CHANGE|CURRENT_REFERENCE, value:AMOUNT|QUANTITY|REALIZED_PRICE} returns chartEvidenceId: include it in facts and place {{chart:0}} (zero-based facts index) on its own paragraph when useful or requested, at most two per answer. BARS plots the returned ranking/page; AMOUNT is the default. LINE requires at most thirty-one days and TOTAL for amounts. Quantities/realized-price plots require PRODUCT sales and includeSalesMeasures, with compatible recorded units; for LINE select exactly one productId. Those plots support CURRENT or CURRENT_REFERENCE; price is realized selling price, not PA. No mixed-unit aggregation, margin-rate average or writes.",
                       inputSchema: copilotAnalyticsQuerySchema,
                       execute: (input) =>
                         executeRead(
                           JSON.stringify(["analytics-query", input]),
                           async () => {
                             const result = analyticsQueryResultSchema.parse(
-                              await reads.analyticsQuery!(input),
+                              await reads.analyticsQuery!(
+                                resolveCopilotComparison(input),
+                              ),
                             );
                             if (
                               JSON.stringify(result.query) !==
                               JSON.stringify(
-                                copilotAnalyticsQuerySchema.parse(input),
+                                copilotAnalyticsQuerySchema.parse(
+                                  resolveCopilotComparison(input),
+                                ),
                               )
                             )
                               throw Error("READ_SCOPE_INVALID");
@@ -3242,7 +3247,7 @@ export function createCopilotAiProvider(
                 ? {
                     analytics_period: tool({
                       description:
-                        "Calculate official department totals (productId null) or one known product’s totals/daily averages for inclusive calendar periods and an optional independent reference, up to ten years each. Use analytics_query for breakdowns, rankings, Pareto and realized selling prices; mongo_list/mongo_aggregate for general exploration or purchase costs. This tool also returns recorded waste/net-sales ratios from sums, largest observed product waste amounts (SUM), French period labels, available date ranges and synchronized Mercalys publication audits: consult these before requesting files. Ratios of known amounts remain usable when reporting days differ; qualify partial coverage. Delayed waste recording can shift periods, so do not infer actual loss dates. Partial KPIs do not prove omitted import lines. SUM compares totals; AVERAGE compares available-day averages. Missing days stay unknown; never guess a product UUID or silently resolve an ambiguous identity.",
+                        "Calculate official department totals (productId null) or one known product’s totals/daily averages for inclusive calendar periods and an optional independent reference, up to ten years each. Civil-anniversary N-1 is aligned to ISO weekdays; referenceMode CUSTOM preserves an explicit civil/custom comparison. Use analytics_query for breakdowns, rankings, Pareto and realized selling prices; mongo_list/mongo_aggregate for general exploration or purchase costs. This tool also returns recorded waste/net-sales ratios from sums, largest observed product waste amounts (SUM), French period labels, available date ranges and synchronized Mercalys publication audits: consult these before requesting files. Ratios of known amounts remain usable when reporting days differ; qualify partial coverage. Delayed waste recording can shift periods, so do not infer actual loss dates. Partial KPIs do not prove omitted import lines. SUM compares totals; AVERAGE compares available-day averages. Missing days stay unknown; never guess a product UUID or silently resolve an ambiguous identity.",
                       inputSchema: periodAnalysisInputSchema,
                       execute: (input) =>
                         executeRead(
@@ -3252,13 +3257,18 @@ export function createCopilotAiProvider(
                           ]),
                           async () => {
                             const value = periodAnalysisResultSchema.parse(
-                              await reads.period!(input),
+                              await reads.period!(
+                                resolveCopilotComparison(input),
+                              ),
                             );
                             if (
                               JSON.stringify(value.currentPeriod) !==
                                 JSON.stringify(input.currentPeriod) ||
                               JSON.stringify(value.referencePeriod) !==
-                                JSON.stringify(input.referencePeriod) ||
+                                JSON.stringify(
+                                  resolveCopilotComparison(input)
+                                    .referencePeriod,
+                                ) ||
                               value.aggregation !== input.aggregation ||
                               value.target.productId !== input.productId
                             )

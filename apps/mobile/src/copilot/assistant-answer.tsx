@@ -1,3 +1,4 @@
+import { AnswerChart } from "./answer-chart";
 import { router } from "expo-router";
 import { randomUUID } from "expo-crypto";
 import { explorerHref } from "../analytics/explorer-link";
@@ -93,50 +94,75 @@ export function AssistantAnswer({
       return part.replace(/\\([\\`*_[\]|<>])/g, "$1");
     });
   }
+  function inlineChart(block: { type: string; text?: string }, key: number) {
+    if (block.type !== "paragraph") return null;
+    const match = /^\[Graphique\]\(copilot-source:([^)]+)\)$/.exec(
+      block.text ?? "",
+    );
+    if (!match) return null;
+    try {
+      const source = readAnswerSource(
+        match[1]!,
+        analyticsDestinations,
+        answerSources,
+      );
+      return source.chart ? (
+        <AnswerChart
+          key={key}
+          chart={source.chart}
+          onSource={() => openSource(match[1]!)}
+        />
+      ) : null;
+    } catch {
+      return null;
+    }
+  }
   return (
     <View style={styles.answer}>
-      {blocks.map((block, i) =>
-        block.type === "table" ? (
-          <ScrollView
-            key={i}
-            horizontal
-            directionalLockEnabled
-            nestedScrollEnabled
-            canCancelContentTouches
-            keyboardShouldPersistTaps="handled"
-            indicatorStyle="white"
-            showsHorizontalScrollIndicator
-            accessibilityLabel="Tableau de chiffres, faites défiler horizontalement"
-            style={styles.tableScroll}
-          >
-            <View style={styles.table}>
-              {block.rows.map((row, r) => (
-                <View key={r} style={[styles.row, r === 0 && styles.header]}>
-                  {row.map((cell, c) => (
-                    <Text
-                      key={c}
-                      selectable={selectable}
-                      onLongPress={onLongPress}
-                      style={[styles.cell, r === 0 && styles.bold]}
-                    >
-                      {inline(cell)}
-                    </Text>
-                  ))}
-                </View>
-              ))}
-            </View>
-          </ScrollView>
-        ) : (
-          <Text
-            key={i}
-            selectable={selectable}
-            onLongPress={onLongPress}
-            style={[styles.text, block.type === "heading" && styles.heading]}
-          >
-            {block.type === "list" ? "• " : ""}
-            {inline(block.text)}
-          </Text>
-        ),
+      {blocks.map(
+        (block, i) =>
+          inlineChart(block, i) ??
+          (block.type === "table" ? (
+            <ScrollView
+              key={i}
+              horizontal
+              directionalLockEnabled
+              nestedScrollEnabled
+              canCancelContentTouches
+              keyboardShouldPersistTaps="handled"
+              indicatorStyle="white"
+              showsHorizontalScrollIndicator
+              accessibilityLabel="Tableau de chiffres, faites défiler horizontalement"
+              style={styles.tableScroll}
+            >
+              <View style={styles.table}>
+                {block.rows.map((row, r) => (
+                  <View key={r} style={[styles.row, r === 0 && styles.header]}>
+                    {row.map((cell, c) => (
+                      <Text
+                        key={c}
+                        selectable={selectable}
+                        onLongPress={onLongPress}
+                        style={[styles.cell, r === 0 && styles.bold]}
+                      >
+                        {inline(cell)}
+                      </Text>
+                    ))}
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          ) : (
+            <Text
+              key={i}
+              selectable={selectable}
+              onLongPress={onLongPress}
+              style={[styles.text, block.type === "heading" && styles.heading]}
+            >
+              {block.type === "list" ? "• " : ""}
+              {inline(block.text)}
+            </Text>
+          )),
       )}
       <BottomSheet
         visible={!!source}
@@ -148,18 +174,22 @@ export function AssistantAnswer({
             <Text selectable={selectable} style={[styles.text, styles.bold]}>
               {source.label}
             </Text>
-            <Text selectable={selectable} style={styles.text}>
-              {source.value === null
-                ? "Valeur non disponible"
-                : String(source.value)}
-            </Text>
+            {!source.chart ? (
+              <Text selectable={selectable} style={styles.text}>
+                {source.value === null
+                  ? "Valeur non disponible"
+                  : String(source.value)}
+              </Text>
+            ) : null}
             {source.analyticsContext ? (
               <View style={styles.answer}>
                 <Text style={styles.text}>
                   Consultez les données locales actuelles de cette sélection. La
                   valeur citée ci-dessus reste celle de cette discussion.
                   {source.analyticsContext.relation === "RELATED_AMOUNTS"
-                    ? " Le détail affiche les montants en euros qui servent au taux, pas le taux lui-même."
+                    ? source.chart
+                      ? " Le détail présente les montants de vente associés ; les quantités et prix réalisés restent dans le graphique de cette discussion."
+                      : " Le détail affiche les montants en euros qui servent au taux, pas le taux lui-même."
                     : ""}
                 </Text>
                 <SecondaryButton

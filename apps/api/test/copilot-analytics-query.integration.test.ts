@@ -466,4 +466,184 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
       "ANALYTICS_QUERY_SCOPE_INVALID",
     );
   });
+  it.each([false, true])(
+    "uses the installed SDK to align the model query, then renders the actual Mongo chart snapshot (streaming %s)",
+    async (streaming) => {
+      const { createCopilotAiProvider } =
+        await import("../src/copilot/ai-provider");
+      const { parseEnvironment } = await import("../src/config");
+      const { scoreCopilotPriorities, detectCopilotConflicts } =
+        await import("@fl-copilot/analytics-core");
+      const { copilotResponseSchema } = await import("@fl-copilot/domain");
+      const { validateCopilotResponse } =
+        await import("../src/copilot/response-service");
+      const { renderAnswerContent } =
+        await import("../src/copilot/answer-text");
+      const input = query({
+        currentPeriod: { start: "2026-10-01", end: "2026-10-03" },
+        referencePeriod: { start: "2025-10-01", end: "2025-10-03" },
+        chart: { type: "BARS", measure: "CURRENT_REFERENCE" },
+      });
+      let result: Awaited<ReturnType<typeof readAnalyticsQuery>> | undefined;
+      let calls = 0;
+      const provider = createCopilotAiProvider(
+        parseEnvironment({
+          NODE_ENV: "test",
+          OPENAI_API_KEY: "sk-test-only-not-a-real-secret",
+          COPILOT_AI_MODEL: "test-model",
+          COPILOT_AI_TIMEOUT_MS: "5000",
+        }),
+        async (_url, init) => {
+          const sent = JSON.parse(String(init?.body));
+          if (!calls) expect(JSON.stringify(sent.tools)).toContain("chart");
+          const output =
+            calls++ === 0
+              ? [
+                  {
+                    type: "function_call",
+                    id: "fc-chart",
+                    call_id: "call-chart",
+                    name: "analytics_query",
+                    arguments: JSON.stringify(input),
+                  },
+                ]
+              : [
+                  {
+                    type: "message",
+                    id: "msg-chart",
+                    role: "assistant",
+                    status: "completed",
+                    content: [
+                      {
+                        type: "output_text",
+                        text: JSON.stringify({
+                          language: "fr-FR",
+                          summary: "Voici la comparaison.",
+                          facts: [{ evidenceId: result!.chartEvidenceId! }],
+                          narrative: "Voici la comparaison.\n\n{{chart:0}}",
+                          interpretation: [],
+                          recommendations: [],
+                          questions: [],
+                        }),
+                        annotations: [],
+                      },
+                    ],
+                  },
+                ];
+          if (streaming) {
+            const events: unknown[] = [
+              {
+                type: "response.created",
+                response: {
+                  id: "resp-chart",
+                  model: "test-model",
+                  created_at: 1,
+                },
+              },
+            ];
+            for (const [index, item] of output.entries()) {
+              events.push({
+                type: "response.output_item.added",
+                output_index: index,
+                item:
+                  item.type === "function_call"
+                    ? { ...item, arguments: "" }
+                    : { type: "message", id: item.id },
+              });
+              if (item.type === "message" && "content" in item)
+                events.push({
+                  type: "response.output_text.delta",
+                  item_id: item.id,
+                  output_index: index,
+                  delta: item.content![0]!.text,
+                });
+              events.push({
+                type: "response.output_item.done",
+                output_index: index,
+                item: { ...item, status: "completed" },
+              });
+            }
+            events.push({
+              type: "response.completed",
+              response: {
+                usage: {
+                  input_tokens: 10,
+                  output_tokens: 10,
+                  total_tokens: 20,
+                },
+              },
+            });
+            return new Response(
+              events
+                .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+                .join(""),
+              { headers: { "content-type": "text/event-stream" } },
+            );
+          }
+          return new Response(
+            JSON.stringify({
+              id: "resp-chart",
+              object: "response",
+              created_at: 1,
+              model: "test-model",
+              status: "completed",
+              output,
+              usage: { input_tokens: 10, output_tokens: 10, total_tokens: 20 },
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        },
+        {
+          daily: async () => {
+            throw Error("UNEXPECTED_DAILY");
+          },
+          analyticsQuery: async (q) => {
+            expect(q.referencePeriod).toEqual({
+              start: "2025-10-02",
+              end: "2025-10-04",
+            });
+            result = await readAnalyticsQuery(db, storeId, q);
+            return result;
+          },
+        },
+      );
+      const request = {
+        requestId: randomUUID(),
+        storeId,
+        userQuestion: "Compare N-1 en graphique",
+        context: detectCopilotConflicts({
+          batch: scoreCopilotPriorities({
+            storeId,
+            evaluatedAt: "2026-11-01T10:00:00Z",
+            candidates: [],
+          }),
+          intents: [],
+        }),
+      };
+      const generated = await provider.generate(
+        request,
+        copilotResponseSchema,
+        undefined,
+        streaming ? () => undefined : undefined,
+      );
+      const complete = { ...request, evidence: generated.toolEvidence };
+      const response = validateCopilotResponse(generated.output, complete);
+      const rendered = renderAnswerContent(
+        response.narrative!,
+        response.facts,
+        generated.toolEvidence!,
+      );
+      const source = JSON.parse(
+        decodeURIComponent(/copilot-source:([^)]*)/.exec(rendered.text)![1]!),
+      );
+      expect(source.chart.series[1].period).toEqual({
+        start: "2025-10-02",
+        end: "2025-10-04",
+      });
+      expect(source.chart).toEqual(
+        result!.evidence.find((e) => e.id === result!.chartEvidenceId)!.chart,
+      );
+      expect(calls).toBe(2);
+    },
+  );
 });

@@ -1,3 +1,5 @@
+import { buildAnalyticsQueryChart } from "@fl-copilot/analytics-core";
+import type { CopilotChart } from "@fl-copilot/domain";
 import { COPILOT_READ_EVIDENCE_LIMIT } from "./generation-limits";
 import { createHash } from "node:crypto";
 import type { Db } from "mongodb";
@@ -65,6 +67,7 @@ const concentrationPeriodResult = salesConcentrationPeriodSchema.extend({
 });
 export const analyticsQueryResultSchema = z.strictObject({
   query: copilotAnalyticsQuerySchema,
+  chartEvidenceId: z.string().optional(),
   status: z.enum(["AVAILABLE", "EMPTY", "UNAVAILABLE", "LIMIT_EXCEEDED"]),
   totalGroups: z.number().int().nonnegative(),
   evaluatedGroups: z.number().int().nonnegative(),
@@ -352,6 +355,7 @@ export async function readAnalyticsQuery(
     detail: string,
     sourceType: "KPI" | "COMPARISON" | "DATA_QUALITY" = "KPI",
     analyticsContext?: AnalyticsExplorerContext,
+    chart?: CopilotChart,
   ) => {
     // An evidence key is an opaque lookup, not its provenance or a permission.
     // Keep full SHA-256 in sourceId; shorten repeated model output and retain
@@ -367,6 +371,7 @@ export async function readAnalyticsQuery(
         value,
         detail,
         ...(analyticsContext ? { analyticsContext } : {}),
+        ...(chart ? { chart } : {}),
         factKind: sourceType === "DATA_QUALITY" ? "QUALITY" : "DERIVED",
       }),
     );
@@ -579,17 +584,60 @@ export async function readAnalyticsQuery(
     );
     return { ...value, evidenceIds: concentrationEvidenceIds.parse(ids) };
   }
+  const scopeContext: AnalyticsExplorerContext = {
+    schemaVersion: 1,
+    period: {
+      kind: "range",
+      current: query.currentPeriod,
+      reference: query.referencePeriod,
+      aggregation: query.aggregation,
+      basis: "OBSERVED_PRODUCTS",
+    },
+    metric: query.metrics[0]!,
+    filters: { ...query.filters, productId: null },
+  };
+  const chart = buildAnalyticsQueryChart({
+    storeId,
+    query,
+    products,
+    points,
+    result,
+  });
+  if (query.chart && !chart)
+    add(
+      `${sourceId}/chart-unavailable`,
+      "Graphique indisponible",
+      "Les données, périodes ou unités ne permettent pas de tracer les séries demandées sans supposition.",
+      "Les résultats numériques conservés restent consultables.",
+      "DATA_QUALITY",
+      scopeContext,
+    );
+  const chartEvidenceId = chart
+    ? add(
+        `${sourceId}/chart`,
+        chart.title,
+        null,
+        `Période ${query.currentPeriod.start} au ${query.currentPeriod.end}.${query.referencePeriod ? ` Référence ${query.referencePeriod.start} au ${query.referencePeriod.end}.` : ""} Données enregistrées ; points partiels signalés, absents inconnus.`,
+        "KPI",
+        query.chart?.value && query.chart.value !== "AMOUNT"
+          ? { ...scopeContext, relation: "RELATED_AMOUNTS" }
+          : scopeContext,
+        chart,
+      )
+    : undefined;
   add(
     `${sourceId}/scope`,
     "Périmètre du classement",
     `${result.totalGroups} groupes correspondants sur ${result.evaluatedGroups} évalués ; ${result.unknownConditionGroups} exclus de la condition faute de valeur comparable ; ${query.offset} résultats précédents ; ${result.rows.length} affichés ; ${result.hasMore ? "suite disponible" : "fin des résultats"}.`,
     `Période ${period}. Regroupement ${query.groupBy}, indicateurs ${query.metrics.join(", ")}, tri ${query.sort.metric}/${query.sort.value}/${query.sort.direction}. Classement calculé sur l’ensemble des groupes avant pagination. Jours absents et valeurs nulles non remplacés par zéro ; couverture conservée par groupe. Filtres et catégories du catalogue actuel ; produits retirés conservés pour les chiffres historiques.`,
     "DATA_QUALITY",
+    scopeContext,
   );
   return analyticsQueryResultSchema.parse({
     ...result,
     ...(salesConcentration ? { salesConcentration } : {}),
     rows: resultRows,
+    ...(chartEvidenceId ? { chartEvidenceId } : {}),
     status: !result.totalGroups
       ? result.unknownConditionGroups
         ? "UNAVAILABLE"

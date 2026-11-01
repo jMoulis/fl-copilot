@@ -11,7 +11,7 @@ import {
 import type { CopilotResponse } from "@fl-copilot/domain";
 import type { CopilotGenerationRequest } from "./ai-provider.js";
 type Evidence = NonNullable<CopilotGenerationRequest["evidence"]>[number];
-const token = /\{\{(value|label|source):(\d+)\}\}/g;
+const token = /\{\{(value|label|source|chart):(\d+)\}\}/g;
 export function answerProse(text: string) {
   return text.replace(token, "");
 }
@@ -40,8 +40,43 @@ function render(
       throw Error("AMBIGUOUS_ANSWER_EVIDENCE");
     byId.set(item.id, preferEvidenceNavigation(old, item));
   }
+  // Cite the actual numeric read families, even when prose omits links or cites an earlier coverage read.
+  const effectiveFacts = [...facts];
+  if (!partial) {
+    const used = [...text.matchAll(token)];
+    const cited = new Set(
+      used
+        .filter((m) => m[1] === "source" || m[1] === "chart")
+        .map((m) => byId.get(facts[Number(m[2])]?.evidenceId ?? "")?.sourceId),
+    );
+    const missing: string[] = [];
+    for (const m of used) {
+      const item = byId.get(facts[Number(m[2])]?.evidenceId ?? "");
+      if (
+        m[1] !== "value" ||
+        !item ||
+        item.value === null ||
+        !/^-?\d+(?:\.\d+)?$/.test(String(item.value)) ||
+        !["KPI", "COMPARISON"].includes(item.sourceType) ||
+        cited.has(item.sourceId)
+      )
+        continue;
+      cited.add(item.sourceId);
+      const scope =
+        evidence.find(
+          (e) =>
+            e.sourceId === item.sourceId &&
+            e.sourceType === "DATA_QUALITY" &&
+            e.analyticsContext,
+        ) ?? item;
+      effectiveFacts.push({ evidenceId: scope.id });
+      missing.push(`{{source:${effectiveFacts.length - 1}}}`);
+    }
+    if (missing.length) text += "\n\n" + missing.join(" · ");
+  }
+  let chartCount = 0;
   text = text.replace(token, (_whole, kind: string, index: string) => {
-    const item = byId.get(facts[Number(index)]?.evidenceId ?? "");
+    const item = byId.get(effectiveFacts[Number(index)]?.evidenceId ?? "");
     if (!item) {
       if (partial) return "";
       throw Error("UNKNOWN_ANSWER_EVIDENCE");
@@ -60,6 +95,8 @@ function render(
       return escape(formatted);
     }
     if (kind === "label") return escape(item.label);
+    if (kind === "chart" && !item.chart) throw Error("UNKNOWN_ANSWER_CHART");
+    if (kind === "chart" && ++chartCount > 2) kind = "source";
     let analyticsIndex: number | undefined;
     if (destinations && item.analyticsContext) {
       const identity = JSON.stringify(item.analyticsContext);
@@ -73,6 +110,7 @@ function render(
     }
     const metadata: CopilotAnswerSource = {
       label: item.label,
+      ...(item.chart ? { chart: item.chart } : {}),
       value: item.retailExpertise
         ? (item.detail ?? item.value)
         : item.externalResearch
@@ -101,13 +139,13 @@ function render(
         at = sources.length;
         sources.push(metadata);
       }
-      return `[Source](copilot-source:ref:${at})`;
+      return `[${kind === "chart" ? "Graphique" : "Source"}](copilot-source:ref:${at})`;
     }
     const source = encodeURIComponent(JSON.stringify(metadata)).replace(
       /[()]/g,
       (c) => (c === "(" ? "%28" : "%29"),
     );
-    return `[Source](copilot-source:${source})`;
+    return `[${kind === "chart" ? "Graphique" : "Source"}](copilot-source:${source})`;
   });
   if (!partial && /\{\{|\}\}/.test(text))
     throw Error("INVALID_ANSWER_TEMPLATE");

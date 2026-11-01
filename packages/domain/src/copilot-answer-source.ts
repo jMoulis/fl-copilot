@@ -1,3 +1,4 @@
+import { copilotChartSchema, chartMatchesContext } from "./copilot-chart";
 import { z } from "zod";
 import { analyticsExplorerContextSchema } from "./analytics-explorer";
 import { retailExpertiseCitationSchema } from "./retail-expertise";
@@ -11,10 +12,24 @@ export const copilotAnswerSourceSchema = z
     externalResearch: copilotExternalResearchSourceSchema.optional(),
     retailExpertise: retailExpertiseCitationSchema.optional(),
     analyticsContext: analyticsExplorerContextSchema.optional(),
+    chart: copilotChartSchema.optional(),
     analyticsIndex: z.number().int().min(0).max(95).optional(),
   })
   .refine(
     (v) =>
+      !v.chart ||
+      !v.analyticsContext ||
+      chartMatchesContext(v.chart, v.analyticsContext),
+  )
+  .refine(
+    (v) =>
+      (!v.chart ||
+        ((!!v.analyticsContext || v.analyticsIndex !== undefined) &&
+          !v.externalResearch &&
+          !v.retailExpertise &&
+          ["KPI", "COMPARISON", "DATA_QUALITY"].includes(
+            v.sourceType ?? "",
+          ))) &&
       !(v.externalResearch && v.retailExpertise) &&
       !(v.analyticsContext && v.analyticsIndex !== undefined) &&
       (!(v.analyticsContext || v.analyticsIndex !== undefined) ||

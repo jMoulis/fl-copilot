@@ -1,3 +1,7 @@
+## Owner refinement — 1 November: sourced charts and comparable N-1
+
+Reuse the existing analytics_query, canonical ISO-weekday comparison and persisted source protocol for bounded native bar/trend charts. Optional chart presentation requests never authorize model-authored values/code. Monetary/quantity/realized-price snapshots preserve coverage and units; explicit CUSTOM periods and historical replay remain intact. No new tool/agent/writer/storage model. See `../qa/M7_COPILOT_CHARTS_2026_11_01.md`. Compatible API and grouped native delivery require their normal exact-head checks; physical acceptance remains separate.
+
 # Current M7 increment — weekly preparation return, 1 November 2026
 
 Refresh an untouched draft when returning after chat/sync updates; retain unsaved fields and let the canonical revision guard reject stale writes. Reuse existing form comparison/readers without a background loop or writer. Show the selected week dates/year before saving. Verify four TG draft persistence and the existing original-backed offer/second-device/future-plan flow separately; see `../qa/M7_WEEK_PREPARATION_REFRESH_2026_11_01.md`. Group pending native/API work; real model and device acceptance remain open.

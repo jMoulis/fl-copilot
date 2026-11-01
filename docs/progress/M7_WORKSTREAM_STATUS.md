@@ -1,3 +1,7 @@
+# 1er novembre — graphiques du chat et comparaisons N-1
+
+Ajout demandé de barres/courbes natives depuis les calculs partagés et les sources existantes, avec quantités/prix réalisés à unité cohérente. N-1 civil déduit aligné sur semaine/jour ISO ; comparaison personnalisée explicite conservée. Sources numériques rattachées au calcul effectivement utilisé. Aucun nouvel outil, agent, schéma de stockage, dépendance ou rédacteur métier. [QA et limites](../qa/M7_COPILOT_CHARTS_2026_11_01.md). Contrôles locaux/Mongo/SDK et montage natif ; fixture Chrome synthétique, recette iPhone et livraison native groupée encore ouvertes. **Chantiers 4/7 avancés ; 1/3/4/5/6/7 en cours, 2 code prêt.** Aucun build EAS ni essai IA payant.
+
 # 1er novembre — retour vers la préparation de semaine
 
 Le formulaire restait sur son premier brouillon après une modification dans le chat ou une réception synchronisée. Reproduction montée sur SQLite, puis rafraîchissement au retour seulement si aucune saisie n'est en cours ; les modifications locales restent conservées et le rédacteur canonique refuse un écrasement périmé. Année et dates visibles dès l'ouverture. Quatre TG sauvegardées/retrouvées et parcours original → deux offres → autre SQLite → plan futur vérifiés séparément ; aucune recette modèle/humaine présumée. [QA](../qa/M7_WEEK_PREPARATION_REFRESH_2026_11_01.md). Vérification visuelle locale bloquée par le Mac verrouillé ; livraison native groupée après CI. **Chantiers 3/7 avancés ; 1/3/4/5/6/7 en cours, 2 code prêt.**

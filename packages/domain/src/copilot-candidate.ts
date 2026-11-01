@@ -1,3 +1,4 @@
+import { copilotChartSchema, chartMatchesContext } from "./copilot-chart";
 import { z } from "zod";
 import { analyticsExplorerContextSchema } from "./analytics-explorer";
 import { retailExpertiseCitationSchema } from "./retail-expertise";
@@ -47,6 +48,7 @@ export const copilotEvidenceSchema = z
     externalResearch: copilotExternalResearchSourceSchema.optional(),
     retailExpertise: retailExpertiseCitationSchema.optional(),
     analyticsContext: analyticsExplorerContextSchema.optional(),
+    chart: copilotChartSchema.optional(),
     factKind: z.enum([
       "OBSERVED",
       "SOURCE_INSTRUCTION",
@@ -56,6 +58,13 @@ export const copilotEvidenceSchema = z
     ]),
   })
   .strict()
+  .refine(
+    (e) =>
+      !e.chart ||
+      (!!e.analyticsContext &&
+        e.factKind === "DERIVED" &&
+        chartMatchesContext(e.chart, e.analyticsContext)),
+  )
   .refine(
     (e) =>
       !e.analyticsContext ||
