@@ -1,5 +1,9 @@
 # Implementation Plan — Native Offline-First Fruits & Vegetables Copilot
 
+## Owner refinement — 1 November: Mercalys only under Actions
+
+Remove the chat Mercalys shortcut and embedded importer altogether. Keep manual intake in Actions → Imports Mercalys and historical source references passive. Existing unfiltered account/store repository already lists conversation-owned lots; preserve them in place. This supersedes the Fichiers shortcut in the prior increment. No data migration, tool or source deletion. See `../qa/M7_MERCALYS_ACTIONS_ONLY_2026_11_01.md`; group native delivery with PR 389/394 and the single server-description alignment with the next API release.
+
 ## Current corrective increment — 1 November: simplify Mercalys intake
 
 The owner prioritizes removing the parallel conversational import path. Reuse the existing manual importer from chat, retain read-only historical reference links, retire paid semantic import classification and preserve the separately authorized email intake without model assistance. No new tools/agents, data model, provider or writer. This narrowly supersedes earlier T23 direct-chat manual-import expansion, not source retention or ordinary imports. See `../qa/M7_MERCALYS_SIMPLIFICATION_2026_11_01.md`. Release the compatible API after exact-head/master CI; group native UI acceptance with PR 389. Continue auditing actual redundancy before expanding other M7 modules.

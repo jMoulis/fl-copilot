@@ -44,7 +44,6 @@ type PanelProps = {
     onSubmitted: () => Promise<void>,
   ): ReactNode;
   intakeSummary?: ReactNode;
-  onOpenMercalys?(): void;
   onOpenEmailIntake?(): void;
   externalDraftRevision?: number;
   externalMessageRevision?: number | string;
@@ -96,7 +95,6 @@ function LocalChatPanel({
   onPhotographReceipt,
   onAttachReceiptViews,
   renderToolMessage,
-  onOpenMercalys,
   onOpenEmailIntake,
   intakeSummary,
   externalDraftRevision = 0,
@@ -124,7 +122,6 @@ function LocalChatPanel({
   const [fileMenu, setFileMenu] = useState(false);
   const queuedFileAction = useRef<
     | "PDF"
-    | "MERCALYS"
     | "RECEIPTS"
     | "RECEIPT_VIEWS"
     | "CAMERA"
@@ -402,7 +399,6 @@ function LocalChatPanel({
   function performFileAction(
     kind:
       | "PDF"
-      | "MERCALYS"
       | "RECEIPTS"
       | "RECEIPT_VIEWS"
       | "CAMERA"
@@ -419,12 +415,10 @@ function LocalChatPanel({
       kind === "CAMERA"
     )
       void attachReceipts(kind);
-    else onOpenMercalys?.();
   }
   function selectFileAction(
     kind:
       | "PDF"
-      | "MERCALYS"
       | "RECEIPTS"
       | "RECEIPT_VIEWS"
       | "CAMERA"
@@ -566,9 +560,7 @@ function LocalChatPanel({
         activities={activities}
         streamingText={streamingText}
         intakeSummary={intakeSummary}
-        allowIntakeWithoutAttachmentCapacity={
-          !!(onOpenMercalys || onOpenEmailIntake)
-        }
+        allowIntakeWithoutAttachmentCapacity={!!onOpenEmailIntake}
         title={snapshot.conversation.title}
         messages={snapshot.messages
           .map((message) => message.entity)
@@ -597,14 +589,12 @@ function LocalChatPanel({
         onAttach={
           onAttachStorePhotos ||
           onAttachPdf ||
-          onOpenMercalys ||
           onOpenEmailIntake ||
           onAttachReceipts ||
           onAttachReceiptViews ||
           onPhotographReceipt
             ? () => {
                 if (
-                  onOpenMercalys ||
                   onOpenEmailIntake ||
                   onAttachStorePhotos ||
                   onAttachReceipts ||
@@ -768,22 +758,6 @@ function LocalChatPanel({
             icon="document-text-outline"
             onPress={() => {
               selectFileAction("PDF");
-            }}
-          />
-        ) : null}
-        {onOpenMercalys ? (
-          <Text style={{ padding: 12, color: colors.muted, lineHeight: 22 }}>
-            Importez vos ventes et votre casse dans l’écran Mercalys, puis
-            revenez ici pour les analyser avec le copilote.
-          </Text>
-        ) : null}
-        {onOpenMercalys ? (
-          <MenuRow
-            title="Ouvrir les imports Mercalys"
-            description="Plusieurs fichiers XLSX ou une archive ZIP"
-            icon="documents-outline"
-            onPress={() => {
-              selectFileAction("MERCALYS");
             }}
           />
         ) : null}
