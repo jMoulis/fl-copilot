@@ -1684,7 +1684,7 @@ Do not force a score.
 
 Margin shown in substitute recommendations should use validated business metrics only.
 
-Until Mercalys HT/TTC and margin conventions are finalized:
+Owner-confirmed Mercalys basis (1 November 2026): sales are TTC and purchases HT. Imported margin remains the validated source metric; do not subtract HT purchases directly from TTC sales. Continue to:
 
 - preserve source margin values;
 - label them as source values;
