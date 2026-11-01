@@ -25,3 +25,7 @@ Existing controlled SDK tests exercise both JSON and streaming dictionary/discov
 ## Delivery and limits
 
 This is server guidance only, pending grouped API delivery with PR 395's Actions-only instruction. No paid EAS or native change. A controlled transport chooses scripted tools: it proves compatibility and preserved execution, not natural-model selection or conversational quality. Owner response acceptance remains open. No seven-workstream completion is inferred; chantier 4 advances with states 1/3/4/5/6/7 ongoing, 2 code ready.
+
+## Owner tone refinement
+
+The owner requests tutoiement and a warm, relaxed, friendly colleague-to-colleague voice. One sentence in the existing instructions sets that tone; analytical accuracy, evidence and decision requirements stay unchanged. This follow-up awaits the same grouped API delivery, with no native build or paid model test.
