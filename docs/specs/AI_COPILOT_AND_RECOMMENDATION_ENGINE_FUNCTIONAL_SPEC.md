@@ -1,3 +1,7 @@
+# Owner refinement — Mercalys manual import only in Actions, 1 November 2026
+
+The chat no longer opens Mercalys intake at all. The dedicated native Actions → Imports Mercalys entry owns manual imports. Retain historical references as passive metadata and preserve conversation-owned batches, originals and publications in the existing account/store repositories. Other attachments and authorized email reception are unchanged. This supersedes the chat-to-classic-import shortcut below; no new tool or workflow is requested.
+
 # Approved Mercalys intake simplification — 1 November 2026
 
 The owner withdraws the requirement for a parallel direct-chat Mercalys import workflow and paid category inference during intake. The chat opens the ordinary native importer and discusses published observations. Historical references/results remain retained and readable; opening a message does not authorize processing or publication. Authorized email reception remains a separate shared ingestion path without semantic model calls. Preserve original files, canonical identity/reconciliation, local transactions/Outbox and explicit decisions. This supersedes earlier direct-chat manual-import automation requirements only; analytical exploration, original PDF reading, memory and useful domain actions remain in scope. See `../qa/M7_MERCALYS_SIMPLIFICATION_2026_11_01.md`.

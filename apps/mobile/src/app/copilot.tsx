@@ -98,9 +98,6 @@ import { readContextCheckpoint } from "@fl-copilot/domain";
 import { readKnowledgeSuggestion } from "@fl-copilot/domain";
 import { KnowledgeSuggestionCard } from "@/copilot/knowledge-suggestion-card";
 import { fetch as expoFetch } from "expo/fetch";
-import { CopilotIntakeSummary } from "@/copilot/intake-summary";
-import { MercalysImportScreen } from "@/documents/mercalys-import-screen";
-import { MercalysBatchRepository } from "@/documents/mercalys-batch-repository";
 import { CopilotInformationFormController } from "@/copilot/information-form-controller";
 import { InformationFormCard } from "@/copilot/information-form-card";
 import { ProductProposalCard } from "@/copilot/product-proposal-card";
@@ -714,14 +711,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   ) => {
     try {
       readCopilotImportReference(message);
-      return (
-        <MercalysImportCard
-          key={message.id}
-          message={message}
-          canOpen={!!canManageProducts}
-          onOpen={() => setIntakeConversation(message.conversationId)}
-        />
-      );
+      return <MercalysImportCard key={message.id} message={message} />;
     } catch {
       /* Other private artifacts follow. */
     }
@@ -1453,10 +1443,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   >([]);
   const [active, setActive] = useState<string>();
   const [menu, setMenu] = useState(false);
-  const [intakeConversation, setIntakeConversation] = useState<string>();
-  const [draftRefresh, setDraftRefresh] = useState(0);
-  const [intakeRevision, setIntakeRevision] = useState(0);
-  const [intakeBusy, setIntakeBusy] = useState(false);
   const [importMessageRevision, setImportMessageRevision] = useState(0);
 
   const [linkError, setLinkError] = useState<string>();
@@ -1683,11 +1669,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
             ? () => setEmailConversation(active)
             : undefined
         }
-        onOpenMercalys={
-          canManageProducts ? () => setIntakeConversation(active) : undefined
-        }
         externalMessageRevision={`${importMessageRevision}/${lastSyncedAt ?? ""}`}
-        externalDraftRevision={draftRefresh}
         intakeSummary={
           <>
             {canManageProducts && emailIntake ? (
@@ -1700,15 +1682,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 onOpen={() => setEmailConversation(active)}
               />
             ) : null}
-            <CopilotIntakeSummary
-              key={active}
-              db={sqlite}
-              storeId={storeId}
-              ownerId={ownerId}
-              conversationId={active}
-              revision={intakeRevision}
-              onOpen={() => setIntakeConversation(active)}
-            />
           </>
         }
         renderToolMessage={renderProposal}
@@ -1742,42 +1715,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 else router.push("/sync-status");
               })
             }
-          />
-        ) : null}
-      </Modal>
-      <Modal
-        visible={!!intakeConversation}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => {
-          if (!intakeBusy) {
-            setIntakeConversation(undefined);
-            setIntakeRevision((revision) => revision + 1);
-          }
-        }}
-      >
-        {intakeConversation ? (
-          <MercalysImportScreen
-            key={`${storeId}/${ownerId}/${intakeConversation}`}
-            conversationId={intakeConversation}
-            onBusyChange={setIntakeBusy}
-            onClose={() => {
-              setIntakeConversation(undefined);
-              setIntakeRevision((revision) => revision + 1);
-            }}
-            onDiscuss={async (batchId) => {
-              const conversationId = intakeConversation;
-              const intake = new MercalysBatchRepository(sqlite, {
-                storeId,
-                ownerId,
-                conversationId,
-              });
-              const question = await intake.discussionQuestion(batchId);
-              await controller.appendIntakeQuestion(conversationId, question);
-              setDraftRefresh((revision) => revision + 1);
-              setIntakeRevision((revision) => revision + 1);
-              setIntakeConversation(undefined);
-            }}
           />
         ) : null}
       </Modal>

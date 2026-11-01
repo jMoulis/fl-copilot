@@ -108,7 +108,7 @@ async function setup(
     reply: unknown;
     publish(): Promise<void>;
   }) => void,
-  onOpenMercalys?: () => void,
+  onOpenEmailIntake?: () => void,
 ) {
   db = new DatabaseSync(":memory:");
   const a = new Adapter(db),
@@ -192,7 +192,7 @@ async function setup(
     scopeKey: f.storeId + f.ownerId,
     onConversations: vi.fn(),
     externalMessageRevision: 0,
-    onOpenMercalys,
+    onOpenEmailIntake,
   };
   await act(async () => {
     renderer = create(createElement(CopilotLocalChatPanel, props));
@@ -566,7 +566,7 @@ it("does not acknowledge an answer dated before its question", async () => {
 });
 
 it.each([true, false])(
-  "offers Mercalys intake only when the host supplies it, dismissing the iOS sheet before opening the ordinary importer: %s",
+  "offers email intake only when the host supplies it, dismissing the iOS sheet before opening the email inbox: %s",
   async (allowed) => {
     const open = vi.fn();
     const x = await setup("LOST", undefined, allowed ? open : undefined);
@@ -583,8 +583,13 @@ it.each([true, false])(
           renderer!.root.findByType("BottomSheet" as ElementType),
         row = renderer!.root
           .findAllByType("MenuRow" as ElementType)
-          .find((node) => node.props.title === "Ouvrir les imports Mercalys")!;
+          .find((node) => node.props.title === "Recevoir par email")!;
       expect(sheet().props.visible).toBe(true);
+      expect(
+        renderer!.root
+          .findAllByType("MenuRow" as ElementType)
+          .map((node) => node.props.title),
+      ).toEqual(["Recevoir par email"]);
       await act(async () => row.props.onPress());
       expect(open).not.toHaveBeenCalled();
       expect(sheet().props.visible).toBe(false);

@@ -4,18 +4,9 @@ import {
   readCopilotImportReference,
   type CopilotMessage,
 } from "@fl-copilot/domain";
-import { SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
 /** Historical references stay readable; mounting a message never starts an import. */
-export function MercalysImportCard({
-  message,
-  canOpen,
-  onOpen,
-}: {
-  message: CopilotMessage;
-  canOpen: boolean;
-  onOpen(): void;
-}) {
+export function MercalysImportCard({ message }: { message: CopilotMessage }) {
   const { reference } = readCopilotImportReference(message);
   return (
     <View
@@ -31,12 +22,9 @@ export function MercalysImportCard({
         {reference.label}
       </Text>
       <Text>
-        Retrouvez les fichiers conservés et leur état de publication dans les
-        imports Mercalys.
+        Fichiers conservés. Retrouvez leur état de publication dans Actions →
+        Imports Mercalys.
       </Text>
-      {canOpen ? (
-        <SecondaryButton label="Ouvrir les imports Mercalys" onPress={onOpen} />
-      ) : null}
     </View>
   );
 }
