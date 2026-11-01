@@ -212,7 +212,7 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
     ).toContain("66,01 %");
     expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
   });
-  it("reads stored quantities, preserves units and supplies citable weighted realized-price evidence without asserting TTC", async () => {
+  it("reads stored quantities, preserves units and supplies citable weighted realized-price evidence with confirmed TTC basis", async () => {
     await db.collection("productDailyPerformance").updateMany(
       { storeId, productId: banana },
       {
@@ -239,7 +239,7 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
     const row = r.rows.find((p) => p.key === banana)!;
     expect(row.salesMeasures).toMatchObject({
       current: {
-        taxBasis: "UNCONFIRMED",
+        taxBasis: "INCLUDING_VAT",
         quantity: { value: "4.000", unit: "KG", status: "PARTIAL" },
         averageRealizedPrice: {
           value: "2.58",
@@ -256,7 +256,8 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
     )!;
     expect(price.value).toBe("2.58");
     expect(price.label).toContain("€/kg");
-    expect(price.detail).toContain("Base HT/TTC non confirmée");
+    expect(price.detail).toContain("le prix moyen réalisé est TTC");
+    expect(price.detail).not.toContain("non confirmée");
     expect(price.analyticsContext).toBeUndefined();
     const rendered = renderAnswerText(
       "| Quantité | Prix moyen |\n| --- | --- |\n| {{value:0}} kg | {{value:1}} €/kg |\n{{source:1}}",

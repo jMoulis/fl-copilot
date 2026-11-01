@@ -1,0 +1,7 @@
+# Mercalys tax basis — 1 November 2026
+
+The owner confirms that sales are TTC and purchases HT. Previous tool descriptions, the Mongo dictionary, structured sales measures and realized-price evidence explicitly asserted an unconfirmed basis. This was application guidance, not evidence of missing owner files.
+
+Fresh measures now emit INCLUDING_VAT. The schema still reads historical UNCONFIRMED snapshots without relabeling history. The Mongo sales field is TTC and salesCost HT; imported margin stays authoritative. Sales/purchase amounts are independently imported and summed, not inferred from each other. No VAT rate, tax conversion, supplier tariff or shelf-price history is invented. Existing HT-only price-scenario validation is unchanged. Global generation instructions are unchanged; only existing analytical descriptions are corrected. No tool, model, storage migration, sync writer or permission is added.
+
+Existing weighted-ratio and Mongo-to-evidence tests verify unchanged numbers with the confirmed basis; installed SDK JSON/SSE tests check the actual structured tool payload. Legacy schema reading is covered separately. Targeted transactional Mongo tests: 313 passed before the compatibility case. Full structure/lint/typecheck and 4,621 tests pass (744 environment-dependent skips), formatting and API build/import pass. Exact-head push/PR CI are required before merge; compatible API delivery and the next real conversation remain separate acceptance steps. No paid model test or EAS build. Historical replies are retained rather than silently rewritten.

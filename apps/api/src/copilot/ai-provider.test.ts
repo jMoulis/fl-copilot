@@ -2471,7 +2471,7 @@ it.each([false, true])(
       }
       expect(JSON.stringify(body)).toContain(evidence.id);
       expect(JSON.stringify(body)).toContain(priceEvidence.id);
-      expect(JSON.stringify(body)).toContain("UNCONFIRMED");
+      expect(JSON.stringify(body)).toContain("INCLUDING_VAT");
       if (includeConcentration)
         expect(JSON.stringify(body)).toContain(
           concentrationIds.productsFor80Percent,

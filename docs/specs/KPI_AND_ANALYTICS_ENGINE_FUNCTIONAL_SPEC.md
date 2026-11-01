@@ -435,7 +435,7 @@ French UI placeholder:
 Ventes
 ```
 
-Final wording must remain configurable until HT/TTC semantics are fully validated.
+Owner confirmation (1 November 2026): Mercalys sales values are TTC, so the weighted realized selling price is TTC as well. Purchase amounts/costs are HT. Preserve imported values and margin; no VAT rate or automatic conversion is inferred.
 
 ---
 

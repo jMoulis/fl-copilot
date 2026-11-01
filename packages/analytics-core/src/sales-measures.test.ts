@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { calculateSalesMeasures } from "./sales-measures";
+import { calculateSalesMeasures, salesMeasuresSchema } from "./sales-measures";
 const period = { start: "2025-10-01", end: "2025-10-02" };
 const point = (
   date: string,
@@ -19,13 +19,13 @@ const point = (
   },
   quantityUnit: unit,
 });
-it("uses a weighted ratio of matching sales/quantities, retains decimal quantities and never asserts TTC", () => {
+it("uses a weighted ratio of matching sales/quantities, retains decimal quantities and retains confirmed Mercalys TTC basis without tax conversion", () => {
   const r = calculateSalesMeasures(period, [
     point(period.start, "10.00", "1.250"),
     point(period.end, "90.00", "8.750"),
   ]);
   expect(r).toMatchObject({
-    taxBasis: "UNCONFIRMED",
+    taxBasis: "INCLUDING_VAT",
     quantity: { value: "10.000", unit: "KG", status: "AVAILABLE" },
     averageRealizedPrice: {
       value: "10.00",
@@ -151,4 +151,16 @@ it("excludes a pending unit refresh without hiding known money or claiming the p
     quantity: { value: "2", status: "PARTIAL", reason: "MISSING_INPUT" },
     averageRealizedPrice: { value: "5.00", pairedDays: 1, status: "PARTIAL" },
   });
+});
+
+it("reads a legacy tax-basis snapshot without relabeling its history", () => {
+  const fresh = calculateSalesMeasures(period, [
+    point(period.start, "10", "2"),
+  ]);
+  const legacy = salesMeasuresSchema.parse({
+    ...fresh,
+    taxBasis: "UNCONFIRMED",
+  });
+  expect(legacy.taxBasis).toBe("UNCONFIRMED");
+  expect(legacy.averageRealizedPrice).toEqual(fresh.averageRealizedPrice);
 });
