@@ -213,3 +213,26 @@ it("plots all 31 dates across both canonical daily pages", () => {
   );
   expect(chart.labels.at(-1)).toBe("2026-10-31");
 });
+
+it("does not plot groups excluded by the requested condition", () => {
+  const query: CopilotAnalyticsQuery = {
+    ...base,
+    referencePeriod: null,
+    having: {
+      metric: "sales",
+      value: "CURRENT",
+      operator: "GT",
+      threshold: "100",
+    },
+    chart: { type: "LINE", measure: "CURRENT" },
+  };
+  const input = {
+    storeId,
+    query,
+    products,
+    points: [point("2026-10-01", "5")],
+  };
+  const result = executeAnalyticsQuery(input);
+  expect(result.rows).toEqual([]);
+  expect(buildAnalyticsQueryChart({ ...input, result })).toBeUndefined();
+});

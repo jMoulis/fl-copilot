@@ -25,7 +25,7 @@ export function buildAnalyticsQueryChart(input: {
 }) {
   const { query, result } = input,
     request = query.chart;
-  if (!request) return undefined;
+  if (!request || !result.rows.length) return undefined;
   const metric = query.metrics[0]!;
   if ((request.value ?? "AMOUNT") !== "AMOUNT") {
     const field =
@@ -126,7 +126,6 @@ export function buildAnalyticsQueryChart(input: {
       points: ReturnType<typeof point>[];
     }[];
   if (request.type === "BARS") {
-    if (!result.rows.length) return undefined;
     labels = result.rows.map((r) => r.label);
     const values = (side: "CURRENT" | "REFERENCE" | "CHANGE") =>
       result.rows.map((r) => {
