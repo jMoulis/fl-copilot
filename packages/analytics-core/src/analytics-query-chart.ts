@@ -101,7 +101,7 @@ export function buildAnalyticsQueryChart(input: {
       qualification:
         request.value === "QUANTITY"
           ? "Unités enregistrées, sans conversion."
-          : "Prix réalisé pondéré sur les mêmes journées exploitables ; base HT/TTC non confirmée.",
+          : "Prix moyen réalisé TTC, pondéré sur les mêmes journées exploitables.",
       labels: request.type === "BARS" ? result.rows.map((r) => r.label) : days,
       series,
     });

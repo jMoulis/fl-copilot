@@ -895,7 +895,7 @@ type SalesObservation = {
 
 Raw Mercalys values must be preserved.
 
-Do not rename source values to normalized HT/TTC business concepts before the business dictionary is confirmed.
+Owner-confirmed business dictionary (1 November 2026): Mercalys sales values and realized selling prices are VAT-inclusive (TTC); purchase amounts and costs are VAT-exclusive (HT). Preserve the original fields and imported margin. Do not infer a VAT rate, convert amounts automatically, or recalculate imported margin by subtracting HT purchases directly from TTC sales. A realized average remains distinct from a shelf price or supplier tariff.
 
 ---
 

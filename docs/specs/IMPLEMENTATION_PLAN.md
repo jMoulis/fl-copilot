@@ -1,3 +1,7 @@
+## Owner refinement — 1 November: confirmed Mercalys tax basis
+
+Sales and realized selling prices are TTC; purchase amounts/costs are HT. Replace the old unknown basis in analytical tool metadata and evidence, without changing numeric formulas, imported margin, unit/coverage rules or global guidance. Preserve legacy snapshots. See `../qa/M7_COPILOT_TAX_BASIS_2026_11_01.md`. Workstream 4 advances; release and real-chat acceptance remain distinct.
+
 ## Owner refinement — 1 November: collaborative conversation
 
 Replace existing conversational guidance after the owner-approved real-chat audit: respect declared field context and uncertainty, continue the prior proposal on a brief go-ahead, use relevant available reads and ask consequential questions. Explain the existing PDF observation-plus-source placeholder accurately; do not add an agent, tool or automatic writer. Global instructions stay no longer than before. See `../qa/M7_COPILOT_CONVERSATION_POSTURE_2026_11_01.md`; combine API delivery with PR 398, keeping real-model acceptance separate from controlled transport checks.

@@ -1,3 +1,7 @@
+# 1er novembre — bases TTC/HT confirmées
+
+Le propriétaire confirme ventes TTC et achats HT. Correction du dictionnaire Mongo, des descriptifs des outils et des preuves/prix moyens structurés ; les anciennes réserves provenaient de ces sorties. Aucun changement des montants, formules, marge importée, unités ou consignes globales. Anciennes mesures lisibles. [QA et limites](../qa/M7_COPILOT_TAX_BASIS_2026_11_01.md). **Chantier 4 avancé ; 1/3/4/5/6/7 en cours, 2 code prêt.** Livraison API après contrôles ; ancien historique inchangé, recette conversationnelle à confirmer.
+
 # 1er novembre — posture de collaboration du copilote
 
 Après lecture du dernier échange, remplacement des consignes existantes pour suivre l'intention et le contexte métier, poursuivre une investigation sur un accord bref et utiliser les lectures accessibles avant de déléguer une recherche. Réserves proportionnées, absence d'intentions inventées ; déclarations utilisateur distinctes des effets mesurés et des actions enregistrées. Clarification du marqueur PDF qui insère texte et source, cause de répétitions observées. Consignes globales non allongées, aucun outil/couche/schéma supplémentaire. [Audit et cas de recette](../qa/M7_COPILOT_CONVERSATION_POSTURE_2026_11_01.md). Vérifications contrôlées et CI avant livraison API groupée avec PR 398 ; qualité réelle du dialogue à confirmer après livraison. **Chantier 4 avancé ; 1/3/4/5/6/7 en cours, 2 code prêt.** Aucun build EAS ni test IA payant.

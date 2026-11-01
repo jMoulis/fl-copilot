@@ -24,10 +24,11 @@ const productFields = {
 const dailyFields = {
   id: "Identifiant de la projection journalière",
   date: "Date métier YYYY-MM-DD ; casse enregistrée parfois décalée",
-  sales: "CA net EUR Decimal128 ou null ; base HT/TTC non confirmée",
+  sales: "CA net TTC EUR Decimal128 ou null",
   salesCost:
-    "Montant d’achat des ventes EUR Decimal128 ou null ; pas un tarif fournisseur ni un PA unitaire. Pour un coût moyen, apparier montant et quantité sur les mêmes jours et unité ; base fiscale source non confirmée",
-  margin: "Marge EUR Decimal128 ou null, pas un taux",
+    "Montant d’achat HT des ventes EUR Decimal128 ou null ; pas un tarif fournisseur ni un PA unitaire. Pour un coût moyen, apparier montant et quantité sur les mêmes jours et unité",
+  margin:
+    "Marge importée de Mercalys EUR Decimal128 ou null, pas un taux ; ne pas la recalculer par ventes TTC moins achats HT",
   waste: "Casse au prix de vente EUR Decimal128 ou null",
   wasteCostKnown: "Casse au coût d’achat connu EUR Decimal128 ou null",
   wasteCostEstimated:

@@ -20,7 +20,8 @@ const reason = z
   .nullable();
 export const salesMeasuresSchema = z.object({
   period: z.object({ start: z.string().date(), end: z.string().date() }),
-  taxBasis: z.literal("UNCONFIRMED"),
+  // Legacy snapshots remain readable; fresh Mercalys calculations always emit INCLUDING_VAT.
+  taxBasis: z.enum(["INCLUDING_VAT", "UNCONFIRMED"]),
   refreshPendingDays: z.number().int().nonnegative().optional(),
   quantity: metric.extend({
     reason,
@@ -115,7 +116,7 @@ export function calculateSalesMeasures(
   );
   return salesMeasuresSchema.parse({
     period,
-    taxBasis: "UNCONFIRMED",
+    taxBasis: "INCLUDING_VAT",
     ...(rows.some((p) => p.quantityRefreshPending)
       ? {
           refreshPendingDays: rows.filter((p) => p.quantityRefreshPending)
