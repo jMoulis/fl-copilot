@@ -28,4 +28,6 @@ After grouped compatible API/native delivery: Mon magasin → Mon rayon · merch
 
 Deployment order: release the compatible API before a capable native binary. Pre-feature API code has a strict settings parser and cannot be treated as a safe rollback after merchandising has been written; retain the new serialization/preservation compatibility when reverting other behaviour. Never delete the new context to make an old API parse it.
 
-Local verification at PR preparation: 4,655 tests passed, 747 environment-dependent skips; a separate isolated replica run passed all four store-context integration cases (overlapping coverage, not added to the local total). API import/build, format, typecheck/lint and free iOS/Android exports passed. Exact-head push and PR CI remain independent merge gates.
+Local verification at PR preparation: 4,657 tests passed, 747 environment-dependent skips; a separate isolated replica run passed all four store-context integration cases (overlapping coverage, not added to the local total). API import/build, format, typecheck/lint and free iOS/Android exports passed. Exact-head push and PR CI remain independent merge gates.
+
+Final review reproduced a focus-read race: a geography or merchandising keystroke and a previously started read could complete before the dirty ref refreshed at render, clearing the new input. Mark these edits dirty synchronously in their event handlers; mounted deferred-read tests cover both fields. Exact-head CI must rerun after this fix.

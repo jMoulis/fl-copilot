@@ -199,6 +199,7 @@ function StoreSettingsEditor({
     ]);
   }
   function changeTown(value: string, field: "city" | "postalCode") {
+    dirtyRef.current = true;
     if (field === "city") setCity(value);
     else setPostalCode(value);
     setPosition(null);
@@ -385,7 +386,10 @@ function StoreSettingsEditor({
       ) : null}
       <MerchandisingEditor
         value={merchandising}
-        onChange={setMerchandising}
+        onChange={(next) => {
+          dirtyRef.current = true;
+          setMerchandising(next);
+        }}
         disabled={!canManage || busy || saved === undefined}
         issue={issues.merchandising}
       />

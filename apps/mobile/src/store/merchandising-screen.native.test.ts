@@ -173,3 +173,32 @@ it("refuses inconsistent counts without losing input and makes merchandising rea
     true,
   );
 });
+
+it.each(["Nombre de TG actives F&L", "Commune du magasin"])(
+  "preserves %s when a focus read finishes in the same event turn",
+  async (label) => {
+    const f = await setup();
+    const before = await f.repo.get(f.settings.storeId);
+    runtime.focused = false;
+    await act(() => tree!.update(createElement(StoreSettingsScreen)));
+    let release!: (value: typeof before) => void;
+    const pending = new Promise<typeof before>((resolve) => {
+      release = resolve;
+    });
+    const read = vi
+      .spyOn(StoreContextRepository.prototype, "get")
+      .mockReturnValueOnce(pending);
+    runtime.focused = true;
+    await act(() => tree!.update(createElement(StoreSettingsScreen)));
+    await act(async () => {
+      input(label).props.onChangeText(
+        label === "Commune du magasin" ? "Paris" : "2",
+      );
+      release(before);
+    });
+    expect(input(label).props.value).toBe(
+      label === "Commune du magasin" ? "Paris" : "2",
+    );
+    read.mockRestore();
+  },
+);
