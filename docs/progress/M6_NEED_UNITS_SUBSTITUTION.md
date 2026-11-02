@@ -1,3 +1,9 @@
+## Current checkpoint — 2 November 2026
+
+**CLOSED — functional iPhone pilot baseline.** T01–T11 implementation, prior catalogue/membership/relation/event acceptances, current isolated transactional evidence/score tests and owner confirmation on 2 November that consultation of substitutions works.
+
+Requested substitution consultation accepted. No production stockout, score change or production worker run is inferred. Cross-platform, physical recovery and remaining exceptional-path checks are retained in [the consolidated closure register](M0_M6_PILOT_CLOSURE_2026_11_02.md), not silently accepted. This checkpoint supersedes historical pending wording only for the functional baseline; the dated history below remains intact. M7 and M8 remain open.
+
 # M6 — Customer needs and directed substitutions
 
 ## M6-T01 — Editable store customer-need catalogue
