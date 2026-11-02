@@ -774,6 +774,21 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           {
             db,
             provider: createCopilotAiProvider(config, undefined, {
+              onUsage: (usage) => {
+                app.log.info(
+                  {
+                    ...usage,
+                    requestedModel: config.COPILOT_AI_MODEL ?? "unconfigured",
+                    httpRequestId: request.id,
+                    conversationId: request.body.conversationId,
+                    replyId: request.body.replyId,
+                    storeId,
+                    deploymentSha:
+                      process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown",
+                  },
+                  "Copilot model usage",
+                );
+              },
               ...(request.headers["x-copilot-store-photos"] === "1"
                 ? {
                     storePhoto: async (input, signal) => {

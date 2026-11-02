@@ -1,3 +1,7 @@
+## 2 November 2026 — real-chat initiative, monetary display and token diagnostics
+
+The latest owner dialogue is audited against the synchronized draft and actual historical performance. The corrective increment replaces existing guidance, rounds monetary display without changing raw citations/calculations, and records each model step plus terminal outcome in the existing server logs. No new tools, agents, models, domain entities or paid requests. See [audit, verification and limits](../qa/M7_COPILOT_INITIATIVE_USAGE_2026_11_02.md). This advances workstreams 4/7; **1/3/4/5/6/7 ongoing, 2 code ready**. Code checks do not prove natural-model initiative or the complete V1 loop; grouped delivery/owner acceptance remain open.
+
 # 2 novembre — plan de merchandising sans promotion obligatoire
 
 Le modèle de plan existant accepte désormais les thèmes TG et notes convenus sans inventer d’offre/prix/source. Les vraies promotions gardent leurs contrôles. Récapitulatif et historique affichent les notes ; les rappels d’installation TG réutilisent le suivi existant, avec déclaration de réalisation séparée. Protection explicite des anciens clients et négociation API avant envoi des commandes locales. [QA et limites](../qa/M7_QUALITATIVE_COMMERCIAL_PLAN_2026_11_02.md). Aucun modèle/table/collection/tool supplémentaire. Livraison groupée et recette réelle restent requises. **1/3/7 avancent ; 1/3/4/5/6/7 en cours ; 2 code prêt ; aucun chantier clôturé.**

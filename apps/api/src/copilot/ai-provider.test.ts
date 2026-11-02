@@ -27,6 +27,7 @@ import {
 } from "../../../../scripts/test-copilot-priority-fixtures";
 import {
   createCopilotAiProvider,
+  type CopilotGenerationUsage,
   type CopilotGenerationRequest,
 } from "./ai-provider";
 import { presentCopilotStoreLayout } from "./store-layout-tool";
@@ -183,6 +184,112 @@ it("fails missing model/key, invalid scope and oversized input before transport 
     ).generate(f.request, schema),
   ).rejects.toMatchObject({ code: "COPILOT_AI_INPUT_TOO_LARGE" });
   expect(transport).not.toHaveBeenCalled();
+});
+it("reports missing usage as unknown and keeps diagnostics failures out of generation", async () => {
+  const f = fixture();
+  const events: CopilotGenerationUsage[] = [];
+  const envelope = z
+    .record(z.string(), z.unknown())
+    .parse(await response().json());
+  delete envelope.usage;
+  const transport: typeof fetch = async () =>
+    new Response(JSON.stringify(envelope), {
+      headers: { "content-type": "application/json" },
+    });
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    onUsage: (event) => {
+      events.push(event);
+      throw Error("diagnostic sink unavailable");
+    },
+  }).generate(f.request, schema);
+  expect(result.output.answer).toBe("Vérifier les ventes.");
+  expect(events).toEqual([
+    expect.objectContaining({
+      kind: "STEP",
+      inputTokens: null,
+      outputTokens: null,
+    }),
+    expect.objectContaining({
+      kind: "END",
+      outcome: "COMPLETED",
+      usageComplete: false,
+    }),
+  ]);
+});
+it("reports a failed attempt without fabricating zero usage or leaking provider errors", async () => {
+  const f = fixture();
+  const usage = vi.fn();
+  await expect(
+    createCopilotAiProvider(
+      f.config,
+      async () => {
+        throw Error("secret source text sk-private");
+      },
+      { daily: vi.fn(), onUsage: usage },
+    ).generate(f.request, schema),
+  ).rejects.toMatchObject({ code: "COPILOT_AI_UNAVAILABLE" });
+  expect(usage).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({
+      kind: "END",
+      requestId: f.request.requestId,
+      outcome: "FAILED",
+      completedSteps: 0,
+      usageComplete: false,
+    }),
+  );
+  expect(JSON.stringify(usage.mock.calls)).not.toMatch(
+    /secret source|sk-private|inputTokens|outputTokens/,
+  );
+});
+it("keeps received step usage when the following model call fails", async () => {
+  const f = fixture(),
+    usage = vi.fn();
+  let calls = 0;
+  const transport: typeof fetch = async () => {
+    if (calls++) throw Error("upstream unavailable");
+    const envelope = z
+      .record(z.string(), z.unknown())
+      .parse(await response().json());
+    envelope.output = [
+      {
+        type: "function_call",
+        id: "fc_read",
+        call_id: "read",
+        name: "analytics_daily",
+        arguments: JSON.stringify({ businessDate: "2026-10-08" }),
+        status: "completed",
+      },
+    ];
+    return new Response(JSON.stringify(envelope), {
+      headers: { "content-type": "application/json" },
+    });
+  };
+  await expect(
+    createCopilotAiProvider(f.config, transport, {
+      onUsage: usage,
+      daily: async ({ businessDate }) => ({
+        businessDate,
+        referenceDate: "2026-10-01",
+        evidence: [],
+      }),
+    }).generate(f.request, schema),
+  ).rejects.toMatchObject({ code: "COPILOT_AI_UNAVAILABLE" });
+  expect(calls).toBe(2);
+  expect(usage.mock.calls.map(([event]) => event)).toEqual([
+    expect.objectContaining({
+      kind: "STEP",
+      step: 1,
+      inputTokens: 10,
+      outputTokens: 20,
+    }),
+    expect.objectContaining({
+      kind: "END",
+      outcome: "FAILED",
+      completedSteps: 1,
+      usageComplete: false,
+    }),
+  ]);
 });
 it("treats source instructions as quoted data, preserving deterministic scores and the original context", async () => {
   const f = fixture();
@@ -352,9 +459,11 @@ it("executes scoped read capabilities once per date, caps distinct reads and fee
     expect(sent).toContain("Ne les inventez pas");
     return response();
   });
-  const activity = vi.fn();
+  const activity = vi.fn(),
+    usage = vi.fn();
   const result = await createCopilotAiProvider(f.config, transport, {
     daily,
+    onUsage: usage,
   }).generate(f.request, schema, undefined, undefined, activity);
   expect(activity).toHaveBeenCalledTimes(6);
   expect(
@@ -371,6 +480,29 @@ it("executes scoped read capabilities once per date, caps distinct reads and fee
     "tool-2026-10-10",
   ]);
   expect(transport).toHaveBeenCalledTimes(2);
+  expect(usage.mock.calls.map(([event]) => event)).toEqual([
+    expect.objectContaining({
+      kind: "STEP",
+      step: 1,
+      inputTokens: 10,
+      outputTokens: 20,
+      toolCallCount: 5,
+    }),
+    expect.objectContaining({
+      kind: "STEP",
+      step: 2,
+      inputTokens: 10,
+      outputTokens: 20,
+      toolCallCount: 0,
+    }),
+    expect.objectContaining({
+      kind: "END",
+      completedSteps: 2,
+      outcome: "COMPLETED",
+      usageComplete: true,
+    }),
+  ]);
+  expect(JSON.stringify(usage.mock.calls)).not.toContain("businessDate");
 });
 
 it("keeps daily, sales and margin read identities separate for the same business day", async () => {
@@ -1659,12 +1791,11 @@ it("consumes real Responses SSE incrementally rather than animating a completed 
       new Response(body, { headers: { "content-type": "text/event-stream" } }),
   );
   const partial = vi.fn();
-  const task = createCopilotAiProvider(f.config, transport).generate(
-    f.request,
-    schema,
-    undefined,
-    partial,
-  );
+  const usage = vi.fn();
+  const task = createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    onUsage: usage,
+  }).generate(f.request, schema, undefined, partial);
   send({
     type: "response.created",
     response: {
@@ -1713,6 +1844,20 @@ it("consumes real Responses SSE incrementally rather than animating a completed 
   });
   close();
   expect((await task).output).toEqual({ answer: "Bonjour, voici le bilan." });
+  expect(usage.mock.calls.map(([event]) => event)).toEqual([
+    expect.objectContaining({
+      kind: "STEP",
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 0,
+      reasoningTokens: 0,
+    }),
+    expect.objectContaining({
+      kind: "END",
+      outcome: "COMPLETED",
+      usageComplete: true,
+    }),
+  ]);
   expect(JSON.parse(String(transport.mock.calls[0]?.[1]?.body)).stream).toBe(
     true,
   );

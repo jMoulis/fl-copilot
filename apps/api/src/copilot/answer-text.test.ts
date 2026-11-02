@@ -12,6 +12,42 @@ const e = [
   },
 ];
 const facts = [{ evidenceId: "sales" }];
+it("rounds monetary presentation without changing exact citations or quantity precision", () => {
+  const evidence = [
+    {
+      ...e[0]!,
+      id: "cost",
+      label: "Résultat · weightedPurchaseCostHT",
+      value: "2.36071887034659820282413350449294",
+    },
+    {
+      ...e[0]!,
+      id: "quantity",
+      label: "Quantité vendue (kg)",
+      value: "0.12345",
+    },
+    {
+      ...e[0]!,
+      id: "unknown",
+      label: "Résultat · result",
+      value: "1.09559214020180562931492299522",
+    },
+    { ...e[0]!, id: "negative", label: "Écart de CA (€)", value: "-0.004" },
+  ];
+  const text = renderAnswerText(
+    "| Coût | Quantité |\n| --- | --- |\n| {{value:0}} | {{value:1}} |\nAutre coût : {{value:2}} €/kg HT. Écart : {{value:3}}. {{source:0}}",
+    evidence.map((item) => ({ evidenceId: item.id })),
+    evidence,
+  );
+  expect(text).toContain("| 2,36 | 0,12345 |");
+  expect(text).toContain("1,10 €/kg HT");
+  expect(text).toContain("Écart : 0,00");
+  const source = JSON.parse(
+    decodeURIComponent(/copilot-source:([^)]*)/.exec(text)![1]!),
+  );
+  expect(source.value).toBe(evidence[0]!.value);
+  expect(evidence[0]!.value).toBe("2.36071887034659820282413350449294");
+});
 it("places exact canonical values in natural prose/tables and builds source destinations on the server", () => {
   const text = renderAnswerText(
     "Voici le bilan.\n\n| Indicateur | Montant |\n| --- | --- |\n| CA | {{value:0}} € |\n\n{{source:0}}",
