@@ -1566,7 +1566,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(request.headers["x-copilot-plan-validation"] === "1"
+              ...(["1", "2"].includes(
+                String(request.headers["x-copilot-plan-validation"]),
+              )
                 ? {
                     planValidation: async (input) => {
                       await authorize();
@@ -1576,6 +1578,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         input,
                         undefined,
                         request.headers["x-copilot-layout-preparation"] === "1",
+                        request.headers["x-copilot-plan-validation"] === "2",
                       );
                       await authorize();
                       return result;

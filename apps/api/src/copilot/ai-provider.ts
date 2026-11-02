@@ -2407,7 +2407,7 @@ export function createCopilotAiProvider(
                 ? {
                     commercial_plan_readiness: tool({
                       description:
-                        "Check an explicit Monday week's synchronized draft before final plan validation, or explain what blocks it. Uses canonical complete selected-offer, validation, active-product, source, reference and TG checks. READY is advisory only, never a saved or executed plan; native validation must recheck local state. BLOCKED supplies precise affected offers/TGs and French corrections: address those, do not ask the user to reconfirm every unaffected offer. NO_DRAFT can mean pending local work; LIMIT_EXCEEDED is unknown readiness, use Ma semaine. No mutation, extraction or automatic business action.",
+                        "Diagnose an explicit Monday week's synchronized draft. For requested saving use commercial_plan_validation directly; compatible clients group pending offer approvals with the plan. Uses canonical complete selected-offer, validation, active-product, source, reference and TG checks. READY is advisory only, never a saved or executed plan; native validation must recheck local state. BLOCKED supplies precise affected offers/TGs and French corrections: address those, do not ask the user to reconfirm every unaffected offer. NO_DRAFT can mean pending local work; LIMIT_EXCEEDED is unknown readiness, use Ma semaine. No mutation, extraction or automatic business action.",
                       inputSchema: copilotPlanReadinessInputSchema,
                       execute: (input) =>
                         executeRead(
@@ -3024,7 +3024,7 @@ export function createCopilotAiProvider(
                 ? {
                     commercial_plan_validation: tool({
                       description:
-                        "Prepare final validation of an explicit Monday week's complete commercial plan only on user request. Uses the existing synchronized draft and canonical readiness rules, never model-authored plan content. READY creates a complete native review card and requires explicit manager confirmation; it does not save or install anything. BLOCKED identifies required corrections, NO_DRAFT may mean local unsynchronized work, LIMIT_EXCEEDED uses Ma semaine without truncation. UNCHANGED creates no revision or card. Do not conflate retained offers, validated offers, saved plan and field execution. Only the latest requested plan preview is shown.",
+                        "Prepare final validation of an explicit Monday week's complete commercial plan only on user request. Uses the existing synchronized draft and canonical readiness rules, never model-authored plan content. READY creates a complete native review card and requires explicit manager confirmation; it does not save or install anything. Compatible clients can review selected offers and TGs together in this one card, without separate offer certification screens; approval remains pending until confirmation. BLOCKED identifies real corrections, NO_DRAFT may mean local unsynchronized work, LIMIT_EXCEEDED uses Ma semaine without truncation. UNCHANGED creates no revision or card. Saved planning and field execution remain distinct. Only the latest requested plan preview is shown.",
                       inputSchema: planValidationInputSchema,
                       execute: (input) =>
                         executeRead(
@@ -3045,6 +3045,24 @@ export function createCopilotAiProvider(
                               planValidations.length,
                               value,
                             );
+                            if (value.preview?.reviewBasis) {
+                              const plan = value.preview.candidate!;
+                              return {
+                                storeId: value.storeId,
+                                input: value.input,
+                                status: value.status,
+                                issues: value.issues,
+                                evidence: value.evidence,
+                                summary: {
+                                  weekStart: plan.weekStart,
+                                  weekEnd: plan.weekEnd,
+                                  offerCount: plan.offers.length,
+                                  tgCount: plan.preparation.placements.length,
+                                  pendingOfferCount:
+                                    value.preview.reviewBasis.offerRefs.length,
+                                },
+                              };
+                            }
                             return value;
                           },
                         ),

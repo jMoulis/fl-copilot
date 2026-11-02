@@ -6,8 +6,26 @@ export const planPreviewRequestSchema = z.strictObject({
   operationId: z.string().uuid(),
   schemaVersion: z.literal(1),
   tool: z.literal("commercial.plan.preview"),
-  input: preparationReadInputSchema,
+  input: preparationReadInputSchema.safeExtend({
+    groupOfferReview: z.boolean().optional(),
+  }),
 });
+/** Review metadata, never a persisted offer approval. Older cards omit it. */
+export const commercialPlanReviewBasisSchema = z.strictObject({
+  offerRefs: z
+    .array(
+      z.strictObject({
+        choiceId: z.uuid(),
+        choiceVersion: z.number().int().positive(),
+      }),
+    )
+    .max(100),
+  sourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  storeSettingsVersion: z.number().int().positive().nullable(),
+});
+export type CommercialPlanReviewBasis = z.infer<
+  typeof commercialPlanReviewBasisSchema
+>;
 export const planPreviewResultSchema = z.strictObject({
   operationId: z.string().uuid(),
   schemaVersion: z.literal(1),
@@ -17,6 +35,7 @@ export const planPreviewResultSchema = z.strictObject({
   message: z.string(),
   expectedPlanVersion: z.number().int().positive().nullable(),
   candidate: commercialWeekPlanSchema.nullable(),
+  reviewBasis: commercialPlanReviewBasisSchema.optional(),
   issues: z.array(
     z.strictObject({
       code: z.string(),
@@ -35,7 +54,7 @@ export const planPreviewTool = {
   description:
     "Préparer un aperçu déterministe du plan hebdomadaire, ou exposer les points bloquants. L’aperçu n’est pas enregistré ni exécuté.",
   progress: "Préparation de l’aperçu commercial…",
-  inputSchema: preparationReadInputSchema,
+  inputSchema: planPreviewRequestSchema.shape.input,
   outputSchema: planPreviewResultSchema,
 } as const;
 export const planValidateInputSchema = z.strictObject({

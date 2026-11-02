@@ -348,7 +348,7 @@ it("opts into optional proposal and source tools only when the client supports t
       expect(headers).toHaveProperty("x-copilot-commercial-reference", "1");
     else expect(headers).not.toHaveProperty("x-copilot-commercial-reference");
     if (enabled)
-      expect(headers).toHaveProperty("x-copilot-plan-validation", "1");
+      expect(headers).toHaveProperty("x-copilot-plan-validation", "2");
     else expect(headers).not.toHaveProperty("x-copilot-plan-validation");
     if (enabled)
       expect(headers).toHaveProperty("x-copilot-offer-validation", "1");

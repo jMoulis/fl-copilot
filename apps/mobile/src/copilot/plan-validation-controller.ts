@@ -80,7 +80,10 @@ export class CopilotPlanValidationController {
         operationId: content.preview.operationId,
         schemaVersion: 1,
         tool: "commercial.plan.preview",
-        input: { weekStart: content.preview.candidate!.weekStart },
+        input: {
+          weekStart: content.preview.candidate!.weekStart,
+          ...(content.preview.reviewBasis ? { groupOfferReview: true } : {}),
+        },
       },
       content.preview.observedAt,
       this.digest,
@@ -94,6 +97,8 @@ export class CopilotPlanValidationController {
         JSON.stringify(current.candidate) ===
           JSON.stringify(content.preview.candidate) &&
         current.expectedPlanVersion === content.preview.expectedPlanVersion &&
+        JSON.stringify(current.reviewBasis) ===
+          JSON.stringify(content.preview.reviewBasis) &&
         !current.issues.length
           ? ("READY" as const)
           : ("STALE" as const),
@@ -156,7 +161,12 @@ export class CopilotPlanValidationController {
           operationId: state.content.preview.operationId,
           schemaVersion: 1,
           tool: "commercial.plan.preview",
-          input: { weekStart: state.content.preview.candidate!.weekStart },
+          input: {
+            weekStart: state.content.preview.candidate!.weekStart,
+            ...(state.content.preview.reviewBasis
+              ? { groupOfferReview: true }
+              : {}),
+          },
         }),
         JSON.stringify(state.content.preview),
         state.content.preview.observedAt,

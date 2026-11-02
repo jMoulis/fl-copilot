@@ -1,6 +1,6 @@
 import { commercialOfferHref } from "../commercial/offer-navigation";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Switch, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
 import { ChatText as Text } from "./chat-text";
 import { useRouter } from "expo-router";
 import { commercialMechanismDescription } from "@fl-copilot/commercial-core";
@@ -21,7 +21,7 @@ export function PlanValidationCard({
 }) {
   const [state, setState] =
       useState<Awaited<ReturnType<CopilotPlanValidationController["open"]>>>(),
-    [reviewed, setReviewed] = useState(false),
+    [details, setDetails] = useState(false),
     [error, setError] = useState<string>(),
     [saving, setSaving] = useState(false);
   const revision = useRef(0);
@@ -35,8 +35,8 @@ export function PlanValidationCard({
     setSaving(false);
     let active = true;
     setState(undefined);
-    setReviewed(false);
     setError(undefined);
+    setDetails(false);
     void controller
       .open(message)
       .then((s) => {
@@ -56,7 +56,7 @@ export function PlanValidationCard({
     };
   }, [controller, message]);
   const confirm = async () => {
-    if (locked.current || !canConfirm || !reviewed) return;
+    if (locked.current || !canConfirm) return;
     const version = revision.current;
     const isCurrent = () => alive.current && revision.current === version;
     locked.current = true;
@@ -65,11 +65,7 @@ export function PlanValidationCard({
     const cancellation = new AbortController();
     abort.current = cancellation;
     try {
-      const s = await controller.confirm(
-        message,
-        reviewed,
-        cancellation.signal,
-      );
+      const s = await controller.confirm(message, true, cancellation.signal);
       if (isCurrent()) setState(s);
       if (isCurrent()) await onSubmitted?.().catch(() => undefined);
     } catch {
@@ -114,18 +110,36 @@ export function PlanValidationCard({
           {plan.preparation.note ? (
             <Text>Note : {plan.preparation.note}</Text>
           ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: details }}
+            style={{ minHeight: 44, paddingVertical: 12 }}
+            onPress={() => setDetails((v) => !v)}
+          >
+            <Text style={{ color: colors.forest }}>
+              {details
+                ? "Masquer les détails et sources"
+                : "Voir les détails et sources"}
+            </Text>
+          </Pressable>
           {plan.offers.map((o) => (
             <View key={o.id} style={{ gap: 4, paddingVertical: 8 }}>
               <Text style={{ fontWeight: "600" }}>{o.rawProductLabel}</Text>
-              <Text>
-                Produit :{" "}
-                {plan.productRefs.find((p) => p.id === o.productId)?.label ??
-                  "Indisponible"}
-              </Text>
-              <Text>
-                {plan.operations.find((op) => op.id === o.operationId)?.name ??
-                  "Opération"}
-              </Text>
+              {details ||
+              (plan.productRefs.find((p) => p.id === o.productId)?.label ??
+                "Indisponible") !== o.rawProductLabel ? (
+                <Text>
+                  Produit :{" "}
+                  {plan.productRefs.find((p) => p.id === o.productId)?.label ??
+                    "Indisponible"}
+                </Text>
+              ) : null}
+              {details ? (
+                <Text>
+                  {plan.operations.find((op) => op.id === o.operationId)
+                    ?.name ?? "Opération"}
+                </Text>
+              ) : null}
               <Text>
                 {commercialMechanismDescription(o.customerMechanism)}
                 {o.customerMechanism.type === "CARD_BENEFIT"
@@ -137,25 +151,27 @@ export function PlanValidationCard({
                 {formatFrenchCalendarDate(o.saleEnd)}
               </Text>
               {o.note ? <Text>{o.note}</Text> : null}
-              <Pressable
-                accessibilityRole="button"
-                style={{ minHeight: 44, padding: 12 }}
-                onPress={() =>
-                  router.push(
-                    commercialOfferHref(o.sourceReference, o.choiceId),
-                  )
-                }
-              >
-                <Text
-                  style={{
-                    color: colors.forest,
-                    textDecorationLine: "underline",
-                  }}
+              {details ? (
+                <Pressable
+                  accessibilityRole="button"
+                  style={{ minHeight: 44, padding: 12 }}
+                  onPress={() =>
+                    router.push(
+                      commercialOfferHref(o.sourceReference, o.choiceId),
+                    )
+                  }
                 >
-                  Voir l’offre et sa source · page{" "}
-                  {o.sourceReference.pageNumber}
-                </Text>
-              </Pressable>
+                  <Text
+                    style={{
+                      color: colors.forest,
+                      textDecorationLine: "underline",
+                    }}
+                  >
+                    Voir l’offre et sa source · page{" "}
+                    {o.sourceReference.pageNumber}
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
           ))}
           {plan.preparation.placements.map((p) => (
@@ -179,36 +195,27 @@ export function PlanValidationCard({
             Cette confirmation enregistre une révision du plan. Elle ne déclare
             aucune impression d’affiche ni installation en rayon.
           </Text>
-          {state.status === "READY" && canConfirm ? (
-            <View
-              style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
-            >
-              <Switch
-                accessibilityLabel="J’ai revu les offres, leurs conditions et les affectations TG"
-                value={reviewed}
-                onValueChange={setReviewed}
-                disabled={saving}
-              />
-              <Text style={{ flex: 1 }}>
-                J’ai revu les offres, leurs conditions et les affectations TG.
-              </Text>
-            </View>
+          {state.content.preview.reviewBasis?.offerRefs.length ? (
+            <Text>
+              Les offres sélectionnées encore à valider seront confirmées avec
+              ce plan.
+            </Text>
           ) : null}
           <Text>
             {state.status === "COMPLETED"
               ? "Plan enregistré sur cet appareil. La synchronisation peut rester en attente."
               : state.status === "STALE"
                 ? "La préparation ou une référence a changé. Demandez un nouvel aperçu avant de confirmer."
-                : "Vérifiez le plan avant de confirmer."}
+                : "En confirmant, tu valides les produits, dates, conditions et TG affichés."}
           </Text>
           {state.status === "READY" && canConfirm ? (
             <Pressable
               accessibilityRole="button"
               accessibilityState={{
-                disabled: saving || !reviewed,
+                disabled: saving,
                 busy: saving,
               }}
-              disabled={saving || !reviewed}
+              disabled={saving}
               onPress={() => {
                 void confirm();
               }}
@@ -217,7 +224,7 @@ export function PlanValidationCard({
                 padding: 14,
                 borderRadius: 12,
                 backgroundColor: colors.forest,
-                opacity: saving || !reviewed ? 0.45 : 1,
+                opacity: saving ? 0.45 : 1,
               }}
             >
               <Text

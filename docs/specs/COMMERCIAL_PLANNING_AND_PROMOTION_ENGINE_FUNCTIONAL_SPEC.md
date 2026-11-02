@@ -1,3 +1,9 @@
+## Implemented increment — 2 November 2026: one plan confirmation
+
+For an existing saved weekly draft, selected retained commercial offers no longer require a separate certification screen before plan adoption. A single complete review can confirm the pending offer versions and the week plan together. Advice and opening the review write nothing. Prices, mechanisms, units, dates, products, original/extracted source references and actual conflicts remain checked; there is no blanket approval of unselected PDF content. Sources/details stay available on demand, while essential offer terms and TG assignments remain visible.
+
+The existing offer-validation and plan writers run in one local transaction with their histories and ordered Outbox commands. Any stale basis, failure or cancellation rolls everything back. Current store-settings revision and declared active produce-TG capacity qualify the review; unknown capacity is not zero. Execution remains a separate declaration. Legacy clients keep their prior flow. This increment does not remove draft/choice creation or the redundant document-processing pipeline, and does not create a canonical offer-free strategy plan. These remain explicit refactor work, not hidden prerequisites for qualitative advice. See `../qa/M7_GROUPED_PLAN_REVIEW_2026_11_02.md`.
+
 ## Owner arbitration — 1 November 2026: weekly commercial strategy
 
 The weekly pense-bête supports a merchandising/shopper-advice conversation, not a mandatory source-administration workflow. Read the original PDF directly; extraction/transcription approval, retained offers, current-week filtering and detailed measured geometry are not prerequisites for advice. Preserve all periods; use the explicitly selected week, defaulting to next ISO week when entering without a selection.

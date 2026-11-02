@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useAuth } from "@/auth/auth-provider";
+import { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import { Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import {
@@ -6,11 +7,7 @@ import {
   CryptoDigestAlgorithm,
   randomUUID,
 } from "expo-crypto";
-import {
-  buildCommercialWeekPlan,
-  commercialPlanIssues,
-  type CommercialPlanContext,
-} from "@fl-copilot/commercial-core";
+import { buildCommercialWeekPlan } from "@fl-copilot/commercial-core";
 import type {
   CommercialWeekPreparation,
   CommercialWeekPlan,
@@ -27,7 +24,10 @@ import {
   CommercialPlanRepository,
   type LocalCommercialPlan,
 } from "./week-plan-repository";
-import { readWeekPlanContext } from "./week-plan-context";
+import {
+  readCommercialPlanReview,
+  saveReviewedCommercialPlan,
+} from "./plan-review";
 import { CommercialPlanContent } from "./plan-content";
 import { commercialPlanError } from "./plan-presentation";
 const digest = (s: string) =>
@@ -39,25 +39,51 @@ export function CommercialPlanValidationView({
   preparation: CommercialWeekPreparation;
   unsavedChanges: boolean;
 }) {
+  const { session } = useAuth();
+  const canConfirm =
+    session?.stores.find((s) => s.storeId === preparation.storeId)?.role ===
+    "MANAGER";
+  const live = useRef({
+    canConfirm,
+    storeId: preparation.storeId,
+    ownerId: session?.user.id,
+  });
+  live.current = {
+    canConfirm,
+    storeId: preparation.storeId,
+    ownerId: session?.user.id,
+  };
+  const locked = useRef(false);
+  useEffect(
+    () => () => {
+      live.current.canConfirm = false;
+    },
+    [],
+  );
   const { sqlite, deviceId } = useLocalDatabase(),
     { syncNow } = useSync(),
     repo = useMemo(
       () => new CommercialPlanRepository(sqlite, digest),
       [sqlite],
     );
-  const [context, setContext] = useState<CommercialPlanContext>(),
+  const [review, setReview] =
+      useState<Awaited<ReturnType<typeof readCommercialPlanReview>>>(),
     [candidate, setCandidate] = useState<CommercialWeekPlan>(),
     [current, setCurrent] = useState<LocalCommercialPlan | null>(),
-    [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>();
   const refresh = useCallback(async () => {
     const [ctx, record] = await Promise.all([
-      readWeekPlanContext(sqlite, preparation),
+      readCommercialPlanReview(
+        sqlite,
+        preparation,
+        digest,
+        new Date().toISOString(),
+      ),
       repo.get(preparation.storeId, preparation.weekStart),
     ]);
     const now = new Date().toISOString();
-    const preview = commercialPlanIssues(preparation, ctx).length
+    const preview = ctx.issues.length
       ? undefined
       : await buildCommercialWeekPlan(
           {
@@ -69,7 +95,7 @@ export function CommercialPlanValidationView({
             createdAt: record?.entity.createdAt ?? now,
             validatedAt: now,
           },
-          ctx,
+          ctx.context,
           digest,
         );
     return { ctx, record, preview };
@@ -80,10 +106,9 @@ export function CommercialPlanValidationView({
       void refresh()
         .then((r) => {
           if (active) {
-            setContext(r.ctx);
+            setReview(r.ctx);
             setCurrent(r.record);
             setCandidate(r.preview);
-            setConfirmed(false);
           }
         })
         .catch(() => {
@@ -103,10 +128,9 @@ export function CommercialPlanValidationView({
     setError(undefined);
     try {
       const r = await refresh();
-      setContext(r.ctx);
+      setReview(r.ctx);
       setCurrent(r.record);
       setCandidate(r.preview);
-      setConfirmed(false);
     } catch {
       setError("La vérification du plan ne peut pas être actualisée.");
     } finally {
@@ -114,23 +138,37 @@ export function CommercialPlanValidationView({
     }
   }
   async function publish() {
-    if (busy || unsavedChanges || !candidate || !context || !confirmed) return;
+    if (
+      locked.current ||
+      busy ||
+      !canConfirm ||
+      unsavedChanges ||
+      !candidate ||
+      !review
+    )
+      return;
+    locked.current = true;
+    const ownerId = session?.user.id;
     setBusy(true);
     setError(undefined);
     try {
-      const plan = await buildCommercialWeekPlan(
+      const plan = await saveReviewedCommercialPlan(
+        sqlite,
+        candidate,
+        review.basis,
         {
-          preparation,
-          version: candidate.version,
-          createdAt: candidate.createdAt,
-          validatedAt: new Date().toISOString(),
+          commandId: randomUUID(),
+          deviceId,
+          generateId: randomUUID,
+          appliedAt: new Date().toISOString(),
+          canConfirm: () =>
+            live.current.canConfirm &&
+            live.current.storeId === candidate.storeId &&
+            live.current.ownerId === ownerId,
         },
-        context,
         digest,
       );
-      await repo.save(plan, { commandId: randomUUID(), deviceId });
       void syncNow(plan.storeId).catch(() => undefined);
-      setConfirmed(false);
       router.push({
         pathname: "/commercial-plan",
         params: { weekStart: plan.weekStart },
@@ -142,10 +180,11 @@ export function CommercialPlanValidationView({
         ),
       );
     } finally {
+      locked.current = false;
       setBusy(false);
     }
   }
-  const issues = context ? commercialPlanIssues(preparation, context) : [];
+  const issues = review?.issues ?? [];
   return (
     <SectionCard
       title={
@@ -153,7 +192,7 @@ export function CommercialPlanValidationView({
           ? "Valider une nouvelle version du plan"
           : "Finaliser mon plan de semaine"
       }
-      description="Confirmez les opérations regroupées et les TG choisies. Le brouillon reste conservé ; une nouvelle validation ne confirme aucune action exécutée."
+      description="Un seul récapitulatif pour confirmer les offres sélectionnées et les TG. La mise en rayon sera déclarée séparément."
     >
       {unsavedChanges ? (
         <InlineAlert
@@ -191,7 +230,7 @@ export function CommercialPlanValidationView({
         >
           <Text accessibilityRole="alert" className="text-base text-danger">
             {i.choiceId
-              ? `${context?.choices.find((c) => c.id === i.choiceId)?.rawProductLabel ?? "Offre"} : `
+              ? `${review?.context.choices.find((c) => c.id === i.choiceId)?.rawProductLabel ?? "Offre"} : `
               : ""}
             {i.messageFr}
           </Text>
@@ -211,14 +250,11 @@ export function CommercialPlanValidationView({
       />
       {candidate ? (
         <>
-          <CommercialPlanContent plan={candidate} />
-          <SecondaryButton
-            label={`${confirmed ? "✓ " : ""}Je confirme ces regroupements, les offres et les affectations TG pour mon magasin`}
-            disabled={
-              busy || unsavedChanges || current?.syncState === "CONFLICT"
-            }
-            onPress={() => setConfirmed((v) => !v)}
-          />
+          <CommercialPlanContent plan={candidate} review />
+          <Text className="text-sm text-muted">
+            En confirmant, tu valides ensemble les produits, dates et conditions
+            affichés, puis tu enregistres ce plan.
+          </Text>
           <PrimaryButton
             label={
               busy
@@ -229,8 +265,8 @@ export function CommercialPlanValidationView({
             }
             disabled={
               busy ||
+              !canConfirm ||
               unsavedChanges ||
-              !confirmed ||
               current?.syncState === "CONFLICT"
             }
             onPress={() => void publish()}
