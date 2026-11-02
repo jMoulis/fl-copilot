@@ -299,6 +299,19 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.qualitativeCommercialPlans === true) {
+      if (
+        !bootstrap.entities.commercialWeekPlans ||
+        !bootstrap.entities.commercialPlanRevisions
+      )
+        throw Error("QUALITATIVE_COMMERCIAL_PLAN_BOOTSTRAP_INVALID");
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `qualitative-commercial-plans:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
     if (bootstrap.entities.storeMerchandising === true) {
       if (!bootstrap.entities.storeContextSettings)
         throw Error("STORE_MERCHANDISING_BOOTSTRAP_INVALID");
@@ -518,6 +531,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "commercialExecutionActuals",
     "storeContextSettings",
     "storeMerchandising",
+    "qualitativeCommercialPlans",
     "physicalAllocations",
     "storeLayouts",
     "storeLayoutRevisions",

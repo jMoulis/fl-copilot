@@ -1559,7 +1559,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                     },
                   }
                 : {}),
-              ...(["1", "2"].includes(
+              ...(["1", "2", "3"].includes(
                 String(request.headers["x-copilot-plan-validation"]),
               )
                 ? {
@@ -1571,7 +1571,10 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         input,
                         undefined,
                         request.headers["x-copilot-layout-preparation"] === "1",
-                        request.headers["x-copilot-plan-validation"] === "2",
+                        ["2", "3"].includes(
+                          String(request.headers["x-copilot-plan-validation"]),
+                        ),
+                        request.headers["x-copilot-plan-validation"] === "3",
                       );
                       await authorize();
                       return result;

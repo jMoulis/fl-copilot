@@ -192,7 +192,7 @@ export function CommercialPlanValidationView({
           ? "Valider une nouvelle version du plan"
           : "Finaliser mon plan de semaine"
       }
-      description="Un seul récapitulatif pour confirmer les offres sélectionnées et les TG. La mise en rayon sera déclarée séparément."
+      description="Un seul récapitulatif pour confirmer tes choix de la semaine. La mise en rayon sera déclarée séparément."
     >
       {unsavedChanges ? (
         <InlineAlert
@@ -252,8 +252,8 @@ export function CommercialPlanValidationView({
         <>
           <CommercialPlanContent plan={candidate} review />
           <Text className="text-sm text-muted">
-            En confirmant, tu valides ensemble les produits, dates et conditions
-            affichés, puis tu enregistres ce plan.
+            En confirmant, tu enregistres les choix affichés dans le plan de la
+            semaine.
           </Text>
           <PrimaryButton
             label={
@@ -274,8 +274,8 @@ export function CommercialPlanValidationView({
         </>
       ) : (
         <Text className="text-sm text-muted">
-          La validation sera proposée lorsque le brouillon enregistré et ses
-          offres auront passé les contrôles.
+          La validation sera proposée lorsque les choix du brouillon enregistré
+          auront passé les contrôles.
         </Text>
       )}
     </SectionCard>

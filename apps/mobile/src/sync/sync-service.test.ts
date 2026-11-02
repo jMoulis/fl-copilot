@@ -1595,3 +1595,83 @@ it("abandons an email page when the active account permission changes during the
     database.close();
   }
 });
+
+it("negotiates qualitative plans before pushing, preserves Outbox and cursor on old API, then adopts once", async () => {
+  const { adapter, database } = temporaryDatabase();
+  await runLocalMigrations(adapter);
+  database
+    .prepare(
+      "INSERT INTO sync_inbox_state(store_id,cursor,protocol_version) VALUES (?,?,1)",
+    )
+    .run(storeId, "old-cursor");
+  await createSyncTestEntity(adapter, {
+    id: entityId,
+    commandId,
+    storeId,
+    deviceId,
+    label: "Toujours conservé",
+  });
+  const snapshot = bootstrapResponse();
+  snapshot.entities.commercialWeekPlans = [];
+  snapshot.entities.commercialPlanRevisions = [];
+  let boots = 0,
+    pushes = 0,
+    advertised = false;
+  const service = new MobileSyncService(
+    adapter,
+    {
+      bootstrap: async () => {
+        boots++;
+        return snapshot;
+      },
+      push: async (input) => {
+        pushes++;
+        advertised = input.qualitativeCommercialPlans === true;
+        return {
+          results: input.commands.map((c) => ({
+            commandId: c.commandId,
+            entityType: c.entityType,
+            entityId: c.entityId,
+            status: "APPLIED" as const,
+            remoteVersion: 1,
+          })),
+          serverTime: new Date().toISOString(),
+        };
+      },
+      pull: async () => emptyPull("new-cursor"),
+    },
+    {
+      appVersion: "test",
+      deviceId,
+      qualitativeCommercialPlans: true,
+      maxRetries: 0,
+    },
+  );
+  await expect(service.sync(storeId)).rejects.toMatchObject({
+    status: 426,
+    response: { code: "QUALITATIVE_COMMERCIAL_PLAN_UPGRADE_REQUIRED" },
+  });
+  expect(pushes).toBe(0);
+  expect(
+    database
+      .prepare("SELECT status FROM sync_outbox WHERE command_id=?")
+      .get(commandId),
+  ).toEqual({ status: "PENDING" });
+  expect(
+    database
+      .prepare("SELECT cursor FROM sync_inbox_state WHERE store_id=?")
+      .get(storeId),
+  ).toEqual({ cursor: "old-cursor" });
+  snapshot.entities.qualitativeCommercialPlans = true;
+  await service.sync(storeId);
+  await service.sync(storeId);
+  expect(boots).toBe(2);
+  expect(advertised).toBe(true);
+  expect(pushes).toBe(1);
+  expect(
+    database
+      .prepare("SELECT value FROM app_metadata WHERE key=?")
+      .get(`qualitative-commercial-plans:${storeId}`),
+  ).toEqual({ value: "1" });
+  database.close();
+});

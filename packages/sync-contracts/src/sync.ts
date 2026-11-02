@@ -40,6 +40,7 @@ export const syncPushRequestSchema = z.object({
   commercialOriginalSources: z.boolean().optional(),
   physicalAllocations: z.boolean().optional(),
   storeMerchandising: z.boolean().optional(),
+  qualitativeCommercialPlans: z.boolean().optional(),
 });
 export type SyncPushRequest = z.infer<typeof syncPushRequestSchema>;
 
@@ -96,6 +97,7 @@ export const syncPullQuerySchema = z.object({
   commercialOriginalSources: z.enum(["true", "false"]).optional(),
   storeContext: z.enum(["true", "false"]).optional(),
   storeMerchandising: z.enum(["true", "false"]).optional(),
+  qualitativeCommercialPlans: z.enum(["true", "false"]).optional(),
   storeLayouts: z.enum(["true", "false"]).optional(),
   physicalAllocations: z.enum(["true", "false"]).optional(),
   needUnits: z.enum(["true", "false"]).optional(),
@@ -148,6 +150,7 @@ export const bootstrapQuerySchema = z.object({
   commercialOriginalSources: z.enum(["true", "false"]).optional(),
   storeContext: z.enum(["true", "false"]).optional(),
   storeMerchandising: z.enum(["true", "false"]).optional(),
+  qualitativeCommercialPlans: z.enum(["true", "false"]).optional(),
   storeLayouts: z.enum(["true", "false"]).optional(),
   physicalAllocations: z.enum(["true", "false"]).optional(),
   needUnits: z.enum(["true", "false"]).optional(),
@@ -223,6 +226,7 @@ export const bootstrapEntitiesSchema = z.object({
   physicalAllocations: z.boolean().optional(),
   storeContextSettings: z.array(jsonObjectSchema).optional(),
   storeMerchandising: z.boolean().optional(),
+  qualitativeCommercialPlans: z.boolean().optional(),
   storeLayouts: z.array(jsonObjectSchema).optional(),
   storeLayoutRevisions: z.array(jsonObjectSchema).optional(),
   needUnitCatalogue: z.array(jsonObjectSchema).optional(),

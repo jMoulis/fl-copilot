@@ -68,11 +68,24 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-async function setup(role = "MANAGER") {
+async function setup(role = "MANAGER", qualitative = false) {
   db = new DatabaseSync(":memory:");
   const sqlite = new ReceiptTestDatabase(db),
     f = await commercialPlanFixture(),
     deviceId = randomUUID();
+  if (qualitative) {
+    f.preparation = {
+      ...f.preparation,
+      offerRefs: [],
+      note: "Présentation de masse à l’entrée. Sans contre-promo.",
+      placements: f.preparation.placements.map((p) => ({
+        ...p,
+        theme: "Agrumes de saison",
+        offerIds: [],
+        sourceIdea: null,
+      })),
+    };
+  }
   await runLocalMigrations(sqlite);
   await new ProductMasterRepository(sqlite).upsertProduct(f.product, {
     commandId: randomUUID(),
@@ -169,4 +182,50 @@ it("blocks helpers and keeps a changed context from silently confirming an old r
     db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
   ).toEqual({ n: 0 });
   expect(env.push).not.toHaveBeenCalled();
+});
+
+it("adopts qualitative TGs and notes with no offer certification or implicit field execution", async () => {
+  const { f } = await setup("MANAGER", true);
+  const visible = JSON.stringify(tree!.toJSON());
+  expect(visible).toContain("Agrumes de saison");
+  expect(visible).toContain(
+    "Présentation de masse à l’entrée. Sans contre-promo.",
+  );
+  expect(visible).not.toContain(f.choice.rawProductLabel);
+  expect(
+    db.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+  ).toEqual({ n: 0 });
+  await act(async () => {
+    confirm().props.onPress();
+    await new Promise((r) => setTimeout(r, 25));
+  });
+  const row = db
+    .prepare("SELECT payload_json FROM commercial_week_plans")
+    .get() as { payload_json: string };
+  const plan = JSON.parse(row.payload_json);
+  expect(plan).toMatchObject({
+    status: "VALIDATED",
+    offers: [],
+    operations: [],
+    validationRefs: [],
+    productRefs: [],
+    preparation: { note: f.preparation.note },
+  });
+  expect(
+    db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+  ).toEqual({ n: 0 });
+  expect(
+    db.prepare("SELECT COUNT(*) n FROM commercial_execution_tasks").get(),
+  ).toEqual({ n: 0 });
+  const { commercialExecutionChecklist } =
+    await import("@fl-copilot/commercial-core");
+  const checklist = await commercialExecutionChecklist(plan, async (s) =>
+    createHash("sha256").update(s).digest("hex"),
+  );
+  expect(checklist).toHaveLength(1);
+  expect(checklist[0]).toMatchObject({
+    kind: "INSTALL_TG",
+    targetId: f.preparation.placements[0]!.id,
+  });
+  expect(env.push).toHaveBeenCalledTimes(1);
 });

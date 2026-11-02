@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { commercialWeekPreparationSchema } from "./commercial-week-preparation";
+import {
+  type CommercialWeekPreparation,
+  commercialWeekPreparationSchema,
+} from "./commercial-week-preparation";
 import {
   commercialOfferSourceSchema,
   commercialOriginalOfferSourceSchema,
@@ -73,6 +76,40 @@ export const plannedCommercialOfferSchema = z
     updatedAt: time,
   })
   .strict();
+/** Content rules shared by review and canonical plan validation. No fictional offer is required. */
+export function commercialPlanContentIssues(
+  preparation: CommercialWeekPreparation,
+) {
+  const issues: { code: string; messageFr: string; placementId?: string }[] =
+    [];
+  if (
+    !preparation.offerRefs.length &&
+    !preparation.note.trim() &&
+    !preparation.placements.some((p) => p.theme.trim())
+  )
+    issues.push({
+      code: "EMPTY_PLAN",
+      messageFr:
+        "Décris au moins un choix de merchandising ou sélectionne une offre avant de confirmer le plan.",
+    });
+  for (const p of preparation.placements)
+    if (!p.offerIds.length && !p.theme.trim())
+      issues.push({
+        code: "EMPTY_TG",
+        placementId: p.id,
+        messageFr: `${p.label} : précise le thème ou la présentation, affecte une offre, ou retire cette TG.`,
+      });
+  return issues;
+}
+/** Older clients require an offer for the plan and each TG. */
+export function commercialPlanRequiresQualitativeSupport(
+  plan: Pick<CommercialWeekPlan, "preparation">,
+) {
+  return (
+    !plan.preparation.offerRefs.length ||
+    plan.preparation.placements.some((p) => !p.offerIds.length)
+  );
+}
 export const commercialWeekPlanSchema = z
   .object({
     id,
@@ -88,7 +125,6 @@ export const commercialWeekPlanSchema = z
           .object({ choiceId: id, choiceVersion: version, validationId: id })
           .strict(),
       )
-      .min(1)
       .max(100),
     preferenceRefs: z.array(z.object({ id, version }).strict()).max(200),
     productRefs: z
@@ -97,10 +133,9 @@ export const commercialWeekPlanSchema = z
           .object({ id, version, label: z.string().trim().min(1).max(240) })
           .strict(),
       )
-      .min(1)
       .max(100),
-    operations: z.array(plannedCommercialOperationSchema).min(1).max(100),
-    offers: z.array(plannedCommercialOfferSchema).min(1).max(100),
+    operations: z.array(plannedCommercialOperationSchema).max(100),
+    offers: z.array(plannedCommercialOfferSchema).max(100),
     groupingConfirmed: z.literal(true),
     validationConfirmed: z.literal(true),
     version,
@@ -110,6 +145,12 @@ export const commercialWeekPlanSchema = z
   })
   .strict()
   .superRefine((p, c) => {
+    for (const issue of commercialPlanContentIssues(p.preparation))
+      c.addIssue({
+        code: "custom",
+        path: ["preparation"],
+        message: issue.messageFr,
+      });
     if (
       p.preparation.storeId !== p.storeId ||
       p.preparation.weekStart !== p.weekStart ||

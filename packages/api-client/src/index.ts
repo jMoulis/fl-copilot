@@ -183,7 +183,7 @@ export class ApiClient {
                   ? { "x-copilot-commercial-reference": "1" }
                   : {}),
                 ...(streaming.planValidation
-                  ? { "x-copilot-plan-validation": "2" }
+                  ? { "x-copilot-plan-validation": "3" }
                   : {}),
                 ...(streaming.offerValidation
                   ? { "x-copilot-offer-validation": "1" }
@@ -466,7 +466,10 @@ export class ApiClient {
     if (commercialPreparation) query.set("commercialPreparation", "true");
     if (commercialVersions) query.set("commercialVersions", "true");
     if (commercialValidation) query.set("commercialValidation", "true");
-    if (commercialPlans) query.set("commercialPlans", "true");
+    if (commercialPlans) {
+      query.set("commercialPlans", "true");
+      query.set("qualitativeCommercialPlans", "true");
+    }
     if (commercialExecution) query.set("commercialExecution", "true");
     if (commercialExecutionActuals)
       query.set("commercialExecutionActuals", "true");
@@ -572,7 +575,10 @@ export class ApiClient {
     if (commercialPreparation) query.set("commercialPreparation", "true");
     if (commercialVersions) query.set("commercialVersions", "true");
     if (commercialValidation) query.set("commercialValidation", "true");
-    if (commercialPlans) query.set("commercialPlans", "true");
+    if (commercialPlans) {
+      query.set("commercialPlans", "true");
+      query.set("qualitativeCommercialPlans", "true");
+    }
     if (commercialExecution) query.set("commercialExecution", "true");
     if (commercialExecutionActuals)
       query.set("commercialExecutionActuals", "true");

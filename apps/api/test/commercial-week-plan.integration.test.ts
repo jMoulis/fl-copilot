@@ -120,6 +120,163 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .findOne({ storeId: x.storeId }),
       ).toMatchObject({ status: "DRAFT", version: 1 });
     }, 20000);
+    it("synchronizes a qualitative plan once, retains TG execution targets and protects legacy readers including immutable history", async () => {
+      const x = await seed(),
+        push = createMongoSyncPushService(database);
+      const prep = {
+        ...x.preparation,
+        offerRefs: [],
+        note: "Agrumes en masse à l’entrée, sans contre-promo.",
+        placements: x.preparation.placements.map((p) => ({
+          ...p,
+          theme: "Agrumes",
+          offerIds: [],
+          sourceIdea: null,
+        })),
+      };
+      await x.db
+        .collection<{ _id: string }>("commercialWeekPreparations")
+        .replaceOne({ _id: prep.id }, { ...prep, _id: prep.id });
+      const plan = await buildCommercialWeekPlan(
+        {
+          preparation: prep,
+          version: 1,
+          createdAt: x.plan.createdAt,
+          validatedAt: x.plan.validatedAt,
+        },
+        {
+          ...x.context,
+          preparation: prep,
+          choices: [],
+          validated: [],
+          products: [],
+          pages: [],
+          preferences: [],
+        },
+        testChoiceDigest,
+      );
+      const r = { ...request(plan), qualitativeCommercialPlans: true };
+      await expect(
+        push.push(request(plan), "legacy-write"),
+      ).rejects.toMatchObject({ statusCode: 426 });
+      expect((await push.push(r, "qualitative")).results[0]?.status).toBe(
+        "APPLIED",
+      );
+      expect((await push.push(r, "retry")).results[0]?.status).toBe(
+        "ALREADY_APPLIED",
+      );
+      for (const name of [
+        "commercialOperations",
+        "offers",
+        "commercialExecutionTasks",
+      ])
+        expect(
+          await x.db.collection(name).countDocuments({ storeId: x.storeId }),
+        ).toBe(0);
+      expect(
+        await x.db
+          .collection("commercialPlanRevisions")
+          .countDocuments({ storeId: x.storeId }),
+      ).toBe(1);
+      const pull = createMongoSyncPullService(database);
+      await expect(
+        pull.pull(x.storeId, { limit: 500, commercialPlans: "true" }),
+      ).rejects.toMatchObject({ statusCode: 426 });
+      const page = await pull.pull(x.storeId, {
+        commercialPlans: "true",
+        qualitativeCommercialPlans: "true",
+        limit: 500,
+      });
+      expect(page.changes).toHaveLength(2);
+      const boot = createMongoSyncBootstrapService(database);
+      const store = {
+        storeId: x.storeId,
+        storeName: "Test",
+        role: "MANAGER" as const,
+        userId: randomUUID(),
+        sessionId: randomUUID(),
+        deviceId: randomUUID(),
+      };
+      await expect(
+        boot.bootstrap(store, {
+          rawObservationDays: 90,
+          commercialPlans: "true",
+        }),
+      ).rejects.toMatchObject({ statusCode: 426 });
+      const snapshot = await boot.bootstrap(store, {
+        rawObservationDays: 90,
+        commercialPlans: "true",
+        qualitativeCommercialPlans: "true",
+      });
+      expect(snapshot.entities.qualitativeCommercialPlans).toBe(true);
+      const { DatabaseSync } = await import("node:sqlite");
+      const { ReceiptTestDatabase } =
+        await import("../../../scripts/test-receipt-publication-sqlite");
+      const { runLocalMigrations } =
+        await import("../../mobile/src/db/migrations");
+      const { applyBootstrap } =
+        await import("../../mobile/src/sync/apply-bootstrap");
+      const { CommercialPlanRepository } =
+        await import("../../mobile/src/commercial/week-plan-repository");
+      const { commercialExecutionChecklist } =
+        await import("@fl-copilot/commercial-core");
+      const local = new DatabaseSync(":memory:");
+      try {
+        const sqlite = new ReceiptTestDatabase(local);
+        await runLocalMigrations(sqlite);
+        await applyBootstrap(sqlite, x.storeId, snapshot);
+        const restored = await new CommercialPlanRepository(
+          sqlite,
+          testChoiceDigest,
+        ).get(x.storeId, prep.weekStart);
+        expect(restored?.entity).toEqual(plan);
+        expect(
+          (
+            await commercialExecutionChecklist(
+              restored!.entity,
+              testChoiceDigest,
+            )
+          ).map((t) => t.kind),
+        ).toEqual(["INSTALL_TG"]);
+        expect(
+          local
+            .prepare("SELECT COUNT(*) n FROM commercial_execution_tasks")
+            .get(),
+        ).toEqual({ n: 0 });
+      } finally {
+        local.close();
+      }
+      const normalPrep = { ...x.preparation, version: 2 };
+      await x.db
+        .collection<{ _id: string }>("commercialWeekPreparations")
+        .replaceOne({ _id: prep.id }, { ...normalPrep, _id: prep.id });
+      const next = await buildCommercialWeekPlan(
+        {
+          preparation: normalPrep,
+          version: 2,
+          createdAt: plan.createdAt,
+          validatedAt: plan.validatedAt,
+        },
+        { ...x.context, preparation: normalPrep },
+        testChoiceDigest,
+      );
+      expect(
+        (
+          await push.push(
+            { ...request(next, 1), qualitativeCommercialPlans: true },
+            "normal-again",
+          )
+        ).results[0]?.status,
+      ).toBe("APPLIED");
+      await expect(
+        pull.pull(x.storeId, { limit: 500, commercialPlans: "true" }),
+      ).rejects.toMatchObject({ statusCode: 426 });
+      expect(
+        await x.db
+          .collection("commercialPlanRevisions")
+          .countDocuments({ storeId: x.storeId }),
+      ).toBe(2);
+    }, 20000);
     it("waits for an earlier validation dependency but rejects changed drafts/choices/products and forged publication data", async () => {
       const x = await seed(),
         push = createMongoSyncPushService(database);

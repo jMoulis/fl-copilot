@@ -149,7 +149,11 @@ it("rejects stale/withdrawn/unvalidated selections, missing source/product and e
     ).rejects.toThrow("COMMERCIAL_PLAN_");
   const p = {
     ...f.preparation,
-    placements: f.preparation.placements.map((t) => ({ ...t, offerIds: [] })),
+    placements: f.preparation.placements.map((t) => ({
+      ...t,
+      theme: "",
+      offerIds: [],
+    })),
   };
   expect(
     commercialPlanIssues(p, { ...f.context, preparation: p })[0]?.code,
@@ -184,4 +188,100 @@ it("requires review after draft/product/reference changes and retains original p
   expect(later.id).toBe(f.plan.id);
   expect(later.revisionId).not.toBe(f.plan.revisionId);
   expect(later.offers[0]?.id).toBe(f.plan.offers[0]?.id);
+});
+
+it("adopts qualitative TGs or general merchandising notes without manufacturing offers, and still rejects empty plans", async () => {
+  const f = await fixture();
+  for (const placements of [
+    f.preparation.placements.map((t) => ({
+      ...t,
+      offerIds: [],
+      sourceIdea: null,
+    })),
+    [],
+  ]) {
+    const preparation = {
+      ...f.preparation,
+      offerRefs: [],
+      placements,
+      note: "Mettre les agrumes en masse à l’entrée.",
+    };
+    const context = {
+      preparation,
+      choices: [],
+      validated: [],
+      products: [],
+      preferences: [],
+      pages: [],
+    };
+    const plan = await buildCommercialWeekPlan(
+      {
+        preparation,
+        version: 1,
+        createdAt: f.plan.createdAt,
+        validatedAt: f.plan.validatedAt,
+      },
+      context,
+      digest,
+    );
+    expect(plan).toMatchObject({
+      offers: [],
+      operations: [],
+      productRefs: [],
+      validationRefs: [],
+      preferenceRefs: [],
+    });
+    expect(commercialPlanNeedsReview(plan, context)).toEqual([]);
+    const empty = { ...preparation, placements: [], note: "" };
+    expect(
+      commercialPlanIssues(empty, { ...context, preparation: empty }).map(
+        (i) => i.code,
+      ),
+    ).toContain("EMPTY_PLAN");
+    expect(
+      commercialWeekPlanSchema.safeParse({ ...plan, preparation: empty })
+        .success,
+    ).toBe(false);
+    const blankTg = {
+      ...preparation,
+      placements: f.preparation.placements.map((t) => ({
+        ...t,
+        theme: "",
+        offerIds: [],
+        sourceIdea: null,
+      })),
+    };
+    expect(
+      commercialPlanIssues(blankTg, { ...context, preparation: blankTg }).map(
+        (i) => i.code,
+      ),
+    ).toContain("EMPTY_TG");
+  }
+});
+it("keeps real selected-offer checks when another TG is purely qualitative", async () => {
+  const f = await fixture();
+  const preparation = {
+    ...f.preparation,
+    tgCapacity: 2,
+    placements: [
+      ...f.preparation.placements,
+      {
+        id: uuid(),
+        label: "TG thème",
+        theme: "Potages",
+        offerIds: [],
+        sourceIdea: null,
+      },
+    ],
+  };
+  expect(
+    commercialPlanIssues(preparation, { ...f.context, preparation }),
+  ).toEqual([]);
+  expect(
+    commercialPlanIssues(preparation, {
+      ...f.context,
+      preparation,
+      validated: [],
+    }).map((i) => i.code),
+  ).toContain("NOT_VALIDATED");
 });
