@@ -35,9 +35,11 @@ const digest = (s: string) =>
 export function CommercialPlanValidationView({
   preparation,
   unsavedChanges,
+  onConfirmed,
 }: {
   preparation: CommercialWeekPreparation;
   unsavedChanges: boolean;
+  onConfirmed?(): void;
 }) {
   const { session } = useAuth();
   const canConfirm =
@@ -169,10 +171,12 @@ export function CommercialPlanValidationView({
         digest,
       );
       void syncNow(plan.storeId).catch(() => undefined);
-      router.push({
-        pathname: "/commercial-plan",
-        params: { weekStart: plan.weekStart },
-      });
+      if (onConfirmed) onConfirmed();
+      else
+        router.push({
+          pathname: "/commercial-plan",
+          params: { weekStart: plan.weekStart },
+        });
     } catch (reason) {
       setError(
         commercialPlanError(
@@ -212,15 +216,17 @@ export function CommercialPlanValidationView({
                   ? " · envoi refusé"
                   : " · à synchroniser"}
           </Text>
-          <SecondaryButton
-            label="Voir mon plan conservé et son historique"
-            onPress={() =>
-              router.push({
-                pathname: "/commercial-plan",
-                params: { weekStart: preparation.weekStart },
-              })
-            }
-          />
+          {!onConfirmed ? (
+            <SecondaryButton
+              label="Voir mon plan conservé et son historique"
+              onPress={() =>
+                router.push({
+                  pathname: "/commercial-plan",
+                  params: { weekStart: preparation.weekStart },
+                })
+              }
+            />
+          ) : null}
         </>
       ) : null}
       {issues.map((i, n) => (

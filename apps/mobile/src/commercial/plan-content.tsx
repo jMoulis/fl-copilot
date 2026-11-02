@@ -1,6 +1,7 @@
 import { commercialOfferHref } from "./offer-navigation";
 import { PhysicalAllocationCard } from "./physical-allocation-card";
 import { Text, View } from "react-native";
+import { useState } from "react";
 import { router } from "expo-router";
 import type { CommercialWeekPlan } from "@fl-copilot/sync-contracts";
 import { SectionCard, SecondaryButton } from "@/components/ui";
@@ -16,6 +17,7 @@ export function CommercialPlanContent({
   operationId?: string;
   review?: boolean;
 }) {
+  const [showNote, setShowNote] = useState(false);
   return (
     <View className="gap-4">
       <Text className="text-base text-muted">
@@ -30,10 +32,50 @@ export function CommercialPlanContent({
         Ces choix sont prévus pour le magasin. Leur réalisation en rayon sera
         déclarée séparément.
       </Text>
+      {!operationId ? (
+        <SectionCard title="TG prévues">
+          {plan.preparation.placements.length ? (
+            plan.preparation.placements.map((t) => (
+              <View key={t.id} className="gap-1">
+                <Text className="font-semibold text-ink">
+                  {t.label}
+                  {t.theme ? ` · ${t.theme}` : ""}
+                </Text>
+                {t.offerIds.length ? (
+                  <Text className="text-base text-ink">
+                    {plan.offers
+                      .filter((o) => t.offerIds.includes(o.choiceId))
+                      .map((o) => o.rawProductLabel)
+                      .join(" · ")}
+                  </Text>
+                ) : null}
+              </View>
+            ))
+          ) : (
+            <Text className="text-muted">Aucune TG prévue dans ce plan.</Text>
+          )}
+          <Text className="text-sm text-muted">
+            Capacité déclarée :{" "}
+            {plan.preparation.tgCapacity ??
+              "non précisée, sans emplacement prévu"}
+          </Text>
+        </SectionCard>
+      ) : null}
       {!operationId && plan.preparation.note ? (
-        <Text selectable className="text-base text-ink">
-          {plan.preparation.note}
-        </Text>
+        <View className="gap-2">
+          {!review ? (
+            <SecondaryButton
+              label="Consignes de la semaine"
+              expanded={showNote}
+              onPress={() => setShowNote((value) => !value)}
+            />
+          ) : null}
+          {review || showNote ? (
+            <Text selectable className="text-base text-ink">
+              {plan.preparation.note}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
       {!operationId && plan.preparation.physicalAllocation ? (
         <PhysicalAllocationCard
@@ -118,35 +160,6 @@ export function CommercialPlanContent({
             ) : null}
           </SectionCard>
         ))}
-      {!operationId ? (
-        <SectionCard title="TG prévues">
-          {plan.preparation.placements.length ? (
-            plan.preparation.placements.map((t) => (
-              <View key={t.id} className="gap-1">
-                <Text className="font-semibold text-ink">
-                  {t.label}
-                  {t.theme ? ` · ${t.theme}` : ""}
-                </Text>
-                {t.offerIds.length ? (
-                  <Text className="text-base text-ink">
-                    {plan.offers
-                      .filter((o) => t.offerIds.includes(o.choiceId))
-                      .map((o) => o.rawProductLabel)
-                      .join(" · ")}
-                  </Text>
-                ) : null}
-              </View>
-            ))
-          ) : (
-            <Text className="text-muted">Aucune TG prévue dans ce plan.</Text>
-          )}
-          <Text className="text-sm text-muted">
-            Capacité déclarée :{" "}
-            {plan.preparation.tgCapacity ??
-              "non précisée, sans emplacement prévu"}
-          </Text>
-        </SectionCard>
-      ) : null}
     </View>
   );
 }

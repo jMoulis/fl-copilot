@@ -21,6 +21,9 @@ const runtime = vi.hoisted(() => ({
   focused: true,
   sync: vi.fn(async () => {}),
 }));
+vi.mock("@/components/dashboard", () => ({
+  DetailsDisclosure: ({ children }: { children: unknown }) => children,
+}));
 vi.mock("@/dates/calendar", () => import("../dates/calendar"));
 vi.mock("@/commercial/physical-allocation-card", () => ({
   PhysicalAllocationCard: "Physical",

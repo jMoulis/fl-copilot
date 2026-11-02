@@ -29,7 +29,6 @@ import {
   SecondaryButton,
   InlineAlert,
   SectionCard,
-  EmptyState,
   MenuRow,
 } from "../../../components/ui";
 export default function ActionsScreen() {
@@ -231,7 +230,7 @@ function StoreActions({
             );
             selected(weekStart);
             router.push({
-              pathname: "/week-preparation",
+              pathname: "/commercial-plan",
               params: { weekStart },
             });
           }}
@@ -252,36 +251,14 @@ function StoreActions({
           />
         </>
       ) : null}
-      <SectionCard title="Préparer la semaine">
+      <SectionCard title="Ma semaine">
         <MenuRow
-          title="Préparation"
-          description="Offres, affiches et mises en avant de la semaine sélectionnée."
+          title="Voir ma semaine"
+          description="Tes TG et les choix enregistrés avec le copilote."
           icon="calendar-outline"
           onPress={() =>
             router.push({
-              pathname: "/week-preparation",
-              params: { weekStart: week.start },
-            })
-          }
-        />
-        <MenuRow
-          title="Plan et historique"
-          description="Retrouver les choix validés et leurs versions."
-          icon="checkmark-done-outline"
-          onPress={() =>
-            router.push({
               pathname: "/commercial-plan",
-              params: { weekStart: week.start },
-            })
-          }
-        />
-        <MenuRow
-          title="Documents commerciaux"
-          description="Consulter les originaux et leurs analyses."
-          icon="document-text-outline"
-          onPress={() =>
-            router.push({
-              pathname: "/week",
               params: { weekStart: week.start },
             })
           }
@@ -315,13 +292,19 @@ function StoreActions({
           filter={view.filter}
           onFilter={(filter) => change({ ...view, filter })}
         />
-      ) : (
-        <EmptyState
-          title="Aucun plan validé cette semaine"
-          message="Préparez cette semaine depuis vos documents ou avec le copilote. Une recommandation acceptée ne constitue pas une réalisation."
+      ) : null}
+      <DetailsDisclosure title="Documents, imports et gestion du magasin">
+        <MenuRow
+          title="Documents commerciaux"
+          description="Tes pense-bêtes et PDF originaux."
+          icon="document-text-outline"
+          onPress={() =>
+            router.push({
+              pathname: "/week",
+              params: { weekStart: week.start },
+            })
+          }
         />
-      )}
-      <DetailsDisclosure title="Casse, imports et gestion du magasin">
         <MenuRow
           title="Casse"
           description="Tickets, photos et imports de casse."
