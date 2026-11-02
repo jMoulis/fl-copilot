@@ -183,7 +183,7 @@ export class ApiClient {
                   ? { "x-copilot-commercial-reference": "1" }
                   : {}),
                 ...(streaming.planValidation
-                  ? { "x-copilot-plan-validation": "1" }
+                  ? { "x-copilot-plan-validation": "2" }
                   : {}),
                 ...(streaming.offerValidation
                   ? { "x-copilot-offer-validation": "1" }

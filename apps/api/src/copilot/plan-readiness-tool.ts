@@ -11,10 +11,12 @@ import {
 import { synchronizedCommercialVisualReadingSchema } from "@fl-copilot/sync-contracts";
 import {
   commercialPlanIssues,
+  prepareCommercialPlanReview,
   type CommercialPlanContext,
   commercialValidatedOfferId,
   commercialChoiceProductUnitMatches,
 } from "@fl-copilot/commercial-core";
+import { readCopilotStoreSettings } from "./store-settings-tool";
 import { loadCommercialPreparationContext } from "./commercial-preparation-tool";
 import {
   serializeProductDocument,
@@ -36,6 +38,7 @@ export async function loadCommercialPlanReadiness(
   db: Db,
   storeId: string,
   raw: unknown,
+  groupedReviewAt?: string,
 ) {
   const input = copilotPlanReadinessInputSchema.parse(raw);
   const { preparation: prep, all: choices } =
@@ -60,6 +63,7 @@ export async function loadCommercialPlanReadiness(
     typeof copilotPlanReadinessResultSchema.parse
   >["issues"] = [];
   let context: CommercialPlanContext | null = null;
+  let reviewBasis;
   if (prep) {
     const readingIds = [
       ...new Set([
@@ -169,15 +173,31 @@ export async function loadCommercialPlanReadiness(
           choices.map((c) => c.source),
         ),
       };
-      issues = commercialPlanIssues(prep, context).map((i) => ({
-        ...i,
-        label: i.choiceId
-          ? (choices.find((c) => c.id === i.choiceId)?.rawProductLabel ?? null)
-          : i.placementId
-            ? (prep.placements.find((p) => p.id === i.placementId)?.label ??
+      const review = groupedReviewAt
+        ? await prepareCommercialPlanReview(
+            prep,
+            context,
+            (await readCopilotStoreSettings(db, storeId, {})).settings,
+            digest,
+            groupedReviewAt,
+          )
+        : null;
+      if (review) {
+        context = review.context;
+        reviewBasis = review.basis;
+      }
+      issues = (review?.issues ?? commercialPlanIssues(prep, context)).map(
+        (i) => ({
+          ...i,
+          label: i.choiceId
+            ? (choices.find((c) => c.id === i.choiceId)?.rawProductLabel ??
               null)
-            : null,
-      }));
+            : i.placementId
+              ? (prep.placements.find((p) => p.id === i.placementId)?.label ??
+                null)
+              : null,
+        }),
+      );
       for (const choice of choices) {
         const product = products.find((p) => p.id === choice.productId);
         if (
@@ -238,7 +258,7 @@ export async function loadCommercialPlanReadiness(
       },
     ],
   });
-  return { result, context, preparation: prep };
+  return { result, context, preparation: prep, reviewBasis };
 }
 export async function readCommercialPlanReadiness(
   db: Db,

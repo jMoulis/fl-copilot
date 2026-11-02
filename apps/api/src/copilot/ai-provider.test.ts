@@ -3990,7 +3990,7 @@ it.each(["OWNED", "FOREIGN", "WRONG_WEEK"])(
   },
 );
 
-it.each(["READY", "FOREIGN", "DISABLED"])(
+it.each(["READY", "GROUPED", "FOREIGN", "DISABLED"])(
   "gates plan validation and binds complete cards (%s)",
   async (mode) => {
     const { commercialPlanFixture } =
@@ -4029,6 +4029,15 @@ it.each(["READY", "FOREIGN", "DISABLED"])(
         message: "À confirmer",
         expectedPlanVersion: null,
         candidate: data.plan,
+        ...(mode === "GROUPED"
+          ? {
+              reviewBasis: {
+                offerRefs: [],
+                sourceDigest: "a".repeat(64),
+                storeSettingsVersion: null,
+              },
+            }
+          : {}),
         issues: [],
       },
       issues: [],
@@ -4074,7 +4083,15 @@ it.each(["READY", "FOREIGN", "DISABLED"])(
       ).toMatchObject(
         mode === "FOREIGN"
           ? { unavailable: true }
-          : { status: "READY", preview: { candidate: data.plan } },
+          : mode === "GROUPED"
+            ? {
+                status: "READY",
+                summary: {
+                  offerCount: data.plan.offers.length,
+                  tgCount: data.plan.preparation.placements.length,
+                },
+              }
+            : { status: "READY", preview: { candidate: data.plan } },
       );
       return response();
     };
@@ -4083,8 +4100,12 @@ it.each(["READY", "FOREIGN", "DISABLED"])(
       ...(mode === "DISABLED" ? {} : { planValidation }),
     }).generate(f.request, schema);
     expect(planValidation).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
-    expect(result.planValidations).toEqual(mode === "READY" ? [value] : []);
-    expect(result.toolEvidence).toEqual(mode === "READY" ? [evidence] : []);
+    expect(result.planValidations).toEqual(
+      ["READY", "GROUPED"].includes(mode) ? [value] : [],
+    );
+    expect(result.toolEvidence).toEqual(
+      ["READY", "GROUPED"].includes(mode) ? [evidence] : [],
+    );
   },
 );
 

@@ -10,9 +10,11 @@ import { formatFrenchCalendarDate } from "@/dates/calendar";
 export function CommercialPlanContent({
   plan,
   operationId,
+  review = false,
 }: {
   plan: CommercialWeekPlan;
   operationId?: string;
+  review?: boolean;
 }) {
   return (
     <View className="gap-4">
@@ -79,18 +81,20 @@ export function CommercialPlanContent({
                       Note magasin : {o.note}
                     </Text>
                   ) : null}
-                  <SecondaryButton
-                    label="Revoir le choix actuel de cette offre"
-                    onPress={() =>
-                      router.push(
-                        commercialOfferHref(o.sourceReference, o.choiceId),
-                      )
-                    }
-                  />
+                  {!review ? (
+                    <SecondaryButton
+                      label="Revoir le choix actuel de cette offre"
+                      onPress={() =>
+                        router.push(
+                          commercialOfferHref(o.sourceReference, o.choiceId),
+                        )
+                      }
+                    />
+                  ) : null}
                 </View>
               ))}
             <CommercialOriginalButton sourceDocumentId={op.sourceDocumentId} />
-            {!operationId ? (
+            {!operationId && !review ? (
               <SecondaryButton
                 label="Ouvrir l’opération et ses rappels"
                 onPress={() =>

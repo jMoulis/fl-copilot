@@ -1,3 +1,9 @@
+## Implemented increment — 2 November 2026: confirming the selected weekly plan
+
+An existing week draft now leads to one recap of selected offers/conditions and TGs, with one explicit manager confirmation. Remove the separate commercial-offer certification section and its redundant confirmation state from the week screen. The chat's existing plan card uses the same grouped commit; essential terms remain visible and additional source/product/operation detail is disclosed on demand. Do not link an unsaved preview to the execution/reminder route for a nonexistent operation.
+
+Opening a review is read-only. Confirmation validates only the displayed selected versions and saves the plan; execution is not declared. Stale products, sources, choices, preparation or store context require a fresh review. Unknown store capacity does not prevent advice; a plan exceeding a declared active TG capacity must be corrected. Legacy cards and explicit targeted offer-validation tools retain their semantics. This is not yet simplification of all draft/offer creation or document processing. Compatible grouped API/native delivery and real device acceptance remain required.
+
 ## Approved UX refinement — 1 November 2026: recommencer la préparation
 
 Open a native modal from weekly preparation, PDF review, or an exact-duplicate import result. Preserve the explicit Monday–Sunday selection and allow adjacent-week navigation. Two labelled switches choose empty draft and/or fresh PDF analysis; show the selected filename, with a collapsed searchable eight-entry PDF picker. Reuse the source chosen from document detail even beyond the recent list. Warn before leaving unsaved preparation fields, and restore the parent form's clean baseline so returning rereads the actual cleared revision.

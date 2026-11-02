@@ -320,7 +320,7 @@ it("does not use a message predating the preview as acceptance", async () => {
   }
 });
 
-async function planCard(s: Awaited<ReturnType<typeof setup>>) {
+async function planCard(s: Awaited<ReturnType<typeof setup>>, grouped = false) {
   const { readCopilotContext } = await import("./context-readers"),
     { copilotMessageSchema } = await import("@fl-copilot/domain"),
     { applyCopilotRecord } = await import("./conversation-repository");
@@ -329,6 +329,10 @@ async function planCard(s: Awaited<ReturnType<typeof setup>>) {
     s.f.storeId,
     {
       ...s.previewRequest,
+      input: {
+        ...s.previewRequest.input,
+        ...(grouped ? { groupOfferReview: true } : {}),
+      },
       schemaVersion: 1 as const,
       tool: "commercial.plan.preview" as const,
     },
@@ -584,6 +588,260 @@ it("rejects revoked permission, forged cards, deleted replies and cancellation w
     expect(
       s.db.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
     ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});
+
+it("groups pending offer review and plan into one explicit private confirmation, with no writes on open", async () => {
+  const s = await setup();
+  try {
+    s.db.exec("DELETE FROM commercial_validated_offers");
+    const before = s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    const message = await planCard(s, true),
+      controller = await planController(s);
+    const state = await controller.open(message);
+    expect(state.status).toBe("READY");
+    expect(state.content.preview.reviewBasis?.offerRefs).toEqual([
+      {
+        choiceId: s.fixture.choice.id,
+        choiceVersion: s.fixture.choice.version,
+      },
+    ]);
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+    ).toEqual({ n: 0 });
+    expect(s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      before,
+    );
+    await expect(controller.confirm(message, false)).rejects.toThrow(
+      "REVIEW_REQUIRED",
+    );
+    expect((await controller.confirm(message, true)).status).toBe("COMPLETED");
+    await controller.confirm(message, true);
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+    ).toEqual({ n: 1 });
+    expect(
+      s.db
+        .prepare(
+          "SELECT command_type FROM sync_outbox WHERE command_type IN ('COMMERCIAL_OFFER_VALIDATE','COMMERCIAL_WEEK_PLAN_UPSERT') ORDER BY local_sequence",
+        )
+        .all(),
+    ).toEqual([
+      { command_type: "COMMERCIAL_OFFER_VALIDATE" },
+      { command_type: "COMMERCIAL_WEEK_PLAN_UPSERT" },
+    ]);
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_execution_tasks").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});
+it("rolls grouped approval, history, plan, confirmation and Outbox back together on failure", async () => {
+  const s = await setup();
+  try {
+    s.db.exec("DELETE FROM commercial_validated_offers");
+    const message = await planCard(s, true),
+      controller = await planController(s);
+    const before = s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get();
+    s.a.fail = true;
+    await expect(controller.confirm(message, true)).rejects.toThrow(
+      "private database error",
+    );
+    for (const table of [
+      "commercial_validated_offers",
+      "commercial_offer_validation_history",
+      "commercial_week_plans",
+      "commercial_plan_history",
+    ])
+      expect(s.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()).toEqual({
+        n: 0,
+      });
+    expect(s.db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()).toEqual(
+      before,
+    );
+    s.a.fail = false;
+    expect((await controller.confirm(message, true)).status).toBe("COMPLETED");
+  } finally {
+    s.db.close();
+  }
+});
+it.each(["product", "source", "draft", "store", "offer"])(
+  "rejects a grouped confirmation if %s changes after review",
+  async (kind) => {
+    const s = await setup();
+    try {
+      s.db.exec("DELETE FROM commercial_validated_offers");
+      const message = await planCard(s, true),
+        controller = await planController(s);
+      if (kind === "product")
+        s.db
+          .prepare("UPDATE products SET version=version+1 WHERE id=?")
+          .run(s.fixture.product.id);
+      if (kind === "source") {
+        const reading = structuredClone(s.fixture.reading);
+        reading.reading!.operations[0]!.fields.push({
+          name: "sellingPrice",
+          rawValue: "999",
+          confidence: 1,
+          evidence: [],
+          validationStatus: "TO_VALIDATE",
+        });
+        s.db
+          .prepare(
+            "UPDATE commercial_visual_readings SET payload_json=? WHERE id=?",
+          )
+          .run(JSON.stringify(reading), reading.id);
+      }
+      if (kind === "draft")
+        s.db
+          .prepare(
+            "UPDATE commercial_week_preparations SET payload_json=? WHERE id=?",
+          )
+          .run(
+            JSON.stringify({
+              ...s.fixture.preparation,
+              note: "Autre décision",
+            }),
+            s.fixture.preparation.id,
+          );
+      if (kind === "offer")
+        s.db
+          .prepare(
+            "UPDATE commercial_offer_choices SET payload_json=? WHERE id=?",
+          )
+          .run(
+            JSON.stringify({ ...s.fixture.choice, version: 2 }),
+            s.fixture.choice.id,
+          );
+      if (kind === "store") {
+        const { storeContextFixture } =
+          await import("../../../../scripts/test-store-context-fixtures");
+        const { applyStoreContext } =
+          await import("../store/context-repository");
+        await applyStoreContext(s.a, s.f.storeId, {
+          ...storeContextFixture(),
+          id: s.f.storeId,
+          storeId: s.f.storeId,
+        });
+      }
+      expect((await controller.open(message)).status).toBe("STALE");
+      await expect(controller.confirm(message, true)).rejects.toThrow("STALE");
+      expect(
+        s.db
+          .prepare("SELECT COUNT(*) n FROM commercial_validated_offers")
+          .get(),
+      ).toEqual({ n: 0 });
+    } finally {
+      s.db.close();
+    }
+  },
+);
+it("keeps a legacy preview blocked by missing approvals and does not grant a helper grouped confirmation", async () => {
+  const s = await setup();
+  try {
+    s.db.exec("DELETE FROM commercial_validated_offers");
+    const legacy = planPreviewResultSchema.parse(
+      await s.reader.execute(s.previewRequest, s.scope),
+    );
+    expect(legacy.candidate).toBeNull();
+    expect(legacy.issues.map((i) => i.code)).toContain("NOT_VALIDATED");
+    const message = await planCard(s, true),
+      helper = await planController(s, false);
+    await expect(helper.confirm(message, true)).rejects.toThrow("FORBIDDEN");
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});
+
+it("confirms a retained original-PDF offer without waiting for any extraction", async () => {
+  const s = await setup();
+  try {
+    s.db.exec(
+      "DELETE FROM commercial_validated_offers; DELETE FROM commercial_visual_readings",
+    );
+    const source = {
+      kind: "PDF_ORIGINAL" as const,
+      sourceDocumentId: s.fixture.choice.source.sourceDocumentId,
+      checksum: `sha256:${"a".repeat(64)}`,
+      pageNumber: 2,
+      excerpt: "Offre commerciale retenue dans la page originale",
+    };
+    const { commercialChoiceId } = await import("@fl-copilot/commercial-core");
+    const choice = {
+      ...s.fixture.choice,
+      id: await commercialChoiceId(s.f.storeId, source, testChoiceDigest),
+      source,
+    };
+    s.db.exec("DELETE FROM commercial_offer_choices");
+    await applyCommercialChoice(s.a, s.f.storeId, choice);
+    await s.a.runAsync(
+      "INSERT INTO source_documents(id,store_id,source_type,checksum,local_processing_status,remote_upload_status,version,created_at,updated_at,sync_state,dirty) VALUES(?,?,'WEEKLY_COMMERCIAL_PDF',?,'PENDING','PENDING',1,?,?,'PENDING',1)",
+      source.sourceDocumentId,
+      s.f.storeId,
+      source.checksum,
+      choice.createdAt,
+      choice.updatedAt,
+    );
+    const preparation = {
+      ...s.fixture.preparation,
+      offerRefs: [{ choiceId: choice.id, choiceVersion: choice.version }],
+      placements: s.fixture.preparation.placements.map((p) => ({
+        ...p,
+        offerIds: [choice.id],
+        sourceIdea: null,
+      })),
+    };
+    await applyCommercialPreparation(s.a, s.f.storeId, preparation);
+    const message = await planCard(s, true),
+      controller = await planController(s);
+    expect((await controller.open(message)).status).toBe("READY");
+    expect((await controller.confirm(message, true)).status).toBe("COMPLETED");
+    const row = s.db
+      .prepare("SELECT payload_json FROM commercial_week_plans")
+      .get() as { payload_json: string };
+    expect(JSON.parse(row.payload_json).offers[0].sourceReference).toEqual(
+      source,
+    );
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_visual_readings").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});
+
+it("cancels a grouped confirmation during approval without leaving partial business writes", async () => {
+  const s = await setup();
+  try {
+    s.db.exec("DELETE FROM commercial_validated_offers");
+    const message = await planCard(s, true),
+      controller = await planController(s),
+      abort = new AbortController();
+    const run = s.a.runAsync.bind(s.a);
+    s.a.runAsync = async (sql, ...params) => {
+      const result = await run(sql, ...params);
+      if (sql.includes("INSERT INTO commercial_offer_validation_history"))
+        abort.abort();
+      return result;
+    };
+    await expect(
+      controller.confirm(message, true, abort.signal),
+    ).rejects.toThrow();
+    for (const table of [
+      "commercial_validated_offers",
+      "commercial_offer_validation_history",
+      "commercial_week_plans",
+      "commercial_plan_history",
+    ])
+      expect(s.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()).toEqual({
+        n: 0,
+      });
   } finally {
     s.db.close();
   }

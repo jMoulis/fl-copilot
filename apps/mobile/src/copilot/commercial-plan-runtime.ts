@@ -1,3 +1,4 @@
+import { saveReviewedCommercialPlan } from "../commercial/plan-review";
 import {
   planValidateRequestSchema,
   planValidateAuthoritySchema,
@@ -94,26 +95,43 @@ export class CopilotCommercialPlanRuntime {
           (before?.entity.version ?? null) !== review.data.expectedPlanVersion
         )
           throw new ProductClassificationError("VERSION_CONFLICT");
-        const current = await readWeekPlanContext(tx, candidate.preparation);
-        if (commercialPlanIssues(candidate.preparation, current).length)
-          throw new ProductClassificationError(
-            "COMMERCIAL_PLAN_REVIEW_REQUIRED",
-          );
-        const rebuilt = await buildCommercialWeekPlan(
-          {
-            preparation: candidate.preparation,
-            version: candidate.version,
-            createdAt: candidate.createdAt,
-            validatedAt: candidate.validatedAt,
-          },
-          current,
-          this.digest,
-        );
-        if (JSON.stringify(rebuilt) !== JSON.stringify(candidate))
-          throw new ProductClassificationError(
-            "COMMERCIAL_PLAN_REVIEW_REQUIRED",
-          );
         const appliedAt = this.now(),
+          commandId = this.generateId();
+        let after;
+        if (review.data.reviewBasis) {
+          after = await saveReviewedCommercialPlan(
+            joinedProductToolDatabase(tx),
+            candidate,
+            review.data.reviewBasis,
+            {
+              commandId,
+              deviceId: ctx.deviceId,
+              generateId: this.generateId,
+              appliedAt,
+              canConfirm: () => canValidateCommercialPlan && !signal?.aborted,
+            },
+            this.digest,
+          );
+        } else {
+          const current = await readWeekPlanContext(tx, candidate.preparation);
+          if (commercialPlanIssues(candidate.preparation, current).length)
+            throw new ProductClassificationError(
+              "COMMERCIAL_PLAN_REVIEW_REQUIRED",
+            );
+          const rebuilt = await buildCommercialWeekPlan(
+            {
+              preparation: candidate.preparation,
+              version: candidate.version,
+              createdAt: candidate.createdAt,
+              validatedAt: candidate.validatedAt,
+            },
+            current,
+            this.digest,
+          );
+          if (JSON.stringify(rebuilt) !== JSON.stringify(candidate))
+            throw new ProductClassificationError(
+              "COMMERCIAL_PLAN_REVIEW_REQUIRED",
+            );
           after = await buildCommercialWeekPlan(
             {
               preparation: candidate.preparation,
@@ -123,9 +141,9 @@ export class CopilotCommercialPlanRuntime {
             },
             current,
             this.digest,
-          ),
-          commandId = this.generateId();
-        await repo.save(after, { commandId, deviceId: ctx.deviceId });
+          );
+          await repo.save(after, { commandId, deviceId: ctx.deviceId });
+        }
         return {
           operationId: request.operationId,
           schemaVersion: 1 as const,

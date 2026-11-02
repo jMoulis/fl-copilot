@@ -1,3 +1,4 @@
+import { readCommercialPlanReview } from "../commercial/plan-review";
 import { CommercialExecutionRepository } from "../commercial/execution-repository";
 import {
   commercialExecutionChecklist,
@@ -142,17 +143,22 @@ export async function readCopilotContext(
           storeId,
           request.input.weekStart,
         );
-      const issues = prep
-        ? commercialPlanIssues(
-            prep.entity,
-            await readWeekPlanContext(tx, prep.entity),
-          )
-        : [
-            {
-              code: "PREPARATION_MISSING",
-              messageFr: "Préparez cette semaine avant de valider son plan.",
-            },
-          ];
+      const review =
+        prep && request.input.groupOfferReview
+          ? await readCommercialPlanReview(tx, prep.entity, digest, observedAt)
+          : null;
+      const context =
+        review?.context ??
+        (prep ? await readWeekPlanContext(tx, prep.entity) : null);
+      const issues =
+        prep && context
+          ? (review?.issues ?? commercialPlanIssues(prep.entity, context))
+          : [
+              {
+                code: "PREPARATION_MISSING",
+                messageFr: "Préparez cette semaine avant de valider son plan.",
+              },
+            ];
       if (plan && ["ERROR", "CONFLICT"].includes(plan.syncState))
         issues.push({
           code: "PLAN_SYNC",
@@ -168,11 +174,12 @@ export async function readCopilotContext(
                 createdAt: plan?.entity.createdAt ?? observedAt,
                 validatedAt: observedAt,
               },
-              await readWeekPlanContext(tx, prep.entity),
+              review?.context ?? context!,
               digest,
             )
           : null;
       return {
+        ...(review ? { reviewBasis: review.basis } : {}),
         expectedPlanVersion: plan?.entity.version ?? null,
         candidate,
         issues,

@@ -18,13 +18,17 @@ export async function previewCommercialPlanValidation(
   raw: unknown,
   now: () => string = () => new Date().toISOString(),
   physicalAllocationClient = false,
+  groupedReview = false,
 ) {
+  const observedAt = now();
   const input = copilotPlanReadinessInputSchema.parse(raw),
-    { result, context, preparation } = await loadCommercialPlanReadiness(
-      db,
-      storeId,
-      input,
-    );
+    { result, context, preparation, reviewBasis } =
+      await loadCommercialPlanReadiness(
+        db,
+        storeId,
+        input,
+        groupedReview ? observedAt : undefined,
+      );
   if (
     !physicalAllocationClient &&
     preparation?.physicalAllocation !== undefined
@@ -48,7 +52,6 @@ export async function previewCommercialPlanValidation(
         before.weekStart !== input.weekStart)
     )
       throw Error("PLAN_VALIDATION_SCOPE");
-    const observedAt = now();
     const candidate = await buildCommercialWeekPlan(
       {
         preparation,
@@ -84,6 +87,7 @@ export async function previewCommercialPlanValidation(
         observedAt,
         message:
           "Aperçu du plan à confirmer sur l’appareil. Aucun enregistrement ni exécution.",
+        ...(reviewBasis ? { reviewBasis } : {}),
         expectedPlanVersion: before?.version ?? null,
         candidate,
         issues: [],
@@ -109,7 +113,9 @@ export async function previewCommercialPlanValidation(
         label: "Validation du plan hebdomadaire",
         value:
           status === "READY"
-            ? "Plan préparé pour revue native des offres et TG. Une confirmation explicite enregistrera une révision locale, sans déclarer de mise en rayon. Rien n’a encore été enregistré."
+            ? groupedReview
+              ? "Récapitulatif des offres et TG prêt : une seule confirmation sur l’appareil validera les offres sélectionnées qui le nécessitent et enregistrera le plan. Aucun enregistrement ni mise en rayon pour le moment."
+              : "Plan préparé pour revue native des offres et TG. Une confirmation explicite enregistrera une révision locale, sans déclarer de mise en rayon. Rien n’a encore été enregistré."
             : status === "UNCHANGED"
               ? "Ce plan est déjà enregistré avec cette préparation et ces références ; aucune nouvelle révision nécessaire."
               : status === "LIMIT_EXCEEDED"

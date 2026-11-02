@@ -1,3 +1,9 @@
+## M7 increment — 2 November 2026: grouped plan adoption
+
+Replace the separate offer-certification section with one recap/confirmation of the selected offers and TG plan. Reuse existing canonical validation/plan writers in one local transaction, scoped private review and ordered Outbox; qualify stale previews against current store settings and active TG capacity. Compatible native clients use plan-validation capability 2; legacy previews stay unchanged. No model tool, global instruction block, new entity or paid request. See `../qa/M7_GROUPED_PLAN_REVIEW_2026_11_02.md`.
+
+Next: audit/remove obsolete document-processing consumers and further simplify agreement-to-draft/choice creation, including representation of advice without a retained offer; preserve original sources/history/corrections and current plan/execution boundaries. Actual merchandising dialogue and PDF → advice → adjusted plan → execution/bilan acceptance remain open. The seven workstreams and complete V1 scope remain unchanged.
+
 ## M7 current owner arbitration — 1 November 2026: commercial strategy and store context
 
 The pense-bête is a strategy input, not a required extraction-review workflow. PR403 replaces default review with a selected-week exact-original chat draft; its remaining refactor gates are explicit. The next increment extends the existing store settings with manager-declared active produce TGs, implantation/circulation and optional hot/intermediate/cold/unknown named locations, using existing history/Outbox/sync and explicit legacy capability projection/preservation. No measured 2D prerequisite, inferred heat, new model tool or parallel geometry store. See `STORE_LAYOUT_SPEC.md`, `DATABASE_AND_API_CONTRACTS.md` and `../qa/M7_STORE_MERCHANDISING_CONTEXT_2026_11_01.md`. Complete V1, agreed-plan simplification, redundant processing removal and the seven workstreams remain in scope; no whole milestone closes from this increment.

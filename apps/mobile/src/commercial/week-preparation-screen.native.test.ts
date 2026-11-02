@@ -28,9 +28,6 @@ vi.mock("@/commercial/physical-allocation-card", () => ({
 vi.mock("@/commercial/plan-validation-view", () => ({
   CommercialPlanValidationView: "PlanValidation",
 }));
-vi.mock("@/commercial/offer-validation-view", () => ({
-  CommercialOfferValidationView: "OfferValidation",
-}));
 vi.mock(
   "@/commercial/week-preparation-repository",
   () => import("./week-preparation-repository"),

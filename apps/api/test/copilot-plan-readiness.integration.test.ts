@@ -54,6 +54,51 @@ describe.skipIf(!uri)("complete synchronized commercial plan readiness", () => {
         .insertOne({ _id: value.id, ...value });
     return f;
   }
+  it("only capable clients get one grouped review, without creating approvals or plans", async () => {
+    const f = await fixture();
+    await db
+      .collection("commercialValidatedOffers")
+      .deleteMany({ storeId: f.storeId });
+    const legacy = await previewCommercialPlanValidation(db, f.storeId, input);
+    expect(legacy.status).toBe("BLOCKED");
+    expect(legacy.preview).toBeNull();
+    const grouped = await previewCommercialPlanValidation(
+      db,
+      f.storeId,
+      input,
+      undefined,
+      false,
+      true,
+    );
+    expect(grouped.status).toBe("READY");
+    expect(grouped.preview?.reviewBasis?.offerRefs).toEqual([
+      { choiceId: f.choice.id, choiceVersion: f.choice.version },
+    ]);
+    expect(grouped.evidence[0]!.value).toContain("Aucun enregistrement");
+    for (const name of [
+      "commercialValidatedOffers",
+      "commercialWeekPlans",
+      "syncChanges",
+    ])
+      expect(
+        await db.collection(name).countDocuments({ storeId: f.storeId }),
+      ).toBe(0);
+    await db
+      .collection("products")
+      .updateOne({ _id: f.product.id } as Document, {
+        $set: { status: "RETIRED" },
+      });
+    const blocked = await previewCommercialPlanValidation(
+      db,
+      f.storeId,
+      input,
+      undefined,
+      false,
+      true,
+    );
+    expect(blocked.status).toBe("BLOCKED");
+    expect(blocked.issues.map((i) => i.code)).toContain("PRODUCT_INVALID");
+  });
   it("reuses canonical complete readiness without saving a plan, action, or Outbox", async () => {
     const f = await fixture();
     const r = await readCommercialPlanReadiness(db, f.storeId, input);

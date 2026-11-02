@@ -2,7 +2,6 @@ import { formatFrenchCalendarDate } from "@/dates/calendar";
 import { PhysicalAllocationCard } from "@/commercial/physical-allocation-card";
 import { contextWeekQuerySchema } from "@fl-copilot/domain";
 import { CommercialPlanValidationView } from "@/commercial/plan-validation-view";
-import { CommercialOfferValidationView } from "@/commercial/offer-validation-view";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Alert } from "react-native";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -87,7 +86,6 @@ export default function WeekPreparationScreen() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [issues, setIssues] = useState<Record<string, string>>({});
-  const [validationGeneration, setValidationGeneration] = useState(0);
   const initialized = useRef(false),
     saving = useRef(false);
   const unsavedChanges =
@@ -610,16 +608,8 @@ export default function WeekPreparationScreen() {
         onPress={() => void save()}
       />
       {saved ? (
-        <CommercialOfferValidationView
-          key={`${saved.entity.id}:${saved.entity.version}`}
-          plan={saved.entity}
-          unsavedChanges={unsavedChanges}
-          onValidated={() => setValidationGeneration((v) => v + 1)}
-        />
-      ) : null}
-      {saved ? (
         <CommercialPlanValidationView
-          key={`plan:${saved.entity.id}:${saved.entity.version}:${validationGeneration}`}
+          key={`plan:${saved.entity.id}:${saved.entity.version}`}
           preparation={saved.entity}
           unsavedChanges={unsavedChanges}
         />
