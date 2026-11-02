@@ -20,14 +20,21 @@ export function CommercialPlanContent({
     <View className="gap-4">
       <Text className="text-base text-muted">
         {formatFrenchCalendarDate(plan.weekStart)} au{" "}
-        {formatFrenchCalendarDate(plan.weekEnd)} · {plan.operations.length}{" "}
-        opérations · {plan.offers.length} offres ·{" "}
+        {formatFrenchCalendarDate(plan.weekEnd)} ·{" "}
         {plan.preparation.placements.length} TG
+        {plan.offers.length
+          ? ` · ${plan.operations.length} opérations · ${plan.offers.length} offres`
+          : " · Merchandising"}
       </Text>
       <Text className="text-sm text-muted">
-        Ces opérations sont prévues pour le magasin. Aucune exécution n’est
-        confirmée par la validation du plan.
+        Ces choix sont prévus pour le magasin. Leur réalisation en rayon sera
+        déclarée séparément.
       </Text>
+      {!operationId && plan.preparation.note ? (
+        <Text selectable className="text-base text-ink">
+          {plan.preparation.note}
+        </Text>
+      ) : null}
       {!operationId && plan.preparation.physicalAllocation ? (
         <PhysicalAllocationCard
           scenario={plan.preparation.physicalAllocation}
@@ -120,12 +127,14 @@ export function CommercialPlanContent({
                   {t.label}
                   {t.theme ? ` · ${t.theme}` : ""}
                 </Text>
-                <Text className="text-base text-ink">
-                  {plan.offers
-                    .filter((o) => t.offerIds.includes(o.choiceId))
-                    .map((o) => o.rawProductLabel)
-                    .join(" · ")}
-                </Text>
+                {t.offerIds.length ? (
+                  <Text className="text-base text-ink">
+                    {plan.offers
+                      .filter((o) => t.offerIds.includes(o.choiceId))
+                      .map((o) => o.rawProductLabel)
+                      .join(" · ")}
+                  </Text>
+                ) : null}
               </View>
             ))
           ) : (

@@ -103,25 +103,30 @@ export function PlanValidationCard({
             {formatFrenchCalendarDate(plan.weekEnd)} · Révision {plan.version}
           </Text>
           <Text>
-            {plan.offers.length} offre(s) · {plan.preparation.placements.length}{" "}
-            TG · Capacité déclarée :{" "}
+            {plan.preparation.placements.length} TG
+            {plan.offers.length
+              ? ` · ${plan.offers.length} offre(s)`
+              : " · Merchandising"}{" "}
+            · Capacité déclarée :{" "}
             {plan.preparation.tgCapacity ?? "non précisée"}
           </Text>
           {plan.preparation.note ? (
             <Text>Note : {plan.preparation.note}</Text>
           ) : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ expanded: details }}
-            style={{ minHeight: 44, paddingVertical: 12 }}
-            onPress={() => setDetails((v) => !v)}
-          >
-            <Text style={{ color: colors.forest }}>
-              {details
-                ? "Masquer les détails et sources"
-                : "Voir les détails et sources"}
-            </Text>
-          </Pressable>
+          {plan.offers.length ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: details }}
+              style={{ minHeight: 44, paddingVertical: 12 }}
+              onPress={() => setDetails((v) => !v)}
+            >
+              <Text style={{ color: colors.forest }}>
+                {details
+                  ? "Masquer les détails et sources"
+                  : "Voir les détails et sources"}
+              </Text>
+            </Pressable>
+          ) : null}
           {plan.offers.map((o) => (
             <View key={o.id} style={{ gap: 4, paddingVertical: 8 }}>
               <Text style={{ fontWeight: "600" }}>{o.rawProductLabel}</Text>
@@ -180,15 +185,17 @@ export function PlanValidationCard({
                 {p.label}
                 {p.theme ? ` · ${p.theme}` : ""}
               </Text>
-              <Text>
-                {p.offerIds
-                  .map(
-                    (id) =>
-                      plan.offers.find((o) => o.choiceId === id)
-                        ?.rawProductLabel ?? "Offre indisponible",
-                  )
-                  .join(" · ")}
-              </Text>
+              {p.offerIds.length ? (
+                <Text>
+                  {p.offerIds
+                    .map(
+                      (id) =>
+                        plan.offers.find((o) => o.choiceId === id)
+                          ?.rawProductLabel ?? "Offre indisponible",
+                    )
+                    .join(" · ")}
+                </Text>
+              ) : null}
             </View>
           ))}
           <Text>
@@ -206,7 +213,7 @@ export function PlanValidationCard({
               ? "Plan enregistré sur cet appareil. La synchronisation peut rester en attente."
               : state.status === "STALE"
                 ? "La préparation ou une référence a changé. Demandez un nouvel aperçu avant de confirmer."
-                : "En confirmant, tu valides les produits, dates, conditions et TG affichés."}
+                : "En confirmant, tu adoptes les choix affichés pour cette semaine."}
           </Text>
           {state.status === "READY" && canConfirm ? (
             <Pressable

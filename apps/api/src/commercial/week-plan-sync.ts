@@ -150,16 +150,18 @@ export async function applyCommercialPlanCommand(
     await ctx.database
       .collection(name)
       .deleteMany({ storeId, planId: plan.id }, { session: ctx.session });
-  await ctx.database
-    .collection<{ _id: string }>("commercialOperations")
-    .insertMany(
-      plan.operations.map((o) => ({ ...o, _id: o.id })),
+  if (plan.operations.length)
+    await ctx.database
+      .collection<{ _id: string }>("commercialOperations")
+      .insertMany(
+        plan.operations.map((o) => ({ ...o, _id: o.id })),
+        { session: ctx.session },
+      );
+  if (plan.offers.length)
+    await ctx.database.collection<{ _id: string }>("offers").insertMany(
+      plan.offers.map((o) => ({ ...o, _id: o.id })),
       { session: ctx.session },
     );
-  await ctx.database.collection<{ _id: string }>("offers").insertMany(
-    plan.offers.map((o) => ({ ...o, _id: o.id })),
-    { session: ctx.session },
-  );
   const revision = commercialPlanRevisionSchema.parse({
     id: plan.revisionId,
     storeId,

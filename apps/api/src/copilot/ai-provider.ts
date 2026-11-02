@@ -3024,7 +3024,7 @@ export function createCopilotAiProvider(
                 ? {
                     commercial_plan_validation: tool({
                       description:
-                        "Prepare final validation of an explicit Monday week's complete commercial plan only on user request. Uses the existing synchronized draft and canonical readiness rules, never model-authored plan content. READY creates a complete native review card and requires explicit manager confirmation; it does not save or install anything. Compatible clients can review selected offers and TGs together in this one card, without separate offer certification screens; approval remains pending until confirmation. BLOCKED identifies real corrections, NO_DRAFT may mean local unsynchronized work, LIMIT_EXCEEDED uses Ma semaine without truncation. UNCHANGED creates no revision or card. Saved planning and field execution remain distinct. Only the latest requested plan preview is shown.",
+                        "Preview the complete saved draft for the explicit Monday only on user request, using canonical readiness rather than model-authored plan content. Described TG themes/notes need no commercial offer; never invent one. READY creates one complete native manager confirmation for choices and any selected offer certifications; it saves and executes nothing. BLOCKED identifies corrections; NO_DRAFT may mean unsynchronized local work; LIMIT_EXCEEDED uses Ma semaine without truncation. UNCHANGED creates no revision/card. Adoption and field execution remain distinct. Only the latest requested preview is shown.",
                       inputSchema: planValidationInputSchema,
                       execute: (input) =>
                         executeRead(

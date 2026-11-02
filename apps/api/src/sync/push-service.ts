@@ -4,7 +4,14 @@ import {
 } from "@fl-copilot/domain";
 import { applyDocumentArchiveCommand } from "../document-archive-sync";
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
-import { requireCommercialSourceCompatibility } from "../commercial/source-compatibility";
+import {
+  commercialWeekPlanSchema,
+  commercialPlanRequiresQualitativeSupport,
+} from "@fl-copilot/domain";
+import {
+  requireCommercialSourceCompatibility,
+  requireQualitativeCommercialPlanCompatibility,
+} from "../commercial/source-compatibility";
 import { isCommercialOriginalSource } from "@fl-copilot/domain";
 import { commercialOfferChoiceSchema } from "@fl-copilot/sync-contracts";
 import { AuthError } from "../auth/service";
@@ -111,6 +118,37 @@ export function createMongoSyncPushService(
 
   return {
     async push(input, requestId, ownerId) {
+      if (!input.qualitativeCommercialPlans) {
+        if (
+          input.commands.some((command) => {
+            const plan = commercialWeekPlanSchema.safeParse(command.payload);
+            return (
+              plan.success &&
+              commercialPlanRequiresQualitativeSupport(plan.data)
+            );
+          })
+        )
+          throw new AuthError(
+            426,
+            "QUALITATIVE_COMMERCIAL_PLAN_UPGRADE_REQUIRED",
+            "Mets l’application à jour pour synchroniser ce plan de merchandising. Tes données locales sont conservées.",
+          );
+        try {
+          await requireQualitativeCommercialPlanCompatibility(
+            await database.getDb(),
+            input.storeId,
+            false,
+          );
+        } catch (error) {
+          if (error instanceof AuthError) throw error;
+          return {
+            results: input.commands.map((command) =>
+              retryableResult(command, requestId),
+            ),
+            serverTime: now().toISOString(),
+          };
+        }
+      }
       const supportsOriginals = input.commercialOriginalSources === true;
       if (
         !supportsOriginals &&
@@ -274,6 +312,26 @@ export function createMongoSyncPushService(
       ) {
         await advanceProductUnitRefresh(database, input.storeId, now);
       }
+      // A concurrent plan decision can arrive after the initial compatibility read.
+      if (
+        !input.qualitativeCommercialPlans &&
+        results.some((result) => {
+          if (
+            result.entityType !== "commercial_week_plan" ||
+            !result.remoteEntity
+          )
+            return false;
+          const plan = commercialWeekPlanSchema.safeParse(result.remoteEntity);
+          return (
+            plan.success && commercialPlanRequiresQualitativeSupport(plan.data)
+          );
+        })
+      )
+        throw new AuthError(
+          426,
+          "QUALITATIVE_COMMERCIAL_PLAN_UPGRADE_REQUIRED",
+          "Mets l’application à jour pour lire ce plan de merchandising. Tes données locales sont conservées.",
+        );
       if (!input.storeMerchandising)
         for (const result of results)
           if (

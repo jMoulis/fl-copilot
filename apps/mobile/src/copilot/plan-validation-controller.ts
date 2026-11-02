@@ -134,7 +134,7 @@ export class CopilotPlanValidationController {
           ...message,
           id: userMessageId,
           role: "USER",
-          text: `Je confirme le plan de la semaine du ${state.content.preview.candidate!.weekStart}, avec les offres et les TG affichées.`,
+          text: `Je confirme le plan de la semaine du ${state.content.preview.candidate!.weekStart}, avec les choix affichés.`,
           attachments: [],
           replyToMessageId: state.content.assistantMessageId,
           supersedesMessageId: null,

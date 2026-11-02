@@ -846,3 +846,64 @@ it("cancels a grouped confirmation during approval without leaving partial busin
     s.db.close();
   }
 });
+
+it("confirms an offer-free strategic plan through the private chat card once, without manufacturing certification or execution", async () => {
+  const s = await setup();
+  try {
+    const preparation = {
+      ...s.fixture.preparation,
+      version: 2,
+      offerRefs: [],
+      note: "Agrumes en masse à l’entrée.",
+      placements: s.fixture.preparation.placements.map((t) => ({
+        ...t,
+        theme: "Agrumes de saison",
+        offerIds: [],
+        sourceIdea: null,
+      })),
+    };
+    await applyCommercialPreparation(s.a, s.f.storeId, preparation);
+    s.db.exec("DELETE FROM commercial_validated_offers");
+    const message = await planCard(s, true),
+      controller = await planController(s);
+    const preview = await controller.open(message);
+    expect(preview.status).toBe("READY");
+    expect(preview.content.preview.candidate).toMatchObject({
+      operations: [],
+      offers: [],
+      validationRefs: [],
+      productRefs: [],
+      preparation,
+    });
+    expect(preview.content.preview.reviewBasis?.offerRefs).toEqual([]);
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+    ).toEqual({ n: 0 });
+    await expect(controller.confirm(message, false)).rejects.toThrow(
+      "REVIEW_REQUIRED",
+    );
+    s.a.fail = true;
+    await expect(controller.confirm(message, true)).rejects.toThrow();
+    s.a.fail = false;
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+    ).toEqual({ n: 0 });
+    expect((await controller.confirm(message, true)).status).toBe("COMPLETED");
+    expect((await controller.confirm(message, true)).status).toBe("COMPLETED");
+    expect(
+      s.db
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE command_type='COMMERCIAL_WEEK_PLAN_UPSERT'",
+        )
+        .get(),
+    ).toEqual({ n: 1 });
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_validated_offers").get(),
+    ).toEqual({ n: 0 });
+    expect(
+      s.db.prepare("SELECT COUNT(*) n FROM commercial_execution_tasks").get(),
+    ).toEqual({ n: 0 });
+  } finally {
+    s.db.close();
+  }
+});

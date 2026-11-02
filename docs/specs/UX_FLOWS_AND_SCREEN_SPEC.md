@@ -1,3 +1,7 @@
+## Implemented increment — 2 November 2026: adopt a merchandising plan without a promotion
+
+Use the existing final-plan recap/confirmation for described TG themes and notes even when no promotion is selected. Show the general note, themes and actual TG count; omit empty offer/source sections and label qualitative content as merchandising. The same plan/history screen preserves these notes after saving. Keep explicit removed/changed references and ordinary offer terms when present. Saving adopts a plan, never declares a TG installed. Existing TG reminders remain available separately; no print-signage task is invented without an offer. An empty plan or an unassigned/unexplained TG shows its actionable correction. Compatible API/native delivery and actual-device acceptance remain pending.
+
 ## Implemented increment — 2 November 2026: concise strategic draft recap
 
 Show agreed TG themes and weekly notes together with declared capacity and one “Enregistrer ces choix” action for a new week. Omit empty offer lists, empty previous notes and repeated per-TG source/execution disclaimers. Existing-draft edits retain before/after information, explicit removals and reference-refresh consequences. Opening a card never saves; role, stale-preview, double-tap, cancellation and transaction checks remain. Saving is a draft decision; plan validation and field realization stay distinct. No new workflow or automatic approval. Real-device and real-model acceptance are pending.

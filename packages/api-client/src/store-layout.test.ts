@@ -111,3 +111,41 @@ it.each([false, true])(
     }
   },
 );
+
+it.each([false, true])(
+  "negotiates qualitative commercial snapshots with plan reads (%s)",
+  async (enabled) => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return new Response(
+          JSON.stringify({
+            code: "UNAVAILABLE",
+            messageFr: "Indisponible",
+            retryable: false,
+          }),
+          { status: 503 },
+        );
+      }),
+    );
+    const api = new ApiClient("https://test.invalid"),
+      store = "00000000-0000-4000-8000-000000000001";
+    const pull: Parameters<ApiClient["pullSync"]> = ["token", store];
+    pull[10] = enabled;
+    const boot: Parameters<ApiClient["bootstrapSync"]> = ["token", store];
+    boot[9] = enabled;
+    await expect(api.pullSync(...pull)).rejects.toBeInstanceOf(ApiClientError);
+    await expect(api.bootstrapSync(...boot)).rejects.toBeInstanceOf(
+      ApiClientError,
+    );
+    for (const url of urls) {
+      const query = new URL(url).searchParams;
+      expect(query.get("commercialPlans")).toBe(enabled ? "true" : null);
+      expect(query.get("qualitativeCommercialPlans")).toBe(
+        enabled ? "true" : null,
+      );
+    }
+  },
+);

@@ -8,6 +8,7 @@ import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import {
   requireCommercialSourceCompatibility,
   requireCommercialAnalysisCompatibility,
+  requireQualitativeCommercialPlanCompatibility,
 } from "../commercial/source-compatibility";
 import {
   readableEmailDecisions,
@@ -813,6 +814,11 @@ export function createMongoSyncPullService(
         : (selected.at(-1)?.sequence ?? afterSequence);
 
       if (query.documentArchiveHistory !== "true") {
+        await requireQualitativeCommercialPlanCompatibility(
+          mongoDatabase,
+          storeId,
+          query.qualitativeCommercialPlans === "true",
+        );
         await requireCommercialAnalysisCompatibility(
           mongoDatabase,
           storeId,

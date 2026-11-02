@@ -99,6 +99,62 @@ describe.skipIf(!uri)("complete synchronized commercial plan readiness", () => {
     expect(blocked.status).toBe("BLOCKED");
     expect(blocked.issues.map((i) => i.code)).toContain("PRODUCT_INVALID");
   });
+  it("previews qualitative TG adoption only for the compatible client, without certifying an invented offer", async () => {
+    const f = await fixture();
+    const preparation = {
+      ...f.preparation,
+      offerRefs: [],
+      note: "Présentation de masse à l’entrée.",
+      placements: f.preparation.placements.map((p) => ({
+        ...p,
+        theme: "Agrumes",
+        offerIds: [],
+        sourceIdea: null,
+      })),
+    };
+    await db
+      .collection<Document & { _id: string }>("commercialWeekPreparations")
+      .replaceOne(
+        { _id: f.preparation.id },
+        { ...preparation, _id: preparation.id },
+      );
+    const legacy = await previewCommercialPlanValidation(
+      db,
+      f.storeId,
+      input,
+      undefined,
+      false,
+      true,
+    );
+    expect(legacy.status).toBe("BLOCKED");
+    expect(legacy.preview).toBeNull();
+    expect(legacy.issues.map((i) => i.code)).toContain(
+      "QUALITATIVE_COMMERCIAL_PLAN_UPGRADE_REQUIRED",
+    );
+    const capable = await previewCommercialPlanValidation(
+      db,
+      f.storeId,
+      input,
+      undefined,
+      false,
+      true,
+      true,
+    );
+    expect(capable.status).toBe("READY");
+    expect(capable.preview?.candidate).toMatchObject({
+      offers: [],
+      operations: [],
+      validationRefs: [],
+      productRefs: [],
+      preparation,
+    });
+    expect(capable.preview?.reviewBasis?.offerRefs).toEqual([]);
+    expect(
+      await db
+        .collection("commercialWeekPlans")
+        .countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
+  });
   it("reuses canonical complete readiness without saving a plan, action, or Outbox", async () => {
     const f = await fixture();
     const r = await readCommercialPlanReadiness(db, f.storeId, input);
@@ -138,7 +194,7 @@ describe.skipIf(!uri)("complete synchronized commercial plan readiness", () => {
     await db
       .collection("commercialWeekPreparations")
       .updateOne({ _id: f.preparation.id } as Document, {
-        $set: { "placements.0.offerIds": [] },
+        $set: { "placements.0.offerIds": [], "placements.0.theme": "" },
       });
     const r = await readCommercialPlanReadiness(db, f.storeId, input);
     expect(r.status).toBe("BLOCKED");

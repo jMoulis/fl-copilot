@@ -3,6 +3,7 @@ import type { Db } from "mongodb";
 import {
   copilotPlanValidationPreviewSchema,
   copilotPlanReadinessInputSchema,
+  commercialPlanRequiresQualitativeSupport,
 } from "@fl-copilot/domain";
 import { buildCommercialWeekPlan } from "@fl-copilot/commercial-core";
 import {
@@ -19,6 +20,7 @@ export async function previewCommercialPlanValidation(
   now: () => string = () => new Date().toISOString(),
   physicalAllocationClient = false,
   groupedReview = false,
+  qualitativePlans = false,
 ) {
   const observedAt = now();
   const input = copilotPlanReadinessInputSchema.parse(raw),
@@ -40,6 +42,23 @@ export async function previewCommercialPlanValidation(
   let preview: ReturnType<
     typeof copilotPlanValidationPreviewSchema.parse
   >["preview"] = null;
+  if (
+    status === "READY" &&
+    preparation &&
+    !qualitativePlans &&
+    commercialPlanRequiresQualitativeSupport({ preparation })
+  ) {
+    status = "BLOCKED";
+    result.status = "BLOCKED";
+    const messageFr =
+      "Mets l’application à jour pour confirmer un plan de merchandising sans offre obligatoire.";
+    result.issues.push({
+      code: "QUALITATIVE_COMMERCIAL_PLAN_UPGRADE_REQUIRED",
+      messageFr,
+      label: null,
+    });
+    result.evidence[0]!.value = messageFr;
+  }
   if (status === "READY" && context && preparation) {
     const row = await db
         .collection<WeekPlanDocument>("commercialWeekPlans")
@@ -114,7 +133,7 @@ export async function previewCommercialPlanValidation(
         value:
           status === "READY"
             ? groupedReview
-              ? "Récapitulatif des offres et TG prêt : une seule confirmation sur l’appareil validera les offres sélectionnées qui le nécessitent et enregistrera le plan. Aucun enregistrement ni mise en rayon pour le moment."
+              ? "Récapitulatif des choix prêt : une seule confirmation enregistrera le plan et validera les éventuelles offres sélectionnées qui le nécessitent. Aucun enregistrement ni mise en rayon pour le moment."
               : "Plan préparé pour revue native des offres et TG. Une confirmation explicite enregistrera une révision locale, sans déclarer de mise en rayon. Rien n’a encore été enregistré."
             : status === "UNCHANGED"
               ? "Ce plan est déjà enregistré avec cette préparation et ces références ; aucune nouvelle révision nécessaire."

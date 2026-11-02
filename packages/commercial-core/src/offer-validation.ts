@@ -1,5 +1,6 @@
 import {
   commercialValidatedOfferSchema,
+  commercialPlanContentIssues,
   type CommercialValidatedOffer,
   type CommercialOfferChoice,
   type CommercialWeekPreparation,
@@ -161,11 +162,7 @@ export function commercialPreparationReadiness(
       OUTSIDE_WEEK: "L’offre ne couvre plus la semaine préparée.",
     }[i.code],
   }));
-  if (!plan.offerRefs.length)
-    issues.push({
-      code: "NO_OFFERS",
-      messageFr: "Sélectionnez au moins une offre pour le plan commercial.",
-    });
+  issues.push(...commercialPlanContentIssues(plan));
   for (const ref of plan.offerRefs) {
     const c = choices.find(
       (c) => c.id === ref.choiceId && c.storeId === plan.storeId,
@@ -196,14 +193,6 @@ export function commercialPreparationReadiness(
         choiceId: c.id,
         messageFr:
           "Cette offre utilise un PDF différent de votre référence choisie après correction. Revoyez l’offre ou le choix de référence.",
-      });
-  }
-  for (const p of plan.placements) {
-    if (!p.offerIds.length)
-      issues.push({
-        code: "EMPTY_TG",
-        placementId: p.id,
-        messageFr: `${p.label} : affectez une offre ou retirez cet emplacement du brouillon.`,
       });
   }
   const selected = choices.filter(

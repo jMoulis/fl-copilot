@@ -1,3 +1,7 @@
+# 2 novembre — plan de merchandising sans promotion obligatoire
+
+Le modèle de plan existant accepte désormais les thèmes TG et notes convenus sans inventer d’offre/prix/source. Les vraies promotions gardent leurs contrôles. Récapitulatif et historique affichent les notes ; les rappels d’installation TG réutilisent le suivi existant, avec déclaration de réalisation séparée. Protection explicite des anciens clients et négociation API avant envoi des commandes locales. [QA et limites](../qa/M7_QUALITATIVE_COMMERCIAL_PLAN_2026_11_02.md). Aucun modèle/table/collection/tool supplémentaire. Livraison groupée et recette réelle restent requises. **1/3/7 avancent ; 1/3/4/5/6/7 en cours ; 2 code prêt ; aucun chantier clôturé.**
+
 # 2 novembre — choix de merchandising dans un seul brouillon
 
 Réutilisation du parcours existant pour enregistrer ensemble thèmes TG, notes de présentation/emplacement et éventuelles offres retenues. Aucun besoin de créer une promotion ni de confirmer d’abord un brouillon vide pour les seuls choix qualitatifs. Carte native allégée ; contrôles de versions, droits, retrait explicite, historique et Outbox conservés. Aucun nouveau modèle/tool/writer ; description de tool raccourcie. Le plan validé sans offre reste à traiter, ainsi que la recette réelle du dialogue et de l’appareil. [QA et limites](../qa/M7_STRATEGY_DRAFT_REVIEW_2026_11_02.md). Livraison groupée encore requise. **1/3/7 avancent ; 1/3/4/5/6/7 en cours ; 2 code prêt ; aucun chantier clôturé.**
