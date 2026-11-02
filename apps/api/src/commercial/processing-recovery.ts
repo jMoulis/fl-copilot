@@ -1,3 +1,4 @@
+import { registerCommercialReviewPages } from "./review-sync.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { ClientSession, Db } from "mongodb";
 import {
@@ -392,6 +393,9 @@ export function createCommercialProcessingRecovery(
       await authorize();
       const input = commercialProcessingResumeSchema.parse(raw),
         requestJson = JSON.stringify({ storeId, id, input, actor });
+      // Preserve a fully received historical text cohort before switching to a fresh visual generation.
+      if (input.mode === "RESTART")
+        await registerCommercialReviewPages(database, storeId, id);
       const db = await database.getDb(),
         session = db.client.startSession();
       try {
@@ -462,10 +466,7 @@ export function createCommercialProcessingRecovery(
                   $set: {
                     analysisRevision: revision,
                     status: "TEXT_READY",
-                    stage: "AI_EXTRACTION",
-                    aiModel: options.model,
-                    aiSchemaVersion: COMMERCIAL_AI_SCHEMA_VERSION,
-                    nextAiAttemptAt: null,
+                    stage: "VISUAL_READING",
                     updatedAt: timestamp,
                   },
                 },
@@ -510,7 +511,7 @@ export function createCommercialProcessingRecovery(
               ...actor,
               checksum: current.review.checksum,
               requestJson,
-              stages: restart ? ["AI", "VISUAL"] : current.eligible,
+              stages: restart ? ["VISUAL"] : current.eligible,
               ...(revision ? { analysisRevision: revision } : {}),
               ...(restart ? { previousJob, previousVisualJob } : {}),
               status: "PENDING",

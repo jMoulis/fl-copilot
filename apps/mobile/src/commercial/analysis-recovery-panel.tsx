@@ -187,14 +187,16 @@ function AnalysisState({
             {new Date(review.observedAt).toLocaleString("fr-FR")}
           </Text>
           <Text className="text-sm text-ink">{review.messageFr}</Text>
-          {review.stages.map((stage) => (
-            <Text key={stage.kind} className="text-sm text-muted">
-              {labels[stage.kind]} : {stageLabels[stage.state]}
-              {stage.totalPages
-                ? ` · ${stage.readyPages}/${stage.totalPages} pages`
-                : ""}
-            </Text>
-          ))}
+          {review.stages
+            .filter((stage) => stage.kind !== "AI")
+            .map((stage) => (
+              <Text key={stage.kind} className="text-sm text-muted">
+                {labels[stage.kind]} : {stageLabels[stage.state]}
+                {stage.totalPages
+                  ? ` · ${stage.readyPages}/${stage.totalPages} pages`
+                  : ""}
+              </Text>
+            ))}
           {review.notBefore && !review.canResume ? (
             <Text className="text-sm text-muted">
               Nouvelle tentative possible après le{" "}

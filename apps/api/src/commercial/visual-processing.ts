@@ -1,3 +1,4 @@
+import { COMMERCIAL_AI_PAGE_LEASE_MS } from "./ai-runtime-limits.js";
 import { randomUUID, createHash } from "node:crypto";
 import {
   COMMERCIAL_VISUAL_SCHEMA_VERSION,
@@ -13,7 +14,7 @@ import {
   privatePdfStorage,
   type PdfSourceStorage,
 } from "./pdf-page-processing.js";
-import { CommercialAiPermanentError } from "./ai-provider.js";
+import { CommercialAiPermanentError } from "./generation-errors.js";
 import {
   MAX_VISUAL_PDF_BYTES,
   MAX_VISUAL_PDF_PAGES,
@@ -238,7 +239,9 @@ export function createCommercialVisualProcessor(
           $set: {
             status: "PROCESSING",
             leaseToken,
-            leaseExpiresAt: new Date(now().getTime() + 300000),
+            leaseExpiresAt: new Date(
+              now().getTime() + COMMERCIAL_AI_PAGE_LEASE_MS,
+            ),
             updatedAt: now(),
           },
           $inc: { attemptCount: 1 },

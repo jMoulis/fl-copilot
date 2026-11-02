@@ -26,9 +26,9 @@ it("offers only unfinished stages and does not mutate the frozen source or retai
   const before = structuredClone(s),
     r = commercialProcessingPolicy(s, now);
   expect(r).toMatchObject({
-    state: "PARTIAL",
+    state: "WAITING",
     canResume: true,
-    eligible: ["AI", "VISUAL"],
+    eligible: ["VISUAL"],
   });
   expect(r.stages[1]).toMatchObject({ readyPages: 1, totalPages: 2 });
   expect(s).toEqual(before);
@@ -71,7 +71,8 @@ it.each(["AI", "VISUAL"] as const)(
       eligible: [],
     });
     row.leaseExpiresAt = past;
-    expect(commercialProcessingPolicy(s, now).eligible).toContain(kind);
+    expect(commercialProcessingPolicy(s, now).eligible).toContain("VISUAL");
+    expect(commercialProcessingPolicy(s, now).eligible).not.toContain("AI");
   },
 );
 it.each([
@@ -81,28 +82,31 @@ it.each([
   "partial result",
   "wrong checksum",
   "duplicate page",
-])("blocks unsafe AI replay even when a second page is missing: %s", (why) => {
-  const s = commercialProcessingFixture();
-  const row: ProcessingPage = {
-    _id: "page",
-    pageNumber: 1,
-    checksum: s.source.checksum,
-    status: "RETRY",
-    attemptCount: 1,
-    runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
-    budgetAttemptCount: 1,
-  };
-  if (why === "legacy budget") row.runtimeBudgetVersion = 1;
-  if (why === "missing budget") delete row.budgetAttemptCount;
-  if (why === "lost result") row.status = "DRAFT_READY";
-  if (why === "partial result") row.hasResult = true;
-  if (why === "wrong checksum") row.checksum = `sha256:${"c".repeat(64)}`;
-  s.aiPages = [row];
-  if (why === "duplicate page") s.aiPages.push({ ...row, _id: "duplicate" });
-  const r = commercialProcessingPolicy(s, now);
-  expect(r.eligible).not.toContain("AI");
-  expect(r.stages[1]!.state).toBe("BLOCKED");
-});
+])(
+  "never replays retired AI pages or blocks visual work on their budgets: %s",
+  (why) => {
+    const s = commercialProcessingFixture();
+    const row: ProcessingPage = {
+      _id: "page",
+      pageNumber: 1,
+      checksum: s.source.checksum,
+      status: "RETRY",
+      attemptCount: 1,
+      runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
+      budgetAttemptCount: 1,
+    };
+    if (why === "legacy budget") row.runtimeBudgetVersion = 1;
+    if (why === "missing budget") delete row.budgetAttemptCount;
+    if (why === "lost result") row.status = "DRAFT_READY";
+    if (why === "partial result") row.hasResult = true;
+    if (why === "wrong checksum") row.checksum = `sha256:${"c".repeat(64)}`;
+    s.aiPages = [row];
+    if (why === "duplicate page") s.aiPages.push({ ...row, _id: "duplicate" });
+    const r = commercialProcessingPolicy(s, now);
+    expect(r.eligible).not.toContain("AI");
+    expect(r.eligible).toContain("VISUAL");
+  },
+);
 it("respects due times and cooldown without hiding accepted work from the worker", () => {
   const s = commercialProcessingFixture();
   s.job!.nextAiAttemptAt = future;
@@ -128,7 +132,7 @@ it("never retries current exhausted or permanently failed AI pages", () => {
     runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION,
   }));
   expect(commercialProcessingPolicy(s, now).eligible).not.toContain("AI");
-  expect(commercialProcessingPolicy(s, now).stages[1]!.state).toBe("BLOCKED");
+  expect(commercialProcessingPolicy(s, now).eligible).toContain("VISUAL");
 });
 it("does not announce receipt when completed markers have no result", () => {
   const s = commercialProcessingFixture();
@@ -184,7 +188,7 @@ it("finalizes fully received pages without rerunning providers and never resumes
   expect(commercialProcessingPolicy(s, now)).toMatchObject({
     state: "READY",
     canResume: true,
-    eligible: ["AI", "VISUAL"],
+    eligible: ["VISUAL"],
   });
   s.visualPages[0]!.status = "PENDING";
   s.visualPages[0]!.hasResult = false;
@@ -220,4 +224,23 @@ it("never offers a new paid run while pending, retrying or missing pages can sti
     hasResult: false,
   });
   expect(commercialProcessingPolicy(s, processingTime).canRestart).toBe(false);
+});
+
+it("finishes visual-only generations without waiting for retired AI pages, while reporting no fabricated text-AI result", () => {
+  const s = commercialProcessingFixture();
+  s.job!.stage = "VISUAL_READING";
+  s.visualPages = [1, 2].map((pageNumber) => ({
+    _id: String(pageNumber),
+    pageNumber,
+    checksum: s.source.checksum,
+    status: "READY",
+    hasResult: true,
+  }));
+  const before = structuredClone(s);
+  const r = commercialProcessingPolicy(s, now);
+  expect(r.state).toBe("READY");
+  expect(r.canRestart).toBe(true);
+  expect(r.eligible).toEqual(["VISUAL"]);
+  expect(r.stages[1]).toMatchObject({ state: "UNAVAILABLE", readyPages: 0 });
+  expect(s).toEqual(before);
 });

@@ -8,7 +8,7 @@ import { createCommercialOriginalLinkService } from "../src/commercial/original-
 import { createMongoSyncPullService } from "../src/sync/pull-service.js";
 import { createMongoSyncBootstrapService } from "../src/sync/bootstrap-service.js";
 import type { CommercialVisualProvider } from "../src/commercial/visual-provider.js";
-import { CommercialAiPermanentError } from "../src/commercial/ai-provider.js";
+import { CommercialAiPermanentError } from "../src/commercial/generation-errors.js";
 const uri = process.env.TEST_MONGODB_URI;
 describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
   "private original and visual PDF workflow",
