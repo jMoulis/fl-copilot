@@ -1,3 +1,4 @@
+import { DetailsDisclosure } from "@/components/dashboard";
 import { formatFrenchCalendarDate } from "@/dates/calendar";
 import { PhysicalAllocationCard } from "@/commercial/physical-allocation-card";
 import { contextWeekQuerySchema } from "@fl-copilot/domain";
@@ -321,57 +322,25 @@ export default function WeekPreparationScreen() {
   return (
     <AppScreen>
       <AppHeader
-        title={`Préparer ma semaine ${week.number} · ${week.year}`}
-        subtitle={`Du ${formatFrenchCalendarDate(week.start)} au ${formatFrenchCalendarDate(week.end)}. Choisissez vos offres et vos TG. Cette préparation reste un brouillon, sans validation finale ni action exécutée.`}
+        title={`Modifier ma semaine ${week.number} · ${week.year}`}
+        subtitle={`Du ${formatFrenchCalendarDate(week.start)} au ${formatFrenchCalendarDate(week.end)} · Brouillon`}
       />
       <SecondaryButton
-        label="Retour à Ma semaine"
+        label="Retour aux choix de la semaine"
         disabled={busy}
         onPress={() => router.back()}
       />
-      {session?.stores[0]?.role === "MANAGER" ? (
-        <SecondaryButton
-          label="Recommencer la préparation"
-          disabled={busy || !loaded}
-          onPress={() => {
-            const open = () => {
-              setCapacity(
-                saved?.entity.tgCapacity == null
-                  ? ""
-                  : String(saved.entity.tgCapacity),
-              );
-              setRefs(saved?.entity.offerRefs ?? []);
-              setPlacements(saved?.entity.placements ?? []);
-              setNote(saved?.entity.note ?? "");
-              setPhysicalAllocation(saved?.entity.physicalAllocation);
-              dirty.current = false;
-              router.push({
-                pathname: "/commercial-restart",
-                params: { weekStart: week.start },
-              });
-            };
-            if (unsavedChanges)
-              Alert.alert(
-                "Quitter sans enregistrer ?",
-                "Tes saisies non enregistrées ne seront pas conservées.",
-                [
-                  { text: "Annuler", style: "cancel" },
-                  { text: "Continuer", onPress: open },
-                ],
-              );
-            else open();
-          }}
-        />
-      ) : null}
       {!loaded ? <Text>Lecture de la préparation…</Text> : null}
       {error ? (
         <InlineAlert title="Préparation à vérifier" message={error} />
       ) : null}
       {saved ? (
         <SectionCard title="Brouillon enregistré">
-          <Text className="text-base text-ink">
-            {commercialPreparationSummary(saved.entity)}
-          </Text>
+          <DetailsDisclosure title="Détail de l’enregistrement">
+            <Text className="text-base text-ink">
+              {commercialPreparationSummary(saved.entity)}
+            </Text>
+          </DetailsDisclosure>
           <StatusBadge
             status={
               saved.syncState === "SYNCED"
@@ -451,27 +420,31 @@ export default function WeekPreparationScreen() {
           }
         />
       ) : null}
-      <SectionCard
-        title="Offres pour ma semaine"
-        description="Sélectionnez parmi vos offres retenues. Une offre peut rester hors TG."
-      >
-        {!eligible.length ? (
-          <Text className="text-sm text-muted">
-            Retenez d’abord une offre dans la synthèse commerciale.
-          </Text>
-        ) : null}
-        {eligible.map((c) => (
-          <View key={c.entity.id} className="gap-2">
-            <Text className="text-base text-ink">
-              {commercialChoiceSummary(c.entity)}
-            </Text>
-            <SecondaryButton
-              label={`${refs.some((r) => r.choiceId === c.entity.id) ? "✓ Sélectionnée · retirer" : "Inclure dans la préparation"}`}
-              onPress={() => toggleOffer(c)}
-            />
-          </View>
-        ))}
-      </SectionCard>
+      {eligible.length || refs.length ? (
+        <>
+          <SectionCard
+            title="Offres pour ma semaine"
+            description="Sélectionnez parmi vos offres retenues. Une offre peut rester hors TG."
+          >
+            {!eligible.length ? (
+              <Text className="text-sm text-muted">
+                Retenez d’abord une offre dans la synthèse commerciale.
+              </Text>
+            ) : null}
+            {eligible.map((c) => (
+              <View key={c.entity.id} className="gap-2">
+                <Text className="text-base text-ink">
+                  {commercialChoiceSummary(c.entity)}
+                </Text>
+                <SecondaryButton
+                  label={`${refs.some((r) => r.choiceId === c.entity.id) ? "✓ Sélectionnée · retirer" : "Inclure dans la préparation"}`}
+                  onPress={() => toggleOffer(c)}
+                />
+              </View>
+            ))}
+          </SectionCard>
+        </>
+      ) : null}
       <SectionCard
         title="TG disponibles cette semaine"
         description="Les idées du PDF ne déterminent pas la capacité de votre magasin."
@@ -515,11 +488,7 @@ export default function WeekPreparationScreen() {
         />
       </SectionCard>
       {placements.map((p) => (
-        <SectionCard
-          key={p.id}
-          title={p.label || "Emplacement TG"}
-          description="Une affectation préparée n’est pas une installation réalisée."
-        >
+        <SectionCard key={p.id} title={p.label || "Emplacement TG"}>
           <TextInput
             accessibilityLabel="Nom de cet emplacement"
             value={p.label}
@@ -528,35 +497,38 @@ export default function WeekPreparationScreen() {
           />
           <TextInput
             accessibilityLabel="Thème de cette TG"
+            multiline
+            textAlignVertical="top"
             value={p.theme}
             onChangeText={(theme) => changePlacement(p.id, { theme })}
             placeholder="Thème choisi pour le magasin"
             className="rounded-xl border border-line p-3 text-base text-ink"
           />
           {ideas.length ? (
-            <Text className="font-semibold text-ink">
-              Idées du document, à adapter
-            </Text>
+            <DetailsDisclosure title="Idées du pense-bête">
+              {ideas.map((idea, index) => (
+                <SecondaryButton
+                  key={`${idea.source.readingId}:${index}`}
+                  label={`S’inspirer de : ${idea.label}`}
+                  onPress={() =>
+                    changePlacement(p.id, {
+                      theme: idea.label,
+                      sourceIdea: idea.source,
+                    })
+                  }
+                />
+              ))}
+            </DetailsDisclosure>
           ) : null}
-          {ideas.map((idea, index) => (
-            <SecondaryButton
-              key={`${idea.source.readingId}:${index}`}
-              label={`S’inspirer de : ${idea.label}`}
-              onPress={() =>
-                changePlacement(p.id, {
-                  theme: idea.label,
-                  sourceIdea: idea.source,
-                })
-              }
-            />
-          ))}
           {p.sourceIdea ? (
             <SecondaryButton
               label="Détacher l’idée du document"
               onPress={() => changePlacement(p.id, { sourceIdea: null })}
             />
           ) : null}
-          <Text className="font-semibold text-ink">Offres affectées</Text>
+          {refs.length ? (
+            <Text className="font-semibold text-ink">Offres affectées</Text>
+          ) : null}
           {refs.map((ref) => {
             const c = choices.find((c) => c.entity.id === ref.choiceId);
             return c ? (
@@ -575,7 +547,9 @@ export default function WeekPreparationScreen() {
           })}
           {!p.offerIds.length ? (
             <Text className="text-sm text-muted">
-              Aucune offre affectée : cet emplacement reste à compléter.
+              {p.theme.trim()
+                ? "Présentation à thème, sans offre promotionnelle affectée."
+                : "Décris le thème ou affecte une offre à cet emplacement."}
             </Text>
           ) : null}
           <SecondaryButton
@@ -608,12 +582,61 @@ export default function WeekPreparationScreen() {
         onPress={() => void save()}
       />
       {saved ? (
-        <CommercialPlanValidationView
-          key={`plan:${saved.entity.id}:${saved.entity.version}`}
-          preparation={saved.entity}
-          unsavedChanges={unsavedChanges}
-        />
+        <>
+          <SecondaryButton
+            label="Voir ma semaine"
+            onPress={() =>
+              router.push({
+                pathname: "/commercial-plan",
+                params: { weekStart: week.start },
+              })
+            }
+          />
+          <DetailsDisclosure title="Vérifier et confirmer les choix">
+            <CommercialPlanValidationView
+              key={`plan:${saved.entity.id}:${saved.entity.version}`}
+              preparation={saved.entity}
+              unsavedChanges={unsavedChanges}
+            />
+          </DetailsDisclosure>
+        </>
       ) : null}
+      <DetailsDisclosure title="Autres options">
+        {session?.stores[0]?.role === "MANAGER" ? (
+          <SecondaryButton
+            label="Recommencer la préparation"
+            disabled={busy || !loaded}
+            onPress={() => {
+              const open = () => {
+                setCapacity(
+                  saved?.entity.tgCapacity == null
+                    ? ""
+                    : String(saved.entity.tgCapacity),
+                );
+                setRefs(saved?.entity.offerRefs ?? []);
+                setPlacements(saved?.entity.placements ?? []);
+                setNote(saved?.entity.note ?? "");
+                setPhysicalAllocation(saved?.entity.physicalAllocation);
+                dirty.current = false;
+                router.push({
+                  pathname: "/commercial-restart",
+                  params: { weekStart: week.start },
+                });
+              };
+              if (unsavedChanges)
+                Alert.alert(
+                  "Quitter sans enregistrer ?",
+                  "Tes saisies non enregistrées ne seront pas conservées.",
+                  [
+                    { text: "Annuler", style: "cancel" },
+                    { text: "Continuer", onPress: open },
+                  ],
+                );
+              else open();
+            }}
+          />
+        ) : null}
+      </DetailsDisclosure>
     </AppScreen>
   );
 }

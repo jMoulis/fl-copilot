@@ -1,3 +1,7 @@
+## 2 November — weekly results directly from Actions
+
+One **Ma semaine** entry replaces competing preparation/plan-history menus. Draft and confirmed result share the existing local route; TGs lead, instructions/history are disclosed on demand and the manual editor is secondary. Native real-data testing confirms both TGs, edit/return, archived read-only view and execution preserved at 0/2; the wrong return to documents is fixed. No business mutation in the UI test beyond the owner-authorized normal synchronization. [Evidence and limits](../qa/M7_WEEKLY_RESULT_NAVIGATION_2026_11_02.md). **Workstreams 5/7 advance; 1/3/4/5/6/7 ongoing, 2 code ready.** Mobile-only; not installed build 22, no paid build/API release. Historical chat card visibility remains a separate diagnostic.
+
 ## 2 November 2026 — real-chat initiative, monetary display and token diagnostics
 
 The latest owner dialogue is audited against the synchronized draft and actual historical performance. The corrective increment replaces existing guidance, rounds monetary display without changing raw citations/calculations, and records each model step plus terminal outcome in the existing server logs. No new tools, agents, models, domain entities or paid requests. See [audit, verification and limits](../qa/M7_COPILOT_INITIATIVE_USAGE_2026_11_02.md). This advances workstreams 4/7; **1/3/4/5/6/7 ongoing, 2 code ready**. Code checks do not prove natural-model initiative or the complete V1 loop; grouped delivery/owner acceptance remain open.

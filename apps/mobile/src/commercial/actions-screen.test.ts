@@ -142,7 +142,7 @@ it("restores the week and filter and preserves that context in both preparation 
   await render();
   expect(date().props.value).toBe("2025-12-29");
   expect(execution().props.filter).toBe("ALL");
-  for (const title of ["Préparation", "Plan et historique"]) {
+  for (const title of ["Voir ma semaine"]) {
     const link = rendered!.root
       .findAllByType("MenuRow" as never)
       .find((n) => n.props.title === title)!;
@@ -284,24 +284,25 @@ it("makes preparation visible before activity and selects next ISO week from tod
     );
     await render();
     const nodes = rendered!.root.findAll(
-      (n) => n.type === CopilotActivityPanel || n.props.title === "Préparation",
+      (n) =>
+        n.type === CopilotActivityPanel || n.props.title === "Voir ma semaine",
     );
-    expect(nodes[0]!.props.title).toBe("Préparation");
+    expect(nodes[0]!.props.title).toBe("Voir ma semaine");
     const next = rendered!.root
       .findAllByType("SecondaryButton" as never)
       .find((n) => n.props.label === "Préparer la semaine prochaine")!;
     await act(() => next.props.onPress());
     expect(date().props.value).toBe("2026-12-28");
     expect(runtime.push.mock.lastCall?.[0]).toEqual({
-      pathname: "/week-preparation",
+      pathname: "/commercial-plan",
       params: { weekStart: "2026-12-28" },
     });
     const preparation = rendered!.root
       .findAllByType("MenuRow" as never)
-      .find((n) => n.props.title === "Préparation")!;
+      .find((n) => n.props.title === "Voir ma semaine")!;
     await act(() => preparation.props.onPress());
     expect(runtime.push.mock.lastCall?.[0]).toEqual({
-      pathname: "/week-preparation",
+      pathname: "/commercial-plan",
       params: { weekStart: "2026-12-28" },
     });
     const documents = rendered!.root

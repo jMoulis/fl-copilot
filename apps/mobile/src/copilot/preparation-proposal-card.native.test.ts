@@ -95,6 +95,7 @@ it.each([true, false])(
     expect(text()).not.toContain("Aucune offre");
     expect(text()).not.toContain("Avant :");
     expect(confirm).not.toHaveBeenCalled();
+    expect(hosts("Link")).toHaveLength(0);
     const buttons = hosts("Button");
     expect(buttons).toHaveLength(canConfirm ? 1 : 0);
     if (canConfirm) {
@@ -106,6 +107,10 @@ it.each([true, false])(
       expect(confirm).toHaveBeenCalledTimes(1);
       expect(hosts("Button")).toHaveLength(0);
       expect(text()).toContain("Décision enregistrée sur cet appareil");
+      expect(hosts("Link")[0]!.props.href).toEqual({
+        pathname: "/commercial-plan",
+        params: { weekStart: "2026-11-09" },
+      });
     }
   },
 );
