@@ -19,7 +19,6 @@ it("uses the existing durable client and sends only stable job identity, with re
     "test-event-key",
     "signkey-test-only",
     undefined,
-    undefined,
     originals,
   );
   const send = vi
@@ -47,7 +46,6 @@ it("propagates dispatch failure so the signed webhook remains retriable after du
     database,
     "test-event-key",
     "signkey-test-only",
-    undefined,
     undefined,
     originals,
   );

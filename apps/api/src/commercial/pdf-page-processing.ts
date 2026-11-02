@@ -202,7 +202,7 @@ export function createCommercialPdfPageProcessor(
           {
             $set: {
               status: "TEXT_READY",
-              stage: "AI_EXTRACTION",
+              stage: "VISUAL_READING",
               parserVersion: COMMERCIAL_PDF_PARSER_VERSION,
               pageCount: pages.length,
               textPageCount: pages.filter((page) => page.text.length > 0)

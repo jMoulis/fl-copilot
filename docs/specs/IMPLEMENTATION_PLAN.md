@@ -1,3 +1,9 @@
+## M7 increment — 2 November 2026: remove duplicate text-model processing
+
+Audit confirms retained choices/source-backed plans use visual readings or the original, whereas text-AI drafts feed historical transcription/review. Remove only the latter producer, event subscribers/dispatch and maintenance retry. Preserve deterministic text parsing, original/visual readers, current offer workflows and all immutable legacy data/read/sync contracts. Processing readiness/restart no longer waits for retired text-AI pages; live prior leases remain protected. Fully received old pages can still be registered as unvalidated historical snapshots before generation switch. See `../qa/M7_RETIRED_TEXT_AI_2026_11_02.md`.
+
+Next: simplify agreement-to-draft/choice creation and offer-free strategic decisions, then audit whether retained automatic visual preprocessing can become optional without losing existing source tools. Do not remove visual consumers, original/cache/history/restart or source evidence indiscriminately. Real merchandising dialogue, native acceptance and the complete seven-workstream V1 remain open. No standalone release or paid model/build call in this increment.
+
 ## M7 increment — 2 November 2026: grouped plan adoption
 
 Replace the separate offer-certification section with one recap/confirmation of the selected offers and TG plan. Reuse existing canonical validation/plan writers in one local transaction, scoped private review and ordered Outbox; qualify stale previews against current store settings and active TG capacity. Compatible native clients use plan-validation capability 2; legacy previews stay unchanged. No model tool, global instruction block, new entity or paid request. See `../qa/M7_GROUPED_PLAN_REVIEW_2026_11_02.md`.

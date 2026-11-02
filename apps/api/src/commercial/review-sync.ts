@@ -37,11 +37,15 @@ export async function registerCommercialReviewPages(
       aiModel: string;
       aiSchemaVersion: string;
       analysisRevision?: number;
+      stage: string;
     }>("commercialDocumentJobs")
     .find({
       storeId,
-      status: "TO_VALIDATE",
-      stage: "DRAFT_REVIEW",
+      stage: { $in: ["AI_EXTRACTION", "DRAFT_REVIEW"] },
+      status: { $in: ["TEXT_READY", "PROCESSING", "AI_FAILED", "TO_VALIDATE"] },
+      parserVersion: { $type: "string" },
+      aiModel: { $type: "string" },
+      aiSchemaVersion: { $type: "string" },
       ...(sourceDocumentId ? { _id: sourceDocumentId } : {}),
     })
     .toArray();
@@ -63,6 +67,18 @@ export async function registerCommercialReviewPages(
         analysisRevision: job.analysisRevision ?? null,
       })
       .toArray();
+    // A retired worker may have completed every immutable page before its final status write.
+    // Publish only a complete received cohort in that case; never synthesize a missing result.
+    if (
+      job.stage === "AI_EXTRACTION" &&
+      (!Number.isInteger(job.pageCount) ||
+        job.pageCount < 1 ||
+        job.pageCount > 100 ||
+        pages.length !== job.pageCount ||
+        new Set(pages.map((p) => p.pageNumber)).size !== job.pageCount ||
+        pages.some((p) => p.pageNumber < 1 || p.pageNumber > job.pageCount))
+    )
+      continue;
     const source = await db
       .collection<{ _id: string; originalFilename?: string }>("sourceDocuments")
       .findOne({ _id: job._id, storeId });

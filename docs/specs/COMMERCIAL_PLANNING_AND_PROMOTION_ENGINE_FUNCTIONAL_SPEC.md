@@ -1,3 +1,9 @@
+## Implemented increment — 2 November 2026: retire duplicate text-model extraction
+
+The automatic text-to-AI draft producer and its retry/maintenance/workflow entry points are removed. The original PDF and deterministic page text remain; visual reading still supplies source operation/offer/TG dossiers used by existing manual tools, while the Copilot can read the original directly. This increment removes one duplicate model pass, not all background PDF processing.
+
+Current analysis readiness/restart depends on text-page preparation and visual results, never on a new text-AI transcription. Existing text-AI records, review pages/decisions and historical references remain immutable/readable/synchronizable. A fully received old cohort whose final status write was interrupted can still be projected into the existing unvalidated review snapshots; no missing output is synthesized. Old live leases still prevent overlapping restart. Explicit fresh analysis creates only a new visual generation; source/history and prior usable generations remain retained. See `../qa/M7_RETIRED_TEXT_AI_2026_11_02.md`.
+
 ## Implemented increment — 2 November 2026: one plan confirmation
 
 For an existing saved weekly draft, selected retained commercial offers no longer require a separate certification screen before plan adoption. A single complete review can confirm the pending offer versions and the week plan together. Advice and opening the review write nothing. Prices, mechanisms, units, dates, products, original/extracted source references and actual conflicts remain checked; there is no blanket approval of unselected PDF content. Sources/details stay available on demand, while essential offer terms and TG assignments remain visible.

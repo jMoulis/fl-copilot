@@ -1,5 +1,5 @@
 import { NoObjectGeneratedError } from "ai";
-import { classifyCommercialGenerationError } from "../src/commercial/ai-provider.js";
+import { classifyCommercialGenerationError } from "../src/commercial/generation-errors.js";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {

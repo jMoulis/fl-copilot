@@ -5,8 +5,6 @@ import type { EmailOriginalProcessor } from "../intake/email-originals.js";
 import { createSubstitutionEvidenceProcessor } from "../substitution/processor.js";
 import { createCommercialVisualProcessor } from "./visual-processing.js";
 import type { CommercialVisualProvider } from "./visual-provider.js";
-import { createCommercialAiDraftProcessor } from "./ai-draft-processing.js";
-import type { CommercialAiProvider } from "./ai-provider.js";
 import { Inngest } from "inngest";
 import { z } from "zod";
 import type { DatabaseService } from "../database/types.js";
@@ -27,7 +25,6 @@ export function createCommercialInngestWorkflows(
   database: DatabaseService,
   eventKey: string,
   signingKey: string,
-  aiProvider?: CommercialAiProvider,
   visualProvider?: CommercialVisualProvider,
   emailOriginals?: EmailOriginalProcessor,
   illustrations?: Pick<
@@ -110,8 +107,8 @@ export function createCommercialInngestWorkflows(
   const recovery = createCommercialProcessingRecovery(
     database,
     {
-      enabled: !!aiProvider && !!visualProvider,
-      model: aiProvider?.model ?? "unavailable",
+      enabled: !!visualProvider,
+      model: visualProvider?.model ?? "unavailable",
     },
     async (input) => {
       await client.send({
@@ -122,60 +119,6 @@ export function createCommercialInngestWorkflows(
     },
   );
   const processor = createCommercialPdfPageProcessor(database);
-  const aiProcessor = aiProvider
-    ? createCommercialAiDraftProcessor(database, aiProvider)
-    : undefined;
-  const aiPage = aiProcessor
-    ? client.createFunction(
-        {
-          id: "commercial-pdf-ai-page-v1",
-          concurrency: 2,
-          retries: 3,
-          triggers: [{ event: "commercial/pdf.ai-page" }],
-        },
-        async ({ event, step }) => {
-          const identity = sourceIdentity
-            .extend({ pageNumber: z.number().int().min(1).max(100) })
-            .parse(event.data);
-          return step.run("extract-page-draft", () =>
-            aiProcessor.extractPage(
-              identity.storeId,
-              identity.sourceDocumentId,
-              identity.pageNumber,
-            ),
-          );
-        },
-      )
-    : undefined;
-  const aiDocument =
-    aiProcessor && aiPage
-      ? client.createFunction(
-          {
-            id: "commercial-pdf-ai-document-v1",
-            concurrency: 2,
-            retries: 3,
-            triggers: [{ event: "commercial/pdf.text-ready" }],
-          },
-          async ({ event, step }) => {
-            const identity = sourceIdentity.parse(event.data);
-            const manifest = await step.run("source-page-manifest", () =>
-              aiProcessor.manifest(identity.storeId, identity.sourceDocumentId),
-            );
-            if (manifest.status !== "READY") return { status: manifest.status };
-            await Promise.all(
-              manifest.pages.map((pageNumber) =>
-                step.invoke(`draft-page-${pageNumber}`, {
-                  function: aiPage,
-                  data: { ...identity, pageNumber },
-                }),
-              ),
-            );
-            return step.run("finalize-unvalidated-draft", () =>
-              aiProcessor.finalize(identity.storeId, identity.sourceDocumentId),
-            );
-          },
-        )
-      : undefined;
   const extract = client.createFunction(
     {
       id: "commercial-pdf-extract-pages-v1",
@@ -185,16 +128,9 @@ export function createCommercialInngestWorkflows(
     },
     async ({ event, step }) => {
       const identity = sourceIdentity.parse(event.data);
-      const result = await step.run("extract-source-pages", () =>
+      return step.run("extract-source-pages", () =>
         processor.process(identity.storeId, identity.sourceDocumentId),
       );
-      if (result.status === "TEXT_READY" && aiDocument)
-        await step.sendEvent("request-commercial-draft", {
-          id: `commercial-pdf.ai.v1:${identity.sourceDocumentId}`,
-          name: "commercial/pdf.text-ready",
-          data: identity,
-        });
-      return result;
     },
   );
   const visualProcessor = visualProvider
@@ -248,32 +184,6 @@ export function createCommercialInngestWorkflows(
             sourceDocumentId: identity.sourceDocumentId,
           },
         });
-      if (work.includes("AI") && aiProcessor && aiPage) {
-        const manifest = await step.run("resume-ai-manifest", () =>
-          aiProcessor.manifest(
-            identity.storeId,
-            identity.sourceDocumentId,
-            false,
-          ),
-        );
-        if (manifest.status === "READY") {
-          await Promise.all(
-            manifest.pages.map((pageNumber) =>
-              step.invoke(`resume-ai-${pageNumber}`, {
-                function: aiPage,
-                data: {
-                  storeId: identity.storeId,
-                  sourceDocumentId: identity.sourceDocumentId,
-                  pageNumber,
-                },
-              }),
-            ),
-          );
-          await step.run("resume-finalize-draft", () =>
-            aiProcessor.finalize(identity.storeId, identity.sourceDocumentId),
-          );
-        }
-      }
       if (work.includes("VISUAL") && visualProcessor && visualPage) {
         const pending = await step.run("resume-visual-manifest", () =>
           visualProcessor.pending({
@@ -328,18 +238,6 @@ export function createCommercialInngestWorkflows(
           function: extract,
           data: source,
         });
-      const aiPending =
-        aiProcessor && aiDocument
-          ? await step.run("pending-ai-sources", () =>
-              aiProcessor.pendingDocuments(),
-            )
-          : [];
-      if (aiDocument)
-        for (const source of aiPending)
-          await step.invoke(`recover-ai-${source.sourceDocumentId}`, {
-            function: aiDocument,
-            data: source,
-          });
       const visualPending = visualProcessor
         ? await step.run("pending-visual-sources", () =>
             visualProcessor.pending(),
@@ -367,7 +265,6 @@ export function createCommercialInngestWorkflows(
       return {
         illustrationScheduled,
         scheduled: pending.length,
-        aiScheduled: aiPending.length,
         visualScheduled: visualPending.length,
       };
     },
@@ -406,7 +303,6 @@ export function createCommercialInngestWorkflows(
       evidence,
       ...(emailOriginal ? [emailOriginal] : []),
       ...(illustration ? [illustration] : []),
-      ...(aiDocument && aiPage ? [aiDocument, aiPage] : []),
       ...(visualPage ? [visualPage] : []),
     ],
     async dispatch(storeId: string, sourceDocumentId: string) {

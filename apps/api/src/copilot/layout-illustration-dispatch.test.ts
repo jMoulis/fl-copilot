@@ -17,7 +17,6 @@ it("dispatches only stable generation identity and version using the existing du
       "signkey-test-only",
       undefined,
       undefined,
-      undefined,
       { process, pending },
     ),
     send = vi
@@ -53,7 +52,6 @@ it("creates no generation function or event when the service is absent, and leav
     database,
     "test-event-key",
     "signkey-test-only",
-    undefined,
     undefined,
     undefined,
     {

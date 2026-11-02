@@ -2,7 +2,6 @@ import type {
   CommercialProcessingReview,
   CommercialProcessingStage,
 } from "@fl-copilot/sync-contracts";
-import { COMMERCIAL_AI_RUNTIME_BUDGET_VERSION } from "./ai-runtime-limits.js";
 export type ProcessingPage = {
   _id: string;
   pageNumber: number;
@@ -59,6 +58,7 @@ export type ProcessingSnapshot = {
 };
 const elapsed = (value: Date | null | undefined, now: Date) =>
   !value || value.getTime() <= now.getTime();
+/** Text-AI drafts are historical only; current work is text parsing + visual reading. */
 export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
   type Step = CommercialProcessingReview["stages"][number];
   const job = s.job,
@@ -66,11 +66,15 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
   const total = Number.isInteger(n) && n! >= 1 && n! <= 100 ? n! : null;
   const steps: Step[] = [
     { kind: "TEXT", state: "WAITING", readyPages: 0, totalPages: total },
-    { kind: "AI", state: "WAITING", readyPages: 0, totalPages: total },
+    { kind: "AI", state: "UNAVAILABLE", readyPages: 0, totalPages: total },
     { kind: "VISUAL", state: "WAITING", readyPages: 0, totalPages: total },
   ];
   const eligible: CommercialProcessingStage[] = [];
-  let active = false,
+  const live = (p: ProcessingPage) =>
+    p.status === "PROCESSING" &&
+    (!p.leaseExpiresAt || !elapsed(p.leaseExpiresAt, now));
+  // Old invocations may still finish on their original deployment. Never restart over a live lease.
+  let active = s.aiPages.some(live),
     unavailable = false;
   const validPages = (rows: Array<{ pageNumber: number; checksum: string }>) =>
     rows.length <= 100 &&
@@ -82,6 +86,19 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
         p.checksum === s.source.checksum,
     ) &&
     new Set(rows.map((p) => p.pageNumber)).size === rows.length;
+  const oldReady = s.aiPages.filter(
+    (p) => p.status === "DRAFT_READY" && p.hasResult,
+  ).length;
+  steps[1]!.readyPages = Math.min(100, oldReady);
+  if (s.aiPages.length)
+    steps[1]!.state = active
+      ? "RUNNING"
+      : !validPages(s.aiPages) ||
+          s.aiPages.some((p) => p.status === "DRAFT_READY" && !p.hasResult)
+        ? "BLOCKED"
+        : oldReady === total && s.aiPages.length === total
+          ? "READY"
+          : "UNAVAILABLE";
   const valid = !!(
     job &&
     job._id === s.source._id &&
@@ -91,6 +108,7 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
     job.objectKey === s.source.objectKey &&
     job.pipelineVersion === "commercial-pdf.v1"
   );
+  let visualSafe = false;
   if (!valid) unavailable = true;
   else if (job!.stage === "TEXT_EXTRACTION") {
     if (job!.status === "PENDING") {
@@ -110,7 +128,7 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
     !job!.parserVersion ||
     !validPages(s.textPages) ||
     s.textPages.length !== total ||
-    !["AI_EXTRACTION", "DRAFT_REVIEW"].includes(job!.stage)
+    !["AI_EXTRACTION", "DRAFT_REVIEW", "VISUAL_READING"].includes(job!.stage)
   )
     unavailable = true;
   else {
@@ -120,11 +138,7 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
       readyPages: total,
       totalPages: total,
     };
-    const aiValid =
-      (!job!.aiModel || job!.aiModel === s.model) &&
-      (!job!.aiSchemaVersion || job!.aiSchemaVersion === s.aiSchema) &&
-      validPages(s.aiPages);
-    const visualValid =
+    const registrationValid =
       !s.visual ||
       (s.visual._id === s.source._id &&
         s.visual.sourceDocumentId === s.source._id &&
@@ -134,108 +148,65 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
         s.visual.model === s.model &&
         s.visual.schemaVersion === s.visualSchema &&
         s.visual.pageCount === total);
-    for (const kind of ["AI", "VISUAL"] as const) {
-      const index = kind === "AI" ? 1 : 2,
-        rows = kind === "AI" ? s.aiPages : s.visualPages;
-      const validRows =
-        (kind === "AI" ? aiValid : visualValid) && validPages(rows);
-      const completed = kind === "AI" ? "DRAFT_READY" : "READY";
-      const ready = rows.filter(
-        (p) => p.status === completed && p.hasResult,
-      ).length;
-      steps[index]!.readyPages = Math.min(100, ready);
-      const live = rows.some(
+    const rows = s.visualPages,
+      ready = rows.filter((p) => p.status === "READY" && p.hasResult).length;
+    steps[2]!.readyPages = Math.min(100, ready);
+    const running = rows.some(live);
+    if (running) active = true;
+    visualSafe =
+      registrationValid &&
+      validPages(rows) &&
+      !rows.some(
         (p) =>
-          p.status === "PROCESSING" &&
-          (!p.leaseExpiresAt || !elapsed(p.leaseExpiresAt, now)),
+          !["READY", "FAILED", "RETRY", "PROCESSING"].includes(p.status) ||
+          (p.status === "READY" && !p.hasResult) ||
+          (p.hasResult && !["READY", "FAILED"].includes(p.status)) ||
+          (!["READY", "FAILED"].includes(p.status) &&
+            (!Number.isInteger(p.attemptCount ?? 0) ||
+              (p.attemptCount ?? 0) < 0)),
       );
-      if (live) active = true;
-      const safe =
-        validRows &&
-        !rows.some(
-          (p) =>
-            (p.hasResult && p.status !== completed && p.status !== "FAILED") ||
-            (p.status === completed && !p.hasResult) ||
-            (kind === "AI" &&
-              p.status !== completed &&
-              p.status !== "FAILED" &&
-              (p.attemptCount ?? 0) > 0 &&
-              (p.runtimeBudgetVersion !==
-                COMMERCIAL_AI_RUNTIME_BUDGET_VERSION ||
-                !Number.isInteger(p.budgetAttemptCount))) ||
-            !(
-              kind === "AI"
-                ? [completed, "FAILED", "PENDING", "RETRY", "PROCESSING"]
-                : [completed, "FAILED", "RETRY", "PROCESSING"]
-            ).includes(p.status) ||
-            (p.status !== completed &&
-              p.status !== "FAILED" &&
-              (!Number.isInteger(p.attemptCount ?? 0) ||
-                (p.attemptCount ?? 0) < 0 ||
-                (p.budgetAttemptCount !== undefined &&
-                  (!Number.isInteger(p.budgetAttemptCount) ||
-                    p.budgetAttemptCount < 0)))),
-        );
-      const due = rows.some(
-        (p) =>
-          p.status !== completed &&
-          p.status !== "FAILED" &&
-          (kind !== "AI" ||
-            p.runtimeBudgetVersion === COMMERCIAL_AI_RUNTIME_BUDGET_VERSION ||
-            !(p.attemptCount ?? 0)) &&
-          (kind === "AI"
-            ? (p.budgetAttemptCount ?? p.attemptCount ?? 0)
-            : (p.attemptCount ?? 0)) < 4 &&
-          (p.status === "PROCESSING"
-            ? !!p.leaseExpiresAt && elapsed(p.leaseExpiresAt, now)
-            : elapsed(p.nextAttemptAt, now)),
-      );
-      const exhausted = rows.some(
-        (p) =>
-          p.status !== completed &&
-          p.status !== "FAILED" &&
-          (kind === "AI"
-            ? (p.budgetAttemptCount ?? p.attemptCount ?? 0)
-            : (p.attemptCount ?? 0)) >= 4,
-      );
-      const missing = rows.length < total;
-      const stageAllowed =
-        kind === "AI"
-          ? job!.stage === "AI_EXTRACTION" &&
-            ["TEXT_READY", "PROCESSING"].includes(job!.status)
-          : ["TEXT_READY", "PROCESSING", "TO_VALIDATE", "AI_FAILED"].includes(
-              job!.status,
-            );
-      const finalizing =
-        ready === total &&
-        (kind === "AI"
-          ? job!.status !== "TO_VALIDATE"
-          : s.visual?.status !== "COMPLETE");
-      if (
-        safe &&
-        !live &&
-        stageAllowed &&
-        (finalizing ||
-          ((due || missing) &&
-            (kind !== "AI" || elapsed(job!.nextAiAttemptAt, now))))
-      )
-        eligible.push(kind);
-      steps[index]!.state = !safe
-        ? "BLOCKED"
-        : live
-          ? "RUNNING"
-          : ready === total
-            ? "READY"
-            : rows.some((p) => p.status === "FAILED") ||
-                exhausted ||
-                !stageAllowed
-              ? ready
-                ? "PARTIAL"
-                : "BLOCKED"
-              : ready
-                ? "PARTIAL"
-                : "WAITING";
-    }
+    const due = rows.some(
+      (p) =>
+        !["READY", "FAILED"].includes(p.status) &&
+        (p.attemptCount ?? 0) < 4 &&
+        (p.status === "PROCESSING"
+          ? !!p.leaseExpiresAt && elapsed(p.leaseExpiresAt, now)
+          : elapsed(p.nextAttemptAt, now)),
+    );
+    const exhausted = rows.some(
+      (p) =>
+        !["READY", "FAILED"].includes(p.status) && (p.attemptCount ?? 0) >= 4,
+    );
+    const stageAllowed = [
+      "TEXT_READY",
+      "PROCESSING",
+      "TO_VALIDATE",
+      "AI_FAILED",
+    ].includes(job!.status);
+    if (
+      visualSafe &&
+      !running &&
+      stageAllowed &&
+      ((ready === total && s.visual?.status !== "COMPLETE") ||
+        due ||
+        rows.length < total)
+    )
+      eligible.push("VISUAL");
+    steps[2]!.state = !visualSafe
+      ? "BLOCKED"
+      : running
+        ? "RUNNING"
+        : ready === total
+          ? "READY"
+          : rows.some((p) => p.status === "FAILED") ||
+              exhausted ||
+              !stageAllowed
+            ? ready
+              ? "PARTIAL"
+              : "BLOCKED"
+            : ready
+              ? "PARTIAL"
+              : "WAITING";
   }
   if (active || unavailable || !s.enabled) eligible.length = 0;
   const cooldown = job?.lastManualResumeAt
@@ -244,15 +215,13 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
   const notBefore =
     [
       cooldown,
-      job?.nextAttemptAt,
-      job?.nextAiAttemptAt,
+      ...(job?.stage === "TEXT_EXTRACTION" ? [job.nextAttemptAt] : []),
       ...s.visualPages.map((p) => p.nextAttemptAt),
     ]
       .filter((d): d is Date => !!d && d > now)
       .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
   const canResume = eligible.length > 0 && elapsed(cooldown, now);
-  const ready = steps.every((step) => step.state === "READY"),
-    partial = steps.slice(1).some((step) => step.readyPages > 0);
+  const ready = steps[0]!.state === "READY" && steps[2]!.state === "READY";
   const state: CommercialProcessingReview["state"] =
     unavailable || !s.enabled
       ? "UNAVAILABLE"
@@ -260,25 +229,26 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
         ? "RUNNING"
         : ready
           ? "READY"
-          : partial
+          : steps[2]!.readyPages > 0
             ? "PARTIAL"
-            : steps.some((step) => step.state === "BLOCKED") && !eligible.length
+            : steps[0]!.state === "BLOCKED" ||
+                (steps[2]!.state === "BLOCKED" && !eligible.length)
               ? "BLOCKED"
               : "WAITING";
   const messageFr =
     state === "UNAVAILABLE"
       ? "Le suivi de cette analyse n’est pas disponible. Le document et les résultats déjà reçus restent conservés."
       : state === "RUNNING"
-        ? "L’analyse est en cours. Les étapes actives ne seront pas relancées."
+        ? "Une analyse est encore en cours. Les étapes actives ne seront pas relancées."
         : ready
-          ? "Les résultats d’analyse ont été reçus. Ils restent à examiner avant toute décision commerciale."
+          ? "La lecture visuelle du PDF est disponible. L’ancienne extraction IA du texte n’est plus nécessaire. Aucune décision commerciale n’est enregistrée par cette lecture."
           : canResume
-            ? "Les étapes en attente ou interrompues peuvent reprendre. Les résultats déjà reçus seront conservés."
+            ? "La lecture visuelle ou la préparation des pages peut reprendre. L’ancienne extraction IA du texte ne sera pas relancée ; ses résultats restent conservés."
             : state === "BLOCKED"
-              ? "Cette analyse demande une vérification. Une relance ne corrigera pas un fichier invalide ou une limite de tentatives atteinte."
+              ? "La lecture visuelle demande une vérification. Une relance ne corrigera pas un fichier invalide ou une limite de tentatives atteinte."
               : notBefore
-                ? "Une prochaine tentative est prévue après le délai demandé par le service. Les résultats déjà reçus restent disponibles."
-                : "Une partie du traitement attend le service. Les résultats déjà reçus restent disponibles ; actualisez cet état pour suivre la suite.";
+                ? "Une prochaine tentative est possible après le délai demandé par le service. Les résultats reçus restent disponibles."
+                : "La lecture visuelle attend le service. L’ancienne extraction IA du texte n’est plus utilisée ; le PDF original reste consultable dans le copilote.";
   return {
     state,
     stages: steps,
@@ -286,14 +256,16 @@ export function commercialProcessingPolicy(s: ProcessingSnapshot, now: Date) {
     canRestart:
       s.enabled &&
       valid &&
+      !unavailable &&
       steps[0]!.state === "READY" &&
       !active &&
       elapsed(cooldown, now) &&
       elapsed(notBefore, now) &&
       !!total &&
-      ["TO_VALIDATE", "AI_FAILED"].includes(job!.status) &&
-      s.aiPages.length === total &&
-      s.aiPages.every((p) => ["DRAFT_READY", "FAILED"].includes(p.status)) &&
+      visualSafe &&
+      ["TEXT_READY", "PROCESSING", "TO_VALIDATE", "AI_FAILED"].includes(
+        job!.status,
+      ) &&
       s.visualPages.length === total &&
       s.visualPages.every((p) => ["READY", "FAILED"].includes(p.status)),
     messageFr,

@@ -1,3 +1,7 @@
+## 2 November 2026 — superseding producer retirement
+
+The text-AI producer and `src/development/retry-commercial-ai-page.ts` maintenance command described in the historical journal below have been removed. They must not be run/recreated to resume the current pipeline. Legacy received results/review history remain, while current processing/restart uses deterministic page text and visual reading. See `../qa/M7_RETIRED_TEXT_AI_2026_11_02.md`.
+
 # M5 commercial planning
 
 Date: 2026-10-07.

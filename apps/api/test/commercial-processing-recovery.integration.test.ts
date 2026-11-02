@@ -23,9 +23,7 @@ import {
   processingTime,
 } from "../../../scripts/test-commercial-processing-fixtures";
 import { createCommercialProcessingRecovery } from "../src/commercial/processing-recovery";
-import { createCommercialAiDraftProcessor } from "../src/commercial/ai-draft-processing";
 import { createCommercialVisualProcessor } from "../src/commercial/visual-processing";
-import { COMMERCIAL_AI_RUNTIME_BUDGET_VERSION } from "../src/commercial/ai-runtime-limits";
 import { AuthError } from "../src/auth/service";
 const uri = process.env.TEST_MONGODB_URI;
 describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
@@ -130,7 +128,6 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         original,
       );
       expect(await f.service.work(storeId, id, input.operationId)).toEqual([
-        "AI",
         "VISUAL",
       ]);
       expect(await f.service.work(randomUUID(), id, input.operationId)).toEqual(
@@ -342,7 +339,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       ).toEqual(retained);
       expect(provider.extract).not.toHaveBeenCalled();
     });
-    it("does not reopen legacy budgets during manual AI manifest preparation", async () => {
+    it("never replays a previously accepted text-AI-only recovery request or changes its stored results", async () => {
       const f = await fixture(),
         { storeId, _id: id } = f.s.source;
       const page = {
@@ -350,29 +347,78 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         storeId,
         sourceDocumentId: id,
         pageNumber: 1,
+        checksum: f.s.source.checksum,
+        parserVersion: f.s.job!.parserVersion,
+        schemaVersion: f.s.aiSchema,
+        model: f.s.model,
+        status: "FAILED",
+        errorCode: "COMMERCIAL_AI_ATTEMPT_LIMIT",
+        attemptCount: 4,
+        runtimeBudgetVersion: 1,
+      };
+      await f.c("commercialDocumentAiPages").insertOne(page);
+      const operationId = randomUUID();
+      await f.c("commercialDocumentRecoveryRequests").insertOne({
+        _id: operationId,
+        storeId,
+        sourceDocumentId: id,
+        checksum: f.s.source.checksum,
+        stages: ["AI"],
+        status: "DISPATCHED",
+      });
+      expect(await f.service.work(storeId, id, operationId)).toEqual([]);
+      expect(
+        await f.c("commercialDocumentAiPages").findOne({ _id: page._id }),
+      ).toEqual(page);
+      expect((await f.service.review(storeId, id)).canResume).toBe(true);
+    });
+    it("publishes complete received legacy text pages after an interrupted finalization, without inventing the missing page", async () => {
+      const f = await fixture(),
+        { storeId, _id: id } = f.s.source;
+      await f.c("commercialDocumentJobs").updateOne(
+        { _id: id },
+        {
+          $set: {
+            status: "PROCESSING",
+            stage: "AI_EXTRACTION",
+            aiModel: f.s.model,
+            aiSchemaVersion: f.s.aiSchema,
+          },
+        },
+      );
+      const page = (pageNumber: number) => ({
+        _id: randomUUID(),
+        storeId,
+        sourceDocumentId: id,
+        pageNumber,
         parserVersion: f.s.job!.parserVersion,
         schemaVersion: f.s.aiSchema,
         model: f.s.model,
         checksum: f.s.source.checksum,
-        status: "FAILED",
-        errorCode: "COMMERCIAL_AI_ATTEMPT_LIMIT",
-        attemptCount: 4,
-        budgetAttemptCount: 4,
-        runtimeBudgetVersion: COMMERCIAL_AI_RUNTIME_BUDGET_VERSION - 1,
-      };
-      await f.c("commercialDocumentAiPages").insertOne(page);
-      const provider = { model: f.s.model, extract: vi.fn() },
-        processor = createCommercialAiDraftProcessor(
-          database,
-          provider,
-          () => processingTime,
-        );
-      await processor.manifest(storeId, id, false);
-      await processor.extractPage(storeId, id, 1);
+        status: "DRAFT_READY",
+        draft: { blocks: [], warnings: [], issues: [] },
+      });
+      await f.c("commercialDocumentAiPages").insertOne(page(1));
+      await registerCommercialReviewPages(database, storeId, id);
       expect(
-        await f.c("commercialDocumentAiPages").findOne({ _id: page._id }),
-      ).toEqual(page);
-      expect(provider.extract).not.toHaveBeenCalled();
+        await f.c("commercialReviewPages").countDocuments({ storeId }),
+      ).toBe(0);
+      await f.c("commercialDocumentAiPages").insertOne(page(2));
+      const before = await f
+        .c("commercialDocumentAiPages")
+        .find({ storeId })
+        .toArray();
+      await registerCommercialReviewPages(database, storeId, id);
+      await registerCommercialReviewPages(database, storeId, id);
+      expect(
+        await f.c("commercialReviewPages").countDocuments({ storeId }),
+      ).toBe(2);
+      expect(
+        await f.c("commercialDocumentAiPages").find({ storeId }).toArray(),
+      ).toEqual(before);
+      expect(await f.c("commercialWeekPlans").countDocuments({ storeId })).toBe(
+        0,
+      );
     });
     it("reanalyses the same retained original once, preserves old generations, and synchronizes only coherent fresh results", async () => {
       const f = await fixture(),
@@ -389,8 +435,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         {
           $set: {
             checksum,
-            status: "TO_VALIDATE",
-            stage: "DRAFT_REVIEW",
+            status: "PROCESSING",
+            stage: "AI_EXTRACTION",
             aiModel: f.s.model,
             aiSchemaVersion: f.s.aiSchema,
           },
@@ -446,7 +492,6 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         schemaVersion: f.s.visualSchema,
         status: "COMPLETE",
       });
-      await registerCommercialReviewPages(database, storeId);
       const oldVisual = await f
         .c("commercialVisualReadings")
         .find({ storeId })
@@ -477,54 +522,41 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ),
       ).rejects.toMatchObject({ statusCode: 409 });
       expect(await f.service.work(storeId, id, input.operationId)).toEqual([
-        "AI",
         "VISUAL",
       ]);
-      const aiCall = vi.fn(async () => ({
-        output: { blocks: [], warnings: [] },
-        responseId: "synthetic",
-        resolvedModel: f.s.model,
-        usage: { inputTokens: 0, outputTokens: 0 },
-      }));
       const visualCall = vi.fn(async () => ({
         output: empty,
         responseId: "synthetic",
         usage: { inputTokens: 0, outputTokens: 0 },
       }));
-      const ai = createCommercialAiDraftProcessor(
-        database,
-        { model: f.s.model, extract: aiCall },
-        () => processingTime,
-      );
       const visual = createCommercialVisualProcessor(
         database,
         { model: f.s.model, extract: visualCall },
         { read: async () => bytes },
         () => processingTime,
       );
-      await ai.manifest(storeId, id, false);
       await visual.pending({ storeId, sourceDocumentId: id });
       expect(
         (
           await readCurrentCommercialVisualPages(f.db, storeId, id, checksum)
         ).map((p) => p.id),
       ).toEqual(oldVisual.map((p) => p.id));
-      await ai.extractPage(storeId, id, 1);
       await visual.process(storeId, id, 1);
       expect(
         (
           await readCurrentCommercialVisualPages(f.db, storeId, id, checksum)
         ).map((p) => p.id),
       ).toEqual(oldVisual.map((p) => p.id));
-      await ai.extractPage(storeId, id, 2);
-      await ai.finalize(storeId, id);
       await visual.process(storeId, id, 2);
       await visual.pending({ storeId, sourceDocumentId: id });
       await registerCommercialReviewPages(database, storeId);
-      await ai.extractPage(storeId, id, 1);
       await visual.process(storeId, id, 1);
-      expect(aiCall).toHaveBeenCalledTimes(2);
       expect(visualCall).toHaveBeenCalledTimes(2);
+      expect(
+        await f
+          .c("commercialDocumentAiPages")
+          .countDocuments({ storeId, analysisRevision: 1 }),
+      ).toBe(0);
       expect(await f.c("sourceDocuments").findOne({ _id: id })).toEqual(
         original,
       );
@@ -544,7 +576,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       ).toEqual(oldVisual);
       expect(
         await f.c("commercialReviewPages").countDocuments({ storeId }),
-      ).toBe(4);
+      ).toBe(2);
       const pull = createMongoSyncPullService(database);
       await expect(
         pull.pull(storeId, { limit: 200, commercialVisual: "true" }),
@@ -583,7 +615,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       const record = await f
         .c("commercialDocumentRecoveryRequests")
         .findOne({ _id: input.operationId });
-      expect(record?.previousJob).toMatchObject({ status: "TO_VALIDATE" });
+      expect(record?.previousJob).toMatchObject({ status: "PROCESSING" });
       expect(record?.previousVisualJob).toMatchObject({ status: "COMPLETE" });
     });
     it("upgrades existing immutable extraction indexes without changing a single legacy record", async () => {

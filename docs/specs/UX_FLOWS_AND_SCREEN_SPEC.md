@@ -1,3 +1,7 @@
+## Implemented increment — 2 November 2026: analysis status without duplicate transcription
+
+The detailed analysis panel displays deterministic page preparation and visual reading; it no longer shows the retired text-AI step as mandatory waiting work. Global server status and explicit restart/recovery already use those active stages. Previously received text transcriptions and decisions remain in their existing historical/detail screens. The primary weekly entry remains a strategy conversation with the exact original, without awaiting those background results. No new button, validation, automatic business approval or model call is introduced by opening the panel. Native delivery/acceptance remain separate.
+
 ## Implemented increment — 2 November 2026: confirming the selected weekly plan
 
 An existing week draft now leads to one recap of selected offers/conditions and TGs, with one explicit manager confirmation. Remove the separate commercial-offer certification section and its redundant confirmation state from the week screen. The chat's existing plan card uses the same grouped commit; essential terms remain visible and additional source/product/operation detail is disclosed on demand. Do not link an unsaved preview to the execution/reminder route for a nonexistent operation.
