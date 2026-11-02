@@ -508,9 +508,35 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
     const empty = await readPreparationPreview(db, f.storeId, {
       ...input,
       create: { choiceIds: [] },
+      patch: {
+        tgCapacity: 2,
+        note: "TG1 en masse à l’entrée. Pas de contre-promo.",
+        tgAdditions: [
+          { label: "TG1", theme: "Agrumes", offerIds: [] },
+          { label: "TG2", theme: "Potages", offerIds: [] },
+        ],
+      },
     });
     expect(empty.status).toBe("READY");
     expect(empty.basis?.choices).toEqual([]);
+    const strategy = prepareWeekPatch(empty.input, empty.basis!, randomUUID());
+    expect(strategy.input.draft).toMatchObject({
+      offerRefs: [],
+      tgCapacity: 2,
+      note: "TG1 en masse à l’entrée. Pas de contre-promo.",
+      placements: [
+        { label: "TG1", theme: "Agrumes", offerIds: [], sourceIdea: null },
+        { label: "TG2", theme: "Potages", offerIds: [], sourceIdea: null },
+      ],
+    });
+    expect(empty.evidence[0]!.value).toContain(
+      "sans offre commerciale ajoutée",
+    );
+    expect(
+      await db
+        .collection("commercialWeekPreparations")
+        .countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
   });
   it("rejects missing/foreign/withdrawn/out-of-week initial choices and undeclared TG capacity", async () => {
     const f = await fixture(),

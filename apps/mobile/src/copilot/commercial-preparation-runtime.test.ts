@@ -645,7 +645,10 @@ it("rolls back added/removed TGs on failed commit and refuses deletion when its 
   }
 });
 
-async function newWeekCard(x: Awaited<ReturnType<typeof setup>>) {
+async function newWeekCard(
+  x: Awaited<ReturnType<typeof setup>>,
+  strategyOnly = false,
+) {
   const { copilotMessageSchema, copilotPreparationPatchSchema } =
       await import("@fl-copilot/domain"),
     { applyCopilotRecord } = await import("./conversation-repository");
@@ -659,14 +662,17 @@ async function newWeekCard(x: Awaited<ReturnType<typeof setup>>) {
   });
   const input = copilotPreparationPatchSchema.parse({
     weekStart: x.request.input.draft.weekStart,
-    create: { choiceIds: [x.choice.choice.id] },
+    create: { choiceIds: strategyOnly ? [] : [x.choice.choice.id] },
     patch: {
       tgCapacity: 1,
+      note: strategyOnly
+        ? "Présentation de masse à l’entrée, sans contre-promo."
+        : "",
       tgAdditions: [
         {
           label: "TG nouvelle",
           theme: "Saison",
-          offerIds: [x.choice.choice.id],
+          offerIds: strategyOnly ? [] : [x.choice.choice.id],
         },
       ],
     },
@@ -683,7 +689,7 @@ async function newWeekCard(x: Awaited<ReturnType<typeof setup>>) {
       basis: {
         preparation: null,
         creationStoreId: x.f.storeId,
-        choices: [x.choice.choice],
+        choices: strategyOnly ? [] : [x.choice.choice],
       },
     }),
   });
@@ -693,70 +699,85 @@ async function newWeekCard(x: Awaited<ReturnType<typeof setup>>) {
   });
   return message;
 }
-it("creates the week's canonical draft offline from a version-3 private card and replays once after restart", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "week-create-")),
-    path = join(dir, "local.db"),
-    x = await setup(path);
-  let reopened: DatabaseSync | undefined;
-  try {
-    const m = await newWeekCard(x),
-      c = await preparationController(x);
-    expect((await c.open(m)).status).toBe("READY");
-    const expected = (await c.open(m)).request.input.draft;
-    expect((await c.confirm(m)).status).toBe("COMPLETED");
-    x.db.close();
-    reopened = new DatabaseSync(path);
-    const a = new Adapter(reopened);
-    expect(
-      (await (await preparationController(x, true, a)).confirm(m)).status,
-    ).toBe("COMPLETED");
-    const row = reopened
-        .prepare("SELECT payload_json FROM commercial_week_preparations")
-        .get() as { payload_json: string },
-      saved = JSON.parse(row.payload_json);
-    const { commercialWeekPreparationId } =
-      await import("@fl-copilot/commercial-core");
-    expect(saved.id).toBe(
-      await commercialWeekPreparationId(
-        x.f.storeId,
-        expected.weekStart,
-        testChoiceDigest,
-      ),
-    );
-    expect(saved).toMatchObject({
-      ...expected,
-      version: 1,
-      storeId: x.f.storeId,
-    });
-    expect(saved.createdAt).not.toBe("2000-01-01T00:00:00.000Z");
-    expect(
-      reopened
-        .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
-        .get(),
-    ).toEqual({ n: 1 });
-    expect(
-      reopened
-        .prepare(
-          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='commercial_week_preparation'",
-        )
-        .get(),
-    ).toEqual({ n: 1 });
-    expect(
-      reopened.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
-    ).toEqual({ n: 0 });
-    await expect(
-      (await preparationController(x, false, a)).confirm(m),
-    ).rejects.toThrow("FORBIDDEN");
-  } finally {
-    reopened?.close();
+it.each([false, true])(
+  "creates the week's canonical draft offline and replays once after restart (strategy only: %s)",
+  async (strategyOnly) => {
+    const dir = mkdtempSync(join(tmpdir(), "week-create-")),
+      path = join(dir, "local.db"),
+      x = await setup(path);
+    let reopened: DatabaseSync | undefined;
     try {
+      const m = await newWeekCard(x, strategyOnly),
+        c = await preparationController(x);
+      expect((await c.open(m)).status).toBe("READY");
+      const expected = (await c.open(m)).request.input.draft;
+      expect((await c.confirm(m)).status).toBe("COMPLETED");
       x.db.close();
-    } catch {
-      /* already closed */
+      reopened = new DatabaseSync(path);
+      const a = new Adapter(reopened);
+      expect(
+        (await (await preparationController(x, true, a)).confirm(m)).status,
+      ).toBe("COMPLETED");
+      const row = reopened
+          .prepare("SELECT payload_json FROM commercial_week_preparations")
+          .get() as { payload_json: string },
+        saved = JSON.parse(row.payload_json);
+      const { commercialWeekPreparationId } =
+        await import("@fl-copilot/commercial-core");
+      expect(saved.id).toBe(
+        await commercialWeekPreparationId(
+          x.f.storeId,
+          expected.weekStart,
+          testChoiceDigest,
+        ),
+      );
+      expect(saved).toMatchObject({
+        ...expected,
+        version: 1,
+        storeId: x.f.storeId,
+      });
+      if (strategyOnly) {
+        expect(saved.offerRefs).toEqual([]);
+        expect(saved.placements[0].offerIds).toEqual([]);
+        expect(saved.note).toBe(
+          "Présentation de masse à l’entrée, sans contre-promo.",
+        );
+        expect(
+          reopened
+            .prepare("SELECT COUNT(*) n FROM commercial_validated_offers")
+            .get(),
+        ).toEqual({ n: 0 });
+      }
+      expect(saved.createdAt).not.toBe("2000-01-01T00:00:00.000Z");
+      expect(
+        reopened
+          .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
+          .get(),
+      ).toEqual({ n: 1 });
+      expect(
+        reopened
+          .prepare(
+            "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type='commercial_week_preparation'",
+          )
+          .get(),
+      ).toEqual({ n: 1 });
+      expect(
+        reopened.prepare("SELECT COUNT(*) n FROM commercial_week_plans").get(),
+      ).toEqual({ n: 0 });
+      await expect(
+        (await preparationController(x, false, a)).confirm(m),
+      ).rejects.toThrow("FORBIDDEN");
+    } finally {
+      reopened?.close();
+      try {
+        x.db.close();
+      } catch {
+        /* already closed */
+      }
+      rmSync(dir, { recursive: true, force: true });
     }
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+  },
+);
 it("never overwrites a local pending week when the remote creation preview was based on absence", async () => {
   const x = await setup();
   try {

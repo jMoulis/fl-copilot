@@ -1,3 +1,7 @@
+## Implemented increment — 2 November 2026: concise strategic draft recap
+
+Show agreed TG themes and weekly notes together with declared capacity and one “Enregistrer ces choix” action for a new week. Omit empty offer lists, empty previous notes and repeated per-TG source/execution disclaimers. Existing-draft edits retain before/after information, explicit removals and reference-refresh consequences. Opening a card never saves; role, stale-preview, double-tap, cancellation and transaction checks remain. Saving is a draft decision; plan validation and field realization stay distinct. No new workflow or automatic approval. Real-device and real-model acceptance are pending.
+
 ## Implemented increment — 2 November 2026: analysis status without duplicate transcription
 
 The detailed analysis panel displays deterministic page preparation and visual reading; it no longer shows the retired text-AI step as mandatory waiting work. Global server status and explicit restart/recovery already use those active stages. Previously received text transcriptions and decisions remain in their existing historical/detail screens. The primary weekly entry remains a strategy conversation with the exact original, without awaiting those background results. No new button, validation, automatic business approval or model call is introduced by opening the panel. Native delivery/acceptance remain separate.

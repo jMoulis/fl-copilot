@@ -1,3 +1,7 @@
+## Implemented increment — 2 November 2026: qualitative agreement to draft
+
+Agreed TG themes and presentation/location notes can be saved together through the existing weekly preparation preview with no retained offer. Reuse empty choice/assignment arrays and the existing theme/note fields; no placeholder product, price, commercial offer, PDF certification or preliminary empty-draft confirmation. The same manager confirmation saves all displayed choices locally with canonical history/Outbox. Existing retained offers remain available and version-checked when intentionally selected. This increment does not make a qualitative draft a validated plan or an executed action; final offer-free plan representation remains open.
+
 ## Implemented increment — 2 November 2026: retire duplicate text-model extraction
 
 The automatic text-to-AI draft producer and its retry/maintenance/workflow entry points are removed. The original PDF and deterministic page text remain; visual reading still supplies source operation/offer/TG dossiers used by existing manual tools, while the Copilot can read the original directly. This increment removes one duplicate model pass, not all background PDF processing.

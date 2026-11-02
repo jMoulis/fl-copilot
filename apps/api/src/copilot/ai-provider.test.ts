@@ -3209,6 +3209,13 @@ it.each(["EDIT", "LAYOUT", "CREATE", "SELECTION", "REFRESH"])(
           (t: { name: string }) => t.name === "commercial_preparation_preview",
         );
       expect(definition.parameters.type).toBe("object");
+      expect(definition.description).toContain(
+        "without creating a commercial offer",
+      );
+      if (create)
+        expect(definition.description).toContain(
+          "not a preliminary empty-draft confirmation",
+        );
       if (create)
         expect(definition.parameters.properties).toHaveProperty("create");
       else
