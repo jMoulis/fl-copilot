@@ -2337,6 +2337,8 @@ Platform backup inclusion/exclusion must be reviewed before production.
 
 # 135. Observability
 
+Copilot generation diagnostics (2 November 2026) use existing structured API logs, not a new business entity or synchronized collection. `Copilot model usage` emits one `STEP` record per completed SDK model call: request/response/model identity, step ordinal, input/output tokens, cache-read/reasoning subcounts and tool-call count. Null means not reported, never zero. One `END` record adds outcome, completed-step count, duration, initial JSON context bytes and `usageComplete`; it carries no duplicate token totals. Failed/interrupted calls can have unreported consumption, while previously received steps remain logged. Correlate with HTTP request, conversation, reply, store and deployment IDs. Never log prompts, tool arguments/results, document bytes/names, provider errors or credentials. Cache and reasoning are subsets of input/output, not extra totals. Initial context bytes exclude system/tool/PDF payloads and are not tokens. Logs follow existing retention and LOG_LEVEL; they are not an invoice, historical backfill, durable billing ledger or an automatic spending limit. A diagnostic-sink failure cannot alter generation or trigger a retry.
+
 Monitor both mobile and remote.
 
 Mobile:

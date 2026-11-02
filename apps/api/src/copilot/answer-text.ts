@@ -9,6 +9,7 @@ import {
   type AnalyticsExplorerContext,
 } from "@fl-copilot/domain";
 import type { CopilotResponse } from "@fl-copilot/domain";
+import { BusinessDecimal } from "@fl-copilot/analytics-core";
 import type { CopilotGenerationRequest } from "./ai-provider.js";
 type Evidence = NonNullable<CopilotGenerationRequest["evidence"]>[number];
 const token = /\{\{(value|label|source|chart):(\d+)\}\}/g;
@@ -75,15 +76,30 @@ function render(
     if (missing.length) text += "\n\n" + missing.join(" · ");
   }
   let chartCount = 0;
-  text = text.replace(token, (_whole, kind: string, index: string) => {
-    const item = byId.get(effectiveFacts[Number(index)]?.evidenceId ?? "");
+  text = text.replace(token, (_m, kind: string, i: string, at: number) => {
+    const item = byId.get(effectiveFacts[Number(i)]?.evidenceId ?? "");
     if (!item) {
       if (partial) return "";
       throw Error("UNKNOWN_ANSWER_EVIDENCE");
     }
     if (kind === "value") {
       if (item.value === null) return "non disponible";
-      const raw = String(item.value);
+      let raw = String(item.value);
+      // Presentation only: exact evidence/citation values remain unchanged. Do not
+      // round identifiers, quantities or ratios based on their numeric shape.
+      const monetary =
+        ["KPI", "COMPARISON"].includes(item.sourceType) &&
+        (/^\s*(?:€|EUR\b)/i.test(text.slice(at + _m.length)) ||
+          (/(?:price|cost|amount|purchase|sales|margin|prix|co[uû]t|montant|chiffre d.affaires|marge|€)/i.test(
+            item.label,
+          ) &&
+            !/(?:quantity|quantit[eé]|rate|ratio|taux|percent|pourcentage|count|days|jours)/i.test(
+              item.label,
+            )));
+      if (monetary && /^-?\d+\.\d{3,}$/.test(raw)) {
+        const rounded = new BusinessDecimal(raw).toDecimalPlaces(2);
+        raw = rounded.isZero() ? "0.00" : rounded.toFixed(2);
+      }
       const formatted = /^-?\d+(?:\.\d+)?$/.test(raw)
         ? raw
             .split(".")

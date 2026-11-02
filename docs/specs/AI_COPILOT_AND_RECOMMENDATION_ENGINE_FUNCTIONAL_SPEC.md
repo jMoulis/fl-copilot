@@ -1,3 +1,7 @@
+## Owner refinement — 2 November 2026: finish the requested investigation
+
+A request for analysis authorizes relevant available read tools within the existing bounds; do not gate each continuation behind another go-ahead. Business writes keep explicit canonical review. A counter-promotion candidate must be considered as a competing/substitutable alternative beside the promoted product, not merely a complementary purchase or another listed promotion. Explain the actual role and placement; use available store evidence without inventing uplift or future purchase terms. Missing future cost can limit a numeric margin scenario without blocking qualitative merchandising advice. Keep existing natural tone, provenance and tax/unit rules. Monetary prose may round to cents, with exact values retained in citations and calculations. This refinement replaces existing guidance rather than expanding the global instruction block. Real-chat acceptance remains necessary.
+
 # Owner refinement — Mercalys manual import only in Actions, 1 November 2026
 
 The chat no longer opens Mercalys intake at all. The dedicated native Actions → Imports Mercalys entry owns manual imports. Retain historical references as passive metadata and preserve conversation-owned batches, originals and publications in the existing account/store repositories. Other attachments and authorized email reception are unchanged. This supersedes the chat-to-classic-import shortcut below; no new tool or workflow is requested.
