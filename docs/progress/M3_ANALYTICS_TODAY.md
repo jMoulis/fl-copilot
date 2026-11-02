@@ -1,3 +1,9 @@
+## Current checkpoint — 2 November 2026
+
+**CLOSED — functional iPhone pilot baseline.** Explicit original target-iPhone exit acceptance plus later owner acceptance of retail comparisons and product trend filters/sorts. Shared deterministic parity remains the authority.
+
+No new M3 phone test requested; chat chart acceptance belongs to M7. Cross-platform, physical recovery and remaining exceptional-path checks are retained in [the consolidated closure register](M0_M6_PILOT_CLOSURE_2026_11_02.md), not silently accepted. This checkpoint supersedes historical pending wording only for the functional baseline; the dated history below remains intact. M7 and M8 remain open.
+
 # M3 shared analytics and Aujourd’hui
 
 Date: 2026-10-04.

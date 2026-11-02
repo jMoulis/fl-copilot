@@ -1,3 +1,9 @@
+## Current checkpoint — 2 November 2026
+
+**CLOSED — functional iPhone pilot baseline.** Functional iPhone minimum accepted on 9 October, owner-approved direct-original strategy replacing compulsory extraction review, and owner confirmation on 2 November that the requested commercial-week test works.
+
+Requested commercial-week journey accepted. This does not declare any TG installed or close the M7 recommendation-to-bilan loop. Cross-platform, physical recovery and remaining exceptional-path checks are retained in [the consolidated closure register](M0_M6_PILOT_CLOSURE_2026_11_02.md), not silently accepted. This checkpoint supersedes historical pending wording only for the functional baseline; the dated history below remains intact. M7 and M8 remain open.
+
 ## 2 November 2026 — superseding producer retirement
 
 The text-AI producer and `src/development/retry-commercial-ai-page.ts` maintenance command described in the historical journal below have been removed. They must not be run/recreated to resume the current pipeline. Legacy received results/review history remain, while current processing/restart uses deterministic page text and visual reading. See `../qa/M7_RETIRED_TEXT_AI_2026_11_02.md`.

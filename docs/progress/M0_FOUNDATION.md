@@ -1,3 +1,9 @@
+## Current checkpoint — 2 November 2026
+
+**CLOSED — functional iPhone pilot baseline.** Operational native/API/auth/SQLite/Mongo foundation; prior owner iPhone authentication and Sentry acceptance. Hosted API replaces the historical LAN-only remaining item.
+
+No new M0 phone test requested. Cross-platform, physical recovery and remaining exceptional-path checks are retained in [the consolidated closure register](M0_M6_PILOT_CLOSURE_2026_11_02.md), not silently accepted. This checkpoint supersedes historical pending wording only for the functional baseline; the dated history below remains intact. M7 and M8 remain open.
+
 # M0 foundation implementation and acceptance
 
 Date: 2026-09-26.

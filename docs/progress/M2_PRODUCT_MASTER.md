@@ -1,3 +1,9 @@
+## Current checkpoint — 2 November 2026
+
+**CLOSED — functional iPhone pilot baseline.** Recorded iPhone offline/import/restart/reconnect/upload gate, 147 product resolutions, corrected-file reconciliation and 10,000-row test. Current targeted verification/conflict checks pass without altering production data.
+
+No new import requested solely to close the initial module. The rare physical DIFFERENCE exception remains explicitly tracked in M8. Cross-platform, physical recovery and remaining exceptional-path checks are retained in [the consolidated closure register](M0_M6_PILOT_CLOSURE_2026_11_02.md), not silently accepted. This checkpoint supersedes historical pending wording only for the functional baseline; the dated history below remains intact. M7 and M8 remain open.
+
 # M2 product master
 
 Date: 2026-10-04.
