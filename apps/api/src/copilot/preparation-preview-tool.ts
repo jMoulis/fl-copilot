@@ -146,7 +146,9 @@ export async function readPreparationPreview(
               ? "Ce brouillon est trop volumineux pour une carte de confirmation complète. Modifiez-le dans l’écran de préparation hebdomadaire ; aucune donnée n’a été tronquée ni enregistrée."
               : status === "READY"
                 ? input.create
-                  ? "Nouvelle semaine préparée à partir des offres retenues sélectionnées, à confirmer sur l’appareil. Aucune validation commerciale, publication ou installation en rayon."
+                  ? input.create.choiceIds.length
+                    ? "Brouillon de la semaine préparé avec les offres sélectionnées. À confirmer sur l’appareil ; le plan et sa réalisation restent distincts."
+                    : "Choix de merchandising préparés dans le brouillon de la semaine, sans offre commerciale ajoutée. À confirmer sur l’appareil ; le plan et sa réalisation restent distincts."
                   : "Modification préparée, à confirmer sur l’appareil. Le brouillon sera enregistré localement ; aucune validation de plan ni installation en rayon."
                 : status === "UNCHANGED"
                   ? "Le brouillon contient déjà ces valeurs ; aucun changement."

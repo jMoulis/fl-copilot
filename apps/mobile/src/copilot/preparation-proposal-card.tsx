@@ -105,21 +105,15 @@ export function PreparationProposalCard({
           </Text>
           {state.content.input.create ? (
             <View style={{ gap: 4 }}>
-              <Text style={{ fontWeight: "700" }}>
-                Créer le brouillon de cette semaine
-              </Text>
-              <Text>
-                Offres retenues sélectionnées :{" "}
-                {state.content.basis.choices
-                  .map((c) => c.rawProductLabel + " — " + c.operationLabel)
-                  .join(" ; ") || "Aucune"}
-              </Text>
-              <Text>
-                Capacité TG :{" "}
-                {state.request.input.draft.tgCapacity ?? "Non renseignée"}. Ce
-                brouillon n’est pas un plan validé. Les offres ne sont pas
-                validées par cette création.
-              </Text>
+              <Text style={{ fontWeight: "700" }}>Choix pour la semaine</Text>
+              {state.content.basis.choices.length ? (
+                <Text>
+                  Offres sélectionnées :{" "}
+                  {state.content.basis.choices
+                    .map((c) => c.rawProductLabel + " — " + c.operationLabel)
+                    .join(" ; ")}
+                </Text>
+              ) : null}
             </View>
           ) : null}
           {state.content.input.patch.refreshChoiceIds ? (
@@ -201,20 +195,28 @@ export function PreparationProposalCard({
               </Text>
             </View>
           ) : null}
-          {state.content.input.patch.tgCapacity !== undefined ? (
+          {state.content.input.patch.tgCapacity !== undefined ||
+          state.content.input.create ? (
             <Text>
-              Capacité TG :{" "}
-              {state.content.basis.preparation?.tgCapacity ?? "Non renseignée"}{" "}
-              → {state.request.input.draft.tgCapacity ?? "Non renseignée"}
+              TG disponibles :{" "}
+              {state.content.basis.preparation
+                ? `${state.content.basis.preparation.tgCapacity ?? "Non renseigné"} → `
+                : ""}
+              {state.request.input.draft.tgCapacity ?? "Non renseigné"}
             </Text>
           ) : null}
           {state.content.input.patch.note !== undefined ? (
             <View style={{ gap: 3 }}>
               <Text style={{ fontWeight: "600" }}>Note</Text>
+              {state.content.basis.preparation ? (
+                <Text>
+                  Avant : {state.content.basis.preparation.note || "Aucune"}
+                </Text>
+              ) : null}
               <Text>
-                Avant : {state.content.basis.preparation?.note || "Aucune"}
+                {state.content.basis.preparation ? "Après : " : ""}
+                {state.request.input.draft.note || "Aucune"}
               </Text>
-              <Text>Après : {state.request.input.draft.note || "Aucune"}</Text>
             </View>
           ) : null}
           {(state.content.input.patch.tgUpdates ?? []).map((u) => {
@@ -294,27 +296,24 @@ export function PreparationProposalCard({
                   Ajouter au brouillon : {addition.label}
                 </Text>
                 <Text>Thème : {addition.theme || "Non renseigné"}</Text>
-                <Text>
-                  Offres :{" "}
-                  {addition.offerIds
-                    .map(
-                      (id) =>
-                        state.content.basis.choices.find((c) => c.id === id)
-                          ?.rawProductLabel ?? "Offre indisponible",
-                    )
-                    .join(" ; ") || "Aucune offre affectée"}
-                </Text>
-                <Text>
-                  Nouvel emplacement proposé, sans lien vers une idée PDF et
-                  sans installation en rayon.
-                </Text>
+                {addition.offerIds.length ? (
+                  <Text>
+                    Offres :{" "}
+                    {addition.offerIds
+                      .map(
+                        (id) =>
+                          state.content.basis.choices.find((c) => c.id === id)
+                            ?.rawProductLabel ?? "Offre indisponible",
+                      )
+                      .join(" ; ")}
+                  </Text>
+                ) : null}
               </View>
             ),
           )}
           <Text>
-            Les TG conservées gardent leurs liens vers les idées du PDF.
-            Confirmer enregistre le brouillon ; le plan validé et l’installation
-            en rayon restent inchangés.
+            Enregistre ces choix dans le brouillon de la semaine. La validation
+            du plan et sa réalisation en rayon restent distinctes.
           </Text>
           <Text>
             {state.status === "COMPLETED"
@@ -355,7 +354,7 @@ export function PreparationProposalCard({
                       : state.content.input.patch.refreshChoiceIds
                         ? "Confirmer l’actualisation et enregistrer"
                         : state.content.input.create
-                          ? "Créer le brouillon"
+                          ? "Enregistrer ces choix"
                           : "Enregistrer le brouillon"}
               </Text>
             </Pressable>
