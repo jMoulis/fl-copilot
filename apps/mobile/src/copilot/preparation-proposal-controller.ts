@@ -54,7 +54,13 @@ export class CopilotPreparationProposalController {
         JSON.stringify(draft) !== JSON.stringify(request.input.draft)
       )
         throw Error("PREPARATION_PROPOSAL_SCOPE");
-      return { message, content, request, status: "COMPLETED" as const };
+      return {
+        message,
+        content,
+        request,
+        status: "COMPLETED" as const,
+        savedWeekAvailable: true,
+      };
     }
     const prep = await new CommercialPreparationRepository(
       this.db,
@@ -91,6 +97,7 @@ export class CopilotPreparationProposalController {
       content,
       request,
       status: stale ? ("STALE" as const) : ("READY" as const),
+      savedWeekAvailable: !!prep,
     };
   }
   async confirm(message: CopilotMessage, signal?: AbortSignal) {
