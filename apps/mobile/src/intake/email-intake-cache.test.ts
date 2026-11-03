@@ -1261,3 +1261,39 @@ it("keeps a store inbox and legacy receipts readable locally without inventing a
     "EMAIL_INTAKE_SESSION_REQUIRED",
   );
 });
+
+it("hides cached deleted-chat receipts from the store inbox without deleting their originals or hiding store receipts", async () => {
+  const f = await fixture();
+  await f.cache.storePage(f.scope, f.page);
+  const scope = { ...f.scope, conversationId: f.scope.storeId };
+  const binding = {
+    ...f.binding,
+    id: randomUUID(),
+    conversationId: scope.storeId,
+  };
+  const receipt = {
+    ...f.receipt,
+    id: randomUUID(),
+    bindingId: binding.id,
+    conversationId: scope.storeId,
+  };
+  await f.cache.storePage(scope, {
+    bindings: [binding],
+    receipts: [receipt],
+    nextCursor: null,
+  });
+  await f.db.runAsync(
+    "UPDATE copilot_conversations SET payload_json=? WHERE id=?",
+    JSON.stringify({
+      ...f.chat.conversation,
+      deletedAt: "2026-11-03T18:00:00.000Z",
+    }),
+    f.scope.conversationId,
+  );
+  expect((await f.cache.list(scope.storeId)).receipts).toEqual([receipt]);
+  expect(
+    (await f.db.getFirstAsync<{ n: number }>(
+      "SELECT COUNT(*) n FROM email_intake_receipts",
+    ))!.n,
+  ).toBe(2);
+});
