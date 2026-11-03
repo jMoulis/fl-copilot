@@ -2,6 +2,18 @@
 
 Edition: `produce-retail.2026-10-18.v1`. This is a real-dialogue acceptance checklist, not a record of successful live-model/device testing. Automated fixtures check transport, provenance, boundaries and persistence; they cannot establish expert reasoning quality. Run these cases in a grouped acceptance session with the configured model and known pilot data. Do not trigger a paid build or provider request merely by reading this file.
 
+## Functional V1 acceptance — 3 November 2026
+
+**Workstream 4 is closed for the functional V1 scope.** This supersedes the introductory absence-of-acceptance statement for the pilot scope, while preserving the detailed scenarios as reference material.
+
+The bounded review of existing owner dialogues covered revised field observations, competing causes of a decline, practical TG presentation and observed versus hypothetical margin. The owner then supplied three actual Copilot replies:
+
+- **Association:** simultaneous tomato/onion sales do not establish shared baskets; anonymous transaction-level evidence would be needed, with no invented attachment rate.
+- **Substitution:** aubergine cannot be assumed to absorb all missing courgette sales; alternatives, abandonment and concurrent promotions remain possible. No automatic replenishment or business write is asserted.
+- **Seasonality:** availability alone does not establish local season; origin and production cycle matter. No current supplier or campaign claim is fabricated.
+
+The replies meet these questions' functional criteria. The owner asked whether workstream 4 was done, received the explicit functional-V1 closure decision, and agreed to proceed. Record owner-provided results, not an independent device inspection, a fresh model call by the coding agent or exhaustive certification of every scenario below. Generic Q2 is not a test of a particular confirmed directed edge, and generic Q3 does not demonstrate live seasonal research. Existing technical freshness, scoping and no-write tests retain their original evidence boundaries. New defects may be fixed without leaving the original expertise workstream indefinitely open.
+
 For every case: keep the response natural; consult only relevant reference topics if useful, distinguish store facts/source findings/application hypotheses, cite a useful primary source, reuse already known information and ask only a material missing fact. Do not turn the reference’s sample questions into a mandatory list. Any business write requires the existing explicit decision path.
 
 | User question                                                                 | Relevant reference           | Acceptance observations                                                                                                                                                                  |
