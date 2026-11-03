@@ -40,6 +40,11 @@ export const copilotProductSearchResultSchema = z
       .array(
         z.strictObject({
           product: productSchema,
+          identifiers: z
+            .array(copilotProductSearchInputSchema.shape.identifiers.element)
+            .max(20)
+            .optional(),
+          identifiersComplete: z.boolean().optional(),
           basis: z.enum([
             "EXACT_IDENTIFIER",
             "VALIDATED_ALIAS",
@@ -61,6 +66,15 @@ export const copilotProductSearchResultSchema = z
         code: "custom",
         message: "Inconsistent product lookup result",
       });
+    for (const candidate of r.candidates) {
+      if (
+        (candidate.identifiers === undefined) !==
+          (candidate.identifiersComplete === undefined) ||
+        (candidate.identifiersComplete === false &&
+          candidate.identifiers?.length)
+      )
+        fail();
+    }
     if (r.status === "LIMIT_EXCEEDED") {
       if (
         r.state !== null ||

@@ -1121,10 +1121,47 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(code.state).toBe("AUTO_MATCH");
       expect(code.matchedProductId).toBe(id);
       expect(code.candidates[0]?.basis).toBe("EXACT_IDENTIFIER");
+      await db
+        .collection<
+          Omit<typeof identifier, "deletedAt"> & { deletedAt: Date | null }
+        >("productIdentifiers")
+        .insertMany([
+          {
+            ...identifier,
+            _id: randomUUID(),
+            storeId: randomUUID(),
+            value: "foreign-code",
+          },
+          {
+            ...identifier,
+            _id: randomUUID(),
+            value: "unreviewed-code",
+            status: "TO_REVIEW",
+          },
+          {
+            ...identifier,
+            _id: randomUUID(),
+            value: "deleted-code",
+            deletedAt: stamp,
+          },
+        ]);
       const text = await readProductSearch(db, f.storeId, {
         label: "banane",
         identifiers: [],
       });
+      expect(text.candidates.find((c) => c.product.id === id)).toMatchObject({
+        identifiers: [{ type: "PLU", value: "000123" }],
+        identifiersComplete: true,
+      });
+      expect(
+        text.candidates.find((c) => c.product.id === second._id),
+      ).toMatchObject({ identifiers: [], identifiersComplete: true });
+      expect(text.evidence.find((e) => e.sourceId === id)?.value).toContain(
+        "PLU 000123",
+      );
+      expect(JSON.stringify(text)).not.toMatch(
+        /foreign-code|unreviewed-code|deleted-code/,
+      );
       expect(text.state).toBe("AMBIGUOUS");
       expect(text.matchedProductId).toBeNull();
       expect(text.candidateCount).toBe(2);
@@ -1153,6 +1190,38 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           })
         ).matchedProductId,
       ).toBeNull();
+      const oldEvidence = text.evidence.find((e) => e.sourceId === id)!.id;
+      await db
+        .collection("productIdentifiers")
+        .updateOne({ _id: identifier._id as never }, { $set: { version: 2 } });
+      const refreshed = await readProductSearch(db, f.storeId, {
+        label: "banane",
+        identifiers: [],
+      });
+      expect(refreshed.evidence.find((e) => e.sourceId === id)!.id).not.toBe(
+        oldEvidence,
+      );
+      await db.collection<typeof identifier>("productIdentifiers").insertMany(
+        Array.from({ length: 20 }, (_, i) => ({
+          ...identifier,
+          _id: randomUUID(),
+          value: `000900${i}`,
+        })),
+      );
+      const bounded = await readProductSearch(db, f.storeId, {
+        label: "banane",
+        identifiers: [],
+      });
+      expect(bounded.status).toBe("COMPLETE_CATALOG");
+      expect(bounded.candidates.find((c) => c.product.id === id)).toMatchObject(
+        { identifiers: [], identifiersComplete: false },
+      );
+      expect(
+        bounded.candidates.find((c) => c.product.id === second._id),
+      ).toMatchObject({ identifiers: [], identifiersComplete: true });
+      expect(bounded.evidence.find((e) => e.sourceId === id)?.value).toContain(
+        "Limite de lecture des codes",
+      );
       await db
         .collection<
           Omit<typeof product, "deletedAt"> & { deletedAt: Date | null }

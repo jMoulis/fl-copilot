@@ -4,6 +4,7 @@ const randomUUID = () =>
 import { it, expect } from "vitest";
 import {
   searchCopilotProducts,
+  copilotProductSearchResultSchema,
   copilotProductSearchInputSchema,
 } from "./copilot-product-search";
 import type { Product } from "./products";
@@ -78,4 +79,57 @@ it("reports complete ambiguity beyond the visible five candidates and rejects em
   expect(() =>
     copilotProductSearchInputSchema.parse({ label: null, identifiers: [] }),
   ).toThrow();
+});
+
+it("keeps legacy lookup code coverage unknown and validates explicit complete or unavailable code lists", () => {
+  const f = fixture();
+  const found = searchCopilotProducts(
+    f.storeId,
+    { label: f.product.label, identifiers: [] },
+    { products: [f.product], identifiers: [], aliases: [] },
+  );
+  const result = { status: "COMPLETE_CATALOG", ...found, evidence: [] };
+  expect(
+    copilotProductSearchResultSchema.parse(result).candidates[0],
+  ).not.toHaveProperty("identifiersComplete");
+  const codes = (patch: object) => ({
+    ...result,
+    candidates: [{ ...found.candidates[0], ...patch }],
+  });
+  expect(
+    copilotProductSearchResultSchema.parse(
+      codes({
+        identifiers: [{ type: "PLU", value: "000123" }],
+        identifiersComplete: true,
+      }),
+    ).candidates[0]?.identifiers?.[0]?.value,
+  ).toBe("000123");
+  expect(
+    copilotProductSearchResultSchema.safeParse(
+      codes({ identifiers: [], identifiersComplete: true }),
+    ).success,
+  ).toBe(true);
+  expect(
+    copilotProductSearchResultSchema.safeParse(
+      codes({ identifiers: [], identifiersComplete: false }),
+    ).success,
+  ).toBe(true);
+  for (const patch of [
+    { identifiers: [] },
+    { identifiersComplete: true },
+    {
+      identifiers: [{ type: "PLU", value: "000123" }],
+      identifiersComplete: false,
+    },
+    {
+      identifiers: Array.from({ length: 21 }, () => ({
+        type: "PLU",
+        value: "000123",
+      })),
+      identifiersComplete: true,
+    },
+  ])
+    expect(
+      copilotProductSearchResultSchema.safeParse(codes(patch)).success,
+    ).toBe(false);
 });
