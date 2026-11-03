@@ -1,4 +1,14 @@
-# M7/M8 — recette native groupée V1, iOS build 14
+# M7/M8 — grouped native acceptance
+
+## Current recipe authority — 3 November 2026
+
+Use the [current M7 checkpoint](../progress/M7_WORKSTREAM_STATUS.md) before choosing another test. The owner has accepted weekly UX, real TG declaration/synchronization/first review, qualitative counter-promotion, historical-card recovery and the representative offline decision/restart/synchronization case. **Do not ask for those recipes again without a demonstrated regression.** M0–M6's functional iPhone baseline remains closed.
+
+Available native artifact: **0.1.0/build 24**, [EAS](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/3afdfe49-b370-4179-9594-c97dd2554cd1). Released API: `cc566f88c317435ace4402313ae0c4265200ba33`. The installed build was not independently inspected. No new build or phone test is requested by this documentation reconciliation.
+
+The sections below are historical recipes, not a fresh mandatory checklist. Earlier build IDs, lack-of-acceptance statements and completed core loops are superseded only within the scopes recorded in the checkpoint. Unaccepted cross-device/original recovery, Android and M8 hardening remain separate gates. Current business rules override historical wording: sales are TTC, purchases HT; no need to ask the owner to reconfirm that convention. A realized average price is still distinct from an advertised price or supplier tariff.
+
+## Historical recipe — builds 14–16, 24 October 2026
 
 ## Current candidate — iOS 16, 24 October 2026
 
@@ -60,13 +70,9 @@ Dans la discussion concernée, demander :
 - [ ] Le texte arrive progressivement et les étapes d’outils apparaissent. Une relance courte (« Et quels produits contribuent le plus à cet écart ? ») conserve le contexte et distingue les faits des hypothèses.
 - [ ] Les anciens blocs déjà enregistrés appartiennent à l’historique : vérifier une nouvelle réponse après livraison, sans les confondre avec un nouvel incident. Si une panne survient, conserver l’heure et la question. Le diagnostic serveur doit donner une cause exploitable avant de déclarer l’incident résolu. Voir [la recette de fiabilité](M7_CHAT_RELIABILITY_SCENARIOS.md).
 
-### 3. Un lot Mercalys depuis le chat
+### 3. Mercalys — historical chat recipe retired
 
-- [ ] Joindre plusieurs fichiers ou un ZIP ventes/casse et demander leur traitement : suivi par fichier, périodes et canaux distincts, succès déjà acquis conservés.
-- [ ] Les lignes sans doute suivent la publication autorisée existante ; seules les ambiguïtés ou corrections significatives demandent une décision ciblée.
-- [ ] Les fichiers publiés sont identifiables. Examiner un fichier puis revenir conserve la position dans la liste.
-- [ ] Reprendre le même fichier ne double pas les chiffres. Une version corrigée qui recouvre des observations existantes demande la réconciliation prévue.
-- [ ] Après synchronisation, le copilote retrouve les chiffres publiés pour la période concernée.
+Since the 1 November arbitration, Mercalys imports belong exclusively in **Actions → Import**. Do not attach a Mercalys ZIP to the chat to satisfy this older recipe, or restore its removed tool workflow. For a demonstrated import regression, use the canonical import screen: examine ambiguities, reconcile corrected overlapping files and verify once-only publication. The Copilot reads the published figures through its analytical tools.
 
 ### 4. Hors connexion, redémarrage et reprise
 
@@ -83,7 +89,7 @@ Dans un échange réel, demander :
 
 - [ ] Le copilote consulte les données actuelles ; il ne reprend pas comme vérité la déclaration historique « les outils n'exposent pas les quantités ».
 - [ ] Le tableau garde CA, quantité, unité et prix distincts. Quantités totales et prix pondéré utilisent les journées exploitables correspondantes ; une quantité partielle n'est pas le dénominateur du CA du mois complet.
-- [ ] HT/TTC non confirmé et éventuelles unités/données manquantes restent qualifiés. Le prix moyen encaissé n'est pas un historique des prix affichés.
+- [ ] Ventes TTC et achats HT suivent la convention métier confirmée. Les unités/données manquantes restent qualifiées ; le prix moyen encaissé n’est pas un historique des prix affichés.
 - [ ] Sources, défilement horizontal, streaming et copie de message fonctionnent. Les figures et la couverture attendues sont celles relues au moment du test, pas des montants copiés d'un ancien message.
 
 ## Parcours complémentaires selon les données disponibles
