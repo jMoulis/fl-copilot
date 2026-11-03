@@ -149,6 +149,7 @@ it("opens and pages cached history offline even when the remote read fails", asy
     const older = await f.controller.older(f.f.conversation.id, local.before!);
     expect(older.messages).toHaveLength(50);
     expect(older.hasMore).toBe(true);
+    expect(f.read).toHaveBeenCalledTimes(1);
   } finally {
     f.db.db.close();
   }
@@ -267,11 +268,38 @@ it("fills a gap between old cached messages and recent sync without moving the l
     const anchor = first.before!;
     const second = await f.controller.older(f.f.conversation.id, anchor);
     expect(second.before).toEqual(anchor);
-    expect(second.hasMore).toBe(false);
+    expect(second.hasMore).toBe(true);
+    const third = await f.controller.older(f.f.conversation.id, second.before!);
+    expect(third.before).toEqual(anchor);
+    expect(third.hasMore).toBe(false);
     const all = await f.controller.open(f.f.conversation.id, f.messages[0]);
     expect(all.messages.map((m) => m.entity.id)).toEqual(
       f.messages.map((m) => m.id),
     );
+  } finally {
+    f.db.db.close();
+  }
+});
+it("does not rewind remote paging when the initial background read arrives late", async () => {
+  const f = await fixture();
+  try {
+    let release!: (page: ReturnType<typeof f.page>) => void;
+    f.read.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
+    const initial = f.controller.refreshHistory(f.f.conversation.id);
+    await vi.waitFor(() => expect(release).toBeDefined());
+    const first = await f.controller.older(f.f.conversation.id);
+    const second = await f.controller.older(f.f.conversation.id, first.before!);
+    release(f.page(f.messages.slice(-50), true));
+    await initial;
+    const third = await f.controller.older(f.f.conversation.id, second.before!);
+    expect(third.messages).toHaveLength(26);
+    expect(third.hasMore).toBe(false);
+    expect(f.read).toHaveBeenCalledTimes(4);
   } finally {
     f.db.db.close();
   }

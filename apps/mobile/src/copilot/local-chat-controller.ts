@@ -121,13 +121,15 @@ export class CopilotLocalChatController {
   async refreshHistory(conversationId: string, signal?: AbortSignal) {
     if (!this.readHistory) return this.open(conversationId);
     await this.active(conversationId);
+    const previous = this.history.get(conversationId);
     const raw = await this.readHistory(conversationId, undefined, signal);
     if (signal?.aborted) throw Error("COPILOT_HISTORY_CANCELLED");
     const page = await this.repo.restoreHistory(conversationId, raw);
-    this.history.set(conversationId, {
-      hasMore: page.hasMore,
-      before: page.before,
-    });
+    if (this.history.get(conversationId) === previous)
+      this.history.set(conversationId, {
+        hasMore: page.hasMore,
+        before: page.before,
+      });
     return this.open(conversationId);
   }
   async older(
@@ -136,33 +138,25 @@ export class CopilotLocalChatController {
   ) {
     await this.active(conversationId);
     let local = await this.repo.messages(conversationId, 50, before);
-    if (this.remoteHasMore(conversationId)) {
+    if (!local.messages.length && this.remoteHasMore(conversationId)) {
       const cursor = this.history.get(conversationId)?.before ?? undefined;
-      try {
-        const raw = await this.readHistory!(conversationId, cursor);
-        const page = copilotHistoryPageSchema.parse(raw);
-        if (
-          page.hasMore &&
-          (!page.before ||
-            (cursor &&
-              (page.before.createdAt > cursor.createdAt ||
-                (page.before.createdAt === cursor.createdAt &&
-                  page.before.id >= cursor.id))))
-        )
-          throw Error("COPILOT_HISTORY_CURSOR_INVALID");
-        await this.repo.restoreHistory(conversationId, page);
-        this.history.set(conversationId, {
-          hasMore: page.hasMore,
-          before: page.before,
-        });
-        const restored = await this.repo.messages(conversationId, 50, cursor);
-        local = {
-          ...mergeCopilotHistory(local, restored),
-          hasMore: local.hasMore || restored.hasMore,
-        };
-      } catch (error) {
-        if (!local.messages.length) throw error;
-      }
+      const raw = await this.readHistory!(conversationId, cursor);
+      const page = copilotHistoryPageSchema.parse(raw);
+      if (
+        page.hasMore &&
+        (!page.before ||
+          (cursor &&
+            (page.before.createdAt > cursor.createdAt ||
+              (page.before.createdAt === cursor.createdAt &&
+                page.before.id >= cursor.id))))
+      )
+        throw Error("COPILOT_HISTORY_CURSOR_INVALID");
+      await this.repo.restoreHistory(conversationId, page);
+      this.history.set(conversationId, {
+        hasMore: page.hasMore,
+        before: page.before,
+      });
+      local = await this.repo.messages(conversationId, 50, cursor);
     }
     const anchor =
       before &&

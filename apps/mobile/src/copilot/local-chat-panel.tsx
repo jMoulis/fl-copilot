@@ -213,8 +213,6 @@ function LocalChatPanel({
   }, [controller, conversationId, delivery]);
   useEffect(() => {
     const abort = new AbortController();
-    olderLocked.current = true;
-    setLoadingOlder(true);
     void controller
       .refreshHistory(conversationId, abort.signal)
       .then((value) => {
@@ -230,17 +228,8 @@ function LocalChatPanel({
           setHistoryError(
             "L’historique synchronisé ne peut pas être chargé. Les messages locaux restent disponibles.",
           );
-      })
-      .finally(() => {
-        if (!abort.signal.aborted) {
-          olderLocked.current = false;
-          setLoadingOlder(false);
-        }
       });
-    return () => {
-      abort.abort();
-      olderLocked.current = false;
-    };
+    return () => abort.abort();
   }, [controller, conversationId]);
   const seenMessageRevision = useRef(externalMessageRevision);
   useEffect(() => {

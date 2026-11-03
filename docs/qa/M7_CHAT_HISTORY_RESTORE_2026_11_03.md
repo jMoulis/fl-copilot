@@ -14,7 +14,7 @@ A recovered card may have no device-local confirmation receipt even though its w
 
 ## Verification
 
-Eight isolated SQLite/controller regression tests cover a valid preparation card outside the bootstrap excerpt, 126 messages in bounded pages, no Outbox intents, draft retention, repeat reads, offline local paging, owner/conversation rejection, cancellation, deletion retention, invalid cursors, late archive and gaps between old cache and recent sync. Existing repository/chat/card tests are retained. Full check and exact-head CI results are recorded in the release ledger.
+Nine isolated SQLite/controller regression tests cover a valid preparation card outside the bootstrap excerpt, 126 messages in bounded pages, no Outbox intents, draft retention, repeat reads, offline local paging, owner/conversation rejection, cancellation, deletion retention, invalid cursors, late archive gaps between old cache and recent sync, and a late background read after explicit paging. Cached-page navigation never waits for a remote read. Existing repository/chat/card tests are retained. Full check and exact-head CI results are recorded in the release ledger.
 
 The native Mac is locked during this increment, so actual simulator gestures/rendering are not claimed. The test card is a controlled fixture and is never confirmed or written to the real store. No live model call, production mutation or actual store execution.
 
