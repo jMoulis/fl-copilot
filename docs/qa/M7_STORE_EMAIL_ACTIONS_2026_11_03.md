@@ -30,3 +30,7 @@ A further **27-test Mercalys file check** passes, including rollback on access l
 4. Confirm there is no reception entry/indicator in the Copilot. Old conversations and their already recorded sources remain untouched. Do not use a deleted conversation as the new reception test.
 
 The rollout must deploy the compatible API before the native artifact. Retain the previous API and binary; no destructive data reset is required. A finished build is available for installation, not proof of acceptance. Workstream 4 remains closed; this increment advances workstreams 1/3/7 without declaring all M7/M8 complete.
+
+## Local historical-cache follow-up
+
+The global store inbox initially selected every cached receipt, including receipts from deleted conversations that the server already excludes. A real SQLite regression test reproduces this disagreement. Filter historical parents before the local LIMIT using the same active/not-deleted condition, retaining store-mailbox receipts without a chat. No cached receipt, original, handoff or unsynchronized command is deleted. This is mobile-only; the delivered API already applies the correct boundary. Native acceptance must use the artifact containing this follow-up.

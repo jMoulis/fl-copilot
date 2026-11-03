@@ -219,7 +219,15 @@ export class EmailIntakeCache {
       ...keys,
     );
     const receipts = await this.db.getAllAsync<{ payload_json: string }>(
-      `SELECT payload_json FROM email_intake_receipts WHERE store_id=? AND owner_id=? ${isStoreEmailScope(scope) ? "" : "AND conversation_id=?"} ORDER BY json_extract(payload_json,'$.receivedAt') DESC,id DESC LIMIT ?`,
+      `SELECT payload_json FROM email_intake_receipts WHERE store_id=? AND owner_id=? ${
+        isStoreEmailScope(scope)
+          ? `AND (conversation_id=store_id OR EXISTS (
+        SELECT 1 FROM copilot_conversations c WHERE c.id=email_intake_receipts.conversation_id
+        AND c.store_id=email_intake_receipts.store_id AND c.owner_id=email_intake_receipts.owner_id
+        AND json_extract(c.payload_json,'$.status')='ACTIVE' AND json_extract(c.payload_json,'$.deletedAt') IS NULL
+      ))`
+          : "AND conversation_id=?"
+      } ORDER BY json_extract(payload_json,'$.receivedAt') DESC,id DESC LIMIT ?`,
       ...(isStoreEmailScope(scope) ? keys.slice(0, 2) : keys),
       limit,
     );
