@@ -1,3 +1,7 @@
+## Owner refinement — 3 November: readable store email address
+
+The owner requests `pdv09083` for the pilot mailbox. Administratively rename the existing store binding, retaining its prior address in the same unique routing namespace. No owner/sender change, fake chat, new mailbox collection, AI tool or provider configuration. The mobile store cache may refresh only the displayed recipient while all other binding guards remain. See [verification and activation](../qa/M7_STORE_EMAIL_PDV_2026_11_03.md).
+
 ## Owner arbitration — 3 November: one store email address in Actions
 
 Move reception from the Copilot to Actions, using one stable mailbox per store. Reuse the existing binding/envelope/retention/admission and canonical file-processing services; preserve immutable legacy originals and in-flight work. No fake conversation, new email agent, model turn, provider, storage model or duplicate importer. Once the mailbox is configured, historical chat aliases stop accepting new email without invalidating their retained files. Manager/owner/store isolation remains; no implicit owner transfer. This supersedes conversation-bound T23 reception UX. See [scope, proofs and focused acceptance](../qa/M7_STORE_EMAIL_ACTIONS_2026_11_03.md). Compatible API first, then grouped native release; physical acceptance remains separate.

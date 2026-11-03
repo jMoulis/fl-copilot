@@ -24,6 +24,7 @@ type VerifiedEvent = NonNullable<ReturnType<typeof verifyResendReceivedEvent>>;
 type Binding = Omit<EmailIntakeBinding, "id" | "createdAt" | "revokedAt"> & {
   _id: string;
   storeMailbox?: true;
+  routingRecipients?: string[];
   createdAt: Date;
   revokedAt: Date | null;
 };
@@ -221,12 +222,14 @@ export function createEmailIntakeStore(
           )
         )
           throw conflict();
+        const recipient = `fl-${randomBytes(24).toString("hex")}@${domain}`;
         const binding: Binding = {
           ...scope,
           _id: input.id,
           ...(mailbox ? { storeMailbox: true as const } : {}),
           allowedSender: input.allowedSender,
-          recipient: `fl-${randomBytes(24).toString("hex")}@${domain}`,
+          recipient,
+          routingRecipients: [recipient],
           createdAt: now(),
           revokedAt: null,
         };
@@ -326,7 +329,13 @@ export function createEmailIntakeStore(
         const candidates = await db
           .collection<Binding>("emailIntakeBindings")
           .find(
-            { recipient: { $in: recipients }, revokedAt: null },
+            {
+              $or: [
+                { recipient: { $in: recipients } },
+                { routingRecipients: { $in: recipients } },
+              ],
+              revokedAt: null,
+            },
             { session },
           )
           .maxTimeMS(2000)

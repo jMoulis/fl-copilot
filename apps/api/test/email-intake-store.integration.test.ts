@@ -8,6 +8,7 @@ import type { DatabaseService } from "../src/database/types.js";
 import { createEmailIntakeStore } from "../src/intake/email-intake-store.js";
 import { verifyResendReceivedEvent } from "../src/intake/resend-event.js";
 import { registerResendIntakeWebhook } from "../src/intake/resend-webhook.js";
+import { mongoMigrations } from "../src/database/migrations.js";
 const key = Buffer.alloc(32, 9),
   secret = `whsec_${key.toString("base64")}`;
 const client = new Resend("test-only-unused");
@@ -166,6 +167,76 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       await expect(f.service.list(scope)).rejects.toMatchObject({
         publicCode: "EMAIL_INTAKE_FORBIDDEN",
       });
+    });
+    it("routes a PDV address and its retained alias to one store mailbox, preserving sender and revocation checks", async () => {
+      const f = await fixture();
+      const scope = { ...f.scope, conversationId: f.scope.storeId };
+      const request = {
+        ...f.request,
+        id: randomUUID(),
+        conversationId: scope.storeId,
+      };
+      const mailbox = await f.service.createBinding(scope, request);
+      const recipient = `pdv09083-${randomUUID()}@unit.resend.app`;
+      const routingRecipients = [mailbox.recipient, recipient];
+      const bindings = f.db.collection<{
+        _id: string;
+        recipient: string;
+        routingRecipients: string[];
+      }>("emailIntakeBindings");
+      await bindings.updateOne(
+        { _id: mailbox.id, recipient: mailbox.recipient },
+        { $set: { recipient, routingRecipients } },
+      );
+      // Migration replay must not discard aliases or change historical identity.
+      await mongoMigrations.find((m) => m.version === 56)!.up(f.db);
+      expect((await f.service.createBinding(scope, request)).recipient).toBe(
+        recipient,
+      );
+      expect((await f.service.list(scope)).bindings).toMatchObject([
+        { id: mailbox.id, recipient },
+      ]);
+      for (const to of [[recipient], [mailbox.recipient], routingRecipients]) {
+        f.event.data.email_id = randomUUID();
+        f.event.data.to = to;
+        const id = await f.service.admit(f.verified());
+        expect(id).not.toBeNull();
+        expect(
+          await f.db
+            .collection("emailIntakeReceipts")
+            .findOne({ providerEmailId: f.event.data.email_id }),
+        ).toMatchObject({
+          bindingId: mailbox.id,
+          conversationId: scope.storeId,
+        });
+      }
+      f.event.data.email_id = randomUUID();
+      f.event.data.from = "other@example.test";
+      expect(await f.service.admit(f.verified())).toBeNull();
+      f.event.data.from = request.allowedSender;
+      await expect(
+        bindings.updateOne(
+          { _id: f.binding.id },
+          { $addToSet: { routingRecipients: recipient } },
+        ),
+      ).rejects.toMatchObject({ code: 11000 });
+      await expect(
+        bindings.updateOne(
+          { _id: f.binding.id },
+          { $addToSet: { routingRecipients: mailbox.recipient } },
+        ),
+      ).rejects.toMatchObject({ code: 11000 });
+      await f.service.revokeBinding(scope, mailbox.id);
+      for (const address of routingRecipients) {
+        f.event.data.email_id = randomUUID();
+        f.event.data.to = [address];
+        expect(await f.service.admit(f.verified())).toBeNull();
+      }
+      expect(
+        await f.db
+          .collection<{ _id: string }>("copilotConversations")
+          .countDocuments({ _id: scope.storeId }),
+      ).toBe(0);
     });
     it("keeps one opaque recipient across retries and never reactivates or retargets a revoked binding", async () => {
       const f = await fixture();
