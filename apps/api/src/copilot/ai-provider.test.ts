@@ -5409,14 +5409,20 @@ it.each([
   "DECISION_RETARGETED",
   "DECISION_VERSION",
   "DECISION_STRIPPED",
+  "QUALITATIVE",
 ])(
   "uses the existing bounded SDK loop for a sourced action review (%s)",
   async (mode) => {
-    const { actionReviewFixture, actionReviewDatabase } =
-      await import("../../../../scripts/test-action-review-fixtures");
+    const {
+      actionReviewFixture,
+      qualitativeActionReviewFixture,
+      actionReviewDatabase,
+    } = await import("../../../../scripts/test-action-review-fixtures");
     const { readActionReview } = await import("./action-review-tool");
     const f = fixture(),
-      business = await actionReviewFixture(),
+      business = await (mode === "QUALITATIVE"
+        ? qualitativeActionReviewFixture()
+        : actionReviewFixture()),
       { db } = actionReviewDatabase(business);
     f.request.storeId = business.storeId;
     f.request.context = detectCopilotConflicts({
@@ -5454,7 +5460,7 @@ it.each([
       if (mode === "DECISION_VERSION") value.input.decision.expectedVersion = 2;
       if (mode === "DECISION_STRIPPED") value.decisionContext = null;
     }
-    const succeeds = ["READY", "WITH_DECISION"].includes(mode);
+    const succeeds = ["READY", "WITH_DECISION", "QUALITATIVE"].includes(mode);
     const actionReview = vi.fn(async () => value),
       activity = vi.fn();
     let calls = 0;
@@ -5502,6 +5508,10 @@ it.each([
             }
           : { unavailable: true },
       );
+      if (mode === "QUALITATIVE") {
+        expect(output.evidence[0].value).toContain("ne prouve pas sa présence");
+        expect(definition.description).toContain("theme-only TG");
+      }
       return response();
     };
     const result = await createCopilotAiProvider(f.config, transport, {

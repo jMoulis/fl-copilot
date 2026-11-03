@@ -51,6 +51,7 @@ export const actionReviewResultSchema = z
       "TASK_UNAVAILABLE",
       "PRODUCT_NOT_IN_TASK",
       "PERIOD_OUTSIDE_OFFER",
+      "PERIOD_OUTSIDE_PLAN",
       "DECISION_UNAVAILABLE",
       "DECISION_CHANGED",
       "DECISION_SOURCE_UNAVAILABLE",
@@ -227,17 +228,36 @@ export async function readActionReview(
                   t.offerIds.includes(o.choiceId),
               )),
       );
-  if (status === "READY" && !offers.length) status = "PRODUCT_NOT_IN_TASK";
+  // A theme-only TG has no certified product allocation. The selected product
+  // is analytical context only, never an inferred placement or promotion.
+  const contextualProduct =
+    !!task &&
+    task.proposal.kind === "INSTALL_TG" &&
+    p!.preparation.placements.some(
+      (t) =>
+        t.id === task.proposal.targetId &&
+        t.offerIds.length === 0 &&
+        t.theme.trim().length > 0,
+    );
+  if (status === "READY" && !offers.length && !contextualProduct)
+    status = "PRODUCT_NOT_IN_TASK";
   const offerPeriods = mergeBusinessPeriods(
     offers.map((o) => ({ start: o.saleStart, end: o.saleEnd })),
   );
   if (
     status === "READY" &&
+    !contextualProduct &&
     !offerPeriods.some(
       (p) => p.start <= input.during.start && p.end >= input.during.end,
     )
   )
     status = "PERIOD_OUTSIDE_OFFER";
+  if (
+    status === "READY" &&
+    contextualProduct &&
+    (input.during.start < p!.weekStart || input.during.end > p!.weekEnd)
+  )
+    status = "PERIOD_OUTSIDE_PLAN";
   let duringComparison: ActionReviewResult["duringComparison"] = null;
   let afterComparison: ActionReviewResult["afterComparison"] = null;
   let fieldEvents: ActionReviewResult["fieldEvents"] = null;
@@ -283,8 +303,9 @@ export async function readActionReview(
     )
     .digest("hex");
   const messages: Record<ActionReviewResult["status"], string> = {
-    READY:
-      "Bilan descriptif des périodes explicites pour un produit de la tâche enregistrée.",
+    READY: contextualProduct
+      ? "Bilan descriptif d’une TG à thème sans offre associée. Le produit est sélectionné pour ce bilan uniquement ; ce choix ne prouve pas sa présence sur la TG et n’enregistre aucune affectation produit."
+      : "Bilan descriptif des périodes explicites pour un produit de la tâche enregistrée.",
     NO_PLAN:
       "Aucun plan synchronisé pour cette semaine ; un plan local peut exister.",
     LIMIT_EXCEEDED:
@@ -295,6 +316,8 @@ export async function readActionReview(
       "Le produit n’est pas associé à cette tâche dans le plan enregistré. Précisez le produit ou la tâche.",
     PERIOD_OUTSIDE_OFFER:
       "La période pendant dépasse les dates des offres enregistrées de ce produit pour cette tâche. Précisez la période ; aucune date d’exécution n’est déduite.",
+    PERIOD_OUTSIDE_PLAN:
+      "La période pendant dépasse la semaine de cette TG à thème. Choisissez une période dans la semaine du plan ; aucune date réelle d’installation n’est déduite.",
     DECISION_UNAVAILABLE:
       "Ce choix n’est pas disponible pour ce compte et ce magasin. Il peut être resté sur un appareil ; aucun bilan n’est calculé en son nom.",
     DECISION_CHANGED:

@@ -1,3 +1,7 @@
+## 3 November — descriptive review for qualitative TGs
+
+The canonical offer-free plan exposed a follow-through mismatch: task review required a saved offer and returned PRODUCT_NOT_IN_TASK. Reuse the same reader for a theme-only TG, with a store-scoped product selected for analysis only, the during window bounded to the plan week, and explicit source qualification that presence/placement/execution is not established. Offer-backed constraints, current task/private choice guards and shared calculations remain. No new tool/input/model/migration/write; tool description shortened. [Proof and limits](../qa/M7_QUALITATIVE_TG_REVIEW_2026_11_03.md). **Workstream 5 advances; 1/3/4/5/6/7 ongoing, 2 code ready.** M0–M6 functional iPhone baseline stays closed. Actual pilot loop and API delivery remain separate; no paid native build.
+
 ## 2 November — M0–M6 functional baseline closed
 
 The owner confirms the requested waste, commercial-week and substitution-consultation iPhone journeys work. Existing milestone acceptances plus 73 current isolated technical checks close **M0–M6 for the functional iPhone pilot baseline**. [Closure register and retained M8 checks](M0_M6_PILOT_CLOSURE_2026_11_02.md). This does not claim Android, physical two-device learning/recovery, full V1 or M7 closure. New defects/extensions are tracked separately instead of indefinitely reopening accepted milestones. Seven M7 workstream states remain unchanged.

@@ -1,3 +1,7 @@
+## M7 corrective increment — 3 November: offer-free TG outcome review
+
+The existing commercial task review must support canonical qualitative plans without requiring an invented offer or product allocation. For an INSTALL_TG with nonempty theme and no retained offer IDs, permit a scoped product as descriptive analysis context only; during stays inside the planned week. Keep offer-backed product/date checks and all current revision/declaration/private-choice guards. This does not assert actual placement or causal impact. Reuse existing formulas/tool/inputs, shorten its description, no schema/migration/write. See `../qa/M7_QUALITATIVE_TG_REVIEW_2026_11_03.md`; full M7 loop and real release/acceptance remain open. M0–M6 functional baseline remains closed.
+
 ## M7 increment — 2 November 2026: one weekly result destination
 
 Unify saved preparation and confirmed plan on the existing commercial-plan route. Actions exposes Ma semaine; documents, editor, alternatives and history become secondary. Preserve explicit week, local reads, scoped focus refresh, canonical confirmation and separate current-plan execution. No new model/writer/tool. Mounted SQLite tests and actual native data verify result access and back behavior without business writes. See `../qa/M7_WEEKLY_RESULT_NAVIGATION_2026_11_02.md`; grouped native delivery and owner acceptance remain open.
