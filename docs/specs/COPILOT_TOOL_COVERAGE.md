@@ -1,3 +1,7 @@
+## Current action/conflict boundary — 3 November
+
+The current source reconciliation closes M7 workstream 1 for the functional V1 pilot baseline, with the accepted persil/synchronization and offline decision cases plus 275 current SQLite/controller checks. [Operation/exception matrix and retained boundaries](../qa/M7_ACTION_CONFLICT_CLOSURE_2026_11_03.md). Known tombstones and same-identity conflict groups are implemented. Unknown absence, identity reassignment, contradictory versions, oversized reviews and replay of permanently refused commands do not authorize generic repair. Administrative source/file recovery and physical two-device hardening keep their separate scope. This supersedes historical entries that classify every such refusal as a missing model tool; it does not grant unrestricted CRUD or remove canonical checks. No new tool, prompt, writer or runtime behavior.
+
 ## Current scope and delivery — 3 November
 
 The Actions-only store mailbox and readable PDV alias are delivered in API `7734b0f` / compatible iPhone build 27. The owner accepts email → explicit confirmation → existing Mercalys import/publication (159 displayed lines). Email reception creates no Copilot conversation/message. New manual Mercalys intake remains in Actions, as explicitly requested; no missing conversational importer should be inferred from the historical T23 inventory below.
