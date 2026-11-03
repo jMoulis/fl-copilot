@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { MongoClient, type Db, type Document } from "mongodb";
 import {
@@ -26,7 +30,13 @@ import {
   syncPullQuerySchema,
   type SyncPushRequest,
 } from "@fl-copilot/sync-contracts";
-import { copilotExecutionLinkSchema } from "@fl-copilot/domain";
+import {
+  copilotExecutionLinkSchema,
+  copilotMessageSchema,
+} from "@fl-copilot/domain";
+import { readActionReview } from "../src/copilot/action-review-tool";
+import { actionReviewPerformance } from "../../../scripts/test-action-review-fixtures";
+import { readAnswerSource } from "../../mobile/src/copilot/answer-source";
 import {
   readExecutionLinkPreview,
   readExecutionLinks,
@@ -45,6 +55,7 @@ describe.skipIf(!uri || !enabled)(
   () => {
     let client: MongoClient, db: Db;
     const devices: MercalysTestDatabase[] = [];
+    const directories: string[] = [];
     beforeAll(async () => {
       client = await MongoClient.connect(uri!);
       db = client.db(
@@ -54,6 +65,8 @@ describe.skipIf(!uri || !enabled)(
     }, 60000);
     afterEach(() => {
       for (const d of devices.splice(0)) d.db.close();
+      for (const directory of directories.splice(0))
+        rmSync(directory, { recursive: true, force: true });
     }, 60000);
     afterAll(async () => {
       try {
@@ -122,7 +135,11 @@ describe.skipIf(!uri || !enabled)(
       });
       return f;
     }
-    function transport(f: Fixture, ownerId = f.ownerId) {
+    function transport(
+      f: Fixture,
+      ownerId = f.ownerId,
+      analyticsSources: false | 2 = false,
+    ) {
       const push = createMongoSyncPushService(service()),
         pull = createMongoSyncPullService(service()),
         bootstrap = createMongoSyncBootstrapService(service());
@@ -146,17 +163,28 @@ describe.skipIf(!uri || !enabled)(
             storeId,
             syncPullQuerySchema.parse({ ...q, cursor }),
             ownerId,
+            false,
+            analyticsSources,
           ),
         bootstrap: () =>
-          bootstrap.bootstrap(authority, bootstrapQuerySchema.parse(q)),
+          bootstrap.bootstrap(
+            authority,
+            bootstrapQuerySchema.parse(q),
+            false,
+            analyticsSources,
+          ),
         rawPush: push,
         rawPull: pull,
         rawBootstrap: bootstrap,
         authority,
       };
     }
-    const sync = (f: Fixture, device = f.db) =>
-      new MobileSyncService(device, transport(f), {
+    const sync = (
+      f: Fixture,
+      device = f.db,
+      analyticsSources: false | 2 = false,
+    ) =>
+      new MobileSyncService(device, transport(f, f.ownerId, analyticsSources), {
         appVersion: "test",
         deviceId: f.deviceId,
         copilotOwnerId: f.ownerId,
@@ -279,6 +307,219 @@ describe.skipIf(!uri || !enabled)(
           entityType: "copilot_execution_link",
         }),
       ).toBe(2);
+    }, 60000);
+    it("retains a linked descriptive review through sync and file restart, without turning withdrawal or corrected figures into a new execution", async () => {
+      const f = await seed();
+      const saved = await confirm(f);
+      expect(saved.link?.snapshot.decision.revision.type).toBe("MODIFY");
+      await sync(f).sync(f.storeId);
+      await sync(f).sync(f.storeId);
+      const scope = { storeId: f.storeId, ownerId: f.ownerId };
+      const links = await readExecutionLinks(db, scope, {
+        recommendationId: f.decision.id,
+        afterId: null,
+        limit: 5,
+      });
+      expect(links.entries).toHaveLength(1);
+      const link = links.entries[0]!;
+      expect(link.version).toBe(1);
+      expect(link.snapshot.task.status).toBe("DONE");
+      await db.collection<Document & { _id: string }>("products").insertOne({
+        _id: f.business.product.id,
+        ...f.business.product,
+        createdAt: new Date(f.business.product.createdAt),
+        updatedAt: new Date(f.business.product.updatedAt),
+        deletedAt: null,
+      });
+      for (const [date, sales] of [
+        ["2026-10-01", "100"],
+        ["2026-10-08", "200"],
+        ["2026-10-11", "150"],
+      ]) {
+        await db
+          .collection<Document & { _id: string }>("productDailyPerformance")
+          .insertOne(
+            actionReviewPerformance(
+              f.storeId,
+              f.business.product.id,
+              date!,
+              sales!,
+              null,
+            ),
+          );
+      }
+      const now = "2026-10-18T12:01:00.000Z";
+      const review = await readActionReview(
+        db,
+        f.storeId,
+        {
+          ...f.business.input,
+          weekStart: link.snapshot.weekStart,
+          taskId: link.snapshot.task.id,
+          decision: {
+            recommendationId: link.snapshot.decision.id,
+            expectedVersion: link.snapshot.decision.version,
+          },
+        },
+        now,
+        f.ownerId,
+      );
+      expect(review.status).toBe("READY");
+      expect(review.decisionContext?.entries[0]?.latest.type).toBe("MODIFY");
+      expect(review.task?.declaration?.status).toBe("DONE");
+      expect(review.evidence[0]?.value).toContain("ne démontre ni causalité");
+      const numeric = review.duringComparison!.evidence.find(
+        (e) => e.sourceType === "KPI" && e.value === "200",
+      )!;
+      expect(numeric).toBeDefined();
+      const question = copilotMessageSchema.parse({
+        ...f.message,
+        id: randomUUID(),
+        text: "Fais le bilan descriptif de cette TG et de mon choix modifié.",
+        attachments: [],
+        createdAt: now,
+      });
+      await db
+        .collection<Document & { _id: string }>("copilotMessages")
+        .insertOne({ _id: question.id, ...question });
+      const generate = vi.fn(async () => ({
+        output: {
+          language: "fr-FR",
+          summary: "Le cumul renseigné reste partiel.",
+          narrative: "Le cumul renseigné reste partiel. {{source:0}}",
+          facts: [{ evidenceId: numeric.id }],
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        },
+        metadata: {
+          requestedModel: "test",
+          resolvedModel: "test",
+          responseId: "linked-review-test",
+          inputTokens: null,
+          outputTokens: null,
+        },
+        toolEvidence: review.evidence,
+      }));
+      const dependencies = {
+        db,
+        provider: { model: "test", generate } as CopilotAiProvider,
+        authorize: async () => ({ ...scope, canRespond: true }),
+        now: () => new Date(now),
+        loadContext: async () =>
+          detectCopilotConflicts({
+            batch: scoreCopilotPriorities({
+              storeId: f.storeId,
+              evaluatedAt: now,
+              candidates: [],
+            }),
+            intents: [],
+          }),
+      };
+      const turn = {
+        conversationId: f.conversation.id,
+        userMessageId: question.id,
+        replyId: randomUUID(),
+      };
+      const answer = await runCopilotTurn(dependencies, turn);
+      expect((await runCopilotTurn(dependencies, turn)).alreadyApplied).toBe(
+        true,
+      );
+      expect(generate).toHaveBeenCalledOnce();
+      const directory = mkdtempSync(join(tmpdir(), "fl-linked-review-"));
+      directories.push(directory);
+      const filename = join(directory, "second.sqlite");
+      const restored = new MercalysTestDatabase(new DatabaseSync(filename));
+      devices.push(restored);
+      await runLocalMigrations(restored);
+      await sync(f, restored, 2).sync(f.storeId);
+      restored.db.close();
+      devices.splice(devices.indexOf(restored), 1);
+      const reopened = new MercalysTestDatabase(new DatabaseSync(filename));
+      devices.push(reopened);
+      const repo = new CopilotExecutionLinkRepository(
+        reopened,
+        f.linkScope,
+        decisionDigest,
+        randomUUID,
+        () => "2026-10-18T12:02:00.000Z",
+      );
+      const state = await repo.open(f.linkCard);
+      expect(state.status).toBe("CONFIRMED");
+      expect(state.link?.snapshot).toEqual(link.snapshot);
+      const row = await reopened.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=?",
+        turn.replyId,
+        f.storeId,
+        f.ownerId,
+      );
+      const retained = copilotMessageSchema.parse(
+        JSON.parse(row!.payload_json),
+      );
+      expect(retained).toEqual(answer.message);
+      const encoded = /copilot-source:([^)]*)/.exec(retained.text)![1]!;
+      expect(
+        readAnswerSource(
+          encoded,
+          retained.analyticsDestinations,
+          retained.answerSources,
+        ).value,
+      ).toBe("200");
+      await repo.save(f.linkCard, state.review, true);
+      await sync(f, reopened, 2).sync(f.storeId);
+      const withdrawn = await readExecutionLinks(db, scope, {
+        recommendationId: f.decision.id,
+        afterId: null,
+        limit: 5,
+      });
+      expect(withdrawn.entries).toHaveLength(1);
+      expect(withdrawn.entries[0]?.version).toBe(2);
+      await db.collection("productDailyPerformance").updateOne(
+        {
+          storeId: f.storeId,
+          productId: f.business.product.id,
+          date: "2026-10-08",
+        },
+        {
+          $set: {
+            "performance.sales.salesValue": "250",
+            "performance.inputRevision": "corrected",
+          },
+        },
+      );
+      const fresh = await readActionReview(
+        db,
+        f.storeId,
+        review.input,
+        now,
+        f.ownerId,
+      );
+      expect(
+        fresh.duringComparison?.evidence.some(
+          (e) => e.sourceType === "KPI" && e.value === "250",
+        ),
+      ).toBe(true);
+      const unchanged = await reopened.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM copilot_messages WHERE id=?",
+        turn.replyId,
+      );
+      expect(unchanged!.payload_json).toBe(row!.payload_json);
+      expect(
+        await db
+          .collection("copilotDecisions")
+          .findOne({ _id: f.decision.id as never }),
+      ).toEqual({ _id: f.decision.id, ...f.decision });
+      expect(
+        await db
+          .collection("commercialExecutionTasks")
+          .findOne({ _id: f.business.task.id as never }),
+      ).toEqual({ _id: f.business.task.id, ...f.business.task });
+      expect(
+        await db
+          .collection("commercialExecutionTasks")
+          .countDocuments({ storeId: f.storeId }),
+      ).toBe(1);
+      expect(generate).toHaveBeenCalledOnce();
     }, 60000);
     it("keeps links private on bootstrap, pull, read and cached command replay; old clients receive no new entities", async () => {
       const f = await seed(),
