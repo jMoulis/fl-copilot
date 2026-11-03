@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { ClientSession, Db, Document } from "mongodb";
 import { z } from "zod";
 import {
+  isStoreEmailScope,
   emailIntakeReceivingDomainSchema,
   emailIntakeBindingRequestSchema,
   emailIntakeBindingSchema,
@@ -22,6 +23,7 @@ import {
 type VerifiedEvent = NonNullable<ReturnType<typeof verifyResendReceivedEvent>>;
 type Binding = Omit<EmailIntakeBinding, "id" | "createdAt" | "revokedAt"> & {
   _id: string;
+  storeMailbox?: true;
   createdAt: Date;
   revokedAt: Date | null;
 };
@@ -117,6 +119,7 @@ async function authorized(
     { session, maxTimeMS: 2000 },
   );
   if (!membership) return false;
+  if (isStoreEmailScope(scope)) return true;
   const conversation = await db
     .collection<Document & { _id: string }>("copilotConversations")
     .findOne(
@@ -180,8 +183,25 @@ export function createEmailIntakeStore(
       const result = await atomic(db, async (session) => {
         if (!(await authorized(db, scope, session))) throw unavailable();
         const bindings = db.collection<Binding>("emailIntakeBindings");
+        // A unique partial index enforces one stable mailbox per store. Keep the
+        // existing opaque binding ID and all historical conversation bindings.
+        const mailbox = isStoreEmailScope(scope);
+        if (
+          !isStoreEmailScope(scope) &&
+          (await bindings.findOne(
+            {
+              storeMailbox: true,
+              storeId: scope.storeId,
+              revokedAt: null,
+            },
+            { session, maxTimeMS: 2000 },
+          ))
+        )
+          throw conflict();
         const old = await bindings.findOne(
-          { _id: input.id },
+          mailbox
+            ? { storeId: scope.storeId, storeMailbox: true }
+            : { _id: input.id },
           { session, maxTimeMS: 2000 },
         );
         if (old) {
@@ -204,6 +224,7 @@ export function createEmailIntakeStore(
         const binding: Binding = {
           ...scope,
           _id: input.id,
+          ...(mailbox ? { storeMailbox: true as const } : {}),
           allowedSender: input.allowedSender,
           recipient: `fl-${randomBytes(24).toString("hex")}@${domain}`,
           createdAt: now(),
@@ -312,8 +333,22 @@ export function createEmailIntakeStore(
           .limit(2)
           .toArray();
         const binding = chooseInboundBinding(input.event, candidates);
+        // Once the store mailbox is configured, old chat aliases stop accepting
+        // NEW email. Keep their records untouched for retained files and jobs.
+        const retiredAlias =
+          binding &&
+          !isStoreEmailScope(binding) &&
+          (await db.collection<Binding>("emailIntakeBindings").findOne(
+            {
+              storeMailbox: true,
+              storeId: binding.storeId,
+              revokedAt: null,
+            },
+            { session, maxTimeMS: 2000 },
+          ));
         if (
           binding &&
+          !retiredAlias &&
           (await authorized(
             db,
             {
@@ -407,7 +442,11 @@ export function createEmailIntakeStore(
       const rows = await db
         .collection<Receipt>("emailIntakeReceipts")
         .find({
-          ...scope,
+          storeId: scope.storeId,
+          ownerId: scope.ownerId,
+          ...(!isStoreEmailScope(scope)
+            ? { conversationId: scope.conversationId }
+            : {}),
           ...(boundary
             ? {
                 $or: [
@@ -432,8 +471,39 @@ export function createEmailIntakeStore(
         .maxTimeMS(2000)
         .toArray();
       if (!(await authorized(db, scope))) throw unavailable();
-      const visible = rows.slice(0, 20),
-        last = visible.at(-1);
+      const page = rows.slice(0, 20),
+        last = page.at(-1);
+      // At most one bounded parent query for all legacy receipts on the page.
+      const ids = [
+        ...new Set(
+          page
+            .filter((row) => !isStoreEmailScope(row))
+            .map((row) => row.conversationId),
+        ),
+      ];
+      const parents =
+        isStoreEmailScope(scope) && ids.length
+          ? await db
+              .collection<Document & { _id: string }>("copilotConversations")
+              .find(
+                {
+                  _id: { $in: ids },
+                  storeId: scope.storeId,
+                  ownerId: scope.ownerId,
+                  status: "ACTIVE",
+                  deletedAt: null,
+                },
+                { projection: { _id: 1 } },
+              )
+              .maxTimeMS(2000)
+              .toArray()
+          : [];
+      const allowed = new Set(parents.map((row) => row._id));
+      const visible = !isStoreEmailScope(scope)
+        ? page
+        : page.filter(
+            (row) => isStoreEmailScope(row) || allowed.has(row.conversationId),
+          );
       return emailIntakeListSchema.parse({
         bindings: bindings.map(bindingDto),
         receipts: visible.map(receiptDto),

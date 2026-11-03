@@ -68,12 +68,10 @@ export function CopilotChatView({
   attaching = false,
   onRemoveAttachment,
   intakeSummary,
-  allowIntakeWithoutAttachmentCapacity = false,
 }: {
   streamingText?: string;
   activities?: readonly CopilotActivity[];
   intakeSummary?: ReactNode;
-  allowIntakeWithoutAttachmentCapacity?: boolean;
   title: string;
   messages: readonly CopilotMessage[];
   draft: string;
@@ -113,9 +111,7 @@ export function CopilotChatView({
     !sending &&
     !attaching;
   const canAttach =
-    !attaching &&
-    status !== "GENERATING" &&
-    (allowIntakeWithoutAttachmentCapacity || draftAttachments.length < 10);
+    !attaching && status !== "GENERATING" && draftAttachments.length < 10;
   const onScroll = ({
     nativeEvent,
   }: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -453,9 +449,7 @@ export function CopilotChatView({
               style={styles.attach}
             >
               <Text style={styles.menuText}>＋</Text>
-              <Text style={styles.attachCaption}>
-                {allowIntakeWithoutAttachmentCapacity ? "Fichiers" : "PDF"}
-              </Text>
+              <Text style={styles.attachCaption}>Fichiers</Text>
             </Pressable>
           ) : null}
           <TextInput

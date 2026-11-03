@@ -565,38 +565,14 @@ it("does not acknowledge an answer dated before its question", async () => {
   ]);
 });
 
-it.each([true, false])(
-  "offers email intake only when the host supplies it, dismissing the iOS sheet before opening the email inbox: %s",
-  async (allowed) => {
-    const open = vi.fn();
-    const x = await setup("LOST", undefined, allowed ? open : undefined);
-    const before = await x.controller.open(x.f.conversation.id),
-      calls = x.ask.mock.calls.length;
-    if (!allowed) {
-      expect(view().onAttach).toBeUndefined();
-      expect(renderer!.root.findAllByType("MenuRow" as ElementType)).toEqual(
-        [],
-      );
-    } else {
-      await act(async () => view().onAttach());
-      const sheet = () =>
-          renderer!.root.findByType("BottomSheet" as ElementType),
-        row = renderer!.root
-          .findAllByType("MenuRow" as ElementType)
-          .find((node) => node.props.title === "Recevoir par email")!;
-      expect(sheet().props.visible).toBe(true);
-      expect(
-        renderer!.root
-          .findAllByType("MenuRow" as ElementType)
-          .map((node) => node.props.title),
-      ).toEqual(["Recevoir par email"]);
-      await act(async () => row.props.onPress());
-      expect(open).not.toHaveBeenCalled();
-      expect(sheet().props.visible).toBe(false);
-      await act(async () => sheet().props.onDismiss());
-      expect(open).toHaveBeenCalledTimes(1);
-    }
-    expect(x.ask).toHaveBeenCalledTimes(calls);
-    expect(await x.controller.open(x.f.conversation.id)).toEqual(before);
-  },
-);
+it("does not offer or invoke email reception in the Copilot, even for a legacy host, and preserves chat state", async () => {
+  const open = vi.fn();
+  const x = await setup("LOST", undefined, open);
+  const before = await x.controller.open(x.f.conversation.id);
+  const calls = x.ask.mock.calls.length;
+  expect(view().onAttach).toBeUndefined();
+  expect(renderer!.root.findAllByType("MenuRow" as ElementType)).toEqual([]);
+  expect(open).not.toHaveBeenCalled();
+  expect(x.ask).toHaveBeenCalledTimes(calls);
+  expect(await x.controller.open(x.f.conversation.id)).toEqual(before);
+});

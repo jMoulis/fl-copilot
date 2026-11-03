@@ -225,8 +225,8 @@ function FailedCommands({
           !item.parentDeleted &&
           z.uuid().safeParse(item.conversationId).success
             ? {
-                label: "Examiner l’email dans sa conversation",
-                path: `/copilot?conversationId=${item.conversationId}`,
+                label: "Examiner les documents reçus",
+                path: "/actions/email",
               }
             : examinationTarget(item.entityType, item.entityId);
         return (

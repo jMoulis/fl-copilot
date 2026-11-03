@@ -44,7 +44,6 @@ type PanelProps = {
     onSubmitted: () => Promise<void>,
   ): ReactNode;
   intakeSummary?: ReactNode;
-  onOpenEmailIntake?(): void;
   externalDraftRevision?: number;
   externalMessageRevision?: number | string;
   onPhotographReceipt?(
@@ -95,7 +94,6 @@ function LocalChatPanel({
   onPhotographReceipt,
   onAttachReceiptViews,
   renderToolMessage,
-  onOpenEmailIntake,
   intakeSummary,
   externalDraftRevision = 0,
   externalMessageRevision = 0,
@@ -121,13 +119,7 @@ function LocalChatPanel({
   );
   const [fileMenu, setFileMenu] = useState(false);
   const queuedFileAction = useRef<
-    | "PDF"
-    | "RECEIPTS"
-    | "RECEIPT_VIEWS"
-    | "CAMERA"
-    | "STORE_PHOTOS"
-    | "EMAIL"
-    | undefined
+    "PDF" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA" | "STORE_PHOTOS" | undefined
   >(undefined);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [loadedController, setLoadedController] =
@@ -420,17 +412,10 @@ function LocalChatPanel({
     }
   }
   function performFileAction(
-    kind:
-      | "PDF"
-      | "RECEIPTS"
-      | "RECEIPT_VIEWS"
-      | "CAMERA"
-      | "STORE_PHOTOS"
-      | "EMAIL",
+    kind: "PDF" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA" | "STORE_PHOTOS",
   ) {
     if (!isCurrent()) return;
-    if (kind === "EMAIL") onOpenEmailIntake?.();
-    else if (kind === "PDF") void attach();
+    if (kind === "PDF") void attach();
     else if (
       kind === "STORE_PHOTOS" ||
       kind === "RECEIPTS" ||
@@ -440,13 +425,7 @@ function LocalChatPanel({
       void attachReceipts(kind);
   }
   function selectFileAction(
-    kind:
-      | "PDF"
-      | "RECEIPTS"
-      | "RECEIPT_VIEWS"
-      | "CAMERA"
-      | "STORE_PHOTOS"
-      | "EMAIL",
+    kind: "PDF" | "RECEIPTS" | "RECEIPT_VIEWS" | "CAMERA" | "STORE_PHOTOS",
   ) {
     setFileMenu(false);
     // UIKit must finish dismissing this sheet before another modal/picker opens.
@@ -583,7 +562,6 @@ function LocalChatPanel({
         activities={activities}
         streamingText={streamingText}
         intakeSummary={intakeSummary}
-        allowIntakeWithoutAttachmentCapacity={!!onOpenEmailIntake}
         title={snapshot.conversation.title}
         messages={snapshot.messages
           .map((message) => message.entity)
@@ -612,13 +590,11 @@ function LocalChatPanel({
         onAttach={
           onAttachStorePhotos ||
           onAttachPdf ||
-          onOpenEmailIntake ||
           onAttachReceipts ||
           onAttachReceiptViews ||
           onPhotographReceipt
             ? () => {
                 if (
-                  onOpenEmailIntake ||
                   onAttachStorePhotos ||
                   onAttachReceipts ||
                   onAttachReceiptViews ||
@@ -734,14 +710,6 @@ function LocalChatPanel({
           if (kind) performFileAction(kind);
         }}
       >
-        {onOpenEmailIntake ? (
-          <MenuRow
-            title="Recevoir par email"
-            description="Adresse de réception et documents de cette conversation"
-            icon="mail-outline"
-            onPress={() => selectFileAction("EMAIL")}
-          />
-        ) : null}
         {onPhotographReceipt ? (
           <MenuRow
             title="Photographier un ticket"

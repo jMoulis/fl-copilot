@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { copilotConversationSchema } from "@fl-copilot/domain";
 import {
+  isStoreEmailScope,
   emailIntakeBindingSchema,
   emailIntakeListSchema,
   emailIntakeReceiptSchema,
@@ -71,6 +72,7 @@ export class EmailIntakeCache {
   async authorize(scope: EmailIntakeScope, tx: OutboxDatabase = this.db) {
     scopeSchema.parse(scope);
     this.check(scope);
+    if (isStoreEmailScope(scope)) return;
     const row = await tx.getFirstAsync<{ payload_json: string }>(
       "SELECT payload_json FROM copilot_conversations WHERE store_id=? AND owner_id=? AND id=?",
       scope.storeId,
@@ -95,7 +97,8 @@ export class EmailIntakeCache {
     if (
       value.storeId !== scope.storeId ||
       value.ownerId !== scope.ownerId ||
-      value.conversationId !== scope.conversationId
+      (!isStoreEmailScope(scope) &&
+        value.conversationId !== scope.conversationId)
     )
       throw invalid();
   }
@@ -116,8 +119,12 @@ export class EmailIntakeCache {
     await this.db.withExclusiveTransactionAsync(async (tx) => {
       await this.authorize(scope, tx);
       await guard?.(tx);
-      const keys = [scope.storeId, scope.ownerId, scope.conversationId];
       for (const binding of page.bindings) {
+        await this.authorize(
+          { ...scope, conversationId: binding.conversationId },
+          tx,
+        );
+        const keys = [scope.storeId, scope.ownerId, binding.conversationId];
         const row = await tx.getFirstAsync<{ payload_json: string }>(
           "SELECT payload_json FROM email_intake_bindings WHERE store_id=? AND owner_id=? AND conversation_id=? AND id=?",
           ...keys,
@@ -145,6 +152,11 @@ export class EmailIntakeCache {
         );
       }
       for (const receipt of page.receipts) {
+        await this.authorize(
+          { ...scope, conversationId: receipt.conversationId },
+          tx,
+        );
+        const keys = [scope.storeId, scope.ownerId, receipt.conversationId];
         const row = await tx.getFirstAsync<{ payload_json: string }>(
           "SELECT payload_json FROM email_intake_receipts WHERE store_id=? AND owner_id=? AND conversation_id=? AND id=?",
           ...keys,
@@ -207,8 +219,8 @@ export class EmailIntakeCache {
       ...keys,
     );
     const receipts = await this.db.getAllAsync<{ payload_json: string }>(
-      "SELECT payload_json FROM email_intake_receipts WHERE store_id=? AND owner_id=? AND conversation_id=? ORDER BY json_extract(payload_json,'$.receivedAt') DESC,id DESC LIMIT ?",
-      ...keys,
+      `SELECT payload_json FROM email_intake_receipts WHERE store_id=? AND owner_id=? ${isStoreEmailScope(scope) ? "" : "AND conversation_id=?"} ORDER BY json_extract(payload_json,'$.receivedAt') DESC,id DESC LIMIT ?`,
+      ...(isStoreEmailScope(scope) ? keys.slice(0, 2) : keys),
       limit,
     );
     await this.authorize(scope);

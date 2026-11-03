@@ -6,6 +6,15 @@ const id = z.uuid(),
 export const emailIntakeReceivingDomainSchema = z
   .string()
   .regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.resend\.app$/);
+/** Legacy wire/cache field `conversationId` is retained so immutable original manifests
+ * and queued commands remain valid. A store mailbox uses storeId as its namespace;
+ * it is NOT a Copilot conversation and must never create a chat row or message. */
+export function isStoreEmailScope(scope: {
+  storeId: string;
+  conversationId: string;
+}) {
+  return scope.storeId === scope.conversationId;
+}
 const mailbox = z.email().max(320).toLowerCase();
 export const emailIntakeBindingRequestSchema = z.strictObject({
   id,

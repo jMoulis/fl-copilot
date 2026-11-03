@@ -1,4 +1,3 @@
-import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -29,81 +28,12 @@ type Inbox = Pick<
   | "list"
   | "refresh"
   | "createBinding"
-  | "revokeBinding"
   | "decision"
   | "decide"
   | "retryOriginal"
 > &
   EmailProcessingControlsPort;
 type Cached = Awaited<ReturnType<Inbox["list"]>>;
-/** Refresh on focus/ordinary sync only; never add a second inbox polling loop. */
-export function EmailInboxIndicator({
-  inbox,
-  conversationId,
-  revision,
-  configurationRevision,
-  onOpen,
-}: {
-  inbox: Inbox;
-  conversationId: string;
-  revision?: string;
-  configurationRevision: number;
-  onOpen(): void;
-}) {
-  const [count, setCount] = useState(0);
-  const available = useRef<boolean | undefined>(undefined);
-  const setupRevision = useRef(configurationRevision);
-  const checkedRevision = useRef<string | undefined>(undefined);
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      if (setupRevision.current !== configurationRevision) {
-        setupRevision.current = configurationRevision;
-        available.current = undefined;
-      }
-      async function read() {
-        const cached = await inbox.list(conversationId);
-        if (active)
-          setCount(
-            cached.receipts.filter((receipt) => receipt.status !== "DISMISSED")
-              .length,
-          );
-      }
-      void (async () => {
-        try {
-          await read();
-          if (!active) return;
-          if (
-            available.current === undefined ||
-            checkedRevision.current !== revision
-          ) {
-            const enabled = await inbox.status(conversationId);
-            if (!active) return;
-            available.current = enabled;
-            checkedRevision.current = revision;
-          }
-          if (!active || !available.current) return;
-          await inbox.refresh(conversationId);
-          if (active) await read();
-        } catch {
-          /* Preserve the local indicator; the explicit screen explains read/network errors. */
-        }
-      })();
-      return () => {
-        active = false;
-      };
-    }, [inbox, conversationId, revision, configurationRevision]),
-  );
-  if (!count) return null;
-  return (
-    <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
-      <SecondaryButton
-        label={`${count} email${count > 1 ? "s" : ""} reçu${count > 1 ? "s" : ""}`}
-        onPress={onOpen}
-      />
-    </View>
-  );
-}
 /** Remote configuration is explicit; already received documents render from SQLite first. */
 export function EmailInbox({
   inbox,
@@ -127,13 +57,9 @@ export function EmailInbox({
     [busy, setBusy] = useState(false),
     [sender, setSender] = useState(initialSender),
     [next, setNext] = useState<string | null>(null),
-    [open, setOpen] = useState<string>(),
-    [revoking, setRevoking] = useState<string>();
+    [open, setOpen] = useState<string>();
   const alive = useRef(true),
-    pending = useRef(false),
-    bindingRequest = useRef<{ sender: string; id: string } | undefined>(
-      undefined,
-    );
+    pending = useRef(false);
   const loadEpoch = useRef(0);
   const selections = useRef(new Map<string, EmailAdmissionSelection>());
   useEffect(() => {
@@ -202,13 +128,10 @@ export function EmailInbox({
       setError("Saisissez une adresse email valide pour l’expéditeur.");
       return;
     }
-    if (bindingRequest.current?.sender !== parsed.data)
-      bindingRequest.current = { sender: parsed.data, id: randomUUID() };
-    const request = bindingRequest.current;
     await run(async () => {
-      await inbox.createBinding(conversationId, request.id, request.sender);
+      await inbox.createBinding(conversationId, randomUUID(), parsed.data);
       await load();
-    }, "L’adresse ne peut pas être créée. Vérifiez la connexion et la synchronisation de cette conversation, puis réessayez.");
+    }, "L’adresse ne peut pas être créée. Vérifiez la connexion et les droits du magasin, puis réessayez.");
   }
   return (
     <SafeAreaView
@@ -222,7 +145,7 @@ export function EmailInbox({
         >
           Documents reçus par email
         </Text>
-        <SecondaryButton label="Revenir au chat" onPress={onClose} />
+        <SecondaryButton label="Retour aux actions" onPress={onClose} />
       </View>
       <FlatList
         data={cached.receipts}
@@ -233,8 +156,8 @@ export function EmailInbox({
         ListHeaderComponent={
           <View style={{ gap: 16 }}>
             <Text style={{ color: colors.muted, lineHeight: 22 }}>
-              Envoyez les fichiers à l’adresse de cette conversation, puis
-              confirmez les documents à traiter ici.
+              Envoyez les fichiers à l’adresse unique du magasin, puis confirmez
+              les documents à traiter ici.
             </Text>
             {error ? <InlineAlert title="À vérifier" message={error} /> : null}
             {enabled === false ? (
@@ -271,36 +194,6 @@ export function EmailInbox({
                     }, "La copie a échoué. Vous pouvez sélectionner l’adresse affichée.");
                   }}
                 />
-                {revoking === binding.id ? (
-                  <View style={{ gap: 12 }}>
-                    <InlineAlert
-                      title="Retirer cette adresse ?"
-                      message="Les prochains emails ne seront plus reçus ici. Les fichiers déjà conservés sont maintenus."
-                    />
-                    <PrimaryButton
-                      label="Confirmer le retrait"
-                      disabled={busy}
-                      onPress={() =>
-                        void run(async () => {
-                          await inbox.revokeBinding(conversationId, binding.id);
-                          await load();
-                          if (alive.current) setRevoking(undefined);
-                        }, "Le retrait ne peut pas être vérifié. Actualisez avant de réutiliser cette adresse.")
-                      }
-                    />
-                    <SecondaryButton
-                      label="Conserver cette adresse"
-                      disabled={busy}
-                      onPress={() => setRevoking(undefined)}
-                    />
-                  </View>
-                ) : (
-                  <SecondaryButton
-                    label="Retirer cette adresse"
-                    disabled={busy}
-                    onPress={() => setRevoking(binding.id)}
-                  />
-                )}
               </View>
             ))}
             {!active.length && enabled === true ? (
@@ -351,7 +244,7 @@ export function EmailInbox({
         }
         ListEmptyComponent={
           <Text style={{ color: colors.muted, paddingVertical: 20 }}>
-            Aucun email chargé dans cette conversation.
+            Aucun document reçu par email dans ce magasin.
           </Text>
         }
         renderItem={({ item }) => (
@@ -359,7 +252,7 @@ export function EmailInbox({
             key={item.id}
             inbox={inbox}
             receipt={item}
-            conversationId={conversationId}
+            conversationId={item.conversationId}
             revision={revision}
             expanded={open === item.id}
             onExpand={() => setOpen(open === item.id ? undefined : item.id)}

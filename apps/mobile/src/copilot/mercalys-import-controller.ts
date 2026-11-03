@@ -105,36 +105,40 @@ export class CopilotMercalysImportController {
     )
       throw Error("IMPORT_SCOPE");
     await assertEmailMercalysAuthority(db, message, reference);
-    const [m, c] = await Promise.all([
-      db.getFirstAsync<{ payload_json: string }>(
-        "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-        message.id,
-        this.scope.storeId,
-        this.scope.ownerId,
-        message.conversationId,
-      ),
-      db.getFirstAsync<{ payload_json: string }>(
-        "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
-        message.conversationId,
-        this.scope.storeId,
-        this.scope.ownerId,
-      ),
-    ]);
-    if (
-      !m ||
-      !c ||
-      JSON.stringify(copilotMessageSchema.parse(JSON.parse(m.payload_json))) !==
-        JSON.stringify(message)
-    )
-      throw Error("IMPORT_SCOPE");
-    const conversation = copilotConversationSchema.parse(
-      JSON.parse(c.payload_json),
-    );
-    if (
-      conversation.status !== "ACTIVE" ||
-      copilotMessageIsDeleted(message, conversation)
-    )
-      throw Error("IMPORT_DELETED");
+    // Email imports use acknowledged admission/manifest authority, not chat rows.
+    if (!reference.emailOrigin) {
+      const [m, c] = await Promise.all([
+        db.getFirstAsync<{ payload_json: string }>(
+          "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+          message.id,
+          this.scope.storeId,
+          this.scope.ownerId,
+          message.conversationId,
+        ),
+        db.getFirstAsync<{ payload_json: string }>(
+          "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
+          message.conversationId,
+          this.scope.storeId,
+          this.scope.ownerId,
+        ),
+      ]);
+      if (
+        !m ||
+        !c ||
+        JSON.stringify(
+          copilotMessageSchema.parse(JSON.parse(m.payload_json)),
+        ) !== JSON.stringify(message)
+      )
+        throw Error("IMPORT_SCOPE");
+      const conversation = copilotConversationSchema.parse(
+        JSON.parse(c.payload_json),
+      );
+      if (
+        conversation.status !== "ACTIVE" ||
+        copilotMessageIsDeleted(message, conversation)
+      )
+        throw Error("IMPORT_DELETED");
+    }
     const batch = await this.batches(
       joinedProductToolDatabase(db),
       message.conversationId,
@@ -245,6 +249,11 @@ export class CopilotMercalysImportController {
         };
       },
       signal,
+      readCopilotImportReference(message).reference.emailOrigin
+        ? async (tx) => {
+            await this.proof(tx, message);
+          }
+        : undefined,
     );
   }
   private assertCatalog(
@@ -526,6 +535,7 @@ export class CopilotMercalysImportController {
     report: ImportReport,
   ) {
     await this.proof(this.db, message);
+    if (readCopilotImportReference(message).reference.emailOrigin) return;
     const items = [];
     for (const item of report.items) {
       const source =

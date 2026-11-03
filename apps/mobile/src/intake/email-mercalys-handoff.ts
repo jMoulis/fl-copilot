@@ -8,7 +8,6 @@ import {
   type CopilotMessage,
 } from "@fl-copilot/domain";
 import { emailIntakeOriginalRequestSchema } from "@fl-copilot/sync-contracts";
-import { CopilotConversationRepository } from "../copilot/conversation-repository";
 import { importManifestHash } from "../copilot/mercalys-import-controller";
 import { MercalysBatchRepository } from "../documents/mercalys-batch-repository";
 import { MercalysArchiveRepository } from "../documents/mercalys-archive-repository";
@@ -19,7 +18,6 @@ import {
 } from "../documents/mercalys-zip-capture";
 import { SheetJsSpreadsheetParser } from "../documents/sheetjs-spreadsheet-parser";
 import { sourceOriginalHash } from "../documents/source-original-hash";
-import { joinedMutationDatabase } from "../sync/atomic-local-mutation";
 import {
   emailProcessingBasis,
   verifiedEmailProcessingOriginal,
@@ -231,16 +229,6 @@ export class EmailMercalysHandoff {
       version: 1,
       createdAt: decision.createdAt,
     };
-    await database.withExclusiveTransactionAsync(async (tx) => {
-      await new CopilotConversationRepository(
-        joinedMutationDatabase(tx),
-        scope,
-      ).append(message, {
-        commandId: emailProcessingIdentity(scope, origin, "COMMAND"),
-        deviceId: this.deviceId,
-        preserveDraft: true,
-      });
-    });
     return {
       status: "ATTACHED",
       message,

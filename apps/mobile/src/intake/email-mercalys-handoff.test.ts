@@ -47,6 +47,7 @@ afterEach(() => {
 });
 async function fixture(
   options: {
+    storeMailbox?: boolean;
     zip?: boolean;
     invalidMember?: boolean;
     emptyMember?: boolean;
@@ -61,7 +62,16 @@ async function fixture(
     s = await chatImportFixture(path);
   let db = s.db;
   cleanups.push(() => db.close());
-  const scope = { ...s.scope, conversationId: s.conversation.id };
+  const scope = {
+    ...s.scope,
+    conversationId: options.storeMailbox ? s.scope.storeId : s.conversation.id,
+  };
+  if (options.storeMailbox) {
+    await s.a.runAsync(
+      "DELETE FROM sync_outbox WHERE entity_type='copilot_conversation'",
+    );
+    await s.a.runAsync("DELETE FROM copilot_conversations");
+  }
   let session: EmailIntakeSession | null = {
     storeId: scope.storeId,
     userId: scope.ownerId,
@@ -335,7 +345,7 @@ it("restores the same handoff after a physical SQLite close/reopen without a net
         f.conversation.id,
       )
     ).messages,
-  ).toHaveLength(1);
+  ).toHaveLength(0);
 });
 it("processes good members immediately and retains the same ordered manifest/card after a missing copy resumes", async () => {
   const f = await fixture({ zip: true });
@@ -362,7 +372,7 @@ it("processes good members immediately and retains the same ordered manifest/car
     ["Exports/ventes.xlsx", true],
     ["Exports/suite.xlsx", false],
   ]);
-  expect(count(f, "copilot_messages")).toBe(2);
+  expect(count(f, "copilot_messages")).toBe(0);
   const resumed = await f.handoff.attach(f.ref);
   if (resumed.status !== "ATTACHED")
     throw Error("expected completed extraction");
@@ -518,10 +528,11 @@ it("stops a previously attached file when its remote envelope is quarantined", a
   );
   expect(count(f, "source_documents")).toBe(0);
 });
-it("checks current ownership again after byte reads and rolls back a role loss during message commit", async () => {
+it("checks current ownership again and rolls back a role loss during batch commit", async () => {
   const f = await fixture();
   f.a.afterRun = (sql) => {
-    if (sql.startsWith("INSERT INTO copilot_messages")) f.setSession(null);
+    if (sql.startsWith("INSERT INTO mercalys_intake_batches"))
+      f.setSession(null);
   };
   await expect(f.handoff.attach(f.ref)).rejects.toThrow(
     "EMAIL_INTAKE_SCOPE_CHANGED",
@@ -696,7 +707,8 @@ it("publishes a good ZIP sibling before copy retry, then finishes after restart 
     await resumed.db.getAllAsync(
       "SELECT id,payload_json FROM copilot_messages WHERE json_extract(payload_json,'$.role')='USER' AND json_extract(json_extract(payload_json,'$.text'),'$.kind')='MERCALYS_CHAT_IMPORT'",
     ),
-  ).toEqual([originalMessage]);
+  ).toEqual([]);
+  expect(originalMessage).toBeUndefined();
   expect(f.zip.retain).not.toHaveBeenCalled();
   expect(existsSync(fileURLToPath(f.uri))).toBe(true);
 });
@@ -759,4 +771,39 @@ it("does not let an empty workbook block its valid sibling or fabricate a retain
     { path: "Exports/suite.xlsx", code: "MERCALYS_ZIP_INVALID" },
   ]);
   expect(existsSync(fileURLToPath(f.uri))).toBe(true);
+});
+
+it("imports a store-mailbox workbook through the existing engine without a persisted chat or duplicate publication", async () => {
+  const f = await fixture({ storeMailbox: true });
+  const result = await f.handoff.attach(f.ref);
+  if (result.status !== "ATTACHED") throw Error("Expected retained import");
+  const report = await f.engine().run(result.message);
+  expect(report.items[0]?.status, JSON.stringify(report.items)).toBe(
+    "PUBLISHED",
+  );
+  await f.engine().run(result.message);
+  expect(f.db.prepare("SELECT COUNT(*) n FROM copilot_messages").get()!.n).toBe(
+    0,
+  );
+  expect(
+    f.db.prepare("SELECT COUNT(*) n FROM copilot_conversations").get()!.n,
+  ).toBe(0);
+  expect(
+    f.db.prepare("SELECT COUNT(*) n FROM sales_observations").get()!.n,
+  ).toBe(1);
+});
+
+it("rolls store-email publication and its Outbox back if access changes during operation-ledger commit", async () => {
+  const f = await fixture({ storeMailbox: true });
+  const result = await f.handoff.attach(f.ref);
+  if (result.status !== "ATTACHED") throw Error("Expected retained import");
+  f.a.afterRun = (sql) => {
+    if (sql.startsWith("INSERT INTO copilot_tool_results")) f.setSession(null);
+  };
+  await expect(
+    f.engine(f.a, () => f.cache.authorize(f.scope)).run(result.message),
+  ).rejects.toThrow();
+  expect(count(f, "sales_observations")).toBe(0);
+  expect(count(f, "source_documents")).toBe(0);
+  expect(count(f, "copilot_messages")).toBe(0);
 });
