@@ -6,23 +6,30 @@ import { InlineAlert, SecondaryButton } from "../components/ui";
 import { colors } from "../design/tokens";
 export type EmailProcessingControlsPort = Pick<
   NonNullable<SyncContextValue["emailIntake"]>,
-  "processingState" | "retryProcessing" | "setPurpose" | "cancelProcessing"
+  | "processingState"
+  | "mercalysResult"
+  | "retryProcessing"
+  | "setPurpose"
+  | "cancelProcessing"
 >;
 /** Local durable progress; no polling, and never label handoff as publication. */
 export function EmailProcessingControls({
   inbox,
   original,
   revision,
+  onOpenMercalys,
 }: {
   inbox: EmailProcessingControlsPort;
   original: EmailIntakeOriginalRequest;
   revision?: string;
+  onOpenMercalys?(batchId: string): void;
 }) {
   const [state, setState] =
       useState<
         Awaited<ReturnType<EmailProcessingControlsPort["processingState"]>>
       >(),
     [error, setError] = useState(false),
+    [batchId, setBatchId] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
   const alive = useRef(true),
     pending = useRef(false),
@@ -35,16 +42,24 @@ export function EmailProcessingControls({
   }, []);
   const load = useCallback(async () => {
     const current = ++epoch.current;
-    const value = await inbox.processingState({
+    const ref = {
       conversationId: original.conversationId,
       receiptId: original.receiptId,
       fileId: original.fileId,
-    });
-    if (alive.current && current === epoch.current) setState(value);
+    };
+    const [value, result] = await Promise.all([
+      inbox.processingState(ref),
+      inbox.mercalysResult(ref),
+    ]);
+    if (alive.current && current === epoch.current) {
+      setState(value);
+      setBatchId(result);
+    }
   }, [inbox, original.conversationId, original.receiptId, original.fileId]);
   useEffect(() => {
+    const current = epoch.current + 1;
     void load().catch(() => {
-      if (alive.current) setError(true);
+      if (alive.current && current === epoch.current) setError(true);
     });
   }, [load, revision]);
   async function run(work: () => Promise<void>) {
@@ -52,11 +67,15 @@ export function EmailProcessingControls({
     pending.current = true;
     setBusy(true);
     setError(false);
+    let current = epoch.current;
     try {
       await work();
-      await load();
+      if (alive.current && current === epoch.current) {
+        current++;
+        await load();
+      }
     } catch {
-      if (alive.current) setError(true);
+      if (alive.current && current === epoch.current) setError(true);
     } finally {
       pending.current = false;
       if (alive.current) setBusy(false);
@@ -96,6 +115,23 @@ export function EmailProcessingControls({
           L’analyse, la validation et la publication conservent leurs propres
           états.
         </Text>
+      ) : null}
+      {batchId && onOpenMercalys ? (
+        <SecondaryButton
+          label="Ouvrir l’import Mercalys"
+          disabled={busy}
+          onPress={() =>
+            void run(async () => {
+              const current = epoch.current;
+              const result = await inbox.mercalysResult(original);
+              if (alive.current && current === epoch.current) {
+                if (result !== batchId)
+                  throw Error("EMAIL_MERCALYS_RESULT_CHANGED");
+                onOpenMercalys(result);
+              }
+            })
+          }
+        />
       ) : null}
       {purpose ? (
         <>
@@ -141,7 +177,7 @@ export function EmailProcessingControls({
           <SecondaryButton
             label="Relire l’état du fichier"
             disabled={busy}
-            onPress={() => void run(load)}
+            onPress={() => void run(async () => {})}
           />
         </>
       ) : null}

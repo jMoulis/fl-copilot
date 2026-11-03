@@ -35,6 +35,9 @@ export default function StoreEmailScreen() {
       initialSender={session.user.email}
       revision={lastSyncedAt}
       onClose={() => router.back()}
+      onOpenMercalys={(batchId) =>
+        router.push({ pathname: "/actions/email-import", params: { batchId } })
+      }
       onOpenSync={(id) =>
         id
           ? router.push({ pathname: "/sync-conflict/[id]", params: { id } })

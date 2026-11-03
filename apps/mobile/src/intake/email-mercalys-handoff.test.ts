@@ -31,7 +31,10 @@ import {
   applyEmailDecisionRecord,
 } from "./email-decision-repository";
 import { EmailOriginalTransfer } from "./email-original-transfer";
-import { EmailMercalysHandoff } from "./email-mercalys-handoff";
+import {
+  EmailMercalysHandoff,
+  readEmailMercalysResult,
+} from "./email-mercalys-handoff";
 import {
   EmailIntakeProcessing,
   emailProcessingFormat,
@@ -292,6 +295,42 @@ async function fixture(
 function count(s: Awaited<ReturnType<typeof fixture>>, table: string) {
   return Number(s.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()!.n);
 }
+it("finds only the actual owned email import without re-reading bytes, importing or writing, and rechecks current access", async () => {
+  const f = await fixture({ storeMailbox: true });
+  expect(await readEmailMercalysResult(f.cache, f.ref)).toBeNull();
+  expect(count(f, "mercalys_intake_batches")).toBe(0);
+  const attached = await f.handoff.attach(f.ref);
+  if (attached.status !== "ATTACHED") throw Error("expected retained batch");
+  const tables = [
+    "source_documents",
+    "sync_outbox",
+    "local_jobs",
+    "copilot_messages",
+  ];
+  const before = tables.map((table) => count(f, table));
+  const read = vi.spyOn(f.deps, "read").mockClear();
+  expect(await readEmailMercalysResult(f.cache, f.ref)).toBe(attached.batchId);
+  expect(tables.map((table) => count(f, table))).toEqual(before);
+  expect(read).not.toHaveBeenCalled();
+  const header = MercalysBatchRepository.prototype.header;
+  const delayed = vi
+    .spyOn(MercalysBatchRepository.prototype, "header")
+    .mockImplementation(async function (
+      this: MercalysBatchRepository,
+      batchId,
+    ) {
+      const result = await header.call(this, batchId);
+      f.setSession(null);
+      return result;
+    });
+  try {
+    await expect(readEmailMercalysResult(f.cache, f.ref)).rejects.toThrow();
+    expect(tables.map((table) => count(f, table))).toEqual(before);
+  } finally {
+    delayed.mockRestore();
+    read.mockRestore();
+  }
+});
 it.each(["MERCALYS_SALES", "MERCALYS_WASTE"] as const)(
   "hands verified email bytes to the existing %s engine, preserves the draft and publishes once",
   async (flow) => {

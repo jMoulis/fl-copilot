@@ -8,7 +8,10 @@ import {
   EmailIntakeProcessing,
   emailProcessingFormat,
 } from "../intake/email-intake-processing";
-import { EmailMercalysHandoff } from "../intake/email-mercalys-handoff";
+import {
+  EmailMercalysHandoff,
+  readEmailMercalysResult,
+} from "../intake/email-mercalys-handoff";
 import { EmailSourceHandoff } from "../intake/email-source-handoff";
 import { readEmailAdmissionAuthority } from "../intake/email-processing-basis";
 import { CopilotMercalysImportController } from "../copilot/mercalys-import-controller";
@@ -114,6 +117,7 @@ export interface SyncContextValue extends LocalSyncSnapshot {
     processingState(
       ref: EmailIntakeOriginalRequest,
     ): ReturnType<SourceOriginalJobs["emailProcessingState"]>;
+    mercalysResult(ref: EmailIntakeOriginalRequest): Promise<string | null>;
     retryProcessing(ref: EmailIntakeOriginalRequest): Promise<void>;
     retryOriginal(ref: EmailIntakeOriginalRequest): Promise<void>;
     setPurpose(
@@ -1056,6 +1060,8 @@ export function SyncProvider({ children }: PropsWithChildren) {
         const input = await processingInput(ref);
         return originalJobs.emailProcessingState(input);
       },
+      mercalysResult: (ref: EmailIntakeOriginalRequest) =>
+        readEmailMercalysResult(emailCache, ref),
       retryOriginal: async (ref: EmailIntakeOriginalRequest) => {
         const scope = scopeFor(ref.conversationId);
         await queueOriginalRetry(ref);

@@ -30,6 +30,29 @@ import { assertEmailMercalysAuthority } from "./email-mercalys-authority";
 import { emailProcessingIdentity } from "./email-processing-identity";
 
 type Input = z.infer<typeof emailIntakeOriginalRequestSchema>;
+/** Discover an existing result only; opening email never creates or resumes an import. */
+export async function readEmailMercalysResult(
+  cache: EmailIntakeCache,
+  raw: Input,
+) {
+  const basis = await emailProcessingBasis(cache, raw);
+  const batchId = emailProcessingIdentity(basis.scope, basis.origin, "BATCH");
+  let found = false;
+  try {
+    await new MercalysBatchRepository(basis.database, basis.scope).header(
+      batchId,
+    );
+    found = true;
+  } catch (error) {
+    if (
+      !(error instanceof Error) ||
+      error.message !== "MERCALYS_BATCH_UNAVAILABLE"
+    )
+      throw error;
+  }
+  await basis.authorize();
+  return found ? batchId : null;
+}
 type Dependencies = {
   read(uri: string, limit: number): Promise<Uint8Array<ArrayBuffer>>;
   zip: MercalysZipStorage;
