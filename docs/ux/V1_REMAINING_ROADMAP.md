@@ -1,5 +1,11 @@
 # Roadmap V1 — état courant et historique des lots
 
+## Current checkpoint — 3 November: accepted email path, next recommendation review
+
+Use [the current seven-workstream checkpoint](../progress/M7_WORKSTREAM_STATUS.md) before the dated journal below. API `7734b0f` and iOS build 27 are delivered/available with exact identities recorded. The owner accepts Actions email reception → confirmation → Mercalys publication of 159 lines. Prior weekly UX, historical cards, offline decisions, TG declaration/first review and M0–M6 functional iPhone acceptance remain closed cases. Workstream 4 is CLOSED for functional V1; the old “expertise in progress” rows below are historical.
+
+The next bounded gate is a useful after-period recommendation review using an already recorded historical operation, not another email build or a repeat of the current TG installation. [Recipe and limits](../qa/M7_AFTER_PERIOD_PILOT_2026_11_03.md). Numerical counter-promotion/daily supplier-tariff import and deeper measured implantation retain their owner-deferred status. Full V1/M8 physical recovery, Android and broader hardening are not declared complete. The dated implementation inventory below does not reopen accepted cases or make historical pending tools into current missing features.
+
 ## Current delivery checkpoint — 24 October, original PDF conversation
 
 API 375 (`8c72dfb` / `dpl_FkhnTQK82vVyENZ5CAth6NGXNhxv`) is delivered. iOS `0.1.0/build 16`, source `e43dc85`, [EAS fee9fc9e](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/fee9fc9e-0143-403e-801a-7b22f9c53b6a), is **FINISHED with archive/bundle identity verified**, not installed/accepted. Both exact source CI gates and master passed **5,192 / 6**; one grouped EAS request was made. Original PDF reading and future-week choice proposals now reuse the existing business tools without full-document review. The current physical recipe and compatibility limits are in [the identified acceptance file](../qa/M7_GROUPED_IPHONE_ACCEPTANCE.md).
