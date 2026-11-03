@@ -1117,8 +1117,21 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         repo,
         { storeId, ownerId, deviceId },
         randomUUID,
+        undefined,
+        (conversationId, before, signal) =>
+          withAccessToken((token) =>
+            new ApiClient(getApiBaseUrl()).copilotHistory(
+              token,
+              storeId,
+              conversationId,
+              before,
+              50,
+              undefined,
+              signal,
+            ),
+          ),
       ),
-    [repo, storeId, ownerId, deviceId],
+    [repo, storeId, ownerId, deviceId, withAccessToken],
   );
   const delivery = useMemo(() => {
     const api = new ApiClient(getApiBaseUrl());

@@ -211,6 +211,37 @@ function LocalChatPanel({
       current.current = { controller: undefined, conversationId: "" };
     };
   }, [controller, conversationId, delivery]);
+  useEffect(() => {
+    const abort = new AbortController();
+    olderLocked.current = true;
+    setLoadingOlder(true);
+    void controller
+      .refreshHistory(conversationId, abort.signal)
+      .then((value) => {
+        if (!abort.signal.aborted)
+          setSnapshot((previous) =>
+            previous
+              ? { ...value, ...mergeCopilotHistory(previous, value) }
+              : value,
+          );
+      })
+      .catch(() => {
+        if (!abort.signal.aborted)
+          setHistoryError(
+            "L’historique synchronisé ne peut pas être chargé. Les messages locaux restent disponibles.",
+          );
+      })
+      .finally(() => {
+        if (!abort.signal.aborted) {
+          olderLocked.current = false;
+          setLoadingOlder(false);
+        }
+      });
+    return () => {
+      abort.abort();
+      olderLocked.current = false;
+    };
+  }, [controller, conversationId]);
   const seenMessageRevision = useRef(externalMessageRevision);
   useEffect(() => {
     if (seenMessageRevision.current === externalMessageRevision) return;
@@ -371,12 +402,15 @@ function LocalChatPanel({
     }
   }
   async function loadOlder() {
-    if (olderLocked.current || !snapshot?.hasMore || !snapshot.before) return;
+    if (olderLocked.current || !snapshot?.hasMore) return;
     olderLocked.current = true;
     setLoadingOlder(true);
     setHistoryError(undefined);
     try {
-      const page = await controller.older(conversationId, snapshot.before);
+      const page = await controller.older(
+        conversationId,
+        snapshot.before ?? undefined,
+      );
       if (isCurrent())
         setSnapshot((previous) =>
           previous

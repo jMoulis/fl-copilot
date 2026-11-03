@@ -1,3 +1,4 @@
+import { copilotHistoryPageSchema } from "@fl-copilot/sync-contracts";
 import { applyIllustrationGenerationRecord } from "./layout-illustration-generation-repository";
 import { applyEmailDecisionRecord } from "../intake/email-decision-repository";
 import { MAX_STORE_PHOTOS_PER_TURN } from "@fl-copilot/domain";
@@ -657,6 +658,44 @@ export class CopilotConversationRepository {
           userMessageId: row.user_message_id,
         }),
       );
+  }
+  async restoreHistory(conversationId: string, raw: unknown) {
+    const page = copilotHistoryPageSchema.parse(raw);
+    if (
+      page.storeId !== this.scope.storeId ||
+      page.ownerId !== this.scope.ownerId ||
+      page.conversationId !== conversationId ||
+      page.conversations.length ||
+      page.messages.some(
+        (m) =>
+          m.conversationId !== conversationId ||
+          m.storeId !== this.scope.storeId ||
+          m.ownerId !== this.scope.ownerId,
+      )
+    )
+      throw Error("COPILOT_HISTORY_SCOPE_INVALID");
+    await this.db.withExclusiveTransactionAsync(async (tx) => {
+      const row = await tx.getFirstAsync<Row>(
+        "SELECT * FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
+        conversationId,
+        this.scope.storeId,
+        this.scope.ownerId,
+      );
+      if (
+        !row ||
+        copilotConversationSchema.parse(JSON.parse(row.payload_json)).status !==
+          "ACTIVE"
+      )
+        throw Error("COPILOT_CONVERSATION_UNAVAILABLE");
+      const parent = copilotConversationSchema.parse(
+        JSON.parse(row.payload_json),
+      );
+      for (const message of page.messages) {
+        if (!copilotMessageIsDeleted(message, parent))
+          await applyCopilotRecord(tx, this.scope, "copilot_message", message);
+      }
+    });
+    return page;
   }
   async messages(
     conversationId: string,
