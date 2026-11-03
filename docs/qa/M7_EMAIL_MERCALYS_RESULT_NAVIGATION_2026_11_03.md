@@ -27,3 +27,9 @@ Mobile strict types, targeted ESLint/format and structure checks are recorded wi
 3. Close the sheet by its return button, then by swiping on another opening. Expect the same email list and position. Ordinary Mercalys history/file review remains reachable through its normal entry.
 
 M7 workstreams 3/7 advance. Workstreams 1 and 4 stay closed. The accepted email/Mercalys publication, partial banana realization and historical grape review are not reopened; the banana’s actual dates and future numbers remain unknown.
+
+## Delivery and owner acceptance
+
+PR 426 is merged at `2af200beb57568189ba38bbfe6d32f0805f43ec9`; exact-head push/PR and merged-master CI pass, and the branch is deleted. iOS staging/internal build 28 is FINISHED ([artifact](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/8a3b3a3d-907a-474e-a3fd-36b5bb0c1d65)). The downloaded IPA identifies `com.flcopilot.mobile`, version `0.1.0`, build `28`; its SHA-256 is `b11a0767b8717cbc954e7b4948c2aad1a32365a6306f531dcc2ea81d53623d72`. API source `7734b0f` stays deployed and healthy, with the database connected.
+
+The owner replies to the supplied navigation recipe: “tres ben. c’est testé et valiidé”. **The focused open-result/return case is closed.** The device version was not independently read; no further import or gesture test is requested without a regression. This does not close every document format or all M7/M8.
