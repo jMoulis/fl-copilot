@@ -1,3 +1,48 @@
+# M7 — current checkpoint, 3 November 2026
+
+This checkpoint supersedes the delivery/acceptance statuses in the dated journal below. It records scoped owner acceptance; it does not declare the whole V1 complete. M0–M6 remain [closed for the functional iPhone pilot baseline](M0_M6_PILOT_CLOSURE_2026_11_02.md).
+
+## Accepted pilot cases — do not request again without a regression
+
+- Weekly UX: the owner accepted the four requested journeys.
+- Real TGs: the owner confirmed installation, explicit declaration, synchronization and the first Copilot review: “Ok c’est parfait 👍 Je valide”. This is not a complete post-period or causal assessment.
+- Qualitative counter-promotion: same-conversation tomato/banana advice, euro amounts and explicit 19 October–2 November period, known layout distinguished from suggestions, existing TGs preserved: “Ok top on clôture”. Numerical simulation remains separate and deferred pending planned purchase-price data.
+- Historical preparation card: older messages, reopening without duplicate/draft loss and offline reading of loaded history: “Oui c’est bon . C’est testé et ça fonctionne”.
+- Offline advice decision: existing card loaded online, acceptance saved offline, retained after offline restart, synchronized once without declaring execution: “Ok test fait et je valide”.
+
+These are owner-reported confirmations of the supplied recipes. Build 24 was suggested; the installed device version was not independently inspected. CI, an available binary and a scripted model do not substitute for owner acceptance.
+
+## Seven workstreams — reconciled status
+
+| Workstream              | Current status                                                 | Remaining boundary                                                                                                                                                                              |
+| ----------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 — Actions / conflicts | In progress; offline decision case accepted                    | Other domain exceptions remain separately tracked; do not repeat the accepted case as a generic gate.                                                                                           |
+| 2 — Counter-promotion   | Qualitative pilot case accepted; numerical scope deferred      | Preserve the numerical calculator and its constraints; do not reopen the PA-import digression or claim numerical acceptance.                                                                    |
+| 3 — Documents           | In progress; secondary channel gate                            | Old email original/retry and original recovery on another physical device remain unverified. Current provider rights have not been rechecked; an old 401 is not proof of a present restriction. |
+| 4 — Expertise           | In progress; qualitative merchandising case accepted           | Broader real-model advice cases remain to assess; schema tests and scripted transport alone do not certify their usefulness.                                                                    |
+| 5 — Recommendations     | Core representative pilot cases accepted                       | Decision/restart/sync and real TG declaration/first review are closed cases. Complete after-period review and broader scenarios remain distinct; no blanket workstream closure.                 |
+| 6 — Implantation        | Basic declared context retained; deeper work deferred by owner | Group merchandising plan, precise furniture/circulation and feasibility refinement wait for the agreed input. No invented placement or new drawing work now.                                    |
+| 7 — UX / validation     | Weekly UX, historical-card and offline-decision cases accepted | Remaining native/cross-platform, recovery, performance and accessibility gates belong to the broader M7/M8 release matrix; accepted functional cases are not reopened wholesale.                |
+
+No percentage is inferred from test counts or from these case closures. No complete workstream is newly declared closed by this checkpoint.
+
+## Current delivery and technical evidence
+
+- Available native artifact: **iOS 0.1.0/build 24**, source `a8dc5342decba706e6933bd6a957d9bab4c61218`, [EAS build](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/3afdfe49-b370-4179-9594-c97dd2554cd1). Availability and reported acceptance remain distinct from independent installation inspection.
+- Released API: `cc566f88c317435ace4402313ae0c4265200ba33`, deployment `dpl_5B1ugjtjvuVK6pUBPFVkeXghEycG`; exact-head and master CI passed before grouped release. PR 417/418 formatting/context corrections are API-only; no new mobile build is required for them.
+- The bounded core-exit check passed **352 tests across 12 files, zero skips**, with isolated transactional MongoDB and real SQLite. Four decision modes, restart/replay, explicit execution, changed facts and provider failure were exercised with scripted SDK transport, without paid model calls or production business writes. See the existing [decision](../qa/M7_RECOMMENDATION_DECISION_SCENARIOS.md), [fact-context](../qa/M7_FACT_CONTEXT_SCENARIOS.md), [execution roundtrip](../qa/M7_EXPLICIT_EXECUTION_ROUNDTRIP_2026_11_03.md) and [monetary advice](../qa/M7_ADVICE_AMOUNT_CONTEXT_2026_11_03.md) recipes for implementation boundaries.
+- The offline-decision integration suite already covers changed facts before synchronization. No duplicate test or additional stale-state architecture is justified by this review.
+
+## Next work order
+
+1. Assess the remaining central expertise/advice cases against existing conversations and the [retail scenarios](../qa/M7_RETAIL_EXPERTISE_SCENARIOS.md), preserving closed cases. Report any access limit before claiming a real-model result; no paid test request is implied.
+2. Fix only demonstrated gaps, then group any necessary native changes into a focused acceptance build. Do not rebuild this documentation update.
+3. Return to the identified email/document gate after the central advice review. Deeper implantation and daily purchase-tariff import stay deferred. Broader M8 certification remains explicit, rather than silently absorbed into repeated M7 phone tests.
+
+## Historical implementation journal
+
+The dated entries below preserve what was known at the time. Their “pending”, “current build” and “no acceptance” statements do not override this checkpoint.
+
 ## 3 November — readable monetary advice and physical-placement qualification
 
 The shared answer renderer supplies omitted EUR symbols for recognized monetary facts and shows verified query periods once when omitted. Exact-message inspection also covers analytics_query rankings through their existing typed monetary relation and Explorer period, including product-only labels; percentages remain distinct. Exact values/citations, quantities, identifier exclusions and coverage remain separate. The existing placement sentence is replaced with a shorter suggestion/unknown-arrangement distinction; no new tool, instruction block or read budget. [Proof and boundaries](../qa/M7_ADVICE_AMOUNT_CONTEXT_2026_11_03.md). **2/4/7 advance; workstream 2 remains code ready and 1/3/4/5/6/7 ongoing.** API delivery and natural-model retest remain separate; no native rebuild. The owner has accepted the representative TG declaration/sync/first-review pilot following build-24 guidance; that case, M0–M6 and weekly UX are closed without implying every M7/M8 scenario passed.
@@ -240,7 +285,7 @@ Le handoff externe a été lu et audité contre les schémas, l’authentificati
 
 Le serveur compatible `4bbbeb1` est livré dans `dpl_B1QDr8HVPk8omeuictVhRncVptQi`, même artefact production préparé, contrôlé puis promu sans reconstruction. Les 1 765 fichiers suivis de l’archive ont été vérifiés contre le commit ; deux CI exactes et master verts. Santé publique 200/Mongo connecté et routes privées 401 `AUTH_REQUIRED`, sans principal applicatif ni écriture métier. Ancienne version `4941513`/`dpl_J8GundEHU4dF1yEg4Fv5XSwyhKzR` conservée pour retour arrière. Les capacités récentes restent négociées par les clients compatibles ; le build 14 et son acceptation non confirmée ne sont pas remplacés. Pas de migration, nouveau fournisseur, clé Resend, appel IA ou build EAS. Cette livraison ne vaut ni recette physique ni import réussi des illustrations.
 
-## État courant vérifié — 24 octobre 2026
+## Historical checkpoint — 24 October 2026
 
 API compatible `276bdcb` / `dpl_FqzjHMRpWpo8u54Bqo2R1zZMgjCf` livrée (PR 373) après les deux CI exactes et master verts, **5 160 tests / 6 ignorés** dans chaque CI ; même artefact préparé et promu, santé publique/Mongo et accès privé aux originaux vérifiés. Retour arrière `ceab2a5` / `dpl_3WFF66C8Yp8FusH5zH5zNW8UDYNy` conservé. Lecture originale du PDF sans attendre la revue, observations IA sourcées distinctes des KPI et conservation des semaines futures dans les nouvelles lectures côté serveur. Build natif 15 inchangé, recette humaine et parcours d’enregistrement d’offres restent ouverts. Les autres mentions de déploiement ci-dessous sont historiques.
 
