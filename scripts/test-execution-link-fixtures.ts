@@ -18,7 +18,10 @@ import { OutboxRepository } from "../apps/mobile/src/sync/outbox-repository";
 import { CopilotExecutionLinkRepository } from "../apps/mobile/src/copilot/execution-link-repository";
 import { buildExecutionLinkMessages } from "../apps/api/src/copilot/execution-link-messages";
 import { MercalysTestDatabase } from "./test-mercalys-sync-fixtures";
-export async function executionLinkFixture(db = new MercalysTestDatabase()) {
+export async function executionLinkFixture(
+  db = new MercalysTestDatabase(),
+  includeExecution = true,
+) {
   const business = await actionReviewFixture(),
     n = await decisionNativeFixture(
       decisionFixture({ storeId: business.storeId }),
@@ -31,7 +34,8 @@ export async function executionLinkFixture(db = new MercalysTestDatabase()) {
     await new OutboxRepository(db).markAcknowledged(c.commandId);
   }
   await applyCommercialPlan(db, n.storeId, business.plan);
-  await applyCommercialExecution(db, n.storeId, business.task);
+  if (includeExecution)
+    await applyCommercialExecution(db, n.storeId, business.task);
   const request = copilotMessageSchema.parse({
     ...n.request,
     id: randomUUID(),

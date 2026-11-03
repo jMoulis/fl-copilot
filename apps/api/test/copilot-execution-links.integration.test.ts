@@ -19,6 +19,7 @@ import { MercalysTestDatabase } from "../../../scripts/test-mercalys-sync-fixtur
 import { runMongoMigrations } from "../src/database/migrations";
 import { runLocalMigrations } from "../../mobile/src/db/migrations";
 import { CopilotExecutionLinkRepository } from "../../mobile/src/copilot/execution-link-repository";
+import { CommercialExecutionRepository } from "../../mobile/src/commercial/execution-repository";
 import { MobileSyncService } from "../../mobile/src/sync/sync-service";
 import { OutboxRepository } from "../../mobile/src/sync/outbox-repository";
 import { createMongoSyncPushService } from "../src/sync/push-service";
@@ -80,8 +81,8 @@ describe.skipIf(!uri || !enabled)(
       checkHealth: async () => "connected" as const,
       close: async () => {},
     });
-    async function seed(includeLinkCard = true) {
-      const f = await executionLinkFixture();
+    async function seed(includeLinkCard = true, includeExecution = true) {
+      const f = await executionLinkFixture(undefined, includeExecution);
       devices.push(f.db);
       const insert = async (
         name: string,
@@ -122,17 +123,19 @@ describe.skipIf(!uri || !enabled)(
         plan: f.business.plan,
         version: 1,
       });
-      await insert("commercialExecutionTasks", {
-        _id: f.business.task.id,
-        ...f.business.task,
-      });
-      await db.collection("commercialExecutionHistory").insertOne({
-        storeId: f.storeId,
-        taskId: f.business.task.id,
-        version: f.business.task.version,
-        commandId: randomUUID(),
-        plan: f.business.task,
-      });
+      if (includeExecution) {
+        await insert("commercialExecutionTasks", {
+          _id: f.business.task.id,
+          ...f.business.task,
+        });
+        await db.collection("commercialExecutionHistory").insertOne({
+          storeId: f.storeId,
+          taskId: f.business.task.id,
+          version: f.business.task.version,
+          commandId: randomUUID(),
+          plan: f.business.task,
+        });
+      }
       return f;
     }
     function transport(
@@ -155,6 +158,7 @@ describe.skipIf(!uri || !enabled)(
           copilotHistory: "true",
           copilotDecisions: "true",
           copilotExecutionLinks: "true",
+          commercialExecution: "true",
         };
       return {
         push: (r: SyncPushRequest) => push.push(r, randomUUID(), ownerId),
@@ -191,6 +195,7 @@ describe.skipIf(!uri || !enabled)(
         copilotHistory: true,
         copilotDecisions: true,
         copilotExecutionLinks: true,
+        commercialExecution: true,
       });
     async function confirm(f: Fixture) {
       const s = await f.repository.open(f.linkCard);
@@ -308,8 +313,42 @@ describe.skipIf(!uri || !enabled)(
         }),
       ).toBe(2);
     }, 60000);
-    it("retains a linked descriptive review through sync and file restart, without turning withdrawal or corrected figures into a new execution", async () => {
-      const f = await seed();
+    it("retains an explicitly declared execution and linked review through sync and file restart, without turning withdrawal or corrected figures into a new execution", async () => {
+      const f = await seed(true, false);
+      const execution = new CommercialExecutionRepository(f.db, decisionDigest);
+      expect(
+        await execution.list(f.storeId, f.business.plan.revisionId),
+      ).toEqual([]);
+      expect(
+        await db.collection("commercialExecutionTasks").countDocuments({
+          storeId: f.storeId,
+        }),
+      ).toBe(0);
+      const commandId = randomUUID();
+      await execution.save(f.business.task, {
+        commandId,
+        deviceId: f.deviceId,
+      });
+      expect(
+        (await execution.get(f.storeId, f.business.task.id))?.syncState,
+      ).toBe("PENDING");
+      expect(
+        (await new OutboxRepository(f.db).listPending(f.storeId)).map(
+          (c) => c.commandType,
+        ),
+      ).toEqual(["COMMERCIAL_EXECUTION_TASK_UPSERT"]);
+      await sync(f).sync(f.storeId);
+      await sync(f).sync(f.storeId);
+      expect(
+        (await execution.get(f.storeId, f.business.task.id))?.syncState,
+      ).toBe("SYNCED");
+      expect(
+        await db.collection("commercialExecutionHistory").countDocuments({
+          storeId: f.storeId,
+          taskId: f.business.task.id,
+          commandId,
+        }),
+      ).toBe(1);
       const saved = await confirm(f);
       expect(saved.link?.snapshot.decision.revision.type).toBe("MODIFY");
       await sync(f).sync(f.storeId);
@@ -437,6 +476,14 @@ describe.skipIf(!uri || !enabled)(
       devices.splice(devices.indexOf(restored), 1);
       const reopened = new MercalysTestDatabase(new DatabaseSync(filename));
       devices.push(reopened);
+      expect(
+        (
+          await new CommercialExecutionRepository(reopened, decisionDigest).get(
+            f.storeId,
+            f.business.task.id,
+          )
+        )?.entity,
+      ).toEqual(f.business.task);
       const repo = new CopilotExecutionLinkRepository(
         reopened,
         f.linkScope,
