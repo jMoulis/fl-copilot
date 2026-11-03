@@ -9,7 +9,7 @@ import {
   type AnalyticsExplorerContext,
 } from "@fl-copilot/domain";
 import type { CopilotResponse } from "@fl-copilot/domain";
-import { BusinessDecimal } from "@fl-copilot/analytics-core";
+import { BusinessDecimal, explorerRange } from "@fl-copilot/analytics-core";
 import type { CopilotGenerationRequest } from "./ai-provider.js";
 type Evidence = NonNullable<CopilotGenerationRequest["evidence"]>[number];
 const token = /\{\{(value|label|source|chart):(\d+)\}\}/g;
@@ -66,6 +66,20 @@ function render(
         item.value !== null &&
         /^-?\d+(?:\.\d+)?$/.test(String(item.value))
       ) {
+        if (item.analyticsContext) {
+          const range = explorerRange(item.analyticsContext.period);
+          const key = `${range.start}/${range.end}`;
+          const visible = [...shown]
+            .map((id) => String(byId.get(id ?? "")?.value ?? ""))
+            .join(" ");
+          if (!periods.has(key)) {
+            periods.add(key);
+            if (!visible.includes(range.start) || !visible.includes(range.end))
+              periodLines.push(
+                `Période consultée : ${range.start} au ${range.end}.`,
+              );
+          }
+        }
         const dates = ["start", "end"].map((key) =>
           evidence.find(
             (e) =>
@@ -127,11 +141,12 @@ function render(
       // round identifiers, quantities or ratios based on their numeric shape.
       const monetary =
         ["KPI", "COMPARISON"].includes(item.sourceType) &&
-        (/^\s*(?:€|EUR\b)/i.test(text.slice(at + _m.length)) ||
+        (item.analyticsContext?.relation === "MONETARY" ||
+          /^\s*(?:€|EUR\b)/i.test(text.slice(at + _m.length)) ||
           (/(?:price|cost|amount|purchase|sales|margin|prix|co[uû]t|montant|chiffre d.affaires|marge|€)/i.test(
             item.label,
           ) &&
-            !/(?:quantity|quantit[eé]|rate|ratio|taux|percent|pourcentage|pct|count|days|jours|identifier|(?:^|[.\s])(?:id|ean|itm8|plu|code)\b|Id$)/i.test(
+            !/(?:quantity|quantit[eé]|rate|ratio|taux|percent|pourcentage|%|pct|count|days|jours|identifier|(?:^|[.\s])(?:id|ean|itm8|plu|code)\b|Id$)/i.test(
               item.label,
             )));
       if (monetary && /^-?\d+\.\d{3,}$/.test(raw)) {

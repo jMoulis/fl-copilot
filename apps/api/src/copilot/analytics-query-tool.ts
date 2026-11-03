@@ -421,6 +421,7 @@ export async function readAnalyticsQuery(
       };
       const destination: AnalyticsExplorerContext = {
         schemaVersion: 1,
+        relation: "MONETARY",
         period: {
           kind: "range",
           current:
@@ -483,7 +484,7 @@ export async function readAnalyticsQuery(
                 m.changePercent,
                 detail,
                 "COMPARISON",
-                destination,
+                { ...destination, relation: "RELATED_AMOUNTS" },
               )
             : null,
         },
