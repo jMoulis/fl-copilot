@@ -51,12 +51,7 @@ export function EmailDecisionConflict({
         if (!emailIntake) throw Error("EMAIL_INTAKE_SESSION_REQUIRED");
         await emailIntake.adoptDecision(local.data.conversationId, conflict.id);
       }}
-      onOpenConversation={() =>
-        router.push({
-          pathname: "/copilot",
-          params: { conversationId: local.data.conversationId },
-        })
-      }
+      onOpenInbox={() => router.push("/actions/email")}
     />
   );
 }
@@ -66,13 +61,13 @@ export function EmailDecisionConflictView({
   remote,
   canAdopt,
   onAdopt,
-  onOpenConversation,
+  onOpenInbox,
 }: {
   local: EmailIntakeDecision;
   remote: EmailIntakeDecision;
   canAdopt: boolean;
   onAdopt: () => Promise<void>;
-  onOpenConversation: () => void;
+  onOpenInbox: () => void;
 }) {
   const [busy, setBusy] = useState(false),
     [resolved, setResolved] = useState(false),
@@ -139,9 +134,9 @@ export function EmailDecisionConflictView({
           <InlineAlert title="Résolution impossible" message={error} />
         ) : null}
         <SecondaryButton
-          label="Ouvrir la conversation"
+          label="Voir les documents reçus"
           disabled={busy}
-          onPress={onOpenConversation}
+          onPress={onOpenInbox}
         />
       </SectionCard>
     </>

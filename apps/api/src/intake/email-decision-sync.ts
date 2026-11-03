@@ -1,5 +1,6 @@
 import type { ClientSession, Db } from "mongodb";
 import {
+  isStoreEmailScope,
   emailIntakeDecisionSchema,
   type EmailIntakeDecision,
   type SyncCommand,
@@ -65,7 +66,7 @@ export async function readableEmailDecisions(
     (row) =>
       row.storeId === storeId &&
       row.ownerId === ownerId &&
-      allowed.has(row.conversationId),
+      (isStoreEmailScope(row) || allowed.has(row.conversationId)),
   );
 }
 /** Runs before processed-command replay, and again inside its transaction. */

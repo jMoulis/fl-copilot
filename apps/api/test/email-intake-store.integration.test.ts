@@ -120,6 +120,53 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         verifyResendReceivedEvent(client, signed(id))!;
       return { db, scope, service, request, binding, event, signed, verified };
     }
+    it("creates one store mailbox without a chat, reuses it under concurrent setup, and retains legacy receipts separately", async () => {
+      const f = await fixture();
+      await f.service.admit(f.verified());
+      const scope = { ...f.scope, conversationId: f.scope.storeId };
+      const results = await Promise.all(
+        Array.from({ length: 4 }, () =>
+          f.service.createBinding(scope, {
+            ...f.request,
+            id: randomUUID(),
+            conversationId: scope.storeId,
+          }),
+        ),
+      );
+      expect(new Set(results.map((b) => b.recipient)).size).toBe(1);
+      expect(new Set(results.map((b) => b.id)).size).toBe(1);
+      expect(
+        await f.db
+          .collection<{ _id: string }>("copilotConversations")
+          .countDocuments({ _id: scope.storeId }),
+      ).toBe(0);
+      f.event.data.email_id = randomUUID();
+      f.event.data.to = [results[0]!.recipient];
+      const id = await f.service.admit(f.verified());
+      expect(id).not.toBeNull();
+      const page = await f.service.list(scope);
+      expect(page.bindings).toHaveLength(1);
+      expect(page.receipts).toHaveLength(2);
+      expect(new Set(page.receipts.map((r) => r.conversationId))).toEqual(
+        new Set([scope.storeId, f.scope.conversationId]),
+      );
+      f.event.data.email_id = randomUUID();
+      f.event.data.to = [f.binding.recipient];
+      expect(await f.service.admit(f.verified())).toBeNull();
+      await expect(
+        f.service.createBinding(f.scope, { ...f.request, id: randomUUID() }),
+      ).rejects.toMatchObject({ publicCode: "EMAIL_INTAKE_BINDING_CONFLICT" });
+      expect((await f.service.list(scope)).receipts).toHaveLength(2);
+      await f.db
+        .collection("storeMemberships")
+        .updateOne(
+          { storeId: scope.storeId, userId: scope.ownerId },
+          { $set: { active: false } },
+        );
+      await expect(f.service.list(scope)).rejects.toMatchObject({
+        publicCode: "EMAIL_INTAKE_FORBIDDEN",
+      });
+    });
     it("keeps one opaque recipient across retries and never reactivates or retargets a revoked binding", async () => {
       const f = await fixture();
       expect(f.binding.recipient).toMatch(

@@ -295,6 +295,12 @@ function StoreActions({
       ) : null}
       <DetailsDisclosure title="Documents, imports et gestion du magasin">
         <MenuRow
+          title="Recevoir des documents par email"
+          description="L’adresse unique du magasin et les fichiers reçus."
+          icon="mail-outline"
+          onPress={() => router.push("/actions/email")}
+        />
+        <MenuRow
           title="Documents commerciaux"
           description="Tes pense-bêtes et PDF originaux."
           icon="document-text-outline"

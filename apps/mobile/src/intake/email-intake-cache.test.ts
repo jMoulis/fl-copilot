@@ -1226,3 +1226,38 @@ it.each(["verified", "active", "no-cache", "foreign", "cancelled"])(
     }
   },
 );
+
+it("keeps a store inbox and legacy receipts readable locally without inventing a conversation for the mailbox", async () => {
+  const f = await fixture();
+  await f.cache.storePage(f.scope, f.page);
+  const scope = { ...f.scope, conversationId: f.scope.storeId };
+  const binding = {
+    ...f.binding,
+    id: scope.storeId,
+    conversationId: scope.storeId,
+  };
+  const receipt = {
+    ...f.receipt,
+    id: randomUUID(),
+    bindingId: binding.id,
+    conversationId: scope.storeId,
+  };
+  await f.cache.storePage(scope, {
+    bindings: [binding],
+    receipts: [f.receipt, receipt],
+    nextCursor: null,
+  });
+  const page = await f.cache.list(scope.storeId);
+  expect(page.receipts).toHaveLength(2);
+  expect(page.bindings).toEqual([binding]);
+  expect(
+    await f.db.getFirstAsync(
+      "SELECT id FROM copilot_conversations WHERE id=?",
+      scope.storeId,
+    ),
+  ).toBeNull();
+  f.changeSession(null);
+  await expect(f.cache.list(scope.storeId)).rejects.toThrow(
+    "EMAIL_INTAKE_SESSION_REQUIRED",
+  );
+});

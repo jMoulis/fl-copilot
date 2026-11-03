@@ -1142,6 +1142,20 @@ export const mongoMigrations: readonly MongoMigration[] = [
       }
     },
   },
+  {
+    version: 55,
+    name: "unique-store-email-mailbox",
+    async up(db) {
+      await db.collection("emailIntakeBindings").createIndex(
+        { storeId: 1 },
+        {
+          unique: true,
+          name: "one_store_email_mailbox",
+          partialFilterExpression: { storeMailbox: true },
+        },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

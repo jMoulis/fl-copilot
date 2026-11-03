@@ -18,7 +18,6 @@ import {
   registerCommercialPdf,
   MAX_COMMERCIAL_PDF_BYTES,
 } from "../documents/commercial-pdf-capture";
-import { CopilotConversationRepository } from "../copilot/conversation-repository";
 import { SourceDocumentRepository } from "../documents/source-document-repository";
 import { WasteReceiptRepository } from "../documents/waste-receipt-repository";
 import {
@@ -441,36 +440,8 @@ export class EmailSourceHandoff {
         wasteReceiptId,
         duplicateCandidate,
       });
-      // The admitted source belongs to this conversation, using its ordinary attachment
-      // channel. Never turn email prose into an instruction or schedule an AI turn.
-      // Capture, source link and its Outbox append commit together; a retry reuses IDs.
-      await new CopilotConversationRepository(
-        joinedMutationDatabase(tx),
-        scope,
-      ).append(
-        {
-          id: emailProcessingIdentity(scope, origin, "MESSAGE"),
-          ...scope,
-          role: "USER",
-          text: "Document reçu par email et confirmé dans cette conversation.",
-          attachments: [
-            {
-              sourceDocumentId,
-              filename: file.originalFilename,
-              mediaType: file.mimeType,
-            },
-          ],
-          replyToMessageId: null,
-          supersedesMessageId: null,
-          version: 1,
-          createdAt: decision.createdAt,
-        },
-        {
-          commandId: emailProcessingIdentity(scope, origin, "COMMAND"),
-          deviceId: this.deviceId,
-          preserveDraft: true,
-        },
-      );
+      // Source/upload and the durable handoff commit together; reception never
+      // appends to a chat, including when resuming a historical email admission.
       await tx.runAsync(
         "INSERT INTO email_source_handoffs(store_id,owner_id,conversation_id,receipt_id,processing_id,payload_json) VALUES(?,?,?,?,?,?) ON CONFLICT(store_id,owner_id,conversation_id,receipt_id,processing_id) DO UPDATE SET payload_json=excluded.payload_json",
         scope.storeId,

@@ -36,6 +36,9 @@ export async function runReviewedStoreOperation<
     ctx: ReviewedStoreOperationAuthority,
   ) => Promise<T>,
   signal?: AbortSignal,
+  // Trusted application callback, never a serialized tool/model argument. Store
+  // email imports prove their acknowledged admission instead of a chat message.
+  authorizeSource?: (tx: OutboxDatabase) => Promise<void>,
 ): Promise<T> {
   const scope = reviewedStoreOperationAuthoritySchema.safeParse(rawAuthority),
     requestJson = JSON.stringify(request);
@@ -52,56 +55,59 @@ export async function runReviewedStoreOperation<
   try {
     await db.withExclusiveTransactionAsync(async (tx) => {
       if (signal?.aborted) throw new ProductClassificationError("CANCELLED");
-      const parent = await tx.getFirstAsync<{ payload_json: string }>(
-          "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
-          ctx.conversationId,
-          ctx.storeId,
-          ctx.ownerId,
-        ),
-        message = await tx.getFirstAsync<{ payload_json: string }>(
+      if (authorizeSource) await authorizeSource(tx);
+      else {
+        const parent = await tx.getFirstAsync<{ payload_json: string }>(
+            "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
+            ctx.conversationId,
+            ctx.storeId,
+            ctx.ownerId,
+          ),
+          message = await tx.getFirstAsync<{ payload_json: string }>(
+            "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+            ctx.userMessageId,
+            ctx.storeId,
+            ctx.ownerId,
+            ctx.conversationId,
+          );
+        const c = parent
+            ? copilotConversationSchema.parse(JSON.parse(parent.payload_json))
+            : null,
+          m = message
+            ? copilotMessageSchema.parse(JSON.parse(message.payload_json))
+            : null;
+        if (
+          !c ||
+          c.id !== ctx.conversationId ||
+          c.storeId !== ctx.storeId ||
+          c.ownerId !== ctx.ownerId ||
+          c.status !== "ACTIVE" ||
+          !m ||
+          m.id !== ctx.userMessageId ||
+          m.storeId !== ctx.storeId ||
+          m.ownerId !== ctx.ownerId ||
+          m.conversationId !== ctx.conversationId ||
+          m.role !== "USER"
+        )
+          throw new ProductClassificationError("FORBIDDEN");
+        if (copilotMessageIsDeleted(m, c))
+          throw new ProductClassificationError("FORBIDDEN");
+        const artifact = await tx.getFirstAsync<{ payload_json: string }>(
           "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-          ctx.userMessageId,
+          request.operationId,
           ctx.storeId,
           ctx.ownerId,
           ctx.conversationId,
         );
-      const c = parent
-          ? copilotConversationSchema.parse(JSON.parse(parent.payload_json))
-          : null,
-        m = message
-          ? copilotMessageSchema.parse(JSON.parse(message.payload_json))
-          : null;
-      if (
-        !c ||
-        c.id !== ctx.conversationId ||
-        c.storeId !== ctx.storeId ||
-        c.ownerId !== ctx.ownerId ||
-        c.status !== "ACTIVE" ||
-        !m ||
-        m.id !== ctx.userMessageId ||
-        m.storeId !== ctx.storeId ||
-        m.ownerId !== ctx.ownerId ||
-        m.conversationId !== ctx.conversationId ||
-        m.role !== "USER"
-      )
-        throw new ProductClassificationError("FORBIDDEN");
-      if (copilotMessageIsDeleted(m, c))
-        throw new ProductClassificationError("FORBIDDEN");
-      const artifact = await tx.getFirstAsync<{ payload_json: string }>(
-        "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
-        request.operationId,
-        ctx.storeId,
-        ctx.ownerId,
-        ctx.conversationId,
-      );
-      if (
-        artifact &&
-        copilotMessageIsDeleted(
-          copilotMessageSchema.parse(JSON.parse(artifact.payload_json)),
-          c,
+        if (
+          artifact &&
+          copilotMessageIsDeleted(
+            copilotMessageSchema.parse(JSON.parse(artifact.payload_json)),
+            c,
+          )
         )
-      )
-        throw new ProductClassificationError("FORBIDDEN");
+          throw new ProductClassificationError("FORBIDDEN");
+      }
       const old = await tx.getFirstAsync<{
         store_id: string;
         owner_id: string;
@@ -124,9 +130,11 @@ export async function runReviewedStoreOperation<
         result = schema.parse(JSON.parse(old.result_json));
         if (result.userMessageId !== ctx.userMessageId)
           throw new ProductClassificationError("FORBIDDEN");
+        await authorizeSource?.(tx);
         return;
       }
       result = schema.parse(await work(tx, ctx));
+      await authorizeSource?.(tx);
       if (signal?.aborted) throw new ProductClassificationError("CANCELLED");
       await tx.runAsync(
         "INSERT INTO copilot_tool_results(operation_id,store_id,owner_id,conversation_id,request_json,result_json,created_at) VALUES(?,?,?,?,?,?,?)",
@@ -138,6 +146,7 @@ export async function runReviewedStoreOperation<
         JSON.stringify(result),
         result.appliedAt,
       );
+      await authorizeSource?.(tx);
       if (signal?.aborted) throw new ProductClassificationError("CANCELLED");
     });
   } catch (e) {

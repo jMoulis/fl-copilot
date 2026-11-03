@@ -4,14 +4,11 @@ import { SourceOriginalJobs } from "../../mobile/src/documents/source-original-j
 import { EmailIntakeProcessing } from "../../mobile/src/intake/email-intake-processing";
 import { SourceDocumentRepository } from "../../mobile/src/documents/source-document-repository";
 import { SourceOriginalTransfer } from "../../mobile/src/documents/source-original-transfer";
-import { readConversationGenerationHistory } from "../src/copilot/generation-history";
-import { readAttachedSources } from "../src/copilot/attached-sources";
 import {
   createMongoSourceUploadService,
   type SourceBlobMetadata,
 } from "../src/uploads/source-upload-service";
 import { createSourceOriginalService } from "../src/uploads/source-original-service";
-import { copilotMessageSchema } from "@fl-copilot/domain";
 import { fileURLToPath } from "node:url";
 import { createEmailDecisionHistory } from "../src/intake/email-decision-history";
 import { createHash, randomUUID } from "node:crypto";
@@ -582,7 +579,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           await a.local.getFirstAsync(
             "SELECT COUNT(*) n FROM copilot_messages",
           ),
-        ).toEqual({ n: 1 });
+        ).toEqual({ n: 0 });
         expect(
           await a.local.getFirstAsync(
             "SELECT COUNT(*) n FROM copilot_pending_turns",
@@ -602,7 +599,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await f.cleanup();
       }
     });
-    it("restores an admitted email photo through the real private chat and source services on a fresh device, then remains usable offline", async () => {
+    it("restores an admitted email photo through canonical source services without chat attachments on a fresh device, then remains usable offline", async () => {
       const bytes = new Uint8Array(
         Buffer.from(
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aZkAAAAASUVORK5CYII=",
@@ -643,15 +640,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         if (result.status !== "CAPTURED")
           throw Error("Expected canonical media");
         const sourceId = result.record.sourceDocumentId;
-        const [message] = (
-          await a.local.getAllAsync<{ payload_json: string }>(
-            "SELECT payload_json FROM copilot_messages",
-          )
-        ).map((r) => copilotMessageSchema.parse(JSON.parse(r.payload_json)));
-        expect(message!.attachments[0]!.sourceDocumentId).toBe(sourceId);
-        // The ordinary Outbox, not direct insertion of a message into Mongo.
+        expect(
+          await a.local.getAllAsync("SELECT * FROM copilot_messages"),
+        ).toEqual([]);
         expect(await a.service.push(f.scope.storeId)).toMatchObject({
-          pushed: 1,
+          pushed: 0,
           conflicts: 0,
           failed: 0,
         });
@@ -712,31 +705,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           async () => blob!.url,
           () => f.at,
         );
-        const query = {
-          ...message!,
-          id: randomUUID(),
-          text: "Que vois-tu sur la photo du rayon reçue par email ?",
-          attachments: [],
-          createdAt: new Date(
-            Date.parse(message!.createdAt) + 1000,
-          ).toISOString(),
-        };
-        const history = await readConversationGenerationHistory(f.db, query);
         expect(
-          history.recentAttachmentReferences.map((r) => r.sourceDocumentId),
-        ).toContain(sourceId);
-        const available = await readAttachedSources(
-          f.db,
-          f.scope.storeId,
-          history.recentAttachmentReferences,
-        );
-        expect(available).toMatchObject([
-          {
-            sourceDocumentId: sourceId,
-            sourceType: "STORE_PHOTO",
-            status: "CONFIRMED",
-          },
-        ]);
+          await remote.manifest(f.scope.storeId, f.scope.ownerId, sourceId),
+        ).toMatchObject({
+          sourceDocumentId: sourceId,
+          sourceType: "STORE_PHOTO",
+        });
         await expect(
           remote.download(f.scope.storeId, randomUUID(), sourceId),
         ).rejects.toMatchObject({ statusCode: 404 });
@@ -750,11 +724,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         const restoredMessages = await b.local.getAllAsync<{
           payload_json: string;
         }>("SELECT payload_json FROM copilot_messages");
-        expect(
-          restoredMessages.map((r) =>
-            copilotMessageSchema.parse(JSON.parse(r.payload_json)),
-          ),
-        ).toContainEqual(message);
+        expect(restoredMessages).toEqual([]);
         const receive = vi.fn(async () => {
           const path = join(b.dir, "restored-canonical.png");
           await writeFile(path, bytes, { flag: "wx" });

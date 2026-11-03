@@ -6,7 +6,8 @@ export async function assertIntakeConversation(
   scope: { storeId: string; ownerId: string },
   conversationId?: string | null,
 ) {
-  if (!conversationId) return;
+  // Store email imports reuse the existing namespace column without a chat.
+  if (!conversationId || conversationId === scope.storeId) return;
   const row = await db.getFirstAsync<{ payload_json: string }>(
     "SELECT payload_json FROM copilot_conversations WHERE id=? AND store_id=? AND owner_id=?",
     conversationId,

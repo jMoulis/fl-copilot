@@ -104,10 +104,10 @@ export class EmailIntakeProcessing {
       `
       SELECT d.payload_json,json_extract(f.value,'$.fileId') AS file_id,json_extract(f.value,'$.processingId') AS processing_id
       FROM email_intake_decisions d JOIN json_each(d.payload_json,'$.files') f
-      JOIN copilot_conversations c ON c.id=d.conversation_id AND c.store_id=d.store_id AND c.owner_id=d.owner_id
+      LEFT JOIN copilot_conversations c ON c.id=d.conversation_id AND c.store_id=d.store_id AND c.owner_id=d.owner_id
       WHERE d.store_id=? AND d.owner_id=? AND d.sync_state='SYNCED' AND d.dirty=0 AND d.remote_version=1
        AND d.remote_payload_json=d.payload_json AND json_extract(d.payload_json,'$.choice')='ADMIT'
-       AND json_extract(c.payload_json,'$.status')='ACTIVE' AND json_extract(c.payload_json,'$.deletedAt') IS NULL
+       AND (d.conversation_id=d.store_id OR (json_extract(c.payload_json,'$.status')='ACTIVE' AND json_extract(c.payload_json,'$.deletedAt') IS NULL))
        AND NOT EXISTS(SELECT 1 FROM json_each(d.payload_json,'$.files') earlier
         WHERE json_extract(earlier.value,'$.processingId')=json_extract(f.value,'$.processingId') AND CAST(earlier.key AS INTEGER)<CAST(f.key AS INTEGER))
        AND NOT EXISTS(SELECT 1 FROM local_jobs j WHERE j.type='EMAIL_INTAKE_PROCESS'

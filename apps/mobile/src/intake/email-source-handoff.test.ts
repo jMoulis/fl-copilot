@@ -16,7 +16,6 @@ import {
   type EmailIntakeReceipt,
 } from "@fl-copilot/sync-contracts";
 import {
-  copilotMessageSchema,
   RECEIPT_PHOTO_BUNDLE_MIME,
   receiptPhotoBundleSchema,
 } from "@fl-copilot/domain";
@@ -64,6 +63,7 @@ const pdf = new TextEncoder().encode(
 );
 async function fixture(
   options: {
+    storeMailbox?: boolean;
     photo?: boolean;
     count?: number;
     mode?: "AUTO" | "WASTE_TICKET" | "STORE_PHOTO";
@@ -87,15 +87,18 @@ async function fixture(
     scope = {
       storeId: chat.storeId,
       ownerId: chat.ownerId,
-      conversationId: chat.conversation.id,
+      conversationId: options.storeMailbox
+        ? chat.storeId
+        : chat.conversation.id,
     };
-  await a.runAsync(
-    "INSERT INTO copilot_conversations(id,store_id,owner_id,payload_json,sync_state,dirty) VALUES(?,?,?,?,'SYNCED',0)",
-    scope.conversationId,
-    scope.storeId,
-    scope.ownerId,
-    JSON.stringify(chat.conversation),
-  );
+  if (!options.storeMailbox)
+    await a.runAsync(
+      "INSERT INTO copilot_conversations(id,store_id,owner_id,payload_json,sync_state,dirty) VALUES(?,?,?,?,'SYNCED',0)",
+      scope.conversationId,
+      scope.storeId,
+      scope.ownerId,
+      JSON.stringify(chat.conversation),
+    );
   let session: EmailIntakeSession | null = {
     storeId: scope.storeId,
     userId: scope.ownerId,
@@ -413,7 +416,7 @@ it("captures independent store photos beyond the composer limit without creating
   expect(count(f, "waste_receipts")).toBe(0);
   expect(count(f, "local_jobs")).toBe(12);
   expect(count(f, "copilot_drafts")).toBe(0);
-  expect(count(f, "copilot_messages")).toBe(12);
+  expect(count(f, "copilot_messages")).toBe(0);
   expect(count(f, "copilot_pending_turns")).toBe(0);
 });
 it("keeps independent waste photos separate and routes an exact duplicate through the existing review guard", async () => {
@@ -922,7 +925,7 @@ it("drains more than the ten composer attachments in bounded batches without omi
       )
       .get(),
   ).toEqual({ n: 25 });
-  expect(count(f, "copilot_messages")).toBe(25);
+  expect(count(f, "copilot_messages")).toBe(0);
   expect(count(f, "copilot_pending_turns")).toBe(0);
   expect(count(f, "waste_receipts")).toBe(0);
 });
@@ -1006,7 +1009,7 @@ it("processes the actual selection's reversed-tap ticket group plus an independe
 });
 
 it.each(["PDF", "STORE_PHOTO", "WASTE_TICKET", "MULTI_VIEW"] as const)(
-  "links an admitted %s to the exact chat using one durable ordinary attachment without consuming the draft or starting a turn",
+  "captures an admitted %s without a chat message, consuming the draft or starting a turn",
   async (kind) => {
     const f = await fixture({
       photo: kind !== "PDF",
@@ -1035,26 +1038,14 @@ it.each(["PDF", "STORE_PHOTO", "WASTE_TICKET", "MULTI_VIEW"] as const)(
     const rows = await f.a.getAllAsync<{ payload_json: string }>(
       "SELECT payload_json FROM copilot_messages",
     );
-    expect(rows).toHaveLength(1);
-    const message = copilotMessageSchema.parse(
-      JSON.parse(rows[0]!.payload_json),
-    );
-    expect(message).toMatchObject({
-      ...f.scope,
-      role: "USER",
-      createdAt: f.decision.createdAt,
-      text: "Document reçu par email et confirmé dans cette conversation.",
-      attachments: [{ sourceDocumentId: result.record.sourceDocumentId }],
-    });
-    expect(message.attachments).toHaveLength(1);
-    expect(message.attachments[0]!.mediaType).toBe(
+    expect(rows).toHaveLength(0);
+    expect(result.record.sourceType).toBe(
       kind === "PDF"
-        ? "application/pdf"
-        : kind === "MULTI_VIEW"
-          ? RECEIPT_PHOTO_BUNDLE_MIME
-          : "image/png",
+        ? "WEEKLY_COMMERCIAL_PDF"
+        : kind === "STORE_PHOTO"
+          ? "STORE_PHOTO"
+          : "WASTE_RECEIPT",
     );
-    expect(message.text).not.toContain(f.receipt.subject);
     expect(await conversations.draft(f.scope.conversationId)).toEqual(draft);
     expect(count(f, "copilot_pending_turns")).toBe(0);
     const command = await f.a.getAllAsync<{
@@ -1063,26 +1054,24 @@ it.each(["PDF", "STORE_PHOTO", "WASTE_TICKET", "MULTI_VIEW"] as const)(
     }>(
       "SELECT payload_json,device_id FROM sync_outbox WHERE command_type='COPILOT_MESSAGE_APPEND'",
     );
-    expect(command).toHaveLength(1);
-    expect(JSON.parse(command[0]!.payload_json)).toEqual(message);
-    expect(command[0]!.device_id).toBe(f.chat.deviceId);
+    expect(command).toHaveLength(0);
     // Replaying any admitted view uses the one same source/message/command.
     for (let i = 0; i < f.originals.length; i++)
       await f.handoff.capture(f.ref(i));
-    expect(count(f, "copilot_messages")).toBe(1);
+    expect(count(f, "copilot_messages")).toBe(0);
     expect(
       (
         await f.a.getAllAsync(
           "SELECT command_id FROM sync_outbox WHERE command_type='COPILOT_MESSAGE_APPEND'",
         )
       ).length,
-    ).toBe(1);
+    ).toBe(0);
     expect(count(f, "sales_observations")).toBe(0);
     expect(count(f, "waste_observations")).toBe(0);
   },
 );
 
-it("rolls source capture and its upload back if the chat-link Outbox append fails; original bytes and draft survive for retry", async () => {
+it("rolls source capture and its upload back if the durable handoff fails; original bytes and draft survive for retry", async () => {
   const f = await fixture({ photo: true, mode: "STORE_PHOTO" });
   const conversations = new CopilotConversationRepository(f.a, f.scope);
   const draft = {
@@ -1091,10 +1080,11 @@ it("rolls source capture and its upload back if the chat-link Outbox append fail
     updatedAt: f.chat.time,
   };
   await conversations.saveDraft(f.scope.conversationId, draft);
-  f.db.exec(`CREATE TRIGGER refuse_email_link BEFORE INSERT ON sync_outbox
-    WHEN NEW.command_type='COPILOT_MESSAGE_APPEND' BEGIN SELECT RAISE(ABORT,'INJECTED_MESSAGE_OUTBOX_FAILURE'); END;`);
+  f.db
+    .exec(`CREATE TRIGGER refuse_email_link BEFORE INSERT ON email_source_handoffs
+    BEGIN SELECT RAISE(ABORT,'INJECTED_HANDOFF_FAILURE'); END;`);
   await expect(f.handoff.capture(f.ref())).rejects.toThrow(
-    "INJECTED_MESSAGE_OUTBOX_FAILURE",
+    "INJECTED_HANDOFF_FAILURE",
   );
   for (const table of [
     "source_documents",
@@ -1114,17 +1104,18 @@ it("rolls source capture and its upload back if the chat-link Outbox append fail
   });
   expect(count(f, "source_documents")).toBe(1);
   expect(count(f, "local_jobs")).toBe(1);
-  expect(count(f, "copilot_messages")).toBe(1);
+  expect(count(f, "copilot_messages")).toBe(0);
 });
 
-it("rolls back the chat source link as well as capture if the account changes while its append is being committed", async () => {
+it("rolls back capture if the account changes while its durable handoff is being committed", async () => {
   const f = await fixture();
   const run = f.a.runAsync.bind(f.a);
   const spy = vi
     .spyOn(f.a, "runAsync")
     .mockImplementation(async (sql, ...args) => {
       const result = await run(sql, ...args);
-      if (sql.startsWith("INSERT INTO copilot_messages(")) f.setSession(null);
+      if (sql.startsWith("INSERT INTO email_source_handoffs("))
+        f.setSession(null);
       return result;
     });
   await expect(f.handoff.capture(f.ref())).rejects.toThrow(
@@ -1263,7 +1254,7 @@ it("keeps ordinary source-availability waits out of the six real-error budget an
     attempts: 10,
   });
   expect(count(f, "source_documents")).toBe(1);
-  expect(count(f, "copilot_messages")).toBe(1);
+  expect(count(f, "copilot_messages")).toBe(0);
   expect(count(f, "copilot_pending_turns")).toBe(0);
 });
 it.each(["FAILED", "CANCELLED", "WAITING_INPUT", "OTHER_FAILED"])(
@@ -1368,4 +1359,39 @@ it("treats an expired cached quota deadline as ordinary availability, rather tha
     attempts: 2,
   });
   expect(count(f, "source_documents")).toBe(1);
+});
+
+it("captures a store-mailbox PDF exactly once without creating any conversation or chat message, across disk restart", async () => {
+  const f = await fixture({ storeMailbox: true });
+  expect(count(f, "copilot_conversations")).toBe(0);
+  const processing = processingRuntime(f);
+  expect(
+    await processing.runtime.seed(
+      f.scope.storeId,
+      f.scope.ownerId,
+      processing.jobs,
+    ),
+  ).toBe(1);
+  await processing.jobs.process(f.scope.storeId, f.scope.ownerId);
+  expect(
+    await processing.jobs.emailProcessingState(processing.input()),
+  ).toMatchObject({ status: "COMPLETED" });
+  const result = await f.handoff.capture(f.ref());
+  expect(result.status).toBe("CAPTURED");
+  expect(count(f, "copilot_messages")).toBe(0);
+  expect(count(f, "copilot_conversations")).toBe(0);
+  expect(count(f, "source_documents")).toBe(1);
+  const db = f.reopen();
+  const again = await f.makeHandoff(f.makeCache(db)).capture(f.ref());
+  expect(again).toEqual(result);
+  expect(
+    (await db.getFirstAsync<{ n: number }>(
+      "SELECT COUNT(*) n FROM source_documents",
+    ))!.n,
+  ).toBe(1);
+  expect(
+    (await db.getFirstAsync<{ n: number }>(
+      "SELECT COUNT(*) n FROM copilot_messages",
+    ))!.n,
+  ).toBe(0);
 });

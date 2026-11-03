@@ -10,7 +10,6 @@ import { LayoutIllustrationGenerationRepository } from "../copilot/layout-illust
 import { LayoutIllustrationTransfer } from "../copilot/layout-illustration-transfer";
 import { nativeLayoutIllustrationFiles } from "../copilot/layout-illustration-native-files";
 import { LayoutIllustrationRepository } from "@/copilot/layout-illustration-repository";
-import { EmailInbox, EmailInboxIndicator } from "@/intake/email-inbox";
 import { z } from "zod";
 import { CopilotStorePhotoIntake } from "@/copilot/store-photo-intake";
 import { LayoutPreparationController } from "@/copilot/layout-preparation-controller";
@@ -114,7 +113,7 @@ import { CopilotReceiptPhotoIntake } from "@/copilot/receipt-photo-intake";
 import { resolveWasteReceiptImageExtension } from "@/documents/waste-receipt-capture";
 import { selectCopilotPdfs } from "@/copilot/pdf-selection";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams, useFocusEffect } from "expo-router";
 import {
@@ -460,13 +459,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
-  const {
-    syncNow,
-    emailIntake,
-    lastSyncedAt,
-    originals,
-    visuals: visualFiles,
-  } = useSync();
+  const { syncNow, lastSyncedAt, originals, visuals: visualFiles } = useSync();
   const visualSourcePort = useMemo(
     () =>
       originals
@@ -678,32 +671,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId],
   );
-
-  const [emailConversation, setEmailConversation] = useState<string>();
-  const [emailConfigurationRevision, setEmailConfigurationRevision] =
-    useState(0);
-  const emailNavigation = useRef<(() => void) | undefined>(undefined),
-    emailMounted = useRef(true);
-  useEffect(() => {
-    emailMounted.current = true;
-    return () => {
-      emailMounted.current = false;
-    };
-  }, []);
-  function closeEmail(after?: () => void) {
-    if (Platform.OS === "ios") emailNavigation.current = after;
-    setEmailConversation(undefined);
-    setEmailConfigurationRevision((value) => value + 1);
-    setImportMessageRevision((value) => value + 1);
-    if (Platform.OS !== "ios") after?.();
-  }
-
-  useEffect(() => {
-    if (!canManageProducts) {
-      emailNavigation.current = undefined;
-      setEmailConversation(undefined);
-    }
-  }, [canManageProducts]);
 
   const renderProposal = (
     message: CopilotMessage,
@@ -1456,7 +1423,6 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   >([]);
   const [active, setActive] = useState<string>();
   const [menu, setMenu] = useState(false);
-  const [importMessageRevision, setImportMessageRevision] = useState(0);
 
   const [linkError, setLinkError] = useState<string>();
   useFocusEffect(
@@ -1677,60 +1643,9 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
                 attachReceipts(conversationId, signal, capacity, true)
             : undefined
         }
-        onOpenEmailIntake={
-          canManageProducts && emailIntake
-            ? () => setEmailConversation(active)
-            : undefined
-        }
-        externalMessageRevision={`${importMessageRevision}/${lastSyncedAt ?? ""}`}
-        intakeSummary={
-          <>
-            {canManageProducts && emailIntake ? (
-              <EmailInboxIndicator
-                key={`${storeId}/${ownerId}/${active}`}
-                inbox={emailIntake}
-                conversationId={active}
-                revision={lastSyncedAt}
-                configurationRevision={emailConfigurationRevision}
-                onOpen={() => setEmailConversation(active)}
-              />
-            ) : null}
-          </>
-        }
+        externalMessageRevision={lastSyncedAt}
         renderToolMessage={renderProposal}
       />
-      <Modal
-        visible={!!emailConversation}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => closeEmail()}
-        onDismiss={() => {
-          const navigate = emailNavigation.current;
-          emailNavigation.current = undefined;
-          if (emailMounted.current) navigate?.();
-        }}
-      >
-        {emailConversation && emailIntake ? (
-          <EmailInbox
-            key={`${storeId}/${ownerId}/${emailConversation}`}
-            inbox={emailIntake}
-            conversationId={emailConversation}
-            initialSender={session?.user.email ?? ""}
-            revision={lastSyncedAt}
-            onClose={() => closeEmail()}
-            onOpenSync={(id) =>
-              closeEmail(() => {
-                if (id)
-                  router.push({
-                    pathname: "/sync-conflict/[id]",
-                    params: { id },
-                  });
-                else router.push("/sync-status");
-              })
-            }
-          />
-        ) : null}
-      </Modal>
       {receiptCamera ? (
         <receiptCamera.Sheet
           session={receiptCamera.session}
