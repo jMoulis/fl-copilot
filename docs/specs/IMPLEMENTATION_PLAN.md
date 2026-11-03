@@ -1,3 +1,7 @@
+## M7 verification increment — 3 November: original decision through linked review
+
+Extend the existing real Mongo/SQLite execution-review roundtrip to synchronize the choice created by the native decision writer, instead of seeding an acknowledged remote choice. Assert PENDING/one Outbox command, one synchronized change on replay, no inferred execution, and exact choice/task/review restoration after the second database reopens. Advice and validated-plan fixtures/provider remain controlled; this is technical proof rather than a fabricated live pilot. No runtime/schema/tool/prompt change, API deployment or EAS build. See [proof and limits](../qa/M7_EXPLICIT_EXECUTION_ROUNDTRIP_2026_11_03.md). Workstream 5 advances; 1/3/4 remain closed.
+
 ## M7 UX increment — 3 November: direct email result access
 
 Open the actual locally retained Mercalys batch directly from its confirmed email file. Reuse acknowledged admission authority, deterministic IDs, the canonical batch reader and existing import screen/page sheet; return to the preserved email list. No capture, retry, publication or mount-time analytics dequeue merely to read a result. No new model, endpoint, sync command, AI prompt or provider. See [scope, verification and focused acceptance](../qa/M7_EMAIL_MERCALYS_RESULT_NAVIGATION_2026_11_03.md). Mobile-only delivery; no API redeploy, and accepted email publication is not retested by reimporting.
