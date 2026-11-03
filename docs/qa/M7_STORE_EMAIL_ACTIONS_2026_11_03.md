@@ -34,3 +34,9 @@ The rollout must deploy the compatible API before the native artifact. Retain th
 ## Local historical-cache follow-up
 
 The global store inbox initially selected every cached receipt, including receipts from deleted conversations that the server already excludes. A real SQLite regression test reproduces this disagreement. Filter historical parents before the local LIMIT using the same active/not-deleted condition, retaining store-mailbox receipts without a chat. No cached receipt, original, handoff or unsynchronized command is deleted. This is mobile-only; the delivered API already applies the correct boundary. Native acceptance must use the artifact containing this follow-up.
+
+## Current owner acceptance — store PDF and Mercalys
+
+The owner accepted the real store-email Mercalys file `16102026.xlsx` with 159 published lines, then build-28 direct result/return navigation. On 3 November the owner sends `semaine45.pdf` to the same store mailbox and explicitly confirms: “Confirmé, document retrouvé et original ouvert”. Server readback shows receipt `9a6cd47f-72ac-4c60-ab66-d97c0ffec4f2` CONFIRMED and original retention DONE after one attempt. Those reads establish server state; the owner’s reply establishes the tested native document/original path. An existing same-name PDF is not proof by itself of a new import, and duplicate reuse is allowed.
+
+**Workstream 3 closes for the functional V1 pilot baseline**, incorporating the prior accepted PDF strategy/draft, original access, current Actions-only reception and Mercalys result journeys. Existing canonical PDF/photo/ZIP tests qualify supported routing, duplicate handling, authority and restart. Every possible future format, Android and physical second-device recovery are not claimed certified; those broader release gates remain M8. No additional source upload, processing, publication, API release or native build is requested to repeat the successful cases.
