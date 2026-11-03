@@ -32,6 +32,39 @@ import type { EmailOriginalFiles } from "./email-original-transfer";
 
 const hash = (text: string) =>
   `sha256:${createHash("sha256").update(text).digest("hex")}`;
+it("refreshes a renamed store address while rejecting owner/sender changes and revoked reactivation", async () => {
+  const f = await fixture();
+  const scope = { ...f.scope, conversationId: f.scope.storeId };
+  const binding = { ...f.binding, ...scope };
+  const page = { bindings: [binding], receipts: [], nextCursor: null };
+  await f.cache.storePage(scope, page);
+  const renamed = { ...binding, recipient: "pdv09083@store-test.resend.app" };
+  await f.cache.storePage(scope, { ...page, bindings: [renamed] });
+  expect((await f.cache.list(scope.conversationId)).bindings).toEqual([
+    renamed,
+  ]);
+  for (const changed of [
+    { ...renamed, allowedSender: "other@example.test" },
+    { ...renamed, ownerId: randomUUID() },
+  ]) {
+    await expect(
+      f.cache.storePage(scope, { ...page, bindings: [changed] }),
+    ).rejects.toThrow();
+  }
+  const revoked = { ...renamed, revokedAt: "2026-11-03T18:00:00.000Z" };
+  await f.cache.storePage(scope, { ...page, bindings: [revoked] });
+  await f.cache.storePage(scope, page);
+  expect((await f.cache.list(scope.conversationId)).bindings).toEqual([
+    revoked,
+  ]);
+  await f.cache.storePage(f.scope, f.page);
+  await expect(
+    f.cache.storePage(f.scope, {
+      ...f.page,
+      bindings: [{ ...f.binding, recipient: renamed.recipient }],
+    }),
+  ).rejects.toThrow();
+});
 async function fixture(path = ":memory:") {
   const db = new VisualTestDatabase(new DatabaseSync(path));
   // Upgrade the shipped schema while preserving existing conversations and unsent work.

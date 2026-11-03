@@ -135,7 +135,13 @@ export class EmailIntakeCache {
           : null;
         if (prior) {
           const immutable = (b: EmailIntakeBinding) =>
-            JSON.stringify({ ...b, revokedAt: undefined });
+            JSON.stringify({
+              ...b,
+              revokedAt: undefined,
+              // An administratively renamed store mailbox keeps its identity,
+              // owner and sender. Historical conversation bindings stay immutable.
+              recipient: isStoreEmailScope(b) ? undefined : b.recipient,
+            });
           if (immutable(prior) !== immutable(binding)) throw invalid();
           // A delayed list response cannot reactivate a revoked address.
           if (prior.revokedAt) {

@@ -92,7 +92,11 @@ export function declaredMailbox(value: string): string | null {
 
 /** Reject ambiguous routing instead of copying one message into multiple stores/chats. */
 export function chooseInboundBinding<
-  T extends { recipient: string; allowedSender: string },
+  T extends {
+    recipient: string;
+    allowedSender: string;
+    routingRecipients?: readonly string[];
+  },
 >(
   event: NonNullable<ReturnType<typeof verifyResendReceivedEvent>>["event"],
   bindings: readonly T[],
@@ -104,7 +108,9 @@ export function chooseInboundBinding<
       .filter((r): r is string => r !== null),
   );
   const routed = bindings.filter((binding) =>
-    recipients.has(binding.recipient),
+    [binding.recipient, ...(binding.routingRecipients ?? [])].some((address) =>
+      recipients.has(address),
+    ),
   );
   if (routed.length !== 1 || sender !== routed[0]!.allowedSender) return null;
   return routed[0]!;

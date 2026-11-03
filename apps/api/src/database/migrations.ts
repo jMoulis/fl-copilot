@@ -1156,6 +1156,31 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 56,
+    name: "email-mailbox-routing-addresses",
+    async up(db) {
+      const bindings = db.collection("emailIntakeBindings");
+      // Include the primary address in the same unique multikey namespace as
+      // its aliases. Retrying this migration retains already configured aliases.
+      await bindings.updateMany({}, [
+        {
+          $set: {
+            routingRecipients: {
+              $setUnion: [
+                { $ifNull: ["$routingRecipients", []] },
+                ["$recipient"],
+              ],
+            },
+          },
+        },
+      ]);
+      await bindings.createIndex(
+        { routingRecipients: 1 },
+        { unique: true, name: "unique_email_routing_recipient" },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(
