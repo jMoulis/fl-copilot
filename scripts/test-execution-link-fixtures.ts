@@ -21,6 +21,7 @@ import { MercalysTestDatabase } from "./test-mercalys-sync-fixtures";
 export async function executionLinkFixture(
   db = new MercalysTestDatabase(),
   includeExecution = true,
+  acknowledgeDecision = true,
 ) {
   const business = await actionReviewFixture(),
     n = await decisionNativeFixture(
@@ -28,10 +29,12 @@ export async function executionLinkFixture(
       db,
     );
   const decision = (await saveDecision(n, "MODIFY")).decision!;
-  await applyDecisionRecord(db, n.scope, decision, decision.version);
-  for (const c of await new OutboxRepository(db).listPending(n.storeId)) {
-    await new OutboxRepository(db).markSyncing(c.commandId);
-    await new OutboxRepository(db).markAcknowledged(c.commandId);
+  if (acknowledgeDecision) {
+    await applyDecisionRecord(db, n.scope, decision, decision.version);
+    for (const c of await new OutboxRepository(db).listPending(n.storeId)) {
+      await new OutboxRepository(db).markSyncing(c.commandId);
+      await new OutboxRepository(db).markAcknowledged(c.commandId);
+    }
   }
   await applyCommercialPlan(db, n.storeId, business.plan);
   if (includeExecution)

@@ -20,6 +20,7 @@ import { runMongoMigrations } from "../src/database/migrations";
 import { runLocalMigrations } from "../../mobile/src/db/migrations";
 import { CopilotExecutionLinkRepository } from "../../mobile/src/copilot/execution-link-repository";
 import { CommercialExecutionRepository } from "../../mobile/src/commercial/execution-repository";
+import { CopilotDecisionRepository } from "../../mobile/src/copilot/decision-repository";
 import { MobileSyncService } from "../../mobile/src/sync/sync-service";
 import { OutboxRepository } from "../../mobile/src/sync/outbox-repository";
 import { createMongoSyncPushService } from "../src/sync/push-service";
@@ -81,8 +82,16 @@ describe.skipIf(!uri || !enabled)(
       checkHealth: async () => "connected" as const,
       close: async () => {},
     });
-    async function seed(includeLinkCard = true, includeExecution = true) {
-      const f = await executionLinkFixture(undefined, includeExecution);
+    async function seed(
+      includeLinkCard = true,
+      includeExecution = true,
+      includeRemoteDecision = true,
+    ) {
+      const f = await executionLinkFixture(
+        undefined,
+        includeExecution,
+        includeRemoteDecision,
+      );
       devices.push(f.db);
       const insert = async (
         name: string,
@@ -111,7 +120,8 @@ describe.skipIf(!uri || !enabled)(
         ...(includeLinkCard ? [f.linkAssistant, f.linkCard] : []),
       ])
         await insert("copilotMessages", { _id: m.id, ...m });
-      await insert("copilotDecisions", { _id: f.decision.id, ...f.decision });
+      if (includeRemoteDecision)
+        await insert("copilotDecisions", { _id: f.decision.id, ...f.decision });
       await insert("commercialWeekPlans", {
         _id: f.business.plan.id,
         ...f.business.plan,
@@ -313,8 +323,30 @@ describe.skipIf(!uri || !enabled)(
         }),
       ).toBe(2);
     }, 60000);
-    it("retains an explicitly declared execution and linked review through sync and file restart, without turning withdrawal or corrected figures into a new execution", async () => {
-      const f = await seed(true, false);
+    it("synchronizes a locally chosen recommendation before explicit execution and retains its linked review through file restart without changing history", async () => {
+      const f = await seed(true, false, false);
+      expect((await f.repo.open(f.card)).syncState).toBe("PENDING");
+      const outbox = new OutboxRepository(f.db);
+      const decisionCommands = await outbox.listPending(f.storeId);
+      expect(decisionCommands.map((c) => c.commandType)).toEqual([
+        "COPILOT_DECISION_UPSERT",
+      ]);
+      expect(
+        await db.collection("copilotDecisions").countDocuments({
+          storeId: f.storeId,
+        }),
+      ).toBe(0);
+      await sync(f).sync(f.storeId);
+      await sync(f).sync(f.storeId);
+      expect((await f.repo.open(f.card)).syncState).toBe("SYNCED");
+      expect(await outbox.listPending(f.storeId)).toEqual([]);
+      expect(
+        await db.collection("syncChanges").countDocuments({
+          storeId: f.storeId,
+          entityType: "copilot_decision",
+          entityId: f.decision.id,
+        }),
+      ).toBe(1);
       const execution = new CommercialExecutionRepository(f.db, decisionDigest);
       expect(
         await execution.list(f.storeId, f.business.plan.revisionId),
@@ -476,6 +508,14 @@ describe.skipIf(!uri || !enabled)(
       devices.splice(devices.indexOf(restored), 1);
       const reopened = new MercalysTestDatabase(new DatabaseSync(filename));
       devices.push(reopened);
+      const restoredDecision = await new CopilotDecisionRepository(
+        reopened,
+        f.scope,
+        decisionDigest,
+        randomUUID,
+      ).open(f.card);
+      expect(restoredDecision.syncState).toBe("SYNCED");
+      expect(restoredDecision.decision).toEqual(f.decision);
       expect(
         (
           await new CommercialExecutionRepository(reopened, decisionDigest).get(
