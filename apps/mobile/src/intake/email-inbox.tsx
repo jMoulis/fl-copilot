@@ -42,6 +42,7 @@ export function EmailInbox({
   revision,
   onClose,
   onOpenSync,
+  onOpenMercalys,
 }: {
   inbox: Inbox;
   conversationId: string;
@@ -49,6 +50,7 @@ export function EmailInbox({
   revision?: string;
   onClose(): void;
   onOpenSync(conflictId?: string): void;
+  onOpenMercalys?(batchId: string): void;
 }) {
   const [cached, setCached] = useState<Cached>({ bindings: [], receipts: [] }),
     [enabled, setEnabled] = useState<boolean>(),
@@ -259,6 +261,7 @@ export function EmailInbox({
             selection={selections.current}
             onChanged={load}
             onOpenSync={onOpenSync}
+            onOpenMercalys={onOpenMercalys}
           />
         )}
         ListFooterComponent={
@@ -284,6 +287,7 @@ function EmailReceivedCard({
   selection,
   onChanged,
   onOpenSync,
+  onOpenMercalys,
 }: {
   inbox: Inbox;
   receipt: EmailIntakeReceipt;
@@ -294,6 +298,7 @@ function EmailReceivedCard({
   selection: Map<string, EmailAdmissionSelection>;
   onChanged(): Promise<void>;
   onOpenSync(conflictId?: string): void;
+  onOpenMercalys?(batchId: string): void;
 }) {
   const [decision, setDecision] =
       useState<Awaited<ReturnType<Inbox["decision"]>>>(null),
@@ -740,6 +745,7 @@ function EmailReceivedCard({
                 leader ? (
                   <EmailProcessingControls
                     inbox={inbox}
+                    onOpenMercalys={onOpenMercalys}
                     original={{
                       conversationId,
                       receiptId: receipt.id,

@@ -79,7 +79,11 @@ export function MercalysBatchPanel({
   renderReview,
   disabled = false,
   archiveContext,
+  initialBatchId,
+  onCloseInitialBatch,
 }: {
+  initialBatchId?: string;
+  onCloseInitialBatch?(): void;
   archiveContext?: DocumentArchiveAccess;
   db: OutboxDatabase & AtomicMutationDatabase;
   storeId: string;
@@ -229,6 +233,9 @@ export function MercalysBatchPanel({
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [progress, setProgress] = useState<string>();
+  const [linkedBatch, setLinkedBatch] = useState<MercalysBatchInput>();
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const [publications, setPublications] = useState<
     Awaited<ReturnType<MercalysBatchRepository["publications"]>>
   >([]);
@@ -299,66 +306,84 @@ export function MercalysBatchPanel({
       await automaticallyPublish(result.batchId, signal);
     }
   }
-  async function load(
-    batchId: string,
-    older = false,
-    visibilityMode = activeRef.current === batchId
-      ? itemsArchivedRef.current
-      : false,
-  ) {
-    const page = await repo.page(
-      batchId,
-      older ? (items.at(-1)?.position ?? -1) : -1,
-      20,
-      archiveContext ? visibilityMode : undefined,
-    );
-    const committed = await repo.publications(batchId);
-    if (alive.current) {
-      if (activeRef.current !== batchId) {
-        setQuery("");
-        setItemFilter("ALL");
-        itemsArchivedRef.current = false;
-        setItemsArchived(false);
-        setToolsOpen(false);
+  const load = useCallback(
+    async (
+      batchId: string,
+      older = false,
+      visibilityMode = activeRef.current === batchId
+        ? itemsArchivedRef.current
+        : false,
+      signal?: AbortSignal,
+    ) => {
+      const page = await repo.page(
+        batchId,
+        older ? (itemsRef.current.at(-1)?.position ?? -1) : -1,
+        20,
+        archiveEnabled ? visibilityMode : undefined,
+      );
+      const committed = await repo.publications(batchId);
+      if (alive.current && currentRepo.current === repo && !signal?.aborted) {
+        if (activeRef.current !== batchId) {
+          setQuery("");
+          setItemFilter("ALL");
+          itemsArchivedRef.current = false;
+          setItemsArchived(false);
+          setToolsOpen(false);
+        }
+        setPublications(committed);
+        setPublicationPlan(undefined);
+        setPublicationReport(undefined);
+        setActive(batchId);
+        activeRef.current = batchId;
+        setItems((old) => (older ? [...old, ...page.items] : page.items));
+        setMore(page.hasMore);
       }
-      setPublications(committed);
-      setPublicationPlan(undefined);
-      setPublicationReport(undefined);
-      setActive(batchId);
-      activeRef.current = batchId;
-      setItems((old) => (older ? [...old, ...page.items] : page.items));
-      setMore(page.hasMore);
-    }
-  }
+    },
+    [repo, archiveEnabled],
+  );
   useEffect(() => {
     alive.current = true;
+    const opening = new AbortController();
     const mode = historyArchivedRef.current;
     void Promise.all([
       archiveRepo.recent(undefined, archiveEnabled ? mode : undefined),
       repo.recent(undefined, archiveEnabled ? mode : undefined),
+      initialBatchId ? repo.header(initialBatchId) : Promise.resolve(null),
     ])
-      .then(([archivePage, batchPage]) => {
+      .then(async ([archivePage, batchPage, linked]) => {
         if (
           alive.current &&
           currentRepo.current === repo &&
+          !opening.signal.aborted &&
           historyArchivedRef.current === mode
         ) {
           setArchives(archivePage.archives);
           setMoreArchives(archivePage.hasMore);
           setBatches(batchPage.batches);
           setMoreBatches(batchPage.hasMore);
+          setLinkedBatch(linked ?? undefined);
+          if (linked) await load(linked.id, false, false, opening.signal);
         }
       })
       .catch(() => {
-        if (alive.current)
-          setError("Les imports conservés ne peuvent pas être ouverts.");
+        if (
+          alive.current &&
+          currentRepo.current === repo &&
+          !opening.signal.aborted
+        )
+          setError(
+            initialBatchId
+              ? "Cet import ne peut pas être ouvert. Revenez aux documents reçus."
+              : "Les imports conservés ne peuvent pas être ouverts.",
+          );
       });
     return () => {
+      opening.abort();
       alive.current = false;
       abort.current?.abort();
       reviewDone.current?.();
     };
-  }, [repo, archiveRepo, archiveEnabled]);
+  }, [repo, archiveRepo, archiveEnabled, initialBatchId, load]);
   useEffect(() => {
     void readVisibility();
   }, [readVisibility, archiveContext?.revision]);
@@ -440,7 +465,9 @@ export function MercalysBatchPanel({
       archiveEnabled,
     ],
   );
-  const activeBatch = batches.find((batch) => batch.id === active);
+  const activeBatch =
+    batches.find((batch) => batch.id === active) ??
+    (linkedBatch?.id === active ? linkedBatch : undefined);
   const activeArchive = archives.find((archive) => archive.batchId === active);
   const batchTitle =
     activeArchive?.filename ??
@@ -453,6 +480,13 @@ export function MercalysBatchPanel({
     (activeArchive?.outcome.status === "PROCESSED"
       ? activeArchive.outcome.retainedCount
       : undefined);
+  const closeBatch = () => {
+    if (busy) return;
+    const linked = initialBatchId === active;
+    setActive(undefined);
+    activeRef.current = undefined;
+    if (linked) onCloseInitialBatch?.();
+  };
   const historyTerm = historyQuery.trim().toLocaleLowerCase("fr-FR");
   const visibleArchives = archives.filter(
     (a) =>
@@ -677,12 +711,7 @@ export function MercalysBatchPanel({
         animationType="slide"
         presentationStyle="pageSheet"
         allowSwipeDismissal={!busy}
-        onRequestClose={() => {
-          if (!busy) {
-            setActive(undefined);
-            activeRef.current = undefined;
-          }
-        }}
+        onRequestClose={closeBatch}
       >
         <AppScreen>
           <AppHeader
@@ -694,12 +723,13 @@ export function MercalysBatchPanel({
             }
           />
           <SecondaryButton
-            label="Retour aux imports"
+            label={
+              initialBatchId === active && onCloseInitialBatch
+                ? "Retour aux documents reçus"
+                : "Retour aux imports"
+            }
             disabled={busy}
-            onPress={() => {
-              setActive(undefined);
-              activeRef.current = undefined;
-            }}
+            onPress={closeBatch}
           />
           {busy ? (
             <Text

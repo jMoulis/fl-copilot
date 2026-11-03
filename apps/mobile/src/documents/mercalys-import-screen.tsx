@@ -111,7 +111,11 @@ export function MercalysImportScreen({
   onBusyChange,
   onChanged,
   retainedAsset,
+  initialBatchId,
+  closeLabel,
 }: {
+  initialBatchId?: string;
+  closeLabel?: string;
   retainedAsset?: NativeDocumentPickerAsset & { expectedChecksum: string };
   conversationId?: string;
   onClose?(): void;
@@ -196,8 +200,8 @@ export function MercalysImportScreen({
   }, [onBusyChange, busy]);
 
   useEffect(() => {
-    if (storeId) void analyticsScheduler.process(storeId);
-  }, [analyticsScheduler, storeId]);
+    if (storeId && !initialBatchId) void analyticsScheduler.process(storeId);
+  }, [analyticsScheduler, storeId, initialBatchId]);
 
   const chooseWorkbook = useCallback(
     async (asset: NativeDocumentPickerAsset & { expectedChecksum: string }) => {
@@ -696,7 +700,10 @@ export function MercalysImportScreen({
 
       {onClose ? (
         <SecondaryButton
-          label={retainedAsset ? "Fermer le fichier" : "Retour au chat"}
+          label={
+            closeLabel ??
+            (retainedAsset ? "Fermer le fichier" : "Retour au chat")
+          }
           disabled={loading || publishing || resolvingProducts || batchBusy}
           onPress={onClose}
         />
@@ -721,6 +728,8 @@ export function MercalysImportScreen({
             },
           }}
           conversationId={conversationId}
+          initialBatchId={initialBatchId}
+          onCloseInitialBatch={onClose}
           onDiscuss={onDiscuss}
           onBusyChange={setBatchBusy}
           onPublished={async () => {

@@ -25,6 +25,7 @@ const p = vi.hoisted(() => ({
   close: vi.fn(),
   changed: vi.fn(),
   read: vi.fn(),
+  recompute: vi.fn(async () => ({ failedJobs: 0 })),
 }));
 vi.mock("expo-router", () => ({ useIsFocused: () => true }));
 vi.mock("react-native", () => ({
@@ -115,7 +116,7 @@ vi.mock("expo-modules-core", () => ({
 }));
 vi.mock("../analytics/local-recomputation", () => ({
   LocalAnalyticsRecomputationScheduler: class {
-    process = async () => ({ failedJobs: 0 });
+    process = p.recompute;
   },
   SQLiteProductDateRecomputer: class {},
 }));
@@ -347,6 +348,25 @@ afterEach(async () => {
   if (renderer) await act(async () => renderer!.unmount());
   renderer = undefined;
   vi.restoreAllMocks();
+});
+it("opens an existing email batch without workbook reading, publication or background recomputation", async () => {
+  await act(async () => {
+    renderer = create(
+      createElement<NonNullable<Parameters<typeof MercalysImportScreen>[0]>>(
+        MercalysImportScreen,
+        {
+          initialBatchId: "11111111-1111-4111-8111-111111111111",
+          closeLabel: "Retour aux documents reçus",
+          onClose: p.close,
+        },
+      ),
+    );
+  });
+  expect(p.read).not.toHaveBeenCalled();
+  expect(p.publish).not.toHaveBeenCalled();
+  expect(p.recompute).not.toHaveBeenCalled();
+  await press("Retour aux documents reçus");
+  expect(p.close).toHaveBeenCalledTimes(1);
 });
 it("opens a retained corrected file, resolves its product through the real mapping/rematch functions and requires explicit current-fingerprint application", async () => {
   await mount();

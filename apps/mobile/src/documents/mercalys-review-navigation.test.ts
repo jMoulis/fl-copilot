@@ -19,6 +19,7 @@ const ports = vi.hoisted(() => ({
   visibility: vi.fn().mockResolvedValue([]),
   archiveSet: vi.fn(),
   recent: vi.fn(),
+  header: vi.fn(),
   page: vi.fn(),
   get: vi.fn(),
   refresh: vi.fn(),
@@ -124,6 +125,7 @@ vi.mock("./mercalys-archive-repository", () => ({
 vi.mock("./mercalys-batch-repository", () => ({
   MercalysBatchRepository: class {
     recent = ports.recent;
+    header = ports.header;
     page = ports.page;
     get = ports.get;
     refresh = ports.refresh;
@@ -412,6 +414,7 @@ function batchFixture() {
     createdAt: at,
     files: items,
   } satisfies MercalysBatchInput;
+  ports.header.mockResolvedValue(batch);
   ports.recent.mockResolvedValue({ batches: [batch], hasMore: false });
   ports.archives.mockResolvedValue({
     archives: [
@@ -469,6 +472,57 @@ async function openBatch() {
   )[0]!;
   await act(async () => archive.props.onPress());
 }
+it("opens an email-linked batch outside the recent page without processing and returns directly to the email list", async () => {
+  batchFixture();
+  ports.recent.mockResolvedValue({ batches: [], hasMore: true });
+  ports.archives.mockResolvedValue({ archives: [], hasMore: false });
+  const back = vi.fn();
+  await act(async () => {
+    renderer = create(
+      panel({ initialBatchId: "batch", onCloseInitialBatch: back }),
+    );
+  });
+  const title = renderer!.root.findAll(
+    (n) =>
+      n.props.title === "Fichiers du lot" &&
+      typeof n.props.subtitle === "string",
+  )[0]!;
+  expect(title.props.subtitle).toContain("40 fichiers");
+  expect(title.props.subtitle).toContain("23/10/2026");
+  expect(renderer!.root.findByType("Modal" as ElementType).props.visible).toBe(
+    true,
+  );
+  expect(ports.prepare).not.toHaveBeenCalled();
+  expect(ports.confirm).not.toHaveBeenCalled();
+  await press("Retour aux documents reçus");
+  expect(back).toHaveBeenCalledTimes(1);
+});
+it("closes an email-linked batch with the sheet gesture and keeps a missing target unavailable", async () => {
+  batchFixture();
+  const back = vi.fn();
+  await act(async () => {
+    renderer = create(
+      panel({ initialBatchId: "batch", onCloseInitialBatch: back }),
+    );
+  });
+  await act(async () =>
+    renderer!.root.findByType("Modal" as ElementType).props.onRequestClose(),
+  );
+  expect(back).toHaveBeenCalledTimes(1);
+  await act(async () => renderer!.unmount());
+  ports.header.mockRejectedValueOnce(Error("MERCALYS_BATCH_UNAVAILABLE"));
+  await act(async () => {
+    renderer = create(
+      panel({ initialBatchId: "missing", onCloseInitialBatch: back }),
+    );
+  });
+  expect(renderer!.root.findAllByType("Modal" as ElementType)).toHaveLength(0);
+  expect(text(renderer!.root)).toContain(
+    "Cet import ne peut pas être ouvert. Revenez aux documents reçus.",
+  );
+  expect(ports.prepare).not.toHaveBeenCalled();
+  expect(ports.confirm).not.toHaveBeenCalled();
+});
 it("keeps archives and batch files on separate levels, labels the import date, and retains the loaded list when a review closes", async () => {
   batchFixture();
   await act(async () => {

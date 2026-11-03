@@ -1,3 +1,7 @@
+## M7 UX increment — 3 November: direct email result access
+
+Open the actual locally retained Mercalys batch directly from its confirmed email file. Reuse acknowledged admission authority, deterministic IDs, the canonical batch reader and existing import screen/page sheet; return to the preserved email list. No capture, retry, publication or mount-time analytics dequeue merely to read a result. No new model, endpoint, sync command, AI prompt or provider. See [scope, verification and focused acceptance](../qa/M7_EMAIL_MERCALYS_RESULT_NAVIGATION_2026_11_03.md). Mobile-only delivery; no API redeploy, and accepted email publication is not retested by reimporting.
+
 ## Owner refinement — 3 November: readable store email address
 
 The owner requests `pdv09083` for the pilot mailbox. Administratively rename the existing store binding, retaining its prior address in the same unique routing namespace. No owner/sender change, fake chat, new mailbox collection, AI tool or provider configuration. The mobile store cache may refresh only the displayed recipient while all other binding guards remain. See [verification and activation](../qa/M7_STORE_EMAIL_PDV_2026_11_03.md).
