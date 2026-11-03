@@ -212,6 +212,38 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
     ).toContain("66,01 %");
     expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
   });
+  it("renders ranking money and actual periods when prose omits them, without turning percentages into euros", async () => {
+    const input = query({
+      referencePeriod: { start: "2024-10-01", end: "2024-10-31" },
+    });
+    const r = await readAnalyticsQuery(db, storeId, input);
+    const current = r.evidence.find(
+      (e) =>
+        e.analyticsContext?.relation === "MONETARY" &&
+        e.sourceType === "KPI" &&
+        e.value !== null,
+    )!;
+    expect(current).toBeDefined();
+    const rendered = renderAnswerText(
+      "Ventes récentes : {{value:0}}.",
+      [{ evidenceId: current.id }],
+      r.evidence,
+    );
+    expect(rendered).toContain(" €.");
+    expect(rendered).toContain(
+      `Période consultée : ${input.currentPeriod.start} au ${input.currentPeriod.end}.`,
+    );
+    const percent = r.evidence.find(
+      (e) => e.label.includes("variation (%)") && e.value !== null,
+    )!;
+    expect(percent).toBeDefined();
+    const percentage = renderAnswerText(
+      "Variation : {{value:0}} %.",
+      [{ evidenceId: percent.id }],
+      r.evidence,
+    );
+    expect(percentage).not.toContain("€");
+  });
   it("reads stored quantities, preserves units and supplies citable weighted realized-price evidence with confirmed TTC basis", async () => {
     await db.collection("productDailyPerformance").updateMany(
       { storeId, productId: banana },
