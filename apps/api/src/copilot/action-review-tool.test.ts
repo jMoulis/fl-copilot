@@ -174,7 +174,7 @@ it.each([
   expect(actionReviewResultSchema.safeParse(r).success).toBe(false);
 });
 
-it("compares unequal complete windows with canonical daily averages instead of an invented uplift", async () => {
+it("preserves explicit unequal-window daily averages without treating their weekdays as equivalent", async () => {
   const f = await actionReviewFixture(),
     { db, state } = actionReviewDatabase(f);
   state.performances = [];
@@ -212,7 +212,61 @@ it("compares unequal complete windows with canonical daily averages instead of a
     )?.value,
   ).toBe("50.00");
   expect(r.evidence[0]?.value).toContain("gain incrémental");
+  expect(r.evidence[0]?.value).toContain(
+    "ne deviennent pas comparables avec une moyenne",
+  );
 });
+it.each([
+  { reference: "81.18", current: "83.16", difference: "1.98" },
+  { reference: "6.17", current: "0.89", difference: "-5.28" },
+])(
+  "keeps an observed Monday paired to the preceding Monday, separate from other weekdays and unknown waste ($reference → $current)",
+  async ({ reference, current, difference }) => {
+    const f = await qualitativeActionReviewFixture(),
+      { db, state } = actionReviewDatabase(f);
+    const point = (date: string, sales: string) =>
+      actionReviewPerformance(f.storeId, f.product.id, date, sales, null);
+    state.performances = [
+      point("2026-09-28", reference),
+      point("2026-09-29", "1000"),
+      point("2026-10-04", "2000"),
+      point("2026-10-05", current),
+    ];
+    const r = await readActionReview(
+      db,
+      f.storeId,
+      {
+        ...f.input,
+        before: { start: "2026-09-28", end: "2026-09-28" },
+        during: { start: "2026-10-05", end: "2026-10-05" },
+        after: null,
+        aggregation: "AVERAGE",
+        metrics: ["sales", "waste"],
+      },
+      now,
+    );
+    expect(r.status).toBe("READY");
+    expect(r.duringComparison?.coverage[0]).toMatchObject({
+      current: { expectedDays: 1, availableDays: 1 },
+      reference: { expectedDays: 1, availableDays: 1 },
+      comparisonStatus: "AVAILABLE",
+      availablePeriods: [{ start: "2026-10-05", end: "2026-10-05" }],
+    });
+    const amount = (key: string) =>
+      r.duringComparison?.evidence.find((e) => {
+        const id = JSON.parse(e.id);
+        return id.at(-2) === "sales" && id.at(-1) === key;
+      })?.value;
+    expect(amount("current")).toBe(current);
+    expect(amount("reference")).toBe(reference);
+    expect(amount("difference")).toBe(difference);
+    expect(r.duringComparison?.coverage[1]).toMatchObject({
+      metric: "waste",
+      comparisonStatus: "UNAVAILABLE",
+    });
+    expect(r.afterComparison).toBeNull();
+  },
+);
 it("keeps signage printing separate from TG installation, even for the same product", async () => {
   const f = await actionReviewFixture(),
     { db } = actionReviewDatabase(f),

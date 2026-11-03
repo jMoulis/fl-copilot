@@ -1,3 +1,7 @@
+## M7 corrective increment — 3 November: comparable weekdays for the linked review
+
+The owner confirms both qualitative choice/task links. The real linked review finds the exact chain but compares one observed Monday to an entire previous-week average. Replace the existing review-tool description with shorter same-observed-ISO-weekday defaults and strengthen its quality qualification; retain explicit user-requested custom windows, unchanged canonical calculations, source history and authority. No schema, tool, provider, model, prompt block, business mutation or EAS build. [Evidence, verification and API-only retest](../qa/M7_REVIEW_COMPARABLE_WEEKDAYS_2026_11_03.md). Workstream 5 remains open for the corrected read-only review; 1/3/4 stay closed.
+
 ## M7 verification increment — 3 November: original decision through linked review
 
 Extend the existing real Mongo/SQLite execution-review roundtrip to synchronize the choice created by the native decision writer, instead of seeding an acknowledged remote choice. Assert PENDING/one Outbox command, one synchronized change on replay, no inferred execution, and exact choice/task/review restoration after the second database reopens. Advice and validated-plan fixtures/provider remain controlled; this is technical proof rather than a fabricated live pilot. No runtime/schema/tool/prompt change, API deployment or EAS build. See [proof and limits](../qa/M7_EXPLICIT_EXECUTION_ROUNDTRIP_2026_11_03.md). Workstream 5 advances; 1/3/4 remain closed.
