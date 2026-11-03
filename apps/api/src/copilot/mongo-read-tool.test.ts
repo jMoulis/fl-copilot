@@ -56,6 +56,13 @@ it("supplies scalar cell/date/coverage evidence for the real narrative renderer,
   expect(text).toContain("Depuis 2026-10-01, 2 entrées consultées.");
   expect(text).toContain("copilot-source:");
   expect(text).not.toContain('"sales"');
+  const concise = renderAnswerText(
+    "CA récent : {{value:1}}. {{source:1}}",
+    facts,
+    r.evidence,
+  );
+  expect(concise).toContain("CA récent : 12,34 €.");
+  expect(concise).toContain("Période consultée : 2026-10-01 au 2026-10-31.");
 });
 it("keeps the existing evidence ceiling by paging lists and refusing an oversized analytical result without sampled figures", async () => {
   const rows = Array.from({ length: 20 }, (_, i) => ({

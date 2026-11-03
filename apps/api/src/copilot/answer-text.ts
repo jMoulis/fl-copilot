@@ -51,8 +51,45 @@ function render(
         .map((m) => byId.get(facts[Number(m[2])]?.evidenceId ?? "")?.sourceId),
     );
     const missing: string[] = [];
+    const shown = new Set(
+      used
+        .filter((m) => m[1] === "value")
+        .map((m) => facts[Number(m[2])]?.evidenceId),
+    );
+    const periods = new Set<string>();
+    const periodLines: string[] = [];
     for (const m of used) {
       const item = byId.get(facts[Number(m[2])]?.evidenceId ?? "");
+      if (
+        m[1] === "value" &&
+        item?.sourceType === "KPI" &&
+        item.value !== null &&
+        /^-?\d+(?:\.\d+)?$/.test(String(item.value))
+      ) {
+        const dates = ["start", "end"].map((key) =>
+          evidence.find(
+            (e) =>
+              e.sourceId === item.sourceId &&
+              e.sourceType === "DATA_QUALITY" &&
+              e.label === `Périmètre · period.${key}` &&
+              typeof e.value === "string" &&
+              /^\d{4}-\d{2}-\d{2}$/.test(e.value),
+          ),
+        );
+        const [start, end] = dates;
+        if (start && end && !periods.has(`${start.value}/${end.value}`)) {
+          periods.add(`${start.value}/${end.value}`);
+          if (!shown.has(start.id) || !shown.has(end.id)) {
+            const indexes = dates.map((date) => {
+              effectiveFacts.push({ evidenceId: date!.id });
+              return effectiveFacts.length - 1;
+            });
+            periodLines.push(
+              `Période consultée : {{value:${indexes[0]}}} au {{value:${indexes[1]}}}.`,
+            );
+          }
+        }
+      }
       if (
         m[1] !== "value" ||
         !item ||
@@ -73,6 +110,7 @@ function render(
       effectiveFacts.push({ evidenceId: scope.id });
       missing.push(`{{source:${effectiveFacts.length - 1}}}`);
     }
+    if (periodLines.length) text += "\n\n" + periodLines.join("\n");
     if (missing.length) text += "\n\n" + missing.join(" · ");
   }
   let chartCount = 0;
@@ -93,7 +131,7 @@ function render(
           (/(?:price|cost|amount|purchase|sales|margin|prix|co[uû]t|montant|chiffre d.affaires|marge|€)/i.test(
             item.label,
           ) &&
-            !/(?:quantity|quantit[eé]|rate|ratio|taux|percent|pourcentage|count|days|jours)/i.test(
+            !/(?:quantity|quantit[eé]|rate|ratio|taux|percent|pourcentage|pct|count|days|jours|identifier|(?:^|[.\s])(?:id|ean|itm8|plu|code)\b|Id$)/i.test(
               item.label,
             )));
       if (monetary && /^-?\d+\.\d{3,}$/.test(raw)) {
@@ -108,7 +146,14 @@ function render(
             )
             .join(",")
         : raw;
-      return escape(formatted);
+      return (
+        escape(formatted) +
+        (monetary &&
+        /^-?\d+(?:\.\d+)?$/.test(raw) &&
+        !/^\s*(?:[*_]+\s*)?(?:€|EUR\b)/i.test(text.slice(at + _m.length))
+          ? " €"
+          : "")
+      );
     }
     if (kind === "label") return escape(item.label);
     if (kind === "chart" && !item.chart) throw Error("UNKNOWN_ANSWER_CHART");

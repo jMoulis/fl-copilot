@@ -12,6 +12,73 @@ const e = [
   },
 ];
 const facts = [{ evidenceId: "sales" }];
+it("supplies missing euros in prose and streaming without duplicating declared units or changing raw citations", () => {
+  expect(renderAnswerText("CA : {{value:0}}.", facts, e)).toContain(
+    "12\u202f345,67 €.",
+  );
+  expect(renderAnswerText("CA : {{value:0}}.", facts, e, true)).toBe(
+    "CA : 12\u202f345,67 €.",
+  );
+  expect(renderAnswerText("**{{value:0}}** €", facts, e)).toContain(
+    "**12\u202f345,67** €",
+  );
+  expect(renderAnswerText("{{value:0}} EUR", facts, e)).toContain(
+    "12\u202f345,67 EUR",
+  );
+  for (const label of [
+    "Quantité vendue",
+    "Taux de marge",
+    "Résultat · result",
+    "Nombre de jours",
+    "Résultat · salesProductId",
+    "Résultat · marginPct",
+  ]) {
+    expect(
+      renderAnswerText("{{value:0}}", facts, [{ ...e[0]!, label }]),
+    ).not.toContain("€");
+  }
+});
+it("shows only verified used-read periods and keeps query dates distinct from coverage", () => {
+  const period = (sourceId: string, start: string, end: string) =>
+    [start, end].map((value, i) => ({
+      ...e[0]!,
+      sourceId,
+      id: `${sourceId}/${i}`,
+      sourceType: "DATA_QUALITY" as const,
+      label: `Périmètre · period.${i === 0 ? "start" : "end"}`,
+      value,
+    }));
+  const evidence = [
+    ...e,
+    ...period(e[0]!.sourceId, "2026-10-19", "2026-10-25"),
+    ...period("unused", "2025-10-20", "2025-10-26"),
+  ];
+  const text = renderAnswerText("CA récent : {{value:0}}.", facts, evidence);
+  expect(text).toContain("Période consultée : 2026-10-19 au 2026-10-25.");
+  expect(text).not.toContain("2025-10-20");
+  expect(text.match(/Période consultée/g)).toHaveLength(1);
+  expect(
+    renderAnswerText(
+      "CA : {{value:0}} du {{value:1}} au {{value:2}}.",
+      [
+        ...facts,
+        { evidenceId: evidence[1]!.id },
+        { evidenceId: evidence[2]!.id },
+      ],
+      evidence,
+    ),
+  ).not.toContain("Période consultée");
+  expect(
+    renderAnswerText(
+      "{{value:0}}",
+      facts,
+      evidence.filter((item) => item.id !== evidence[2]!.id),
+    ),
+  ).not.toContain("Période consultée");
+  expect(renderAnswerText("{{value:0}}", facts, evidence, true)).not.toContain(
+    "Période consultée",
+  );
+});
 it("rounds monetary presentation without changing exact citations or quantity precision", () => {
   const evidence = [
     {
@@ -39,9 +106,9 @@ it("rounds monetary presentation without changing exact citations or quantity pr
     evidence.map((item) => ({ evidenceId: item.id })),
     evidence,
   );
-  expect(text).toContain("| 2,36 | 0,12345 |");
+  expect(text).toContain("| 2,36 € | 0,12345 |");
   expect(text).toContain("1,10 €/kg HT");
-  expect(text).toContain("Écart : 0,00");
+  expect(text).toContain("Écart : 0,00 €");
   const source = JSON.parse(
     decodeURIComponent(/copilot-source:([^)]*)/.exec(text)![1]!),
   );
