@@ -2,7 +2,7 @@
 
 The Actions-only store mailbox and readable PDV alias are delivered in API `7734b0f` / compatible iPhone build 27. The owner accepts email → explicit confirmation → existing Mercalys import/publication (159 displayed lines). Email reception creates no Copilot conversation/message. New manual Mercalys intake remains in Actions, as explicitly requested; no missing conversational importer should be inferred from the historical T23 inventory below.
 
-The existing commercial/action review readers are the next representative natural-model acceptance target; see [the bounded after-period recipe](../qa/M7_AFTER_PERIOD_PILOT_2026_11_03.md). No additional tool/prompt/writer is introduced. [Current accepted, remaining and deferred scopes](../progress/M7_WORKSTREAM_STATUS.md) supersede dated pending/delivery assertions in this historical inventory. Workstream 4 and accepted M0–M6 pilot cases are not reopened by it.
+The existing commercial/action review readers passed the owner-run historical grape after-period case, independently checked against canonical available daily sales/margin; see [the actual result and remaining boundary](../qa/M7_AFTER_PERIOD_PILOT_2026_11_03.md). No additional tool/prompt/writer is introduced. [Current accepted, remaining and deferred scopes](../progress/M7_WORKSTREAM_STATUS.md) supersede dated pending/delivery assertions in this historical inventory. Workstream 4 and accepted M0–M6 pilot cases are not reopened by it.
 
 ## Owner refinement — 1 November: charts from existing numerical reads
 
