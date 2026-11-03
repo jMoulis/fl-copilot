@@ -1,5 +1,9 @@
 # Weekly result navigation — 2 November 2026
 
+## 3 November delivery checkpoint
+
+Delivered in iPhone build 23 from `fe57a80`. The owner explicitly confirms all four requested weekly UX journeys: direct weekly result, expandable instructions, edit/return preserving choices, and read-only history. This UX lot is closed. The historical chat-card diagnostic below is separate and remains unaccepted.
+
 ## Problem and decision
 
 Actions exposed preparation, confirmed plan/history and documents at the same level. A saved draft could therefore lead to an empty confirmed-plan view, and its “Ma semaine” return opened documents. The owner requested native UI tests and fewer competing destinations.

@@ -1,5 +1,9 @@
 # M7 — descriptive review of an offer-free TG, 3 November 2026
 
+## Delivery checkpoint
+
+Released to production in API source `fe57a80aae4797b560671334d99eb32fd57bbc79` (deployment `dpl_BDpxj1wyroSpc7NmDbDxoPG1peWR`). The historical delivery paragraph below describes the pre-release boundary. Real-model/pilot acceptance remains open; no native rebuild is needed for this server behavior.
+
 ## Reproduced mismatch
 
 Qualitative commercial plans can save and confirm a TG theme without inventing an offer or product allocation. The existing `commercial_action_review` still required a matching saved offer for every task, so the canonical theme-only TG fixture returned PRODUCT_NOT_IN_TASK. Six new boundary cases fail before the correction and pass after it. This is a follow-through gap in the existing decision/execution/review loop, not a new planning module.
