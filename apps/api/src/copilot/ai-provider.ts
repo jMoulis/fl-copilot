@@ -2802,7 +2802,7 @@ export function createCopilotAiProvider(
                 ? {
                     product_search: tool({
                       description:
-                        "Find authorized active products by name, validated alias or exact ITM8/EAN/PLU string. Leading zeros are significant. Ambiguous/fuzzy/name-term candidates need a human choice; no mutation or automatic identity confirmation. LIMIT_EXCEEDED is not NO_MATCH.",
+                        "Find active store products by name, validated alias or ITM8/EAN/PLU (keep leading zeros). Candidate identifiers are validated; use them directly when identifiersComplete=true. False/absent means unknown. Fuzzy/term matches need a choice. No writes; LIMIT_EXCEEDED is not NO_MATCH.",
                       inputSchema: copilotProductSearchInputSchema,
                       execute: (input) =>
                         executeRead(

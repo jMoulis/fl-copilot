@@ -81,6 +81,44 @@ export async function readProductSearch(db: Db, storeId: string, raw: unknown) {
         missingIdentifiers: [],
       }
     : searchCopilotProducts(storeId, input, catalog);
+  const candidateCodes = await Promise.all(
+    found.candidates.map(async (candidate) => {
+      const rows = await db
+        .collection<ProductIdentifierDocument>("productIdentifiers")
+        .find({
+          storeId,
+          productId: candidate.product.id,
+          status: "VALIDATED",
+          deletedAt: null,
+        })
+        .sort({ _id: 1 })
+        .limit(21)
+        .maxTimeMS(2000)
+        .toArray();
+      const records = rows.map(serializeProductIdentifierDocument);
+      if (
+        records.some(
+          (r) =>
+            r.storeId !== storeId ||
+            r.productId !== candidate.product.id ||
+            r.status !== "VALIDATED" ||
+            r.deletedAt,
+        )
+      )
+        throw Error("COPILOT_SEARCH_SCOPE_INVALID");
+      return { records, identifiersComplete: records.length <= 20 };
+    }),
+  );
+  const candidates = found.candidates.map((candidate, index) => {
+    const codes = candidateCodes[index]!;
+    return {
+      ...candidate,
+      identifiersComplete: codes.identifiersComplete,
+      identifiers: codes.identifiersComplete
+        ? codes.records.map(({ type, value }) => ({ type, value }))
+        : [],
+    };
+  });
   const revision = createHash("sha256")
     .update(
       JSON.stringify([
@@ -89,6 +127,7 @@ export async function readProductSearch(db: Db, storeId: string, raw: unknown) {
         catalog.products.map((p) => [p.id, p.version, p.label]).sort(),
         catalog.identifiers,
         catalog.aliases,
+        candidateCodes,
         limited,
       ]),
     )
@@ -123,14 +162,14 @@ export async function readProductSearch(db: Db, storeId: string, raw: unknown) {
     AMBIGUOUS: "Plusieurs identités possibles",
     NO_MATCH: "Aucune correspondance retrouvée",
   };
-  const evidence = found.candidates.map((c) =>
+  const evidence = candidates.map((c) =>
     copilotEvidenceSchema.parse({
       id: JSON.stringify(["product-search", storeId, revision, c.product.id]),
       sourceType: "DATA_QUALITY",
       sourceId: c.product.id,
       sourceVersion: c.product.version || null,
       label: `Fiche produit — ${c.product.label}`,
-      value: `Catégorie : ${categories[c.product.category]} ; nature : ${natures[c.product.nature]} ; unité de vente : ${units[c.product.salesUnit]} ; correspondance : ${bases[c.basis]}${c.basis === "LABEL_TERMS" || c.basis === "FUZZY_LABEL" ? " (proposition à confirmer)" : ""}. Aucun produit n’a été modifié.`,
+      value: `Catégorie : ${categories[c.product.category]} ; nature : ${natures[c.product.nature]} ; unité de vente : ${units[c.product.salesUnit]} ; correspondance : ${bases[c.basis]}${c.basis === "LABEL_TERMS" || c.basis === "FUZZY_LABEL" ? " (proposition à confirmer)" : ""}. ${c.identifiersComplete ? (c.identifiers.length ? "Codes validés : " + c.identifiers.map((i) => `${i.type} ${i.value}`).join(" ; ") + "." : "Aucun code validé renseigné.") : "Limite de lecture des codes dépassée ; aucun code ni absence de code ne peut être confirmé par cette réponse."} Aucun produit n’a été modifié.`,
       factKind: "QUALITY",
     }),
   );
@@ -150,6 +189,7 @@ export async function readProductSearch(db: Db, storeId: string, raw: unknown) {
   return copilotProductSearchResultSchema.parse({
     status: limited ? "LIMIT_EXCEEDED" : "COMPLETE_CATALOG",
     ...found,
+    candidates,
     evidence,
   });
 }

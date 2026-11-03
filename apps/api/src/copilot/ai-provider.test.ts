@@ -7982,3 +7982,160 @@ it("discovers, aggregates and inspects through scoped Mongo reads before a final
       .every(([a]) => a.stage === "ANALYTICS"),
   ).toBe(true);
 });
+it("returns validated candidate codes through the SDK without separate fiche reads within the unchanged business-read budget", async () => {
+  const f = fixture();
+  const { copilotProductSearchResultSchema } =
+    await import("@fl-copilot/domain");
+  const { commercialPlanFixture } =
+    await import("../../../../scripts/test-commercial-plan-fixtures");
+  const data = await commercialPlanFixture();
+  f.request.storeId = data.storeId;
+  f.request.context = detectCopilotConflicts({
+    batch: scoreCopilotPriorities({
+      storeId: data.storeId,
+      evaluatedAt,
+      candidates: [],
+    }),
+    intents: [],
+  });
+  const labels = [
+    "BANANE VRAC",
+    "RAISIN BLANC ITALIA VRAC",
+    "POMME GOLDEN VRAC",
+    "CLEMENTINE FEUILLE VRAC",
+  ];
+  const ids = labels.map(() => randomUUID());
+  const productSearch = vi.fn(async ({ label }: { label: string | null }) => {
+    const i = labels.indexOf(label!);
+    return copilotProductSearchResultSchema.parse({
+      status: "COMPLETE_CATALOG",
+      state: "AUTO_MATCH",
+      matchedProductId: ids[i],
+      candidateCount: 1,
+      hasMoreCandidates: false,
+      candidates: [
+        {
+          product: {
+            id: ids[i],
+            storeId: f.request.storeId,
+            label,
+            category: "FRUIT",
+            nature: "BULK",
+            salesUnit: "KG",
+            status: "ACTIVE",
+            version: 1,
+            createdAt: evaluatedAt,
+            updatedAt: evaluatedAt,
+            deletedAt: null,
+          },
+          identifiers: [{ type: "PLU", value: `00012${i}` }],
+          identifiersComplete: true,
+          basis: "CANONICAL_LABEL",
+          score: 1,
+          reasons: [],
+        },
+      ],
+      missingIdentifiers: [],
+      evidence: [
+        {
+          id: `codes-${i}`,
+          sourceId: ids[i],
+          sourceVersion: 1,
+          sourceType: "DATA_QUALITY",
+          label: "Codes validés",
+          value: `PLU 00012${i}`,
+          factKind: "QUALITY",
+        },
+      ],
+    });
+  });
+  const commercialPreparation = vi.fn(async () => ({
+    weekStart: data.preparation.weekStart,
+    status: "DRAFT" as const,
+    preparation: data.preparation,
+    choices: [data.choice],
+    issues: [],
+    missingChoiceIds: [],
+    nextOffset: null,
+    evidence: [
+      {
+        id: "preparation-code-test",
+        sourceId: data.preparation.id,
+        sourceVersion: data.preparation.version,
+        sourceType: "COMMERCIAL_OPERATION" as const,
+        label: "Préparation existante",
+        value: "Brouillon lu sans modification",
+        factKind: "PLANNED" as const,
+      },
+    ],
+  }));
+  const cataloguePreview = vi.fn();
+  let requests = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (requests++ === 0) {
+      expect(
+        body.tools.find((t: { name: string }) => t.name === "product_search")
+          .description,
+      ).toContain("use them directly");
+      return discoveryResponse([
+        ...labels.map((label) => ({
+          name: "product_search",
+          input: { label, identifiers: [] },
+        })),
+        {
+          name: "commercial_preparation",
+          input: {
+            weekStart: data.preparation.weekStart,
+            offset: 0,
+            limit: 10,
+          },
+        },
+      ]);
+    }
+    const outputs = body.input
+      .filter((x: { type: string }) => x.type === "function_call_output")
+      .map((x: { output: string }) => JSON.parse(x.output));
+    expect(outputs).toHaveLength(5);
+    expect(outputs.some((x: { unavailable?: boolean }) => x.unavailable)).toBe(
+      false,
+    );
+    const searches = outputs.filter(
+      (x: { candidates?: unknown[] }) => x.candidates,
+    );
+    expect(searches).toHaveLength(4);
+    expect(
+      outputs.find((x: { preparation?: unknown }) => x.preparation)?.preparation
+        .id,
+    ).toBe(data.preparation.id);
+    expect(
+      searches.map(
+        (x: {
+          candidates: Array<{
+            identifiers: Array<{ value: string }>;
+            identifiersComplete: boolean;
+          }>;
+        }) => x.candidates[0]!.identifiers[0]!.value,
+      ),
+    ).toEqual(["000120", "000121", "000122", "000123"]);
+    expect(
+      searches.every(
+        (x: { candidates: Array<{ identifiersComplete: boolean }> }) =>
+          x.candidates[0]!.identifiersComplete,
+      ),
+    ).toBe(true);
+    return response();
+  };
+  const r = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    commercialPreparation,
+    productSearch,
+    cataloguePreview,
+    mongoRead: vi.fn(),
+  }).generate(f.request, schema);
+  expect(requests).toBe(2);
+  expect(productSearch).toHaveBeenCalledTimes(4);
+  expect(commercialPreparation).toHaveBeenCalledOnce();
+  expect(cataloguePreview).not.toHaveBeenCalled();
+  expect(r.cataloguePreviews).toEqual([]);
+});
