@@ -322,13 +322,13 @@ export function PreparationProposalCard({
                 ? "Le brouillon ou ses offres ont changé. Demandez un nouvel aperçu avant de confirmer."
                 : "Vérifiez les informations avant de confirmer. L’enregistrement est local, puis synchronisé."}
           </Text>
-          {state.status === "COMPLETED" ? (
+          {state.status === "COMPLETED" || state.savedWeekAvailable ? (
             <Link
               href={{
                 pathname: "/commercial-plan",
                 params: { weekStart: state.content.input.weekStart },
               }}
-              accessibilityLabel="Voir ma semaine et les TG enregistrées"
+              accessibilityLabel="Voir les choix actuels de cette semaine"
               style={{
                 color: colors.forest,
                 fontWeight: "700",

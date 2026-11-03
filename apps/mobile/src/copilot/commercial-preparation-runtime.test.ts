@@ -784,7 +784,10 @@ it("never overwrites a local pending week when the remote creation preview was b
     const m = await newWeekCard(x),
       c = await preparationController(x);
     await x.runtime.execute(x.request, x.authority(x.request));
-    expect((await c.open(m)).status).toBe("STALE");
+    expect(await c.open(m)).toMatchObject({
+      status: "STALE",
+      savedWeekAvailable: true,
+    });
     await expect(c.confirm(m)).rejects.toThrow("STALE");
     const row = x.db
       .prepare("SELECT payload_json FROM commercial_week_preparations")

@@ -112,5 +112,27 @@ it.each([true, false])(
         params: { weekStart: "2026-11-09" },
       });
     }
+    const calls = confirm.mock.calls.length;
+    vi.mocked(controller.open).mockResolvedValue({
+      ...read,
+      status: "STALE",
+      savedWeekAvailable: true,
+    });
+    await act(async () =>
+      tree!.update(
+        createElement(PreparationProposalCard, {
+          message: { ...message },
+          controller,
+          canConfirm,
+        }),
+      ),
+    );
+    expect(hosts("Button")).toHaveLength(0);
+    expect(hosts("Link")[0]!.props.href).toEqual({
+      pathname: "/commercial-plan",
+      params: { weekStart: "2026-11-09" },
+    });
+    expect(text()).not.toContain("Décision enregistrée sur cet appareil");
+    expect(confirm).toHaveBeenCalledTimes(calls);
   },
 );
