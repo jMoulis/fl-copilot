@@ -3,6 +3,7 @@ import { MongoClient, type Db, type Document } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   actionReviewFixture,
+  qualitativeActionReviewFixture,
   actionReviewPerformance,
 } from "../../../scripts/test-action-review-fixtures";
 import { chatFixture } from "../../../scripts/test-chat-fixtures";
@@ -37,8 +38,10 @@ describe.skipIf(!uri)("scoped action outcome review", () => {
       await client?.close();
     }
   }, 60000);
-  async function fixture() {
-    const f = await actionReviewFixture();
+  async function fixture(qualitative = false) {
+    const f = await (qualitative
+      ? qualitativeActionReviewFixture()
+      : actionReviewFixture());
     const insert = async (name: string, row: Document & { _id: string }) =>
       db.collection<Document & { _id: string }>(name).insertOne(row);
     await insert("commercialWeekPlans", { _id: f.plan.id, ...f.plan });
@@ -205,6 +208,60 @@ describe.skipIf(!uri)("scoped action outcome review", () => {
     expect(invalid.status).toBe("DECISION_SOURCE_UNAVAILABLE");
     expect(invalid.task).toBeNull();
     expect(invalid.duringComparison).toBeNull();
+  });
+  it("reviews an offer-free saved TG through canonical Mongo readers without assigning the selected product or declaring execution", async () => {
+    const f = await fixture(true);
+    await db
+      .collection("commercialExecutionTasks")
+      .deleteOne({ storeId: f.storeId });
+    const before = await db
+      .collection("commercialWeekPlans")
+      .findOne({ storeId: f.storeId });
+    const r = await readActionReview(
+      db,
+      f.storeId,
+      { ...f.input, after: null },
+      now,
+    );
+    expect(r.status).toBe("READY");
+    expect(r.task?.declaration).toBeNull();
+    expect(r.duringComparison?.target.productId).toBe(f.product.id);
+    expect(
+      r.duringComparison?.evidence.some(
+        (e) => e.sourceType === "KPI" && e.value === "200",
+      ),
+    ).toBe(true);
+    expect(r.fieldEvents?.events.map((e) => e.event.id)).toEqual([f.event.id]);
+    expect(r.evidence[0]?.value).toContain(
+      "sélectionné pour ce bilan uniquement",
+    );
+    expect(r.evidence[0]?.value).toContain("réalisation inconnue");
+    expect(
+      await db
+        .collection("commercialWeekPlans")
+        .findOne({ storeId: f.storeId }),
+    ).toEqual(before);
+    expect(
+      await db
+        .collection("commercialExecutionTasks")
+        .countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
+    expect(
+      await db.collection("syncChanges").countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
+    const foreign = randomUUID();
+    await f.insert("products", {
+      _id: foreign,
+      id: foreign,
+      storeId: randomUUID(),
+      label: "Other store",
+    });
+    await expect(
+      readActionReview(db, f.storeId, { ...f.input, productId: foreign }, now),
+    ).rejects.toThrow("PRODUCT_UNAVAILABLE");
+    expect(
+      (await readActionReview(db, randomUUID(), f.input, now)).status,
+    ).toBe("NO_PLAN");
   });
   it("retrieves scoped KPIs and recorded overlap through actual canonical readers, preserving plan/task data", async () => {
     const f = await fixture(),

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { copilotActionReviewInputSchema } from "@fl-copilot/domain";
 import {
   actionReviewFixture,
+  qualitativeActionReviewFixture,
   actionReviewDatabase,
   actionReviewPerformance,
 } from "../../../../scripts/test-action-review-fixtures";
@@ -251,3 +252,66 @@ it("quotes actual details separately and warns of mismatched exposure without ch
     result.evidence.some((e) => e.sourceType === "KPI" && e.value === "200"),
   ).toBe(true);
 });
+
+it("reviews an offer-free TG with a contextual product, preserving source values and no product allocation", async () => {
+  const f = await qualitativeActionReviewFixture(),
+    { db, state } = actionReviewDatabase(f);
+  const before = JSON.stringify(state);
+  const r = await readActionReview(db, f.storeId, f.input, now);
+  expect(r.status).toBe("READY");
+  expect(r.task?.declaration).toEqual(f.task);
+  expect(r.duringComparison?.target.productId).toBe(f.product.id);
+  expect(
+    r.duringComparison?.evidence.some(
+      (e) => e.sourceType === "KPI" && e.value === "200",
+    ),
+  ).toBe(true);
+  expect(r.evidence[0]?.value).toContain(
+    "sélectionné pour ce bilan uniquement",
+  );
+  expect(r.evidence[0]?.value).toContain("ne prouve pas sa présence");
+  expect(r.evidence[0]?.value).toContain("ne démontre ni causalité");
+  expect({ ...state, planReads: 0 }).toEqual(JSON.parse(before));
+});
+it.each(["2026-10-04", "2026-10-12"])(
+  "does not read figures for a qualitative TG outside its planned week (%s)",
+  async (date) => {
+    const f = await qualitativeActionReviewFixture(),
+      { db } = actionReviewDatabase(f);
+    const during = { start: date, end: date };
+    const r = await readActionReview(
+      db,
+      f.storeId,
+      {
+        ...f.input,
+        before: { start: "2026-10-01", end: "2026-10-03" },
+        during,
+        after: null,
+      },
+      now,
+    );
+    expect(r.status).toBe("PERIOD_OUTSIDE_PLAN");
+    expect(r.duringComparison).toBeNull();
+    expect(r.fieldEvents).toBeNull();
+  },
+);
+it.each(["ABSENT", "TODO", "WITH_NEW_PLAN"])(
+  "preserves execution and current-revision checks for an offer-free TG (%s)",
+  async (mode) => {
+    const f = await qualitativeActionReviewFixture(),
+      { db, state } = actionReviewDatabase(f);
+    if (mode === "ABSENT") state.tasks = [];
+    if (mode === "TODO")
+      Object.assign(state.tasks[0]!, { status: "TODO", completedAt: null });
+    if (mode === "WITH_NEW_PLAN") state.changePlan = true;
+    if (mode === "WITH_NEW_PLAN")
+      await expect(
+        readActionReview(db, f.storeId, f.input, now),
+      ).rejects.toThrow("CHANGED");
+    else {
+      const r = await readActionReview(db, f.storeId, f.input, now);
+      expect(r.status).toBe("READY");
+      expect(r.task?.declaration?.status ?? "ABSENT").toBe(mode);
+    }
+  },
+);

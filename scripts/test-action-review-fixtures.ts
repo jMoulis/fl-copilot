@@ -1,3 +1,8 @@
+import {
+  buildCommercialWeekPlan,
+  commercialExecutionChecklist,
+} from "../packages/commercial-core/src/index";
+import { testChoiceDigest } from "./test-commercial-choice-fixtures";
 import { commercialExecutionFixture } from "./test-commercial-execution-fixtures";
 import type { Db } from "mongodb";
 export async function actionReviewFixture() {
@@ -19,6 +24,42 @@ export async function actionReviewFixture() {
     ...f.proposals.find((t) => t.id === input.taskId)!,
   };
   return { ...f, task, input };
+}
+/** A real canonical offer-free plan, with no fabricated product allocation. */
+export async function qualitativeActionReviewFixture() {
+  const f = await actionReviewFixture();
+  const preparation = {
+    ...f.preparation,
+    offerRefs: [],
+    placements: f.preparation.placements.map((p) => ({ ...p, offerIds: [] })),
+    note: "Présentation de saison, sans promotion dédiée.",
+  };
+  const context = { ...f.context, preparation, choices: [], validated: [] };
+  const plan = await buildCommercialWeekPlan(
+    {
+      preparation,
+      version: 1,
+      createdAt: f.plan.createdAt,
+      validatedAt: f.plan.validatedAt,
+    },
+    context,
+    testChoiceDigest,
+  );
+  const proposals = await commercialExecutionChecklist(plan, testChoiceDigest);
+  const task = {
+    ...f.task,
+    ...proposals[0]!,
+    note: "Présentation mise en place",
+  };
+  return {
+    ...f,
+    preparation,
+    context,
+    plan,
+    proposals,
+    task,
+    input: { ...f.input, taskId: task.id },
+  };
 }
 export function actionReviewPerformance(
   storeId: string,
