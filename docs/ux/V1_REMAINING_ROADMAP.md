@@ -1,5 +1,9 @@
 # Roadmap V1 — état courant et historique des lots
 
+## Current functional closure — actions and conflicts, 3 November
+
+[Workstream 1 is closed for the functional V1 pilot baseline](../qa/M7_ACTION_CONFLICT_CLOSURE_2026_11_03.md): existing canonical manual/chat services, qualified deliberate refusals, owner-accepted catalogue/offline decision cases and 275 current SQLite/controller tests. Workstream 4 remains closed. This is not unrestricted CRUD, physical two-device recovery or full M7/M8 certification. Use [the current seven-workstream checkpoint](../progress/M7_WORKSTREAM_STATUS.md); older pending tool lists below do not reopen these accepted cases. No runtime/API/native release for this documentation reconciliation.
+
 ## Current checkpoint — 3 November: accepted email path, next recommendation review
 
 Use [the current seven-workstream checkpoint](../progress/M7_WORKSTREAM_STATUS.md) before the dated journal below. API `7734b0f` and iOS build 27 are delivered/available with exact identities recorded. The owner accepts Actions email reception → confirmation → Mercalys publication of 159 lines. Prior weekly UX, historical cards, offline decisions, TG declaration/first review and M0–M6 functional iPhone acceptance remain closed cases. Workstream 4 is CLOSED for functional V1; the old “expertise in progress” rows below are historical.

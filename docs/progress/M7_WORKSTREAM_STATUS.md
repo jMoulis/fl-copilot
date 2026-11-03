@@ -6,6 +6,10 @@ This checkpoint supersedes the delivery/acceptance statuses in the dated journal
 
 The owner confirms the new Actions-only reception journey on iPhone: email received in the existing store mailbox, file confirmed, original retained, and `16102026.xlsx` visible in Imports Mercalys as **159 published lines**. The requested `pdv09083@selidoruel.resend.app` address is activated on the same binding; its prior opaque address remains an alias. This closes the focused email-to-sales-Mercalys acceptance, not every attachment format or M8 physical recovery. See [implementation boundaries](../qa/M7_STORE_EMAIL_ACTIONS_2026_11_03.md) and [address compatibility](../qa/M7_STORE_EMAIL_PDV_2026_11_03.md). **1/3/7 advance; workstream 4 remains CLOSED for functional V1.** Do not request the successful email/Mercalys test again without a regression.
 
+## Current closure — actions and conflicts
+
+**Workstream 1 is CLOSED for the functional V1 pilot baseline.** Current canonical manual/chat services and 275 existing SQLite tests qualify the historical exceptions: unknown absence, identity reassignment, contradictory versions and permanently rejected UUIDs are guarded operations, not an omitted generic repair tool. The owner has accepted the persil resolution/synchronization tests and offline decision case. [Scope, current operation matrix and M8 boundaries](../qa/M7_ACTION_CONFLICT_CLOSURE_2026_11_03.md). No new runtime/tool/prompt or native build is warranted by this reconciliation. This does not establish unrestricted CRUD or physical cross-device certification.
+
 ## Accepted pilot cases — do not request again without a regression
 
 - **Workstream 4 — expertise: CLOSED for the functional V1 scope.** After the existing dialogue review, the owner supplied the three missing live replies (basket association, substitution and seasonality), then explicitly asked for the workstream decision and agreed to proceed after its closure. This is a functional acceptance, not a claim that every future merchandising answer is certified. Future improvements are maintenance/evolution, not an indefinitely open original gate.
@@ -23,7 +27,7 @@ These are owner-reported confirmations of the supplied recipes. Build 24 was sug
 
 | Workstream              | Current status                                                 | Remaining boundary                                                                                                                                                                                                                                                                                              |
 | ----------------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1 — Actions / conflicts | In progress; offline decision case accepted                    | Other domain exceptions remain separately tracked; do not repeat the accepted case as a generic gate.                                                                                                                                                                                                           |
+| 1 — Actions / conflicts | **CLOSED — functional V1 pilot baseline**                      | Current canonical services and accepted catalogue/offline decision cases verified; unsafe generic repairs are deliberate boundaries. Physical concurrent-device and recovery hardening stays in M8.                                                                                                             |
 | 2 — Counter-promotion   | Qualitative pilot case accepted; numerical scope deferred      | Preserve the numerical calculator and its constraints; do not reopen the PA-import digression or claim numerical acceptance.                                                                                                                                                                                    |
 | 3 — Documents           | Email/Mercalys pilot case accepted; other boundaries retained  | Prior real original opening and the new Actions-only email → confirmed file → canonical Mercalys publication are owner accepted. This does not establish all attachment formats; historical failed deleted-chat receipts are not a current reception regression. Physical second-device recovery remains in M8. |
 | 4 — Expertise           | **CLOSED — functional V1 scope**                               | Existing advice review plus owner-supplied association/substitution/seasonality replies accepted on 3 November. New regressions remain actionable; do not reopen the initial gate for speculative improvements.                                                                                                 |
@@ -31,7 +35,7 @@ These are owner-reported confirmations of the supplied recipes. Build 24 was sug
 | 6 — Implantation        | Basic declared context retained; deeper work deferred by owner | Group merchandising plan, precise furniture/circulation and feasibility refinement wait for the agreed input. No invented placement or new drawing work now.                                                                                                                                                    |
 | 7 — UX / validation     | Weekly UX, historical-card and offline-decision cases accepted | Remaining native/cross-platform, recovery, performance and accessibility gates belong to the broader M7/M8 release matrix; accepted functional cases are not reopened wholesale.                                                                                                                                |
 
-No percentage is inferred from test counts. **Workstream 4 is closed for the functional V1 scope**; this does not close all M7/M8 or change the remaining/deferred scopes of the other six workstreams.
+No percentage is inferred from test counts. **Workstreams 1 and 4 are closed for their functional V1 pilot scope**; this does not close all M7/M8 or change the remaining/deferred scopes of the other five workstreams.
 
 ## Current delivery and technical evidence
 
@@ -42,10 +46,10 @@ No percentage is inferred from test counts. **Workstream 4 is closed for the fun
 
 ## Next work order
 
-1. Workstream 4 is closed. Preserve its accepted advice cases; no additional generic expertise phone test is requested.
+1. Workstreams 1 and 4 are closed for functional V1. Preserve accepted action/conflict/advice cases; do not request another generic conflict or expertise phone test without a regression.
 2. The targeted Actions email/Mercalys journey is accepted. Do not rebuild or repeat it; other formats and physical recovery keep their own scope.
 3. Workstream 5: the owner-run historical grape after-period review now passes independent amount/coverage checks. See [actual result and retained boundary](../qa/M7_AFTER_PERIOD_PILOT_2026_11_03.md). Do not repeat accepted decision/restart/sync, TG declaration/first review or this successful review. The current November TGs are too recent for an invented finished outcome; the remaining complete linked-chain boundary stays explicit.
-4. Reconcile remaining action exceptions from current canonical services and owner-approved exclusions, not old blanket CRUD promises. Physical second-device recovery and broader release hardening stay in M8. Deeper implantation and daily purchase-tariff import remain deferred.
+4. The remaining action exceptions are now qualified in the workstream-1 closure matrix. Continue the explicit linked-recommendation boundary and broader UX/media/release gates, rather than add a generic repair writer. Physical second-device recovery and broader release hardening stay in M8. Deeper implantation and daily purchase-tariff import remain deferred.
 
 ## Historical implementation journal
 
