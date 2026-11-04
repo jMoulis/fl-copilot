@@ -83,7 +83,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       const device = async (
         name: string,
         actor = f.actorId,
-        transparent = false,
+        transparent = true,
       ) => {
         const db = new VisualTestDatabase(
           new DatabaseSync(join(folder, `${name}.sqlite`)),

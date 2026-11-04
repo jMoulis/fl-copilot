@@ -148,6 +148,11 @@ export class VisualFileTransfer {
           asset,
         );
         await this.approved(context, assetId);
+        if (
+          asset.mimeType === "image/png" &&
+          manifest.processorVersion !== "visual-image.v2"
+        )
+          throw Error("VISUAL_PREVIEW_UPGRADE_REQUIRED");
         try {
           const cached = await this.cache.get(
             context.storeId,

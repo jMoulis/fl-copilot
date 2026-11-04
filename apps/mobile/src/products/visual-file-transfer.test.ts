@@ -393,3 +393,31 @@ it("keeps a legacy derived file while another product asset still references it"
     s.db.raw.close();
   }
 });
+
+it("refuses a legacy response for a requested PNG upgrade without downloading white copies again", async () => {
+  const s = await setup("image/png");
+  try {
+    const previous = await s.files.write(
+      s.f.storeId,
+      "PREVIEW",
+      s.manifest.preview,
+      s.preview,
+    );
+    await s.cache.remember(
+      s.f.storeId,
+      s.f.asset.id,
+      "PREVIEW",
+      previous,
+      s.manifest,
+    );
+    await expect(s.transfer.fetchPreview(s.f.asset.id)).rejects.toThrow(
+      "VISUAL_PREVIEW_UPGRADE_REQUIRED",
+    );
+    expect(s.api.download).not.toHaveBeenCalled();
+    expect(
+      (await s.cache.get(s.f.storeId, s.f.asset, "PREVIEW"))!.contentHash,
+    ).toBe(previous.contentHash);
+  } finally {
+    s.db.raw.close();
+  }
+});
