@@ -37,7 +37,7 @@ export class VisualFileTransfer {
   private library: VisualLibraryRepository;
   private inFlight = new Map<string, Promise<VisualFileManifest>>();
   constructor(
-    db: OutboxDatabase & AtomicMutationDatabase,
+    private db: OutboxDatabase & AtomicMutationDatabase,
     private api: VisualFileTransport,
     private files: VisualFileStorage,
     private session: () => VisualFileSession | null,
@@ -156,6 +156,8 @@ export class VisualFileTransfer {
           );
           if (
             cached &&
+            cached.contentHash === manifest.preview.contentHash &&
+            cached.manifest?.processorVersion === manifest.processorVersion &&
             (await this.files.uri(context.storeId, "PREVIEW", manifest.preview))
           )
             return manifest;
@@ -172,6 +174,11 @@ export class VisualFileTransfer {
         await this.approved(context, assetId);
         await withVisualFiles(context.storeId, async () => {
           await this.approved(context, assetId);
+          const previous = await this.cache.get(
+            context.storeId,
+            asset,
+            "PREVIEW",
+          );
           const proof = await this.files.write(
             context.storeId,
             "PREVIEW",
@@ -186,6 +193,21 @@ export class VisualFileTransfer {
             proof,
             manifest,
           );
+          if (previous && previous.relativePath !== proof.relativePath) {
+            // Delete only an unreferenced derived copy, after the replacement is committed.
+            const retained = await this.db.getFirstAsync<{ n: number }>(
+              "SELECT COUNT(*) n FROM visual_asset_files WHERE store_id=? AND relative_path=?",
+              context.storeId,
+              previous.relativePath,
+            );
+            if (Number(retained?.n) === 0) {
+              try {
+                await this.files.removeCached(context.storeId, previous);
+              } catch {
+                /* Replacement remains available if disposable-cache cleanup fails. */
+              }
+            }
+          }
         });
         return manifest;
       },

@@ -123,6 +123,11 @@ export function useVisualLibrary() {
           ["ERROR", "CONFLICT"].includes(record.syncState)
         )
           return null;
+        const canFetchPreview =
+          !record.dirty &&
+          record.remoteVersion !== null &&
+          record.remoteVersion >= record.entity.version &&
+          !!queuePreview;
         const cache = new VisualFileCache(sqlite);
         for (const variant of original
           ? (["PREVIEW", "SOURCE"] as const)
@@ -140,6 +145,14 @@ export function useVisualLibrary() {
             checked();
             if (uri) {
               await cache.touch(storeId!, asset.id, variant);
+              // Keep the existing copy visible while the durable worker upgrades legacy PNG previews.
+              if (
+                variant === "PREVIEW" &&
+                asset.mimeType === "image/png" &&
+                file.manifest?.processorVersion === "visual-image.v1" &&
+                canFetchPreview
+              )
+                void queuePreview!(asset.id).catch(() => undefined);
               return uri;
             }
           } catch (error) {
@@ -153,14 +166,9 @@ export function useVisualLibrary() {
         }
         // Return the placeholder now; the durable worker fetches only the small
         // preview after metadata acknowledgement, including on another device.
-        if (
-          !record.dirty &&
-          record.remoteVersion !== null &&
-          record.remoteVersion >= record.entity.version &&
-          queuePreview
-        ) {
+        if (canFetchPreview) {
           checked();
-          void queuePreview(asset.id).catch(() => undefined);
+          void queuePreview!(asset.id).catch(() => undefined);
         }
         return null;
       })();

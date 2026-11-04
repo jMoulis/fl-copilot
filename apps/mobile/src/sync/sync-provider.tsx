@@ -531,7 +531,9 @@ export function SyncProvider({ children }: PropsWithChildren) {
             api.completeVisualFile(token, store, id, upload),
           ),
         manifest: (store, id) =>
-          withAccessToken((token) => api.visualFileManifest(token, store, id)),
+          withAccessToken((token) =>
+            api.visualFileManifest(token, store, id, true),
+          ),
         download: (store, manifest, variant) =>
           withAccessToken((token) =>
             api.downloadVisualFile(token, store, manifest, variant),

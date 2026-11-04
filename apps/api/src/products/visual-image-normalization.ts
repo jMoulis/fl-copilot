@@ -12,10 +12,11 @@ export interface VisualImageProcessor {
   normalize(
     bytes: Uint8Array,
     asset: VisualAsset,
+    preserveTransparency?: boolean,
   ): Promise<{ bytes: Uint8Array; width: number; height: number }>;
 }
 export const visualImageProcessor: VisualImageProcessor = {
-  async normalize(bytes, asset) {
+  async normalize(bytes, asset, preserveTransparency = false) {
     if (
       bytes.byteLength !== asset.sizeBytes ||
       bytes.byteLength > VISUAL_LIBRARY_POLICY.maximumBytes ||
@@ -48,7 +49,7 @@ export const visualImageProcessor: VisualImageProcessor = {
     )
       throw Error("VISUAL_FILE_INVALID");
     const compatible = await sharpCompatibleInput(bytes);
-    const output = await sharp(compatible, {
+    const image = sharp(compatible, {
       failOn: "error",
       limitInputPixels: VISUAL_LIBRARY_POLICY.maximumPixels,
     })
@@ -58,10 +59,25 @@ export const visualImageProcessor: VisualImageProcessor = {
         height: 1024,
         fit: "inside",
         withoutEnlargement: true,
-      })
-      .flatten({ background: "#ffffff" })
-      .jpeg({ quality: 85 })
-      .toBuffer({ resolveWithObject: true });
+      });
+    let output = await (
+      preserveTransparency
+        ? image.clone().png({ compressionLevel: 9 })
+        : image.clone().flatten({ background: "#ffffff" }).jpeg({ quality: 85 })
+    ).toBuffer({ resolveWithObject: true });
+    if (preserveTransparency && output.data.byteLength > 2 * 1024 * 1024) {
+      // Keep full color/alpha and the existing byte cap instead of dropping transparency.
+      output = await image
+        .clone()
+        .resize({
+          width: 512,
+          height: 512,
+          fit: "inside",
+          withoutEnlargement: true,
+        })
+        .png({ compressionLevel: 9 })
+        .toBuffer({ resolveWithObject: true });
+    }
     if (
       output.data.byteLength > 2 * 1024 * 1024 ||
       !output.info.width ||

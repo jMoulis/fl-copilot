@@ -964,9 +964,14 @@ export class ApiClient {
       visualFileManifestSchema,
     );
   }
-  visualFileManifest(accessToken: string, storeId: string, assetId: string) {
+  visualFileManifest(
+    accessToken: string,
+    storeId: string,
+    assetId: string,
+    transparent = false,
+  ) {
     return this.request(
-      `/api/v1/visual-assets/${encodeURIComponent(assetId)}/file-manifest`,
+      `/api/v1/visual-assets/${encodeURIComponent(assetId)}/file-manifest${transparent ? "?preview=transparent" : ""}`,
       { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
       visualFileManifestSchema,
     );
@@ -982,7 +987,7 @@ export class ApiClient {
     if (manifest.storeId !== storeId) throw new Error("VISUAL_SCOPE_INVALID");
     const expected = manifest[variant];
     return this.downloadPrivateBinary(
-      `/api/v1/visual-assets/${encodeURIComponent(manifest.assetId)}/${variant}`,
+      `/api/v1/visual-assets/${encodeURIComponent(manifest.assetId)}/${variant}${variant === "preview" && manifest.processorVersion === "visual-image.v2" ? "?preview=transparent" : ""}`,
       authorizedStoreHeaders(accessToken, storeId),
       expected,
       "VISUAL_FILE",

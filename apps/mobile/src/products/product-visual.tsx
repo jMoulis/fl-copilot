@@ -74,7 +74,7 @@ export function ProductVisual({
             visual?.illustrative
               ? "Illustration de synthèse"
               : visual?.generic
-                ? "Visuel générique du produit"
+                ? "Visuel du produit"
                 : "Photo du produit"
           }
           resizeMode="contain"
@@ -93,7 +93,7 @@ export function ProductVisual({
           accessibilityLabel="Aucun visuel disponible sur cet appareil"
         />
       )}
-      {uri && (visual?.illustrative || visual?.generic) ? (
+      {uri && visual?.illustrative ? (
         <View
           style={{
             position: "absolute",
@@ -107,7 +107,7 @@ export function ProductVisual({
           <Text
             style={{ fontSize: 10, color: colors.ink, textAlign: "center" }}
           >
-            {visual?.illustrative ? "Illustration" : "Générique"}
+            Illustration
           </Text>
         </View>
       ) : null}

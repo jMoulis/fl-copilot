@@ -80,7 +80,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         db.raw.close();
         open.delete(db);
       };
-      const device = async (name: string, actor = f.actorId) => {
+      const device = async (
+        name: string,
+        actor = f.actorId,
+        transparent = false,
+      ) => {
         const db = new VisualTestDatabase(
           new DatabaseSync(join(folder, `${name}.sqlite`)),
         );
@@ -195,7 +199,14 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               manifest: VisualFileManifest,
               variant: "source" | "preview",
             ) =>
-              (await service.read(principal, manifest.assetId, variant)).bytes,
+              (
+                await service.read(
+                  principal,
+                  manifest.assetId,
+                  variant,
+                  manifest.processorVersion === "visual-image.v2",
+                )
+              ).bytes,
           ),
           transfer = new VisualFileTransfer(
             db,
@@ -203,7 +214,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               init: (_store, id) => service.init(principal, id),
               complete: (_store, id, upload) =>
                 service.complete(principal, id, upload),
-              manifest: (_store, id) => service.manifest(principal, id),
+              manifest: (_store, id) =>
+                service.manifest(principal, id, transparent),
               download,
             },
             files,
@@ -251,8 +263,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
               create: {
                 width: 32,
                 height: 24,
-                channels: 3,
-                background: "#cc5533",
+                channels: 4,
+                background: { r: 204, g: 85, b: 51, alpha: 0 },
               },
             })
               .png()
@@ -301,7 +313,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             .countDocuments({ storeId: f.storeId }),
         ).toBe(3);
 
-        const b = await device("b", otherActor);
+        const b = await device("b", otherActor, true);
         await b.sync.bootstrap(f.storeId);
         const state = await loadVisualLibraryState(b.db, f.storeId, otherActor);
         expect(
@@ -319,6 +331,28 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           "PREVIEW",
         );
         expect(cached?.manifest).toBeTruthy();
+        expect(cached?.manifest?.processorVersion).toBe("visual-image.v2");
+        const restoredPng = await b.files.read(
+          f.storeId,
+          "PREVIEW",
+          cached!.manifest!.preview,
+        );
+        expect((await sharp(restoredPng).metadata()).format).toBe("png");
+        expect(
+          (await sharp(restoredPng).ensureAlpha().raw().toBuffer())[3],
+        ).toBe(0);
+        const legacyFile = await (
+          await database.getDb()
+        )
+          .collection<{
+            _id: string;
+            storeId: string;
+            manifest: VisualFileManifest;
+          }>("visualAssetFiles")
+          .findOne({ _id: asset.id, storeId: f.storeId });
+        expect(legacyFile!.manifest.processorVersion).toBe("visual-image.v1");
+        expect(legacyFile!.manifest.preview.mimeType).toBe("image/jpeg");
+        expect(await a.files.read(f.storeId, "SOURCE", asset)).toEqual(bytes);
         expect(
           await b.files.uri(f.storeId, "PREVIEW", cached!.manifest!.preview),
         ).toBeTruthy();

@@ -82,11 +82,16 @@ export function registerVisualFileRoutes(
     {
       schema: {
         params: z.strictObject({ assetId: z.uuid() }),
+        querystring: z.strictObject({
+          preview: z.literal("transparent").optional(),
+        }),
         response: { 200: visualFileManifestSchema },
       },
     },
     async (request) =>
-      files.manifest(await authorize(request), request.params.assetId),
+      request.query.preview === "transparent"
+        ? files.manifest(await authorize(request), request.params.assetId, true)
+        : files.manifest(await authorize(request), request.params.assetId),
   );
   app.get(
     "/api/v1/visual-assets/:assetId/:variant",
@@ -96,14 +101,26 @@ export function registerVisualFileRoutes(
           assetId: z.uuid(),
           variant: z.enum(["source", "preview"]),
         }),
+        querystring: z.strictObject({
+          preview: z.literal("transparent").optional(),
+        }),
       },
     },
     async (request, reply) => {
-      const result = await files.read(
-        await authorize(request),
-        request.params.assetId,
-        request.params.variant,
-      );
+      const principal = await authorize(request);
+      const result =
+        request.query.preview === "transparent"
+          ? await files.read(
+              principal,
+              request.params.assetId,
+              request.params.variant,
+              true,
+            )
+          : await files.read(
+              principal,
+              request.params.assetId,
+              request.params.variant,
+            );
       return reply
         .type(result.mimeType)
         .header("cache-control", "private, no-store")

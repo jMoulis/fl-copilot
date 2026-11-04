@@ -1,3 +1,7 @@
+## Owner correction — 4 November 2026: transparent product images
+
+Preserve uploaded PNG transparency in the displayed cached preview, including existing images, without requiring reupload or reassignment. Keep the current local image while its updated preview is fetched; source/original and approval remain unchanged. Remove the recurring “Générique” thumbnail overlay and default product-panel caption. Preserve specificity/provenance in data and explicit editor/library distinctions; retain the separate AI Illustration disclosure. No new import/review screen or Copilot instruction is introduced. Native acceptance follows compatible API and grouped binary delivery.
+
 ## Implemented increment — 2 November 2026: weekly choices before administration
 
 Actions → Voir ma semaine opens the saved TG result, including an unconfirmed draft. A newer draft does not replace the confirmed plan's execution. TG themes appear first, long instructions expand on request, and editing/confirmation are explicit secondary steps. Historical versions are read-only in a disclosure; documents and store/import management remain reachable in secondary Actions navigation. Return restores the originating screen, with Actions as direct-entry fallback. Completed chat preparation cards link to their exact week. Opening these views never saves, confirms or declares execution. See `../qa/M7_WEEKLY_RESULT_NAVIGATION_2026_11_02.md` for actual native verification and cross-device card visibility limits.
