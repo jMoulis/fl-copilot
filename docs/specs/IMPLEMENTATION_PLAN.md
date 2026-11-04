@@ -1,3 +1,7 @@
+## M8-T03/T04 — current-schema preservation, 4 November
+
+M8 is active after owner acceptance of the focused build-33 source/menu recipe. Extend the existing preservation matrix with actual SIGKILL/WAL boundaries v60→61 and v61→62, retained commercial-choice rows (including nullable original-backed references from v61) and v62 private archive metadata. **190 tests across six suites pass, zero skips**, using real file-backed SQLite and controlled native ports. No migration, recovery writer or runtime change. Native restoration and production restore remain open. See [current M8 scope and acceptance boundaries](../progress/M8_HARDENING_STATUS.md).
+
 ## M7 UX / M8 correction — PDF reading wire serialization
 
 Prioritize the reproduced native sync/pull 500: individual PDF readings are valid, but their normalized absent revision is not JSON-safe in the complete sync envelope. Omit only the absent property in the canonical serializer and retain strict response validation, source records and cursor semantics. Transactional pull/bootstrap and null/undefined/positive regressions qualify the fix; API delivery followed by normal native synchronization remains required. [Evidence](../qa/M8_VISUAL_READING_SYNC_JSON_2026_11_04.md). No new PDF, model call, database reset or paid native build is required for this API-only correction.
