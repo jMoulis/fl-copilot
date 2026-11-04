@@ -10,6 +10,7 @@ vi.mock("react-native", () => ({
   Text: "Text",
   ScrollView: "ScrollView",
   Pressable: "Pressable",
+  useWindowDimensions: () => ({ fontScale: 2 }),
 }));
 let tree: ReactTestRenderer | undefined;
 beforeEach(() => {
@@ -122,4 +123,64 @@ it("restores a chart from a persisted answer and opens its existing source sheet
     true,
   );
   expect(JSON.stringify(tree!.toJSON())).not.toContain("Valeur non disponible");
+});
+
+it("keeps partial status beside the selected value and exposes selection without relying on color", async () => {
+  const label = "TOMATE CERISE 250G PETIT PRIX — référence au libellé long";
+  const chart = copilotChartSchema.parse({
+    version: 1,
+    type: "BARS",
+    title: "Comparaison",
+    unit: "EUR",
+    labels: [label, "Clémentine"],
+    series: [
+      {
+        label: "Actuel",
+        period: { start: "2026-11-02", end: "2026-11-02" },
+        points: [
+          { value: "83.16", status: "PARTIAL" },
+          { value: null, status: "UNAVAILABLE" },
+        ],
+      },
+    ],
+  });
+  const source = vi.fn();
+  await act(() => {
+    tree = create(createElement(AnswerChart, { chart, onSource: source }));
+  });
+  const summary = () =>
+    tree!.root.findAll(
+      (n) =>
+        typeof n.type === "string" &&
+        String(n.type) === "Text" &&
+        n.props.accessibilityLiveRegion === "polite",
+    )[0]!;
+  const points = () =>
+    tree!.root.findAll(
+      (n) =>
+        typeof n.type === "string" &&
+        String(n.type) === "Pressable" &&
+        n.props.accessibilityRole === "button",
+    );
+  expect(summary().props.children.flat(Infinity).join("")).toContain(label);
+  expect(summary().props.children.flat(Infinity).join("")).toContain(
+    "83,16 € (partiel)",
+  );
+  expect(points()[0]!.props.accessibilityState).toEqual({ selected: true });
+  expect(points()[1]!.props.accessibilityState).toEqual({ selected: false });
+  expect(points()[0]!.props.style.height).toBeGreaterThan(220);
+  await act(() => points()[1]!.props.onPress());
+  expect(summary().props.children.flat(Infinity).join("")).toContain(
+    "Sans donnée",
+  );
+  expect(points()[1]!.props.accessibilityState).toEqual({ selected: true });
+  const sourceLink = tree!.root.findAll(
+    (n) =>
+      typeof n.type === "string" &&
+      String(n.type) === "Pressable" &&
+      n.props.accessibilityRole === "link",
+  )[0]!;
+  expect(sourceLink.props.style.minHeight).toBeGreaterThanOrEqual(44);
+  await act(() => sourceLink.props.onPress());
+  expect(source).toHaveBeenCalledTimes(1);
 });

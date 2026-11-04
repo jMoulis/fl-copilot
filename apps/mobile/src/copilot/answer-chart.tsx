@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import type { CopilotChart } from "@fl-copilot/domain";
 import { colors } from "../design/tokens";
 import { formatFrenchCalendarDate } from "../dates/calendar";
@@ -13,6 +19,9 @@ export function AnswerChart({
   onSource(): void;
 }) {
   const [selected, setSelected] = useState(0);
+  const { fontScale } = useWindowDimensions();
+  const labelHeight = Math.ceil(54 * Math.max(1, fontScale));
+  const chartHeight = 166 + labelHeight;
   const money = (value: string | null) => {
     if (value === null) return "Sans donnée";
     const numeric = Number(value);
@@ -27,6 +36,13 @@ export function AnswerChart({
     return chart.unit === "EUR"
       ? numeric.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })
       : `${numeric.toLocaleString("fr-FR", { maximumFractionDigits: 2 })} ${suffix[chart.unit]}`;
+  };
+  const pointLabel = (
+    series: CopilotChart["series"][number],
+    index: number,
+  ) => {
+    const point = series.points[index]!;
+    return `${series.label} : ${money(point.value)}${point.status === "PARTIAL" ? " (partiel)" : ""}`;
   };
   const active = Math.min(selected, chart.labels.length - 1);
   const values = chart.series.flatMap((s) =>
@@ -63,11 +79,7 @@ export function AnswerChart({
       ))}
       <Text accessibilityLiveRegion="polite" style={{ color: colors.ink }}>
         {chart.labels[active]}
-        {chart.series
-          .map(
-            (s) => ` · ${s.label} : ${money(s.points[active]?.value ?? null)}`,
-          )
-          .join("")}
+        {chart.series.map((s) => ` · ${pointLabel(s, active)}`).join("")}
       </Text>
       <ScrollView
         horizontal
@@ -76,7 +88,7 @@ export function AnswerChart({
         showsHorizontalScrollIndicator
         accessibilityLabel="Graphique, faites défiler pour consulter les valeurs"
       >
-        <View style={{ width, height: 220 }}>
+        <View style={{ width, height: chartHeight }}>
           <View
             style={{
               position: "absolute",
@@ -146,14 +158,17 @@ export function AnswerChart({
             <Pressable
               key={i}
               accessibilityRole="button"
-              accessibilityLabel={`${label}. ${chart.series.map((s) => `${s.label} : ${money(s.points[i]!.value)}${s.points[i]!.status === "PARTIAL" ? ", partiel" : ""}`).join(". ")}`}
+              accessibilityLabel={`${label}. ${chart.series.map((s) => pointLabel(s, i)).join(". ")}`}
+              accessibilityState={{ selected: active === i }}
               onPress={() => setSelected(i)}
               style={{
                 position: "absolute",
                 left: i * 64,
                 width: 64,
                 top: 0,
-                height: 220,
+                height: chartHeight,
+                borderBottomWidth: active === i ? 3 : 0,
+                borderBottomColor: colors.forest,
                 justifyContent: "flex-end",
                 padding: 3,
               }}
@@ -163,7 +178,7 @@ export function AnswerChart({
                 style={{
                   color: active === i ? colors.forest : colors.muted,
                   fontSize: 11,
-                  height: 54,
+                  height: labelHeight,
                 }}
               >
                 {chart.type === "LINE"
@@ -184,7 +199,11 @@ export function AnswerChart({
           Données partielles : les valeurs absentes restent inconnues.
         </Text>
       ) : null}
-      <Pressable accessibilityRole="link" onPress={onSource}>
+      <Pressable
+        accessibilityRole="link"
+        onPress={onSource}
+        style={{ minHeight: 44, justifyContent: "center" }}
+      >
         <Text style={{ color: colors.forest, textDecorationLine: "underline" }}>
           Source et détail des données
         </Text>

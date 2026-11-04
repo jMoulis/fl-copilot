@@ -1,3 +1,7 @@
+## M7 UX increment — readable selected chart points
+
+Preserve partial qualification beside a selected amount, expose accessible selection, enlarge the label region with system font scale and retain a 44-point source target. Reuse the existing persisted chart/source sheet; no formula, reader, provider, schema or prompt change. [Reproduction and native boundary](../qa/M7_CHART_READABILITY_2026_11_04.md). The owner’s subsequent two-product live comparison completes the clémentine follow-up; exact values/deltas match independent canonical readback. Workstreams 1/3/4/5 remain closed; 7 continues with native UX/release gates, 2/6 remain owner deferred.
+
 ## M7 owner acceptance — grouped native UX, build 30
 
 The owner accepts both supplied iPhone checks: compact confirmed-card details and explicit sender addition/removal. PR 433/434 are delivered in verified iOS build 30, source `36393b1`; API `3353993` stays unchanged. These two focused increments are CLOSED and should not be tested again without a regression. [Delivery/acceptance scope](../qa/M7_FOLLOWUP_CARD_DETAILS_2026_11_04.md#delivery-and-owner-acceptance). Workstreams 1/3/4/5 stay functionally closed; 7 continues with multi-product analytical completion, while 2/6 retain owner-deferred boundaries.
