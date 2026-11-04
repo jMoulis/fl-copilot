@@ -102,12 +102,29 @@ it("reads only after expansion, shows five copies per page and keeps the panel f
   expect(runtime.list).toHaveBeenCalledTimes(1);
 });
 it("verifies before a separate explicit confirmation and starts canonical logout before handing off to the root", async () => {
+  let finish!: (value: PreparedLocalCopy) => void;
+  runtime.prepare.mockReturnValue(
+    new Promise<PreparedLocalCopy>((resolve) => {
+      finish = resolve;
+    }),
+  );
   await mount();
   await click("Gérer les copies locales");
   await click("Vérifier cette copie");
+  expect(button("Créer une copie maintenant").props.loading).toBe(false);
+  expect(button("Créer une copie maintenant").props.disabled).toBe(true);
+  expect(button("Vérifier cette copie").props.disabled).toBe(true);
+  expect(
+    tree!.root.findAll(
+      (node) =>
+        String(node.type) === "Text" &&
+        node.props.children === "Vérification de la copie avant reprise…",
+    ),
+  ).toHaveLength(1);
   expect(runtime.prepare).toHaveBeenCalledTimes(1);
   expect(runtime.logout).not.toHaveBeenCalled();
   expect(runtime.restore).not.toHaveBeenCalled();
+  await act(async () => finish(ready));
   runtime.restore.mockImplementation(() =>
     expect(runtime.logout).toHaveBeenCalledWith({ localOnly: true }),
   );

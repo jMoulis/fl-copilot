@@ -22,6 +22,8 @@ import {
   type PreparedLocalCopy,
 } from "./local-copy-contracts";
 
+type CopyOperation = "READ" | "CREATE" | "PREPARE" | "RESTORE";
+
 export function LocalCopiesPanel() {
   const { session, status } = useAuth(),
     db = useLocalDatabase();
@@ -42,10 +44,11 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
     { logout } = useAuth();
   const [open, setOpen] = useState(false),
     [copies, setCopies] = useState<LocalCopyRef[]>([]),
-    [busy, setBusy] = useState(false),
+    [operation, setOperation] = useState<CopyOperation>(),
     [message, setMessage] = useState<string>(),
     [prepared, setPrepared] = useState<PreparedLocalCopy>(),
     [page, setPage] = useState(0);
+  const busy = operation !== undefined;
   const alive = useRef(false),
     locked = useRef(false);
   useLayoutEffect(() => {
@@ -57,10 +60,13 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
   const assertCurrent = () => {
     if (!alive.current) throw new LocalCopyError("CHANGED");
   };
-  const run = async (action: () => Promise<void>) => {
+  const run = async (
+    action: () => Promise<void>,
+    kind: CopyOperation = "READ",
+  ) => {
     if (locked.current) return;
     locked.current = true;
-    setBusy(true);
+    setOperation(kind);
     setMessage(undefined);
     try {
       await action();
@@ -73,7 +79,7 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
         );
     } finally {
       locked.current = false;
-      if (alive.current) setBusy(false);
+      if (alive.current) setOperation(undefined);
     }
   };
   const read = async () => {
@@ -100,6 +106,22 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
       />
       {open ? (
         <>
+          {operation ? (
+            <Text
+              className="text-sm leading-5 text-muted"
+              accessibilityRole="text"
+              accessibilityLiveRegion="polite"
+            >
+              {
+                {
+                  READ: "Lecture des copies locales…",
+                  CREATE: "Création et vérification de la copie…",
+                  PREPARE: "Vérification de la copie avant reprise…",
+                  RESTORE: "Préparation de la reprise…",
+                }[operation]
+              }
+            </Text>
+          ) : null}
           {message ? (
             <InlineAlert title="Copie locale" message={message} />
           ) : null}
@@ -126,7 +148,7 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
                     // Start canonical logout before operational children unmount.
                     const clearing = logout({ localOnly: true });
                     restore(prepared, clearing);
-                  });
+                  }, "RESTORE");
                 }}
               />
               <SecondaryButton
@@ -139,7 +161,8 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
             <>
               <PrimaryButton
                 label="Créer une copie maintenant"
-                loading={busy}
+                loading={operation === "CREATE"}
+                disabled={busy}
                 onPress={() => {
                   void run(async () => {
                     await createLocalCopy(
@@ -153,7 +176,7 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
                     setMessage(
                       "La copie a été créée et vérifiée sur cet appareil.",
                     );
-                  });
+                  }, "CREATE");
                 }}
               />
               <SecondaryButton
@@ -198,7 +221,7 @@ function Copies({ ownerId, storeId }: { ownerId: string; storeId: string }) {
                         );
                         assertCurrent();
                         setPrepared(value);
-                      });
+                      }, "PREPARE");
                     }}
                   />
                 </View>
