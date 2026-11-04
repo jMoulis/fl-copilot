@@ -13,6 +13,9 @@ import {
   emailIntakeDecisionPageQuerySchema,
 } from "@fl-copilot/sync-contracts";
 import {
+  emailSenderPolicySchema,
+  emailSenderPolicyUpdateSchema,
+  type EmailSenderPolicyUpdate,
   emailIntakeStatusSchema,
   emailIntakeOriginalRetrySchema,
   emailIntakeOriginalRetryResultSchema,
@@ -704,6 +707,38 @@ export class ApiClient {
       emailIntakeStatusSchema,
     );
   }
+  async emailSenderPolicy(accessToken: string, storeId: string) {
+    const result = await this.request(
+      "/api/v1/intake/email/senders",
+      {
+        method: "GET",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+      },
+      emailSenderPolicySchema,
+    );
+    if (result.storeId !== storeId)
+      throw Error("EMAIL_SENDER_POLICY_SCOPE_INVALID");
+    return result;
+  }
+  async updateEmailSenderPolicy(
+    accessToken: string,
+    storeId: string,
+    raw: EmailSenderPolicyUpdate,
+  ) {
+    const input = emailSenderPolicyUpdateSchema.parse(raw);
+    const result = await this.request(
+      "/api/v1/intake/email/senders",
+      {
+        method: "PUT",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      emailSenderPolicySchema,
+    );
+    if (result.storeId !== storeId || result.bindingId !== input.bindingId)
+      throw Error("EMAIL_SENDER_POLICY_SCOPE_INVALID");
+    return result;
+  }
   createEmailIntakeBinding(
     accessToken: string,
     storeId: string,
@@ -769,7 +804,13 @@ export class ApiClient {
       : "";
     return this.request(
       `/api/v1/intake/email/conversations/${conversationId}${query}`,
-      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      {
+        method: "GET",
+        headers: {
+          ...authorizedStoreHeaders(accessToken, storeId),
+          "x-email-sender-policy": "1",
+        },
+      },
       emailIntakeListSchema,
     );
   }

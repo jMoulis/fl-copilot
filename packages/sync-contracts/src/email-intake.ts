@@ -31,6 +31,31 @@ export const emailIntakeBindingSchema = z.strictObject({
   createdAt: time,
   revokedAt: time.nullable(),
 });
+/** Store-only remote configuration; existing binding/receipt DTOs stay compatible. */
+export const emailSenderListSchema = z
+  .array(z.string().trim().pipe(mailbox))
+  .min(1)
+  .max(20)
+  .refine(
+    (values) => new Set(values).size === values.length,
+    "Duplicate sender",
+  );
+export const emailSenderPolicySchema = z.strictObject({
+  storeId: id,
+  bindingId: id,
+  version: z.number().int().nonnegative(),
+  allowedSenders: emailSenderListSchema,
+});
+export const emailSenderPolicyUpdateSchema = z.strictObject({
+  bindingId: id,
+  expectedVersion: z.number().int().nonnegative(),
+  allowedSenders: emailSenderListSchema,
+});
+export type EmailSenderPolicy = z.infer<typeof emailSenderPolicySchema>;
+export type EmailSenderPolicyUpdate = z.infer<
+  typeof emailSenderPolicyUpdateSchema
+>;
+
 export const emailIntakeReceiptSchema = z
   .strictObject({
     id,

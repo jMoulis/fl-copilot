@@ -30,6 +30,10 @@ The existing execution/review/restart scenario now includes an actual locally sa
 
 Workstream 7 replaces the existing review/analytics descriptions with shorter grouped-product guidance and qualifies the existing read refusal by reason. END usage logs retain content-free refusal counters. The actual old clémentine failure remains undiagnosed; the real Mongo test proves both Monday comparisons are available through one canonical query, independently of missing waste. **249 SDK and 13 Mongo tests pass**, plus strict types/lint/build; live-model selection remains separate. [Evidence and release boundary](../qa/M7_REVIEW_COMPARABLE_WEEKDAYS_2026_11_03.md). No new tool, global prompt block, schema, formula, business write, extra budget or native build. Workstreams 1/3/4/5 stay closed; 7 remains open. API release pending.
 
+## Current increment — configurable store email senders
+
+Workstreams 3/7 receive an owner-requested exact sender list in the existing Actions mailbox card. Reuse the binding and canonical admission/original APIs, with versioned manager configuration and compatibility for build 28. Removing a sender only affects future intake; no old event is replayed or document erased. [Verification, native release boundary and separate 3 November source-warning diagnosis](../qa/M7_STORE_EMAIL_SENDERS_2026_11_04.md). Native list management is new acceptance, not a request to repeat the closed document workflow. The CA warning is a genuine unresolved **6.98 EUR** tomato line in the active sales file; N-1 weekday alignment is correct. No analytics formula/product identity change. 1/3/4/5 stay functionally closed; 7 advances. API/native delivery pending.
+
 ## Accepted pilot cases — do not request again without a regression
 
 - Linked review: the owner supplies the real corrected answer; exact source periods and independent decimal checks verify matching Mondays and tomato CA/margin changes. Choice, declarations, confirmed links and prudent partial review are accepted cases; the incomplete clémentine comparison stays an explicit workstream-7 follow-up.

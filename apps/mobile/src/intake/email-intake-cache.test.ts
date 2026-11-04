@@ -1330,3 +1330,21 @@ it("hides cached deleted-chat receipts from the store inbox without deleting the
     ))!.n,
   ).toBe(2);
 });
+
+it("keeps an authenticated receipt from an additional sender while preserving its immutable provenance", async () => {
+  const f = await fixture();
+  try {
+    const page = structuredClone(f.page);
+    page.receipts[0]!.sender = "work@example.test";
+    await f.cache.storePage(f.scope, page);
+    expect(
+      (await f.cache.list(f.scope.conversationId)).receipts[0]?.sender,
+    ).toBe("work@example.test");
+    const tampered = structuredClone(page);
+    tampered.receipts[0]!.sender = "changed@example.test";
+    tampered.receipts[0]!.version++;
+    await expect(f.cache.storePage(f.scope, tampered)).rejects.toThrow();
+  } finally {
+    f.db.raw.close();
+  }
+});

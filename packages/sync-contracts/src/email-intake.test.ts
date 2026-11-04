@@ -1,3 +1,7 @@
+import {
+  emailSenderListSchema,
+  emailSenderPolicyUpdateSchema,
+} from "./email-intake";
 let sequence = 0;
 const randomUUID = () =>
   `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`;
@@ -194,4 +198,28 @@ it("requires a bounded availability state for a daily limit instead of applying 
         files: [{ ...receipt.files[0], ...change }],
       }).success,
     ).toBe(false);
+});
+
+it("accepts a bounded exact sender list, normalizes case and rejects wildcards, duplicates and actor injection", () => {
+  expect(
+    emailSenderListSchema.parse([
+      " Manager@Example.test ",
+      "work@example.test",
+    ]),
+  ).toEqual(["manager@example.test", "work@example.test"]);
+  for (const senders of [
+    [],
+    ["*@example.test"],
+    ["a@example.test", "A@example.test"],
+    Array.from({ length: 21 }, (_, i) => `a${i}@example.test`),
+  ])
+    expect(emailSenderListSchema.safeParse(senders).success).toBe(false);
+  expect(
+    emailSenderPolicyUpdateSchema.safeParse({
+      bindingId: randomUUID(),
+      expectedVersion: 0,
+      allowedSenders: ["a@example.test"],
+      storeId: randomUUID(),
+    }).success,
+  ).toBe(false);
 });

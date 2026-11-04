@@ -1,3 +1,7 @@
+import type {
+  EmailSenderPolicy,
+  EmailSenderPolicyUpdate,
+} from "@fl-copilot/sync-contracts";
 import { EmailDecisionRepository } from "../intake/email-decision-repository";
 import type {
   EmailIntakeDecision,
@@ -85,6 +89,10 @@ export interface SyncContextValue extends LocalSyncSnapshot {
   status: SyncRuntimeStatus;
   emailIntake?: {
     status(conversationId: string): Promise<boolean>;
+    senderPolicy(): Promise<EmailSenderPolicy>;
+    updateSenderPolicy(
+      input: EmailSenderPolicyUpdate,
+    ): Promise<EmailSenderPolicy>;
     createBinding(
       conversationId: string,
       id: string,
@@ -920,6 +928,26 @@ export function SyncProvider({ children }: PropsWithChildren) {
         );
         await emailCache.authorize(scope);
         return result.enabled;
+      },
+      senderPolicy: async () => {
+        const scope = scopeFor(defaultStoreId);
+        await emailCache.authorize(scope);
+        const result = await withAccessToken(
+          (token) => api.emailSenderPolicy(token, scope.storeId),
+          owner,
+        );
+        await emailCache.authorize(scope);
+        return result;
+      },
+      updateSenderPolicy: async (input: EmailSenderPolicyUpdate) => {
+        const scope = scopeFor(defaultStoreId);
+        await emailCache.authorize(scope);
+        const result = await withAccessToken(
+          (token) => api.updateEmailSenderPolicy(token, scope.storeId, input),
+          owner,
+        );
+        await emailCache.authorize(scope);
+        return result;
       },
       createBinding: async (
         conversationId: string,
