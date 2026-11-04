@@ -41,6 +41,18 @@ function fixture(enabled = true, webhook = false, retryEnabled = false) {
   };
   const intake: EmailIntakeStore = {
     createBinding: vi.fn(async () => binding),
+    senderPolicy: vi.fn(async () => ({
+      storeId,
+      bindingId,
+      version: 0,
+      allowedSenders: [binding.allowedSender],
+    })),
+    updateSenderPolicy: vi.fn(async (_actor, input) => ({
+      storeId,
+      bindingId,
+      version: input.expectedVersion + 1,
+      allowedSenders: input.allowedSenders,
+    })),
     revokeBinding: vi.fn(async () => {}),
     admit: vi.fn(async () => null),
     list: vi.fn(async () => ({
@@ -264,7 +276,11 @@ it("binds setup, list and revoke to the current authenticated actor without acce
     });
     expect(list.statusCode).toBe(200);
     expect(list.headers["cache-control"]).toBe("private, no-store");
-    expect(f.intake.list).toHaveBeenCalledExactlyOnceWith(f.scope, undefined);
+    expect(f.intake.list).toHaveBeenCalledExactlyOnceWith(
+      f.scope,
+      undefined,
+      false,
+    );
     expect(
       (
         await f.app.inject({
@@ -556,6 +572,73 @@ it("reports unavailable retry without a receipt mutation or provider call", asyn
     expect(result.json().code).toBe("EMAIL_ORIGINAL_RETRY_UNAVAILABLE");
     expect(f.retryOriginal.request).not.toHaveBeenCalled();
     expect(f.originals.receipt).not.toHaveBeenCalled();
+  } finally {
+    await f.app.close();
+  }
+});
+
+it("keeps sender policy management private, manager-only and versioned, with explicit client capability", async () => {
+  const f = fixture();
+  const url = "/api/v1/intake/email/senders";
+  const payload = {
+    bindingId: f.binding.id,
+    expectedVersion: 0,
+    allowedSenders: ["manager@example.test", "work@example.test"],
+  };
+  try {
+    expect((await f.app.inject({ url })).statusCode).toBe(401);
+    f.role("USER");
+    expect(
+      (await f.app.inject({ method: "PUT", url, headers: f.headers, payload }))
+        .statusCode,
+    ).toBe(403);
+    expect(f.intake.updateSenderPolicy).not.toHaveBeenCalled();
+    f.role("MANAGER");
+    const get = await f.app.inject({ url, headers: f.headers });
+    expect(get.statusCode).toBe(200);
+    expect(get.headers["cache-control"]).toBe("private, no-store");
+    const saved = await f.app.inject({
+      method: "PUT",
+      url,
+      headers: f.headers,
+      payload,
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({
+      version: 1,
+      allowedSenders: payload.allowedSenders,
+    });
+    expect(f.intake.updateSenderPolicy).toHaveBeenCalledExactlyOnceWith(
+      { storeId: f.scope.storeId, ownerId: f.scope.ownerId },
+      payload,
+    );
+    expect(
+      (
+        await f.app.inject({
+          method: "PUT",
+          url,
+          headers: f.headers,
+          payload: { ...payload, ownerId: f.scope.ownerId },
+        })
+      ).statusCode,
+    ).toBe(400);
+    await f.app.inject({
+      url: `/api/v1/intake/email/conversations/${f.scope.conversationId}`,
+      headers: { ...f.headers, "x-email-sender-policy": "1" },
+    });
+    expect(f.intake.list).toHaveBeenCalledWith(f.scope, undefined, true);
+    vi.mocked(f.intake.senderPolicy).mockImplementationOnce(async () => {
+      f.revoke();
+      return {
+        storeId: f.scope.storeId,
+        bindingId: f.binding.id,
+        version: 0,
+        allowedSenders: ["manager@example.test"],
+      };
+    });
+    const revoked = await f.app.inject({ url, headers: f.headers });
+    expect(revoked.statusCode).toBe(403);
+    expect(revoked.body).not.toContain("manager@example.test");
   } finally {
     await f.app.close();
   }

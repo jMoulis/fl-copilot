@@ -168,3 +168,24 @@ it.each([
 ])("rejects ambiguous declared sender %s", (value) => {
   expect(declaredMailbox(value)).toBeNull();
 });
+
+it("uses an explicit multi-sender policy without accepting a whole domain or losing recipient ambiguity guards", () => {
+  const f = fixture();
+  f.event.data.from = "Work <work@example.test>";
+  f.event.data.to = ["store@unit.resend.app"];
+  const event = verifyResendReceivedEvent(client, f.signed())!.event;
+  const binding = {
+    recipient: "store@unit.resend.app",
+    allowedSender: "manager@example.test",
+    allowedSenders: ["manager@example.test", "work@example.test"],
+  };
+  expect(chooseInboundBinding(event, [binding])).toBe(binding);
+  expect(chooseInboundBinding(event, [binding, binding])).toBeNull();
+  expect(
+    chooseInboundBinding(event, [
+      { ...binding, allowedSenders: ["manager@example.test"] },
+    ]),
+  ).toBeNull();
+  event.data.from = "someone@example.test";
+  expect(chooseInboundBinding(event, [binding])).toBeNull();
+});

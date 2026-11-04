@@ -1,3 +1,4 @@
+import { EmailSenderSettings } from "./email-sender-settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Pressable, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -28,6 +29,8 @@ type Inbox = Pick<
   | "list"
   | "refresh"
   | "createBinding"
+  | "senderPolicy"
+  | "updateSenderPolicy"
   | "decision"
   | "decide"
   | "retryOriginal"
@@ -182,9 +185,7 @@ export function EmailInbox({
                 <Text selectable style={{ color: colors.ink, fontSize: 16 }}>
                   {binding.recipient}
                 </Text>
-                <Text style={{ color: colors.muted }}>
-                  Expéditeur prévu : {binding.allowedSender}
-                </Text>
+                <EmailSenderSettings inbox={inbox} bindingId={binding.id} />
                 <SecondaryButton
                   label="Copier l’adresse"
                   disabled={busy}

@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
+  emailSenderPolicySchema,
+  emailSenderPolicyUpdateSchema,
   emailIntakeStatusSchema,
   emailIntakeOriginalRetrySchema,
   emailIntakeOriginalRetryResultSchema,
@@ -183,6 +185,59 @@ export function registerEmailIntakeRoutes(
       return { enabled: !!dependencies.store };
     },
   );
+  api.get(
+    "/api/v1/intake/email/senders",
+    {
+      schema: { response: { 200: emailSenderPolicySchema } },
+    },
+    async (request, reply) => {
+      const principal = await authorize(request);
+      const result = await configured().senderPolicy({
+        storeId: principal.storeId,
+        ownerId: principal.userId,
+      });
+      const current = await authorize(request);
+      if (
+        current.userId !== principal.userId ||
+        current.storeId !== principal.storeId
+      )
+        throw new AuthError(
+          403,
+          "EMAIL_INTAKE_FORBIDDEN",
+          "L’accès au magasin a changé.",
+        );
+      reply.header("cache-control", "private, no-store");
+      return result;
+    },
+  );
+  api.put(
+    "/api/v1/intake/email/senders",
+    {
+      schema: {
+        body: emailSenderPolicyUpdateSchema,
+        response: { 200: emailSenderPolicySchema },
+      },
+    },
+    async (request, reply) => {
+      const principal = await authorize(request);
+      const result = await configured().updateSenderPolicy(
+        { storeId: principal.storeId, ownerId: principal.userId },
+        request.body,
+      );
+      const current = await authorize(request);
+      if (
+        current.userId !== principal.userId ||
+        current.storeId !== principal.storeId
+      )
+        throw new AuthError(
+          403,
+          "EMAIL_INTAKE_FORBIDDEN",
+          "L’accès au magasin a changé.",
+        );
+      reply.header("cache-control", "private, no-store");
+      return result;
+    },
+  );
   api.post(
     "/api/v1/intake/email/bindings",
     {
@@ -233,6 +288,7 @@ export function registerEmailIntakeRoutes(
           conversationId: request.params.id,
         },
         request.query.cursor,
+        request.headers["x-email-sender-policy"] === "1",
       );
       const current = await authorize(request);
       if (

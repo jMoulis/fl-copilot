@@ -191,17 +191,8 @@ export class EmailIntakeCache {
           )
             throw invalid();
         }
-        const binding = await tx.getFirstAsync<{ payload_json: string }>(
-          "SELECT payload_json FROM email_intake_bindings WHERE store_id=? AND owner_id=? AND conversation_id=? AND id=?",
-          ...keys,
-          receipt.bindingId,
-        );
-        if (
-          binding &&
-          emailIntakeBindingSchema.parse(JSON.parse(binding.payload_json))
-            .allowedSender !== receipt.sender
-        )
-          throw invalid();
+        // The authenticated server admitted this historical receipt. Today's sender
+        // policy controls future intake; removing an address never erases its receipts.
         await tx.runAsync(
           "INSERT INTO email_intake_receipts(store_id,owner_id,conversation_id,id,version,payload_json) VALUES(?,?,?,?,?,?) ON CONFLICT(store_id,owner_id,conversation_id,id) DO UPDATE SET version=excluded.version,payload_json=excluded.payload_json",
           ...keys,

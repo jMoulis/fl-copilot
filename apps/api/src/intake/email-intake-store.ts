@@ -2,6 +2,9 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { ClientSession, Db, Document } from "mongodb";
 import { z } from "zod";
 import {
+  emailSenderPolicySchema,
+  emailSenderPolicyUpdateSchema,
+  type EmailSenderPolicyUpdate,
   isStoreEmailScope,
   emailIntakeReceivingDomainSchema,
   emailIntakeBindingRequestSchema,
@@ -25,6 +28,8 @@ type Binding = Omit<EmailIntakeBinding, "id" | "createdAt" | "revokedAt"> & {
   _id: string;
   storeMailbox?: true;
   routingRecipients?: string[];
+  allowedSenders?: string[];
+  senderPolicyVersion?: number;
   createdAt: Date;
   revokedAt: Date | null;
 };
@@ -35,6 +40,7 @@ type Receipt = Omit<EmailIntakeReceipt, "id" | "receivedAt" | "updatedAt"> & {
   receivedAt: Date;
   updatedAt: Date;
   originalReservedBytes?: number;
+  additionalSender?: true;
 };
 type Event = {
   _id: string;
@@ -239,6 +245,88 @@ export function createEmailIntakeStore(
       if (!(await authorized(db, scope))) throw unavailable();
       return result;
     },
+    async senderPolicy(actor: Omit<EmailIntakeScope, "conversationId">) {
+      const scope = { ...actor, conversationId: actor.storeId };
+      const db = await database.getDb();
+      if (!(await authorized(db, scope))) throw unavailable();
+      const binding = await db
+        .collection<Binding>("emailIntakeBindings")
+        .findOne(
+          {
+            storeId: actor.storeId,
+            ownerId: actor.ownerId,
+            storeMailbox: true,
+            revokedAt: null,
+          },
+          { maxTimeMS: 2000 },
+        );
+      if (!binding || !(await authorized(db, scope))) throw unavailable();
+      return emailSenderPolicySchema.parse({
+        storeId: binding.storeId,
+        bindingId: binding._id,
+        version: binding.senderPolicyVersion ?? 0,
+        allowedSenders: binding.allowedSenders ?? [binding.allowedSender],
+      });
+    },
+    async updateSenderPolicy(
+      actor: Omit<EmailIntakeScope, "conversationId">,
+      raw: EmailSenderPolicyUpdate,
+    ) {
+      const input = emailSenderPolicyUpdateSchema.parse(raw);
+      const scope = { ...actor, conversationId: actor.storeId };
+      const db = await database.getDb();
+      const result = await atomic(db, async (session) => {
+        if (!(await authorized(db, scope, session))) throw unavailable();
+        const bindings = db.collection<Binding>("emailIntakeBindings");
+        const binding = await bindings.findOne(
+          {
+            _id: input.bindingId,
+            storeId: actor.storeId,
+            ownerId: actor.ownerId,
+            storeMailbox: true,
+            revokedAt: null,
+          },
+          { session, maxTimeMS: 2000 },
+        );
+        if (!binding) throw unavailable();
+        const version = binding.senderPolicyVersion ?? 0;
+        if (version !== input.expectedVersion) throw conflict();
+        const changed =
+          JSON.stringify(binding.allowedSenders ?? [binding.allowedSender]) !==
+          JSON.stringify(input.allowedSenders);
+        if (changed) {
+          const saved = await bindings.updateOne(
+            {
+              _id: binding._id,
+              ...(version === 0
+                ? {
+                    $or: [
+                      { senderPolicyVersion: 0 },
+                      { senderPolicyVersion: { $exists: false } },
+                    ],
+                  }
+                : { senderPolicyVersion: version }),
+            },
+            {
+              $set: {
+                allowedSenders: input.allowedSenders,
+                senderPolicyVersion: version + 1,
+              },
+            },
+            { session },
+          );
+          if (saved.matchedCount !== 1) throw conflict();
+        }
+        return emailSenderPolicySchema.parse({
+          storeId: actor.storeId,
+          bindingId: binding._id,
+          version: version + (changed ? 1 : 0),
+          allowedSenders: input.allowedSenders,
+        });
+      });
+      if (!(await authorized(db, scope))) throw unavailable();
+      return result;
+    },
     async revokeBinding(scope: EmailIntakeScope, id: string) {
       scopeSchema.parse(scope);
       z.uuid().parse(id);
@@ -379,7 +467,10 @@ export function createEmailIntakeStore(
               bindingId: binding._id,
               providerEmailId: data.email_id,
               metadataHash: digest,
-              sender: binding.allowedSender,
+              sender: declaredMailbox(data.from)!,
+              ...(declaredMailbox(data.from) !== binding.allowedSender
+                ? { additionalSender: true as const }
+                : {}),
               subject: data.subject,
               createdAt: timestamp,
               receivedAt: new Date(input.event.created_at),
@@ -423,7 +514,11 @@ export function createEmailIntakeStore(
         return ledger.receiptId;
       });
     },
-    async list(scope: EmailIntakeScope, cursor?: string) {
+    async list(
+      scope: EmailIntakeScope,
+      cursor?: string,
+      includeAdditionalSenders = false,
+    ) {
       scopeSchema.parse(scope);
       const db = await database.getDb();
       if (!(await authorized(db, scope))) throw unavailable();
@@ -452,6 +547,9 @@ export function createEmailIntakeStore(
         .collection<Receipt>("emailIntakeReceipts")
         .find({
           storeId: scope.storeId,
+          ...(!includeAdditionalSenders
+            ? { additionalSender: { $ne: true } }
+            : {}),
           ownerId: scope.ownerId,
           ...(!isStoreEmailScope(scope)
             ? { conversationId: scope.conversationId }

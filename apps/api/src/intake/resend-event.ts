@@ -95,6 +95,7 @@ export function chooseInboundBinding<
   T extends {
     recipient: string;
     allowedSender: string;
+    allowedSenders?: readonly string[];
     routingRecipients?: readonly string[];
   },
 >(
@@ -112,6 +113,11 @@ export function chooseInboundBinding<
       recipients.has(address),
     ),
   );
-  if (routed.length !== 1 || sender !== routed[0]!.allowedSender) return null;
+  if (
+    routed.length !== 1 ||
+    !sender ||
+    !(routed[0]!.allowedSenders ?? [routed[0]!.allowedSender]).includes(sender)
+  )
+    return null;
   return routed[0]!;
 }

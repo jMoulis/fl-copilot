@@ -285,3 +285,49 @@ it("sends a stable original retry action with authenticated scope and rejects mi
     ).rejects.toThrow("EMAIL_ORIGINAL_RETRY_IDENTITY_INVALID");
   }
 });
+
+it("validates sender policy scope and versions while announcing the new receipt capability", async () => {
+  const storeId = randomUUID(),
+    bindingId = randomUUID();
+  const policy = {
+    storeId,
+    bindingId,
+    version: 1,
+    allowedSenders: ["work@example.test"],
+  };
+  const fetch = vi.fn(
+    async () => new Response(JSON.stringify(policy), { status: 200 }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  const api = new ApiClient("https://api.test.invalid");
+  expect(await api.emailSenderPolicy("token", storeId)).toEqual(policy);
+  await api.updateEmailSenderPolicy("token", storeId, {
+    bindingId,
+    expectedVersion: 0,
+    allowedSenders: policy.allowedSenders,
+  });
+  expect(fetch.mock.calls).toHaveLength(2);
+  fetch.mockImplementationOnce(
+    async () =>
+      new Response(JSON.stringify({ ...policy, storeId: randomUUID() }), {
+        status: 200,
+      }),
+  );
+  await expect(api.emailSenderPolicy("token", storeId)).rejects.toThrow(
+    "SCOPE_INVALID",
+  );
+  fetch.mockImplementationOnce(
+    async () =>
+      new Response(
+        JSON.stringify({ bindings: [], receipts: [], nextCursor: null }),
+        { status: 200 },
+      ),
+  );
+  await api.emailIntakeList("token", storeId, storeId);
+  expect(fetch).toHaveBeenLastCalledWith(
+    expect.any(String),
+    expect.objectContaining({
+      headers: expect.objectContaining({ "x-email-sender-policy": "1" }),
+    }),
+  );
+});

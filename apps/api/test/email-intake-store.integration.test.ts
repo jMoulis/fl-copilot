@@ -121,6 +121,83 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         verifyResendReceivedEvent(client, signed(id))!;
       return { db, scope, service, request, binding, event, signed, verified };
     }
+    it("configures exact store senders with version fencing, real sender provenance and retained history", async () => {
+      const f = await fixture();
+      const actor = { storeId: f.scope.storeId, ownerId: f.scope.ownerId };
+      const scope = { ...actor, conversationId: actor.storeId };
+      const binding = await f.service.createBinding(actor, {
+        ...f.request,
+        id: randomUUID(),
+        conversationId: actor.storeId,
+      });
+      const original = await f.service.senderPolicy(actor);
+      expect(original).toEqual({
+        storeId: actor.storeId,
+        bindingId: binding.id,
+        version: 0,
+        allowedSenders: [f.request.allowedSender],
+      });
+      f.event.data.to = [binding.recipient];
+      f.event.data.from = "work@example.test";
+      const rejectedEvent = f.verified();
+      expect(await f.service.admit(rejectedEvent)).toBeNull();
+      const changed = await f.service.updateSenderPolicy(actor, {
+        bindingId: binding.id,
+        expectedVersion: 0,
+        allowedSenders: [f.request.allowedSender, "work@example.test"],
+      });
+      expect(changed.version).toBe(1);
+      expect(await f.service.admit(rejectedEvent)).toBeNull(); // No historical replay after a policy change.
+      f.event.data.email_id = randomUUID();
+      const receiptId = await f.service.admit(f.verified());
+      expect(receiptId).not.toBeNull();
+      expect(
+        await f.db
+          .collection("emailIntakeReceipts")
+          .findOne({ providerEmailId: f.event.data.email_id }),
+      ).toMatchObject({
+        sender: "work@example.test",
+        bindingId: binding.id,
+        additionalSender: true,
+      });
+      expect((await f.service.list(scope)).receipts).toHaveLength(0); // Old binaries retain their single-sender cache invariant.
+      expect(
+        (await f.service.list(scope, undefined, true)).receipts,
+      ).toHaveLength(1);
+      await expect(
+        f.service.updateSenderPolicy(actor, {
+          bindingId: binding.id,
+          expectedVersion: 0,
+          allowedSenders: ["other@example.test"],
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      await f.service.updateSenderPolicy(actor, {
+        bindingId: binding.id,
+        expectedVersion: 1,
+        allowedSenders: [f.request.allowedSender],
+      });
+      expect(
+        (await f.service.list(scope, undefined, true)).receipts[0]?.sender,
+      ).toBe("work@example.test");
+      f.event.data.email_id = randomUUID();
+      expect(await f.service.admit(f.verified())).toBeNull();
+      await expect(
+        f.service.senderPolicy({ ...actor, ownerId: randomUUID() }),
+      ).rejects.toMatchObject({ statusCode: 403 });
+      await expect(
+        f.service.updateSenderPolicy(
+          { ...actor, storeId: randomUUID() },
+          {
+            bindingId: binding.id,
+            expectedVersion: 2,
+            allowedSenders: ["work@example.test"],
+          },
+        ),
+      ).rejects.toMatchObject({ statusCode: 403 });
+      expect((await f.service.senderPolicy(actor)).allowedSenders).toEqual([
+        f.request.allowedSender,
+      ]);
+    });
     it("creates one store mailbox without a chat, reuses it under concurrent setup, and retains legacy receipts separately", async () => {
       const f = await fixture();
       await f.service.admit(f.verified());
