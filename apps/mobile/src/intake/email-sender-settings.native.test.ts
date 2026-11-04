@@ -48,13 +48,22 @@ it("loads settings on demand, validates exact addresses and saves the observed p
   await act(async () =>
     hosts("Input")[0]!.props.onChangeText("*@example.test"),
   );
-  await act(async () => button("Enregistrer les expéditeurs").props.onPress());
+  await act(async () => button("Ajouter").props.onPress());
   expect(inbox.updateSenderPolicy).not.toHaveBeenCalled();
   await act(async () =>
-    hosts("Input")[0]!.props.onChangeText(
-      "personal@example.test\nWork@Example.test",
-    ),
+    hosts("Input")[0]!.props.onChangeText(" Work@Example.test "),
   );
+  // Unadded input must never be silently lost by Save.
+  await act(async () => button("Enregistrer les expéditeurs").props.onPress());
+  expect(inbox.updateSenderPolicy).not.toHaveBeenCalled();
+  await act(async () => button("Ajouter").props.onPress());
+  expect(hosts("Input")[0]!.props.value).toBe("");
+  await act(async () =>
+    hosts("Input")[0]!.props.onChangeText("WORK@example.test"),
+  );
+  await act(async () => button("Ajouter").props.onPress());
+  expect(hosts("Alert")).toHaveLength(1);
+  await act(async () => hosts("Input")[0]!.props.onChangeText(""));
   await act(async () => button("Enregistrer les expéditeurs").props.onPress());
   expect(inbox.updateSenderPolicy).toHaveBeenCalledExactlyOnceWith({
     bindingId: id,
@@ -80,8 +89,17 @@ it("preserves an unsaved draft after a rejected save and ignores an old binding'
   await act(async () =>
     hosts("Input")[0]!.props.onChangeText("work@example.test"),
   );
+  await act(async () => button("Ajouter").props.onPress());
+  await act(async () =>
+    hosts("Button")
+      .find(
+        (n) => n.props.accessibilityLabel === "Retirer personal@example.test",
+      )!
+      .props.onPress(),
+  );
   await act(async () => button("Enregistrer les expéditeurs").props.onPress());
-  expect(hosts("Input")[0]!.props.value).toBe("work@example.test");
+  expect(JSON.stringify(tree!.toJSON())).toContain("work@example.test");
+  expect(JSON.stringify(tree!.toJSON())).not.toContain("personal@example.test");
   expect(hosts("Alert")).toHaveLength(1);
   inbox.senderPolicy.mockImplementationOnce(
     () =>
@@ -101,4 +119,21 @@ it("preserves an unsaved draft after a rejected save and ignores an old binding'
   await act(async () => resolve(policy));
   expect(hosts("Input")).toHaveLength(0);
   expect(button("Gérer les expéditeurs autorisés")).toBeDefined();
+});
+
+it("allows replacing the last address without submitting an empty list", async () => {
+  const inbox = {
+    senderPolicy: vi.fn(async () => policy),
+    updateSenderPolicy: vi.fn(async () => policy),
+  };
+  await act(async () => {
+    tree = create(createElement(EmailSenderSettings, { inbox, bindingId: id }));
+  });
+  await act(async () =>
+    button("Gérer les expéditeurs autorisés").props.onPress(),
+  );
+  await act(async () => button("Retirer").props.onPress());
+  await act(async () => button("Enregistrer les expéditeurs").props.onPress());
+  expect(inbox.updateSenderPolicy).not.toHaveBeenCalled();
+  expect(hosts("Alert")[0]!.props.message).toContain("au moins une");
 });
