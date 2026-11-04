@@ -17,5 +17,8 @@ export type VisualReadingDocument = Omit<
   updatedAt: Date;
 };
 export function serializeVisualReading(row: VisualReadingDocument) {
-  return synchronizedCommercialVisualReadingSchema.parse(row);
+  const reading = synchronizedCommercialVisualReadingSchema.parse(row);
+  // A normalized absent revision is omitted, never sent as undefined in a JSON entity.
+  if (reading.analysisRevision === undefined) delete reading.analysisRevision;
+  return reading;
 }

@@ -1,3 +1,7 @@
+## JSON synchronization — absent visual-reading revision
+
+A legacy/original-backed visual PDF reading may store a null analysis revision. The canonical serializer normalizes this to an omitted optional property in both pull and bootstrap, never an own `undefined` value inside a `z.json()` entity. Explicit positive revisions and the stored original remain unchanged; no client cursor is advanced past a rejected envelope. See `../qa/M8_VISUAL_READING_SYNC_JSON_2026_11_04.md`.
+
 ## Implemented increment — 4 November 2026: opt-in transparent visual previews
 
 Canonical visual-file initialization/completion and default manifest/preview GET responses retain `visual-image.v1` / JPEG. Capable clients request `GET /api/v1/visual-assets/:assetId/file-manifest?preview=transparent`; PNG originals can then yield `visual-image.v2` / PNG. Download the matching preview with `GET /api/v1/visual-assets/:assetId/preview?preview=transparent`. Source bytes/URLs and all bearer/store/live-membership/approval checks remain unchanged. The shared discriminated manifest requires v1→JPEG or v2→PNG, binds the same immutable source and caps previews at 2 MiB and 1024 pixels per side. A noisy alpha preview may downsize to 512 pixels rather than flatten. Non-PNG assets keep legacy output. No source upload or human reapproval is required merely to derive a compatible preview.
