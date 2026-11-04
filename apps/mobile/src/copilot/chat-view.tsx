@@ -261,6 +261,7 @@ export function CopilotChatView({
                 }
               >
                 <Text
+                  accessibilityRole="text"
                   style={styles.author}
                   onLongPress={
                     item.role === "ASSISTANT" ? onLongPress : undefined
