@@ -521,7 +521,7 @@ Do not use superseded technical documents from outside this repository.
 
 ## 17. Current implementation scope
 
-M7 is active. Read `docs/progress/M7_WORKSTREAM_STATUS.md` and the latest code before relying on older milestone introductions. Keep the seven agreed workstreams and the complete V1 objective, including approved UX, rather than narrowing to a presentation demo. `docs/ux/V1_REMAINING_ROADMAP.md` decomposes the remaining work; it does not replace the seven workstreams.
+M8 hardening is active. The functional iPhone M7 pilot baseline for workstreams 1/3/4/5/7 is closed; 2/6 retain owner-deferred scopes and missing AI illustration prerequisites remain explicit. Read `docs/progress/M8_HARDENING_STATUS.md` and `docs/progress/M7_WORKSTREAM_STATUS.md` and the latest code before relying on older milestone introductions. Keep the seven agreed workstreams and the complete V1 objective, including approved UX, rather than narrowing to a presentation demo. `docs/ux/V1_REMAINING_ROADMAP.md` decomposes the remaining work; it does not replace the seven workstreams.
 
 Reuse the canonical architecture and validated functions. Distinguish code ready, merged, deployed and device accepted. Follow `docs/RELEASE_PROCESS.md`: both exact-head push and PR checks must pass before merge; delete the merged branch. Group releases and reserve paid EAS builds for substantial native acceptance. No automatic Vercel deployment per PR, system-toolchain modification, new provider spending or fabricated production demo data.
 

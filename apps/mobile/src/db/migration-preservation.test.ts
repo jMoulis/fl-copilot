@@ -217,6 +217,52 @@ async function fixture(version: number) {
         1,
         at,
       );
+    if (version >= 18) {
+      const insert = db.prepare(
+        "INSERT INTO commercial_offer_choices(id,store_id,source_document_id,reading_id,operation_index,item_index,payload_json,remote_payload_json,remote_version,sync_state,dirty) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+      );
+      insert.run(
+        randomUUID(),
+        storeId,
+        randomUUID(),
+        randomUUID(),
+        0,
+        1,
+        JSON.stringify({ label: "Choix local conservé", code: "00042" }),
+        JSON.stringify({ label: "Version distante conservée" }),
+        7,
+        "CONFLICT",
+        1,
+      );
+      if (version >= 61)
+        insert.run(
+          randomUUID(),
+          storeId,
+          randomUUID(),
+          null,
+          null,
+          null,
+          JSON.stringify({ label: "Choix issu de l’original", page: 2 }),
+          null,
+          null,
+          "PENDING",
+          1,
+        );
+    }
+    if (version >= 62)
+      db.prepare(
+        "INSERT INTO document_archives(id,store_id,owner_id,target_kind,archived,payload_json,remote_payload_json,remote_version,pending_command_id) VALUES(?,?,?,?,?,?,?,?,?)",
+      ).run(
+        randomUUID(),
+        storeId,
+        randomUUID(),
+        "COMMERCIAL_DOCUMENT",
+        1,
+        JSON.stringify({ retained: true }),
+        null,
+        3,
+        commands[0]!.commandId,
+      );
     return {
       directory,
       path,
@@ -247,6 +293,8 @@ function durableSnapshot(db: DatabaseSync) {
     "products",
     "product_identifiers",
     "product_aliases",
+    "commercial_offer_choices",
+    "document_archives",
   ];
   const tables = db
     .prepare("SELECT name FROM sqlite_master WHERE type='table'")
@@ -263,6 +311,14 @@ async function verifyUpgrade(
   db: DatabaseSync,
 ) {
   const adapter = new ReceiptTestDatabase(db),
+    beforeChoices =
+      s.version >= 18
+        ? db.prepare("SELECT * FROM commercial_offer_choices ORDER BY id").all()
+        : [],
+    beforeArchives =
+      s.version >= 62
+        ? db.prepare("SELECT * FROM document_archives ORDER BY id").all()
+        : [],
     beforeFiles = db.prepare("SELECT * FROM local_files ORDER BY id").all(),
     beforeJobs = db.prepare("SELECT * FROM local_jobs ORDER BY id").all(),
     beforeProducts =
@@ -287,6 +343,12 @@ async function verifyUpgrade(
     .prepare("SELECT * FROM sync_outbox ORDER BY local_sequence,command_id")
     .all();
   expect(after).toHaveLength(originalCommands.length);
+  expect(
+    db.prepare("SELECT * FROM commercial_offer_choices ORDER BY id").all(),
+  ).toEqual(beforeChoices);
+  expect(
+    db.prepare("SELECT * FROM document_archives ORDER BY id").all(),
+  ).toEqual(beforeArchives);
   for (const row of originalCommands)
     expect(after.find((r) => r.command_id === row.command_id)).toEqual(row);
   expect(db.prepare("SELECT * FROM local_files ORDER BY id").all()).toEqual(
@@ -480,7 +542,7 @@ async function killBeforeCommit(path: string, targetVersion: number) {
     });
   });
 }
-it.each([1, 3, 4, 12, 38, 58, 59])(
+it.each([1, 3, 4, 12, 38, 58, 59, 60, 61])(
   "recovers WAL after a real SIGKILL before committing the migration after v%s",
   async (version) => {
     const s = await fixture(version),
