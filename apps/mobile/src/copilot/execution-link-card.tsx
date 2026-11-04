@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
 import { ChatText as Text } from "./chat-text";
-import type { CopilotMessage } from "@fl-copilot/domain";
+import {
+  commercialExecutionActualsSummary,
+  type CopilotMessage,
+} from "@fl-copilot/domain";
 import type { CopilotExecutionLinkRepository } from "./execution-link-repository";
 import { colors } from "../design/tokens";
 const choices = {
@@ -29,6 +32,7 @@ export function ExecutionLinkCard({
       useState<Awaited<ReturnType<CopilotExecutionLinkRepository["open"]>>>(),
     [error, setError] = useState<string>(),
     [checked, setChecked] = useState(false),
+    [details, setDetails] = useState(false),
     [busy, setBusy] = useState(false);
   const generation = useRef(0),
     currentMessage = useRef(message),
@@ -38,6 +42,7 @@ export function ExecutionLinkCard({
   useEffect(() => {
     const token = ++generation.current;
     setState(undefined);
+    setDetails(false);
     setChecked(false);
     setError(undefined);
     setBusy(false);
@@ -92,6 +97,7 @@ export function ExecutionLinkCard({
       if (generation.current === token) {
         setState(s);
         setChecked(false);
+        setDetails(false);
       }
     } catch {
       if (generation.current === token) {
@@ -109,6 +115,9 @@ export function ExecutionLinkCard({
     }
   };
   const actionable = state?.status === "READY" || state?.status === "CONFIRMED";
+  const recorded =
+    state?.status === "CONFIRMED" || state?.status === "WITHDRAWN";
+  const expanded = !recorded || details;
   return (
     <View
       style={{
@@ -120,61 +129,102 @@ export function ExecutionLinkCard({
       }}
     >
       <Text style={{ fontWeight: "700", color: colors.forest }}>
-        Suivi de votre choix
+        {state?.status === "CONFIRMED"
+          ? "Mise en place reliée au choix"
+          : state?.status === "WITHDRAWN"
+            ? "Association retirée"
+            : state?.status === "READY"
+              ? "Relier le choix à la mise en place"
+              : state
+                ? "Association à vérifier"
+                : "Choix et mise en place"}
       </Text>
       {state ? (
         <>
-          <Text style={{ fontWeight: "600" }}>
-            {choices[state.content.snapshot.decision.revision.type]} — version{" "}
-            {state.content.snapshot.decision.version}
-          </Text>
           <Text>
-            {state.content.snapshot.decision.revision.modifiedAction ??
-              state.content.snapshot.decision.basis.quote}
-          </Text>
-          <Text>
-            Choix du{" "}
+            Semaine du{" "}
             {new Date(
-              state.content.snapshot.decision.revision.decidedAt,
-            ).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })}
+              state.content.snapshot.weekStart + "T00:00:00Z",
+            ).toLocaleDateString("fr-FR", { timeZone: "UTC" })}
           </Text>
-          {state.content.snapshot.decision.revision.postponeUntil ? (
-            <Text>
-              Report prévu le{" "}
-              {new Date(
-                state.content.snapshot.decision.revision.postponeUntil +
-                  "T00:00:00Z",
-              ).toLocaleDateString("fr-FR", { timeZone: "UTC" })}
-            </Text>
-          ) : null}
-          {state.content.snapshot.decision.revision.reason ? (
-            <Text>
-              Note du choix : {state.content.snapshot.decision.revision.reason}
-            </Text>
-          ) : null}
-          <Text style={{ fontWeight: "600" }}>
-            {state.content.snapshot.task.label}
-          </Text>
+          {expanded ? (
+            <>
+              <Text style={{ fontWeight: "600" }}>
+                {choices[state.content.snapshot.decision.revision.type]} —
+                version {state.content.snapshot.decision.version}
+              </Text>
+              <Text>
+                {state.content.snapshot.decision.revision.modifiedAction ??
+                  state.content.snapshot.decision.basis.quote}
+              </Text>
+              <Text>
+                Choix du{" "}
+                {new Date(
+                  state.content.snapshot.decision.revision.decidedAt,
+                ).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })}
+              </Text>
+              {state.content.snapshot.decision.revision.postponeUntil ? (
+                <Text>
+                  Report prévu le{" "}
+                  {new Date(
+                    state.content.snapshot.decision.revision.postponeUntil +
+                      "T00:00:00Z",
+                  ).toLocaleDateString("fr-FR", { timeZone: "UTC" })}
+                </Text>
+              ) : null}
+              {state.content.snapshot.decision.revision.reason ? (
+                <Text>
+                  Note du choix :{" "}
+                  {state.content.snapshot.decision.revision.reason}
+                </Text>
+              ) : null}
+              <Text style={{ fontWeight: "600" }}>
+                {state.content.snapshot.task.label}
+              </Text>
+              <Text>
+                {statuses[state.content.snapshot.task.status]} — déclaration
+                version {state.content.snapshot.task.version}
+              </Text>
+              <Text>
+                {state.content.snapshot.task.completedAt
+                  ? "Date de déclaration : " +
+                    new Date(
+                      state.content.snapshot.task.completedAt,
+                    ).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })
+                  : "Aucune réalisation déclarée."}
+              </Text>
+              {state.content.snapshot.task.note ? (
+                <Text>
+                  Note de la tâche : {state.content.snapshot.task.note}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Text style={{ fontWeight: "600" }}>
+                {state.content.snapshot.task.label}
+              </Text>
+              <Text>
+                Choix{" "}
+                {choices[
+                  state.content.snapshot.decision.revision.type
+                ].toLowerCase()}{" "}
+                · {statuses[state.content.snapshot.task.status]}
+              </Text>
+            </>
+          )}
           <Text>
-            {statuses[state.content.snapshot.task.status]} — déclaration version{" "}
-            {state.content.snapshot.task.version}
+            {commercialExecutionActualsSummary(
+              state.content.snapshot.task.actuals,
+            )}
           </Text>
-          <Text>
-            {state.content.snapshot.task.completedAt
-              ? "Date de déclaration : " +
-                new Date(
-                  state.content.snapshot.task.completedAt,
-                ).toLocaleString("fr-FR", { timeZone: "Europe/Paris" })
-              : "Aucune réalisation déclarée."}
-          </Text>
-          {state.content.snapshot.task.note ? (
-            <Text>Note de la tâche : {state.content.snapshot.task.note}</Text>
-          ) : null}
           <Text>
             {state.status === "WITHDRAWN"
               ? "Lien retiré. Les versions d’origine restent conservées dans l’historique."
               : state.status === "CONFIRMED"
-                ? "Association enregistrée. Elle relie uniquement ces versions, même si le choix ou la tâche change ensuite."
+                ? expanded
+                  ? "Association enregistrée. Elle relie uniquement ces versions, même si le choix ou la tâche change ensuite."
+                  : "Cette mise en place est reliée à ton choix."
                 : state.status === "STALE"
                   ? "Le choix ou la déclaration a changé. Synchronisez puis demandez un nouvel aperçu."
                   : state.status === "ERROR"
@@ -194,7 +244,7 @@ export function ExecutionLinkCard({
                   : "Enregistrement à vérifier"}
             </Text>
           ) : null}
-          {state.link ? (
+          {expanded && state.link ? (
             <>
               <Text>
                 Lien confirmé le{" "}
@@ -212,7 +262,23 @@ export function ExecutionLinkCard({
               ) : null}
             </>
           ) : null}
-          {actionable && canConfirm ? (
+          {recorded ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: details, disabled: busy }}
+              disabled={busy}
+              onPress={() => {
+                setDetails((value) => !value);
+                setChecked(false);
+              }}
+              style={{ minHeight: 44, paddingVertical: 12 }}
+            >
+              <Text style={{ color: colors.forest }}>
+                {details ? "Masquer les détails" : "Voir les détails"}
+              </Text>
+            </Pressable>
+          ) : null}
+          {actionable && canConfirm && expanded ? (
             <>
               <Pressable
                 accessibilityRole="checkbox"
@@ -274,15 +340,19 @@ export function ExecutionLinkCard({
           {error}
         </Text>
       ) : null}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ disabled: busy }}
-        disabled={busy}
-        onPress={() => void refresh()}
-        style={{ minHeight: 44, padding: 12 }}
-      >
-        <Text style={{ color: colors.forest }}>Actualiser la comparaison</Text>
-      </Pressable>
+      {(expanded || state?.syncState === "PENDING") && (state || error) ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: busy }}
+          disabled={busy}
+          onPress={() => void refresh()}
+          style={{ minHeight: 44, padding: 12 }}
+        >
+          <Text style={{ color: colors.forest }}>
+            {recorded ? "Actualiser le suivi" : "Actualiser la comparaison"}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

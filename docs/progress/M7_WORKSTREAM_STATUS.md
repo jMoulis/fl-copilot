@@ -38,6 +38,10 @@ Workstreams 3/7 receive an owner-requested exact sender list in the existing Act
 
 Replace build 29’s one-email-per-line textarea with address rows, one new-email field, **Ajouter** and per-row **Retirer**. Keep the existing explicit save/versioned API. Invalid/duplicate entries, unadded typed text, empty saves, rejected-save drafts and stale binding responses are qualified by three mounted interaction tests. [Scope and native delivery boundary](../qa/M7_STORE_EMAIL_SENDERS_2026_11_04.md). Mobile-only, no API redeploy; group the native release. Workstreams 1/3/4/5 stay closed; 7 advances without repeating document-processing acceptance.
 
+## Current UX increment — compact follow-up cards
+
+Confirmed links/realizations show business scope/status/actuals/synchronization, with historical detail and withdrawal controls folded. READY verification remains expanded; errors, read-only history and pending refresh remain reachable. Eight mounted real-SQLite interactions plus existing repository/editor suites pass (**32 tests**); types/lint/format pass. [Proof and grouped iPhone recipe](../qa/M7_FOLLOWUP_CARD_DETAILS_2026_11_04.md). Group with PR 433’s sender editor; no API deployment or repeated installation/link/source-processing recipe. Workstreams 1/3/4/5 remain closed; 7 advances, native acceptance pending.
+
 ## Accepted pilot cases — do not request again without a regression
 
 - Linked review: the owner supplies the real corrected answer; exact source periods and independent decimal checks verify matching Mondays and tomato CA/margin changes. Choice, declarations, confirmed links and prudent partial review are accepted cases; the incomplete clémentine comparison stays an explicit workstream-7 follow-up.
