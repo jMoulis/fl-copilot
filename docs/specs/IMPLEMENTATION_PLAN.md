@@ -1,3 +1,7 @@
+## M7 UX increment — compact follow-up cards
+
+Keep confirmed card summaries readable while moving history/withdrawal behind accessible details. Preserve planned week, actuals qualification, synchronization, READY confirmation facts and visible error/pending recovery; disclosure is read-only and closing disarms withdrawal. Reuse existing repositories/Outbox and verify mounted real-SQLite interactions. Group native delivery with the explicit email sender editor; API `3353993` remains unchanged. [Proof and focused native acceptance](../qa/M7_FOLLOWUP_CARD_DETAILS_2026_11_04.md). Accepted 1/3/4/5 remain closed; 7 advances.
+
 ## M7 UX refinement — explicit sender addition
 
 Use a compact address list and a separate email field with Ajouter/Retirer instead of separator-based textarea editing. Reuse the shared sender-list validation and existing explicit versioned save; preserve drafts and prevent silent loss of typed but unadded input. [Interaction proof and grouped native delivery](../qa/M7_STORE_EMAIL_SENDERS_2026_11_04.md). Mobile-only; no new API, schema, dependency, business data mutation or reopening of accepted 1/3/4/5 cases.

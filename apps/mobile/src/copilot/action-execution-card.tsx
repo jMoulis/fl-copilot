@@ -20,6 +20,7 @@ export function ActionExecutionCard({
       useState<Awaited<ReturnType<CopilotActionExecutionRepository["open"]>>>(),
     [error, setError] = useState<string>(),
     [checked, setChecked] = useState(false),
+    [details, setDetails] = useState(false),
     [busy, setBusy] = useState(false);
   const generation = useRef(0),
     currentMessage = useRef(message),
@@ -30,6 +31,7 @@ export function ActionExecutionCard({
     const token = generation.current + 1;
     generation.current = token;
     setState(undefined);
+    setDetails(false);
     setChecked(false);
     setError(undefined);
     setBusy(false);
@@ -84,6 +86,7 @@ export function ActionExecutionCard({
       if (generation.current === token) {
         setState(s);
         setChecked(false);
+        setDetails(false);
       }
     } catch {
       if (generation.current === token) {
@@ -100,6 +103,9 @@ export function ActionExecutionCard({
       if (abort.current === cancellation) abort.current = undefined;
     }
   };
+  const recorded =
+    state?.status === "CONFIRMED" || state?.status === "WITHDRAWN";
+  const expanded = !recorded || details;
   return (
     <View
       style={{
@@ -111,34 +117,46 @@ export function ActionExecutionCard({
       }}
     >
       <Text style={{ color: colors.forest, fontWeight: "700" }}>
-        Réalisation déclarée
+        {state?.status === "READY"
+          ? "Réalisation à confirmer"
+          : state?.status === "WITHDRAWN"
+            ? "Déclaration retirée"
+            : state?.status === "CONFIRMED"
+              ? "Réalisation déclarée"
+              : state
+                ? "Déclaration à vérifier"
+                : "Suivi de la réalisation"}
       </Text>
       {state ? (
         <>
           <Text style={{ fontWeight: "600" }}>
             {state.content.snapshot.action}
           </Text>
-          <Text>
-            Conseil d’origine : « {state.content.snapshot.basis.quote} »
-          </Text>
+          {expanded ? (
+            <Text>
+              Conseil d’origine : « {state.content.snapshot.basis.quote} »
+            </Text>
+          ) : null}
           <Text>
             {commercialExecutionActualsSummary(state.content.snapshot.actuals)}
           </Text>
-          {state.content.snapshot.notes ? (
+          {expanded && state.content.snapshot.notes ? (
             <Text>Note : {state.content.snapshot.notes}</Text>
           ) : null}
           <Text>
             {state.status === "WITHDRAWN"
               ? "Déclaration retirée. Son contenu d’origine reste dans l’historique ; aucun chiffre n’est annulé automatiquement."
               : state.status === "CONFIRMED"
-                ? "Réalisation enregistrée dans votre suivi privé. Elle ne modifie ni votre choix, ni le plan, ni les chiffres."
+                ? expanded
+                  ? "Réalisation enregistrée dans votre suivi privé. Elle ne modifie ni votre choix, ni le plan, ni les chiffres."
+                  : "Réalisation enregistrée dans ton suivi."
                 : state.status === "STALE"
                   ? "Le conseil d’origine n’est plus vérifiable ici. Actualisez ou demandez un nouvel aperçu."
                   : state.status === "ERROR"
                     ? "La déclaration reste conservée ; vérifiez sa synchronisation ou la capacité du suivi."
                     : "Confirmez uniquement ce que vous avez réalisé. L’application ne réalise pas l’action physique et ne revalide pas les faits du conseil."}
           </Text>
-          {state.link ? (
+          {expanded && state.link ? (
             <Text>
               Déclaration :{" "}
               {new Date(state.link.createdAt).toLocaleString("fr-FR")}
@@ -156,7 +174,25 @@ export function ActionExecutionCard({
                   : "Enregistrement à vérifier"}
             </Text>
           ) : null}
-          {canConfirm && ["READY", "CONFIRMED"].includes(state.status) ? (
+          {recorded ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: details, disabled: busy }}
+              disabled={busy}
+              onPress={() => {
+                setDetails((value) => !value);
+                setChecked(false);
+              }}
+              style={{ minHeight: 44, paddingVertical: 12 }}
+            >
+              <Text style={{ color: colors.forest }}>
+                {details ? "Masquer les détails" : "Voir les détails"}
+              </Text>
+            </Pressable>
+          ) : null}
+          {canConfirm &&
+          expanded &&
+          ["READY", "CONFIRMED"].includes(state.status) ? (
             <>
               <Pressable
                 accessibilityRole="checkbox"
@@ -200,15 +236,6 @@ export function ActionExecutionCard({
               </Pressable>
             </>
           ) : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ disabled: busy, busy }}
-            disabled={busy}
-            onPress={() => void refresh()}
-            style={{ minHeight: 44, padding: 12 }}
-          >
-            <Text style={{ color: colors.forest }}>Vérifier à nouveau</Text>
-          </Pressable>
         </>
       ) : !error ? (
         <ActivityIndicator accessibilityLabel="Vérification de la déclaration" />
@@ -220,6 +247,17 @@ export function ActionExecutionCard({
         >
           {error}
         </Text>
+      ) : null}
+      {(expanded || state?.syncState === "PENDING") && (state || error) ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: busy, busy }}
+          disabled={busy}
+          onPress={() => void refresh()}
+          style={{ minHeight: 44, padding: 12 }}
+        >
+          <Text style={{ color: colors.forest }}>Vérifier à nouveau</Text>
+        </Pressable>
       ) : null}
     </View>
   );
