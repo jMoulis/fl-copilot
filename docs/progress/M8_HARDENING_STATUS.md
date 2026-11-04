@@ -36,11 +36,13 @@ After each kill, the reopened database must still have its prior schema and exac
 
 The production runtime, schema, APIs, AI instructions and business data are unchanged. This test/documentation batch needs no EAS build or API deployment. CI/merge state is recorded separately; these local counts do not imply physical iOS/Android termination or corruption repair.
 
-## Native restore preparation — not yet executed
+## Native restore — isolated iOS simulator rehearsal
 
 The existing iPhone 16e simulator contains the working database and must not be reset, logged out or restored for this experiment. Its previous explicit copy (`copy-caa99d4b-7683-4fe4-8ab5-d6facbffcb25`) completed at 19:02:27 UTC on 4 November: **173,371,392 bytes**, native success state and independently matching SHA-256/manifest size. This proves copy creation, not restoration. Source binaries remain at their original private locations.
 
-A read-only inventory finds separate available iOS simulators; no second authenticated test installation or successful restore is established. Do not clone session tokens, Keychain or device identity from the working installation to bypass normal authentication.
+The existing official Expo Go57.0.9 binary is installed on a separate iPhone17Pro/iOS26.3.1 simulator without copying data, tokens or Keychain. Its initial SQLite database is empty at schema62; the owner logs in normally and canonical bootstrap recovers the store. The working iPhone16e is neither restored nor reset.
+
+The actual native first-leg recipe now passes: local draft A → verified 173,346,816-byte copy → later draft B → prepare/cancel retaining B and session → canonical activation → full simulator restart → normal owner login → A visible and B absent. Independent SQL checks confirm integrity, schema62, stable device identity, 458 products, zero Outbox rows and retained PDF bytes matching size/SHA-256. The previous location still contains A+B. Returning through the canonical previous-location route, a second full restart and normal owner login also passes: B reappears in native UI and A remains. Integrity and original-byte checks pass again. The original reaches the native share sheet but is labeled archive/BIN, so PDF rendering is not accepted and its filename/MIME handoff needs correction. [Actual evidence, timings and limits](../qa/M8_LOCAL_COPY_NATIVE_REHEARSAL_2026_11_04.md).
 
 Use an isolated installation with authorized access and the current source/build:
 
@@ -57,4 +59,8 @@ Do not uninstall, erase an installation, activate an unowned copy, replay unknow
 
 Owner-private logs/JSON remain under `artifacts/2026-11-04-m8-current-schema-recovery/` outside Git. The prior local-copy and build-33 acceptance ledgers remain outside Git as well. No secrets, source documents or production database contents belong in PR attachments.
 
-Next gate: a separate authenticated native test installation and actual restore/restart/return-to-previous-location evidence. Cloud restore, Android and the remaining T01–T14 checks stay open. No full M8 or whole-V1 completion follows from this batch.
+Next gate: correct the observed original-file MIME/filename handoff, then exercise queued business-command recovery in a controlled store. The read-only real-store draft rehearsal does not certify that mutation case. Cloud restore, Android and the remaining T01–T14 checks stay open. No full M8 or whole-V1 completion follows from this batch.
+
+## Focused UX correction — accurate copy-operation progress
+
+The native rehearsal reproduces a creation spinner during restoration verification. Replace only the panel's existing busy flag with an operation marker, retaining the same lock/disabled/lifetime rules and canonical services. Accessible status text describes the actual operation; no fabricated percentage, timeout, repair layer or weaker integrity check. The existing deferred interaction fails against the original component and passes with the correction. **15 targeted tests across three files pass, zero skips**, plus types/lint/format. This later mobile-only label patch has its own delivery boundary and does not justify a paid binary by itself. [Proof](../qa/M8_LOCAL_COPY_NATIVE_REHEARSAL_2026_11_04.md).
