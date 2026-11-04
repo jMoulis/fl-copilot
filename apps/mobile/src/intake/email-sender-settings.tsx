@@ -22,7 +22,8 @@ export function EmailSenderSettings({
 }) {
   const [open, setOpen] = useState(false),
     [policy, setPolicy] = useState<EmailSenderPolicy>(),
-    [draft, setDraft] = useState(""),
+    [draft, setDraft] = useState<string[]>([]),
+    [address, setAddress] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string>(),
     [saved, setSaved] = useState(false);
@@ -32,7 +33,8 @@ export function EmailSenderSettings({
     const token = ++epoch.current;
     setOpen(false);
     setPolicy(undefined);
-    setDraft("");
+    setDraft([]);
+    setAddress("");
     setError(undefined);
     setSaved(false);
     setBusy(false);
@@ -43,18 +45,13 @@ export function EmailSenderSettings({
   }, [bindingId, inbox]);
   async function run(save: boolean) {
     if (pending.current) return;
-    const parsed = save
-      ? emailSenderListSchema.safeParse(
-          draft
-            .split(/\r?\n/)
-            .map((s) => s.trim())
-            .filter(Boolean),
-        )
-      : undefined;
+    if (save && address.trim()) {
+      setError("Ajoute l’adresse saisie à la liste avant d’enregistrer.");
+      return;
+    }
+    const parsed = save ? emailSenderListSchema.safeParse(draft) : undefined;
     if (save && (!parsed?.success || !policy)) {
-      setError(
-        "Saisis entre 1 et 20 adresses email distinctes, une par ligne.",
-      );
+      setError("Conserve au moins une adresse email autorisée.");
       return;
     }
     const token = epoch.current;
@@ -74,7 +71,8 @@ export function EmailSenderSettings({
       if (token !== epoch.current) return;
       if (result.bindingId !== bindingId) throw Error("Binding changed");
       setPolicy(result);
-      setDraft(result.allowedSenders.join("\n"));
+      setDraft(result.allowedSenders);
+      setAddress("");
       setSaved(save);
     } catch {
       if (token === epoch.current)
@@ -87,6 +85,20 @@ export function EmailSenderSettings({
         setBusy(false);
       }
     }
+  }
+  function addAddress() {
+    if (pending.current) return;
+    const parsed = emailSenderListSchema.safeParse([...draft, address]);
+    if (!parsed.success) {
+      setError(
+        "Saisis une adresse email valide, différente de celles de la liste (20 maximum).",
+      );
+      return;
+    }
+    setDraft(parsed.data);
+    setAddress("");
+    setError(undefined);
+    setSaved(false);
   }
   return (
     <View style={{ gap: 12 }}>
@@ -106,34 +118,71 @@ export function EmailSenderSettings({
             Expéditeurs autorisés
           </Text>
           <Text style={{ color: colors.muted }}>
-            Une adresse par ligne. Les changements concernent les prochains
-            envois ; les documents déjà reçus restent conservés.
+            Ajoute ou retire une adresse, puis enregistre la liste. Les
+            documents déjà reçus restent conservés.
           </Text>
           {error ? <InlineAlert title="À vérifier" message={error} /> : null}
           {policy ? (
             <>
+              {draft.map((sender) => (
+                <View
+                  key={sender}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    paddingVertical: 8,
+                    borderBottomWidth: 1,
+                    borderColor: colors.line,
+                  }}
+                >
+                  <Text selectable style={{ flex: 1, color: colors.ink }}>
+                    {sender}
+                  </Text>
+                  <SecondaryButton
+                    label="Retirer"
+                    accessibilityLabel={`Retirer ${sender}`}
+                    disabled={busy}
+                    onPress={() => {
+                      if (pending.current) return;
+                      setDraft((values) =>
+                        values.filter((value) => value !== sender),
+                      );
+                      setSaved(false);
+                      setError(undefined);
+                    }}
+                  />
+                </View>
+              ))}
               <TextInput
-                accessibilityLabel="Adresses email autorisées"
-                value={draft}
-                maxLength={6500}
-                multiline
+                accessibilityLabel="Nouvelle adresse email"
+                placeholder="Nouvelle adresse email"
+                placeholderTextColor={colors.muted}
+                value={address}
+                maxLength={320}
                 autoCapitalize="none"
                 autoCorrect={false}
                 keyboardType="email-address"
-                editable={!busy}
+                editable={!busy && draft.length < 20}
+                onSubmitEditing={addAddress}
                 onChangeText={(value) => {
-                  setDraft(value);
+                  if (pending.current) return;
+                  setAddress(value);
                   setSaved(false);
                 }}
                 style={{
-                  minHeight: 120,
+                  minHeight: 48,
                   padding: 12,
                   borderWidth: 1,
                   borderColor: colors.line,
                   borderRadius: 12,
                   color: colors.ink,
-                  textAlignVertical: "top",
                 }}
+              />
+              <SecondaryButton
+                label="Ajouter"
+                disabled={busy || draft.length >= 20 || !address.trim()}
+                onPress={addAddress}
               />
               <PrimaryButton
                 label={busy ? "En cours…" : "Enregistrer les expéditeurs"}

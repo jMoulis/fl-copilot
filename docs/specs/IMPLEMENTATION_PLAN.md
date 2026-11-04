@@ -1,3 +1,7 @@
+## M7 UX refinement — explicit sender addition
+
+Use a compact address list and a separate email field with Ajouter/Retirer instead of separator-based textarea editing. Reuse the shared sender-list validation and existing explicit versioned save; preserve drafts and prevent silent loss of typed but unadded input. [Interaction proof and grouped native delivery](../qa/M7_STORE_EMAIL_SENDERS_2026_11_04.md). Mobile-only; no new API, schema, dependency, business data mutation or reopening of accepted 1/3/4/5 cases.
+
 ## M7 increment — store sender whitelist and analysis warning diagnosis
 
 Expose a bounded exact-address sender list through the existing Actions mailbox card and authenticated manager API, with version fencing on the existing binding. Keep old binding/receipt wire contracts and native compatibility, retain admitted history after sender removal, and never replay ignored mail silently. Test actual sender provenance, authorization/concurrency, new/old receipt listing, SQLite history and native form races. [Scope, verification and API/iPhone release boundary](../qa/M7_STORE_EMAIL_SENDERS_2026_11_04.md). The separate 3 November analysis warning comes from an unpublished ambiguous sales line, not waste completeness or an incorrect N-1 day; no formula or automatic product assignment is needed. Accepted 1/3/4/5 remain closed.
