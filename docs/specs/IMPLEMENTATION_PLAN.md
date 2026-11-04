@@ -1,3 +1,7 @@
+## M7 acceptance checkpoint — grouped charts and remaining media
+
+The owner accepts build 31’s supplied chat-chart/source and Analyses week/day/return recipes. The existing return button is found; no new navigation fix is needed. Preserve those closed cases, build-30 acceptance and the successful two-product comparison. [Current scoped register](../progress/M7_WORKSTREAM_STATUS.md). A fresh bounded memory/context pass executes 49 existing tests, including isolated transactional Mongo/SQLite restoration/private ownership, without runtime change. The visual importer is already implemented; three-image pilot execution awaits external final files/truthful provenance and genuine approval/session gates. Existing eight user-uploaded assets are not relabelled as AI. Workstreams 1/3/4/5 remain closed, 2/6 owner deferred, 7 remains active for remaining media/final UX boundaries. No API deployment, new build or paid model request for this checkpoint.
+
 ## M7 UX increment — signed chart in Analyses and product details
 
 Use one zero baseline and signed proportional scale in the existing ExplorerTrendChart: negative amounts extend below zero, positives above it. Preserve canonical buckets, exact values/statuses, zero vs missing, scoped drill and saved scroll callbacks. [Verification and grouped native delivery](../qa/M7_SIGNED_ANALYTICS_CHART_2026_11_04.md). Group with PR 436; no API, KPI formula, dependency, source/Outbox writer or paid AI change. Workstream 7 progresses; accepted and owner-deferred scopes stay unchanged.
