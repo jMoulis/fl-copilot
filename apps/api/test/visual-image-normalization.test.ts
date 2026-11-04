@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import { randomBytes } from "node:crypto";
 import { it, expect } from "vitest";
 import { visualLibraryFixture } from "../../../scripts/test-visual-library-fixtures";
 import {
@@ -72,4 +73,82 @@ it("refuses a forged hash, source MIME, size and dimensions before publishing an
       contentHash: visualBytesHash(disguised),
     }),
   ).rejects.toThrow("VISUAL_FILE_INVALID");
+});
+
+it("preserves transparent PNG pixels in the opted-in preview while keeping legacy JPEG unchanged", async () => {
+  const bytes = await sharp({
+    create: {
+      width: 40,
+      height: 40,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([
+      {
+        input: await sharp({
+          create: {
+            width: 16,
+            height: 16,
+            channels: 4,
+            background: { r: 240, g: 20, b: 10, alpha: 1 },
+          },
+        })
+          .png()
+          .toBuffer(),
+        left: 12,
+        top: 12,
+      },
+    ])
+    .png()
+    .toBuffer();
+  const asset = {
+    ...visualLibraryFixture().asset,
+    mimeType: "image/png" as const,
+    width: 40,
+    height: 40,
+    sizeBytes: bytes.byteLength,
+    contentHash: visualBytesHash(bytes),
+  };
+  const preview = await visualImageProcessor.normalize(bytes, asset, true);
+  const pixels = await sharp(preview.bytes)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  expect(pixels.data[3]).toBe(0);
+  expect(pixels.data[(20 * 40 + 20) * 4 + 3]).toBe(255);
+  expect((await sharp(preview.bytes).metadata()).format).toBe("png");
+  expect(
+    (
+      await sharp(
+        (await visualImageProcessor.normalize(bytes, asset)).bytes,
+      ).metadata()
+    ).format,
+  ).toBe("jpeg");
+  expect(visualBytesHash(bytes)).toBe(asset.contentHash);
+});
+
+it("keeps a noisy transparent preview within the existing byte cap without flattening alpha", async () => {
+  const bytes = await sharp(randomBytes(1024 * 1024 * 4), {
+    raw: { width: 1024, height: 1024, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+  const asset = {
+    ...visualLibraryFixture().asset,
+    mimeType: "image/png" as const,
+    width: 1024,
+    height: 1024,
+    sizeBytes: bytes.byteLength,
+    contentHash: visualBytesHash(bytes),
+  };
+  const preview = await visualImageProcessor.normalize(bytes, asset, true);
+  const metadata = await sharp(preview.bytes).metadata();
+  expect(preview.bytes.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024);
+  expect(metadata).toMatchObject({
+    format: "png",
+    hasAlpha: true,
+    width: 512,
+    height: 512,
+  });
 });

@@ -294,3 +294,27 @@ it("coalesces thumbnail requests, preserves retry deadlines and terminal errors,
     s.db.raw.close();
   }
 });
+
+it("does not loop a PNG preview upgrade against an older API and allows explicit retry after recovery", async () => {
+  const s = await setup();
+  try {
+    await s.jobs.requestPreview(s.f.storeId, s.f.actorId, s.f.asset.id);
+    s.transfer.fetchPreview.mockRejectedValueOnce(
+      Error("VISUAL_PREVIEW_UPGRADE_REQUIRED"),
+    );
+    expect(await s.jobs.process(s.f.storeId, s.f.actorId)).toMatchObject({
+      failed: 1,
+    });
+    s.advance(60 * 60_000);
+    await s.newWorker().process(s.f.storeId, s.f.actorId);
+    await s.jobs.requestPreview(s.f.storeId, s.f.actorId, s.f.asset.id);
+    await s.jobs.process(s.f.storeId, s.f.actorId);
+    expect(s.transfer.fetchPreview).toHaveBeenCalledTimes(1);
+    await s.jobs.retry(s.f.storeId, s.f.actorId, s.f.asset.id);
+    expect(await s.jobs.process(s.f.storeId, s.f.actorId)).toMatchObject({
+      completed: 1,
+    });
+  } finally {
+    s.db.raw.close();
+  }
+});

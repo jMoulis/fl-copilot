@@ -3,6 +3,7 @@ import { get, put, del } from "@vercel/blob";
 import type { ClientSession } from "mongodb";
 import {
   visualAssetSchema,
+  detectVisualImageMime,
   visualAssetObjectKey,
   type VisualAsset,
 } from "@fl-copilot/domain";
@@ -51,11 +52,13 @@ export interface VisualFileService {
   manifest(
     context: VisualFilePrincipal,
     assetId: string,
+    transparent?: boolean,
   ): Promise<VisualFileManifest>;
   read(
     context: VisualFilePrincipal,
     assetId: string,
     variant: "source" | "preview",
+    transparent?: boolean,
   ): Promise<{ bytes: Uint8Array; mimeType: string; contentHash: string }>;
 }
 type Upload = {
@@ -79,12 +82,16 @@ type StoredFile = {
   sourceKey: string;
   previewKey: string;
   manifest: VisualFileManifest;
+  transparentManifest?: VisualFileManifest;
+  transparentPreviewKey?: string;
   verifiedAt: Date;
   verifiedBy: string;
 };
 const ttl = 10 * 60 * 1000;
 const previewKeyFor = (asset: VisualAsset) =>
   `stores/${asset.storeId}/visual-assets/${asset.contentHash.slice(7)}.preview-v1.jpg`;
+const transparentKeyFor = (asset: VisualAsset) =>
+  `stores/${asset.storeId}/visual-assets/${asset.contentHash.slice(7)}.preview-v2.png`;
 const failure = (
   status: number,
   code: string,
@@ -205,12 +212,80 @@ export function createVisualFileService(
     if (!row) return null;
     const manifest = readVisualFileManifest(row.manifest, value);
     if (
+      manifest.processorVersion !== "visual-image.v1" ||
       row.sourceHash !== value.contentHash ||
       row.sourceKey !== visualAssetObjectKey(value) ||
       row.previewKey !== previewKeyFor(value)
     )
       throw Error("VISUAL_STORED_FILE_INVALID");
     return { ...row, manifest };
+  }
+  async function withTransparentPreview(
+    context: VisualFilePrincipal,
+    value: VisualAsset,
+    file: StoredFile,
+  ) {
+    if (value.mimeType !== "image/png") return file;
+    const previewKey = transparentKeyFor(value);
+    if (file.transparentManifest) {
+      const manifest = readVisualFileManifest(file.transparentManifest, value);
+      if (
+        manifest.processorVersion !== "visual-image.v2" ||
+        file.transparentPreviewKey !== previewKey
+      )
+        throw Error("VISUAL_STORED_FILE_INVALID");
+      return { ...file, manifest, previewKey };
+    }
+    // Derive from the verified immutable original, including for previously uploaded PNGs.
+    const bytes = await storage.read(file.sourceKey, value.sizeBytes);
+    if (!bytes)
+      throw failure(
+        503,
+        "VISUAL_FILE_UNAVAILABLE",
+        "L’original ne peut pas être relu. Réessayez plus tard.",
+        true,
+      );
+    const preview = await processor.normalize(bytes, value, true);
+    if (detectVisualImageMime(preview.bytes) !== "image/png")
+      throw Error("VISUAL_FILE_INVALID");
+    const manifest = readVisualFileManifest(
+      {
+        ...file.manifest,
+        processorVersion: "visual-image.v2",
+        preview: {
+          contentHash: visualBytesHash(preview.bytes),
+          mimeType: "image/png",
+          sizeBytes: preview.bytes.byteLength,
+          width: preview.width,
+          height: preview.height,
+        },
+      },
+      value,
+    );
+    const current = await asset(context, value.id);
+    if (current.contentHash !== value.contentHash)
+      throw Error("VISUAL_FILE_BINDING_INVALID");
+    await storage.writeImmutable(previewKey, preview.bytes, "image/png");
+    const saved = await (
+      await database.getDb()
+    )
+      .collection<StoredFile>("visualAssetFiles")
+      .updateOne(
+        {
+          _id: value.id,
+          storeId: value.storeId,
+          sourceHash: value.contentHash,
+        },
+        {
+          $set: {
+            transparentManifest: manifest,
+            transparentPreviewKey: previewKey,
+          },
+        },
+      );
+    if (saved.matchedCount !== 1) throw Error("VISUAL_FILE_BINDING_INVALID");
+    await asset(context, value.id);
+    return { ...file, manifest, previewKey };
   }
   async function cleanup(row: Upload) {
     if (
@@ -456,7 +531,7 @@ export function createVisualFileService(
       await cleanup({ ...upload, status: "CONFIRMED", cleanupPending: true });
       return manifest;
     },
-    async manifest(context, assetId) {
+    async manifest(context, assetId, transparent = false) {
       const value = await asset(context, assetId),
         file = await stored(value);
       if (!file)
@@ -466,9 +541,11 @@ export function createVisualFileService(
           "L’image n’a pas encore terminé son envoi.",
           true,
         );
-      return file.manifest;
+      return (
+        transparent ? await withTransparentPreview(context, value, file) : file
+      ).manifest;
     },
-    async read(context, assetId, variant) {
+    async read(context, assetId, variant, transparent = false) {
       const value = await asset(context, assetId),
         file = await stored(value);
       if (!file)
@@ -478,10 +555,16 @@ export function createVisualFileService(
           "L’image n’a pas encore terminé son envoi.",
           true,
         );
+      const selected =
+        transparent && variant === "preview"
+          ? await withTransparentPreview(context, value, file)
+          : file;
       const descriptor =
-        variant === "source" ? file.manifest.source : file.manifest.preview;
+        variant === "source"
+          ? selected.manifest.source
+          : selected.manifest.preview;
       const bytes = await storage.read(
-        variant === "source" ? file.sourceKey : file.previewKey,
+        variant === "source" ? selected.sourceKey : selected.previewKey,
         descriptor.sizeBytes,
       );
       if (

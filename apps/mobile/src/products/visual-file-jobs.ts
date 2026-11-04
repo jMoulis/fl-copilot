@@ -249,6 +249,7 @@ export class VisualFileJobs {
                 "VISUAL_FILE_INVALID",
                 "VISUAL_FILE_BINDING_INVALID",
                 "VISUAL_SOURCE_FILE_MISSING",
+                "VISUAL_PREVIEW_UPGRADE_REQUIRED",
                 "VISUAL_ASSET_UNAVAILABLE",
                 "VISUAL_ACCESS_INVALID",
               ].includes(code);

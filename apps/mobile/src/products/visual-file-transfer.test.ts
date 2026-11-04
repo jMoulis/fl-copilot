@@ -22,7 +22,7 @@ import {
 import type { VisualFileStorage } from "./visual-file-storage";
 const hash = (bytes: Uint8Array) =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-async function setup() {
+async function setup(mimeType: "image/jpeg" | "image/png" = "image/jpeg") {
   const f = visualLibraryFixture(),
     db = new VisualTestDatabase(new DatabaseSync(":memory:"));
   await runLocalMigrations(db);
@@ -30,6 +30,7 @@ async function setup() {
     preview = new Uint8Array([255, 216, 255, 218]);
   f.asset = {
     ...f.asset,
+    mimeType,
     contentHash: hash(source),
     sizeBytes: source.byteLength,
   };
@@ -283,6 +284,139 @@ it("stops after account/store changes or a known revocation instead of recording
       "VISUAL_ASSET_UNAVAILABLE",
     );
     expect(s.api.download).not.toHaveBeenCalled();
+  } finally {
+    s.db.raw.close();
+  }
+});
+
+it("replaces a retained JPEG preview of a PNG only after successful transfer, keeping the original and offline fallback", async () => {
+  const s = await setup("image/png");
+  try {
+    const previous = await s.files.write(
+      s.f.storeId,
+      "PREVIEW",
+      s.manifest.preview,
+      s.preview,
+    );
+    await s.cache.remember(
+      s.f.storeId,
+      s.f.asset.id,
+      "PREVIEW",
+      previous,
+      s.manifest,
+    );
+    const original = await s.cache.get(s.f.storeId, s.f.asset, "SOURCE");
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const alpha = visualFileManifestSchema.parse({
+      ...s.manifest,
+      processorVersion: "visual-image.v2",
+      preview: {
+        ...s.manifest.preview,
+        mimeType: "image/png",
+        sizeBytes: png.byteLength,
+        contentHash: hash(png),
+      },
+    });
+    vi.mocked(s.api.manifest).mockResolvedValue(alpha);
+    vi.mocked(s.api.download).mockRejectedValueOnce(
+      new Error("NETWORK_UNAVAILABLE"),
+    );
+    await expect(s.transfer.fetchPreview(s.f.asset.id)).rejects.toThrow();
+    expect(
+      (await s.cache.get(s.f.storeId, s.f.asset, "PREVIEW"))!.contentHash,
+    ).toBe(previous.contentHash);
+    expect(s.files.removeCached).not.toHaveBeenCalled();
+    vi.mocked(s.api.download).mockResolvedValue(png);
+    vi.mocked(s.files.removeCached).mockImplementation(
+      async (_store, proof) => {
+        s.local.delete(proof.relativePath);
+      },
+    );
+    await s.transfer.fetchPreview(s.f.asset.id);
+    const upgraded = await s.cache.get(s.f.storeId, s.f.asset, "PREVIEW");
+    expect(upgraded!.manifest!.processorVersion).toBe("visual-image.v2");
+    expect(upgraded!.relativePath).toMatch(/\.png$/);
+    expect(s.local.has(previous.relativePath)).toBe(false);
+    expect(s.local.has(original!.relativePath)).toBe(true);
+  } finally {
+    s.db.raw.close();
+  }
+});
+
+it("keeps a legacy derived file while another product asset still references it", async () => {
+  const s = await setup("image/png");
+  try {
+    const previous = await s.files.write(
+      s.f.storeId,
+      "PREVIEW",
+      s.manifest.preview,
+      s.preview,
+    );
+    await s.cache.remember(
+      s.f.storeId,
+      s.f.asset.id,
+      "PREVIEW",
+      previous,
+      s.manifest,
+    );
+    const other = {
+      ...s.f.asset,
+      contentHash: hash(new Uint8Array([1, 2, 3, 4])),
+    };
+    other.id = testVisualId("visual_asset", s.f.storeId, other.contentHash);
+    await applyVisualEntity(s.db, s.f.storeId, "visual_asset", other);
+    const shared = visualFileManifestSchema.parse({
+      ...s.manifest,
+      assetId: other.id,
+      source: { ...s.manifest.source, contentHash: other.contentHash },
+    });
+    await s.cache.remember(s.f.storeId, other.id, "PREVIEW", previous, shared);
+    const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const alpha = visualFileManifestSchema.parse({
+      ...s.manifest,
+      processorVersion: "visual-image.v2",
+      preview: {
+        ...s.manifest.preview,
+        mimeType: "image/png",
+        sizeBytes: png.byteLength,
+        contentHash: hash(png),
+      },
+    });
+    vi.mocked(s.api.manifest).mockResolvedValue(alpha);
+    vi.mocked(s.api.download).mockResolvedValue(png);
+    await s.transfer.fetchPreview(s.f.asset.id);
+    expect(s.files.removeCached).not.toHaveBeenCalled();
+    expect(
+      (await s.cache.get(s.f.storeId, other, "PREVIEW"))!.relativePath,
+    ).toBe(previous.relativePath);
+  } finally {
+    s.db.raw.close();
+  }
+});
+
+it("refuses a legacy response for a requested PNG upgrade without downloading white copies again", async () => {
+  const s = await setup("image/png");
+  try {
+    const previous = await s.files.write(
+      s.f.storeId,
+      "PREVIEW",
+      s.manifest.preview,
+      s.preview,
+    );
+    await s.cache.remember(
+      s.f.storeId,
+      s.f.asset.id,
+      "PREVIEW",
+      previous,
+      s.manifest,
+    );
+    await expect(s.transfer.fetchPreview(s.f.asset.id)).rejects.toThrow(
+      "VISUAL_PREVIEW_UPGRADE_REQUIRED",
+    );
+    expect(s.api.download).not.toHaveBeenCalled();
+    expect(
+      (await s.cache.get(s.f.storeId, s.f.asset, "PREVIEW"))!.contentHash,
+    ).toBe(previous.contentHash);
   } finally {
     s.db.raw.close();
   }

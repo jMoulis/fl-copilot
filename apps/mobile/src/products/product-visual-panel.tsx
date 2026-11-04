@@ -322,11 +322,6 @@ export function ProductVisualPanel({
               ? "Ajoutez une image pour reconnaître ce produit."
               : "Image du produit non renseignée."}
         </Text>
-        {resolution.kind === "ASSET" && resolution.generic ? (
-          <Text className="text-sm text-muted">
-            Visuel générique · ne décrit pas l’origine ni l’emballage exact.
-          </Text>
-        ) : null}
       </View>
       {notice ? <InlineAlert title="Enregistré" message={notice} /> : null}
       {error ? (

@@ -5,7 +5,7 @@ const dimensions = {
   width: z.number().int().positive().max(12000),
   height: z.number().int().positive().max(12000),
 };
-export const visualFileManifestSchema = z.strictObject({
+const legacyVisualFileManifestSchema = z.strictObject({
   assetId: z.uuid(),
   storeId: z.uuid(),
   processorVersion: z.literal("visual-image.v1"),
@@ -37,6 +37,19 @@ export const visualFileManifestSchema = z.strictObject({
     height: z.number().int().positive().max(1024),
   }),
 });
+/** Old clients keep v1 JPEG; opt-in readers can receive a transparent v2 PNG. */
+export const visualFileManifestSchema = z.discriminatedUnion(
+  "processorVersion",
+  [
+    legacyVisualFileManifestSchema,
+    legacyVisualFileManifestSchema.extend({
+      processorVersion: z.literal("visual-image.v2"),
+      preview: legacyVisualFileManifestSchema.shape.preview.extend({
+        mimeType: z.literal("image/png"),
+      }),
+    }),
+  ],
+);
 export type VisualFileManifest = z.infer<typeof visualFileManifestSchema>;
 export const initVisualFileRequestSchema = z.strictObject({
   assetId: z.uuid(),

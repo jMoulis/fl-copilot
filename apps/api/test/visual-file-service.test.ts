@@ -92,11 +92,16 @@ class MemoryDatabase implements DatabaseService {
     } as unknown as Db;
   }
 }
-async function setup() {
+async function setup(transparent = false) {
   const f = visualLibraryFixture();
   const bytes = new Uint8Array(
     await sharp({
-      create: { width: 32, height: 16, channels: 3, background: "#e9b640" },
+      create: {
+        width: 32,
+        height: 16,
+        channels: 4,
+        background: { r: 233, g: 182, b: 64, alpha: transparent ? 0 : 1 },
+      },
     })
       .png()
       .toBuffer(),
@@ -339,4 +344,57 @@ it("isolates stores and upload owners; staff may read approved files but cannot 
   await expect(
     s.service.read(s.context, s.f.asset.id, "source"),
   ).rejects.toThrow("VISUAL_STORED_FILE_INVALID");
+});
+
+it("upgrades a retained PNG only on opt-in, preserving legacy proof/original and reusing the transparent derivative", async () => {
+  const s = await setup(true),
+    init = await s.upload();
+  const legacy = await s.service.complete(
+    s.context,
+    s.f.asset.id,
+    init.uploadId!,
+  );
+  const assets = structuredClone(s.database.data("visualAssets"));
+  expect(legacy.processorVersion).toBe("visual-image.v1");
+  const png = await s.service.manifest(s.context, s.f.asset.id, true);
+  expect(png).toMatchObject({
+    processorVersion: "visual-image.v2",
+    preview: { mimeType: "image/png" },
+  });
+  const result = await s.service.read(s.context, s.f.asset.id, "preview", true);
+  expect(result.mimeType).toBe("image/png");
+  expect((await sharp(result.bytes).ensureAlpha().raw().toBuffer())[3]).toBe(0);
+  expect(visualBytesHash(result.bytes)).toBe(png.preview.contentHash);
+  expect(await s.service.manifest(s.context, s.f.asset.id)).toEqual(legacy);
+  expect(
+    (await s.service.read(s.context, s.f.asset.id, "preview")).mimeType,
+  ).toBe("image/jpeg");
+  expect(
+    (await s.service.read(s.context, s.f.asset.id, "source")).bytes,
+  ).toEqual(s.bytes);
+  const writes = vi.mocked(s.storage.writeImmutable).mock.calls.length;
+  expect(await s.service.manifest(s.context, s.f.asset.id, true)).toEqual(png);
+  expect(vi.mocked(s.storage.writeImmutable).mock.calls.length).toBe(writes);
+  expect(s.database.data("visualAssets")).toEqual(assets);
+  expect(s.database.data("visualAssetFiles")).toHaveLength(1);
+});
+it("rechecks approval during transparent regeneration and never exposes the withdrawn asset", async () => {
+  const s = await setup(true),
+    init = await s.upload();
+  await s.service.complete(s.context, s.f.asset.id, init.uploadId!);
+  const read = vi.mocked(s.storage.read).getMockImplementation()!;
+  vi.mocked(s.storage.read).mockImplementation(async (key, max) => {
+    const bytes = await read(key, max);
+    s.database.data("visualAssets")[0]!.review = {
+      ...s.f.asset.review,
+      status: "REVOKED",
+    };
+    return bytes;
+  });
+  await expect(
+    s.service.manifest(s.context, s.f.asset.id, true),
+  ).rejects.toMatchObject({ publicCode: "VISUAL_REVIEW_REQUIRED" });
+  expect(
+    s.database.data("visualAssetFiles")[0]!.transparentManifest,
+  ).toBeUndefined();
 });

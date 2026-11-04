@@ -216,6 +216,55 @@ it("authenticates every private image route, limits writers and serves an opaque
       assetId,
       "preview",
     );
+    const alpha = {
+      ...manifest,
+      processorVersion: "visual-image.v2" as const,
+      preview: { ...manifest.preview, mimeType: "image/png" as const },
+    };
+    vi.mocked(files.manifest).mockResolvedValue(alpha);
+    vi.mocked(files.read).mockResolvedValue({
+      bytes,
+      mimeType: "image/png",
+      contentHash: visualBytesHash(bytes),
+    });
+    const opted = await app.inject({
+      url: `/api/v1/visual-assets/${assetId}/file-manifest?preview=transparent`,
+      headers,
+    });
+    expect(opted.statusCode).toBe(200);
+    expect(opted.json()).toEqual(alpha);
+    expect(files.manifest).toHaveBeenLastCalledWith(
+      expect.objectContaining({ storeId, userId }),
+      assetId,
+      true,
+    );
+    const png = await app.inject({
+      url: `/api/v1/visual-assets/${assetId}/preview?preview=transparent`,
+      headers,
+    });
+    expect(png.headers["content-type"]).toBe("image/png");
+    expect(png.headers["cache-control"]).toBe("private, no-store");
+    expect(files.read).toHaveBeenLastCalledWith(
+      expect.objectContaining({ storeId, userId }),
+      assetId,
+      "preview",
+      true,
+    );
+    expect(
+      (
+        await app.inject({
+          url: `/api/v1/visual-assets/${assetId}/preview?preview=transparent`,
+        })
+      ).statusCode,
+    ).toBe(401);
+    expect(
+      (
+        await app.inject({
+          url: `/api/v1/visual-assets/${assetId}/preview?preview=unsupported`,
+          headers,
+        })
+      ).statusCode,
+    ).toBe(400);
   } finally {
     await app.close();
   }

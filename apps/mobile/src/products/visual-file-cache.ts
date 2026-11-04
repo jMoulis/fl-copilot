@@ -30,7 +30,10 @@ export function visualFilePath(
     "image/heic": "heic",
     "image/heif": "heif",
   }[mime];
-  if (!ext || (variant === "PREVIEW" && mime !== "image/jpeg"))
+  if (
+    !ext ||
+    (variant === "PREVIEW" && !["image/jpeg", "image/png"].includes(mime))
+  )
     throw Error("VISUAL_FILE_LOCATION_INVALID");
   return `visual-library/${storeId}/${variant.toLowerCase()}-${hash.slice(7)}.${ext}`;
 }

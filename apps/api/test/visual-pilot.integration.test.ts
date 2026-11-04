@@ -304,7 +304,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           {
             init: (_store, id) => api.init(id),
             complete: (_store, id, upload) => api.complete(id, upload),
-            manifest: (_store, id) => api.manifest(id),
+            manifest: (_store, id) =>
+              client.visualFileManifest(token, s.f.storeId, id, true),
             download: (_store, m, variant) => api.download(m, variant),
           },
           nativeFiles,
@@ -344,7 +345,10 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           result.asset,
           "PREVIEW",
         );
-        expect(cachedProof?.manifest).toEqual(manifest);
+        expect(cachedProof?.manifest?.source).toEqual(manifest.source);
+        expect(cachedProof?.manifest?.processorVersion).toBe("visual-image.v2");
+        expect(cachedProof?.manifest?.preview.mimeType).toBe("image/png");
+        expect(await api.manifest(result.asset.id)).toEqual(manifest);
         expect(
           await nativeFiles.uri(
             s.f.storeId,

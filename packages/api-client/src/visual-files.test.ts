@@ -249,3 +249,51 @@ it("requests a canonical manager review snapshot with bearer, store and sync ver
     "x-sync-protocol-version": "1",
   });
 });
+
+it("opts into PNG manifests/downloads without changing legacy requests or original URLs", async () => {
+  const alpha = visualFileManifestSchema.parse({
+    ...manifest,
+    processorVersion: "visual-image.v2",
+    preview: { ...manifest.preview, mimeType: "image/png" },
+  });
+  const urls: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      urls.push(url);
+      return url.includes("file-manifest")
+        ? new Response(
+            JSON.stringify(
+              url.includes("preview=transparent") ? alpha : manifest,
+            ),
+            { status: 200 },
+          )
+        : new Response(bytes, {
+            headers: { "content-type": "image/png", "content-length": "4" },
+          });
+    }),
+  );
+  const client = new ApiClient("https://api.test.invalid");
+  expect(
+    await client.visualFileManifest("token", f.storeId, f.asset.id),
+  ).toEqual(manifest);
+  expect(
+    await client.visualFileManifest("token", f.storeId, f.asset.id, true),
+  ).toEqual(alpha);
+  await client.downloadVisualFile("token", f.storeId, alpha, "preview");
+  expect(urls[0]).not.toContain("?");
+  expect(urls[1]).toContain("file-manifest?preview=transparent");
+  expect(urls[2]).toContain("/preview?preview=transparent");
+  expect(() =>
+    visualFileManifestSchema.parse({
+      ...alpha,
+      processorVersion: "visual-image.v1",
+    }),
+  ).toThrow();
+  expect(() =>
+    visualFileManifestSchema.parse({
+      ...manifest,
+      processorVersion: "visual-image.v2",
+    }),
+  ).toThrow();
+});

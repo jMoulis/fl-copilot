@@ -73,7 +73,7 @@ export const nativeVisualFileStorage: VisualFileStorage = {
     if (
       !match ||
       proof.contentHash !== `sha256:${match[2]}` ||
-      (match[1] === "preview" && match[3] !== "jpg")
+      (match[1] === "preview" && !["jpg", "png"].includes(match[3]!))
     )
       throw Error("VISUAL_FILE_LOCATION_INVALID");
     const { File, Paths } = await import("expo-file-system");

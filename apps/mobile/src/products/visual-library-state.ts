@@ -292,6 +292,8 @@ export function visualErrorMessage(error: unknown) {
     case "VISUAL_ASSET_UNAVAILABLE":
     case "VISUAL_RESOLVE_REQUIRED":
       return "Cette cible est retirée, non approuvée ou en conflit. Votre choix précédent reste conservé.";
+    case "VISUAL_PREVIEW_UPGRADE_REQUIRED":
+      return "Cet aperçu ne peut pas encore être actualisé. La copie disponible reste conservée ; réessayez plus tard.";
     case "VISUAL_SOURCE_FILE_MISSING":
       return "L’original n’est plus disponible sur cet appareil. Sélectionnez à nouveau la même photo pour reprendre son envoi.";
     case "VISUAL_FILE_INVALID":
