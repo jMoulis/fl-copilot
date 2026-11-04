@@ -1,3 +1,7 @@
+## M7 UX continuation — ordinary chat text remains text
+
+The native review found long-press-enabled assistant paragraphs/cells/author labels exposed as links even without a source. Declare text/header roles and retain nested source links, long-press menus and horizontal table scrolling. Existing-source simulator checks and 22 targeted tests qualify the fix; full VoiceOver/large-text/Android certification remains separate. [Scope](../qa/M7_CHAT_TEXT_ACCESSIBILITY_2026_11_04.md). Build 32’s existing-PNG recipe is owner accepted; memory and chart cases stay closed. Mobile-only, no extra tool/prompt/model/API or paid build for this isolated increment.
+
 ## M7 corrective increment — transparent product previews
 
 Fix the owner’s retained transparent PNGs shown on white and remove the recurring generic thumbnail caption. Reuse canonical private endpoints, immutable original/approval/link state and durable mobile file jobs. Default v1 JPEG remains compatible; an opted-in v2 PNG proof preserves transparency within existing bounds and upgrades cached legacy previews without requiring reupload or deleting offline originals/shared files. [Verification and API-before-native delivery](../qa/M7_TRANSPARENT_PRODUCT_PREVIEWS_2026_11_04.md). The owner retains image selection/uploads. The new-discussion recall test now passes against confirmed practices; do not repeat it. Workstreams 1/3/4/5 remain closed, 2/6 deferred, 7 advances. No new model, provider, business writer or paid AI request.

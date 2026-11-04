@@ -1,3 +1,7 @@
+## Native chat semantics — 4 November 2026
+
+Read ordinary assistant paragraphs, table cells and the author as text, and headings as headings. A long-press context menu must not label all prose as hyperlinks. Actual source spans remain independently discoverable links and open the existing source sheet; copy/delete controls, long press and horizontal table scrolling remain available. This changes accessibility semantics without changing the conversational workflow.
+
 ## Owner correction — 4 November 2026: transparent product images
 
 Preserve uploaded PNG transparency in the displayed cached preview, including existing images, without requiring reupload or reassignment. Keep the current local image while its updated preview is fetched; source/original and approval remain unchanged. Remove the recurring “Générique” thumbnail overlay and default product-panel caption. Preserve specificity/provenance in data and explicit editor/library distinctions; retain the separate AI Illustration disclosure. No new import/review screen or Copilot instruction is introduced. Native acceptance follows compatible API and grouped binary delivery.

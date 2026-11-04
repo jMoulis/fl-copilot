@@ -142,6 +142,7 @@ export function AssistantAnswer({
                       <Text
                         key={c}
                         selectable={selectable}
+                        accessibilityRole="text"
                         onLongPress={onLongPress}
                         style={[styles.cell, r === 0 && styles.bold]}
                       >
@@ -156,6 +157,7 @@ export function AssistantAnswer({
             <Text
               key={i}
               selectable={selectable}
+              accessibilityRole={block.type === "heading" ? "header" : "text"}
               onLongPress={onLongPress}
               style={[styles.text, block.type === "heading" && styles.heading]}
             >

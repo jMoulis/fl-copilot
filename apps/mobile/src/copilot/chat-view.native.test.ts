@@ -162,3 +162,47 @@ it("does not offer actions without the host deletion handler", async () => {
   await mount({ onDeleteMessage: undefined });
   expect(buttons()).toHaveLength(0);
 });
+
+it("reads ordinary answer text as text while retaining the long-press menu and real source links", async () => {
+  const { message } = chatFixture(randomUUID);
+  const source = encodeURIComponent(
+    JSON.stringify({ label: "CA", value: "12.30", sourceId: "canonical" }),
+  );
+  const { remove } = await mount({
+    messages: [
+      {
+        ...message,
+        role: "ASSISTANT",
+        text: `## Bilan\n\nLes ventes sont renseignées. [Source](copilot-source:${source})\n\n| Produit | CA |\n| --- | ---: |\n| Tomate | 12,30 € |`,
+      },
+    ],
+  });
+  const readable = tree!.root.findAll(
+    (node) =>
+      typeof node.type === "string" &&
+      String(node.type) === "Text" &&
+      typeof node.props.onLongPress === "function",
+  );
+  expect(readable.length).toBeGreaterThan(3);
+  for (const node of readable)
+    expect(["text", "header"]).toContain(node.props.accessibilityRole);
+  await act(async () => readable[0]!.props.onLongPress());
+  expect(native.sheet).toHaveBeenCalledOnce();
+  expect(remove).not.toHaveBeenCalled();
+  const link = tree!.root.find(
+    (node) =>
+      typeof node.type === "string" &&
+      String(node.type) === "Text" &&
+      node.props.accessibilityRole === "link" &&
+      node.props.accessibilityLabel === "Consulter la source",
+  );
+  await act(async () => link.props.onPress());
+  expect(
+    tree!.root.find(
+      (node) =>
+        typeof node.type === "string" &&
+        String(node.type) === "BottomSheet" &&
+        node.props.title === "Source",
+    ).props.visible,
+  ).toBe(true);
+});
