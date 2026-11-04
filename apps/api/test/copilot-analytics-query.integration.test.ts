@@ -117,6 +117,127 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
         snapshot(otherStore, randomUUID(), "2025-10-01", "999999.00"),
       ]);
   });
+  it("compares both theme products in one Monday-to-Monday read despite unknown waste", async () => {
+    await db
+      .collection<Document & { _id: string }>("products")
+      .updateOne(
+        { _id: banana },
+        { $set: { label: "Tomate cerise Petit Prix" } },
+      );
+    await db
+      .collection<Document & { _id: string }>("products")
+      .updateOne(
+        { _id: pear },
+        { $set: { label: "Clémentine feuille vrac", deletedAt: null } },
+      );
+    const point = (
+      id: string,
+      date: string,
+      sales: string,
+      margin: string,
+      waste: string | null,
+    ) => {
+      const row = snapshot(storeId, id, date, sales);
+      row.performance.sales.marginValue = margin;
+      row.performance.waste.salesValue = waste;
+      row.performance.availability.wasteSalesValue = {
+        status: waste === null ? "UNAVAILABLE" : "AVAILABLE",
+        inputCount: 1,
+        availableInputCount: waste === null ? 0 : 1,
+        missingInputCount: waste === null ? 1 : 0,
+      };
+      return row;
+    };
+    await db
+      .collection<Document & { _id: string }>("productDailyPerformance")
+      .insertMany([
+        point(banana, "2026-10-26", "81.18", "16.27", null),
+        point(banana, "2026-11-02", "83.16", "16.66", "0.99"),
+        point(pear, "2026-10-26", "6.17", "1.93", null),
+        point(pear, "2026-11-02", "0.89", "0.29", null),
+        point(pear, "2026-10-27", "9999.00", "8888.00", "777.00"),
+        snapshot(otherStore, randomUUID(), "2026-11-02", "999999.00"),
+      ]);
+    const before = await db
+      .collection("productDailyPerformance")
+      .find()
+      .toArray();
+    const input = query({
+      currentPeriod: { start: "2026-11-02", end: "2026-11-02" },
+      referencePeriod: { start: "2026-10-26", end: "2026-10-26" },
+      metrics: ["sales", "margin", "waste"],
+      filters: {
+        productIds: [banana, pear],
+        labelContains: null,
+        category: null,
+        nature: null,
+      },
+    });
+    const r = await readAnalyticsQuery(db, storeId, input);
+    expect(r.hasMore).toBe(false);
+    expect(r.rows).toHaveLength(2);
+    const tomato = r.rows.find((row) => row.key === banana)!;
+    const clementine = r.rows.find((row) => row.key === pear)!;
+    expect(tomato.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metric: "sales",
+          current: "83.16",
+          reference: "81.18",
+          changePercent: "2.44",
+        }),
+        expect.objectContaining({
+          metric: "margin",
+          current: "16.66",
+          reference: "16.27",
+          changePercent: "2.40",
+        }),
+        expect.objectContaining({
+          metric: "waste",
+          current: "0.99",
+          reference: null,
+          changePercent: null,
+        }),
+      ]),
+    );
+    expect(clementine.metrics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metric: "sales",
+          current: "0.89",
+          reference: "6.17",
+          change: "-5.28",
+        }),
+        expect.objectContaining({
+          metric: "margin",
+          current: "0.29",
+          reference: "1.93",
+          change: "-1.64",
+        }),
+        expect.objectContaining({
+          metric: "waste",
+          current: null,
+          reference: null,
+          changePercent: null,
+        }),
+      ]),
+    );
+    for (const row of r.rows)
+      for (const metric of row.metrics) {
+        expect(
+          r.evidence.find((e) => e.id === metric.evidenceIds.current)?.value,
+        ).toBe(metric.current);
+        if (metric.evidenceIds.reference)
+          expect(
+            r.evidence.find((e) => e.id === metric.evidenceIds.reference)
+              ?.value,
+          ).toBe(metric.reference);
+      }
+    expect(
+      await db.collection("productDailyPerformance").find().toArray(),
+    ).toEqual(before);
+    expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
+  });
   it("computes a citable complete-cohort Pareto before pagination, with independent reference and unchanged tenant data", async () => {
     const before = await db
       .collection("productDailyPerformance")

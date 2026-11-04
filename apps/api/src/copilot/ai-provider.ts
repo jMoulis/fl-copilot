@@ -372,6 +372,14 @@ export type CopilotGenerationRequest = z.infer<
   typeof copilotGenerationRequestSchema
 >;
 export type CopilotGenerationMetadata = z.infer<typeof metadataSchema>;
+type CopilotReadFailure =
+  | "READ_LIMIT"
+  | "DISTINCT_READ_LIMIT"
+  | "INPUT_LIMIT"
+  | "ABORTED"
+  | "READ_FAILED"
+  | "EVIDENCE_LIMIT"
+  | "EVIDENCE_CONFLICT";
 /** Content-free operational logs, not billing or synchronized business data.
  * Sum STEP records only; END deliberately contains no duplicate token totals. */
 type CopilotGenerationUsageDetails =
@@ -392,6 +400,7 @@ type CopilotGenerationUsageDetails =
       completedSteps: number;
       durationMs: number;
       initialContextBytes: number;
+      readFailures: Partial<Record<CopilotReadFailure, number>>;
       // A failed call may have consumed tokens without returning usage.
       usageComplete: boolean;
     };
@@ -817,6 +826,7 @@ export function createCopilotAiProvider(
       let completedSteps = 0,
         completed = false,
         allStepsHaveUsage = true;
+      const readFailures: Partial<Record<CopilotReadFailure, number>> = {};
       const reportUsage = (event: CopilotGenerationUsageDetails) => {
         try {
           reads?.onUsage?.({ ...event, requestId: request.requestId });
@@ -971,15 +981,23 @@ export function createCopilotAiProvider(
           }>,
           kind: "READ" | "INFORMATION" | "MEMORY" | "CHECKPOINT" = "READ",
         ) => {
-          const unavailable = {
-            unavailable: true as const,
-            message:
-              "Les données demandées ne peuvent pas être consultées maintenant. Ne les inventez pas.",
-          };
-          if (++readCalls > readLimit || abortSignal.aborted) {
+          const unavailable = (reason: CopilotReadFailure) => {
             completeFactTrace = false;
-            return unavailable;
-          }
+            readFailures[reason] = (readFailures[reason] ?? 0) + 1;
+            return {
+              unavailable: true as const,
+              reason,
+              message: [
+                "READ_LIMIT",
+                "DISTINCT_READ_LIMIT",
+                "INPUT_LIMIT",
+              ].includes(reason)
+                ? "La limite de lecture de cette réponse est atteinte. Termine avec les faits déjà consultés et signale ce qui reste incomplet. Cela ne signifie pas que les données sont absentes ni que le serveur est en panne. Ne retente pas cette lecture dans cette réponse."
+                : "Cette lecture n’a pas pu être utilisée. Ne conclus pas que les données sont absentes et ne les invente pas.",
+            };
+          };
+          if (abortSignal.aborted) return unavailable("ABORTED");
+          if (++readCalls > readLimit) return unavailable("READ_LIMIT");
           let work = pending.get(key);
           if (!work) {
             if (
@@ -999,8 +1017,7 @@ export function createCopilotAiProvider(
                           ? 4
                           : 3)
             ) {
-              completeFactTrace = false;
-              return unavailable;
+              return unavailable("DISTINCT_READ_LIMIT");
             }
             if (kind === "INFORMATION") informationKeys.add(key);
             if (kind === "MEMORY") knowledgeKeys.add(key);
@@ -1023,36 +1040,29 @@ export function createCopilotAiProvider(
                 const value = await load();
                 if (!abortSignal.aborted)
                   onActivity?.({ ...activity, status: "DONE" });
-                return !abortSignal.aborted ? value : unavailable;
+                return !abortSignal.aborted ? value : unavailable("ABORTED");
               } catch {
                 if (!abortSignal.aborted)
                   onActivity?.({ ...activity, status: "UNAVAILABLE" });
-                completeFactTrace = false;
-                return unavailable;
+                return unavailable("READ_FAILED");
               }
             });
             pending.set(key, work);
           }
           const value = await work;
-          if (
-            !("evidence" in value) ||
-            value.evidence.length > COPILOT_READ_EVIDENCE_LIMIT ||
-            abortSignal.aborted
-          ) {
-            completeFactTrace = false;
-            return unavailable;
-          }
+          if (!("evidence" in value)) return value;
+          if (abortSignal.aborted) return unavailable("ABORTED");
+          if (value.evidence.length > COPILOT_READ_EVIDENCE_LIMIT)
+            return unavailable("EVIDENCE_LIMIT");
           const modelValue = projectCopilotModelValue(value);
           const size = Buffer.byteLength(JSON.stringify(modelValue), "utf8");
           if (usedBytes + size > config.COPILOT_AI_MAX_INPUT_BYTES) {
-            completeFactTrace = false;
-            return unavailable;
+            return unavailable("INPUT_LIMIT");
           }
           for (const e of value.evidence) {
             const old = evidence.get(e.id);
             if (old && !sameCopilotEvidence(old, e)) {
-              completeFactTrace = false;
-              return unavailable;
+              return unavailable("EVIDENCE_CONFLICT");
             }
           }
           // Count every returned payload, including cached duplicates, against the input budget.
@@ -1942,7 +1952,7 @@ export function createCopilotAiProvider(
                 ? {
                     analytics_query: tool({
                       description:
-                        "Calculate official CA, margin and waste breakdowns/comparisons, rankings, realized selling prices and Pareto with shared deterministic formulas. For other data exploration or purchase costs / prix d’achat use mongo_list/mongo_aggregate. Filter by literal name substring (singular keyword), known product IDs or current category/nature; group PRODUCT/CATEGORY/NATURE/DAY/TOTAL. Metrics: sales (net CA), margin (euros), waste (sales value); SUM or available-day AVERAGE. N-1 uses matching ISO weekdays automatically for civil anniversaries; referenceMode CUSTOM preserves an explicitly requested civil/custom reference. DAY accepts no reference. Optional having filters one numeric condition; sort current/reference/change/percent or GROUP labels/dates. All groups rank before pagination. Set unused filters/reference/having to null, initial offset zero, usually limit ten; follow nextOffset when useful. A name filter selects an analytical set, not a validated product identity. Partial values remain useful with one coverage qualifier; EMPTY/unresolved IDs/limits do not prove zero activity. Taxonomy is current, not historical. includeSalesConcentration requires PRODUCT, sales only, SUM, having null: measures the complete observed cohort before pagination, first-fifth CA share and minimum count reaching eighty percent, independently per period; do not assume 20/80. includeSalesMeasures requires PRODUCT, sales and limit at most ten: quantity totals (even with AVERAGE) and weighted realized selling prices have separate evidence. Prices pair compatible quantities/sales on matching complete days, not daily-price averages or shelf-price history. Mercalys sales and realized selling prices are TTC; purchases are HT. Optional chart {type:BARS|LINE, measure:CURRENT|CHANGE|CURRENT_REFERENCE, value:AMOUNT|QUANTITY|REALIZED_PRICE} returns chartEvidenceId: include it in facts and place {{chart:0}} (zero-based facts index) on its own paragraph when useful or requested, at most two per answer. BARS plots the returned ranking/page; AMOUNT is the default. LINE requires at most thirty-one days and TOTAL for amounts. Quantities/realized-price plots require PRODUCT sales and includeSalesMeasures, with compatible recorded units; for LINE select exactly one productId. Those plots support CURRENT or CURRENT_REFERENCE; price is realized selling price, not PA. No mixed-unit aggregation, margin-rate average or writes.",
+                        "Compare several products and metrics in ONE read with groupBy PRODUCT and filters.productIds, rather than one call per product/metric. Official CA, margin, waste, rankings, realized prices and Pareto use shared formulas. For purchase costs use mongo_list/mongo_aggregate. Filter by literal name substring (singular keyword), known product IDs or current category/nature; group PRODUCT/CATEGORY/NATURE/DAY/TOTAL. Metrics: sales (net CA), margin (euros), waste (sales value); SUM or available-day AVERAGE. N-1 uses matching ISO weekdays automatically for civil anniversaries; referenceMode CUSTOM preserves an explicitly requested civil/custom reference. DAY accepts no reference. Optional having filters one numeric condition; sort current/reference/change/percent or GROUP labels/dates. All groups rank before pagination. Set unused filters/reference/having to null, initial offset zero, usually limit ten; follow nextOffset when useful. A name filter selects an analytical set, not a validated product identity. Partial values remain useful with one coverage qualifier; EMPTY/unresolved IDs/limits do not prove zero activity. Taxonomy is current, not historical. includeSalesConcentration requires PRODUCT, sales only, SUM, having null: measures the complete observed cohort before pagination, first-fifth CA share and minimum count reaching eighty percent, independently per period; do not assume 20/80. includeSalesMeasures requires PRODUCT, sales and limit at most ten: quantity totals (even with AVERAGE) and weighted realized selling prices have separate evidence. Prices pair compatible quantities/sales on matching complete days, not daily-price averages or shelf-price history. Mercalys sales and realized selling prices are TTC; purchases are HT. Optional chart {type:BARS|LINE, measure:CURRENT|CHANGE|CURRENT_REFERENCE, value:AMOUNT|QUANTITY|REALIZED_PRICE} returns chartEvidenceId: include it in facts and place {{chart:0}} (zero-based facts index) on its own paragraph when useful or requested, at most two per answer. BARS plots the returned ranking/page; AMOUNT is the default. LINE requires at most thirty-one days and TOTAL for amounts. Quantities/realized-price plots require PRODUCT sales and includeSalesMeasures, with compatible recorded units; for LINE select exactly one productId. Those plots support CURRENT or CURRENT_REFERENCE; price is realized selling price, not PA. No mixed-unit aggregation, margin-rate average or writes.",
                       inputSchema: copilotAnalyticsQuerySchema,
                       execute: (input) =>
                         executeRead(
@@ -2573,7 +2583,7 @@ export function createCopilotAiProvider(
                 ? {
                     commercial_action_review: tool({
                       description:
-                        "Review a saved TG/signage task/product; IDs/week via commercial_plan. Default: SAME observed ISO weekdays per metric: one known Monday versus the prior Monday, never a weekly average. Inspect availablePeriods or analytics_query DAY first; no paired input means no trend, not zero. Custom windows only if explicitly requested by the USER. Ordered before/during/after: <=31 days each, <=93 span, no future; after=null if unobserved. Offer-backed: associated product, during within offer. For theme-only TG: descriptive product context within plan week, no inferred allocation. Optional decision: exact id/version via recommendation_decisions; drift/unavailable blocks that contextual review. No relationship saved. Choice, declaration and observed result stay distinct, including late/postponed/rejected choices; declaration time is not exposure time. Concise table/sources, qualify coverage/pages. Missing is unknown; signage is not installation. Prices, stock, traffic, weather and other promos uncontrolled: no causal uplift/ROI. Read-only.",
+                        "Review one saved TG/signage task/product (IDs/week via commercial_plan). For several theme products, use one analytics_query PRODUCT comparison after reading the plan/links, not repeated task reviews: this tool adds no confirmed allocation. Default SAME observed ISO weekdays per metric: one known Monday vs prior Monday, never weekly averages. Inspect availablePeriods or analytics_query DAY; missing input is unknown, not zero. Custom windows only on explicit USER request. Ordered before/during/after <=31 days each, <=93 span, no future; after=null if unobserved. Offer-backed: associated product and during within offer; theme-only TG: context within plan week. Optional decision requires exact id/version; drift blocks that review. No writes/links. Choice, declaration and figures differ; registration is not exposure, signage is not installation. Qualify coverage and uncontrolled prices/stock/traffic/weather/promos; no causal uplift/ROI.",
                       inputSchema: copilotActionReviewInputSchema,
                       execute: (input) =>
                         executeRead(
@@ -3724,6 +3734,7 @@ export function createCopilotAiProvider(
           completedSteps,
           durationMs: Date.now() - startedAt,
           initialContextBytes: Buffer.byteLength(prompt, "utf8"),
+          readFailures,
           usageComplete: completed && completedSteps > 0 && allStepsHaveUsage,
         });
       }

@@ -456,7 +456,7 @@ it("executes scoped read capabilities once per date, caps distinct reads and fee
     const sent = JSON.stringify(body);
     expect(sent).toContain("tool-2026-10-08");
     expect(sent).toContain("12.50");
-    expect(sent).toContain("Ne les inventez pas");
+    expect(sent).toContain("DISTINCT_READ_LIMIT");
     return response();
   });
   const activity = vi.fn(),
@@ -6516,6 +6516,7 @@ it("bounds repeated tool discovery and reserves the final step for an answer", a
 it("preserves the business read budget after discovery instead of converting search into extra data access", async () => {
   const f = fixture();
   let requests = 0;
+  const onUsage = vi.fn();
   const daily = vi.fn(async ({ businessDate }: { businessDate: string }) => ({
     businessDate,
     referenceDate: "2026-10-01",
@@ -6547,17 +6548,35 @@ it("preserves the business read budget after discovery instead of converting sea
           }),
         ),
       );
-    expect(JSON.stringify(body)).toContain("unavailable");
+    const outputs = body.input
+      .filter((i: { type: string }) => i.type === "function_call_output")
+      .map((i: { output: string }) => JSON.parse(i.output));
+    const failure = outputs.find(
+      (v: { reason?: string }) => v.reason === "DISTINCT_READ_LIMIT",
+    );
+    expect(failure).toMatchObject({
+      unavailable: true,
+      reason: "DISTINCT_READ_LIMIT",
+    });
+    expect(failure.message).toContain(
+      "ne signifie pas que les données sont absentes",
+    );
     return response();
   };
   const r = await createCopilotAiProvider(
     f.config,
     transport,
-    discoveryReads({ daily }),
+    discoveryReads({ daily, onUsage }),
   ).generate(f.request, schema);
   expect(daily).toHaveBeenCalledTimes(3);
   expect(r.toolEvidence).toHaveLength(3);
   expect(r.factTrace?.complete).toBe(false);
+  expect(onUsage).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      kind: "END",
+      readFailures: { DISTINCT_READ_LIMIT: 1 },
+    }),
+  );
 });
 it("crosses analysis and catalogue domains while retaining native confirmation for a product correction", async () => {
   const f = fixture(),
@@ -8139,3 +8158,73 @@ it("returns validated candidate codes through the SDK without separate fiche rea
   expect(cataloguePreview).not.toHaveBeenCalled();
   expect(r.cataloguePreviews).toEqual([]);
 });
+
+it.each([
+  "READ_FAILED",
+  "INPUT_LIMIT",
+  "EVIDENCE_CONFLICT",
+  "READ_LIMIT",
+] as const)(
+  "preserves %s read failures for the model and content-free diagnostics",
+  async (reason) => {
+    const f = fixture();
+    if (reason === "INPUT_LIMIT") f.config.COPILOT_AI_MAX_INPUT_BYTES = 4096;
+    const onUsage = vi.fn();
+    const calls =
+      reason === "READ_LIMIT" ? 8 : reason === "EVIDENCE_CONFLICT" ? 2 : 1;
+    const daily = vi.fn(async ({ businessDate }: { businessDate: string }) => {
+      if (reason === "READ_FAILED")
+        throw Error("private source or exception text must not be logged");
+      return {
+        businessDate,
+        referenceDate: "2026-10-01",
+        evidence: [
+          {
+            id: reason === "EVIDENCE_CONFLICT" ? "same-fact" : businessDate,
+            sourceType: "KPI" as const,
+            sourceId: "canonical-private-source",
+            sourceVersion: null,
+            label: "CA",
+            value: reason === "INPUT_LIMIT" ? "9".repeat(3500) : businessDate,
+            factKind: "DERIVED" as const,
+          },
+        ],
+      };
+    });
+    let step = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (step++ === 0)
+        return discoveryResponse(
+          Array.from({ length: calls }, (_, i) => ({
+            name: "analytics_daily",
+            input: { businessDate: `2026-10-${15 + i}` },
+          })),
+        );
+      const outputs = body.input
+        .filter((i: { type: string }) => i.type === "function_call_output")
+        .map((i: { output: string }) => JSON.parse(i.output));
+      expect(
+        outputs.filter((o: { unavailable?: boolean }) => o.unavailable),
+      ).toEqual([expect.objectContaining({ unavailable: true, reason })]);
+      expect(JSON.stringify(outputs)).not.toContain(
+        "private source or exception text",
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily,
+      commercialPdfOriginal: vi.fn(),
+      choiceCreateVersion: 2,
+      onUsage,
+    }).generate(f.request, schema);
+    expect(result.factTrace?.complete).toBe(false);
+    const end = onUsage.mock.calls
+      .map(([e]) => e)
+      .find((e) => e.kind === "END");
+    expect(end?.readFailures).toEqual({ [reason]: 1 });
+    expect(JSON.stringify(end)).not.toContain("canonical-private-source");
+    expect(JSON.stringify(end)).not.toContain("2026-10-15");
+    expect(daily).toHaveBeenCalledTimes(Math.min(calls, 7));
+  },
+);
