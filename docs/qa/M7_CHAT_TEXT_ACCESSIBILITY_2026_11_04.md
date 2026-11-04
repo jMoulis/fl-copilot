@@ -12,7 +12,7 @@ Use the existing Expo Go 57.0.9 installation and retained SQLite database. The o
 
 The current source opens the retained database and existing conversations. Before/after native accessibility trees show the same author and ordinary paragraphs changing from `link` to `text`. Long-pressing the author opens Copier/Supprimer/Annuler; cancel leaves the message intact. In another saved conversation, prose and table values are text while actual Source spans remain separate links with native link-count hints. Opening one of those links shows its existing Source sheet, and Fermer returns to the same conversation.
 
-The same review opens Today and Actions, catalogue search → product detail → retained search, and Analytics → filters → close without changing selection. It does not reconfirm those business numbers or previously accepted TGs. No message is sent, deleted or memorized; no import, plan choice or execution is explicitly changed. Normal background synchronization remains the application's existing behavior.
+The same review opens Today and Actions, catalogue search → product detail → retained search, and Analytics → filters → close without changing selection. It does not reconfirm those business numbers or previously accepted TGs. No message is sent, deleted or memorized; no import, plan choice or execution is explicitly changed. No new AI prompt or generation test is submitted. Existing background synchronization/recovery may resume previously requested work and is not independently metered.
 
 ## Automated validation
 

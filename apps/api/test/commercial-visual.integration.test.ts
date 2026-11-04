@@ -1,3 +1,7 @@
+import {
+  syncPullResponseSchema,
+  bootstrapResponseSchema,
+} from "@fl-copilot/sync-contracts";
 import { randomUUID, createHash } from "node:crypto";
 import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { parseEnvironment } from "../src/config.js";
@@ -265,6 +269,15 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       );
       await processor.pending();
       await processor.process(s.storeId, s.sourceDocumentId, 1);
+      // Original-backed readings persist an explicit null revision, as in the affected pull.
+      await (
+        await database.getDb()
+      )
+        .collection("commercialVisualReadings")
+        .updateMany(
+          { storeId: s.storeId },
+          { $set: { analysisRevision: null } },
+        );
       const pull = createMongoSyncPullService(database);
       expect(
         (await pull.pull(s.storeId, { limit: 500, commercialReview: "true" }))
@@ -275,6 +288,8 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         commercialVisual: "true",
       });
       expect(visible.changes[0]?.entityType).toBe("commercial_visual_reading");
+      expect(() => syncPullResponseSchema.parse(visible)).not.toThrow();
+      expect(visible.changes[0]!.entity).not.toHaveProperty("analysisRevision");
       const boot = await createMongoSyncBootstrapService(database).bootstrap(
         {
           storeId: s.storeId,
@@ -287,6 +302,13 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         { rawObservationDays: 90, commercialVisual: "true" },
       );
       expect(boot.entities.commercialVisualReadings).toHaveLength(1);
+      expect(() => bootstrapResponseSchema.parse(boot)).not.toThrow();
+      expect(
+        Object.hasOwn(
+          boot.entities.commercialVisualReadings![0]!,
+          "analysisRevision",
+        ),
+      ).toBe(false);
     }, 20000);
     it("scopes original download signing to the registered store/path and two minutes", async () => {
       const s = await seed();

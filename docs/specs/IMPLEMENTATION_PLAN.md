@@ -1,3 +1,7 @@
+## M7 UX / M8 correction — PDF reading wire serialization
+
+Prioritize the reproduced native sync/pull 500: individual PDF readings are valid, but their normalized absent revision is not JSON-safe in the complete sync envelope. Omit only the absent property in the canonical serializer and retain strict response validation, source records and cursor semantics. Transactional pull/bootstrap and null/undefined/positive regressions qualify the fix; API delivery followed by normal native synchronization remains required. [Evidence](../qa/M8_VISUAL_READING_SYNC_JSON_2026_11_04.md). No new PDF, model call, database reset or paid native build is required for this API-only correction.
+
 ## M7 UX continuation — ordinary chat text remains text
 
 The native review found long-press-enabled assistant paragraphs/cells/author labels exposed as links even without a source. Declare text/header roles and retain nested source links, long-press menus and horizontal table scrolling. Existing-source simulator checks and 22 targeted tests qualify the fix; full VoiceOver/large-text/Android certification remains separate. [Scope](../qa/M7_CHAT_TEXT_ACCESSIBILITY_2026_11_04.md). Build 32’s existing-PNG recipe is owner accepted; memory and chart cases stay closed. Mobile-only, no extra tool/prompt/model/API or paid build for this isolated increment.
