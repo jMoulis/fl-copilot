@@ -1,3 +1,7 @@
+## M7 owner acceptance — grouped native UX, build 30
+
+The owner accepts both supplied iPhone checks: compact confirmed-card details and explicit sender addition/removal. PR 433/434 are delivered in verified iOS build 30, source `36393b1`; API `3353993` stays unchanged. These two focused increments are CLOSED and should not be tested again without a regression. [Delivery/acceptance scope](../qa/M7_FOLLOWUP_CARD_DETAILS_2026_11_04.md#delivery-and-owner-acceptance). Workstreams 1/3/4/5 stay functionally closed; 7 continues with multi-product analytical completion, while 2/6 retain owner-deferred boundaries.
+
 ## M7 UX increment — compact follow-up cards
 
 Keep confirmed card summaries readable while moving history/withdrawal behind accessible details. Preserve planned week, actuals qualification, synchronization, READY confirmation facts and visible error/pending recovery; disclosure is read-only and closing disarms withdrawal. Reuse existing repositories/Outbox and verify mounted real-SQLite interactions. Group native delivery with the explicit email sender editor; API `3353993` remains unchanged. [Proof and focused native acceptance](../qa/M7_FOLLOWUP_CARD_DETAILS_2026_11_04.md). Accepted 1/3/4/5 remain closed; 7 advances.

@@ -15,3 +15,11 @@ Opening/closing details cannot confirm or withdraw anything. Closing resets a ch
 The native release groups this increment with PR 433’s explicit sender addition/removal. API `3353993` remains compatible and is not redeployed for these mobile changes. Exact-head push/PR checks, merged-master checks, exact EAS source/profile/build identity and downloaded IPA verification precede availability. Mounted tests are not physical iPhone gesture/readability acceptance. No paid AI request, production business fixture, new installation or link confirmation is needed.
 
 Focused phone check after the grouped build: inspect an already confirmed historical card, expand/reclose its details without activating withdrawal, then inspect the existing store sender list/editor. Do not repeat accepted source processing, plan installations or linked-choice creation. Workstreams 1/3/4/5 remain functionally closed; workstream 7 advances and stays open pending native UX validation.
+
+## Delivery and owner acceptance
+
+PR 434 is merged at `36393b1291239728d13a60e6787fce5ddacfb020`, after exact-head push run `41813619200` and PR run `41813637018` passed; merged-master run `41814692146` also passed. Both merged feature branches are deleted. No API deployment was needed.
+
+[EAS build 30](https://expo.dev/accounts/julesmoulis/projects/fruits-vegetables-copilot/builds/c6ca3915-ada6-4e98-a736-ca3bb257f051) is FINISHED from that exact source, staging profile, iOS `0.1.0` / `30`. Downloaded IPA identity is verified: bundle `com.flcopilot.mobile`, 15,810,562 bytes, SHA-256 `3dd71fbb142a7a57c07745b664417e28a29a5d5953853d6376e4fe032158569b`.
+
+On 4 November, after the two focused phone checks were supplied, the owner states **“Ok tout est validé”**. This closes compact-card disclosure and the grouped explicit sender-editor increment. It is owner-reported recipe acceptance; the installed device identity was not independently inspected. Do not repeat those checks without a regression. Workstream 7 remains open for multi-product analytical completion and broader V1/M8 release boundaries; no acceptance of every writer, withdrawal or concurrent-device scenario is inferred.
