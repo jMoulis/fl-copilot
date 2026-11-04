@@ -46,6 +46,10 @@ Confirmed links/realizations show business scope/status/actuals/synchronization,
 
 The existing chart component now repeats a selected point’s PARTIAL status beside its amount, announces selected state, grows the axis-label region with system font scale and gives the source link a 44-point target. Existing horizontal scrolling, persisted snapshots/source sheets, amounts/units and missing/zero/negative semantics remain. [Reproduction and native boundary](../qa/M7_CHART_READABILITY_2026_11_04.md). Mobile-only; no API, formula, schema, prompt or new tool. This increment is outside build 30 and awaits a grouped native release/physical acceptance. Workstreams 1/3/4/5 stay closed; 7 advances.
 
+## Current UX increment — signed analytical chart
+
+The shared Analyses/product chart now draws negative values below one visible zero baseline, positive values above it, with one proportional signed scale. Previously both directions pointed upward and only color distinguished negatives. Recorded zero, absent/partial days, clipped aggregation and drill/scroll callbacks retain their existing semantics. [Before/after proof and native boundary](../qa/M7_SIGNED_ANALYTICS_CHART_2026_11_04.md). **30 tests across five files pass**, plus mobile types/lint. A 320-point local React Native Web review uses labelled synthetic data, not production or iPhone evidence. Group with PR 436’s chat-chart readability in the next native build; no API/formula/provider/schema change. Workstreams 1/3/4/5 remain closed, 2/6 deferred, 7 advances pending native review.
+
 ## Accepted pilot cases — do not request again without a regression
 
 - Build 30 UX: the owner explicitly accepts the supplied compact confirmed-card disclosure and explicit email sender editor checks on 4 November. No repeat receipt/publication, decision/link/installation or card-disclosure test is required without a regression.
