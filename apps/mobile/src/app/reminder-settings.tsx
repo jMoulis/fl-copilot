@@ -1,3 +1,4 @@
+import { useChatPush } from "@/notifications/chat-push-provider";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Linking, Switch, Text, View } from "react-native";
 import { router, useFocusEffect } from "expo-router";
@@ -33,6 +34,7 @@ type ReminderContext = {
   load(): Promise<void>;
 };
 export default function ReminderSettings() {
+  const chatPush = useChatPush();
   const { session } = useAuth(),
     storeId = session?.stores[0]?.storeId,
     { sqlite, deviceId } = useLocalDatabase(),
@@ -232,10 +234,40 @@ export default function ReminderSettings() {
   return (
     <AppScreen>
       <AppHeader
-        title="Rappels sur ce téléphone"
-        subtitle="Des rappels locaux, même hors connexion."
+        title="Notifications sur ce téléphone"
+        subtitle="Alertes du copilote et rappels commerciaux."
       />
       <SecondaryButton label="Retour à Plus" onPress={() => router.back()} />
+      <SectionCard title="Réponses du copilote">
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="flex-1 text-base text-ink">
+            Me prévenir quand une réponse est prête
+          </Text>
+          <Switch
+            accessibilityLabel="Activer les alertes de fin de réponse du copilote"
+            value={chatPush.enabled}
+            disabled={!chatPush.available || !chatPush.ready || chatPush.busy}
+            onValueChange={(v) => void chatPush.setEnabled(v)}
+          />
+        </View>
+        <Text className="text-muted">
+          Une alerte discrète lorsque l’app est en arrière-plan, sans afficher
+          le contenu de ta conversation.
+        </Text>
+        {!chatPush.available ? (
+          <Text className="text-muted">
+            Disponible sur iPhone avec le prochain build installé, hors Expo Go.
+          </Text>
+        ) : null}
+        {chatPush.error ? (
+          <InlineAlert title="Alertes à vérifier" message={chatPush.error} />
+        ) : null}
+        <SecondaryButton
+          label="Vérifier les alertes du copilote"
+          disabled={!chatPush.available || chatPush.busy}
+          onPress={() => void chatPush.refresh()}
+        />
+      </SectionCard>
       <SectionCard title="Notifications commerciales">
         <View className="flex-row items-center justify-between gap-3">
           <Text className="flex-1 text-base text-ink">

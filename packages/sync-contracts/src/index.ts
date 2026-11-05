@@ -123,3 +123,5 @@ export {
   documentArchiveSchema,
   type DocumentArchive,
 } from "@fl-copilot/domain";
+
+export * from "./notifications";

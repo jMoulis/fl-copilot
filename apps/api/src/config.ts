@@ -47,6 +47,7 @@ const environmentSchema = z.object({
     .min(20)
     .optional(),
   AUTH_EMAIL_FROM: z.string().trim().email().optional(),
+  EXPO_PUSH_ACCESS_TOKEN: z.string().trim().min(1).optional(),
   OPENAI_API_KEY: z.string().trim().startsWith("sk-").min(20).optional(),
   AI_GATEWAY_API_KEY: z.string().trim().min(20).optional(),
   VERCEL_OIDC_TOKEN: z.string().trim().min(20).optional(),

@@ -961,3 +961,36 @@ it("advertises the original-backed renderer and source format together for the n
     "x-commercial-source-version": "2",
   });
 });
+it.each([true, false])(
+  "advertises background completion only as an explicit transport capability: %s",
+  async (backgroundCompletion) => {
+    const transport = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify({ message, alreadyApplied: false }), {
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", transport);
+    await new ApiClient("https://test.invalid").copilotTurn(
+      "test",
+      id(4),
+      id(5),
+      input,
+      undefined,
+      { onProgress() {}, backgroundCompletion },
+    );
+    const options = transport.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(options?.headers).toEqual(
+      expect.objectContaining(
+        backgroundCompletion
+          ? { "x-copilot-background-completion": "1" }
+          : { accept: "application/x-ndjson" },
+      ),
+    );
+    if (!backgroundCompletion)
+      expect(options?.headers).not.toHaveProperty(
+        "x-copilot-background-completion",
+      );
+    expect(JSON.parse(options!.body as string)).toEqual(input);
+  },
+);

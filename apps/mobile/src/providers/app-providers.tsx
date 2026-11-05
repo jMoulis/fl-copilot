@@ -1,3 +1,4 @@
+import { ChatPushProvider } from "@/notifications/chat-push-provider";
 import { ReminderProvider } from "@/reminders/provider";
 import { useState, type PropsWithChildren } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -24,7 +25,9 @@ export function AppProviders({ children }: PropsWithChildren) {
           <DatabaseProvider>
             <AuthProvider>
               <SyncProvider>
-                <ReminderProvider>{children}</ReminderProvider>
+                <ChatPushProvider>
+                  <ReminderProvider>{children}</ReminderProvider>
+                </ChatPushProvider>
               </SyncProvider>
             </AuthProvider>
           </DatabaseProvider>

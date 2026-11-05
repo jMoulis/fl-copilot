@@ -1132,6 +1132,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
             api.copilotTurn(token, storeId, ownerId, input, signal, {
               onProgress,
               onActivity,
+              backgroundCompletion: true,
               memorySuggestions: true,
               webResearch: true,
               recommendationTracking: true,
