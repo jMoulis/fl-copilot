@@ -1,3 +1,7 @@
+## M8 correction — typed original opening, 5 November 2026
+
+Reuse the canonical local original reader to supply a verified typed copy for classified email originals still retained as `.bin`. Preserve source bytes, metadata, owner/store checks and existing correctly typed paths; await native copy/verification/relocation and clean only disposable partials on failure. **112 tests across four suites pass, zero skips**; the new assertion fails on previous code. The isolated iOS simulator now recognizes the retained document as PDF and renders its pages in Aperçu; matching SHA-256/size and empty Outbox are independently verified. [Proof and grouped-delivery boundary](../qa/M8_TYPED_ORIGINAL_OPENING_2026_11_05.md). No API, migration, AI call or paid build. Queued-command recovery and remote backup/restore remain open.
+
 ## Owner arbitration — M8 iPhone pilot, 5 November 2026
 
 M8 retains data protection, interruption/conflict recovery, performance and consumption, security/monitoring/delivery, and useful iPhone notifications, explicitly including chat completion. Transfer the dedicated accessibility pass (former M8-T07) and all Android-specific qualification/distribution to **M9**, outside the current pilot exit. Existing implementation and shared CI stay intact; this is a scope decision, not completion evidence. [Current M8 register](../progress/M8_HARDENING_STATUS.md) · [M9 deferred scope](../progress/M9_PLATFORM_ACCESSIBILITY_STATUS.md). This current arbitration supersedes historical broad iOS/Android/accessibility exit statements below.

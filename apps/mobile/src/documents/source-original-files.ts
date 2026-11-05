@@ -189,7 +189,26 @@ export const nativeSourceOriginalFiles: SourceOriginalFiles = {
       file = new File(dir, name);
     }
     if (!file.exists) return null;
-    return inspect(file, manifest, actorId);
+    const proof = await inspect(file, manifest, actorId),
+      suffix = extension(manifest.mimeType);
+    if (file.uri.toLowerCase().endsWith(`.${suffix}`)) return proof;
+    // Classified email originals retain their immutable .bin path. Native
+    // viewers need a typed filename; never trust the sender's filename here.
+    const dir = await directory(manifest, actorId),
+      typed = new File(dir, `original-${manifest.checksum.slice(7)}.${suffix}`);
+    if (typed.exists) return inspect(typed, manifest, actorId);
+    dir.create({ intermediates: true, idempotent: true });
+    const { randomUUID } = await import("expo-crypto"),
+      temporary = new File(dir, `${randomUUID()}.partial`);
+    try {
+      await file.copy(temporary);
+      await verifyFile(temporary, manifest);
+      if (typed.exists) return inspect(typed, manifest, actorId);
+      await temporary.move(typed);
+      return { ...proof, localUri: typed.uri };
+    } finally {
+      if (temporary.uri !== typed.uri && temporary.exists) temporary.delete();
+    }
   },
   async receive(raw, actorId, check, signal) {
     const lease = sourceOriginalDownloadSchema.parse(raw),

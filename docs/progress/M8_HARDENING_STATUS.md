@@ -61,8 +61,14 @@ Do not uninstall, erase an installation, activate an unowned copy, replay unknow
 
 Owner-private logs/JSON remain under `artifacts/2026-11-04-m8-current-schema-recovery/` outside Git. The prior local-copy and build-33 acceptance ledgers remain outside Git as well. No secrets, source documents or production database contents belong in PR attachments.
 
-Next gate: correct the observed original-file MIME/filename handoff, then exercise queued business-command recovery in a controlled store. The read-only real-store draft rehearsal does not certify that mutation case. Cloud restore and the remaining retained M8 checks stay open; Android and the dedicated accessibility pass are tracked in M9. No full M8 or whole-V1 completion follows from this batch.
+Next gate: exercise queued business-command recovery in a controlled store. The native PDF handoff correction below passes its focused simulator check and awaits grouped owner-binary delivery. The read-only real-store draft rehearsal does not certify that mutation case. Cloud restore and the remaining retained M8 checks stay open; Android and the dedicated accessibility pass are tracked in M9. No full M8 or whole-V1 completion follows from this batch.
 
 ## Focused UX correction — accurate copy-operation progress
 
 The native rehearsal reproduces a creation spinner during restoration verification. Replace only the panel's existing busy flag with an operation marker, retaining the same lock/disabled/lifetime rules and canonical services. Accessible status text describes the actual operation; no fabricated percentage, timeout, repair layer or weaker integrity check. The existing deferred interaction fails against the original component and passes with the correction. **15 targeted tests across three files pass, zero skips**, plus types/lint/format. This later mobile-only label patch has its own delivery boundary and does not justify a paid binary by itself. [Proof](../qa/M8_LOCAL_COPY_NATIVE_REHEARSAL_2026_11_04.md).
+
+## Original-file opening — focused iOS correction, 5 November
+
+The existing canonical original reader now provides a verified typed copy when an email-retained original has a `.bin` path. It reuses the private actor/store/source/hash directory, verifies source and copied bytes/header, awaits copy/relocation and preserves immutable originals, metadata and commands. Sender filenames are not used as paths. A corruption/failure never overwrites the existing typed file or deletes the original.
+
+**112 targeted tests across four suites pass, zero skips**, with the new PDF assertion reproduced failing before correction; workspace typecheck, targeted lint and formatting pass. On the same isolated iPhone17Pro simulator, the retained PDF is recognized as Document PDF, and its actual pages render in Aperçu. Independent readback verifies original/copy size and SHA-256 with zero Outbox rows. [Evidence and delivery limits](../qa/M8_TYPED_ORIGINAL_OPENING_2026_11_05.md). This closes the reproduced BIN-to-viewer defect on the simulator, not all T04 or owner-phone delivery. No API deployment, new EAS binary, source reimport or paid model request.

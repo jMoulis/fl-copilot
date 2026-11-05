@@ -15,6 +15,9 @@ const state = vi.hoisted(() => ({
   beforeMove: undefined as (() => Promise<void>) | undefined,
   afterMove: undefined as (() => void) | undefined,
   failMove: false,
+  beforeCopy: undefined as (() => Promise<void>) | undefined,
+  corruptCopy: false,
+  failCopy: false,
 }));
 vi.mock("expo-file-system", () => {
   class File {
@@ -69,6 +72,12 @@ vi.mock("expo-file-system", () => {
         },
         close: () => {},
       };
+    }
+    async copy(to: File) {
+      await state.beforeCopy?.();
+      if (state.failCopy) throw Error("NATIVE_COPY_FAILED");
+      const bytes = state.files.get(this.uri)!.slice();
+      state.files.set(to.uri, state.corruptCopy ? bytes.fill(0) : bytes);
     }
     async move(to: File) {
       await Promise.resolve();
@@ -135,6 +144,9 @@ beforeEach(() => {
   state.beforeMove = undefined;
   state.afterMove = undefined;
   state.failMove = false;
+  state.beforeCopy = undefined;
+  state.corruptCopy = false;
+  state.failCopy = false;
   state.fetch.mockReset();
   state.dimensions.mockReset().mockResolvedValue({ width: 6000, height: 6000 });
   vi.useFakeTimers();
@@ -167,6 +179,106 @@ it("streams the exact original, retains its final file after move/finally and re
     redirect: "error",
     credentials: "omit",
   });
+});
+
+it("opens a classified email PDF through a verified typed copy, preserving its bin original offline", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\nemail original"),
+    l = lease(bytes),
+    uri = "file:///app/email-originals/retained/original.bin";
+  l.manifest.filename = "../../untrusted-name.html";
+  state.files.set(uri, bytes);
+  const expected = `file:///app/source-originals/${scope.storeId}/${scope.ownerId}/${scope.sourceId}/original-${l.manifest.checksum.slice(7)}.pdf`;
+  const proof = await files.existing(l.manifest, uri, scope.ownerId);
+  expect(proof).toEqual({ localUri: expected, views: null });
+  expect(state.files.get(uri)).toEqual(bytes);
+  expect(state.files.get(expected)).toEqual(bytes);
+  expect(await files.existing(l.manifest, uri, scope.ownerId)).toEqual(proof);
+  expect([...state.files.keys()].sort()).toEqual([uri, expected].sort());
+  expect(state.fetch).not.toHaveBeenCalled();
+  expect(state.wholeReads).toBe(0);
+});
+it("waits for typed-copy verification and native move before returning its URI", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\nemail original"),
+    l = lease(bytes),
+    uri = "file:///app/email-originals/retained/original.bin";
+  state.files.set(uri, bytes);
+  let copied!: () => void,
+    finishCopy!: () => void,
+    moving!: () => void,
+    finishMove!: () => void;
+  const started = new Promise<void>((resolve) => {
+      copied = resolve;
+    }),
+    gate = new Promise<void>((resolve) => {
+      finishCopy = resolve;
+    }),
+    moveStarted = new Promise<void>((resolve) => {
+      moving = resolve;
+    }),
+    moveGate = new Promise<void>((resolve) => {
+      finishMove = resolve;
+    });
+  state.beforeCopy = async () => {
+    copied();
+    await gate;
+  };
+  state.beforeMove = async () => {
+    moving();
+    await moveGate;
+  };
+  let finished = false;
+  const reading = files
+    .existing(l.manifest, uri, scope.ownerId)
+    .then((proof) => {
+      finished = true;
+      return proof;
+    });
+  await started;
+  expect(finished).toBe(false);
+  finishCopy();
+  await moveStarted;
+  expect(finished).toBe(false);
+  finishMove();
+  const proof = await reading;
+  expect(state.files.get(proof!.localUri)).toEqual(bytes);
+  expect(state.files.get(uri)).toEqual(bytes);
+  expect([...state.files.keys()].some((key) => key.endsWith(".partial"))).toBe(
+    false,
+  );
+});
+it.each(["copy", "corrupt", "move"])(
+  "preserves the bin original and clears only temporary bytes after %s failure",
+  async (mode) => {
+    const bytes = new TextEncoder().encode("%PDF-1.7\nemail original"),
+      l = lease(bytes),
+      uri = "file:///app/email-originals/retained/original.bin";
+    state.files.set(uri, bytes);
+    state.failCopy = mode === "copy";
+    state.corruptCopy = mode === "corrupt";
+    state.failMove = mode === "move";
+    await expect(
+      files.existing(l.manifest, uri, scope.ownerId),
+    ).rejects.toThrow();
+    expect([...state.files.keys()]).toEqual([uri]);
+    expect(state.files.get(uri)).toEqual(bytes);
+    expect(state.fetch).not.toHaveBeenCalled();
+  },
+);
+
+it("refuses a changed typed copy without overwriting it or deleting the retained email original", async () => {
+  const bytes = new TextEncoder().encode("%PDF-1.7\nemail original"),
+    l = lease(bytes),
+    uri = "file:///app/email-originals/retained/original.bin";
+  state.files.set(uri, bytes);
+  const proof = await files.existing(l.manifest, uri, scope.ownerId);
+  const changed = bytes.slice().fill(1);
+  state.files.set(proof!.localUri, changed);
+  await expect(files.existing(l.manifest, uri, scope.ownerId)).rejects.toThrow(
+    "SOURCE_ORIGINAL_FILE_INVALID",
+  );
+  expect(state.files.get(proof!.localUri)).toEqual(changed);
+  expect(state.files.get(uri)).toEqual(bytes);
+  expect([...state.files.keys()]).toHaveLength(2);
 });
 
 it("does not announce the private original while its native relocation is still pending", async () => {
