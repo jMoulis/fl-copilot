@@ -746,7 +746,9 @@ export function SyncProvider({ children }: PropsWithChildren) {
     )
       return;
     const retry = setTimeout(() => {
-      void syncNow(defaultStoreId);
+      // Foreground return already resumes through AppState; do not wake a new
+      // automatic network cycle while the app is backgrounded or inactive.
+      if (AppState.currentState === "active") void syncNow(defaultStoreId);
     }, 60_000);
     return () => clearTimeout(retry);
   }, [defaultStoreId, service, state.pendingCount, state.status, syncNow]);
