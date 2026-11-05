@@ -7,12 +7,14 @@ import {
   SourceUploadRecoveryRepository,
   type UploadIntakeScope,
 } from "./source-upload-recovery";
+import { verifyPrivateOriginalFile } from "./private-original-file";
 export interface OriginalRestorationStorage {
   /** Creates a new private copy; never overwrites the selection or a previous original. */
   copy(input: {
     uri: string;
     operationId: string;
     expectedSizeBytes: number;
+    expectedChecksum: string;
     mimeType: SourceOriginalCopy["mimeType"];
   }): Promise<SourceOriginalCopy>;
   removeOwnedCopy(localUri: string): Promise<void>;
@@ -56,6 +58,7 @@ export async function restoreSourceOriginal(
       uri: input.selectedUri,
       operationId: input.operationId,
       expectedSizeBytes: current.original.sizeBytes,
+      expectedChecksum: current.original.checksum,
       mimeType,
     });
     check();
@@ -94,9 +97,9 @@ export async function restoreSourceOriginal(
 export const nativeOriginalRestorationStorage: OriginalRestorationStorage = {
   async copy(input) {
     const { File, Directory, Paths } = await import("expo-file-system");
-    const { digest, CryptoDigestAlgorithm } = await import("expo-crypto");
     const { z } = await import("zod");
     z.uuid().parse(input.operationId);
+    sourceOriginalCopySchema.shape.checksum.parse(input.expectedChecksum);
     const selected = new File(input.uri);
     if (!selected.exists) throw Error("SOURCE_RESTORATION_SELECTION_MISSING");
     if (
@@ -114,15 +117,19 @@ export const nativeOriginalRestorationStorage: OriginalRestorationStorage = {
     if (destination.exists) throw Error("SOURCE_RESTORATION_COPY_EXISTS");
     try {
       await selected.copy(destination);
-      const bytes = await destination.bytes();
-      if (bytes.byteLength !== input.expectedSizeBytes)
-        throw Error("SOURCE_RESTORATION_DIFFERENT_FILE");
-      const hash = await digest(CryptoDigestAlgorithm.SHA256, bytes);
+      await verifyPrivateOriginalFile(
+        destination,
+        {
+          sizeBytes: input.expectedSizeBytes,
+          checksum: input.expectedChecksum,
+        },
+        () => Error("SOURCE_RESTORATION_DIFFERENT_FILE"),
+      );
       return {
         localUri: destination.uri,
-        sizeBytes: bytes.byteLength,
+        sizeBytes: input.expectedSizeBytes,
         mimeType: input.mimeType,
-        checksum: `sha256:${Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join("")}`,
+        checksum: input.expectedChecksum,
       };
     } catch (error) {
       if (destination.exists) destination.delete();

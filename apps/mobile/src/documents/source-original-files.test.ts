@@ -104,6 +104,7 @@ vi.mock("expo-crypto", () => ({ randomUUID: state.uuid }));
 vi.mock("expo/fetch", () => ({ fetch: state.fetch }));
 vi.mock("react-native", () => ({ Image: { getSize: state.dimensions } }));
 import { nativeSourceOriginalFiles as files } from "./source-original-files";
+import { nativeOriginalRestorationStorage } from "./restore-source-original";
 const checksum = (bytes: Uint8Array) =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const scope = {
@@ -153,6 +154,79 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-10-20T13:00:00Z"));
 });
 afterEach(() => vi.useRealTimers());
+
+it("restores a large selected original with bounded reads and leaves the selection unchanged", async () => {
+  vi.useRealTimers();
+  const bytes = new Uint8Array(9 * 1024 * 1024 + 17).fill(42),
+    uri = "file:///selection/original.pdf",
+    expectedChecksum = checksum(bytes);
+  state.files.set(uri, bytes);
+  const result = await nativeOriginalRestorationStorage.copy({
+    uri,
+    operationId: randomUUID(),
+    expectedSizeBytes: bytes.length,
+    expectedChecksum,
+    mimeType: "application/pdf",
+  });
+  expect(result.checksum).toBe(expectedChecksum);
+  expect(result.sizeBytes).toBe(bytes.length);
+  expect(result.localUri).not.toBe(uri);
+  expect(checksum(state.files.get(result.localUri)!)).toBe(expectedChecksum);
+  expect(state.files.get(uri)).toBe(bytes);
+  expect(state.maximumRead).toBeLessThanOrEqual(1024 * 1024);
+  expect(state.maximumRead).toBeGreaterThan(0);
+  expect(state.wholeReads).toBe(0);
+});
+it.each(["checksum", "short-copy", "copy-failure"])(
+  "refuses restoration after %s, keeping the selection and unrelated original",
+  async (mode) => {
+    const bytes = new Uint8Array(1024).fill(42),
+      uri = "file:///selection/original.pdf",
+      retained = "file:///app/precious-unsent.pdf";
+    state.files.set(uri, bytes);
+    state.files.set(retained, bytes.slice());
+    state.failCopy = mode === "copy-failure";
+    state.corruptCopy = mode === "checksum";
+    if (mode === "short-copy")
+      state.beforeCopy = async () => {
+        state.files.set(uri, bytes.slice(1));
+      };
+    await expect(
+      nativeOriginalRestorationStorage.copy({
+        uri,
+        operationId: randomUUID(),
+        expectedSizeBytes: bytes.length,
+        expectedChecksum: checksum(bytes),
+        mimeType: "application/pdf",
+      }),
+    ).rejects.toThrow();
+    expect([...state.files.keys()].sort()).toEqual([uri, retained].sort());
+    expect(state.files.get(retained)).toEqual(bytes);
+    expect(state.files.get(uri)).toEqual(
+      mode === "short-copy" ? bytes.slice(1) : bytes,
+    );
+    expect(state.wholeReads).toBe(0);
+  },
+);
+it("never overwrites an existing restoration destination", async () => {
+  const bytes = new Uint8Array(1024).fill(42),
+    uri = "file:///selection/original.pdf",
+    operationId = randomUUID(),
+    retained = `file:///app/source-restorations/${operationId}.pdf`;
+  state.files.set(uri, bytes);
+  state.files.set(retained, bytes.slice().fill(1));
+  await expect(
+    nativeOriginalRestorationStorage.copy({
+      uri,
+      operationId,
+      expectedSizeBytes: bytes.length,
+      expectedChecksum: checksum(bytes),
+      mimeType: "application/pdf",
+    }),
+  ).rejects.toThrow("SOURCE_RESTORATION_COPY_EXISTS");
+  expect(state.files.get(retained)).toEqual(bytes.slice().fill(1));
+  expect(state.files.get(uri)).toBe(bytes);
+});
 it("streams the exact original, retains its final file after move/finally and reads it without network", async () => {
   const bytes = new TextEncoder().encode("%PDF-1.7\nunchanged original"),
     l = lease(bytes);
