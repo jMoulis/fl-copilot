@@ -109,7 +109,7 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
   );
   useEffect(() => {
     active.current = scope;
-    void refresh();
+    if (AppState.currentState === "active") void refresh();
     const subscription = AppState.addEventListener("change", (s) => {
       if (s === "active") void refresh();
     });
@@ -120,7 +120,7 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
         .then((n) => {
           if (!n || !alive) return;
           const listener = n.addPushTokenListener(() => {
-            void refresh();
+            if (AppState.currentState === "active") void refresh();
           });
           stop = () => listener.remove();
         })
