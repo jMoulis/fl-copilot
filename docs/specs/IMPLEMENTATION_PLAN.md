@@ -1,3 +1,7 @@
+## M8 checkpoint — restored command replay and T03 closure, 5 November 2026
+
+Actual SQLite backup/activation/reopen and the canonical mobile/Mongo services now jointly qualify in-flight business commands before commit and after lost acknowledgement. Both cases retain exact command identities/payloads, acknowledge APPLIED/ALREADY_APPLIED and resume the previous location without duplicate changes or version bumps. **21 native-recovery suite tests pass, zero skips**, with real Mongo transactions and controlled Expo ports. Mark T03 closed for all declared schemas through 62 using the existing complete upgrade/rollback/SIGKILL matrix; T04 native interruption/corruption/source checks and T12 cloud restore remain open. [Evidence and boundaries](../qa/M8_RESTORED_COMMAND_REPLAY_2026_11_05.md). Test/documentation only; no runtime, paid build or deployment.
+
 ## M8 correction — typed original opening, 5 November 2026
 
 Reuse the canonical local original reader to supply a verified typed copy for classified email originals still retained as `.bin`. Preserve source bytes, metadata, owner/store checks and existing correctly typed paths; await native copy/verification/relocation and clean only disposable partials on failure. **112 tests across four suites pass, zero skips**; the new assertion fails on previous code. The isolated iOS simulator now recognizes the retained document as PDF and renders its pages in Aperçu; matching SHA-256/size and empty Outbox are independently verified. [Proof and grouped-delivery boundary](../qa/M8_TYPED_ORIGINAL_OPENING_2026_11_05.md). No API, migration, AI call or paid build. Queued-command recovery and remote backup/restore remain open.
@@ -2277,6 +2281,8 @@ ExecutionInstruction
 ---
 
 # 131. M8-T03 — SQLite migration recovery
+
+**CLOSED for supported schemas through 62, 5 November 2026.** The complete upgrade/reopen, Outbox preservation and rollback/SIGKILL matrix satisfies this ticket. [Current evidence and distinct T04/T12 boundaries](../qa/M8_RESTORED_COMMAND_REPLAY_2026_11_05.md). Requalify affected cases when migrations change.
 
 Test upgrade from each supported local schema version.
 

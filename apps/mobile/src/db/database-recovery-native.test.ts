@@ -609,6 +609,289 @@ it("backs up WAL-committed observations, drafts and exact Outbox UUID/order/atte
     f.db.close();
   }
 });
+const mongoUri = process.env.TEST_MONGODB_URI;
+it
+  .skipIf(!mongoUri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")
+  .each(["before-commit", "after-commit"])(
+  "restores in-flight business commands after %s network loss and synchronizes through the real Mongo journal without duplicate mutations",
+  async (loss) => {
+    const f = await copyFixture(),
+      api = await copies(),
+      { createMongoDatabase } = await import("../../../api/src/database/mongo"),
+      { parseEnvironment } = await import("../../../api/src/config"),
+      { createMongoSyncPushService } =
+        await import("../../../api/src/sync/push-service"),
+      { createMongoSyncPullService } =
+        await import("../../../api/src/sync/pull-service"),
+      { createMongoSyncBootstrapService } =
+        await import("../../../api/src/sync/bootstrap-service"),
+      { MobileSyncService } = await import("../sync/sync-service"),
+      database = createMongoDatabase(
+        parseEnvironment({
+          NODE_ENV: "test",
+          MONGODB_URI: mongoUri,
+          MONGODB_DATABASE: `flc_recovery_replay_${f.randomUUID().replaceAll("-", "")}`,
+        }),
+      );
+    let release!: () => void, committed!: () => void;
+    const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+      started = new Promise<void>((resolve) => {
+        committed = resolve;
+      }),
+      requests: import("@fl-copilot/sync-contracts").SyncPushRequest[] = [];
+    const pushing = createMongoSyncPushService(database),
+      pulling = createMongoSyncPullService(database),
+      boot = createMongoSyncBootstrapService(database),
+      makeService = (
+        db: import("../sync/sync-service").SyncDatabase,
+        push: import("../sync/sync-service").SyncTransport["push"],
+      ) =>
+        new MobileSyncService(
+          db,
+          {
+            push,
+            pull: (storeId, cursor) =>
+              pulling.pull(storeId, { cursor, limit: 500 }),
+            bootstrap: (storeId) =>
+              boot.bootstrap(
+                {
+                  storeId,
+                  userId: f.ownerId,
+                  deviceId: f.deviceId,
+                  storeName: "Isolated recovery test",
+                  role: "MANAGER",
+                  sessionId: f.randomUUID(),
+                },
+                { rawObservationDays: 90 },
+              ),
+          },
+          {
+            appVersion: "test",
+            deviceId: f.deviceId,
+            copilotOwnerId: f.ownerId,
+            maxRetries: 0,
+          },
+        );
+    let first: Promise<void> | undefined;
+    try {
+      const remote = await database.getDb();
+      const sending = makeService(f.a, async (request) => {
+        requests.push(request);
+        if (loss === "after-commit") {
+          const result = await pushing.push(request, f.randomUUID(), f.ownerId);
+          expect(result.results.map((r) => r.status)).toEqual(
+            request.commands.map(() => "APPLIED"),
+          );
+        }
+        committed();
+        await gate;
+        throw Error("ACK_NOT_RECEIVED");
+      }).push(f.storeId);
+      first = expect(sending).rejects.toThrow("ACK_NOT_RECEIVED");
+      await Promise.race([
+        started,
+        first.then(() => {
+          throw Error("PUSH_ENDED_BEFORE_SNAPSHOT");
+        }),
+      ]);
+      const checkpoint = await f.a.getAllAsync<{
+        command_id: string;
+        payload_json: string;
+        status: string;
+      }>("SELECT * FROM sync_outbox ORDER BY local_sequence");
+      expect(checkpoint).toHaveLength(3);
+      expect(checkpoint.map((c) => c.status)).toEqual([
+        "SYNCING",
+        "SYNCING",
+        "SYNCING",
+      ]);
+      const saved = await api.createLocalCopy(
+          f.a as never,
+          f.deviceId,
+          f.ownerId,
+          f.storeId,
+          () => {},
+        ),
+        ready = await api.prepareLocalCopy(
+          saved,
+          f.ownerId,
+          f.storeId,
+          () => {},
+        );
+      release();
+      await first;
+      await api.activatePreparedLocalCopy(ready);
+      expect(await api.restoredDatabaseOwner(ready.next)).toBe(f.ownerId);
+      const target = await databaseTarget(await storage.readLocation(), false),
+        { openDatabaseAsync } = await import("expo-sqlite"),
+        restored = await openDatabaseAsync(
+          target.name,
+          { useNewConnection: true },
+          target.directory,
+        );
+      try {
+        expect(
+          await restored.getAllAsync(
+            "SELECT * FROM sync_outbox ORDER BY local_sequence",
+          ),
+        ).toEqual(checkpoint);
+        const replayResults: string[] = [],
+          service = makeService(restored as never, async (request) => {
+            requests.push(request);
+            const result = await pushing.push(
+              request,
+              f.randomUUID(),
+              f.ownerId,
+            );
+            replayResults.push(...result.results.map((r) => r.status));
+            return result;
+          });
+        expect(await service.sync(f.storeId)).toMatchObject({
+          pushed: 3,
+          conflicts: 0,
+          failed: 0,
+        });
+        expect(replayResults).toEqual(
+          checkpoint.map(() =>
+            loss === "after-commit" ? "ALREADY_APPLIED" : "APPLIED",
+          ),
+        );
+        expect(requests).toHaveLength(2);
+        expect(requests[1]!.commands).toEqual(requests[0]!.commands);
+        expect(
+          await restored.getAllAsync(
+            "SELECT command_id,payload_json FROM sync_outbox ORDER BY local_sequence",
+          ),
+        ).toEqual(
+          checkpoint.map(({ command_id, payload_json }) => ({
+            command_id,
+            payload_json,
+          })),
+        );
+        expect(
+          await restored.getAllAsync(
+            "SELECT status,attempt_count FROM sync_outbox ORDER BY local_sequence",
+          ),
+        ).toEqual(
+          checkpoint.map(() => ({ status: "ACKNOWLEDGED", attempt_count: 2 })),
+        );
+        expect(
+          await remote
+            .collection("processedCommands")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(3);
+        expect(
+          await remote
+            .collection("syncChanges")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(3);
+        expect(
+          await remote
+            .collection("products")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(1);
+        const product = await remote
+          .collection<
+            import("../../../api/src/products/product-master").ProductDocument
+          >("products")
+          .findOne({ _id: f.product.id, storeId: f.storeId });
+        expect(product).toMatchObject({
+          _id: f.product.id,
+          label: f.product.label,
+          version: 1,
+        });
+        expect(await service.sync(f.storeId)).toMatchObject({
+          pushed: 0,
+          conflicts: 0,
+          failed: 0,
+        });
+        expect(requests).toHaveLength(2);
+        expect(
+          await remote
+            .collection("syncChanges")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(3);
+        // The retained prior generation still has its own unacknowledged state.
+        expect(
+          (
+            await f.a.getAllAsync<{ status: string }>(
+              "SELECT status FROM sync_outbox",
+            )
+          ).map((c) => c.status),
+        ).toEqual(["PENDING", "PENDING", "PENDING"]);
+      } finally {
+        await restored.closeAsync();
+      }
+      const previous = (await api.listLocalCopies(f.ownerId, f.storeId)).find(
+        (ref) => ref.kind === "previous",
+      )!;
+      expect(previous.location).toEqual(f.location);
+      const back = await api.prepareLocalCopy(
+        previous,
+        f.ownerId,
+        f.storeId,
+        () => {},
+      );
+      await api.activatePreparedLocalCopy(back);
+      const previousTarget = await databaseTarget(
+          await storage.readLocation(),
+          false,
+        ),
+        resumed = await openDatabaseAsync(
+          previousTarget.name,
+          { useNewConnection: true },
+          previousTarget.directory,
+        );
+      try {
+        const results: string[] = [];
+        expect(
+          await makeService(resumed as never, async (request) => {
+            requests.push(request);
+            const response = await pushing.push(
+              request,
+              f.randomUUID(),
+              f.ownerId,
+            );
+            results.push(...response.results.map((r) => r.status));
+            return response;
+          }).sync(f.storeId),
+        ).toMatchObject({ pushed: 3, conflicts: 0, failed: 0 });
+        expect(results).toEqual([
+          "ALREADY_APPLIED",
+          "ALREADY_APPLIED",
+          "ALREADY_APPLIED",
+        ]);
+        expect(requests).toHaveLength(3);
+        expect(requests[2]!.commands).toEqual(requests[0]!.commands);
+        expect(
+          await remote
+            .collection("processedCommands")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(3);
+        expect(
+          await remote
+            .collection("syncChanges")
+            .countDocuments({ storeId: f.storeId }),
+        ).toBe(3);
+      } finally {
+        await resumed.closeAsync();
+      }
+    } finally {
+      release();
+      await first?.catch(() => undefined);
+      f.db.close();
+      try {
+        await (await database.getDb()).dropDatabase();
+      } finally {
+        await database.close();
+      }
+    }
+  },
+  60000,
+);
+
 it("queues the snapshot behind the existing writer, so no half-committed aggregate or Outbox is copied", async () => {
   const f = await copyFixture(),
     api = await copies();
