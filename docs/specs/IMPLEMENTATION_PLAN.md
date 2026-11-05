@@ -1,6 +1,10 @@
+## Owner arbitration — M8 iPhone pilot, 5 November 2026
+
+M8 retains data protection, interruption/conflict recovery, performance and consumption, security/monitoring/delivery, and useful iPhone notifications, explicitly including chat completion. Transfer the dedicated accessibility pass (former M8-T07) and all Android-specific qualification/distribution to **M9**, outside the current pilot exit. Existing implementation and shared CI stay intact; this is a scope decision, not completion evidence. [Current M8 register](../progress/M8_HARDENING_STATUS.md) · [M9 deferred scope](../progress/M9_PLATFORM_ACCESSIBILITY_STATUS.md). This current arbitration supersedes historical broad iOS/Android/accessibility exit statements below.
+
 ## M8-T03/T04 — current-schema preservation, 4 November
 
-M8 is active after owner acceptance of the focused build-33 source/menu recipe. Extend the existing preservation matrix with actual SIGKILL/WAL boundaries v60→61 and v61→62, retained commercial-choice rows (including nullable original-backed references from v61) and v62 private archive metadata. **190 tests across six suites pass, zero skips**, using real file-backed SQLite and controlled native ports. No migration, recovery writer or runtime change. Native restoration and production restore remain open. See [current M8 scope and acceptance boundaries](../progress/M8_HARDENING_STATUS.md).
+M8 is active after owner acceptance of the focused build-33 source/menu recipe. Extend the existing preservation matrix with actual SIGKILL/WAL boundaries v60→61 and v61→62, retained commercial-choice rows (including nullable original-backed references from v61) and v62 private archive metadata. **190 tests across six suites pass, zero skips**, using real file-backed SQLite and controlled native ports. No migration, recovery writer or runtime change. The later isolated native draft-copy round trip passes; queued business-command recovery and production restore remain open. See [current M8 scope and acceptance boundaries](../progress/M8_HARDENING_STATUS.md).
 
 ## M7 UX / M8 correction — PDF reading wire serialization
 
@@ -2233,7 +2237,9 @@ Copilot must:
 
 # 128. Milestone 8 — Hardening & Pilot Release
 
-**Goal:** Make the product safe and reliable for real store use.
+**Goal:** Make the iPhone pilot safe and reliable for real store use.
+
+Owner arbitration, 5 November: retain T01–T06 and T08–T14 with iOS-only native acceptance. T07 and Android-specific parts move to M9; neither is a condition of the current M8 exit. See the current scope registers linked above.
 
 ---
 
@@ -2308,21 +2314,15 @@ Check:
 
 ---
 
-# 135. M8-T07 — Accessibility pass
+# 135. Former M8-T07 — transferred to M9-A01
 
-Test:
-
-- VoiceOver;
-- TalkBack;
-- dynamic type;
-- touch targets;
-- status labels.
+The dedicated accessibility qualification is deferred by the owner on 5 November. Track VoiceOver/TalkBack, enlarged text, touch targets and status labels in [M9](../progress/M9_PLATFORM_ACCESSIBILITY_STATUS.md). It is not an M8 pilot exit gate; preserve existing accessible behavior.
 
 ---
 
 # 136. M8-T08 — Performance benchmark
 
-On representative iOS/Android devices:
+On representative iPhones (Android qualification is in M9):
 
 - app startup from local DB;
 - local XLSX parse;
@@ -2367,11 +2367,14 @@ job latency
 
 Verify:
 
-- token refresh;
-- disabled permissions;
-- local deadline notifications;
-- push deep links;
-- push failure does not break state.
+- useful iPhone alerts, explicitly when an asynchronous chat answer finishes;
+- document completion and retained local task/deadline reminders;
+- correct owned conversation/result on opening, including background/restart;
+- no duplicate alerts or navigation to stale/deleted targets;
+- token refresh and owner/store/session lifetime;
+- disabled permissions or delivery failure do not lose results or block the app.
+
+Reuse and audit existing notification services before implementation. Chat-completion notification is an acceptance requirement, not presumed delivered; Android delivery/qualification is deferred to M9.
 
 ---
 
@@ -2392,23 +2395,24 @@ read-model rebuild
 Create:
 
 ```text
-staging build
+iOS staging build
 TestFlight build
-Google Play internal build
-production profiles
+iOS production profile
 ```
+
+Google Play internal distribution and Android profiles/acceptance move to M9.
 
 ---
 
 # 142. M8-T14 — Pilot checklist
 
-Human pilot readiness review:
+Human iPhone pilot readiness review:
 
 - correct store config;
 - product master seeded/importable;
 - auth email works;
 - source storage private;
-- notifications policy decided;
+- useful iPhone notification cases accepted, including chat completion;
 - monitoring live;
 - support/recovery process documented.
 
@@ -2416,7 +2420,7 @@ Human pilot readiness review:
 
 # 143. M8 exit gate
 
-MVP may be piloted only when:
+The iPhone MVP may be piloted only when (Android and the dedicated accessibility pass are M9 gates):
 
 ```text
 offline data survives restart
@@ -2429,6 +2433,8 @@ commercial planning works
 substitution works offline
 Copilot grounding passes
 backup/recovery tested
+useful iPhone notifications accepted
+security, performance and release readiness verified
 ```
 
 ---
