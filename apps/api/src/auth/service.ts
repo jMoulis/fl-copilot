@@ -402,21 +402,52 @@ async function issueSession(
   const rotatedTokenHashes = current
     ? [...current.rotatedTokenHashes, current.refreshTokenHash].slice(-5)
     : [];
-  await sessions.updateOne(
-    { userId: user._id, deviceId },
-    {
-      $set: {
-        refreshTokenHash,
-        rotatedTokenHashes,
-        updatedAt: now,
-        expiresAt,
+  const next = {
+    refreshTokenHash,
+    rotatedTokenHashes,
+    updatedAt: now,
+    expiresAt,
+  };
+  if (current) {
+    // A renewal cannot overwrite a logout, another rotation or a newer login.
+    const renewed = await sessions.updateOne(
+      {
+        _id: current._id,
+        userId: user._id,
+        deviceId,
+        refreshTokenHash: current.refreshTokenHash,
+        revokedAt: { $exists: false },
+        expiresAt: { $gt: now },
       },
-      $setOnInsert: { _id: sessionId, createdAt: now },
-      $unset: { revokedAt: "" },
-    },
-    { upsert: true },
-  );
-  const stored = await sessions.findOne({ userId: user._id, deviceId });
+      { $set: next },
+    );
+    if (renewed.matchedCount !== 1) throw sessionExpiredError();
+  } else {
+    // A verified login gets a fresh identity: old access/logout tokens must not
+    // become valid again when this device signs back in.
+    const transaction = db.client.startSession();
+    try {
+      await transaction.withTransaction(async () => {
+        await sessions.deleteOne(
+          { userId: user._id, deviceId },
+          { session: transaction },
+        );
+        await sessions.insertOne(
+          {
+            _id: sessionId,
+            userId: user._id,
+            deviceId,
+            createdAt: now,
+            ...next,
+          },
+          { session: transaction },
+        );
+      });
+    } finally {
+      await transaction.endSession();
+    }
+  }
+  const stored = await sessions.findOne({ _id: sessionId });
   if (!stored) throw new Error("Session could not be persisted");
   const accessTokenExpiresAt = new Date(
     now.getTime() + config.AUTH_ACCESS_TOKEN_TTL_SECONDS * 1000,

@@ -99,6 +99,12 @@ Eight real-Mongo integration suites and five SQLite/review/mounted-screen suites
 
 Device Hub subsequently became available after the owner reopened it. A read-only iPhone17Pro/Expo Go smoke test invoked its memory-warning command, backgrounded/resumed the app and retained the product detail, 463-product catalogue and existing unsent draft B. This is neither a measured memory-exhaustion/termination test nor native network-loss qualification. Evidence is retained outside Git in the task artifacts; T01/T08/T09 remain open for their wider native gates.
 
+## 5 November — build34 accepted cases and session revocation
+
+The owner confirms both build34 tests: retained commercial PDF opens correctly, and airplane-mode/WiFi-off cold launch retains cached product/analysis reads before successful reconnection/sync. These two cases are **accepted and closed**; the PDF correction is delivered. Do not repeat them. T01 still retains mid-transfer network/termination cases; M8 as a whole is not closed.
+
+Four actual-Mongo auth races reproduce before correction. Conditional refresh now cannot override logout/newer credentials; verified login transactionally replaces the device session ID so old access/logout tokens cannot act on the new session. Seven new cases and existing auth/source/native-session suites pass **124 tests across nine files, zero skips**. No mobile contract/model/migration changes or forced global logout; compatible with build34. **T06 remains active**, and API delivery is recorded separately. [Proof and limits](../qa/M8_SESSION_REVOCATION_RACES_2026_11_05.md).
+
 ## 5 November — selected-original memory and cloud backup preflight
 
 The explicit local PDF/XLSX reselection adapter now reuses the existing incremental file verifier instead of reading up to 100 MiB at once. Exact reviewed SHA-256/size, immutable originals, authority and canonical repository transaction remain required. **115 targeted tests across three files pass, zero skips**, plus workspace typecheck and targeted lint. Physical iPhone memory measurement and grouped binary delivery remain open. [Evidence](../qa/M8_BOUNDED_ORIGINAL_RESTORATION_2026_11_05.md).

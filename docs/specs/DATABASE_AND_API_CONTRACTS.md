@@ -3645,6 +3645,8 @@ old token invalid after successful rotation
 
 Reuse of revoked old token should revoke device session according to security policy.
 
+Renewal must condition its update on the exact current session ID, user/device, refresh hash, unrevoked state and valid expiry; it cannot upsert or clear a later revocation. Competing renewal or newer login invalidates the stale update. A verified fresh login atomically replaces the existing user/device session with a new session ID using the existing collection/index. Old access/logout tokens cannot authorize or revoke the replacement. Failed replacement preserves the prior session; other devices remain independent. Wire contracts and mobile storage are unchanged. See the focused [M8 evidence](../qa/M8_SESSION_REVOCATION_RACES_2026_11_05.md).
+
 ---
 
 # 171. Security — access token claims
