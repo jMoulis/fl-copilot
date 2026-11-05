@@ -1,3 +1,4 @@
+import { useChatPush } from "@/notifications/chat-push-provider";
 import { createVisualSourcePhotoPort } from "@/copilot/visual-source-photo";
 import { nativeVisualFileStorage } from "@/products/visual-file-storage";
 import { readTranscriptionReviewProposal } from "@fl-copilot/domain";
@@ -188,6 +189,11 @@ export default function CopilotScreen() {
   );
 }
 function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
+  const chatPush = useChatPush();
+  // Read consent at dispatch without replacing/cancelling an in-flight delivery.
+  const chatCompletionAllowed = useRef(false);
+  chatCompletionAllowed.current =
+    chatPush.available && chatPush.ready && chatPush.enabled;
   const { conversationId: requestedConversation } = useLocalSearchParams<{
     conversationId?: string;
   }>();
@@ -1132,7 +1138,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
             api.copilotTurn(token, storeId, ownerId, input, signal, {
               onProgress,
               onActivity,
-              backgroundCompletion: true,
+              backgroundCompletion: chatCompletionAllowed.current,
               memorySuggestions: true,
               webResearch: true,
               recommendationTracking: true,
