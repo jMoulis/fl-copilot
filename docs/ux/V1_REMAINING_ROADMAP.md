@@ -1,5 +1,9 @@
 # Roadmap V1 — état courant et historique des lots
 
+## Arbitrage courant — 5 novembre : pilote iPhone
+
+Le M8 conserve la protection des données, la résistance aux interruptions/conflits, les performances et la consommation, la sécurité/supervision/livraison, ainsi que les notifications utiles, notamment à la fin d’une réponse du chat. Android et la recette d’accessibilité dédiée passent au M9 et ne bloquent plus la clôture du pilote M8. Les implémentations et tests partagés existants restent conservés. [Suivi M8](../progress/M8_HARDENING_STATUS.md) · [Périmètre reporté M9](../progress/M9_PLATFORM_ACCESSIBILITY_STATUS.md). Cet arbitrage remplace les anciennes conditions générales iOS/Android/accessibilité du journal ci-dessous ; aucun sujet reporté n’est présenté comme terminé.
+
 ## Current functional closure — actions and conflicts, 3 November
 
 [Workstream 1 is closed for the functional V1 pilot baseline](../qa/M7_ACTION_CONFLICT_CLOSURE_2026_11_03.md): existing canonical manual/chat services, qualified deliberate refusals, owner-accepted catalogue/offline decision cases and 275 current SQLite/controller tests. Workstream 4 remains closed. This is not unrestricted CRUD, physical two-device recovery or full M7/M8 certification. Use [the current seven-workstream checkpoint](../progress/M7_WORKSTREAM_STATUS.md); older pending tool lists below do not reopen these accepted cases. No runtime/API/native release for this documentation reconciliation.

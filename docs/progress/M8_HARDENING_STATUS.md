@@ -1,21 +1,23 @@
 # M8 — hardening and pilot release
 
-## Authority and scope — 4 November 2026
+## Authority and scope — owner arbitration, 5 November 2026
 
 The owner explicitly starts M8 after accepting the supplied build-33 chat Source/return and long-press/cancel recipe. M0–M6 and M7 workstreams 1/3/4/5/7 retain their functional iPhone pilot acceptance. Numerical counter-promotion/daily purchase tariffs and deeper measured implantation remain deferred (2/6). Missing final AI illustration files, truthful provenance and approval remain a separate explicit prerequisite, not a fabricated completion.
 
-M8 follows the existing T01–T14 requirements in [the implementation plan](../specs/IMPLEMENTATION_PLAN.md#128-milestone-8--hardening--pilot-release). Reuse the current architecture and canonical APIs. Tests qualify existing guarantees and identify actual defects; they do not justify a new generic repair writer, runtime layer, paid model request or repeated accepted business recipe.
+M8 qualifies the **iPhone pilot**. The owner retains data protection, interruption/concurrency recovery, performance/resource use, security/delivery and useful notifications, explicitly including chat completion. Android work and the dedicated accessibility qualification move to [M9 — broader platform and accessibility qualification](M9_PLATFORM_ACCESSIBILITY_STATUS.md); neither blocks this M8 exit. Preserve existing implementations, shared checks and accepted evidence. This scope change is not a claim of completion.
+
+M8 follows T01–T06 and T08–T14 in [the implementation plan](../specs/IMPLEMENTATION_PLAN.md#128-milestone-8--hardening--pilot-release), with iOS-only platform acceptance and T07 transferred to M9. Reuse the current architecture and canonical APIs. Tests qualify existing guarantees and identify actual defects; they do not justify a new generic repair writer, runtime layer, paid model request or repeated accepted business recipe.
 
 ## Execution order and closure criteria
 
 1. **Data protection — T03/T04/T12, active.** Current supported migrations, Outbox/original preservation, isolated local restore, retained later writes, then remote Mongo/original/read-model restore rehearsal. Close only with recovery evidence, not merely copy creation. A local copy is not device-loss/cloud backup.
 2. **Interruptions and concurrency — T01/T02, open.** Offline launch, network loss during upload/import, termination with pending work, reconnection and two authorized installations changing the same supported entities. Require retained work, canonical retry without duplicate publication and resolvable conflicts.
-3. **Endurance and resource use — T05/T08/T09, open.** Measure startup, repeated product navigation/editing, XLSX parsing, KPI backlog and sync on representative iOS/Android devices; qualify storage cleanup, polling/background activity and repeated AI work. Existing isolated stress tests and owner-confirmed improvement remain evidence, not a physical benchmark.
+3. **Endurance and resource use — T05/T08/T09, open.** Measure startup, repeated product navigation/editing, XLSX parsing, KPI backlog and sync on representative iPhones; qualify storage cleanup, polling/background activity and repeated AI work. Existing isolated stress tests and owner-confirmed improvement remain evidence, not a physical benchmark.
 4. **Security — T06, open.** Review session lifecycle, store/owner authority, signed source URLs, MIME validation, unauthorized IDs, replay and logout behavior. Existing scoped refusal tests remain useful; they do not replace the complete current review.
-5. **Accessibility and notifications — T07/T11, open.** Full VoiceOver/TalkBack, enlarged text, keyboard/targets/statuses; notification permissions, token/deep-link/context lifetime for retained channels. Build 33 closes only its supplied focused recipe.
-6. **Monitoring and release — T10/T13/T14, open.** Confirm actionable crash/sync/Outbox/import/AI/job monitoring, distribution identities and compatible rollback, TestFlight/Play internal channels, actual store configuration and documented support/recovery process. Existing staging builds and Sentry do not certify all channels.
+5. **Useful iPhone notifications — T11, open.** Notify when an asynchronous chat answer finishes and for retained document/task reminders. Opening an alert must reach the correct owned conversation/result, including after backgrounding/restart; avoid duplicates and stale/deleted targets. Check permission refusal, token/session lifetime and delivery failure without losing the result or blocking the app. Audit the existing implementation first: these are acceptance targets, not a claim that chat-completion delivery already works.
+6. **Monitoring and release — T10/T13/T14, open.** Confirm actionable crash/sync/Outbox/import/AI/job monitoring, distribution identities and compatible rollback, iOS staging/TestFlight channels, actual store configuration and documented support/recovery process. Existing staging builds and Sentry do not certify all channels.
 
-These are six execution batches for fourteen requirements, not six promised PRs or durations. No complete M8 requirement is closed by the first technical batch below.
+These are six execution batches covering thirteen retained requirements, not six promised PRs or durations. For owner reporting, security/monitoring/release form one of the four reliability pillars; notifications remain an additional explicit requirement. T07 and all Android-specific acceptance belong to M9. No complete M8 requirement is closed by the first technical batch below.
 
 ## First batch — current-schema preservation
 
@@ -59,7 +61,7 @@ Do not uninstall, erase an installation, activate an unowned copy, replay unknow
 
 Owner-private logs/JSON remain under `artifacts/2026-11-04-m8-current-schema-recovery/` outside Git. The prior local-copy and build-33 acceptance ledgers remain outside Git as well. No secrets, source documents or production database contents belong in PR attachments.
 
-Next gate: correct the observed original-file MIME/filename handoff, then exercise queued business-command recovery in a controlled store. The read-only real-store draft rehearsal does not certify that mutation case. Cloud restore, Android and the remaining T01–T14 checks stay open. No full M8 or whole-V1 completion follows from this batch.
+Next gate: correct the observed original-file MIME/filename handoff, then exercise queued business-command recovery in a controlled store. The read-only real-store draft rehearsal does not certify that mutation case. Cloud restore and the remaining retained M8 checks stay open; Android and the dedicated accessibility pass are tracked in M9. No full M8 or whole-V1 completion follows from this batch.
 
 ## Focused UX correction — accurate copy-operation progress
 
