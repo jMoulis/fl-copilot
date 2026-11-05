@@ -304,18 +304,44 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       "resolves a complete real two-device group on the latest pull and restores the decision offline on another device (local=%s)",
       async (useLocal) => {
         const f = await seed(),
-          a = await decisionNativeFixture(f),
-          b = await decisionNativeFixture(f),
           dir = mkdtempSync(join(tmpdir(), "fl-decision-mongo-")),
           path = join(dir, "restored.db"),
-          c = new MercalysTestDatabase(new DatabaseSync(path));
+          deviceB = { ...f, deviceId: randomUUID() },
+          deviceC = { ...f, deviceId: randomUUID() },
+          a = await decisionNativeFixture(
+            f,
+            new MercalysTestDatabase(
+              new DatabaseSync(join(dir, "device-a.db")),
+            ),
+          ),
+          b = await decisionNativeFixture(
+            deviceB,
+            new MercalysTestDatabase(
+              new DatabaseSync(join(dir, "device-b.db")),
+            ),
+          ),
+          c = new MercalysTestDatabase(new DatabaseSync(path)),
+          restoredScope = { ...b.scope, deviceId: deviceC.deviceId };
         let cClosed = false;
         try {
           await runLocalMigrations(c);
           await saveDecision(a, "ACCEPT");
           await saveDecision(b, "REJECT");
+          const aPending = await new OutboxRepository(a.db).listPending(
+              f.storeId,
+            ),
+            bPending = await new OutboxRepository(b.db).listPending(f.storeId);
+          expect(aPending.map((command) => command.deviceId)).toEqual([
+            f.deviceId,
+          ]);
+          expect(bPending.map((command) => command.deviceId)).toEqual([
+            deviceB.deviceId,
+          ]);
+          expect(
+            new Set([f.deviceId, deviceB.deviceId, deviceC.deviceId]).size,
+          ).toBe(3);
           await sync(f, a.db).sync(f.storeId);
-          await sync(f, b.db).sync(f.storeId);
+          await sync(deviceB, b.db).sync(f.storeId);
           const firstConflict = (
               await new ConflictRepository(b.db).listOpenForEntity(
                 f.storeId,
@@ -330,11 +356,11 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             ...original,
             commandId: randomUUID(),
           });
-          const collision = await transport(f).rawPush.push(
+          const collision = await transport(deviceB).rawPush.push(
             syncPushRequestSchema.parse({
               syncProtocolVersion: 1,
               appVersion: "test",
-              deviceId: f.deviceId,
+              deviceId: deviceB.deviceId,
               storeId: f.storeId,
               commands: [
                 {
@@ -366,7 +392,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           );
           await saveDecision(a, "MODIFY");
           await sync(f, a.db).sync(f.storeId);
-          await sync(f, b.db).sync(f.storeId);
+          await sync(deviceB, b.db).sync(f.storeId);
           const compared = await b.repo.open(f.card);
           expect(compared.status).toBe("CONFLICT");
           expect(compared.canResolve).toBe(true);
@@ -378,9 +404,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             "MODIFY",
           ]);
           await b.repo.resolve(f.card, useLocal, compared.review);
-          await sync(f, b.db).sync(f.storeId);
+          await sync(deviceB, b.db).sync(f.storeId);
           await sync(f, a.db).sync(f.storeId);
-          await sync(f, c).sync(f.storeId);
+          await sync(deviceC, c).sync(f.storeId);
           const resolved = (await a.repo.open(f.card)).decision!;
           expect(resolved.revisions.map((r) => r.type)).toEqual(
             useLocal ? ["ACCEPT", "MODIFY", "REJECT"] : ["ACCEPT", "MODIFY"],
@@ -389,7 +415,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
             (
               await new CopilotDecisionRepository(
                 c,
-                b.scope,
+                restoredScope,
                 decisionDigest,
                 randomUUID,
               ).open(f.card)
@@ -412,13 +438,20 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           expect(JSON.parse(capture!.remote_payload_json)).toEqual(
             compared.remote,
           );
-          await sync(f, b.db).sync(f.storeId);
+          await sync(deviceB, b.db).sync(f.storeId);
           expect((await b.repo.open(f.card)).decision).toEqual(resolved);
           expect(
             await db
               .collection("copilotDecisions")
               .countDocuments({ storeId: f.storeId }),
           ).toBe(1);
+          expect(
+            new Set(
+              await db.collection("processedCommands").distinct("deviceId", {
+                storeId: f.storeId,
+              }),
+            ),
+          ).toEqual(new Set([f.deviceId, deviceB.deviceId]));
           expect(
             await db
               .collection("commercialExecutionTasks")
@@ -430,7 +463,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           try {
             const state = await new CopilotDecisionRepository(
               restored,
-              b.scope,
+              restoredScope,
               decisionDigest,
               randomUUID,
             ).open(f.card);

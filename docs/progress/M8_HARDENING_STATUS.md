@@ -91,6 +91,14 @@ Two mounted-provider assertions reproduce an unnecessary retry after a network f
 
 Device Hub stopped exposing its window during the attempted isolated native recipe; reacquiring it timed out. No network outage or native acceptance is claimed. **T01/T09 remain open** for native qualification and wider consumption review; this mobile correction awaits grouped delivery. [Evidence and boundaries](../qa/M8_FOREGROUND_SYNC_RETRY_2026_11_05.md).
 
+## 5 November — current conflict qualification
+
+Eight real-Mongo integration suites and five SQLite/review/mounted-screen suites pass **524 tests across 13 files, zero skips**. The existing two-choice recommendation conflict scenario now uses distinct A/B/C device IDs and persistent SQLite files; Outbox and server journal prove both writer identities, explicit resolution converges and C reopens offline. No runtime or new conflict writer is added.
+
+**T02 remains open** for physical concurrent-device qualification and reconciliation of the old generic ExecutionInstruction label with the retained commercial task/declaration workflow. The generic bootstrap slot is still empty; no generic model completion is claimed. Existing approved M7 functional acceptance is unchanged. [Exact mapping, results and limits](../qa/M8_DISTINCT_DEVICE_CONFLICTS_2026_11_05.md).
+
+Device Hub subsequently became available after the owner reopened it. A read-only iPhone17Pro/Expo Go smoke test invoked its memory-warning command, backgrounded/resumed the app and retained the product detail, 463-product catalogue and existing unsent draft B. This is neither a measured memory-exhaustion/termination test nor native network-loss qualification. Evidence is retained outside Git in the task artifacts; T01/T08/T09 remain open for their wider native gates.
+
 ## 5 November — selected-original memory and cloud backup preflight
 
 The explicit local PDF/XLSX reselection adapter now reuses the existing incremental file verifier instead of reading up to 100 MiB at once. Exact reviewed SHA-256/size, immutable originals, authority and canonical repository transaction remain required. **115 targeted tests across three files pass, zero skips**, plus workspace typecheck and targeted lint. Physical iPhone memory measurement and grouped binary delivery remain open. [Evidence](../qa/M8_BOUNDED_ORIGINAL_RESTORATION_2026_11_05.md).
