@@ -465,7 +465,13 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       ),
     [sqlite, storeId, ownerId, deviceId, canManageProducts],
   );
-  const { syncNow, lastSyncedAt, originals, visuals: visualFiles } = useSync();
+  const {
+    syncNow,
+    syncMessages,
+    lastSyncedAt,
+    originals,
+    visuals: visualFiles,
+  } = useSync();
   const visualSourcePort = useMemo(
     () =>
       originals
@@ -1113,6 +1119,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       { storeId, ownerId },
       {
         sync: () => syncNow(storeId),
+        syncMessages: syncMessages ? () => syncMessages(storeId) : undefined,
         readReply: async (input, signal) => {
           const page = await withAccessToken((token) =>
             api.copilotHistory(
@@ -1190,6 +1197,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     storeId,
     ownerId,
     syncNow,
+    syncMessages,
     withAccessToken,
     canPrepareCommercialWeek,
     canDeclareCommercialExecution,

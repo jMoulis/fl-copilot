@@ -144,6 +144,8 @@ export interface SyncContextValue extends LocalSyncSnapshot {
     requestPreview(assetId: string): Promise<void>;
     retry(assetId: string): Promise<void>;
   };
+  /** Canonical push/pull for text chat, without waiting for file/KPI jobs. */
+  syncMessages?(storeId?: string): Promise<SyncSummary | undefined>;
   syncNow(storeId?: string): Promise<SyncSummary | undefined>;
 }
 
@@ -582,6 +584,25 @@ export function SyncProvider({ children }: PropsWithChildren) {
     }));
     return snapshot;
   }, [database.sqlite, defaultStoreId, session?.user.id]);
+
+  const syncMessages = useCallback(
+    async (storeId = defaultStoreId) => {
+      const scope = visualSession.current;
+      if (
+        !service ||
+        !storeId ||
+        !scope ||
+        scope.userId !== session?.user.id ||
+        scope.storeId !== storeId ||
+        storeId !== defaultStoreId
+      )
+        return undefined;
+      // MobileSyncService serializes the existing Outbox push/pull cycle.
+      // This deliberately excludes the surrounding upload/analytics pipeline.
+      return service.sync(storeId);
+    },
+    [defaultStoreId, service, session?.user.id],
+  );
 
   const syncNow = useCallback(
     async (storeId = defaultStoreId) => {
@@ -1162,6 +1183,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
       value={{
         ...state,
         syncNow,
+        syncMessages,
         originals,
         emailIntake,
         visuals: { requestPreview: requestVisualPreview, retry: retryVisual },

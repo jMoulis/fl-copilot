@@ -12,12 +12,17 @@ const runtime = vi.hoisted(() => ({
     stores: [{ storeId: "33333333-3333-4333-8333-333333333333" }],
   },
   states: new Set<(state: string) => void>(),
-  tokens: new Set<() => void>(),
+  tokens: new Set<(token: { type: "ios"; data: string }) => void>(),
   read: vi.fn(async () => "1"),
   write: vi.fn(async () => {}),
   save: vi.fn(async () => ({ enabled: true })),
   permission: vi.fn(async () => ({ granted: true })),
   token: vi.fn(async () => ({ data: "ExpoPushToken[aaaaaaaaaaaaaaaaaaaaaa]" })),
+  nativeToken: vi.fn(async () => {
+    const value = { type: "ios" as const, data: "native-token-a" };
+    for (const callback of runtime.tokens) callback(value);
+    return value;
+  }),
   access: vi.fn(async (op: (token: string) => unknown) => op("test-access")),
 }));
 vi.mock("react-native", () => ({
@@ -72,8 +77,11 @@ vi.mock("@/reminders/native", () => ({
   notificationModule: async () => ({
     getPermissionsAsync: runtime.permission,
     getExpoPushTokenAsync: runtime.token,
+    getDevicePushTokenAsync: runtime.nativeToken,
     IosAuthorizationStatus: { PROVISIONAL: 3 },
-    addPushTokenListener: (cb: () => void) => {
+    addPushTokenListener: (
+      cb: (token: { type: "ios"; data: string }) => void,
+    ) => {
       runtime.tokens.add(cb);
       return { remove: () => runtime.tokens.delete(cb) };
     },
@@ -96,7 +104,17 @@ beforeEach(() => {
   runtime.state = "background";
   runtime.read.mockClear();
   runtime.save.mockClear();
-  runtime.token.mockClear();
+  runtime.token
+    .mockReset()
+    .mockImplementation(async (options?: { devicePushToken?: unknown }) => {
+      if (!options?.devicePushToken) {
+        // Expo requests the native token, which emits its listener even unchanged.
+        if (runtime.nativeToken.mock.calls.length < 2)
+          await runtime.nativeToken();
+      }
+      return { data: "ExpoPushToken[aaaaaaaaaaaaaaaaaaaaaa]" };
+    });
+  runtime.nativeToken.mockClear();
   runtime.permission.mockClear();
   runtime.access.mockClear();
 });
@@ -111,7 +129,8 @@ afterEach(async () => {
 it("does not register from background mount/token events, then reconciles once on foreground", async () => {
   await render();
   await act(async () => {
-    for (const cb of runtime.tokens) cb();
+    for (const cb of runtime.tokens)
+      cb({ type: "ios", data: "native-token-a" });
   });
   expect(runtime.read).not.toHaveBeenCalled();
   expect(runtime.save).not.toHaveBeenCalled();
@@ -134,4 +153,70 @@ it("ordinary rerenders do not re-register tokens or accumulate listeners", async
   expect(runtime.save).toHaveBeenCalledTimes(1);
   expect(runtime.states.size).toBe(1);
   expect(runtime.tokens.size).toBe(1);
+});
+
+it("does not feed the native token read event back into another registration", async () => {
+  runtime.state = "active";
+  await render();
+  expect(runtime.save).toHaveBeenCalledTimes(1);
+  expect(runtime.nativeToken).toHaveBeenCalledTimes(1);
+  expect(runtime.token).toHaveBeenCalledWith(
+    expect.objectContaining({
+      devicePushToken: { type: "ios", data: "native-token-a" },
+    }),
+  );
+});
+it("uses a rolled native token directly without requesting another native registration", async () => {
+  runtime.state = "active";
+  await render();
+  runtime.save.mockClear();
+  runtime.token.mockClear();
+  await act(async () => {
+    for (const cb of runtime.tokens)
+      cb({ type: "ios", data: "native-token-b" });
+  });
+  expect(runtime.save).toHaveBeenCalledTimes(1);
+  expect(runtime.nativeToken).toHaveBeenCalledTimes(1);
+  expect(runtime.token).toHaveBeenCalledWith(
+    expect.objectContaining({
+      devicePushToken: { type: "ios", data: "native-token-b" },
+    }),
+  );
+});
+
+it("ignores repeated unchanged native token events", async () => {
+  runtime.state = "active";
+  await render();
+  await act(async () => {
+    for (let index = 0; index < 100; index++)
+      for (const cb of runtime.tokens)
+        cb({ type: "ios", data: "native-token-a" });
+  });
+  expect(runtime.save).toHaveBeenCalledTimes(1);
+  expect(runtime.token).toHaveBeenCalledTimes(1);
+  expect(runtime.nativeToken).toHaveBeenCalledTimes(1);
+});
+it("caches background rollover and reconciles it only on foreground", async () => {
+  runtime.state = "active";
+  await render();
+  runtime.save.mockClear();
+  runtime.token.mockClear();
+  await act(async () => {
+    runtime.state = "background";
+    for (const cb of runtime.states) cb("background");
+    for (const cb of runtime.tokens)
+      cb({ type: "ios", data: "native-token-b" });
+  });
+  expect(runtime.save).not.toHaveBeenCalled();
+  await act(async () => {
+    runtime.state = "active";
+    for (const cb of runtime.states) cb("active");
+  });
+  expect(runtime.save).toHaveBeenCalledTimes(1);
+  expect(runtime.nativeToken).toHaveBeenCalledTimes(1);
+  expect(runtime.token).toHaveBeenCalledWith(
+    expect.objectContaining({
+      devicePushToken: { type: "ios", data: "native-token-b" },
+    }),
+  );
 });

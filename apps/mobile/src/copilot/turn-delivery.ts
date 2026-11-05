@@ -56,6 +56,8 @@ export class CopilotTurnDelivery {
     private readonly scope: { storeId: string; ownerId: string },
     private readonly dependencies: {
       sync(): Promise<unknown>;
+      /** Plain questions need canonical Outbox push/pull, not file upload jobs. */
+      syncMessages?(): Promise<unknown>;
       /** Existing private history endpoint; avoids replaying uploads/jobs while waiting. */
       readReply?(
         request: CopilotTurnRequest,
@@ -116,7 +118,28 @@ export class CopilotTurnDelivery {
     const request = copilotTurnRequestSchema.parse(pending[0]);
     try {
       cancelled(signal);
-      await this.dependencies.sync();
+      const localParent = await this.db.getFirstAsync<{ payload_json: string }>(
+        "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+        request.userMessageId,
+        this.scope.storeId,
+        this.scope.ownerId,
+        conversationId,
+      );
+      if (!localParent) throw Error("COPILOT_REPLY_PARENT_INVALID");
+      const localUser = copilotMessageSchema.parse(
+        JSON.parse(localParent.payload_json),
+      );
+      if (
+        localUser.role !== "USER" ||
+        localUser.id !== request.userMessageId ||
+        localUser.storeId !== this.scope.storeId ||
+        localUser.ownerId !== this.scope.ownerId ||
+        localUser.conversationId !== conversationId
+      )
+        throw Error("COPILOT_REPLY_PARENT_INVALID");
+      if (localUser.attachments.length === 0 && this.dependencies.syncMessages)
+        await this.dependencies.syncMessages();
+      else await this.dependencies.sync();
       cancelled(signal);
       const parent = await this.db.getFirstAsync<{
         sync_state: string;
@@ -219,7 +242,10 @@ export class CopilotTurnDelivery {
                     request,
                     signal,
                   );
-                } else await this.dependencies.sync();
+                } else
+                  await (
+                    this.dependencies.syncMessages ?? this.dependencies.sync
+                  )();
               } catch (recoveryError) {
                 cancelled(signal);
                 if (!recoverable(recoveryError)) throw recoveryError;
@@ -281,7 +307,7 @@ export class CopilotTurnDelivery {
       this.listeners.get(conversationId)?.(message.text);
       cancelled(signal);
       try {
-        await this.dependencies.sync();
+        await (this.dependencies.syncMessages ?? this.dependencies.sync)();
       } catch {
         // The reply is already durable locally; the shared sync service owns its retry state.
         cancelled(signal);

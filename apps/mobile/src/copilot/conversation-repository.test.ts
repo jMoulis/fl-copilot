@@ -4,6 +4,7 @@ import { SourceDocumentRepository } from "../documents/source-document-repositor
 import { CopilotTurnDelivery } from "./turn-delivery";
 import { receiveCopilotReply } from "./response-receiver";
 import { CopilotLocalChatController } from "./local-chat-controller";
+import { runSyncPipeline } from "../sync/sync-pipeline";
 import { MobileSyncService } from "../sync/sync-service";
 import type { BootstrapResponse } from "@fl-copilot/sync-contracts";
 import { DatabaseSync } from "node:sqlite";
@@ -1400,3 +1401,89 @@ it("enriches only server-owned destinations after upgrading a projected history 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+it.each([false, true])(
+  "does not let unrelated file jobs hold text dispatch or completion (attachment=%s)",
+  async (hasAttachment) => {
+    const db = new DatabaseSync(":memory:"),
+      adapter = new Adapter(db),
+      f = chatFixture(randomUUID);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const full = runSyncPipeline(adapter, f.ownerId, f.storeId, async () => {
+      await gate;
+      return undefined;
+    });
+    try {
+      await runLocalMigrations(adapter);
+      const repo = new CopilotConversationRepository(adapter, f);
+      const controller = new CopilotLocalChatController(repo, f, randomUUID);
+      await repo.save(f.conversation, command());
+      // Persist an already-bound source reference through the ordinary repository.
+      const parent = {
+        ...f.message,
+        attachments: hasAttachment ? f.message.attachments : [],
+      };
+      await repo.append(parent, { ...command(), replyId: randomUUID() });
+      const request = (await controller.open(f.conversation.id))
+        .pendingTurns[0]!;
+      let asked = 0,
+        canonicalCycles = 0;
+      const syncMessages = async () => {
+        canonicalCycles++;
+        await adapter.runAsync(
+          "UPDATE copilot_messages SET sync_state='SYNCED' WHERE id=?",
+          parent.id,
+        );
+      };
+      let entered!: () => void;
+      const syncingAttachments = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const delivery = new CopilotTurnDelivery(adapter, f, {
+        sync: async () => {
+          entered();
+          await full;
+          await syncMessages();
+        },
+        syncMessages,
+        ask: async (input) => {
+          asked++;
+          expect(input).toEqual(request);
+          return {
+            message: {
+              ...parent,
+              id: request.replyId,
+              role: "ASSISTANT",
+              text: "Réponse",
+              attachments: [],
+              replyToMessageId: parent.id,
+            },
+            alreadyApplied: false,
+          };
+        },
+      });
+      const work = delivery.deliver(f.conversation.id);
+      if (hasAttachment) {
+        await syncingAttachments;
+        expect(asked).toBe(0);
+      } else {
+        expect(await work).toBe("RECEIVED");
+        expect(canonicalCycles).toBe(2);
+        expect((await controller.open(f.conversation.id)).pendingTurns).toEqual(
+          [],
+        );
+      }
+      release();
+      await full;
+      expect(await work).toBe("RECEIVED");
+      expect(asked).toBe(1);
+    } finally {
+      release();
+      await full;
+      db.close();
+    }
+  },
+);

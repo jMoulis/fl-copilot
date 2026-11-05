@@ -9,6 +9,7 @@ import {
 } from "react";
 import { AppState, Platform } from "react-native";
 import Constants from "expo-constants";
+import type { DevicePushToken } from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { ApiClient } from "@fl-copilot/api-client";
 import { expoPushTokenSchema } from "@fl-copilot/sync-contracts";
@@ -30,7 +31,10 @@ type State = ChatPushState & {
   refresh(): Promise<void>;
 };
 const Context = createContext<State | null>(null);
-async function pushToken() {
+async function pushToken(
+  native: { current: DevicePushToken | undefined },
+  reading: { current: number },
+) {
   const n = await notificationModule();
   const projectId =
     Constants.easConfig?.projectId ??
@@ -39,7 +43,21 @@ async function pushToken() {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const token = await Promise.race([
-      n.getExpoPushTokenAsync({ projectId }),
+      (async () => {
+        if (!native.current) {
+          reading.current++;
+          try {
+            const token = await n.getDevicePushTokenAsync();
+            native.current ??= token;
+          } finally {
+            reading.current--;
+          }
+        }
+        return n.getExpoPushTokenAsync({
+          projectId,
+          devicePushToken: native.current,
+        });
+      })(),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => reject(Error("CHAT_PUSH_TIMEOUT")), 15_000);
       }),
@@ -64,6 +82,10 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
     scope: typeof scope;
     value: ChatPushState;
   }>();
+  // Expo's native token read itself emits a token event. Reuse that value
+  // instead of recursively asking native registration from its own listener.
+  const nativeToken = useRef<DevicePushToken | undefined>(undefined);
+  const nativeReads = useRef(0);
   const available = Platform.OS === "ios" && Constants.appOwnership !== "expo";
   const registration = useMemo(() => {
     const key = `fl.chat-push.${ownerId}.${storeId}.${deviceId}`;
@@ -85,7 +107,7 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
           p.granted || p.ios?.status === n.IosAuthorizationStatus.PROVISIONAL
         );
       },
-      token: pushToken,
+      token: () => pushToken(nativeToken, nativeReads),
       save: (token) =>
         withAccessToken((accessToken) => {
           if (active.current !== scope)
@@ -119,8 +141,15 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
       void notificationModule()
         .then((n) => {
           if (!n || !alive) return;
-          const listener = n.addPushTokenListener(() => {
-            if (AppState.currentState === "active") void refresh();
+          const listener = n.addPushTokenListener((token) => {
+            const previous = nativeToken.current;
+            nativeToken.current = token;
+            if (
+              nativeReads.current === 0 &&
+              (previous?.type !== token.type || previous.data !== token.data) &&
+              AppState.currentState === "active"
+            )
+              void refresh();
           });
           stop = () => listener.remove();
         })
