@@ -79,6 +79,12 @@ Two combined tests use the existing SQLite backup/restore paths, native mobile w
 
 T03 is now **CLOSED for supported schemas through 62** against its declared migration/Outbox acceptance criteria; existing migration and SIGKILL evidence is retained. T04 stays active: real-engine tests with controlled Expo ports are not a physical iPhone interruption/corruption or cloud restore claim. This increment adds only tests/documentation, without runtime changes, paid AI requests, EAS build or API deployment.
 
+## 5 November — actual process loss during local import
+
+Six child-process SIGKILL cases exercise current sales/waste publication after an observation insert, immediately before COMMIT and immediately after COMMIT. Reopen proves exact prior state or complete publication; original XLSX bytes, prior work, device/command identities and jobs survive. Canonical retry publishes once or returns the existing exact-duplicate refusal. No graceful rollback runs in the killed child.
+
+**137 tests across seven files pass, zero skips**, including existing batch/continuation/upload/sync/original-transfer cases; ten-project typecheck and targeted lint pass. This is host SQLite/process evidence. **T01 remains open for native iPhone network/termination qualification**. No runtime layer, dependency, EAS build, API deployment or paid provider request is added. [Evidence and boundaries](../qa/M8_IMPORT_PROCESS_INTERRUPTION_2026_11_05.md).
+
 ## 5 November — selected-original memory and cloud backup preflight
 
 The explicit local PDF/XLSX reselection adapter now reuses the existing incremental file verifier instead of reading up to 100 MiB at once. Exact reviewed SHA-256/size, immutable originals, authority and canonical repository transaction remain required. **115 targeted tests across three files pass, zero skips**, plus workspace typecheck and targeted lint. Physical iPhone memory measurement and grouped binary delivery remain open. [Evidence](../qa/M8_BOUNDED_ORIGINAL_RESTORATION_2026_11_05.md).
