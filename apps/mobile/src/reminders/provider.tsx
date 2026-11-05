@@ -44,7 +44,7 @@ const Context = createContext<{
 } | null>(null);
 export function ReminderProvider({ children }: PropsWithChildren) {
   const { session, status } = useAuth(),
-    { lastSyncedAt, syncNow } = useSync(),
+    { lastSyncedAt, syncNow, syncMessages } = useSync(),
     { sqlite } = useLocalDatabase(),
     storeId = session?.stores[0]?.storeId;
   const context = useMemo(
@@ -215,7 +215,7 @@ export function ReminderProvider({ children }: PropsWithChildren) {
               active.current === context &&
               revision === chatRevision
             ) {
-              await syncNow(storeId!).catch(() => undefined);
+              await (syncMessages ?? syncNow)(storeId!).catch(() => undefined);
               if (
                 !alive ||
                 active.current !== context ||
@@ -291,7 +291,16 @@ export function ReminderProvider({ children }: PropsWithChildren) {
       alive = false;
       remove?.();
     };
-  }, [repo, sqlite, status, storeId, root?.key, syncNow, context]);
+  }, [
+    repo,
+    sqlite,
+    status,
+    storeId,
+    root?.key,
+    syncNow,
+    syncMessages,
+    context,
+  ]);
   return (
     <Context.Provider
       value={{ refresh, error, available: notificationsAvailable() }}
