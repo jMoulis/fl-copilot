@@ -85,6 +85,12 @@ Six child-process SIGKILL cases exercise current sales/waste publication after a
 
 **137 tests across seven files pass, zero skips**, including existing batch/continuation/upload/sync/original-transfer cases; ten-project typecheck and targeted lint pass. This is host SQLite/process evidence. **T01 remains open for native iPhone network/termination qualification**. No runtime layer, dependency, EAS build, API deployment or paid provider request is added. [Evidence and boundaries](../qa/M8_IMPORT_PROCESS_INTERRUPTION_2026_11_05.md).
 
+## 5 November — automatic retry while backgrounded
+
+Two mounted-provider assertions reproduce an unnecessary retry after a network failure while AppState is backgrounded. The existing 60-second callback now rechecks for active state. Existing foreground resume remains immediate, active-state timed retry still works and pending commands remain exact. **53 tests across four files pass, zero skips**, with six mounted lifecycle cases. No new runtime layer, dependency or listener.
+
+Device Hub stopped exposing its window during the attempted isolated native recipe; reacquiring it timed out. No network outage or native acceptance is claimed. **T01/T09 remain open** for native qualification and wider consumption review; this mobile correction awaits grouped delivery. [Evidence and boundaries](../qa/M8_FOREGROUND_SYNC_RETRY_2026_11_05.md).
+
 ## 5 November — selected-original memory and cloud backup preflight
 
 The explicit local PDF/XLSX reselection adapter now reuses the existing incremental file verifier instead of reading up to 100 MiB at once. Exact reviewed SHA-256/size, immutable originals, authority and canonical repository transaction remain required. **115 targeted tests across three files pass, zero skips**, plus workspace typecheck and targeted lint. Physical iPhone memory measurement and grouped binary delivery remain open. [Evidence](../qa/M8_BOUNDED_ORIGINAL_RESTORATION_2026_11_05.md).

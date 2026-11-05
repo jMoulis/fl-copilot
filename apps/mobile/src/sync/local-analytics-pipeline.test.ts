@@ -19,11 +19,21 @@ const runtime = vi.hoisted(() => ({
   database: undefined as unknown,
   session: undefined as unknown,
   network: vi.fn(),
+  appState: "active",
+  listeners: new Set<(state: string) => void>(),
   token: async (operation: (token: string) => Promise<unknown>) =>
     operation("fixture-token"),
 }));
 vi.mock("react-native", () => ({
-  AppState: { addEventListener: () => ({ remove() {} }) },
+  AppState: {
+    get currentState() {
+      return runtime.appState;
+    },
+    addEventListener: (_event: string, listener: (state: string) => void) => {
+      runtime.listeners.add(listener);
+      return { remove: () => runtime.listeners.delete(listener) };
+    },
+  },
 }));
 vi.mock("expo-constants", () => ({
   default: { expoConfig: { version: "0.1.0" } },
@@ -149,11 +159,15 @@ class FileDatabase {
 }
 
 it.each([
-  ["NETWORK_UNAVAILABLE", "offline"],
-  ["SYNC_REQUEST_TIMEOUT", "error"],
+  ["NETWORK_UNAVAILABLE", "offline", "background"],
+  ["SYNC_REQUEST_TIMEOUT", "error", "background"],
+  ["NETWORK_UNAVAILABLE", "offline", "inactive"],
+  ["SYNC_REQUEST_TIMEOUT", "error", "inactive"],
+  ["NETWORK_UNAVAILABLE", "offline", "active"],
+  ["SYNC_REQUEST_TIMEOUT", "error", "active"],
 ] as const)(
-  "the actual provider drains local work independently of a blocked network and retains the command after %s",
-  async (failureCode, failureStatus) => {
+  "the actual provider drains local work after %s, retains the command with status %s and qualifies retry while %s",
+  async (failureCode, failureStatus, pausedState) => {
     const directory = mkdtempSync(join(tmpdir(), "fl-local-first-")),
       path = join(directory, "local.db"),
       raw = new DatabaseSync(path);
@@ -271,6 +285,7 @@ it.each([
       expect(
         raw.prepare("SELECT COUNT(*) n FROM product_daily_performance").get(),
       ).toEqual({ n: 2 });
+      vi.useFakeTimers();
       await act(async () => {
         const finishing = latest!.syncNow();
         reject(
@@ -291,7 +306,38 @@ it.each([
           .get(command),
       ).toEqual(before);
       expect(errors).toEqual([]);
+      // A pending retry must not start another network cycle in the background.
+      runtime.appState = pausedState;
+      await act(async () => {
+        if (pausedState !== "active")
+          for (const listener of runtime.listeners) listener(pausedState);
+        await vi.advanceTimersByTimeAsync(60_001);
+      });
+      expect(runtime.network).toHaveBeenCalledTimes(
+        pausedState === "active" ? 2 : 1,
+      );
+      expect(
+        raw
+          .prepare("SELECT * FROM sync_outbox WHERE command_id=?")
+          .get(command),
+      ).toEqual(before);
+      // Foreground recovery uses the existing listener, without waiting a minute.
+      if (pausedState !== "active") {
+        runtime.appState = "active";
+        await act(async () => {
+          for (const listener of runtime.listeners) listener("active");
+          await vi.advanceTimersByTimeAsync(1);
+        });
+      }
+      expect(runtime.network).toHaveBeenCalledTimes(2);
+      expect(
+        raw
+          .prepare("SELECT * FROM sync_outbox WHERE command_id=?")
+          .get(command),
+      ).toEqual(before);
     } finally {
+      vi.useRealTimers();
+      runtime.appState = "active";
       await act(async () => {
         reject?.(
           new ApiClientError(0, {
