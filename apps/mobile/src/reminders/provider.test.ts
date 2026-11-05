@@ -28,6 +28,10 @@ const runtime = vi.hoisted(() => ({
   outboxListeners: new Set<() => void>(),
   stateListeners: new Set<(state: string) => void>(),
   sqlite: { getAllAsync: vi.fn() },
+  destination: vi.fn(),
+}));
+vi.mock("../notifications/chat-destination", () => ({
+  chatNotificationDestination: runtime.destination,
 }));
 vi.mock("react-native", () => ({
   AppState: {
@@ -153,6 +157,7 @@ beforeEach(() => {
   runtime.module.mockReset().mockResolvedValue(native);
   runtime.adapter.mockReset().mockResolvedValue(null);
   runtime.push.mockReset();
+  runtime.destination.mockReset().mockResolvedValue(undefined);
   runtime.syncNow.mockReset().mockResolvedValue(undefined);
   runtime.handler.mockReset();
   runtime.onCommit.mockReset();
@@ -446,4 +451,63 @@ it("silences the previous foreground handler at commit before passive listener c
     shouldShowBanner: false,
     shouldPlaySound: false,
   });
+});
+
+function chatData() {
+  return {
+    kind: "COPILOT_REPLY_READY",
+    ownerId: runtime.ownerId,
+    storeId: runtime.storeId,
+    conversationId: "44444444-4444-4444-8444-444444444444",
+    replyId: "55555555-5555-4555-8555-555555555555",
+  };
+}
+it("opens a cached chat alert once without waiting for network or replaying generation", async () => {
+  const data = chatData(),
+    destination = {
+      pathname: "/(tabs)/copilot",
+      params: { conversationId: data.conversationId },
+    };
+  runtime.destination.mockResolvedValue(destination);
+  runtime.lastResponse = response(data);
+  await render();
+  await act(async () => {
+    for (const listener of runtime.responseListeners) listener(response(data));
+  });
+  expect(runtime.push).toHaveBeenCalledExactlyOnceWith(destination);
+  expect(runtime.syncNow).not.toHaveBeenCalled();
+});
+it("pulls a missing chat result once before opening its fixed route", async () => {
+  const data = chatData(),
+    destination = {
+      pathname: "/(tabs)/copilot",
+      params: { conversationId: data.conversationId },
+    };
+  runtime.destination
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(destination);
+  runtime.lastResponse = response(data);
+  await render();
+  expect(runtime.syncNow).toHaveBeenCalledTimes(1);
+  expect(runtime.push).toHaveBeenCalledExactlyOnceWith(destination);
+});
+it("ignores foreign-owner push and cannot navigate after owner changes during pull", async () => {
+  runtime.lastResponse = response({
+    ...chatData(),
+    ownerId: "66666666-6666-4666-8666-666666666666",
+  });
+  await render();
+  expect(runtime.destination).not.toHaveBeenCalled();
+  const pull = deferred<void>();
+  runtime.syncNow.mockReturnValue(pull.promise);
+  const oldListener = [...runtime.responseListeners][0]!;
+  await act(async () => {
+    oldListener(response(chatData()));
+  });
+  runtime.ownerId = "77777777-7777-4777-8777-777777777777";
+  await render();
+  await act(async () => {
+    pull.resolve();
+  });
+  expect(runtime.push).not.toHaveBeenCalled();
 });

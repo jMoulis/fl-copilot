@@ -1,3 +1,5 @@
+import { copilotCompletionNotificationSchema } from "@fl-copilot/sync-contracts";
+import { chatNotificationDestination } from "../notifications/chat-destination";
 import { CoalescedReminderRunner } from "./coalesced-runner";
 import {
   createContext,
@@ -152,7 +154,9 @@ export function ReminderProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (status !== "authenticated" || !storeId || !root?.key) return;
     let alive = true,
-      remove: (() => void) | undefined;
+      remove: (() => void) | undefined,
+      lastChatReply: string | undefined,
+      chatRevision = 0;
     void notificationModule()
       .then(async (n) => {
         if (!n || !alive) return;
@@ -185,6 +189,53 @@ export function ReminderProvider({ children }: PropsWithChildren) {
           ) {
             n.clearLastNotificationResponse();
             router.push("/reminder-settings");
+            return;
+          }
+          const chat = copilotCompletionNotificationSchema.safeParse(data);
+          if (chat.success) {
+            if (
+              !context.ownerId ||
+              chat.data.ownerId !== context.ownerId ||
+              chat.data.storeId !== storeId
+            )
+              return;
+            if (lastChatReply === chat.data.replyId) return;
+            lastChatReply = chat.data.replyId;
+            const revision = ++chatRevision;
+            const readDestination = () =>
+              chatNotificationDestination(
+                sqlite,
+                { ownerId: context.ownerId!, storeId: storeId! },
+                chat.data,
+              );
+            let destination = await readDestination();
+            if (
+              !destination &&
+              alive &&
+              active.current === context &&
+              revision === chatRevision
+            ) {
+              await syncNow(storeId!).catch(() => undefined);
+              if (
+                !alive ||
+                active.current !== context ||
+                revision !== chatRevision
+              )
+                return;
+              destination = await readDestination();
+            }
+            if (
+              !alive ||
+              active.current !== context ||
+              revision !== chatRevision
+            )
+              return;
+            n.clearLastNotificationResponse();
+            if (destination) router.push(destination);
+            else
+              setError(
+                "Cette réponse n’est pas accessible. Ouvre tes conversations après synchronisation.",
+              );
             return;
           }
           const parsed = reminderNotificationDataSchema.safeParse(data);
@@ -240,7 +291,7 @@ export function ReminderProvider({ children }: PropsWithChildren) {
       alive = false;
       remove?.();
     };
-  }, [repo, status, storeId, root?.key, syncNow, context]);
+  }, [repo, sqlite, status, storeId, root?.key, syncNow, context]);
   return (
     <Context.Provider
       value={{ refresh, error, available: notificationsAvailable() }}

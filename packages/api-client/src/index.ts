@@ -1,4 +1,8 @@
 import {
+  devicePushTokenRequestSchema,
+  devicePushTokenResponseSchema,
+} from "@fl-copilot/sync-contracts";
+import {
   layoutIllustrationQuoteStateSchema,
   layoutIllustrationGenerationRecordSchema,
 } from "@fl-copilot/sync-contracts";
@@ -118,6 +122,7 @@ export class ApiClient {
     streaming?: {
       onProgress(text: string): void;
       onActivity?(activity: CopilotActivity): void;
+      backgroundCompletion?: boolean;
       memorySuggestions?: boolean;
       webResearch?: boolean;
       recommendationTracking?: boolean;
@@ -169,6 +174,9 @@ export class ApiClient {
                 ...authorizedStoreHeaders(accessToken, storeId),
                 "content-type": "application/json",
                 accept: "application/x-ndjson",
+                ...(streaming.backgroundCompletion
+                  ? { "x-copilot-background-completion": "1" }
+                  : {}),
                 "x-copilot-analytics-destinations": "2",
                 ...(streaming.choiceUpdate
                   ? { "x-copilot-choice-update": "1" }
@@ -408,6 +416,24 @@ export class ApiClient {
       "/api/v1/auth/logout",
       { method: "POST", headers: { authorization: `Bearer ${accessToken}` } },
       logoutResponseSchema,
+    );
+  }
+
+  updateDevicePushToken(
+    accessToken: string,
+    deviceId: string,
+    storeId: string,
+    pushToken: string | null,
+  ) {
+    const input = devicePushTokenRequestSchema.parse({ storeId, pushToken });
+    return this.request(
+      `/api/v1/devices/${encodeURIComponent(deviceId)}/push-token`,
+      {
+        method: "PUT",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      devicePushTokenResponseSchema,
     );
   }
 

@@ -1181,6 +1181,20 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 57,
+    name: "unique-session-push-token",
+    async up(database) {
+      await database.collection("deviceSessions").createIndex(
+        { "push.token": 1 },
+        {
+          name: "unique_session_push_token",
+          unique: true,
+          partialFilterExpression: { "push.token": { $type: "string" } },
+        },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

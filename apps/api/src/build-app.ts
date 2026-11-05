@@ -1,3 +1,12 @@
+import {
+  devicePushTokenRequestSchema,
+  devicePushTokenResponseSchema,
+} from "@fl-copilot/sync-contracts";
+import {
+  updateDevicePushToken,
+  registeredChatPush,
+  notifyChatCompletion,
+} from "./notifications/chat-completion";
 import { readMongoExploration } from "./copilot/mongo-read-tool";
 import { readCommercialOriginal } from "./copilot/commercial-original-reader";
 import { requireCommercialSourceCompatibility } from "./commercial/source-compatibility";
@@ -587,6 +596,38 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       return { revoked: true as const };
     },
   );
+  app.put(
+    "/api/v1/devices/:deviceId/push-token",
+    {
+      schema: {
+        params: z.object({ deviceId: z.string().uuid() }),
+        body: devicePushTokenRequestSchema,
+        response: { 200: devicePushTokenResponseSchema },
+      },
+    },
+    async (request) => {
+      const token = request.headers.authorization;
+      if (!token?.startsWith("Bearer "))
+        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+      if (request.headers["x-store-id"] !== request.body.storeId)
+        throw new AuthError(
+          403,
+          "STORE_CONTEXT_MISMATCH",
+          "Le magasin demandé ne correspond pas à la requête.",
+        );
+      const principal = await auth.authorizeStore(
+        token.slice(7),
+        request.body.storeId,
+        request.params.deviceId,
+      );
+      return updateDevicePushToken(
+        await dependencies.database.getDb(),
+        principal,
+        request.params.deviceId,
+        request.body,
+      );
+    },
+  );
   app.post(
     "/api/v1/sync/push",
     {
@@ -725,7 +766,10 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           canRespond: true,
         };
       };
-      await authorize();
+      const initialPrincipal = await auth.authorizeStore(
+        token.slice(7),
+        storeId,
+      );
       const loadContext =
         dependencies.copilotContext ??
         (config.COPILOT_AI_MODEL ? loadCopilotReadContext : undefined);
@@ -741,15 +785,23 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           storeId,
           false,
         );
+      const notificationPrincipal = initialPrincipal;
+      const notificationDb = await dependencies.database.getDb();
+      // Opt-in clients may leave the stream without cancelling the bounded generation.
+      const backgroundCompletion =
+        request.headers["x-copilot-background-completion"] === "1" &&
+        !!(await registeredChatPush(notificationDb, notificationPrincipal));
       const streaming = request.headers.accept === "application/x-ndjson";
       const abort = new AbortController();
-      if (streaming && reply.raw.destroyed) abort.abort();
+      if (streaming && reply.raw.destroyed && !backgroundCompletion)
+        abort.abort();
       if (streaming)
         reply.raw.once("close", () => {
-          if (!reply.raw.writableEnded) abort.abort();
+          if (!reply.raw.writableEnded && !backgroundCompletion) abort.abort();
         });
       let stream: PassThrough | undefined;
       const emit = (event: unknown) => {
+        if (reply.raw.destroyed) return;
         if (!stream) {
           stream = new PassThrough();
           (reply as FastifyReply)
@@ -769,8 +821,8 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       let lastText = "",
         lastSent = 0;
       try {
-        const db = await dependencies.database.getDb();
-        const result = await runCopilotTurn(
+        const db = notificationDb;
+        const generationTask = runCopilotTurn(
           {
             db,
             provider: createCopilotAiProvider(config, undefined, {
@@ -1723,6 +1775,55 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           request.body,
           abort.signal,
         );
+        const notificationTask = generationTask.then(async (result) => {
+          if (backgroundCompletion && !result.alreadyApplied) {
+            try {
+              await notifyChatCompletion(
+                notificationDb,
+                notificationPrincipal,
+                {
+                  kind: "COPILOT_REPLY_READY",
+                  ownerId: notificationPrincipal.userId,
+                  storeId,
+                  conversationId: request.body.conversationId,
+                  replyId: result.message.id,
+                },
+                { accessToken: config.EXPO_PUSH_ACCESS_TOKEN },
+              );
+            } catch {
+              // Never forward provider bodies/tokens or turn a committed answer into an error.
+              app.log.warn(
+                {
+                  code: "COPILOT_NOTIFICATION_FAILED",
+                  httpRequestId: request.id,
+                },
+                "Chat notification failed",
+              );
+            }
+          }
+          return result;
+        });
+        if (backgroundCompletion && dependencies.waitUntil) {
+          try {
+            dependencies.waitUntil(
+              notificationTask.then(
+                () => undefined,
+                () => undefined,
+              ),
+            );
+          } catch {
+            app.log.warn(
+              {
+                code: "COPILOT_NOTIFICATION_LIFECYCLE_FAILED",
+                httpRequestId: request.id,
+              },
+              "Chat lifecycle registration failed",
+            );
+          }
+        }
+        // The result reaches the stream without waiting for Expo delivery.
+        void notificationTask.catch(() => undefined);
+        const result = await generationTask;
         const compatibleResult = {
           ...result,
           message: serializeChatForClient(

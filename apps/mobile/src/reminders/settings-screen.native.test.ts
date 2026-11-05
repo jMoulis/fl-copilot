@@ -18,6 +18,16 @@ const runtime = vi.hoisted(() => ({
   cancel: vi.fn(async () => {}),
   listeners: new Set<() => void>(),
 }));
+vi.mock("@/notifications/chat-push-provider", () => ({
+  useChatPush: () => ({
+    enabled: false,
+    ready: false,
+    busy: false,
+    available: false,
+    refresh: async () => {},
+    setEnabled: async () => {},
+  }),
+}));
 vi.mock("@/auth/auth-provider", () => ({
   useAuth: () => ({ session: runtime.session }),
 }));
@@ -166,7 +176,13 @@ it("does not save an old activation after its permission request outlives the ow
   const permission = deferred<boolean>();
   runtime.permission.mockReturnValueOnce(permission.promise);
   await act(async () => {
-    hosts("Switch")[0]!.props.onValueChange(true);
+    hosts("Switch")
+      .find(
+        (n) =>
+          n.props.accessibilityLabel ===
+          "Activer les rappels commerciaux sur ce téléphone",
+      )!
+      .props.onValueChange(true);
   });
   runtime.session = {
     user: { id: "owner-b" },
@@ -217,7 +233,11 @@ it("coalesces a double activation and accepts an equivalent refreshed session", 
   await mount();
   const permission = deferred<boolean>();
   runtime.permission.mockReturnValueOnce(permission.promise);
-  const toggle = hosts("Switch")[0]!.props.onValueChange;
+  const toggle = hosts("Switch").find(
+    (n) =>
+      n.props.accessibilityLabel ===
+      "Activer les rappels commerciaux sur ce téléphone",
+  )!.props.onValueChange;
   await act(async () => {
     toggle(true);
     toggle(true);
@@ -242,7 +262,13 @@ it("ignores a permission result and retained listener after focus closes", async
     read = [...runtime.listeners][0]!;
   runtime.permission.mockReturnValueOnce(permission.promise);
   await act(async () => {
-    hosts("Switch")[0]!.props.onValueChange(true);
+    hosts("Switch")
+      .find(
+        (n) =>
+          n.props.accessibilityLabel ===
+          "Activer les rappels commerciaux sur ce téléphone",
+      )!
+      .props.onValueChange(true);
   });
   runtime.focused = false;
   await act(async () => {
@@ -306,7 +332,13 @@ it("keeps denied notification permission explicit without writing preferences", 
   await mount();
   runtime.permission.mockResolvedValueOnce(false);
   await act(async () => {
-    hosts("Switch")[0]!.props.onValueChange(true);
+    hosts("Switch")
+      .find(
+        (n) =>
+          n.props.accessibilityLabel ===
+          "Activer les rappels commerciaux sur ce téléphone",
+      )!
+      .props.onValueChange(true);
   });
   expect(runtime.setEnabled).not.toHaveBeenCalled();
   expect(runtime.schedule).not.toHaveBeenCalled();

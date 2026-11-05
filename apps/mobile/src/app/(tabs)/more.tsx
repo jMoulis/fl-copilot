@@ -105,10 +105,10 @@ export default function MoreScreen() {
           onPress={() => router.push("/need-units")}
         />
       </SectionCard>
-      <SectionCard title="Rappels">
+      <SectionCard title="Notifications">
         <MenuRow
-          title="Rappels sur ce téléphone"
-          description="Notifications locales et opérations à préparer"
+          title="Notifications sur ce téléphone"
+          description="Réponses du copilote et rappels commerciaux"
           icon="notifications-outline"
           onPress={() => router.push("/reminder-settings")}
         />
