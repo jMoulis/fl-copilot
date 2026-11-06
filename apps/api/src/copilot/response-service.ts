@@ -489,6 +489,10 @@ export async function generateCopilotResponse(
     }
     return {
       mode: "FALLBACK",
+      titleProposal:
+        error instanceof CopilotAiError
+          ? error.titleProposal
+          : completed?.titleProposal,
       ...(error instanceof CopilotAiError &&
       error.code === "COPILOT_AI_OUTPUT_LIMIT"
         ? { outputLimited: true }

@@ -75,7 +75,8 @@ const environmentSchema = z.object({
     .int()
     .min(1000)
     .max(180000)
-    .default(90000),
+    // Keep synthesis time after bounded multi-step reads, within the 240s host lifetime.
+    .default(180000),
   COPILOT_AI_MAX_OUTPUT_TOKENS: z.coerce
     .number()
     .int()

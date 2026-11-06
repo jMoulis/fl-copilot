@@ -4,7 +4,10 @@ import {
   detectCopilotConflicts,
 } from "@fl-copilot/analytics-core";
 import { runCopilotTurn } from "../src/copilot/turn-service";
-import type { CopilotAiProvider } from "../src/copilot/ai-provider";
+import {
+  CopilotAiError,
+  type CopilotAiProvider,
+} from "../src/copilot/ai-provider";
 import { MercalysTestDatabase } from "../../../scripts/test-mercalys-sync-fixtures";
 import { runLocalMigrations } from "../../mobile/src/db/migrations";
 import { CopilotConversationRepository } from "../../mobile/src/copilot/conversation-repository";
@@ -141,84 +144,91 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authorize: async () => authority,
       };
     }
-    it("keeps the normal turn lease/replay while persisting the generated title", async () => {
-      const f = await fixture();
-      const generate = vi.fn<CopilotAiProvider["generate"]>(
-        async (_request, schema) => ({
-          output: schema.parse({
-            language: "fr-FR",
-            summary: "Salut !",
-            narrative: "Salut !",
-            facts: [],
-            interpretation: [],
-            recommendations: [],
-            questions: [],
-          }),
-          metadata: {
-            requestedModel: "light-test",
-            resolvedModel: "light-test",
-            responseId: "test-response",
-            inputTokens: 10,
-            outputTokens: 10,
+    it.each([null, "COPILOT_AI_TIMEOUT", "COPILOT_AI_OUTPUT_LIMIT"] as const)(
+      "keeps the normal turn lease/replay and title after success or failure (%s)",
+      async (failure) => {
+        const f = await fixture();
+        const generate = vi.fn<CopilotAiProvider["generate"]>(
+          async (_request, schema) => {
+            if (failure)
+              throw new CopilotAiError(failure, true, "Suivi du rayon");
+            return {
+              output: schema.parse({
+                language: "fr-FR",
+                summary: "Salut !",
+                narrative: "Salut !",
+                facts: [],
+                interpretation: [],
+                recommendations: [],
+                questions: [],
+              }),
+              metadata: {
+                requestedModel: "light-test",
+                resolvedModel: "light-test",
+                responseId: "test-response",
+                inputTokens: 10,
+                outputTokens: 10,
+              },
+              titleProposal: "Suivi du rayon",
+            };
           },
-          titleProposal: "Suivi du rayon",
-        }),
-      );
-      const titleTasks: Promise<unknown>[] = [];
-      const dependencies = {
-        onTitleReady: (proposal: {
-          message: CopilotMessage;
-          title: string;
-          expectedTitle: string;
-        }) => {
-          titleTasks.push(
-            updateGeneratedConversationTitle(
-              db,
-              f.authorize,
-              proposal.message,
-              proposal.title,
-              proposal.expectedTitle,
-            ),
-          );
-        },
-        db,
-        provider: {
-          model: "light-test",
-          generate: generate as CopilotAiProvider["generate"],
-        },
-        authorize: f.authorize,
-        loadContext: async () =>
-          detectCopilotConflicts({
-            batch: scoreCopilotPriorities({
-              storeId: f.f.storeId,
-              evaluatedAt: f.f.message.createdAt,
-              candidates: [],
+        );
+        const titleTasks: Promise<unknown>[] = [];
+        const dependencies = {
+          onTitleReady: (proposal: {
+            message: CopilotMessage;
+            title: string;
+            expectedTitle: string;
+          }) => {
+            titleTasks.push(
+              updateGeneratedConversationTitle(
+                db,
+                f.authorize,
+                proposal.message,
+                proposal.title,
+                proposal.expectedTitle,
+              ),
+            );
+          },
+          db,
+          provider: {
+            model: "light-test",
+            generate: generate as CopilotAiProvider["generate"],
+          },
+          authorize: f.authorize,
+          loadContext: async () =>
+            detectCopilotConflicts({
+              batch: scoreCopilotPriorities({
+                storeId: f.f.storeId,
+                evaluatedAt: f.f.message.createdAt,
+                candidates: [],
+              }),
+              intents: [],
             }),
-            intents: [],
-          }),
-      };
-      const input = {
-        conversationId: f.f.conversation.id,
-        userMessageId: f.f.message.id,
-        replyId: randomUUID(),
-      };
-      const result = await runCopilotTurn(dependencies, input);
-      expect(result.alreadyApplied).toBe(false);
-      await Promise.all(titleTasks);
-      expect(await f.read()).toMatchObject({
-        title: "Suivi du rayon",
-        version: 2,
-      });
-      expect((await runCopilotTurn(dependencies, input)).alreadyApplied).toBe(
-        true,
-      );
-      expect(generate).toHaveBeenCalledTimes(1);
-      expect(titleTasks).toHaveLength(1);
-      expect(await f.read()).toMatchObject({
-        title: "Suivi du rayon",
-        version: 2,
-      });
-    });
+        };
+        const input = {
+          conversationId: f.f.conversation.id,
+          userMessageId: f.f.message.id,
+          replyId: randomUUID(),
+        };
+        const result = await runCopilotTurn(dependencies, input);
+        expect(result.alreadyApplied).toBe(false);
+        await Promise.all(titleTasks);
+        expect(await f.read()).toMatchObject({
+          title: "Suivi du rayon",
+          version: 2,
+        });
+        expect((await runCopilotTurn(dependencies, input)).alreadyApplied).toBe(
+          true,
+        );
+        expect(generate).toHaveBeenCalledTimes(1);
+        expect(titleTasks).toHaveLength(1);
+        expect(await f.read()).toMatchObject({
+          title: "Suivi du rayon",
+          version: 2,
+        });
+      },
+    );
     it("synchronizes an offline manual rename over an intervening automatic title without a conflict", async () => {
       const f = await fixture(),
         native = new MercalysTestDatabase();

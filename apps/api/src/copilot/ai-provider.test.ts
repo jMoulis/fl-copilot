@@ -395,6 +395,7 @@ it("validates independent server model and bounded limits without changing other
   const config = parseEnvironment({ NODE_ENV: "test" });
   expect(config.COPILOT_AI_MODEL).toBeUndefined();
   expect(config.COPILOT_AI_MAX_OUTPUT_TOKENS).toBe(4000);
+  expect(config.COPILOT_AI_TIMEOUT_MS).toBe(180000);
   for (const env of [
     { COPILOT_AI_MODEL: "https://untrusted.example" },
     { COPILOT_AI_TIMEOUT_MS: "0" },
