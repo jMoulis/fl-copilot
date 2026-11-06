@@ -402,6 +402,89 @@ it.each([
           expect(prior === undefined || prior === id).toBe(true);
           canonicalByRef.set(ref, id);
         }
+        // Decode the actual provider payload and compare every retained field,
+        // not just the final handful of facts selected by the scripted model.
+        const canonical =
+          original[Math.min(resultIndex - 1, original.length - 1)]!;
+        const decoded = structuredClone(value);
+        const restoreRefs = (item: unknown): unknown => {
+          if (typeof item === "string") return canonicalByRef.get(item) ?? item;
+          if (Array.isArray(item)) return item.map(restoreRefs);
+          if (item && typeof item === "object")
+            return Object.fromEntries(
+              Object.entries(item).map(([k, v]) => [k, restoreRefs(v)]),
+            );
+          return item;
+        };
+        decoded.rows = decoded.rows?.map((row: Record<string, unknown>) => {
+          if (!decoded.metricColumns) return row;
+          return {
+            ...row,
+            metrics: (row.metrics as unknown[][]).map((cells) =>
+              Object.fromEntries(
+                decoded.metricColumns.map((key: string, i: number) => {
+                  const coverage =
+                    key === "currentCoverageIndex" ||
+                    key === "referenceCoverageIndex";
+                  return [
+                    coverage ? key.replace(/Index$/, "") : key,
+                    coverage && cells[i] !== null
+                      ? decoded.coverages[Number(cells[i])]
+                      : cells[i],
+                  ];
+                }),
+              ),
+            ),
+          };
+        });
+        expect(restoreRefs(decoded.rows)).toEqual(
+          "rows" in canonical ? canonical.rows : undefined,
+        );
+        const metadata = (v: object) =>
+          Object.fromEntries(
+            Object.entries(v).filter(
+              ([key]) =>
+                ![
+                  "rows",
+                  "evidence",
+                  "remainingReads",
+                  "coverages",
+                  "metricColumns",
+                ].includes(key),
+            ),
+          );
+        expect(restoreRefs(metadata(decoded))).toEqual(metadata(canonical));
+        const reconstructed = value.evidence.rows.map((row: unknown[]) => {
+          const detail =
+            row[5] === null
+              ? undefined
+              : value.evidence.details[Number(row[5])];
+          return {
+            label: row[1],
+            value: row[2],
+            sourceType: row[3],
+            factKind: row[4],
+            ...(detail === undefined
+              ? {}
+              : {
+                  detail: Array.isArray(detail)
+                    ? detail
+                        .map((i: number) => value.evidence.detailParts[i])
+                        .join("")
+                    : detail,
+                }),
+            ...(row[6] ?? {}),
+          };
+        });
+        expect(reconstructed).toEqual(
+          canonical.evidence.map((entry) =>
+            Object.fromEntries(
+              Object.entries(entry).filter(
+                ([key]) => !["id", "sourceId", "sourceVersion"].includes(key),
+              ),
+            ),
+          ),
+        );
       }
     };
     const transport = vi
@@ -645,7 +728,7 @@ it.each([
     );
     expect(before).toBeGreaterThan(256000);
     expect(after).toBeLessThan(256000);
-    expect(after).toBeLessThan(before * 0.6);
+    expect(after).toBeLessThan(before * 0.3);
     expect(
       observed.filter((e) => e.kind === "STEP").map((e) => e.toolNames),
     ).toEqual([

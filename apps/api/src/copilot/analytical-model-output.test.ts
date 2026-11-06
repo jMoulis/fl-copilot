@@ -53,15 +53,29 @@ function semantic(entries: object[]) {
   );
 }
 function unpack(wire: unknown) {
-  const { rows, details } = (
-    wire as { evidence: { rows: unknown[][]; details: string[] } }
+  const { rows, details, detailParts } = (
+    wire as {
+      evidence: {
+        rows: unknown[][];
+        details: Array<string | number[]>;
+        detailParts?: string[];
+      };
+    }
   ).evidence;
   return rows.map(([, label, value, sourceType, factKind, detail, extra]) => ({
     label,
     value,
     sourceType,
     factKind,
-    ...(detail === null ? {} : { detail: details[Number(detail)] }),
+    ...(detail === null
+      ? {}
+      : {
+          detail: Array.isArray(details[Number(detail)])
+            ? (details[Number(detail)] as number[])
+                .map((part) => detailParts![part])
+                .join("")
+            : details[Number(detail)],
+        }),
     ...((extra as object) ?? {}),
   }));
 }
@@ -170,15 +184,16 @@ it("shares exact query coverages without losing nulls, zeroes, dates, warnings o
   const prepared = p.prepare("analytics-query", value, 1)!;
   prepared.accept();
   const wire = prepared.wire as unknown as {
-    rows: Array<{ metrics: { columns: string[]; rows: unknown[][] } }>;
+    rows: Array<{ metrics: unknown[][] }>;
+    metricColumns: string[];
     coverages: unknown[];
   };
   expect(wire.coverages).toEqual([coverage]);
   const restoredRows = wire.rows.map((row) => ({
     ...row,
-    metrics: row.metrics.rows.map((cells) =>
+    metrics: row.metrics.map((cells) =>
       Object.fromEntries(
-        row.metrics.columns.map((column, index) => {
+        wire.metricColumns.map((column, index) => {
           const coverageColumn =
             column === "currentCoverageIndex" ||
             column === "referenceCoverageIndex";
@@ -214,6 +229,51 @@ it("keeps heterogeneous metric objects and non-query shapes unchanged", () => {
   expect(p.prepare("period", value, 1)!.wire).toMatchObject({
     rows: value.rows,
   });
+  const future = {
+    ...fixture(1),
+    rows: [
+      {
+        metrics: {
+          columns: ["future"],
+          rows: [["0"]],
+          note: "Keep this field",
+        },
+      },
+    ],
+  };
+  expect(p.prepare("analytics-query", future, 1)!.wire).toMatchObject({
+    rows: future.rows,
+  });
+});
+it("shares repeated prose losslessly, including decimals, labels, custom caveats and whitespace", () => {
+  const value = fixture(12);
+  for (const [i, entry] of value.evidence.entries())
+    entry.detail =
+      `Produit ${i}. Prix 1.095592140201805629314922995220393. ` +
+      "Prix pondéré sur journées appariées. Null ne signifie pas zéro. " +
+      "Quantité de gestion, pas un dénombrement physique. " +
+      `Réserve spécifique ${i} : origine non vérifiée.  \nFin.`;
+  const wire = createAnalyticalModelOutput([]).prepare(
+    "analytics-query",
+    value,
+    1,
+  )!.wire;
+  expect(wire).toHaveProperty("evidence.detailParts");
+  expect(unpack(wire)).toEqual(semantic(value.evidence));
+  expect(JSON.stringify(wire).match(/Null ne signifie pas zéro/g)).toHaveLength(
+    1,
+  );
+});
+it("does not add a shared-text dictionary when it would enlarge the result", () => {
+  const value = fixture(1);
+  value.evidence[0]!.detail = "Court.";
+  const wire = createAnalyticalModelOutput([]).prepare(
+    "period",
+    value,
+    0,
+  )!.wire;
+  expect(wire).not.toHaveProperty("evidence.detailParts");
+  expect(unpack(wire)).toEqual(semantic(value.evidence));
 });
 it.each(["analytics-query", "period", "mongo"])(
   "preserves every exact field while sharing repeated evidence metadata: %s",
