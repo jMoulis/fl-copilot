@@ -376,3 +376,92 @@ it.each([
     expect(JSON.stringify(usage.mock.calls)).not.toContain("sk-secret");
   },
 );
+
+it("uses a structural wire schema accepted by the strict provider subset", async () => {
+  const f = fixture();
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockImplementation(async (_url, init) => {
+      const body = JSON.parse(init!.body as string);
+      if (body.model === "expert-test") return reply(expert, "expert-test");
+      const schema = body.text.format.schema;
+      expect(body.text.format.strict).toBe(true);
+      expect(schema.type).toBe("object");
+      expect(schema.additionalProperties).toBe(false);
+      expect([...schema.required].sort()).toEqual([
+        "answer",
+        "confidence",
+        "route",
+        "title",
+      ]);
+      if (/"(?:pattern|minLength|maxLength)"/.test(JSON.stringify(schema))) {
+        return Response.json(
+          {
+            error: {
+              message: "Schema constraints rejected",
+              type: "invalid_request_error",
+              code: "invalid_json_schema",
+              param: "text.format.schema",
+            },
+          },
+          { status: 400 },
+        );
+      }
+      return reply({ ...decision, title: "Comprendre les têtes de gondole" });
+    });
+  const result = await createCopilotAiProvider(f.config, transport, {
+    dispatchEnabled: true,
+    daily: vi.fn(),
+  }).generate(f.request, copilotResponseSchema);
+  expect(result.metadata.requestedModel).toBe("gpt-6-luna");
+  expect(result.titleProposal).toBe("Comprendre les têtes de gondole");
+  expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it.each([
+  { title: "Sujet\nintrus" },
+  { title: "Sujet\u0001intrus" },
+  { title: "Sujet\u007fintrus" },
+  { title: "x".repeat(81) },
+  { title: "   " },
+  { answer: "x".repeat(1201) },
+])("keeps local validation after structural output: %j", async (invalid) => {
+  const f = fixture(),
+    usage = vi.fn();
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(reply({ ...decision, ...invalid }))
+    .mockResolvedValueOnce(reply(expert, "expert-test"));
+  const result = await createCopilotAiProvider(f.config, transport, {
+    dispatchEnabled: true,
+    daily: vi.fn(),
+    onUsage: usage,
+  }).generate(f.request, copilotResponseSchema);
+  expect(result.metadata.requestedModel).toBe("expert-test");
+  expect(result.titleProposal).toBeUndefined();
+  expect(transport).toHaveBeenCalledTimes(2);
+  expect(usage.mock.calls.map(([event]) => event)).toContainEqual(
+    expect.objectContaining({
+      purpose: "DISPATCH",
+      kind: "END",
+      outcome: "FAILED",
+      completedSteps: 1,
+      usageComplete: true,
+      failure: { kind: "INVALID_OUTPUT" },
+    }),
+  );
+});
+it("trims and retains a valid accented title before canonical persistence", async () => {
+  const f = fixture();
+  const transport = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      reply({ ...decision, title: "  Présentation d’été au rayon  " }),
+    );
+  const result = await createCopilotAiProvider(f.config, transport, {
+    dispatchEnabled: true,
+    daily: vi.fn(),
+  }).generate(f.request, copilotResponseSchema);
+  expect(result.titleProposal).toBe("Présentation d’été au rayon");
+  expect(transport).toHaveBeenCalledTimes(1);
+});

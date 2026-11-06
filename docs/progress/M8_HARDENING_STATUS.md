@@ -154,3 +154,7 @@ The owner authorizes a bounded light route for simple requests and automatic tit
 ### Build39 title feedback
 
 The owner reports missing automatic titles. Two real DISPATCH traces fail before a successful model step, leaving the ordinary expert fallback to answer. Light-route acceptance and savings are therefore still open. Add safe provider status/code/parameter diagnostics to the existing content-free END event; **270 tests in two files pass**, with API typecheck/lint. Exact failure cause and correction remain pending an observed provider result after diagnostic delivery; no new native binary or paid synthetic AI request. [Details](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md#build39-owner-test--title-missing-6-november).
+
+### Provider schema refusal identified
+
+The owner's normal exchange with the deployed diagnostic confirms HTTP400 `invalid_json_schema` on `text.format.schema`. Correct the dispatcher wire schema to required structural fields/enums/nullable strings, retaining bounded local validation and the existing expert fallback. **304 targeted tests in three files pass**; a controlled boundary regression fails before correction. API-only; build39 remains compatible. Actual provider/title acceptance and token savings stay open until delivery and an owner exchange. [Evidence and limits](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md#provider-refusal-identified--structural-wire-schema-correction-6-november).
