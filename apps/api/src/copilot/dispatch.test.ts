@@ -11,6 +11,7 @@ import {
   type CopilotGenerationRequest,
 } from "./ai-provider";
 import { buildDispatchInput } from "./dispatch";
+import { generateCopilotResponse } from "./response-service";
 function fixture() {
   const storeId = randomUUID(),
     evaluatedAt = "2026-11-06T10:00:00.000Z";
@@ -465,3 +466,54 @@ it("trims and retains a valid accented title before canonical persistence", asyn
   expect(result.titleProposal).toBe("Présentation d’été au rayon");
   expect(transport).toHaveBeenCalledTimes(1);
 });
+
+it.each(["deadline", "output-limit", "grounding"])(
+  "preserves the validated dispatch title through expert failure: %s",
+  async (failure) => {
+    const f = fixture();
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        reply({
+          ...decision,
+          route: "EXPERT",
+          answer: null,
+          title: "Bilan du rayon",
+        }),
+      )
+      .mockImplementationOnce(async (_url, init) => {
+        if (failure === "deadline")
+          return new Promise((_resolve, reject) =>
+            init!.signal!.addEventListener(
+              "abort",
+              () => reject(init!.signal!.reason),
+              { once: true },
+            ),
+          );
+        if (failure === "output-limit") {
+          const raw = (await reply(expert, "expert-test").json()) as Record<
+            string,
+            unknown
+          >;
+          return Response.json({
+            ...raw,
+            status: "incomplete",
+            incomplete_details: { reason: "max_output_tokens" },
+          });
+        }
+        return reply(
+          { ...expert, facts: [{ evidenceId: "invented" }] },
+          "expert-test",
+        );
+      });
+    const provider = createCopilotAiProvider(
+      { ...f.config, COPILOT_AI_TIMEOUT_MS: 1000 },
+      transport,
+      { dispatchEnabled: true, daily: vi.fn() },
+    );
+    const result = await generateCopilotResponse(provider, f.request);
+    expect(result.mode).toBe("FALLBACK");
+    expect(result.titleProposal).toBe("Bilan du rayon");
+    expect(transport).toHaveBeenCalledTimes(2);
+  },
+);

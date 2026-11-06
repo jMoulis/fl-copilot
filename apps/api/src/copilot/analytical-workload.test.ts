@@ -365,6 +365,19 @@ it.each([false, true])(
         const body = JSON.parse(init!.body as string);
         turns++;
         expect(body.max_output_tokens).toBe(4000);
+        if (turns === 1) {
+          const names = body.tools.map((tool: { name: string }) => tool.name);
+          expect(names).toEqual(
+            expect.arrayContaining([
+              "analytics_period",
+              "analytics_query",
+              "mongo_aggregate",
+              "mongo_list",
+              "find_tools",
+            ]),
+          );
+          expect(names).not.toContain("commercial_pdf");
+        }
         expect(body.stream === true).toBe(streaming);
         if (turns === 1)
           return response(
@@ -422,6 +435,10 @@ it.each([false, true])(
     const result = await createCopilotAiProvider(config, transport, {
       daily: vi.fn(),
       mongoRead: vi.fn(),
+      commercialPdf: vi.fn(),
+      needCatalogue: vi.fn(),
+      referenceInspection: vi.fn(),
+      conversationHistory: vi.fn(),
       period,
       analyticsQuery,
       onUsage: (event) => observed.push(event),

@@ -526,11 +526,7 @@ export async function runCopilotTurn(
         return reply;
       });
       if (!result) throw new Error("COPILOT_REPLY_COMMIT_FAILED");
-      if (
-        !result.alreadyApplied &&
-        generation.mode === "AI" &&
-        generation.titleProposal
-      ) {
+      if (!result.alreadyApplied && generation.titleProposal) {
         // The answer is durable. The existing host lifecycle owns optional title work.
         try {
           dependencies.onTitleReady?.({
