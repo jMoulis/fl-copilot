@@ -354,6 +354,7 @@ it.each([
       .mockResolvedValueOnce(reply(expert, "expert-test"));
     const result = await createCopilotAiProvider(f.config, transport, {
       dispatchEnabled: true,
+      daily: vi.fn(),
       onUsage: usage,
     }).generate(f.request, copilotResponseSchema);
     expect(result.metadata.requestedModel).toBe("expert-test");
