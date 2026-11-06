@@ -18,6 +18,7 @@ const runtime = vi.hoisted(() => ({
   adapter: vi.fn(),
   push: vi.fn(),
   syncNow: vi.fn(),
+  syncMessages: undefined as ReturnType<typeof vi.fn> | undefined,
   handler: vi.fn(),
   onCommit: vi.fn(),
   add: vi.fn(),
@@ -61,7 +62,11 @@ vi.mock("@/auth/auth-provider", () => ({
   }),
 }));
 vi.mock("@/sync/sync-provider", () => ({
-  useSync: () => ({ lastSyncedAt: undefined, syncNow: runtime.syncNow }),
+  useSync: () => ({
+    lastSyncedAt: undefined,
+    syncNow: runtime.syncNow,
+    syncMessages: runtime.syncMessages,
+  }),
 }));
 vi.mock("@/providers/database-provider", () => ({
   useLocalDatabase: () => ({ sqlite: runtime.sqlite }),
@@ -159,6 +164,7 @@ beforeEach(() => {
   runtime.push.mockReset();
   runtime.destination.mockReset().mockResolvedValue(undefined);
   runtime.syncNow.mockReset().mockResolvedValue(undefined);
+  runtime.syncMessages = undefined;
   runtime.handler.mockReset();
   runtime.onCommit.mockReset();
   runtime.add.mockReset().mockImplementation((listener: ResponseListener) => {
@@ -510,4 +516,24 @@ it("ignores foreign-owner push and cannot navigate after owner changes during pu
     pull.resolve();
   });
   expect(runtime.push).not.toHaveBeenCalled();
+});
+
+it("opens a missing chat result through canonical sync without waiting for full file jobs", async () => {
+  const data = chatData(),
+    destination = {
+      pathname: "/(tabs)/copilot",
+      params: { conversationId: data.conversationId },
+    };
+  const files = deferred<void>();
+  runtime.syncNow.mockReturnValue(files.promise);
+  runtime.syncMessages = vi.fn().mockResolvedValue(undefined);
+  runtime.destination
+    .mockResolvedValueOnce(undefined)
+    .mockResolvedValueOnce(destination);
+  runtime.lastResponse = response(data);
+  await render();
+  expect(runtime.syncMessages).toHaveBeenCalledExactlyOnceWith(data.storeId);
+  expect(runtime.syncNow).not.toHaveBeenCalled();
+  expect(runtime.push).toHaveBeenCalledExactlyOnceWith(destination);
+  files.resolve();
 });
