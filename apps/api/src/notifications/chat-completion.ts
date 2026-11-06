@@ -100,7 +100,34 @@ export async function registeredChatPush(
     ? row!.push!.token
     : undefined;
 }
-/** Best-effort single send, after commit only. No content, model calls, retry loop or external URL in payload. */
+/** Short, plain excerpt of the authorized persisted answer; never another model call. */
+export function chatCompletionPreview(text: string) {
+  const plain = text
+    .replace(/```[\s\S]*?(?:```|$)/g, " ")
+    .replace(/!\[[^\]]*\]\((?:[^()]|\([^()]*\))*\)/g, " ")
+    .replace(/\[sources?\]\([^\s]*\)/gi, " ")
+    .replace(
+      /\[([^\]]+)\]\((?:[^()]|\([^()]*\))*\)/g,
+      (_match, label: string) =>
+        /^sources?$/i.test(label.trim()) ? " " : label,
+    )
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/^[ \t]*[-|: \t]{3,}$/gm, " ")
+    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)/gm, "")
+    .replace(/[*_`~]/g, "")
+    .replace(/\|/g, " ")
+    .replace(/\p{Cc}/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!plain)
+    return "Le copilote a terminé. Ouvre ta conversation pour la consulter.";
+  const characters = Array.from(plain);
+  if (characters.length <= 180) return plain;
+  const start = characters.slice(0, 179).join("");
+  const wordEnd = start.lastIndexOf(" ");
+  return (wordEnd >= 120 ? start.slice(0, wordEnd) : start).trimEnd() + "…";
+}
+/** Best-effort single send after commit; fixed navigation data, bounded visible excerpt. */
 export async function notifyChatCompletion(
   db: Db,
   principal: AuthorizedStoreContext,
@@ -156,7 +183,7 @@ export async function notifyChatCompletion(
       body: JSON.stringify({
         to: token,
         title: "Ta réponse est prête",
-        body: "Le copilote a terminé. Ouvre ta conversation pour la consulter.",
+        body: chatCompletionPreview(m.text),
         data,
         sound: "default",
         ttl: 3600,
