@@ -1,3 +1,7 @@
+## Owner UX reserve — coverage labels, 6 November 2026
+
+The verbose complete/partial/missing-day labels in the analytical breakdown are deferred to the UX review. The owner suggests retaining the detail behind the information button in a bottom sheet, rather than repeating it in the main list. No coverage calculation, comparison policy or presentation is changed by the notification navigation fix. Completion-alert excerpts are owner-accepted; duplicate chat navigation is tracked in M8 separately.
+
 # Roadmap V1 — état courant et historique des lots
 
 ## Arbitrage courant — 5 novembre : pilote iPhone

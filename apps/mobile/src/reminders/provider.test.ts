@@ -1,3 +1,5 @@
+import { StackRouter } from "expo-router/build/react-navigation/routers/StackRouter";
+import { TabRouter } from "expo-router/build/react-navigation/routers/TabRouter";
 import { createElement, useLayoutEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -17,6 +19,13 @@ const runtime = vi.hoisted(() => ({
   module: vi.fn(),
   adapter: vi.fn(),
   push: vi.fn(),
+  navigate: vi.fn(),
+  dismissTo: vi.fn(),
+  rootState: {
+    key: "root",
+    index: 0,
+    routes: [{ key: "tabs", name: "(tabs)" }],
+  },
   syncNow: vi.fn(),
   syncMessages: undefined as ReturnType<typeof vi.fn> | undefined,
   handler: vi.fn(),
@@ -43,8 +52,12 @@ vi.mock("react-native", () => ({
   },
 }));
 vi.mock("expo-router", () => ({
-  router: { push: runtime.push },
-  useRootNavigationState: () => ({ key: "root" }),
+  router: {
+    push: runtime.push,
+    navigate: runtime.navigate,
+    dismissTo: runtime.dismissTo,
+  },
+  useRootNavigationState: () => runtime.rootState,
 }));
 vi.mock("expo-crypto", () => ({
   digestStringAsync: vi.fn(),
@@ -162,6 +175,13 @@ beforeEach(() => {
   runtime.module.mockReset().mockResolvedValue(native);
   runtime.adapter.mockReset().mockResolvedValue(null);
   runtime.push.mockReset();
+  runtime.navigate.mockReset();
+  runtime.dismissTo.mockReset();
+  runtime.rootState = {
+    key: "root",
+    index: 0,
+    routes: [{ key: "tabs", name: "(tabs)" }],
+  };
   runtime.destination.mockReset().mockResolvedValue(undefined);
   runtime.syncNow.mockReset().mockResolvedValue(undefined);
   runtime.syncMessages = undefined;
@@ -480,7 +500,7 @@ it("opens a cached chat alert once without waiting for network or replaying gene
   await act(async () => {
     for (const listener of runtime.responseListeners) listener(response(data));
   });
-  expect(runtime.push).toHaveBeenCalledExactlyOnceWith(destination);
+  expect(runtime.navigate).toHaveBeenCalledExactlyOnceWith(destination);
   expect(runtime.syncNow).not.toHaveBeenCalled();
 });
 it("pulls a missing chat result once before opening its fixed route", async () => {
@@ -495,7 +515,7 @@ it("pulls a missing chat result once before opening its fixed route", async () =
   runtime.lastResponse = response(data);
   await render();
   expect(runtime.syncNow).toHaveBeenCalledTimes(1);
-  expect(runtime.push).toHaveBeenCalledExactlyOnceWith(destination);
+  expect(runtime.navigate).toHaveBeenCalledExactlyOnceWith(destination);
 });
 it("ignores foreign-owner push and cannot navigate after owner changes during pull", async () => {
   runtime.lastResponse = response({
@@ -516,6 +536,8 @@ it("ignores foreign-owner push and cannot navigate after owner changes during pu
     pull.resolve();
   });
   expect(runtime.push).not.toHaveBeenCalled();
+  expect(runtime.navigate).not.toHaveBeenCalled();
+  expect(runtime.dismissTo).not.toHaveBeenCalled();
 });
 
 it("opens a missing chat result through canonical sync without waiting for full file jobs", async () => {
@@ -534,6 +556,152 @@ it("opens a missing chat result through canonical sync without waiting for full 
   await render();
   expect(runtime.syncMessages).toHaveBeenCalledExactlyOnceWith(data.storeId);
   expect(runtime.syncNow).not.toHaveBeenCalled();
-  expect(runtime.push).toHaveBeenCalledExactlyOnceWith(destination);
+  expect(runtime.navigate).toHaveBeenCalledExactlyOnceWith(destination);
   files.resolve();
 });
+
+it("reuses the existing chat route for successive reply notifications instead of stacking copies", async () => {
+  const sdk = StackRouter({ initialRouteName: "index" });
+  const options = {
+    routeNames: ["index"],
+    routeParamList: { index: undefined },
+    routeGetIdList: { index: undefined },
+  };
+  let state = sdk.getInitialState(options);
+  const originalKey = state.routes[0]!.key;
+  type Destination = { params: { conversationId: string } };
+  const apply = (type: "NAVIGATE" | "PUSH", destination: Destination) => {
+    state = sdk.getStateForAction(
+      state,
+      { type, payload: { name: "index", params: destination.params } },
+      options,
+    )! as typeof state;
+  };
+  runtime.push.mockImplementation((destination) => apply("PUSH", destination));
+  runtime.navigate.mockImplementation((destination) =>
+    apply("NAVIGATE", destination),
+  );
+  runtime.destination.mockImplementation(async (_db, _scope, data) => ({
+    pathname: "/(tabs)/copilot",
+    params: { conversationId: data.conversationId },
+  }));
+  await render();
+  const first = chatData();
+  await act(async () => {
+    for (const listener of runtime.responseListeners) listener(response(first));
+  });
+  expect(state.routes).toHaveLength(1);
+  expect(state.routes[0]!.key).toBe(originalKey);
+  const second = {
+    ...first,
+    replyId: "66666666-6666-4666-8666-666666666666",
+    conversationId: "77777777-7777-4777-8777-777777777777",
+  };
+  await act(async () => {
+    for (const listener of runtime.responseListeners)
+      listener(response(second));
+  });
+  expect(state.routes).toHaveLength(1);
+  expect(state.routes[0]).toMatchObject({
+    key: originalKey,
+    params: { conversationId: second.conversationId },
+  });
+  expect(runtime.push).not.toHaveBeenCalled();
+});
+
+it("selects the existing Copilote tab when another tab is active", async () => {
+  const sdk = TabRouter({ initialRouteName: "analytics" });
+  const options = {
+    routeNames: ["analytics", "copilot"],
+    routeParamList: {},
+    routeGetIdList: {},
+  };
+  let state = sdk.getInitialState(options);
+  const originalKey = state.routes[1]!.key;
+  runtime.navigate.mockImplementation((destination) => {
+    state = sdk.getStateForAction(
+      state,
+      {
+        type: "NAVIGATE",
+        payload: {
+          name: "copilot",
+          params: { screen: "index", params: destination.params },
+        },
+      },
+      options,
+    )! as typeof state;
+  });
+  const data = chatData();
+  runtime.lastResponse = response(data);
+  runtime.destination.mockResolvedValue({
+    pathname: "/(tabs)/copilot",
+    params: { conversationId: data.conversationId },
+  });
+  await render();
+  expect(state.routes).toHaveLength(2);
+  expect(state.index).toBe(1);
+  expect(state.routes[1]!.key).toBe(originalKey);
+  expect(runtime.push).not.toHaveBeenCalled();
+});
+
+it.each([true, false])(
+  "returns through the root stack without adding a second tab container (existing=%s)",
+  async (existing) => {
+    const sdk = StackRouter({
+      initialRouteName: existing ? "(tabs)" : "product/[id]",
+    });
+    const options = {
+      routeNames: ["(tabs)", "product/[id]"],
+      routeParamList: {},
+      routeGetIdList: {},
+    };
+    let state = sdk.getInitialState(options);
+    const originalTabsKey = existing ? state.routes[0]!.key : undefined;
+    if (existing)
+      state = sdk.getStateForAction(
+        state,
+        {
+          type: "PUSH",
+          payload: { name: "product/[id]", params: { id: "product" } },
+        },
+        options,
+      )! as typeof state;
+    runtime.rootState = state;
+    runtime.dismissTo.mockImplementation((destination) => {
+      state = sdk.getStateForAction(
+        state,
+        {
+          type: "POP_TO",
+          payload: {
+            name: "(tabs)",
+            params: {
+              screen: "copilot",
+              params: { screen: "index", params: destination.params },
+            },
+          },
+        },
+        options,
+      )! as typeof state;
+    });
+    const data = chatData();
+    runtime.lastResponse = response(data);
+    runtime.destination.mockResolvedValue({
+      pathname: "/(tabs)/copilot",
+      params: { conversationId: data.conversationId },
+    });
+    await render();
+    expect(runtime.dismissTo).toHaveBeenCalledTimes(1);
+    expect(runtime.navigate).not.toHaveBeenCalled();
+    expect(runtime.push).not.toHaveBeenCalled();
+    expect(state.routes).toHaveLength(1);
+    expect(state.routes[0]!.name).toBe("(tabs)");
+    if (existing) expect(state.routes[0]!.key).toBe(originalTabsKey);
+    expect(state.routes[0]!.params).toMatchObject({
+      screen: "copilot",
+      params: {
+        screen: "index",
+        params: { conversationId: data.conversationId },
+      },
+    });
+  },
+);
