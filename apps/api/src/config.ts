@@ -61,6 +61,15 @@ const environmentSchema = z.object({
     .trim()
     .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/)
     .optional(),
+  COPILOT_AI_LIGHT_MODEL: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/)
+    .default("gpt-6-luna"),
+  COPILOT_AI_ROUTING_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   COPILOT_AI_TIMEOUT_MS: z.coerce
     .number()
     .int()

@@ -18,6 +18,7 @@ import { ConflictRepository } from "../sync/conflict-repository";
 import { OutboxRepository } from "../sync/outbox-repository";
 import {
   copilotConversationSchema,
+  copilotConversationFromCommand,
   copilotMessageIsDeleted,
 } from "@fl-copilot/domain";
 const stamp = "2026-10-15T14:00:00.000Z";
@@ -329,7 +330,7 @@ it("captures a newer pull baseline independently of the new command and survives
       s.a,
       s.scope,
       "copilot_conversation",
-      command.payload,
+      copilotConversationFromCommand(command.payload),
       4,
     );
     s.db.close();

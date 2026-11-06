@@ -1,6 +1,6 @@
 import {
   copilotTurnRequestSchema,
-  copilotConversationSchema,
+  copilotConversationCommandSchema,
   copilotMessageSchema,
 } from "@fl-copilot/domain";
 import { syncPushRequestSchema } from "./sync";
@@ -21,7 +21,9 @@ export const copilotTurnTransportRequestSchema = copilotTurnRequestSchema
           command.entityType === "copilot_conversation" &&
           command.entityId === input.conversationId
         ) {
-          const value = copilotConversationSchema.safeParse(command.payload);
+          const value = copilotConversationCommandSchema.safeParse(
+            command.payload,
+          );
           return (
             value.success &&
             value.data.id === input.conversationId &&

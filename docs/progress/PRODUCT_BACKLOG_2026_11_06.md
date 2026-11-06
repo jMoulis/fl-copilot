@@ -23,7 +23,9 @@ Liste consignée à la demande du propriétaire. Ces points restent à faire ou 
 
 ## Coût et fonctionnement de l’IA
 
-- [ ] **Optimiser le coût selon la complexité de la tâche** : étudier l’orientation des tâches simples et complexes vers des modèles adaptés. S’appuyer sur les consommations réelles et vérifier qualité et latence ; ne pas ajouter un appel de classification systématique qui annulerait le gain. Choix des modèles, règles et budget à arbitrer avant activation.
+**Priorité précisée par le propriétaire le 6 novembre : consommation de tokens.** Commencer par mesurer les entrées/sorties/cache par étape, le contexte répété et les appels d’outils. La revue des réveils réseau/batterie passe après ce sujet. Le choix de modèles selon la complexité doit être évalué sur ces mesures, Le propriétaire autorise ensuite un routage léger et les titres automatiques ; l’implémentation et ses limites sont suivies dans la qualification M8.
+
+- [ ] **Optimiser le coût selon la complexité de la tâche** : étudier l’orientation des tâches simples et complexes vers des modèles adaptés. S’appuyer sur les consommations réelles et vérifier qualité et latence ; ne pas ajouter un appel de classification systématique qui annulerait le gain. Premier incrément autorisé : un seul appel léger borné oriente la demande, répond au cas simple et propose le titre. Les mesures réelles et la qualité restent à qualifier ; les demandes analytiques conservent le parcours expert. Voir [la qualification](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md).
 
 ## Priorité de cadrage — journal de bord quotidien, à définir ensemble
 

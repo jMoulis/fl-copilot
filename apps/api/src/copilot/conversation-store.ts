@@ -30,6 +30,10 @@ import {
 } from "./knowledge-store";
 import {
   copilotConversationSchema,
+  copilotConversationCommandSchema,
+  copilotConversationFromCommand,
+  copilotConversationMetadataEqual,
+  copilotMessageIsDeleted,
   copilotMessageSchema,
   type CopilotConversation,
   type CopilotMessage,
@@ -40,7 +44,7 @@ import type {
   MongoCommandMutationContext,
   CommandMutationResult,
 } from "../sync/processed-command-service";
-import type { createMongoSyncChangeService } from "../sync/sync-change-service";
+import { createMongoSyncChangeService } from "../sync/sync-change-service";
 import {
   canAccessActionExecution,
   applyActionExecution,
@@ -153,7 +157,7 @@ export async function canAccessChatCommand(
   if (!ownerId || !isChatType(c.entityType)) return false;
   const parsed = (
     c.entityType === "copilot_conversation"
-      ? copilotConversationSchema
+      ? copilotConversationCommandSchema
       : copilotMessageSchema
   ).safeParse(c.payload);
   if (
@@ -256,14 +260,18 @@ export async function applyChatCommand(
   if (!(await canAccessChatCommand(ctx.database, storeId, ownerId, c)))
     return reject("COPILOT_HISTORY_ACCESS_INVALID");
   const type = c.entityType as keyof typeof chatCollections,
-    e = (
+    parsedCommand = (
       type === "copilot_conversation"
-        ? copilotConversationSchema
+        ? copilotConversationCommandSchema
         : copilotMessageSchema
-    ).parse(c.payload),
-    collection = ctx.database.collection<ChatRecordDocument>(
-      chatCollections[type],
-    );
+    ).parse(c.payload);
+  let e =
+    type === "copilot_conversation"
+      ? copilotConversationFromCommand(parsedCommand)
+      : (parsedCommand as CopilotMessage);
+  const collection = ctx.database.collection<ChatRecordDocument>(
+    chatCollections[type],
+  );
   const old = await collection.findOne({ _id: e.id }, { session: ctx.session });
   if (old && (old.storeId !== storeId || old.ownerId !== ownerId))
     return reject("COPILOT_HISTORY_ACCESS_INVALID");
@@ -314,7 +322,8 @@ export async function applyChatCommand(
     }
     await collection.insertOne({ _id: e.id, ...m }, { session: ctx.session });
   } else {
-    const v = e as CopilotConversation;
+    let v = e as CopilotConversation;
+    let expectedVersion = c.expectedRemoteVersion ?? null;
     const previous = old
       ? (serializeChat(type, old) as CopilotConversation)
       : null;
@@ -347,7 +356,60 @@ export async function applyChatCommand(
         return reject("COPILOT_DELETION_TARGET_INVALID");
     }
 
-    if ((c.expectedRemoteVersion ?? null) !== (old?.version ?? null))
+    // An explicit manual rename can supersede only intervening automatic titles.
+    // Archive/deletion/other-device edits retain their ordinary conflict handling.
+    if (
+      previous &&
+      expectedVersion !== null &&
+      expectedVersion !== previous.version &&
+      "titleIntent" in parsedCommand &&
+      parsedCommand.titleIntent === "MANUAL" &&
+      v.version === expectedVersion + 1
+    ) {
+      const history = ctx.database.collection<{
+        _id: string;
+        storeId: string;
+        ownerId: string;
+        conversationId: string;
+        version: number;
+        titleOrigin?: string;
+        conversation: CopilotConversation;
+      }>("copilotConversationHistory");
+      const scope = { storeId, ownerId, conversationId: v.id };
+      const base = await history.findOne(
+        { ...scope, version: expectedVersion },
+        { session: ctx.session },
+      );
+      if (
+        base &&
+        v.createdAt === base.conversation.createdAt &&
+        copilotConversationMetadataEqual(
+          { ...v, title: base.conversation.title },
+          base.conversation,
+        ) &&
+        (await history.countDocuments(
+          {
+            ...scope,
+            version: { $gt: expectedVersion, $lte: previous.version },
+            titleOrigin: "AUTOMATIC",
+          },
+          { session: ctx.session },
+        )) ===
+          previous.version - expectedVersion
+      ) {
+        v = copilotConversationSchema.parse({
+          ...previous,
+          title: v.title,
+          version: previous.version + 1,
+          updatedAt: new Date(
+            Math.max(Date.parse(previous.updatedAt), Date.parse(v.updatedAt)),
+          ).toISOString(),
+        });
+        e = v;
+        expectedVersion = previous.version;
+      }
+    }
+    if (expectedVersion !== (old?.version ?? null))
       return {
         resultStatus: "CONFLICT",
         resultingVersion: old?.version ?? null,
@@ -367,30 +429,16 @@ export async function applyChatCommand(
       (old && (old.createdAt !== v.createdAt || old.ownerId !== v.ownerId))
     )
       return reject("COPILOT_CONVERSATION_VERSION_INVALID");
-    await collection.replaceOne({ _id: e.id }, v, {
-      upsert: true,
-      session: ctx.session,
-    });
-    await ctx.database
-      .collection<{
-        _id: string;
-        storeId: string;
-        ownerId: string;
-        conversationId: string;
-        version: number;
-        conversation: CopilotConversation;
-      }>("copilotConversationHistory")
-      .insertOne(
-        {
-          _id: c.commandId,
-          storeId,
-          ownerId,
-          conversationId: e.id,
-          version: e.version,
-          conversation: v,
-        },
-        { session: ctx.session },
-      );
+    await writeConversationVersion(
+      ctx,
+      v,
+      c.commandId,
+      ("titleIntent" in parsedCommand &&
+        parsedCommand.titleIntent === "MANUAL") ||
+        (previous && previous.title !== v.title)
+        ? "MANUAL"
+        : undefined,
+    );
   }
   await changes.append(ctx, {
     storeId,
@@ -405,6 +453,149 @@ export async function applyChatCommand(
     responseJson: { remoteEntity: e },
   };
 }
+/** Shared canonical metadata/history writer; caller owns the authenticated transaction and version check. */
+async function writeConversationVersion(
+  ctx: MongoCommandMutationContext,
+  conversation: CopilotConversation,
+  actionId: string,
+  titleOrigin?: "MANUAL" | "AUTOMATIC",
+) {
+  if (!ctx.session.inTransaction())
+    throw Error("COPILOT_TITLE_TRANSACTION_REQUIRED");
+  await ctx.database
+    .collection<ChatRecordDocument>("copilotConversations")
+    .replaceOne({ _id: conversation.id }, conversation, {
+      upsert: true,
+      session: ctx.session,
+    });
+  await ctx.database
+    .collection<{
+      _id: string;
+      storeId: string;
+      ownerId: string;
+      conversationId: string;
+      version: number;
+      conversation: CopilotConversation;
+      titleOrigin?: "MANUAL" | "AUTOMATIC";
+    }>("copilotConversationHistory")
+    .insertOne(
+      {
+        _id: actionId,
+        storeId: conversation.storeId,
+        ownerId: conversation.ownerId,
+        conversationId: conversation.id,
+        version: conversation.version,
+        conversation,
+        ...(titleOrigin ? { titleOrigin } : {}),
+      },
+      { session: ctx.session },
+    );
+}
+
+/** Presentation only: canonical title/history/change stream, never a business writer or a new entity. */
+export async function updateGeneratedConversationTitle(
+  db: Db,
+  authorize: () => Promise<{
+    storeId: string;
+    ownerId: string;
+    canRespond: boolean;
+  }>,
+  reply: CopilotMessage,
+  title: string,
+  expectedTitle: string,
+) {
+  const name = title.trim();
+  if (!name || name.length > 80 || /[\r\n\p{Cc}]/u.test(name)) return false;
+  const authority = await authorize();
+  if (
+    !authority.canRespond ||
+    authority.storeId !== reply.storeId ||
+    authority.ownerId !== reply.ownerId
+  )
+    return false;
+  const session = db.client.startSession();
+  try {
+    return await session.withTransaction(async () => {
+      const scope = { storeId: authority.storeId, ownerId: authority.ownerId };
+      const row = await db
+        .collection<ChatRecordDocument>("copilotConversations")
+        .findOne({ _id: reply.conversationId, ...scope }, { session });
+      if (!row) return false;
+      const conversation = serializeChat(
+        "copilot_conversation",
+        row,
+      ) as CopilotConversation;
+      if (
+        conversation.status !== "ACTIVE" ||
+        conversation.title !== expectedTitle ||
+        conversation.title === name ||
+        copilotMessageIsDeleted(reply, conversation)
+      )
+        return false;
+      const messages = db.collection<CopilotMessage & { _id: string }>(
+        "copilotMessages",
+      );
+      const savedReply = await messages.findOne(
+        { _id: reply.id, conversationId: reply.conversationId, ...scope },
+        { session },
+      );
+      if (
+        !savedReply ||
+        savedReply.role !== "ASSISTANT" ||
+        savedReply.replyToMessageId !== reply.replyToMessageId
+      )
+        return false;
+      const history = db.collection<{
+        _id: string;
+        storeId: string;
+        ownerId: string;
+        conversationId: string;
+        version: number;
+        titleOrigin?: "MANUAL" | "AUTOMATIC";
+        conversation: CopilotConversation;
+      }>("copilotConversationHistory");
+      if (await history.findOne({ _id: reply.id }, { session })) return false;
+      const lastTitle = await history.findOne(
+        {
+          conversationId: conversation.id,
+          ...scope,
+          titleOrigin: { $exists: true },
+        },
+        { session, sort: { version: -1 } },
+      );
+      if (
+        lastTitle?.titleOrigin === "MANUAL" ||
+        (!lastTitle && conversation.title !== "Nouvelle conversation") ||
+        (lastTitle && lastTitle.conversation.title !== conversation.title)
+      )
+        return false;
+      const updated = copilotConversationSchema.parse({
+        ...conversation,
+        title: name,
+        version: conversation.version + 1,
+        updatedAt: new Date(
+          Math.max(
+            Date.parse(reply.createdAt),
+            Date.parse(conversation.updatedAt),
+          ),
+        ).toISOString(),
+      });
+      const ctx = { database: db, session };
+      await writeConversationVersion(ctx, updated, reply.id, "AUTOMATIC");
+      await createMongoSyncChangeService().append(ctx, {
+        storeId: updated.storeId,
+        entityType: "copilot_conversation",
+        entityId: updated.id,
+        entityVersion: updated.version,
+        operation: "UPSERT",
+      });
+      return true;
+    });
+  } finally {
+    await session.endSession();
+  }
+}
+
 export async function chatBootstrap(
   db: Db,
   storeId: string,

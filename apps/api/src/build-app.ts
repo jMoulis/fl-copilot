@@ -55,6 +55,7 @@ import { registerVisualFileRoutes } from "./products/visual-file-routes";
 import {
   isChatType,
   serializeChatForClient,
+  updateGeneratedConversationTitle,
   copilotPresentationVersion,
 } from "./copilot/conversation-store";
 import { readStoreLayoutScenarioSources } from "./copilot/store-layout-scenario-tool";
@@ -864,11 +865,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                 }
               : undefined,
             provider: createCopilotAiProvider(config, undefined, {
+              dispatchEnabled: request.headers["x-copilot-economy"] === "1",
               onUsage: (usage) => {
                 app.log.info(
                   {
                     ...usage,
-                    requestedModel: config.COPILOT_AI_MODEL ?? "unconfigured",
+                    requestedModel:
+                      usage.purpose === "DISPATCH"
+                        ? config.COPILOT_AI_LIGHT_MODEL
+                        : (config.COPILOT_AI_MODEL ?? "unconfigured"),
                     httpRequestId: request.id,
                     conversationId: request.body.conversationId,
                     replyId: request.body.replyId,
@@ -1760,6 +1765,34 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
             }),
             authorize,
+            onTitleReady: ({ message, title, expectedTitle }) => {
+              const task = updateGeneratedConversationTitle(
+                db,
+                authorize,
+                message,
+                title,
+                expectedTitle,
+              ).catch(() => {
+                app.log.warn(
+                  {
+                    code: "COPILOT_TITLE_UPDATE_FAILED",
+                    httpRequestId: request.id,
+                  },
+                  "Chat title update failed",
+                );
+              });
+              try {
+                dependencies.waitUntil?.(task.then(() => undefined));
+              } catch {
+                app.log.warn(
+                  {
+                    code: "COPILOT_TITLE_LIFETIME_UNAVAILABLE",
+                    httpRequestId: request.id,
+                  },
+                  "Chat title lifetime unavailable",
+                );
+              }
+            },
             allowMemorySuggestions:
               request.headers["x-copilot-memory-suggestions"] === "1",
             onGenerationFailure: (failure) => {

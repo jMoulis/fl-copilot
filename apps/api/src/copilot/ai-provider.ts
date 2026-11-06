@@ -1,3 +1,4 @@
+import { dispatchCopilotQuestion } from "./dispatch.js";
 import { resolveCopilotComparison } from "@fl-copilot/analytics-core";
 import {
   copilotMongoReadInputSchema,
@@ -306,6 +307,7 @@ import type { ApiConfig } from "../config.js";
 export const copilotGenerationRequestSchema = z
   .object({
     requestId: z.string().uuid(),
+    conversationTitle: z.string().trim().min(1).max(120).optional(),
     storeId: z.string().uuid(),
     context: copilotConflictReportSchema,
     conversationCheckpoint: conversationCheckpointSchema.optional(),
@@ -406,6 +408,8 @@ type CopilotGenerationUsageDetails =
     };
 export type CopilotGenerationUsage = CopilotGenerationUsageDetails & {
   requestId: string;
+  purpose?: "DISPATCH";
+  parentRequestId?: string;
 };
 export type CopilotAiErrorCode =
   | "COPILOT_AI_NOT_CONFIGURED"
@@ -440,6 +444,7 @@ export interface CopilotAiProvider {
     onActivity?: (activity: CopilotActivity) => void,
   ): Promise<{
     output: T;
+    titleProposal?: string;
     metadata: CopilotGenerationMetadata;
     toolEvidence?: CopilotGenerationRequest["evidence"];
     factTrace?: z.infer<typeof copilotFactTraceSchema>;
@@ -550,9 +555,13 @@ export function createCopilotAiProvider(
     | "COPILOT_AI_TIMEOUT_MS"
     | "COPILOT_AI_MAX_OUTPUT_TOKENS"
     | "COPILOT_AI_MAX_INPUT_BYTES"
-  >,
+  > &
+    Partial<
+      Pick<ApiConfig, "COPILOT_AI_LIGHT_MODEL" | "COPILOT_AI_ROUTING_ENABLED">
+    >,
   transport?: typeof fetch,
   reads?: {
+    dispatchEnabled?: boolean;
     // Server diagnostics only; never included in the model tool catalogue.
     onUsage?: (event: CopilotGenerationUsage) => void;
     storePhoto?(
@@ -797,6 +806,29 @@ export function createCopilotAiProvider(
         request.context.intents.some((i) => i.storeId !== request.storeId)
       )
         throw new CopilotAiError("COPILOT_AI_INPUT_INVALID", false);
+      const dispatched =
+        reads?.dispatchEnabled &&
+        config.COPILOT_AI_ROUTING_ENABLED !== false &&
+        Object.is(schema, copilotResponseSchema) &&
+        request.userQuestion
+          ? await dispatchCopilotQuestion({
+              request,
+              apiKey: config.OPENAI_API_KEY,
+              model: config.COPILOT_AI_LIGHT_MODEL ?? "gpt-6-luna",
+              transport,
+              signal,
+              onUsage: reads.onUsage,
+            })
+          : undefined;
+      if (dispatched?.simple) {
+        const output = schema.parse(dispatched.simple.output);
+        onPartial?.(output, []);
+        return {
+          output,
+          metadata: dispatched.simple.metadata,
+          titleProposal: dispatched.titleProposal,
+        };
+      }
       const prompt = JSON.stringify(
         projectCopilotModelValue({
           REQUEST_ID: request.requestId,
@@ -3618,6 +3650,7 @@ export function createCopilotAiProvider(
         const output = schema.parse(bound.output);
         completed = true;
         return {
+          titleProposal: dispatched?.titleProposal,
           output,
           ...(reads
             ? {

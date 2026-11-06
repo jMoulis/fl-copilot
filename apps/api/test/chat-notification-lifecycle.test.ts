@@ -1,3 +1,4 @@
+import * as conversationStore from "../src/copilot/conversation-store";
 import { randomUUID } from "node:crypto";
 import { afterEach, expect, it, vi } from "vitest";
 import { buildApp } from "../src/build-app";
@@ -279,3 +280,50 @@ it("continues canonical intake and generation when the phone disconnects before 
     await x.app.close();
   }
 });
+
+it.each([false, true])(
+  "does not delay a committed response for title persistence (failure=%s)",
+  async (fails) => {
+    const x = setup();
+    let release!: () => void;
+    const title = vi
+      .spyOn(conversationStore, "updateGeneratedConversationTitle")
+      .mockImplementation(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            release = () =>
+              fails ? reject(Error("PRIVATE_TITLE_FAILURE")) : resolve(true);
+          }),
+      );
+    vi.mocked(runCopilotTurn).mockImplementation(async (dependencies) => {
+      dependencies.onTitleReady?.({
+        message: x.result.message,
+        title: "Suivi du rayon",
+        expectedTitle: x.f.conversation.title,
+      });
+      return x.result;
+    });
+    try {
+      const response = await x.app.inject({
+        method: "POST",
+        url: "/api/v1/copilot/turn",
+        headers: { ...x.headers, "x-copilot-background-completion": "0" },
+        payload: x.payload,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.body).toContain('"type":"result"');
+      expect(title).toHaveBeenCalledTimes(1);
+      expect(x.tasks).toHaveLength(1);
+      expect(notifyChatCompletion).not.toHaveBeenCalled();
+      release();
+      await Promise.all(x.tasks);
+      expect(response.body).not.toContain("PRIVATE_TITLE_FAILURE");
+    } finally {
+      release?.();
+      await Promise.all(x.tasks);
+      title.mockRestore();
+      x.app.server.closeAllConnections();
+      await x.app.close();
+    }
+  },
+);

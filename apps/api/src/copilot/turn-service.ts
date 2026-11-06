@@ -95,6 +95,11 @@ export async function runCopilotTurn(
     onActivity?: (activity: CopilotActivity) => void;
     onGenerationFailure?: (failure: CopilotGenerationFailure) => void;
     allowMemorySuggestions?: boolean;
+    onTitleReady?: (proposal: {
+      message: CopilotMessage;
+      title: string;
+      expectedTitle: string;
+    }) => void;
   },
   raw: CopilotTurnRequest,
   signal?: AbortSignal,
@@ -156,9 +161,17 @@ export async function runCopilotTurn(
         throw new CopilotTurnError("IDENTITY_CONFLICT");
       if (copilotMessageIsDeleted(message, payload))
         throw new CopilotTurnError("PARENT_INVALID");
-      return { parent, cached: message };
+      return {
+        parent,
+        cached: message,
+        conversation: copilotConversationSchema.parse(payload),
+      };
     }
-    return { parent, cached: null };
+    return {
+      parent,
+      cached: null,
+      conversation: copilotConversationSchema.parse(payload),
+    };
   };
   const initial = await read();
   cancelled();
@@ -231,6 +244,7 @@ export async function runCopilotTurn(
     );
     const request = {
       requestId: randomUUID(),
+      conversationTitle: initial.conversation.title,
       storeId: authority.storeId,
       context,
       evidence,
@@ -512,6 +526,22 @@ export async function runCopilotTurn(
         return reply;
       });
       if (!result) throw new Error("COPILOT_REPLY_COMMIT_FAILED");
+      if (
+        !result.alreadyApplied &&
+        generation.mode === "AI" &&
+        generation.titleProposal
+      ) {
+        // The answer is durable. The existing host lifecycle owns optional title work.
+        try {
+          dependencies.onTitleReady?.({
+            message: result.message,
+            title: generation.titleProposal,
+            expectedTitle: initial.conversation.title,
+          });
+        } catch {
+          /* A title callback must never fail a saved answer. */
+        }
+      }
       return result;
     } finally {
       await session.endSession();

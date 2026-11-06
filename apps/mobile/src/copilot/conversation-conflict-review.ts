@@ -1,5 +1,7 @@
 import {
   copilotConversationSchema,
+  copilotConversationCommandSchema,
+  copilotConversationFromCommand,
   preserveCopilotConversationDeletions,
   copilotConversationMetadataEqual,
   type CopilotConversation,
@@ -77,8 +79,8 @@ export async function readConversationConflictReview(
       ? reviewConflictVersions(
           conflicts,
           (raw) => {
-            const p = copilotConversationSchema.safeParse(raw);
-            return p.success ? p.data : null;
+            const p = copilotConversationCommandSchema.safeParse(raw);
+            return p.success ? copilotConversationFromCommand(p.data) : null;
           },
           (candidate) => same(local, candidate),
           cached,
@@ -105,7 +107,7 @@ export async function readConversationConflictReview(
       id,
     );
   const ownedPayload = (raw: unknown) => {
-    const p = copilotConversationSchema.safeParse(raw);
+    const p = copilotConversationCommandSchema.safeParse(raw);
     return p.success && same(local, p.data);
   };
   const commandsOwned = commands.every((command) => {
@@ -140,7 +142,7 @@ export async function readConversationConflictReview(
   if (groupReady && remote) {
     try {
       const history = conflicts.flatMap((c) => [
-        copilotConversationSchema.parse(c.localPayload),
+        copilotConversationFromCommand(c.localPayload),
         copilotConversationSchema.parse(c.remotePayload),
       ]);
       localChoice = preserveCopilotConversationDeletions(

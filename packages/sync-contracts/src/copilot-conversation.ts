@@ -1,5 +1,6 @@
 export {
   copilotConversationSchema,
+  copilotConversationCommandSchema,
   copilotMessageSchema,
   copilotAttachmentReferenceSchema,
   type CopilotConversation,

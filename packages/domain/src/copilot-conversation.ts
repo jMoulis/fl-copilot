@@ -40,6 +40,18 @@ export const copilotConversationSchema = z
           Date.parse(e.deletedAt) <= Date.parse(e.updatedAt))),
     "Invalid conversation timestamps",
   );
+/** Optional user intent travels in the canonical command, never in the public entity. */
+export const copilotConversationCommandSchema =
+  copilotConversationSchema.safeExtend({
+    titleIntent: z.literal("MANUAL").optional(),
+  });
+/** Normalize a command without leaking its user intent into stored/public data. */
+export function copilotConversationFromCommand(raw: unknown) {
+  const { titleIntent, ...entity } =
+    copilotConversationCommandSchema.parse(raw);
+  void titleIntent;
+  return copilotConversationSchema.parse(entity);
+}
 export const copilotMessageSchema = z
   .object({
     id,
