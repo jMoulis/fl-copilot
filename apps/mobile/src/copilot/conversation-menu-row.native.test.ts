@@ -7,6 +7,7 @@ import { ConversationMenuRow } from "./conversation-menu-row";
 
 const native = vi.hoisted(() => ({
   alert: vi.fn(),
+  prompt: vi.fn(),
   close: vi.fn(),
   focused: true,
 }));
@@ -17,7 +18,7 @@ vi.mock("expo-router", () => ({
   },
 }));
 vi.mock("react-native", () => ({
-  Alert: { alert: native.alert },
+  Alert: { alert: native.alert, prompt: native.prompt },
   Pressable: "Pressable",
   View: "View",
   Text: "Text",
@@ -32,6 +33,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   native.focused = true;
   native.alert.mockReset();
+  native.prompt.mockReset();
   native.close.mockReset();
   const error = console.error;
   vi.spyOn(console, "error").mockImplementation((...args) => {
@@ -54,11 +56,14 @@ async function mount() {
     enabled: true,
     onOpen: vi.fn(),
     onDelete: remove,
+    onRename: vi
+      .fn<(title: string, signal: AbortSignal) => Promise<void>>()
+      .mockResolvedValue(undefined),
   };
   await act(async () => {
     tree = create(createElement(ConversationMenuRow, props));
   });
-  return { props, remove };
+  return { props, remove, rename: props.onRename };
 }
 const button = () =>
   tree!.root.find(
@@ -230,3 +235,66 @@ it("returns from blur with a new review whose busy/error state cannot be changed
   await act(async () => next.resolve());
   expect(button().props.disabled).toBe(false);
 });
+
+const renameButton = () =>
+  tree!.root.find(
+    (n) =>
+      typeof n.type === "string" &&
+      String(n.type) === "Pressable" &&
+      String(n.props.accessibilityLabel).startsWith("Renommer la conversation"),
+  );
+const renameOptions = () =>
+  native.prompt.mock.calls.at(-1)![2] as Array<{
+    text: string;
+    onPress(value?: string): void;
+  }>;
+it("opens the native rename prompt, permits cancellation and saves only an explicit trimmed title", async () => {
+  const { props, rename } = await mount();
+  await act(async () => renameButton().props.onPress());
+  expect(native.prompt.mock.calls[0]!.slice(3)).toEqual([
+    "plain-text",
+    props.conversation.title,
+  ]);
+  await act(async () => renameOptions()[0]!.onPress());
+  expect(rename).not.toHaveBeenCalled();
+  await act(async () => renameButton().props.onPress());
+  await act(async () => renameOptions()[1]!.onPress("  Mon suivi des TG  "));
+  expect(rename).toHaveBeenCalledExactlyOnceWith(
+    "Mon suivi des TG",
+    expect.any(AbortSignal),
+  );
+});
+it.each(["", " ", "a".repeat(121)])(
+  "rejects an invalid title without writing",
+  async (title) => {
+    const { rename } = await mount();
+    await act(async () => renameButton().props.onPress());
+    await act(async () => renameOptions()[1]!.onPress(title));
+    expect(rename).not.toHaveBeenCalled();
+  },
+);
+it.each(["context", "hidden", "identity", "unmount"])(
+  "rejects a retained rename callback after %s change",
+  async (change) => {
+    const { props, rename } = await mount();
+    await act(async () => renameButton().props.onPress());
+    const options = renameOptions();
+    await act(async () => {
+      if (change === "unmount") tree!.unmount();
+      else
+        tree!.update(
+          createElement(ConversationMenuRow, {
+            ...props,
+            context: change === "context" ? {} : props.context,
+            enabled: change !== "hidden",
+            conversation:
+              change === "identity"
+                ? { ...props.conversation, id: randomUUID() }
+                : props.conversation,
+          }),
+        );
+    });
+    await act(async () => options[1]!.onPress("Ancien écran"));
+    expect(rename).not.toHaveBeenCalled();
+  },
+);

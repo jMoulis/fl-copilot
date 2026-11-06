@@ -13,12 +13,14 @@ export function ConversationMenuRow({
   enabled,
   onOpen,
   onDelete,
+  onRename,
 }: {
   conversation: CopilotConversation;
   context: object;
   enabled: boolean;
   onOpen(): void;
   onDelete(signal: AbortSignal): Promise<void>;
+  onRename?(title: string, signal: AbortSignal): Promise<void>;
 }) {
   const scope = useMemo(
     () => ({
@@ -120,6 +122,77 @@ export function ConversationMenuRow({
       ],
     );
   }
+  function requestRename() {
+    if (
+      !onRename ||
+      typeof Alert.prompt !== "function" ||
+      !enabled ||
+      !focused.current ||
+      live.current !== scope ||
+      scope.cancel
+    )
+      return;
+    const cancel = new AbortController();
+    scope.cancel = cancel;
+    const current = () =>
+      live.current === scope &&
+      focused.current &&
+      scope.cancel === cancel &&
+      !cancel.signal.aborted;
+    Alert.prompt(
+      "Renommer la conversation",
+      "Ce titre sera conservé : le copilote ne le remplacera pas.",
+      [
+        {
+          text: "Annuler",
+          style: "cancel",
+          onPress: () => {
+            if (scope.cancel !== cancel || scope.busy) return;
+            cancel.abort();
+            scope.cancel = undefined;
+          },
+        },
+        {
+          text: "Enregistrer",
+          onPress: (value?: string) => {
+            if (!current() || scope.busy) return;
+            const title = value?.trim() ?? "";
+            if (!title || title.length > 120) {
+              scope.cancel = undefined;
+              setState({
+                scope,
+                busy: false,
+                error: "Saisis un titre de 1 à 120 caractères.",
+              });
+              return;
+            }
+            scope.busy = true;
+            setState({ scope, busy: true });
+            void onRename(title, cancel.signal)
+              .then(() => {
+                if (current()) setState({ scope, busy: false });
+              })
+              .catch(() => {
+                if (current())
+                  setState({
+                    scope,
+                    busy: false,
+                    error: "Le titre n’a pas pu être enregistré. Réessaie.",
+                  });
+              })
+              .finally(() => {
+                if (scope.cancel === cancel) {
+                  scope.cancel = undefined;
+                  scope.busy = false;
+                }
+              });
+          },
+        },
+      ],
+      "plain-text",
+      conversation.title,
+    );
+  }
   const deleteLabel = `Supprimer la conversation ${conversation.title}`;
   return (
     <View style={styles.container}>
@@ -178,6 +251,23 @@ export function ConversationMenuRow({
               </Text>
             </View>
           </Pressable>
+          {onRename && typeof Alert.prompt === "function" ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Renommer la conversation ${conversation.title}`}
+              accessibilityState={{ disabled: !enabled || busy, busy }}
+              disabled={!enabled || busy}
+              style={styles.visibleDelete}
+              onPress={requestRename}
+            >
+              <Ionicons
+                name="pencil-outline"
+                size={21}
+                color={colors.muted}
+                accessible={false}
+              />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={deleteLabel}

@@ -172,7 +172,7 @@ it("preserves both titles and explicitly reconciles a version conflict without c
     await runLocalMigrations(a);
     const repo = new CopilotConversationRepository(a, f, receiptReviewDigest),
       ctx = command();
-    await repo.save(f.conversation, ctx);
+    await repo.save(f.conversation, { ...ctx, titleIntent: "MANUAL" });
     await repo.append(f.message, command());
     const remote = { ...f.conversation, title: "Autre appareil", version: 2 };
     const cf = await new ConflictRepository(a).recordPushConflict(
@@ -185,7 +185,7 @@ it("preserves both titles and explicitly reconciles a version conflict without c
         entityType: "copilot_conversation",
         entityId: f.conversation.id,
         expectedRemoteVersion: null,
-        payload: f.conversation,
+        payload: { ...f.conversation, titleIntent: "MANUAL" },
         createdAt: f.conversation.createdAt,
         status: "CONFLICT",
         attemptCount: 0,
@@ -205,6 +205,7 @@ it("preserves both titles and explicitly reconciles a version conflict without c
       "UPDATE copilot_conversations SET sync_state='CONFLICT' WHERE id=?",
       f.conversation.id,
     );
+    expect((await repo.review(f.conversation.id)).ready).toBe(true);
     await repo.resolve(f.conversation.id, true, {
       ...command(),
       storeId: f.storeId,
@@ -216,6 +217,14 @@ it("preserves both titles and explicitly reconciles a version conflict without c
     expect((await new ConflictRepository(a).getById(cf.id))?.status).toBe(
       "RESOLVED_LOCAL",
     );
+    const pending = await a.getFirstAsync<{ payload_json: string }>(
+      "SELECT payload_json FROM sync_outbox WHERE entity_id=? AND status='PENDING'",
+      f.conversation.id,
+    );
+    expect(JSON.parse(pending!.payload_json)).toMatchObject({
+      titleIntent: "MANUAL",
+      version: 3,
+    });
     expect((await repo.list())[0]!.entity).toMatchObject({
       title: f.conversation.title,
       version: 3,
@@ -1582,6 +1591,70 @@ it("hands a pending plain question to the server without awaiting any sync/pull 
         replyId: randomUUID(),
       }),
     ).toBeUndefined();
+  } finally {
+    db.close();
+  }
+});
+
+it("renames offline through canonical history/Outbox, preserves drafts and records manual intent even for the same title", async () => {
+  const db = new DatabaseSync(":memory:"),
+    adapter = new Adapter(db),
+    f = chatFixture(randomUUID);
+  try {
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    await repo.save(f.conversation, command());
+    await repo.saveDraft(f.conversation.id, {
+      text: "Brouillon conservé",
+      attachments: [],
+      updatedAt: f.conversation.createdAt,
+    });
+    const controller = new CopilotLocalChatController(
+      repo,
+      f,
+      randomUUID,
+      () => "2026-11-06T10:00:00.000Z",
+    );
+    await controller.rename(f.conversation.id, "  Mon suivi  ");
+    expect(await repo.get(f.conversation.id)).toMatchObject({
+      title: "Mon suivi",
+      version: 2,
+    });
+    expect((await repo.draft(f.conversation.id))?.text).toBe(
+      "Brouillon conservé",
+    );
+    const raw = db
+      .prepare("SELECT payload_json FROM copilot_conversations WHERE id=?")
+      .get(f.conversation.id) as { payload_json: string };
+    expect(JSON.parse(raw.payload_json)).not.toHaveProperty("titleIntent");
+    const rows = db
+      .prepare(
+        "SELECT payload_json FROM sync_outbox WHERE entity_id=? ORDER BY local_sequence",
+      )
+      .all(f.conversation.id) as { payload_json: string }[];
+    expect(JSON.parse(rows.at(-1)!.payload_json)).toMatchObject({
+      title: "Mon suivi",
+      titleIntent: "MANUAL",
+      version: 2,
+    });
+    await controller.rename(f.conversation.id, "Mon suivi");
+    expect((await repo.get(f.conversation.id))?.version).toBe(3);
+    const before = db
+      .prepare("SELECT * FROM sync_outbox ORDER BY local_sequence")
+      .all();
+    const abort = new AbortController();
+    abort.abort();
+    await expect(
+      controller.rename(f.conversation.id, "Annulé", abort.signal),
+    ).rejects.toThrow("COPILOT_RENAME_CANCELLED");
+    adapter.fail = true;
+    await expect(
+      controller.rename(f.conversation.id, "Échec disque"),
+    ).rejects.toThrow("COMMIT_FAILED");
+    expect((await repo.get(f.conversation.id))?.title).toBe("Mon suivi");
+    expect(
+      db.prepare("SELECT * FROM sync_outbox ORDER BY local_sequence").all(),
+    ).toEqual(before);
   } finally {
     db.close();
   }

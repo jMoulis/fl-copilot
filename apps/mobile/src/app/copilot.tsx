@@ -1510,6 +1510,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   const refreshMenu = useCallback(() => {
     setMenu(true);
     setError(undefined);
+    void syncMessages?.(storeId).catch(() => undefined);
     const revision = ++topicRevision.current;
     void repo
       .list()
@@ -1521,7 +1522,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
         if (mounted.current && revision === topicRevision.current)
           setError("Les conversations locales ne peuvent pas être lues.");
       });
-  }, [repo]);
+  }, [repo, syncMessages, storeId]);
   const create = async () => {
     if (createLocked.current) return;
     createLocked.current = true;
@@ -1584,6 +1585,40 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               setActive(row.entity.id);
               setMenu(false);
             }}
+            onRename={
+              Platform.OS === "ios"
+                ? async (title, signal) => {
+                    const revision = ++topicRevision.current;
+                    await controller.rename(row.entity.id, title, signal);
+                    if (
+                      !mounted.current ||
+                      signal.aborted ||
+                      revision !== topicRevision.current
+                    )
+                      return;
+                    try {
+                      const rows = await repo.list();
+                      if (
+                        !mounted.current ||
+                        signal.aborted ||
+                        revision !== topicRevision.current
+                      )
+                        return;
+                      setConversations(rows);
+                    } catch {
+                      if (
+                        mounted.current &&
+                        !signal.aborted &&
+                        revision === topicRevision.current
+                      )
+                        setError(
+                          "Le titre est enregistré, mais la liste ne peut pas être relue. Rouvre les conversations.",
+                        );
+                    }
+                    void syncNow(storeId).catch(() => undefined);
+                  }
+                : undefined
+            }
             onDelete={async (signal) => {
               const revision = ++topicRevision.current;
               await controller.removeConversation(row.entity.id, signal);

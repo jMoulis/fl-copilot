@@ -58,3 +58,53 @@ it.each([
     false,
   );
 });
+
+it("hands off an explicit manual rename with its exact plain question", () => {
+  const conversationCommand = {
+    commandId: randomUUID(),
+    localSequence: 2,
+    type: "COPILOT_CONVERSATION_UPSERT",
+    entityType: "copilot_conversation",
+    entityId: f.conversation.id,
+    createdAt: f.conversation.createdAt,
+    expectedRemoteVersion: 1,
+    payload: {
+      ...f.conversation,
+      version: 2,
+      title: "Mon bilan",
+      titleIntent: "MANUAL",
+    },
+  };
+  const input = {
+    ...ids,
+    synchronization: {
+      ...packet,
+      commands: [...packet.commands, conversationCommand],
+    },
+  };
+  expect(
+    copilotTurnTransportRequestSchema.parse(input).synchronization?.commands[1]
+      ?.payload,
+  ).toMatchObject({ titleIntent: "MANUAL" });
+  for (const patch of [
+    { titleIntent: "AUTOMATIC" },
+    { storeId: randomUUID() },
+    { status: "ARCHIVED" },
+    { unknown: true },
+  ]) {
+    expect(
+      copilotTurnTransportRequestSchema.safeParse({
+        ...input,
+        synchronization: {
+          ...input.synchronization,
+          commands: [
+            {
+              ...conversationCommand,
+              payload: { ...conversationCommand.payload, ...patch },
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  }
+});

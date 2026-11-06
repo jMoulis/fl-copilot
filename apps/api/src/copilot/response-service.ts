@@ -270,6 +270,7 @@ export async function generateCopilotResponse(
   factTrace?: Awaited<ReturnType<CopilotAiProvider["generate"]>>["factTrace"];
   response: CopilotResponse;
   metadata: CopilotGenerationMetadata | null;
+  titleProposal?: string;
   evidence?: CopilotGenerationRequest["evidence"];
   contextCheckpoint?: Awaited<
     ReturnType<CopilotAiProvider["generate"]>
@@ -427,6 +428,7 @@ export async function generateCopilotResponse(
       throw new CopilotAiError("COPILOT_AI_CANCELLED", false);
     return {
       mode: "AI",
+      titleProposal: generated.titleProposal,
       factTrace: generated.factTrace,
       response: validateCopilotResponse(generated.output, request),
       metadata: generated.metadata,

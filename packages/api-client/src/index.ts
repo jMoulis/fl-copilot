@@ -186,6 +186,7 @@ export class ApiClient {
                   ? { "x-copilot-background-completion": "1" }
                   : {}),
                 "x-copilot-analytics-destinations": "2",
+                "x-copilot-economy": "1",
                 ...(streaming.choiceUpdate
                   ? { "x-copilot-choice-update": "1" }
                   : {}),
@@ -1259,8 +1260,11 @@ export class ApiClient {
             ? { "x-copilot-history-deletion": "1" }
             : {}),
           ...(/\/sync\/(bootstrap|pull)|\/copilot\/(history|turn)/.test(path)
-            ? { "x-copilot-analytics-destinations": "2" }
+            ? {
+                "x-copilot-analytics-destinations": "2",
+              }
             : {}),
+          ...(/\/copilot\/turn/.test(path) ? { "x-copilot-economy": "1" } : {}),
           ...(init.body ? { "content-type": "application/json" } : {}),
           ...init.headers,
         },

@@ -291,11 +291,21 @@ export class CopilotConversationRepository {
   }
   async save(
     e: CopilotConversation,
-    ctx: { commandId: string; deviceId: string },
+    ctx: {
+      commandId: string;
+      deviceId: string;
+      titleIntent?: "MANUAL";
+      signal?: AbortSignal;
+    },
   ) {
+    const current = () => {
+      if (ctx.signal?.aborted) throw Error("COPILOT_RENAME_CANCELLED");
+    };
+    current();
     e = copilotConversationSchema.parse(e);
     scoped(e, this.scope);
     await this.db.withExclusiveTransactionAsync(async (tx) => {
+      current();
       const row = await tx.getFirstAsync<Row>(
         "SELECT * FROM copilot_conversations WHERE id=?",
         e.id,
@@ -344,9 +354,13 @@ export class CopilotConversationRepository {
         entityType: "copilot_conversation",
         entityId: e.id,
         expectedRemoteVersion: prior?.version ?? null,
-        payload: e,
+        payload: {
+          ...e,
+          ...(ctx.titleIntent ? { titleIntent: ctx.titleIntent } : {}),
+        },
         createdAt: e.updatedAt,
       });
+      current();
     });
     return e;
   }
@@ -529,7 +543,7 @@ export class CopilotConversationRepository {
           entityType: "copilot_conversation",
           entityId: id,
           expectedRemoteVersion: remote.version,
-          payload: resolved,
+          payload: { ...resolved, titleIntent: "MANUAL" },
           createdAt: now,
         });
       if (!current()) throw Error("COPILOT_CONVERSATION_FORBIDDEN");

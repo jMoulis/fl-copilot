@@ -60,6 +60,31 @@ export class CopilotLocalChatController {
       return conversation;
     });
   }
+  rename(conversationId: string, title: string, signal?: AbortSignal) {
+    return this.serial(async () => {
+      if (signal?.aborted) throw Error("COPILOT_RENAME_CANCELLED");
+      const prior = await this.active(conversationId);
+      const name = title.trim();
+      if (!name || name.length > 120) throw Error("COPILOT_TITLE_INVALID");
+      if (signal?.aborted) throw Error("COPILOT_RENAME_CANCELLED");
+      return this.repo.save(
+        {
+          ...prior,
+          title: name,
+          version: prior.version + 1,
+          updatedAt: new Date(
+            Math.max(Date.parse(this.now()), Date.parse(prior.updatedAt)),
+          ).toISOString(),
+        },
+        {
+          commandId: this.id(),
+          deviceId: this.scope.deviceId,
+          titleIntent: "MANUAL",
+          signal,
+        },
+      );
+    });
+  }
   removeMessage(conversationId: string, messageId: string) {
     return this.serial(() =>
       this.repo.remove(
