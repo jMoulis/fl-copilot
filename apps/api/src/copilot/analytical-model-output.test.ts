@@ -65,6 +65,84 @@ function unpack(wire: unknown) {
     ...((extra as object) ?? {}),
   }));
 }
+it("shares exact query coverages without losing nulls, zeroes, dates, warnings or evidence references", () => {
+  const coverage = {
+    expectedDays: 31,
+    availableDays: 20,
+    partialDays: 1,
+    missingDays: 10,
+    missingDateExamples: ["2026-10-01", "2026-10-03"],
+  };
+  const value = {
+    ...fixture(2),
+    rows: Array.from({ length: 20 }, (_, i) => ({
+      key: `canonical-product-${i}`,
+      label: `Produit ${i}`,
+      productCount: 1,
+      salesMeasures: { quantity: { value: "1.50", unit: "KG" } },
+      metrics: ["sales", "margin", "waste"].map((metric) => ({
+        metric,
+        current: "0",
+        reference: null,
+        change: null,
+        changePercent: null,
+        currentCoverage: coverage,
+        referenceCoverage: null,
+        warnings: ["PARTIAL_REFERENCE"],
+        evidenceIds: { current: fixture(2).evidence[0]!.id, reference: null },
+      })),
+    })),
+  };
+  const before = structuredClone(value),
+    p = createAnalyticalModelOutput([]);
+  const prepared = p.prepare("analytics-query", value, 1)!;
+  prepared.accept();
+  const wire = prepared.wire as unknown as {
+    rows: Array<{ metrics: { columns: string[]; rows: unknown[][] } }>;
+    coverages: unknown[];
+  };
+  expect(wire.coverages).toEqual([coverage]);
+  const restoredRows = wire.rows.map((row) => ({
+    ...row,
+    metrics: row.metrics.rows.map((cells) =>
+      Object.fromEntries(
+        row.metrics.columns.map((column, index) => {
+          const coverageColumn =
+            column === "currentCoverageIndex" ||
+            column === "referenceCoverageIndex";
+          const cell = cells[index];
+          return [
+            coverageColumn ? column.replace(/Index$/, "") : column,
+            coverageColumn && cell !== null
+              ? wire.coverages[Number(cell)]
+              : cell,
+          ];
+        }),
+      ),
+    ),
+  }));
+  expect(p.bind(restoredRows)).toEqual(value.rows);
+  expect(unpack(prepared.wire)).toEqual(semantic(value.evidence));
+  expect(value).toEqual(before);
+  expect(Buffer.byteLength(JSON.stringify(prepared.wire))).toBeLessThan(
+    Buffer.byteLength(JSON.stringify(value)) * 0.7,
+  );
+});
+it("keeps heterogeneous metric objects and non-query shapes unchanged", () => {
+  const value = {
+    ...fixture(1),
+    rows: [
+      { metrics: [{ current: null }, { current: "0", optional: "present" }] },
+    ],
+  };
+  const p = createAnalyticalModelOutput([]);
+  expect(p.prepare("analytics-query", value, 1)!.wire).toMatchObject({
+    rows: value.rows,
+  });
+  expect(p.prepare("period", value, 1)!.wire).toMatchObject({
+    rows: value.rows,
+  });
+});
 it.each(["analytics-query", "period", "mongo"])(
   "preserves every exact field while sharing repeated evidence metadata: %s",
   (family) => {

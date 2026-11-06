@@ -1,5 +1,9 @@
 # M8 — hardening and pilot release
 
+## Heavy-analysis token optimization — 6 November
+
+After the owner accepts monthly completion, reduce repeated metric keys/coverage objects in the existing model transport and preserve the original request prefix when forcing conclusion. The same controlled monthly workload drops from 138,712 to 113,614 tool-result bytes (18.09%), with exact facts, coverage and canonical hashes retained. **305 tests across five suites pass, zero skipped**, plus workspace types/lint/format/API build; two targeted regressions fail on the old runtime. Provider-boundary tests prove append-only input with unchanged tools/schema, not an actual cache hit. Exact-head CI, merge, grouped API release (including PR466) and real owner token/quality comparison remain separate gates. No new model/agent, paid AI request or native build. [Evidence and limits](../qa/M8_ANALYTICAL_CONTEXT_REUSE_2026_11_06.md).
+
 ## Monthly quantity follow-up — 6 November
 
 The owner confirms that the monthly analytical answer now displays successfully. A remaining quantity-total query fails on nested group-key sorting; a focused validator correction passes 67 tests, including real Mongo execution and before-fix regression, plus full typecheck/lint/format/API build. CI, merge and API delivery remain separate. Read-only source inspection and owner confirmation establish fixed-price banana ribbons with fractional quantities already retained from Mercalys; their cause remains unresolved, with no source/catalogue rewrite or invented unit conversion. [Evidence and boundaries](../qa/M8_QUANTITY_GROUP_SORT_2026_11_06.md). Broader M8 gates remain open.
