@@ -1,3 +1,7 @@
+## Demandes à arbitrer — 6 novembre 2026
+
+Le [backlog produit du 6 novembre](../progress/PRODUCT_BACKLOG_2026_11_06.md) consigne les demandes de défilement du chat, titres éditables, maquettes/Actions/Ma semaine, graphiques produits, skeleton Analyses, images produits et optimisation du coût IA. Le **journal de bord quotidien** (météo, vacances, actualités, moral, dépenses fruits et légumes, inflation) est à définir ensemble avant développement. La génération d’images de TG est réservée à la **V2**. Cette inscription ne transforme pas toutes ces demandes en nouveaux prérequis de clôture V1/M8.
+
 ## Owner UX reserve — coverage labels, 6 November 2026
 
 The verbose complete/partial/missing-day labels in the analytical breakdown are deferred to the UX review. The owner suggests retaining the detail behind the information button in a bottom sheet, rather than repeating it in the main list. No coverage calculation, comparison policy or presentation is changed by the notification navigation fix. Completion-alert excerpts are owner-accepted; duplicate chat navigation is tracked in M8 separately.

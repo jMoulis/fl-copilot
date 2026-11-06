@@ -137,14 +137,6 @@ export async function notifyChatCompletion(
   const data = copilotCompletionNotificationSchema.parse(raw);
   if (data.ownerId !== principal.userId || data.storeId !== principal.storeId)
     return;
-  const token = await registeredChatPush(db, principal);
-  if (!token) return;
-  const membership = await db.collection("storeMemberships").findOne({
-    userId: principal.userId,
-    storeId: principal.storeId,
-    active: true,
-  });
-  if (!membership) return;
   const scope = { storeId: principal.storeId, ownerId: principal.userId };
   const conversation = await db
     .collection<CopilotConversation & { _id: string }>("copilotConversations")
@@ -169,6 +161,16 @@ export async function notifyChatCompletion(
     copilotMessageIsDeleted(m, c)
   )
     return;
+  // Resolve delivery authority after reply lookup: logout, disable or token
+  // transfer during those reads must not dispatch a previously captured token.
+  const membership = await db.collection("storeMemberships").findOne({
+    userId: principal.userId,
+    storeId: principal.storeId,
+    active: true,
+  });
+  if (!membership) return;
+  const token = await registeredChatPush(db, principal);
+  if (!token) return;
   const response = await (options.fetch ?? fetch)(
     "https://exp.host/--/api/v2/push/send",
     {
