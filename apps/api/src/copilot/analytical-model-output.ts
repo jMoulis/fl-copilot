@@ -99,8 +99,51 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         );
       return item;
     };
+    const projected = referenceFields(value) as Record<string, JSONValue>;
+    // Query metrics repeat identical coverage objects for each product/metric.
+    // Share those exact objects and name the metric columns once; no sampling.
+    if (family === "analytics-query" && Array.isArray(projected.rows)) {
+      const coverages: JSONValue[] = [];
+      const coverageIndex = new Map<string, number>();
+      projected.rows = projected.rows.map((rawRow) => {
+        if (!rawRow || typeof rawRow !== "object" || Array.isArray(rawRow))
+          return rawRow;
+        if (!Array.isArray(rawRow.metrics) || !rawRow.metrics.length)
+          return rawRow;
+        const metrics = rawRow.metrics as Record<string, JSONValue>[];
+        const keys = [
+          ...new Set(metrics.flatMap((metric) => Object.keys(metric))),
+        ];
+        // Future heterogeneous rows keep their original shape: absence must
+        // never silently become a null cell.
+        if (
+          metrics.some((metric) =>
+            keys.some((key) => !Object.hasOwn(metric, key)),
+          )
+        )
+          return rawRow;
+        const coverageKeys = new Set(["currentCoverage", "referenceCoverage"]);
+        return {
+          ...rawRow,
+          metrics: {
+            columns: keys.map((key) =>
+              coverageKeys.has(key) ? `${key}Index` : key,
+            ),
+            rows: metrics.map((metric) =>
+              keys.map((key) => {
+                const item = metric[key];
+                return coverageKeys.has(key) && item != null
+                  ? intern(item, coverages, coverageIndex)
+                  : (item ?? null);
+              }),
+            ),
+          },
+        };
+      });
+      if (coverages.length) projected.coverages = coverages;
+    }
     const wire: JSONValue = {
-      ...(referenceFields(value) as Record<string, JSONValue>),
+      ...projected,
       remainingReads,
       evidence: {
         columns: [

@@ -355,6 +355,12 @@ it.each([
     const observed: CopilotGenerationUsage[] = [];
     const canonicalByRef = new Map<string, string>();
     let turns = 0;
+    const requestBodies: Array<{
+      input: Array<{ role?: string; content?: unknown }>;
+      tools: unknown;
+      text: { format: unknown };
+      tool_choice?: unknown;
+    }> = [];
     const collect = (body: Record<string, unknown>) => {
       let resultIndex = 0;
       for (const item of body.input as Array<{
@@ -394,6 +400,7 @@ it.each([
       .fn<typeof fetch>()
       .mockImplementation(async (_url, init) => {
         const body = JSON.parse(init!.body as string);
+        requestBodies.push(body);
         turns++;
         expect(body.max_output_tokens).toBe(turns === 1 ? 4000 : 10000);
         const allowsUnboundPriorities =
@@ -558,6 +565,27 @@ it.each([
       "L’analyse du copilote est momentanément indisponible",
     );
     expect(turns).toBe(3);
+    // The provider sees the same tools/schema and an append-only input even
+    // when the final step forces conclusion. This qualifies prefix stability,
+    // not an actual remote cache hit or billed-token reduction.
+    for (let index = 1; index < requestBodies.length; index++) {
+      const previous = requestBodies[index - 1]!,
+        current = requestBodies[index]!;
+      expect(current.tools).toEqual(previous.tools);
+      expect(current.text.format).toEqual(previous.text.format);
+      expect(current.input.slice(0, previous.input.length)).toEqual(
+        previous.input,
+      );
+    }
+    if (exhaustedReads) {
+      const last = requestBodies.at(-1)!;
+      expect(last.tool_choice).toBe("none");
+      expect(last.input.at(-1)).toMatchObject({
+        role: "system",
+        content:
+          "Conclude now using completed verified reads. State any uncompleted scope once; do not infer absent data.",
+      });
+    }
     expect(period).toHaveBeenCalledTimes(1);
     expect(analyticsQuery).toHaveBeenCalledTimes(3);
     expect(result.output.facts).toHaveLength(96);
@@ -598,6 +626,7 @@ it.each([
     expect(before).toBeGreaterThan(256000);
     expect(after).toBeLessThan(256000);
     expect(after).toBeLessThan(before * 0.6);
+    if (!exhaustedReads) expect(after).toBeLessThan(138712 * 0.85);
     expect(wireFactsBytes).toBeLessThan(canonicalFactsBytes * 0.4);
     expect(
       observed.filter((e) => e.kind === "STEP").map((e) => e.toolNames),
