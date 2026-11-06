@@ -52,9 +52,11 @@ export function ReminderProvider({ children }: PropsWithChildren) {
     [storeId, status, session?.user.id, sqlite],
   );
   const root = useRootNavigationState(),
+    latestRoot = useRef(root),
     active = useRef<typeof context | undefined>(context),
     queue = useMemo(() => new CoalescedReminderRunner(), []),
     [error, setError] = useState<string>();
+  latestRoot.current = root;
   const repo = useMemo(() => new ReminderRepository(sqlite, digest), [sqlite]);
   const refresh = useCallback(
     () =>
@@ -231,8 +233,12 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             )
               return;
             n.clearLastNotificationResponse();
-            if (destination) router.push(destination);
-            else
+            if (destination) {
+              const state = latestRoot.current;
+              if (state?.routes[state.index ?? 0]?.name === "(tabs)")
+                router.navigate(destination);
+              else router.dismissTo(destination);
+            } else
               setError(
                 "Cette réponse n’est pas accessible. Ouvre tes conversations après synchronisation.",
               );
