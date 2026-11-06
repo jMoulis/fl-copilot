@@ -24,7 +24,7 @@ afterEach(() => {
   vi.mocked(notifyChatCompletion).mockReset();
   vi.mocked(registeredChatPush).mockResolvedValue("registered-token");
 });
-function setup() {
+function setup(syncPush?: import("../src/sync/push-service").SyncPushService) {
   const f = chatFixture(randomUUID),
     tasks: Promise<void>[] = [];
   const result = {
@@ -58,6 +58,7 @@ function setup() {
       close: async () => {},
     },
     auth,
+    syncPush,
     copilotContext: vi.fn(),
     waitUntil: (p) => {
       tasks.push(p);
@@ -195,6 +196,85 @@ it("an unregistered old client retains normal disconnect semantics and no push",
     expect(x.tasks).toHaveLength(0);
     expect(notifyChatCompletion).not.toHaveBeenCalled();
   } finally {
+    x.app.server.closeAllConnections();
+    await x.app.close();
+  }
+});
+
+it("continues canonical intake and generation when the phone disconnects before the first activity", async () => {
+  let entered!: () => void, finishIntake!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    finishIntake = resolve;
+  });
+  const push = vi.fn(
+    async (packet: import("@fl-copilot/sync-contracts").SyncPushRequest) => {
+      entered();
+      await gate;
+      return {
+        syncProtocolVersion: 1 as const,
+        storeId: packet.storeId,
+        deviceId: packet.deviceId,
+        serverTime: new Date().toISOString(),
+        results: packet.commands.map((command) => ({
+          commandId: command.commandId,
+          status: "APPLIED" as const,
+          entityType: command.entityType,
+          entityId: command.entityId,
+          remoteVersion: 1,
+        })),
+      };
+    },
+  );
+  const x = setup({ push });
+  const synchronization = {
+    syncProtocolVersion: 1,
+    appVersion: "test",
+    storeId: x.f.storeId,
+    deviceId: x.f.deviceId,
+    commands: [
+      {
+        commandId: randomUUID(),
+        localSequence: 1,
+        type: "COPILOT_MESSAGE_APPEND",
+        entityType: "copilot_message",
+        entityId: x.f.message.id,
+        createdAt: x.f.message.createdAt,
+        payload: { ...x.f.message, attachments: [] },
+      },
+    ],
+  };
+  vi.mocked(runCopilotTurn).mockImplementation(async (deps) => {
+    await deps.acceptQuestion?.();
+    deps.onActivity?.({
+      id: "prepared",
+      stage: "PREPARING",
+      status: "RUNNING",
+    });
+    return x.result;
+  });
+  const address = await x.app.listen({ port: 0, host: "127.0.0.1" });
+  const controller = new AbortController();
+  const response = fetch(address + "/api/v1/copilot/turn", {
+    method: "POST",
+    headers: x.headers,
+    body: JSON.stringify({ ...x.payload, synchronization }),
+    signal: controller.signal,
+  }).catch(() => undefined);
+  try {
+    await started;
+    expect(x.tasks).toHaveLength(1);
+    controller.abort();
+    await response;
+    finishIntake();
+    await Promise.all(x.tasks);
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(runCopilotTurn).toHaveBeenCalledTimes(1);
+    expect(notifyChatCompletion).toHaveBeenCalledTimes(1);
+  } finally {
+    finishIntake();
     x.app.server.closeAllConnections();
     await x.app.close();
   }

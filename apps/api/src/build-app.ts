@@ -1,3 +1,8 @@
+import type { IncomingHttpHeaders } from "node:http";
+import {
+  copilotTurnTransportRequestSchema,
+  type SyncPushRequest,
+} from "@fl-copilot/sync-contracts";
 import {
   devicePushTokenRequestSchema,
   devicePushTokenResponseSchema,
@@ -148,7 +153,6 @@ import { readProductAnalysis } from "./copilot/product-analysis-tool.js";
 import { readDailyAnalysis } from "./copilot/daily-analysis-tool.js";
 import { loadCopilotReadContext } from "./copilot/read-context.js";
 import {
-  copilotTurnRequestSchema,
   copilotTurnResultSchema,
   type CopilotMessage,
 } from "@fl-copilot/domain";
@@ -628,6 +632,111 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       );
     },
   );
+  const acceptSyncPush = async (
+    input: SyncPushRequest,
+    headers: IncomingHttpHeaders,
+    requestId: string,
+  ) => {
+    const authorization = headers.authorization;
+    if (!authorization?.startsWith("Bearer ")) {
+      throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+    }
+    const storeId = headers["x-store-id"];
+    if (storeId !== input.storeId) {
+      throw new AuthError(
+        403,
+        "STORE_CONTEXT_MISMATCH",
+        "Le magasin demandé ne correspond pas à la requête.",
+      );
+    }
+    const protocolVersion = headers["x-sync-protocol-version"];
+    if (protocolVersion !== String(SYNC_PROTOCOL_VERSION)) {
+      throw new AuthError(
+        400,
+        "SYNC_PROTOCOL_UNSUPPORTED",
+        "Cette version du protocole de synchronisation n’est pas prise en charge.",
+      );
+    }
+    const accessToken = authorization.slice("Bearer ".length);
+    if (!accessToken) {
+      throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
+    }
+    const principal = await auth.authorizeStore(
+      accessToken,
+      input.storeId,
+      input.deviceId,
+    );
+    if (headers["x-commercial-source-version"] === "2")
+      input.commercialOriginalSources = true;
+    const hasCommercialOfferWrite = input.commands.some(
+      (command) =>
+        ["commercial_offer_choice", "commercial_validated_offer"].includes(
+          command.entityType,
+        ) ||
+        [
+          "COMMERCIAL_OFFER_CHOICE_UPSERT",
+          "COMMERCIAL_OFFER_VALIDATE",
+        ].includes(command.type),
+    );
+    if (hasCommercialOfferWrite && principal.role !== "MANAGER")
+      throw new AuthError(
+        403,
+        "STORE_ROLE_FORBIDDEN",
+        "Seul le responsable du magasin peut retenir ou valider une offre commerciale.",
+      );
+    const hasVisualWrite = input.commands.some((c) =>
+      isVisualEntityType(c.entityType),
+    );
+    if (hasVisualWrite && principal.role !== "MANAGER")
+      throw new AuthError(
+        403,
+        "STORE_ROLE_FORBIDDEN",
+        "Seul le responsable peut approuver les visuels du magasin.",
+      );
+    const hasStoreContextWrite = input.commands.some(
+      (c) =>
+        c.entityType === "store_context_settings" ||
+        c.type === "STORE_CONTEXT_SETTINGS_UPSERT",
+    );
+    if (hasStoreContextWrite && principal.role !== "MANAGER")
+      throw new AuthError(
+        403,
+        "STORE_ROLE_FORBIDDEN",
+        "Seul le responsable du magasin peut modifier les réglages et repères merchandising.",
+      );
+    const hasLayoutWrite = input.commands.some(
+      (c) =>
+        c.entityType === "store_layout" || c.type === "STORE_LAYOUT_UPSERT",
+    );
+    if (hasLayoutWrite && principal.role !== "MANAGER")
+      throw new AuthError(
+        403,
+        "STORE_ROLE_FORBIDDEN",
+        "Seul le responsable du magasin peut modifier le plan physique.",
+      );
+    const result = await (input.commands.some(
+      (c) => isChatType(c.entityType) || c.type.startsWith("COPILOT_"),
+    ) ||
+    hasLayoutWrite ||
+    hasVisualWrite ||
+    input.commands.some(
+      (c) =>
+        c.entityType === "document_archive" ||
+        c.type === "DOCUMENT_ARCHIVE_SET",
+    )
+      ? syncPush.push(input, requestId, principal.userId)
+      : syncPush.push(input, requestId));
+    if (
+      commercialWorkflows &&
+      input.commands.some(
+        (c) => c.type === "COPILOT_LAYOUT_ILLUSTRATION_GENERATE",
+      )
+    )
+      await commercialWorkflows
+        .dispatchIllustrations(principal.storeId)
+        .catch(() => undefined);
+    return result;
+  };
   app.post(
     "/api/v1/sync/push",
     {
@@ -637,113 +746,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         response: { 200: syncPushResponseSchema },
       },
     },
-    async (request) => {
-      const authorization = request.headers.authorization;
-      if (!authorization?.startsWith("Bearer ")) {
-        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
-      }
-      const storeId = request.headers["x-store-id"];
-      if (storeId !== request.body.storeId) {
-        throw new AuthError(
-          403,
-          "STORE_CONTEXT_MISMATCH",
-          "Le magasin demandé ne correspond pas à la requête.",
-        );
-      }
-      const protocolVersion = request.headers["x-sync-protocol-version"];
-      if (protocolVersion !== String(SYNC_PROTOCOL_VERSION)) {
-        throw new AuthError(
-          400,
-          "SYNC_PROTOCOL_UNSUPPORTED",
-          "Cette version du protocole de synchronisation n’est pas prise en charge.",
-        );
-      }
-      const accessToken = authorization.slice("Bearer ".length);
-      if (!accessToken) {
-        throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
-      }
-      const principal = await auth.authorizeStore(
-        accessToken,
-        request.body.storeId,
-        request.body.deviceId,
-      );
-      if (request.headers["x-commercial-source-version"] === "2")
-        request.body.commercialOriginalSources = true;
-      const hasCommercialOfferWrite = request.body.commands.some(
-        (command) =>
-          ["commercial_offer_choice", "commercial_validated_offer"].includes(
-            command.entityType,
-          ) ||
-          [
-            "COMMERCIAL_OFFER_CHOICE_UPSERT",
-            "COMMERCIAL_OFFER_VALIDATE",
-          ].includes(command.type),
-      );
-      if (hasCommercialOfferWrite && principal.role !== "MANAGER")
-        throw new AuthError(
-          403,
-          "STORE_ROLE_FORBIDDEN",
-          "Seul le responsable du magasin peut retenir ou valider une offre commerciale.",
-        );
-      const hasVisualWrite = request.body.commands.some((c) =>
-        isVisualEntityType(c.entityType),
-      );
-      if (hasVisualWrite && principal.role !== "MANAGER")
-        throw new AuthError(
-          403,
-          "STORE_ROLE_FORBIDDEN",
-          "Seul le responsable peut approuver les visuels du magasin.",
-        );
-      const hasStoreContextWrite = request.body.commands.some(
-        (c) =>
-          c.entityType === "store_context_settings" ||
-          c.type === "STORE_CONTEXT_SETTINGS_UPSERT",
-      );
-      if (hasStoreContextWrite && principal.role !== "MANAGER")
-        throw new AuthError(
-          403,
-          "STORE_ROLE_FORBIDDEN",
-          "Seul le responsable du magasin peut modifier les réglages et repères merchandising.",
-        );
-      const hasLayoutWrite = request.body.commands.some(
-        (c) =>
-          c.entityType === "store_layout" || c.type === "STORE_LAYOUT_UPSERT",
-      );
-      if (hasLayoutWrite && principal.role !== "MANAGER")
-        throw new AuthError(
-          403,
-          "STORE_ROLE_FORBIDDEN",
-          "Seul le responsable du magasin peut modifier le plan physique.",
-        );
-      const result = await (request.body.commands.some(
-        (c) => isChatType(c.entityType) || c.type.startsWith("COPILOT_"),
-      ) ||
-      hasLayoutWrite ||
-      hasVisualWrite ||
-      request.body.commands.some(
-        (c) =>
-          c.entityType === "document_archive" ||
-          c.type === "DOCUMENT_ARCHIVE_SET",
-      )
-        ? syncPush.push(request.body, request.id, principal.userId)
-        : syncPush.push(request.body, request.id));
-      if (
-        commercialWorkflows &&
-        request.body.commands.some(
-          (c) => c.type === "COPILOT_LAYOUT_ILLUSTRATION_GENERATE",
-        )
-      )
-        await commercialWorkflows
-          .dispatchIllustrations(principal.storeId)
-          .catch(() => undefined);
-      return result;
-    },
+    async (request) =>
+      acceptSyncPush(request.body, request.headers, request.id),
   );
   app.post(
     "/api/v1/copilot/turn",
     {
       schema: {
-        body: copilotTurnRequestSchema,
+        body: copilotTurnTransportRequestSchema,
         response: { 200: copilotTurnResultSchema },
       },
     },
@@ -822,9 +832,37 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         lastSent = 0;
       try {
         const db = notificationDb;
+        const { synchronization, ...turnInput } = request.body;
         const generationTask = runCopilotTurn(
           {
             db,
+            acceptQuestion: synchronization
+              ? async () => {
+                  const intake = await acceptSyncPush(
+                    synchronization,
+                    {
+                      ...request.headers,
+                      "x-sync-protocol-version": String(SYNC_PROTOCOL_VERSION),
+                    },
+                    request.id,
+                  );
+                  if (
+                    !synchronization.commands.every((command) =>
+                      intake.results.some(
+                        (result) =>
+                          result.commandId === command.commandId &&
+                          (result.status === "APPLIED" ||
+                            result.status === "ALREADY_APPLIED"),
+                      ),
+                    )
+                  )
+                    throw new AuthError(
+                      409,
+                      "COPILOT_HANDOFF_NOT_APPLIED",
+                      "La question reste conservée. Vérifie la synchronisation avant de réessayer.",
+                    );
+                }
+              : undefined,
             provider: createCopilotAiProvider(config, undefined, {
               onUsage: (usage) => {
                 app.log.info(
@@ -1772,7 +1810,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               : undefined,
             loadContext: (parent) => loadContext(storeId, parent),
           },
-          request.body,
+          turnInput,
           abort.signal,
         );
         const notificationTask = generationTask.then(async (result) => {

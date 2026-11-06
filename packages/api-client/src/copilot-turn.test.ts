@@ -994,3 +994,56 @@ it.each([true, false])(
     expect(JSON.parse(options!.body as string)).toEqual(input);
   },
 );
+
+it("transmits canonical intake and the turn in one authenticated request", async () => {
+  const synchronization = {
+    syncProtocolVersion: 1 as const,
+    appVersion: "test",
+    storeId: id(4),
+    deviceId: id(7),
+    commands: [
+      {
+        commandId: id(8),
+        localSequence: 1,
+        type: "COPILOT_MESSAGE_APPEND",
+        entityType: "copilot_message",
+        entityId: input.userMessageId,
+        createdAt: message.createdAt,
+        payload: {
+          ...message,
+          id: input.userMessageId,
+          role: "USER",
+          text: "Bonjour",
+          replyToMessageId: null,
+        },
+      },
+    ],
+  };
+  const transport = vi.fn<typeof fetch>(async () =>
+    Response.json({ message, alreadyApplied: false }),
+  );
+  vi.stubGlobal("fetch", transport);
+  await new ApiClient("https://test.invalid").copilotTurn(
+    "test-token",
+    id(4),
+    id(5),
+    input,
+    undefined,
+    { onProgress: vi.fn(), backgroundCompletion: true, synchronization },
+  );
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(String(transport.mock.calls[0]![1]?.body))).toEqual({
+    ...input,
+    synchronization,
+  });
+  expect(transport).toHaveBeenCalledWith(
+    "https://test.invalid/api/v1/copilot/turn",
+    expect.objectContaining({
+      headers: expect.objectContaining({
+        authorization: "Bearer test-token",
+        "x-store-id": id(4),
+        "x-copilot-background-completion": "1",
+      }),
+    }),
+  );
+});

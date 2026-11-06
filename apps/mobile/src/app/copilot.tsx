@@ -468,6 +468,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   const {
     syncNow,
     syncMessages,
+    prepareChatHandoff,
     lastSyncedAt,
     originals,
     visuals: visualFiles,
@@ -1120,6 +1121,9 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       {
         sync: () => syncNow(storeId),
         syncMessages: syncMessages ? () => syncMessages(storeId) : undefined,
+        prepareHandoff: prepareChatHandoff
+          ? (input) => prepareChatHandoff(storeId, input)
+          : undefined,
         readReply: async (input, signal) => {
           const page = await withAccessToken((token) =>
             api.copilotHistory(
@@ -1140,11 +1144,12 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
             throw Error("COPILOT_REPLY_SCOPE_INVALID");
           return page.messages.find((message) => message.id === input.replyId);
         },
-        ask: (input, signal, onProgress, onActivity) =>
+        ask: (input, signal, onProgress, onActivity, synchronization) =>
           withAccessToken((token) =>
             api.copilotTurn(token, storeId, ownerId, input, signal, {
               onProgress,
               onActivity,
+              synchronization,
               backgroundCompletion: chatCompletionAllowed.current,
               memorySuggestions: true,
               webResearch: true,
@@ -1198,6 +1203,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
     ownerId,
     syncNow,
     syncMessages,
+    prepareChatHandoff,
     withAccessToken,
     canPrepareCommercialWeek,
     canDeclareCommercialExecution,
