@@ -39,6 +39,27 @@ import {
   type CopilotMessage,
 } from "@fl-copilot/domain";
 import type { Db, ClientSession } from "mongodb";
+/** A useful first title must not depend on a model returning within its deadline. */
+export function provisionalConversationTitle(
+  current: string,
+  question: string,
+) {
+  if (current !== "Nouvelle conversation") return;
+  const text = question
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/[\p{Cc}\p{Cf}]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    !text ||
+    /^(?:salut|bonjour|bonsoir|hello|merci|ok|oui|non|go)[\s!.?👍]*$/iu.test(
+      text,
+    )
+  )
+    return;
+  const title = text.slice(0, 80).replace(/[\uD800-\uDBFF]$/u, "");
+  return title;
+}
 import type { SyncCommand } from "@fl-copilot/sync-contracts";
 import type {
   MongoCommandMutationContext,

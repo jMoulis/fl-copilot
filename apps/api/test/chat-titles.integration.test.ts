@@ -144,14 +144,25 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         authorize: async () => authority,
       };
     }
-    it.each([null, "COPILOT_AI_TIMEOUT", "COPILOT_AI_OUTPUT_LIMIT"] as const)(
-      "keeps the normal turn lease/replay and title after success or failure (%s)",
-      async (failure) => {
+    it.each([
+      [null, true],
+      ["COPILOT_AI_TIMEOUT", true],
+      ["COPILOT_AI_OUTPUT_LIMIT", true],
+      [null, false],
+      ["COPILOT_AI_TIMEOUT", false],
+      ["COPILOT_AI_OUTPUT_LIMIT", false],
+    ] as const)(
+      "keeps the normal turn lease/replay and title after success or failure (%s, model title %s)",
+      async (failure, hasModelTitle) => {
         const f = await fixture();
         const generate = vi.fn<CopilotAiProvider["generate"]>(
           async (_request, schema) => {
             if (failure)
-              throw new CopilotAiError(failure, true, "Suivi du rayon");
+              throw new CopilotAiError(
+                failure,
+                true,
+                hasModelTitle ? "Suivi du rayon" : undefined,
+              );
             return {
               output: schema.parse({
                 language: "fr-FR",
@@ -169,7 +180,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
                 inputTokens: 10,
                 outputTokens: 10,
               },
-              titleProposal: "Suivi du rayon",
+              titleProposal: hasModelTitle ? "Suivi du rayon" : undefined,
             };
           },
         );
@@ -215,7 +226,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         expect(result.alreadyApplied).toBe(false);
         await Promise.all(titleTasks);
         expect(await f.read()).toMatchObject({
-          title: "Suivi du rayon",
+          title: hasModelTitle ? "Suivi du rayon" : "Prépare les offres",
           version: 2,
         });
         expect((await runCopilotTurn(dependencies, input)).alreadyApplied).toBe(
@@ -224,7 +235,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         expect(generate).toHaveBeenCalledTimes(1);
         expect(titleTasks).toHaveLength(1);
         expect(await f.read()).toMatchObject({
-          title: "Suivi du rayon",
+          title: hasModelTitle ? "Suivi du rayon" : "Prépare les offres",
           version: 2,
         });
       },

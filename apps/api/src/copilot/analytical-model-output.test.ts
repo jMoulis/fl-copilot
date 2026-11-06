@@ -65,6 +65,78 @@ function unpack(wire: unknown) {
     ...((extra as object) ?? {}),
   }));
 }
+it("builds canonical facts from direct references, deduplicates them and contains an unknown paragraph", () => {
+  const p = createAnalyticalModelOutput([]),
+    value = fixture(2);
+  p.prepare("period", value, 0)!.accept();
+  const result = p.bindAnswer({
+    narrative:
+      "CA {{value:r0}}. {{source:r0}}\n\nValeur {{value:invented}}.\n\n| Produit | Valeur |\n| --- | --- |\n| {{label:r1}} | {{value:r1}} |",
+    productId: "canonical-product",
+  });
+  expect(result.omittedBlocks).toBe(1);
+  expect(result.output).toMatchObject({
+    productId: "canonical-product",
+    facts: value.evidence.map((e) => ({ evidenceId: e.id })),
+    narrative: expect.stringContaining("CA {{value:0}}. {{source:0}}"),
+  });
+  expect(String(result.output.narrative)).toContain(
+    "| {{label:1}} | {{value:1}} |",
+  );
+  expect(String(result.output.narrative)).toContain(
+    "Un passage n’a pas pu être vérifié",
+  );
+  expect(String(result.output.narrative)).not.toContain("invented");
+});
+it("exposes short initial evidence references without rewriting product IDs or counting them as analytical reads", () => {
+  const id = JSON.stringify([
+    "period",
+    { start: "2026-10-01", end: "2026-10-31" },
+  ]);
+  const p = createAnalyticalModelOutput([id]);
+  const initial = {
+    EVIDENCE: [{ id, value: "0" }],
+    CONTEXT: { productId: id, candidateId: id },
+  };
+  expect(p.projectInitial(initial)).toEqual({
+    EVIDENCE: [{ id: "i0", value: "0" }],
+    CONTEXT: initial.CONTEXT,
+  });
+  expect(initial.EVIDENCE[0]!.id).toBe(id);
+  expect(p.factCount).toBe(0);
+  expect(p.bindAnswer({ narrative: "{{value:i0}}" }).output).toMatchObject({
+    narrative: "{{value:0}}",
+    facts: [{ evidenceId: id }],
+  });
+});
+it("never resolves a rejected read or leaks a reference from another generation", () => {
+  const p = createAnalyticalModelOutput([]);
+  p.prepare("period", fixture(1), 0);
+  expect(p.bindAnswer({ narrative: "{{value:r0}}" }, true)).toMatchObject({
+    omittedBlocks: 1,
+    output: { facts: [], narrative: "" },
+  });
+  expect(
+    createAnalyticalModelOutput([]).bindAnswer({ narrative: "{{value:i0}}" })
+      .omittedBlocks,
+  ).toBe(1);
+});
+it("keeps the existing fact ceiling and drops a whole over-limit block, never a table cell", () => {
+  const p = createAnalyticalModelOutput([]),
+    value = fixture(97);
+  p.prepare("period", value, 0)!.accept();
+  const first = Array.from({ length: 96 }, (_, i) => `{{value:r${i}}}`).join(
+    " ",
+  );
+  const result = p.bindAnswer({
+    narrative:
+      first +
+      "\n\n| Autre | Valeur |\n| --- | --- |\n| Excès | {{value:r96}} |",
+  });
+  expect(result.output.facts as unknown[]).toHaveLength(96);
+  expect(result.omittedBlocks).toBe(1);
+  expect(result.output.narrative).not.toContain("Excès");
+});
 it("shares exact query coverages without losing nulls, zeroes, dates, warnings or evidence references", () => {
   const coverage = {
     expectedDays: 31,

@@ -1,3 +1,4 @@
+import { directReferenceModelFixture } from "../../../../scripts/test-chat-fixtures";
 import { createHash, randomUUID } from "node:crypto";
 import sharp from "sharp";
 import { expect, it, vi } from "vitest";
@@ -167,6 +168,7 @@ it("reserves the three-image budget before parallel reads finish", async () => {
 });
 
 function envelope(output: unknown[]) {
+  output = directReferenceModelFixture(output) as unknown[];
   return new Response(
     JSON.stringify({
       id: "resp-test",
@@ -317,7 +319,7 @@ it.each([
     ).toEqual(["DOCUMENTS", "DOCUMENTS"]);
     const grounded = { ...request, evidence: result.toolEvidence };
     expect(validateCopilotResponse(result.output, grounded)).toMatchObject({
-      summary: output.summary,
+      narrative: output.narrative,
     });
     expect(() =>
       validateCopilotResponse(

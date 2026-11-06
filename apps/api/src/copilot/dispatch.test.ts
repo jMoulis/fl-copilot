@@ -1,3 +1,4 @@
+import { directReferenceModelFixture } from "../../../../scripts/test-chat-fixtures";
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import { copilotResponseSchema } from "@fl-copilot/domain";
@@ -46,7 +47,11 @@ function reply(value: unknown, model = "gpt-6-luna") {
         role: "assistant",
         status: "completed",
         content: [
-          { type: "output_text", text: JSON.stringify(value), annotations: [] },
+          {
+            type: "output_text",
+            text: JSON.stringify(directReferenceModelFixture(value)),
+            annotations: [],
+          },
         ],
       },
     ],
@@ -502,7 +507,11 @@ it.each(["deadline", "output-limit", "grounding"])(
           });
         }
         return reply(
-          { ...expert, facts: [{ evidenceId: "invented" }] },
+          {
+            ...expert,
+            narrative:
+              "Une valeur {{value:unknown}}.\n\nLe reste du bilan reste disponible.",
+          },
           "expert-test",
         );
       });
@@ -512,7 +521,8 @@ it.each(["deadline", "output-limit", "grounding"])(
       { dispatchEnabled: true, daily: vi.fn() },
     );
     const result = await generateCopilotResponse(provider, f.request);
-    expect(result.mode).toBe("FALLBACK");
+    expect(result.mode).toBe(failure === "grounding" ? "AI" : "FALLBACK");
+    if (failure === "grounding") expect(result.outputLimited).toBe(true);
     expect(result.titleProposal).toBe("Bilan du rayon");
     expect(transport).toHaveBeenCalledTimes(2);
   },

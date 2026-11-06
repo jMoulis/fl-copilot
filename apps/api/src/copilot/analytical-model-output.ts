@@ -4,6 +4,15 @@ import type { JSONValue } from "ai";
 export function createAnalyticalModelOutput(initialIds: readonly string[]) {
   const canonical = new Set(initialIds);
   const references = new Map<string, string>();
+  const analyticalIds = new Set<string>();
+  let initialIndex = 0;
+  for (const id of canonical) {
+    let ref: string;
+    do {
+      ref = `i${initialIndex++}`;
+    } while (canonical.has(ref));
+    references.set(ref, id);
+  }
   let next = 0;
   const outputs = new WeakMap<object, JSONValue>();
   const prepare = (family: string, raw: unknown, remainingReads: number) => {
@@ -165,6 +174,7 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         // prepare/accept run synchronously around the existing byte/scope checks.
         for (const id of ids) canonical.add(id);
         for (const [ref, id] of staged) references.set(ref, id);
+        for (const entry of entries) analyticalIds.add(String(entry.id));
         next = counter;
         outputs.set(raw as object, wire);
       },
@@ -188,10 +198,80 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
   };
   return {
     get factCount() {
-      return references.size;
+      return analyticalIds.size;
+    },
+    projectInitial(value: unknown): unknown {
+      const byId = new Map([...references].map(([ref, id]) => [id, ref]));
+      const walk = (item: unknown, evidence = false): unknown => {
+        if (Array.isArray(item))
+          return item.map((entry) => walk(entry, evidence));
+        if (!item || typeof item !== "object") return item;
+        return Object.fromEntries(
+          Object.entries(item).map(([key, child]) => [
+            key,
+            evidence && key === "id" && typeof child === "string"
+              ? (byId.get(child) ?? child)
+              : walk(child, key.toLowerCase() === "evidence"),
+          ]),
+        );
+      };
+      return walk(value);
     },
     prepare,
     bind,
+    /** The model names a fact directly; only the server constructs array indexes. */
+    bindAnswer(value: unknown, partial = false) {
+      const output = bind(value) as Record<string, unknown>;
+      if (
+        !output ||
+        typeof output !== "object" ||
+        typeof output.narrative !== "string"
+      )
+        return { output, omittedBlocks: 0 };
+      const facts: Array<{ evidenceId: string }> = [];
+      const blocks: string[] = [];
+      let omittedBlocks = 0;
+      for (const block of output.narrative.split(/\n\s*\n/)) {
+        const selected = [...facts];
+        let invalid = false;
+        const narrative = block.replace(
+          /\{\{(value|label|source|chart):([^{}\r\n]+)\}\}/g,
+          (_token, kind: string, ref: string) => {
+            const id = references.get(ref) ?? ref;
+            if (!canonical.has(id)) {
+              invalid = true;
+              return "";
+            }
+            let index = selected.findIndex((fact) => fact.evidenceId === id);
+            if (index < 0) {
+              index = selected.length;
+              selected.push({ evidenceId: id });
+            }
+            return `{{${kind}:${index}}}`;
+          },
+        );
+        if (invalid || selected.length > 96) {
+          omittedBlocks++;
+          continue;
+        }
+        facts.splice(0, facts.length, ...selected);
+        blocks.push(narrative);
+      }
+      if (omittedBlocks && !partial)
+        blocks.push("Un passage n’a pas pu être vérifié et n’est pas affiché.");
+      return {
+        output: {
+          ...output,
+          language: "fr-FR",
+          summary: "Voici les éléments disponibles.",
+          interpretation: [],
+          questions: [],
+          facts,
+          narrative: blocks.join("\n\n"),
+        },
+        omittedBlocks,
+      };
+    },
     /** SDK toModelOutput: execution/replay still receives the original object. */
     toModelOutput: ({ output }: { output: unknown }) => ({
       type: "json" as const,

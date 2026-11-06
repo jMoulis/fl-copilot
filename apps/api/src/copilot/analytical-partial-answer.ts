@@ -2,7 +2,10 @@ import { copilotResponseSchema } from "@fl-copilot/domain";
 
 /** Recover completed paragraphs only after an output-length stop, never repair a
  * JSON object or guess an incomplete fact reference. Grounding still runs later. */
-export function recoverAnalyticalPartialAnswer(text: string) {
+export function recoverAnalyticalPartialAnswer(
+  text: string,
+  directReferences = false,
+) {
   if (text.length > 100_000) return;
   for (const match of text.matchAll(/"narrative"\s*:\s*"/g)) {
     let prefix: { language?: unknown; facts?: unknown };
@@ -14,9 +17,9 @@ export function recoverAnalyticalPartialAnswer(text: string) {
       continue;
     }
     if (
-      prefix?.language !== "fr-FR" ||
-      !Array.isArray(prefix.facts) ||
-      !prefix.facts.length
+      (!directReferences && prefix?.language !== "fr-FR") ||
+      (!directReferences &&
+        (!Array.isArray(prefix.facts) || !prefix.facts.length))
     )
       continue;
     const start = match.index! + match[0].length;
@@ -53,7 +56,7 @@ export function recoverAnalyticalPartialAnswer(text: string) {
     const parsed = copilotResponseSchema.safeParse({
       language: "fr-FR",
       summary: "Voici les premiers éléments de ton bilan.",
-      facts: prefix.facts,
+      facts: directReferences ? [] : prefix.facts,
       narrative:
         narrative +
         "\n\nCette réponse est partielle : je n’ai pas terminé tous les points de ta demande.",
