@@ -429,6 +429,7 @@ export async function generateCopilotResponse(
     return {
       mode: "AI",
       titleProposal: generated.titleProposal,
+      ...(generated.outputLimited ? { outputLimited: true } : {}),
       factTrace: generated.factTrace,
       response: validateCopilotResponse(generated.output, request),
       metadata: generated.metadata,

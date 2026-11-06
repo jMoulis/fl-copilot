@@ -1801,7 +1801,9 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                   ...failure,
                   httpRequestId: request.id,
                   model: config.COPILOT_AI_MODEL ?? "unconfigured",
-                  maxOutputTokens: config.COPILOT_AI_MAX_OUTPUT_TOKENS,
+                  baseOutputTokenLimit: config.COPILOT_AI_MAX_OUTPUT_TOKENS,
+                  analysisOutputTokenLimit:
+                    config.COPILOT_AI_ANALYSIS_MAX_OUTPUT_TOKENS,
                   deploymentSha: process.env.VERCEL_GIT_COMMIT_SHA ?? "unknown",
                 },
                 "Copilot generation fallback",

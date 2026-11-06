@@ -83,6 +83,12 @@ const environmentSchema = z.object({
     .min(128)
     .max(16000)
     .default(4000),
+  COPILOT_AI_ANALYSIS_MAX_OUTPUT_TOKENS: z.coerce
+    .number()
+    .int()
+    .min(128)
+    .max(16000)
+    .default(10000),
   COPILOT_AI_MAX_INPUT_BYTES: z.coerce
     .number()
     .int()
