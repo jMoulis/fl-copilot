@@ -30,7 +30,9 @@ export function CopilotActivityTrail({
     ? labels[active.stage]
     : activities.some((a) => a.stage === "WRITING")
       ? "Finalisation de la réponse"
-      : "Préparation de la réponse";
+      : activities.length
+        ? "Préparation de la réponse"
+        : "Envoi de ta question";
   return (
     <View style={styles.trail}>
       <Pressable

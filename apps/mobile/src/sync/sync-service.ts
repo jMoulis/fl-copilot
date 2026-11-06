@@ -1,3 +1,8 @@
+import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
+import {
+  copilotTurnRequestSchema,
+  type CopilotTurnRequest,
+} from "@fl-copilot/domain";
 import { applyDocumentArchive } from "../documents/document-archive-repository";
 import { applyIllustrationGenerationRecord } from "../copilot/layout-illustration-generation-repository";
 import { applyLayoutIllustrationRecord } from "../copilot/layout-illustration-repository";
@@ -154,6 +159,27 @@ export class MobileSyncService {
     this.baseRetryDelayMs = options.baseRetryDelayMs ?? 500;
     this.now = options.now ?? (() => new Date().toISOString());
     this.sleep = options.sleep ?? wait;
+  }
+
+  /** No network wait or second writer: replay uses the unchanged canonical journal IDs. */
+  async prepareCopilotHandoff(storeId: string, raw: CopilotTurnRequest) {
+    const request = copilotTurnRequestSchema.parse(raw);
+    const ownerId = this.options.copilotOwnerId;
+    if (!ownerId) throw Error("COPILOT_HISTORY_OWNER_REQUIRED");
+    const commands = await new OutboxRepository(
+      this.database,
+      this.now,
+    ).listCopilotHandoff(
+      storeId,
+      ownerId,
+      request.conversationId,
+      request.userMessageId,
+    );
+    if (!commands.length || commands.length > 100) return undefined;
+    return copilotTurnTransportRequestSchema.parse({
+      ...request,
+      synchronization: this.toPushRequest(storeId, commands),
+    }).synchronization;
   }
 
   sync(storeId: string): Promise<SyncSummary> {

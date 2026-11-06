@@ -88,6 +88,8 @@ export async function runCopilotTurn(
     loadContext: (
       parent: CopilotMessage,
     ) => Promise<CopilotGenerationRequest["context"]>;
+    /** Optional canonical Outbox intake; authorized before any history/model access. */
+    acceptQuestion?: () => Promise<void>;
     now?: () => Date;
     onProgress?: (text: string) => void;
     onActivity?: (activity: CopilotActivity) => void;
@@ -104,6 +106,8 @@ export async function runCopilotTurn(
   cancelled();
   const authority = await dependencies.authorize();
   if (!authority.canRespond) throw new CopilotTurnError("ACCESS_INVALID");
+  await dependencies.acceptQuestion?.();
+  cancelled();
   const read = async () => {
     const scope = { storeId: authority.storeId, ownerId: authority.ownerId };
     const conversation = await dependencies.db

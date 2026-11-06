@@ -1,3 +1,5 @@
+import type { CopilotTurnRequest } from "@fl-copilot/domain";
+import type { SyncPushRequest } from "@fl-copilot/sync-contracts";
 import type {
   EmailSenderPolicy,
   EmailSenderPolicyUpdate,
@@ -144,6 +146,10 @@ export interface SyncContextValue extends LocalSyncSnapshot {
     requestPreview(assetId: string): Promise<void>;
     retry(assetId: string): Promise<void>;
   };
+  prepareChatHandoff?(
+    storeId: string,
+    request: CopilotTurnRequest,
+  ): Promise<SyncPushRequest | undefined>;
   /** Canonical push/pull for text chat, without waiting for file/KPI jobs. */
   syncMessages?(storeId?: string): Promise<SyncSummary | undefined>;
   syncNow(storeId?: string): Promise<SyncSummary | undefined>;
@@ -584,6 +590,22 @@ export function SyncProvider({ children }: PropsWithChildren) {
     }));
     return snapshot;
   }, [database.sqlite, defaultStoreId, session?.user.id]);
+
+  const prepareChatHandoff = useCallback(
+    async (storeId: string, request: CopilotTurnRequest) => {
+      const scope = visualSession.current;
+      if (
+        !service ||
+        !scope ||
+        scope.userId !== session?.user.id ||
+        scope.storeId !== storeId ||
+        storeId !== defaultStoreId
+      )
+        throw Error("COPILOT_HISTORY_SCOPE_CHANGED");
+      return service.prepareCopilotHandoff(storeId, request);
+    },
+    [service, session?.user.id, defaultStoreId],
+  );
 
   const syncMessages = useCallback(
     async (storeId = defaultStoreId) => {
@@ -1184,6 +1206,7 @@ export function SyncProvider({ children }: PropsWithChildren) {
         ...state,
         syncNow,
         syncMessages,
+        prepareChatHandoff,
         originals,
         emailIntake,
         visuals: { requestPreview: requestVisualPreview, retry: retryVisual },

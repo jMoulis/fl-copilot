@@ -1487,3 +1487,102 @@ it.each([false, true])(
     }
   },
 );
+
+it("hands a pending plain question to the server without awaiting any sync/pull continuation", async () => {
+  const db = new DatabaseSync(":memory:"),
+    adapter = new Adapter(db),
+    f = chatFixture(randomUUID);
+  try {
+    await runLocalMigrations(adapter);
+    const repo = new CopilotConversationRepository(adapter, f);
+    const controller = new CopilotLocalChatController(repo, f, randomUUID);
+    const conversation = await controller.create();
+    await controller.edit(conversation.id, {
+      text: "Bonjour",
+      attachments: [],
+    });
+    const parent = await controller.send(conversation.id);
+    const service = new MobileSyncService(
+      adapter,
+      {
+        bootstrap: async () => {
+          throw Error("UNEXPECTED_NETWORK");
+        },
+        push: async () => {
+          throw Error("UNEXPECTED_NETWORK");
+        },
+        pull: async () => {
+          throw Error("UNEXPECTED_NETWORK");
+        },
+      },
+      { deviceId: f.deviceId, appVersion: "test", copilotOwnerId: f.ownerId },
+    );
+    // Another ordinary sync may already have selected the question: keep the same command ID.
+    await adapter.runAsync(
+      "UPDATE sync_outbox SET status='SYNCING' WHERE entity_id=?",
+      parent.id,
+    );
+    let asked = 0;
+    const delivery = new CopilotTurnDelivery(adapter, f, {
+      sync: async () => {
+        throw Error("UNEXPECTED_FULL_PIPELINE");
+      },
+      syncMessages: async () => {
+        expect(asked).toBe(1);
+        throw Error("OFFLINE_AFTER_REPLY");
+      },
+      prepareHandoff: (request) =>
+        service.prepareCopilotHandoff(f.storeId, request),
+      ask: async (request, _signal, _progress, _activity, synchronization) => {
+        asked++;
+        expect(
+          synchronization?.commands.map((command) => command.entityId),
+        ).toEqual([conversation.id, parent.id]);
+        expect(
+          synchronization?.commands.find(
+            (command) => command.entityId === parent.id,
+          )?.commandId,
+        ).toBe(
+          (await adapter.getFirstAsync<{ command_id: string }>(
+            "SELECT command_id FROM sync_outbox WHERE entity_id=?",
+            parent.id,
+          ))!.command_id,
+        );
+        return {
+          message: {
+            ...parent,
+            id: request.replyId,
+            role: "ASSISTANT",
+            text: "Bonjour !",
+            replyToMessageId: parent.id,
+          },
+          alreadyApplied: false,
+        };
+      },
+    });
+    expect(await delivery.deliver(conversation.id)).toBe("RECEIVED");
+    expect(asked).toBe(1);
+    expect((await controller.open(conversation.id)).pendingTurns).toEqual([]);
+    // No fabricated acknowledgement: the normal idempotent sync owns reconciliation.
+    expect(
+      (await adapter.getFirstAsync<{ status: string }>(
+        "SELECT status FROM sync_outbox WHERE entity_id=?",
+        parent.id,
+      ))!.status,
+    ).toBe("SYNCING");
+    const foreign = new MobileSyncService(adapter, {} as never, {
+      deviceId: f.deviceId,
+      appVersion: "test",
+      copilotOwnerId: randomUUID(),
+    });
+    expect(
+      await foreign.prepareCopilotHandoff(f.storeId, {
+        conversationId: conversation.id,
+        userMessageId: parent.id,
+        replyId: randomUUID(),
+      }),
+    ).toBeUndefined();
+  } finally {
+    db.close();
+  }
+});

@@ -1,3 +1,4 @@
+import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
 import {
   devicePushTokenRequestSchema,
   devicePushTokenResponseSchema,
@@ -123,6 +124,7 @@ export class ApiClient {
       onProgress(text: string): void;
       onActivity?(activity: CopilotActivity): void;
       backgroundCompletion?: boolean;
+      synchronization?: SyncPushRequest;
       memorySuggestions?: boolean;
       webResearch?: boolean;
       recommendationTracking?: boolean;
@@ -163,6 +165,12 @@ export class ApiClient {
     },
   ) {
     const input = copilotTurnRequestSchema.parse(raw);
+    const transportInput = copilotTurnTransportRequestSchema.parse({
+      ...input,
+      ...(streaming?.synchronization
+        ? { synchronization: streaming.synchronization }
+        : {}),
+    });
     const streamResult = streaming
       ? await (async () => {
           const response = await (streaming.fetch ?? fetch)(
@@ -317,7 +325,7 @@ export class ApiClient {
                   ? { "x-copilot-memory-suggestions": "1" }
                   : {}),
               },
-              body: JSON.stringify(input),
+              body: JSON.stringify(transportInput),
             },
           );
           if (!response.ok) {
@@ -358,7 +366,7 @@ export class ApiClient {
           signal,
           method: "POST",
           headers: authorizedStoreHeaders(accessToken, storeId),
-          body: JSON.stringify(input),
+          body: JSON.stringify(transportInput),
         },
         copilotTurnResultSchema,
       ));

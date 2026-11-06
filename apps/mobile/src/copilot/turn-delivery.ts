@@ -1,3 +1,4 @@
+import type { SyncPushRequest } from "@fl-copilot/sync-contracts";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { ApiClientError } from "@fl-copilot/api-client";
 import {
@@ -58,6 +59,9 @@ export class CopilotTurnDelivery {
       sync(): Promise<unknown>;
       /** Plain questions need canonical Outbox push/pull, not file upload jobs. */
       syncMessages?(): Promise<unknown>;
+      prepareHandoff?(
+        request: CopilotTurnRequest,
+      ): Promise<SyncPushRequest | undefined>;
       /** Existing private history endpoint; avoids replaying uploads/jobs while waiting. */
       readReply?(
         request: CopilotTurnRequest,
@@ -68,6 +72,7 @@ export class CopilotTurnDelivery {
         signal: AbortSignal,
         onProgress: (text: string) => void,
         onActivity: (activity: CopilotActivity) => void,
+        synchronization?: SyncPushRequest,
       ): Promise<unknown>;
       /** Testable, abortable backoff; no unbounded background retry loop. */
       waitForRetry?(milliseconds: number, signal: AbortSignal): Promise<void>;
@@ -118,8 +123,11 @@ export class CopilotTurnDelivery {
     const request = copilotTurnRequestSchema.parse(pending[0]);
     try {
       cancelled(signal);
-      const localParent = await this.db.getFirstAsync<{ payload_json: string }>(
-        "SELECT payload_json FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
+      const localParent = await this.db.getFirstAsync<{
+        payload_json: string;
+        sync_state: string;
+      }>(
+        "SELECT payload_json,sync_state FROM copilot_messages WHERE id=? AND store_id=? AND owner_id=? AND conversation_id=?",
         request.userMessageId,
         this.scope.storeId,
         this.scope.ownerId,
@@ -137,9 +145,22 @@ export class CopilotTurnDelivery {
         localUser.conversationId !== conversationId
       )
         throw Error("COPILOT_REPLY_PARENT_INVALID");
-      if (localUser.attachments.length === 0 && this.dependencies.syncMessages)
-        await this.dependencies.syncMessages();
-      else await this.dependencies.sync();
+      const plain = localUser.attachments.length === 0;
+      const synchronization = plain
+        ? await this.dependencies.prepareHandoff?.(request)
+        : undefined;
+      if (
+        !synchronization &&
+        !(
+          plain &&
+          this.dependencies.prepareHandoff &&
+          localParent.sync_state === "SYNCED"
+        )
+      ) {
+        if (plain && this.dependencies.syncMessages)
+          await this.dependencies.syncMessages();
+        else await this.dependencies.sync();
+      }
       cancelled(signal);
       const parent = await this.db.getFirstAsync<{
         sync_state: string;
@@ -178,7 +199,15 @@ export class CopilotTurnDelivery {
         });
         return "RECEIVED";
       }
-      if (parent.sync_state !== "SYNCED") return "WAITING";
+      if (
+        parent.sync_state !== "SYNCED" &&
+        !synchronization?.commands.some(
+          (command) =>
+            command.entityType === "copilot_message" &&
+            command.entityId === request.userMessageId,
+        )
+      )
+        return "WAITING";
       const current = await repo.get(conversationId);
       if (!current || current.status !== "ACTIVE")
         throw new Error("COPILOT_CONVERSATION_UNAVAILABLE");
@@ -213,6 +242,7 @@ export class CopilotTurnDelivery {
               if (!signal.aborted)
                 this.activityListeners.get(conversationId)?.(activity);
             },
+            synchronization,
           );
           break;
         } catch (error) {

@@ -125,3 +125,4 @@ export {
 } from "@fl-copilot/domain";
 
 export * from "./notifications";
+export * from "./copilot-handoff";

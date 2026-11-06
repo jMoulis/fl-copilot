@@ -230,6 +230,26 @@ export class OutboxRepository {
     return rows.map(mapRow);
   }
 
+  /** Read-only copy of canonical commands; ordinary sync still acknowledges them. */
+  async listCopilotHandoff(
+    storeId: string,
+    ownerId: string,
+    conversationId: string,
+    userMessageId: string,
+  ) {
+    const rows = await this.database.getAllAsync<OutboxRow>(
+      `SELECT * FROM sync_outbox WHERE store_id=? AND status IN ('PENDING','SYNCING')
+       AND json_extract(payload_json,'$.ownerId')=?
+       AND ((entity_type='copilot_conversation' AND entity_id=?) OR (entity_type='copilot_message' AND entity_id=?))
+       ORDER BY local_sequence ASC LIMIT 101`,
+      storeId,
+      ownerId,
+      conversationId,
+      userMessageId,
+    );
+    return rows.map(mapRow);
+  }
+
   /** Read-only diagnostics. Never expose a private command from another account. */
   async listFailures(storeId: string, ownerId?: string, afterSequence = 0) {
     const rows = await this.database.getAllAsync<{
