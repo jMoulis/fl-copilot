@@ -60,6 +60,7 @@ import {
   type CopilotGenerationFailure,
 } from "./response-service.js";
 import { buildCopilotResponseMessage } from "./response-message.js";
+import { provisionalConversationTitle } from "./conversation-store.js";
 import {
   appendCopilotResponse,
   appendCopilotToolRecord,
@@ -526,12 +527,18 @@ export async function runCopilotTurn(
         return reply;
       });
       if (!result) throw new Error("COPILOT_REPLY_COMMIT_FAILED");
-      if (!result.alreadyApplied && generation.titleProposal) {
+      const title =
+        generation.titleProposal ??
+        provisionalConversationTitle(
+          initial.conversation.title,
+          initial.parent.text,
+        );
+      if (!result.alreadyApplied && title) {
         // The answer is durable. The existing host lifecycle owns optional title work.
         try {
           dependencies.onTitleReady?.({
             message: result.message,
-            title: generation.titleProposal,
+            title,
             expectedTitle: initial.conversation.title,
           });
         } catch {

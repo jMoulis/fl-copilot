@@ -1,3 +1,4 @@
+import { directReferenceModelFixture } from "../../../../scripts/test-chat-fixtures";
 import { randomUUID, createHash } from "node:crypto";
 import { expect, it, vi } from "vitest";
 import {
@@ -219,6 +220,7 @@ it("does not expose incomplete source references during streaming", () => {
 });
 
 function envelope(output: unknown[], streaming = false) {
+  output = directReferenceModelFixture(output) as unknown[];
   if (streaming) {
     const events: unknown[] = [
       {

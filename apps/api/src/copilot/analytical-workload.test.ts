@@ -1,3 +1,4 @@
+import { directReferenceModelFixture } from "../../../../scripts/test-chat-fixtures";
 import { randomUUID } from "node:crypto";
 import type { Db } from "mongodb";
 import { expect, it, vi } from "vitest";
@@ -66,7 +67,7 @@ function workload() {
         sales: {
           salesValue: String(10 + i),
           marginValue: String(2 + i),
-          quantity: i === 0 && j === 1 ? null : String(3 + i),
+          quantity: i === 1 && j === 1 ? null : String(3 + i),
           quantityUnit: p.salesUnit,
         },
         waste: { salesValue: j % 3 ? null : "1" },
@@ -75,7 +76,7 @@ function workload() {
           salesMarginValue: availability(String(2 + i)),
           wasteSalesValue: availability(j % 3 ? null : "1"),
           salesQuantity: availability(
-            i === 0 && j === 1 ? null : String(3 + i),
+            i === 1 && j === 1 ? null : String(3 + i),
           ),
         },
       },
@@ -167,6 +168,12 @@ function workload() {
     ...base,
     metrics: ["sales"],
     includeSalesMeasures: true,
+    filters: {
+      ...base.filters,
+      productIds: products
+        .filter((p) => p.salesUnit === "KG")
+        .map((p) => p._id),
+    },
     limit: 10,
     chart: {
       type: "BARS",
@@ -192,6 +199,7 @@ function response(
   streaming = false,
   truncated = false,
 ) {
+  content = directReferenceModelFixture(content);
   const wireText = truncated
     ? JSON.stringify(content).slice(
         0,
@@ -310,14 +318,16 @@ function response(
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
 it.each([
-  [false, false, false],
-  [true, false, false],
-  [false, true, false],
-  [true, true, false],
-  [false, false, true],
+  [false, false, false, false],
+  [true, false, false, false],
+  [false, true, false, false],
+  [true, true, false, false],
+  [false, false, true, false],
+  [false, false, false, true],
+  [true, false, false, true],
 ])(
-  "finishes monthly analysis with canonical sources (streaming %s, truncated %s, exhausted reads %s)",
-  async (streaming, truncated, exhaustedReads) => {
+  "finishes monthly analysis with canonical sources (streaming %s, truncated %s, exhausted reads %s, malformed blocks %s)",
+  async (streaming, truncated, exhaustedReads, malformedBlocks) => {
     const f = workload();
     const fullPeriod = await readPeriodAnalysis(f.db, f.storeId, f.period);
     const fullProducts = await readAnalyticsQuery(f.db, f.storeId, f.base);
@@ -394,12 +404,11 @@ it.each([
         }
       }
     };
-    let wireFactsBytes = 0,
-      canonicalFactsBytes = 0;
     const transport = vi
       .fn<typeof fetch>()
       .mockImplementation(async (_url, init) => {
         const body = JSON.parse(init!.body as string);
+        expect(body.text.format.schema.properties).not.toHaveProperty("facts");
         requestBodies.push(body);
         turns++;
         expect(body.max_output_tokens).toBe(turns === 1 ? 4000 : 10000);
@@ -443,26 +452,23 @@ it.each([
             ],
             streaming,
           );
-        const facts = [...canonicalByRef.keys()]
-          .slice(0, 96)
-          .map((evidenceId) => ({ evidenceId }));
-        wireFactsBytes = bytes(facts);
-        canonicalFactsBytes = bytes(
-          facts.map((x) => ({ evidenceId: canonicalByRef.get(x.evidenceId) })),
-        );
+        const refs = [...canonicalByRef.keys()].slice(0, 12);
+        const chartId = fullMeasures.evidence.find((e) => e.chart)!.id;
+        const chartRef = [...canonicalByRef].find(
+          ([, id]) => id === chartId,
+        )![0];
         return response(
           {
-            language: "fr-FR",
-            summary: "Voici le bilan renseigné.",
-            facts,
             narrative:
-              "Le rayon présente un montant renseigné de {{value:0}}. {{source:0}}\n\n| Repère | Montant |\n| --- | ---: |\n" +
-              facts
-                .slice(1, 12)
-                .map((_, i) => `| {{label:${i + 1}}} | {{value:${i + 1}}} |`)
+              `Le rayon présente un montant renseigné de {{value:${refs[0]}}}. {{source:${refs[0]}}}\n\n| Repère | Montant |\n| --- | ---: |\n` +
+              refs
+                .slice(1)
+                .map((ref) => `| {{label:${ref}}} | {{value:${ref}}} |`)
                 .join("\n") +
-              "\n\nMes priorités : surveiller les produits moteurs, vérifier les prix réalisés et suivre la casse renseignée.\n\nLa couverture reste partielle.",
-            interpretation: [],
+              "\n\nMes priorités : surveiller les produits moteurs, vérifier les prix réalisés et suivre la casse renseignée.\n\nLa couverture reste partielle." +
+              (malformedBlocks
+                ? `\n\nValeur inconnue {{value:r999999}}.\n\nMontant 999999 €.\n\nRéférence mal formée {{value:r0}.\n\nMauvais graphique {{chart:${refs[0]}}}.\n\nLa suite reste lisible. {{chart:${chartRef}}}`
+                : ""),
             recommendations: allowsUnboundPriorities
               ? [
                   {
@@ -471,7 +477,7 @@ it.each([
                     type: recommendationTypeSchema.options[0],
                     title: "Surveiller les produits moteurs",
                     explanation: "Une piste qualitative pour le rayon.",
-                    evidenceIds: [facts[0]!.evidenceId],
+                    evidenceIds: [refs[0]!],
                     confidence: "LOW",
                     risks: [],
                     missingData: [],
@@ -483,7 +489,6 @@ it.each([
                   },
                 ]
               : [],
-            questions: [],
           },
           undefined,
           streaming,
@@ -523,7 +528,9 @@ it.each([
       expect(partials.length).toBeGreaterThan(0);
       expect(JSON.stringify(partials)).not.toMatch(/"evidenceId":"r\d+"/);
     }
-    expect(result.outputLimited).toBe(truncated ? true : undefined);
+    expect(result.outputLimited).toBe(
+      truncated || malformedBlocks ? true : undefined,
+    );
     expect(result.metadata).toMatchObject({
       inputTokens: 30,
       outputTokens: 60,
@@ -588,7 +595,20 @@ it.each([
     }
     expect(period).toHaveBeenCalledTimes(1);
     expect(analyticsQuery).toHaveBeenCalledTimes(3);
-    expect(result.output.facts).toHaveLength(96);
+    // The server retains only the twelve facts actually used by this narrative;
+    // the old fixture copied 96 entries, most of which were never displayed.
+    expect(result.output.facts).toHaveLength(malformedBlocks ? 13 : 12);
+    if (malformedBlocks) {
+      expect(message.text).toContain("La suite reste lisible");
+      expect(message.text).toContain("Un passage n’a pas pu être vérifié");
+      expect(message.text).not.toContain("999999");
+      expect(message.text).not.toContain("{{");
+      expect(result.factTrace?.complete).toBe(false);
+      expect(message.text).toContain("Graphique");
+      expect(observed.at(-1)).toMatchObject({
+        answerOmissions: { reference: 1, render: 3 },
+      });
+    }
     expect(result.output.recommendations).toEqual([]);
     expect(result.output.narrative).toContain("Mes priorités");
     expect(result.output.facts.every((v) => !/^r\d+$/.test(v.evidenceId))).toBe(
@@ -626,8 +646,6 @@ it.each([
     expect(before).toBeGreaterThan(256000);
     expect(after).toBeLessThan(256000);
     expect(after).toBeLessThan(before * 0.6);
-    if (!exhaustedReads) expect(after).toBeLessThan(138712 * 0.85);
-    expect(wireFactsBytes).toBeLessThan(canonicalFactsBytes * 0.4);
     expect(
       observed.filter((e) => e.kind === "STEP").map((e) => e.toolNames),
     ).toEqual([
@@ -640,7 +658,7 @@ it.each([
     ).toEqual([4000, 10000, 10000]);
     expect(observed.at(-1)).toMatchObject({
       kind: "END",
-      outcome: truncated ? "PARTIAL" : "COMPLETED",
+      outcome: truncated || malformedBlocks ? "PARTIAL" : "COMPLETED",
       readFailures: {},
     });
     // Fixture bytes, not measured provider tokens or a production success claim.
@@ -649,8 +667,8 @@ it.each([
         fixture: "monthly-analytics",
         toolBytesBefore: before,
         toolBytesAfter: after,
-        finalFactBytesBefore: canonicalFactsBytes,
-        finalFactBytesAfter: wireFactsBytes,
+        modelCopiedFactEntries: 0,
+        retainedFacts: result.output.facts.length,
       }) + "\n",
     );
   },

@@ -1,3 +1,4 @@
+import { directReferenceModelFixture } from "../../../../scripts/test-chat-fixtures";
 import { layoutScenarioFixture } from "../../../../scripts/test-layout-scenario-fixtures";
 import type { CopilotActivity } from "@fl-copilot/sync-contracts";
 import { completeLayoutGeometry } from "../../../../scripts/test-store-layout-fixtures";
@@ -56,6 +57,7 @@ function response(
   text = JSON.stringify({ answer: "Vérifier les ventes." }),
   status = "completed",
 ) {
+  text = directReferenceModelFixture(text) as string;
   return new Response(
     JSON.stringify({
       id: "resp-test",
