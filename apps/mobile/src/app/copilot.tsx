@@ -1510,18 +1510,22 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
   const refreshMenu = useCallback(() => {
     setMenu(true);
     setError(undefined);
-    void syncMessages?.(storeId).catch(() => undefined);
     const revision = ++topicRevision.current;
-    void repo
-      .list()
-      .then((rows) => {
-        if (mounted.current && revision === topicRevision.current)
+    const read = (expectedRevision: number) =>
+      repo.list().then((rows) => {
+        if (mounted.current && expectedRevision === topicRevision.current)
           setConversations(rows);
-      })
-      .catch(() => {
-        if (mounted.current && revision === topicRevision.current)
-          setError("Les conversations locales ne peuvent pas être lues.");
       });
+    void read(revision).catch(() => {
+      if (mounted.current && revision === topicRevision.current)
+        setError("Les conversations locales ne peuvent pas être lues.");
+    });
+    void syncMessages?.(storeId)
+      .then(() => {
+        if (mounted.current && revision === topicRevision.current)
+          return read(++topicRevision.current);
+      })
+      .catch(() => undefined);
   }, [repo, syncMessages, storeId]);
   const create = async () => {
     if (createLocked.current) return;

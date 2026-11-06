@@ -24,6 +24,7 @@ Official model/structured-output capabilities: https://developers.openai.com/api
 
 - **414 tests across eleven files pass, zero skips**, including disposable transactional Mongo, real SQLite sync, legacy history, provider/response, canonical handoff, notification lifetime, native menu/controller and client transport. No real model request.
 - Offline manual rename v2 over automatic remote v2 converges to canonical v3 with acknowledged Outbox and persistent manual lock. A stale rename carrying archive/deletion remains a conflict. Private owner/store, revoked access, deleted/archived conversations, duplicate replay, title failure and delayed title completion are covered.
+- Full CI initially identified an old ACK fixture echoing a command-only field and an incorrect rename cancellation label on deletion. The fixture now models the canonical public ACK, and deletion retains its existing cancellation code. The focused follow-up passes **78 tests across four files**, including offline conflict restart and deletion rollback. The menu also rereads SQLite after its existing chat pull completes, so a deferred title is visible without waiting for a broader sync.
 - Strict typecheck passes in all ten projects; targeted lint passes. API build/import and iOS Hermes export were successful; final delivery identities are recorded separately.
 - Mac is locked and the supported automatic unlock failed. Native prompt appearance, keyboard/cancel and owner-phone routing/title acceptance are not claimed. Existing build38 notification acceptance stays closed.
 

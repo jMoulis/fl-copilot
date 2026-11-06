@@ -299,7 +299,12 @@ export class CopilotConversationRepository {
     },
   ) {
     const current = () => {
-      if (ctx.signal?.aborted) throw Error("COPILOT_RENAME_CANCELLED");
+      if (ctx.signal?.aborted)
+        throw Error(
+          ctx.titleIntent === "MANUAL"
+            ? "COPILOT_RENAME_CANCELLED"
+            : "COPILOT_DELETE_CANCELLED",
+        );
     };
     current();
     e = copilotConversationSchema.parse(e);
