@@ -1,0 +1,29 @@
+# M8 — adaptive analytical completion, 6 November 2026
+
+## Owner decision and actual failure
+
+The owner’s third monthly analysis on source `829cd84` completes seven reads in two expert steps, then fails at exactly 4,000 output tokens (including 510 reasoning tokens) after 72,491 ms. The fallback code is COPILOT_AI_OUTPUT_LIMIT; there are no read failures. The title-after-failure behavior is owner-accepted. Monthly completion remains rejected. After explanation of the application limits, the owner explicitly authorizes adaptive output budgets, lighter analytical results and graceful bounded completion.
+
+## Changes
+
+Keep the ordinary expert ceiling at 4,000. Once at least 64 distinct canonical analytical facts have been accepted in the current generation, the SDK per-step setting permits the larger of the ordinary ceiling and COPILOT_AI_ANALYSIS_MAX_OUTPUT_TOKENS (default 10,000; configurable up to 16,000). A high ordinary override is never silently reduced. This is a volume-based heuristic, not a second classifier or a promise of more output. The light dispatcher remains 512 tokens. STEP diagnostics include the actual per-step output ceiling; fallback diagnostics distinguish base and analytical configuration. Existing model identities, deadlines, read/step bounds and retry count remain unchanged.
+
+Keep exact canonical evidence, IDs, source/version, source details, chart payloads and freshness digests on the server. The model-only evidence table now omits internal canonical fact/source IDs and revisions. Labels, exact values, units/coverage qualifications and details remain; native source links still use the unchanged original evidence. Nested evidence-reference fields and chartEvidenceId use the same turn-local refs, while product/document/candidate IDs remain canonical. Final/partial binding restores canonical fact IDs before grounding and storage. No new public schema, model, collection or dependency.
+
+For a purely analytical turn, the existing prepareStep concludes without more tools when the read allowance is used, the payload budget approaches its bound, or half the generation deadline is consumed. The final step receives the existing instructions with one concise close-now statement. Other business workflows keep their ordinary step handling. No automatic continuation or retry call is added.
+
+For an output-length stop only, recover completed paragraphs conservatively from the same model response. JSON parsing must first prove the fact array and preceding top-level members are fully closed. Decode only valid JSON string fragments ending at a complete paragraph boundary; discard the unfinished paragraph. Never repair the full JSON object or guess a cut fact ID. Require usable referenced data, drop recommendations/questions and visibly label the result partial. The normal source/numerical validation and message builder run afterward; unknown references or unsupported literal figures still fail. Recovery is disallowed on cancellation/deadline, failed reads, mixed business/document reads, absent metadata or unusable text. Full documents/actions never become implicitly approved by recovery. Mark fact provenance incomplete and emit END outcome PARTIAL, distinct from COMPLETED and FAILED.
+
+The public stored response contract stays compatible with build39. Safe recovered messages retain source links and chart support. Previously accepted title, history, synchronization and notifications reuse the existing paths.
+
+## Checks and measurements
+
+384 tests across eleven suites pass, zero skips, with real SDK streaming and non-streaming monthly workloads, known/read-budget exhaustion, full and cut responses, canonical source restoration and the actual response-service/message-builder path. The five-read case counts a cached duplicate against the same byte/read allowance, ends without tools, and adds no retry. Adversarial recovery cases cover unfinished references/arrays, quoted fake member names, escapes, missing paragraph boundaries, excessive input and unsupported/invented numerical evidence. Source rendering, charts, title failure behavior and notification previews retain their regressions. Ten-project strict typecheck, workspace lint, changed-file formatting and API build/import pass; exact-head CI and delivery are separate gates.
+
+Controlled four-read monthly fixture: 333,203 original bytes → 138,712 model bytes (58.4% smaller than original; 20.4% smaller than the previous 174,221-byte transport). Final fact references stay 13,232 → 2,007 bytes. These are fixture byte counts, not actual provider token savings. No paid synthetic model request was made. The token ceiling is a maximum, not prepaid or guaranteed use.
+
+Official provider references checked: https://developers.openai.com/api/docs/models/gpt-6.1-sol and https://developers.openai.com/api/docs/guides/reasoning . max_output_tokens includes reasoning and visible output; the provider supports output beyond the former application ceiling. The SDK’s installed prepareStep native per-step maxOutputTokens and toModelOutput interfaces are used directly.
+
+## Delivery and acceptance
+
+API-only: keep build39. Preserve source `829cd84` / deployment `dpl_9UprSh72PUY12rD72rXwj5DnWSXj` for rollback. Release only the exact tested tree, verify staged/public identity and connected health, then inspect one new ordinary owner monthly question. Full answer completion, answer usefulness and real token/cost changes remain unverified until that exchange. A partial answer must never be reported as completion of the entire requested analysis.

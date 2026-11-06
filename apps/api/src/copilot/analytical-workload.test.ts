@@ -15,14 +15,18 @@ import {
   createCopilotAiProvider,
   projectCopilotModelValue,
   type CopilotGenerationUsage,
+  type CopilotAiProvider,
 } from "./ai-provider";
 import { parseEnvironment } from "../config";
 import {
+  generateCopilotResponse,
   validateCopilotResponse,
   mergeCopilotCompletedEvidence,
 } from "./response-service";
 import { renderAnswerText } from "./answer-text";
 import { factDigest } from "./fact-context";
+import { buildCopilotResponseMessage } from "./response-message";
+import { chatFixture } from "../../../../scripts/test-chat-fixtures";
 
 function workload() {
   const storeId = randomUUID();
@@ -185,7 +189,14 @@ function response(
   content: unknown,
   calls?: Array<{ name: string; input: unknown }>,
   streaming = false,
+  truncated = false,
 ) {
+  const wireText = truncated
+    ? JSON.stringify(content).slice(
+        0,
+        JSON.stringify(content).indexOf("La couverture reste partielle.") + 10,
+      )
+    : JSON.stringify(content);
   if (streaming) {
     const events: unknown[] = [
       {
@@ -224,7 +235,7 @@ function response(
           type: "response.output_text.delta",
           item_id: id,
           output_index: 0,
-          delta: JSON.stringify(content),
+          delta: wireText,
         },
         {
           type: "response.output_item.done",
@@ -234,8 +245,11 @@ function response(
       );
     }
     events.push({
-      type: "response.completed",
+      type: truncated ? "response.incomplete" : "response.completed",
       response: {
+        ...(truncated
+          ? { incomplete_details: { reason: "max_output_tokens" } }
+          : {}),
         usage: {
           input_tokens: 10,
           output_tokens: 20,
@@ -255,7 +269,10 @@ function response(
     object: "response",
     created_at: 1,
     model: "fixture-expert",
-    status: "completed",
+    status: truncated ? "incomplete" : "completed",
+    ...(truncated
+      ? { incomplete_details: { reason: "max_output_tokens" } }
+      : {}),
     output: calls
       ? calls.map((c, i) => ({
           type: "function_call",
@@ -274,7 +291,7 @@ function response(
             content: [
               {
                 type: "output_text",
-                text: JSON.stringify(content),
+                text: wireText,
                 annotations: [],
               },
             ],
@@ -291,9 +308,15 @@ function response(
 }
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
-it.each([false, true])(
-  "finishes a monthly analytical workload with canonical sources and fixed output budget (streaming %s)",
-  async (streaming) => {
+it.each([
+  [false, false, false],
+  [true, false, false],
+  [false, true, false],
+  [true, true, false],
+  [false, false, true],
+])(
+  "finishes monthly analysis with canonical sources (streaming %s, truncated %s, exhausted reads %s)",
+  async (streaming, truncated, exhaustedReads) => {
     const f = workload();
     const fullPeriod = await readPeriodAnalysis(f.db, f.storeId, f.period);
     const fullProducts = await readAnalyticsQuery(f.db, f.storeId, f.base);
@@ -332,6 +355,7 @@ it.each([false, true])(
     const canonicalByRef = new Map<string, string>();
     let turns = 0;
     const collect = (body: Record<string, unknown>) => {
+      let resultIndex = 0;
       for (const item of body.input as Array<{
         type: string;
         output?: string;
@@ -341,19 +365,25 @@ it.each([false, true])(
         expect(value.unavailable).not.toBe(true);
         expect(value.evidence.columns).toEqual([
           "ref",
-          "id",
           "label",
           "value",
           "sourceType",
           "factKind",
-          "source",
           "detail",
           "extra",
         ]);
-        for (const [ref, id] of value.evidence.rows as string[][]) {
-          const prior = canonicalByRef.get(ref!);
+        const originalEvidence =
+          expected[Math.min(resultIndex++, expected.length - 1)]!.evidence;
+        for (const [index, row] of (
+          value.evidence.rows as string[][]
+        ).entries()) {
+          const ref = row[0]!,
+            id = originalEvidence[index]!.id;
+          expect(row[1]).toBe(originalEvidence[index]!.label);
+          expect(row[2]).toBe(originalEvidence[index]!.value);
+          const prior = canonicalByRef.get(ref);
           expect(prior === undefined || prior === id).toBe(true);
-          canonicalByRef.set(ref!, id!);
+          canonicalByRef.set(ref, id);
         }
       }
     };
@@ -364,7 +394,7 @@ it.each([false, true])(
       .mockImplementation(async (_url, init) => {
         const body = JSON.parse(init!.body as string);
         turns++;
-        expect(body.max_output_tokens).toBe(4000);
+        expect(body.max_output_tokens).toBe(turns === 1 ? 4000 : 10000);
         if (turns === 1) {
           const names = body.tools.map((tool: { name: string }) => tool.name);
           expect(names).toEqual(
@@ -379,6 +409,8 @@ it.each([false, true])(
           expect(names).not.toContain("commercial_pdf");
         }
         expect(body.stream === true).toBe(streaming);
+        if (exhaustedReads && turns === 3)
+          expect(body.tool_choice).toBe("none");
         if (turns === 1)
           return response(
             null,
@@ -393,7 +425,12 @@ it.each([false, true])(
         if (turns === 2)
           return response(
             null,
-            [{ name: "analytics_query", input: f.measures }],
+            [
+              { name: "analytics_query", input: f.measures },
+              ...(exhaustedReads
+                ? [{ name: "analytics_query", input: f.measures }]
+                : []),
+            ],
             streaming,
           );
         const facts = [...canonicalByRef.keys()]
@@ -421,6 +458,7 @@ it.each([false, true])(
           },
           undefined,
           streaming,
+          truncated,
         );
       });
     const period = vi.fn(async () => fullPeriod),
@@ -456,6 +494,43 @@ it.each([false, true])(
       expect(partials.length).toBeGreaterThan(0);
       expect(JSON.stringify(partials)).not.toMatch(/"evidenceId":"r\d+"/);
     }
+    expect(result.outputLimited).toBe(truncated ? true : undefined);
+    if (truncated)
+      expect(result.output.narrative).toContain("Cette réponse est partielle");
+    const onFailure = vi.fn();
+    const generation = await generateCopilotResponse(
+      {
+        model: "fixture-expert",
+        generate: vi.fn().mockResolvedValue(result),
+      } as CopilotAiProvider,
+      request,
+      undefined,
+      undefined,
+      undefined,
+      onFailure,
+    );
+    expect(generation.mode).toBe("AI");
+    expect(onFailure).not.toHaveBeenCalled();
+    const parent = {
+      ...chatFixture(randomUUID).message,
+      storeId: f.storeId,
+      text: request.userQuestion,
+      attachments: [],
+    };
+    const message = buildCopilotResponseMessage({
+      id: randomUUID(),
+      createdAt: parent.createdAt,
+      parent,
+      request,
+      generation,
+    });
+    expect(message.text).toContain("copilot-source:");
+    expect(message.text.includes("Cette réponse est partielle")).toBe(
+      truncated,
+    );
+    expect(message.text).not.toContain(
+      "L’analyse du copilote est momentanément indisponible",
+    );
     expect(turns).toBe(3);
     expect(period).toHaveBeenCalledTimes(1);
     expect(analyticsQuery).toHaveBeenCalledTimes(3);
@@ -485,10 +560,13 @@ it.each([false, true])(
       result.factTrace?.reads.find((r) => r.read.kind === "PERIOD")?.digest,
     ).toBe(factDigest(fullPeriod));
     const payloads = observed.filter((e) => e.kind === "TOOL_RESULT");
-    expect(payloads).toHaveLength(4);
+    expect(payloads).toHaveLength(exhaustedReads ? 5 : 4);
     const before = payloads.reduce((sum, e) => sum + e.originalBytes, 0),
       after = payloads.reduce((sum, e) => sum + e.modelBytes, 0);
-    expect(before).toBe(original.reduce((sum, v) => sum + bytes(v), 0));
+    expect(before).toBe(
+      original.reduce((sum, v) => sum + bytes(v), 0) +
+        (exhaustedReads ? bytes(original[3]) : 0),
+    );
     expect(before).toBeGreaterThan(256000);
     expect(after).toBeLessThan(256000);
     expect(after).toBeLessThan(before * 0.6);
@@ -500,9 +578,12 @@ it.each([false, true])(
       ["analytics_query"],
       [],
     ]);
+    expect(
+      observed.filter((e) => e.kind === "STEP").map((e) => e.outputTokenLimit),
+    ).toEqual([4000, 10000, 10000]);
     expect(observed.at(-1)).toMatchObject({
       kind: "END",
-      outcome: "COMPLETED",
+      outcome: truncated ? "PARTIAL" : "COMPLETED",
       readFailures: {},
     });
     // Fixture bytes, not measured provider tokens or a production success claim.

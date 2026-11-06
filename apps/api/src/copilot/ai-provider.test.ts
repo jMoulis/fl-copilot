@@ -395,6 +395,7 @@ it("validates independent server model and bounded limits without changing other
   const config = parseEnvironment({ NODE_ENV: "test" });
   expect(config.COPILOT_AI_MODEL).toBeUndefined();
   expect(config.COPILOT_AI_MAX_OUTPUT_TOKENS).toBe(4000);
+  expect(config.COPILOT_AI_ANALYSIS_MAX_OUTPUT_TOKENS).toBe(10000);
   expect(config.COPILOT_AI_TIMEOUT_MS).toBe(180000);
   for (const env of [
     { COPILOT_AI_MODEL: "https://untrusted.example" },
@@ -2615,23 +2616,25 @@ it.each([false, true])(
           headers: { "content-type": "application/json" },
         });
       }
-      expect(JSON.stringify(body)).toContain(evidence.id);
-      expect(JSON.stringify(body)).toContain(priceEvidence.id);
+      expect(JSON.stringify(body)).not.toContain(evidence.id);
+      expect(JSON.stringify(body)).not.toContain(priceEvidence.id);
       expect(JSON.stringify(body)).toContain("INCLUDING_VAT");
       if (includeConcentration)
-        expect(JSON.stringify(body)).toContain(
-          concentrationIds.productsFor80Percent,
-        );
+        expect(JSON.stringify(body)).toContain("productsFor80Percent");
       return response(
         JSON.stringify({
           language: "fr-FR",
           summary: "Voici le classement renseigné.",
           facts: [
-            { evidenceId: evidence.id },
-            { evidenceId: quantityEvidence.id },
-            { evidenceId: priceEvidence.id },
+            { evidenceId: "r0" },
+            { evidenceId: "r1" },
+            { evidenceId: "r2" },
             ...(includeConcentration
-              ? [{ evidenceId: concentrationIds.productsFor80Percent! }]
+              ? [
+                  {
+                    evidenceId: `r${3 + concentrationEvidence.findIndex((e) => e.id === concentrationIds.productsFor80Percent)}`,
+                  },
+                ]
               : []),
           ],
           narrative:

@@ -29,10 +29,8 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
     const staged = new Map(references);
     const byId = new Map([...staged].map(([ref, id]) => [id, ref]));
     let counter = next;
-    const sources: JSONValue[] = [],
-      details: JSONValue[] = [];
-    const sourceIndex = new Map<string, number>(),
-      detailIndex = new Map<string, number>();
+    const details: JSONValue[] = [];
+    const detailIndex = new Map<string, number>();
     const intern = (
       item: JSONValue,
       items: JSONValue[],
@@ -54,11 +52,11 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         value: amount,
         sourceType,
         factKind,
-        sourceId,
-        sourceVersion,
         detail,
         ...extra
       } = entry;
+      delete extra.sourceId;
+      delete extra.sourceVersion;
       let ref = byId.get(String(id));
       if (!ref) {
         do {
@@ -69,33 +67,52 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
       }
       return [
         ref,
-        id!,
         label!,
         amount!,
         sourceType!,
         factKind!,
-        intern([sourceId!, sourceVersion!], sources, sourceIndex),
         detail === undefined ? null : intern(detail, details, detailIndex),
         Object.keys(extra).length ? extra : null,
       ];
     });
+    // Only evidence references change; product/document/candidate IDs remain canonical.
+    const referenceFields = (
+      item: JSONValue,
+      inReference = false,
+    ): JSONValue => {
+      if (inReference && typeof item === "string")
+        return byId.get(item) ?? item;
+      if (Array.isArray(item))
+        return item.map((v) => referenceFields(v, inReference));
+      if (item && typeof item === "object")
+        return Object.fromEntries(
+          Object.entries(item).map(([key, v]) => [
+            key,
+            referenceFields(
+              v!,
+              inReference ||
+                key === "evidenceId" ||
+                key === "evidenceIds" ||
+                key === "chartEvidenceId",
+            ),
+          ]),
+        );
+      return item;
+    };
     const wire: JSONValue = {
-      ...value,
+      ...(referenceFields(value) as Record<string, JSONValue>),
       remainingReads,
       evidence: {
         columns: [
           "ref",
-          "id",
           "label",
           "value",
           "sourceType",
           "factKind",
-          "source",
           "detail",
           "extra",
         ],
         rows,
-        sources,
         details,
       },
     };
@@ -127,6 +144,9 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
     return value;
   };
   return {
+    get factCount() {
+      return references.size;
+    },
     prepare,
     bind,
     /** SDK toModelOutput: execution/replay still receives the original object. */

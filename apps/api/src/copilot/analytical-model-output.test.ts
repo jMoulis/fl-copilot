@@ -43,25 +43,27 @@ function fixture(count = 120) {
     evidence,
   };
 }
-function unpack(wire: unknown) {
-  const { rows, sources, details } = (
-    wire as {
-      evidence: { rows: unknown[][]; sources: unknown[][]; details: string[] };
-    }
-  ).evidence;
-  return rows.map(
-    ([, id, label, value, sourceType, factKind, source, detail, extra]) => ({
-      id,
-      label,
-      value,
-      sourceType,
-      factKind,
-      sourceId: sources[Number(source)]![0],
-      sourceVersion: sources[Number(source)]![1],
-      ...(detail === null ? {} : { detail: details[Number(detail)] }),
-      ...((extra as object) ?? {}),
-    }),
+function semantic(entries: object[]) {
+  return entries.map((entry) =>
+    Object.fromEntries(
+      Object.entries(entry).filter(
+        ([key]) => !["id", "sourceId", "sourceVersion"].includes(key),
+      ),
+    ),
   );
+}
+function unpack(wire: unknown) {
+  const { rows, details } = (
+    wire as { evidence: { rows: unknown[][]; details: string[] } }
+  ).evidence;
+  return rows.map(([, label, value, sourceType, factKind, detail, extra]) => ({
+    label,
+    value,
+    sourceType,
+    factKind,
+    ...(detail === null ? {} : { detail: details[Number(detail)] }),
+    ...((extra as object) ?? {}),
+  }));
 }
 it.each(["analytics-query", "period", "mongo"])(
   "preserves every exact field while sharing repeated evidence metadata: %s",
@@ -71,7 +73,7 @@ it.each(["analytics-query", "period", "mongo"])(
       digest = factDigest(value);
     const projection = createAnalyticalModelOutput([]),
       p = projection.prepare(family, value, 2)!;
-    expect(unpack(p.wire)).toEqual(value.evidence);
+    expect(unpack(p.wire)).toEqual(semantic(value.evidence));
     expect(p.wire).toMatchObject({
       query: value.query,
       rows: value.rows,
@@ -80,6 +82,8 @@ it.each(["analytics-query", "period", "mongo"])(
       unresolvedProductIds: ["missing"],
       remainingReads: 2,
     });
+    expect(JSON.stringify(p.wire)).not.toContain("unchanged-canonical-source-");
+    expect(JSON.stringify(p.wire)).not.toContain("immutable-canonical-source-");
     expect(value).toEqual(copy);
     expect(factDigest(value)).toBe(digest);
     const bytes = (v: unknown) => Buffer.byteLength(JSON.stringify(v));
@@ -138,10 +142,9 @@ it("does not expose or bind a rejected budget preview, and reuses references acr
       rows: [
         [
           "r0",
-          value.evidence[0]!.id,
           ...(
             first.wire as { evidence: { rows: unknown[][] } }
-          ).evidence.rows[0]!.slice(2),
+          ).evidence.rows[0]!.slice(1),
         ],
       ],
     },
@@ -177,7 +180,7 @@ it("keeps absent details distinct from empty strings, and preserves chart/extra 
       createAnalyticalModelOutput([]).prepare("analytics-query", value, 0)!
         .wire,
     ),
-  ).toEqual(value.evidence);
+  ).toEqual(semantic(value.evidence));
 });
 it("leaves nonanalytical workflows in their existing model shape", () => {
   const value = fixture(1),
@@ -186,4 +189,38 @@ it("leaves nonanalytical workflows in their existing model shape", () => {
   expect(result.wire).toBe(value);
   result.accept();
   expect(p.toModelOutput({ output: value }).value).toBe(value);
+});
+
+it("rewrites nested evidence references without altering product and document identifiers", () => {
+  const value = fixture(1),
+    id = value.evidence[0]!.id;
+  Object.assign(value, {
+    chartEvidenceId: id,
+    rows: [
+      {
+        productId: "canonical-product",
+        sourceDocumentId: "canonical-document",
+        evidenceIds: { current: id, reference: null },
+        nested: { evidenceId: id },
+      },
+    ],
+  });
+  const p = createAnalyticalModelOutput([]),
+    prepared = p.prepare("analytics-query", value, 1)!;
+  prepared.accept();
+  expect(prepared.wire).toMatchObject({
+    chartEvidenceId: "r0",
+    rows: [
+      {
+        productId: "canonical-product",
+        sourceDocumentId: "canonical-document",
+        evidenceIds: { current: "r0", reference: null },
+        nested: { evidenceId: "r0" },
+      },
+    ],
+  });
+  expect(p.factCount).toBe(1);
+  expect(p.bind({ facts: [{ evidenceId: "r0" }] })).toEqual({
+    facts: [{ evidenceId: id }],
+  });
 });
