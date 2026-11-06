@@ -405,6 +405,12 @@ type CopilotGenerationUsageDetails =
       readFailures: Partial<Record<CopilotReadFailure, number>>;
       // A failed call may have consumed tokens without returning usage.
       usageComplete: boolean;
+      failure?: {
+        kind: "PROVIDER" | "TIMEOUT" | "INVALID_OUTPUT" | "OTHER";
+        status?: number;
+        code?: string;
+        parameter?: string;
+      };
     };
 export type CopilotGenerationUsage = CopilotGenerationUsageDetails & {
   requestId: string;

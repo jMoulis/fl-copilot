@@ -324,3 +324,55 @@ it("removes signed/source URLs from the dispatch excerpt and keeps linked reques
   }).generate(f.request, copilotResponseSchema);
   expect(transport).toHaveBeenCalledTimes(2);
 });
+
+it.each([
+  [400, "invalid_json_schema", "text.format.schema"],
+  [400, "unsupported_value", "reasoning.effort"],
+  [404, "model_not_found", "model"],
+  [429, "insufficient_quota", "input"],
+  [403, "private-secret-value", "private-prompt-value"],
+])(
+  "records only safe diagnostics for HTTP %s / %s",
+  async (status, code, param) => {
+    const f = fixture(),
+      usage = vi.fn();
+    const transport = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            error: {
+              message: "private-message-and-sk-secret",
+              type: "invalid_request_error",
+              code,
+              param,
+            },
+          },
+          { status: Number(status) },
+        ),
+      )
+      .mockResolvedValueOnce(reply(expert, "expert-test"));
+    const result = await createCopilotAiProvider(f.config, transport, {
+      dispatchEnabled: true,
+      daily: vi.fn(),
+      onUsage: usage,
+    }).generate(f.request, copilotResponseSchema);
+    expect(result.metadata.requestedModel).toBe("expert-test");
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(usage.mock.calls.map(([e]) => e)).toContainEqual(
+      expect.objectContaining({
+        kind: "END",
+        purpose: "DISPATCH",
+        outcome: "FAILED",
+        failure: {
+          kind: "PROVIDER",
+          status: Number(status),
+          code: code === "private-secret-value" ? "OTHER" : code,
+          parameter: param === "private-prompt-value" ? "OTHER" : param,
+        },
+      }),
+    );
+    expect(JSON.stringify(usage.mock.calls)).not.toContain("private-");
+    expect(JSON.stringify(usage.mock.calls)).not.toContain("sk-secret");
+  },
+);

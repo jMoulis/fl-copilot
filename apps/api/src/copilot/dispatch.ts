@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateText, Output } from "ai";
+import { APICallError, NoObjectGeneratedError, generateText, Output } from "ai";
 import { z } from "zod";
 import { copilotResponseSchema } from "@fl-copilot/domain";
 import type {
@@ -54,6 +54,65 @@ export function buildDispatchInput(request: CopilotGenerationRequest) {
     answersAForm: !!request.answeredInformation,
   };
 }
+/** Only known provider codes/parameter names; never message, body, headers or prompt. */
+function failureDetails(
+  error: unknown,
+): NonNullable<Extract<CopilotGenerationUsage, { kind: "END" }>["failure"]> {
+  if (APICallError.isInstance(error)) {
+    let body: { error?: { code?: unknown; param?: unknown } } = {};
+    try {
+      body = JSON.parse(error.responseBody ?? "{}");
+    } catch {
+      /* Not JSON. */
+    }
+    const codes = [
+      "model_not_found",
+      "unsupported_parameter",
+      "unsupported_value",
+      "invalid_json_schema",
+      "invalid_request_error",
+      "invalid_api_key",
+      "insufficient_quota",
+      "rate_limit_exceeded",
+      "permission_denied",
+      "context_length_exceeded",
+    ];
+    const parameters = [
+      "model",
+      "reasoning.effort",
+      "text.verbosity",
+      "text.format",
+      "text.format.schema",
+      "max_output_tokens",
+      "input",
+    ];
+    const code =
+      typeof body?.error?.code === "string" && codes.includes(body.error.code)
+        ? body.error.code
+        : "OTHER";
+    const parameter =
+      typeof body?.error?.param === "string" &&
+      parameters.includes(body.error.param)
+        ? body.error.param
+        : "OTHER";
+    return {
+      kind: "PROVIDER",
+      ...(error.statusCode && error.statusCode >= 100 && error.statusCode <= 599
+        ? { status: error.statusCode }
+        : {}),
+      code,
+      parameter,
+    };
+  }
+  if (
+    error instanceof Error &&
+    ["AbortError", "TimeoutError"].includes(error.name)
+  )
+    return { kind: "TIMEOUT" };
+  if (NoObjectGeneratedError.isInstance(error))
+    return { kind: "INVALID_OUTPUT" };
+  return { kind: "OTHER" };
+}
 export async function dispatchCopilotQuestion(options: {
   request: CopilotGenerationRequest;
   apiKey: string;
@@ -70,6 +129,7 @@ export async function dispatchCopilotQuestion(options: {
     started = Date.now();
   let completed = false,
     usageKnown = false;
+  let failure: ReturnType<typeof failureDetails> | undefined;
   const report = (event: CopilotGenerationUsage) => {
     try {
       options.onUsage?.(event);
@@ -151,7 +211,8 @@ export async function dispatchCopilotQuestion(options: {
       outputTokens: usage.outputTokens ?? null,
     };
     return { titleProposal, simple: { output, metadata } };
-  } catch {
+  } catch (error) {
+    failure = failureDetails(error);
     signal?.throwIfAborted();
     // One failed/unavailable routing call falls back to the existing expert; never a retry loop.
     return {};
@@ -167,6 +228,7 @@ export async function dispatchCopilotQuestion(options: {
       initialContextBytes: Buffer.byteLength(prompt, "utf8"),
       readFailures: {},
       usageComplete: completed && usageKnown,
+      ...(failure ? { failure } : {}),
     });
   }
 }
