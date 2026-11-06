@@ -650,6 +650,14 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
         async (_url, init) => {
           const sent = JSON.parse(String(init?.body));
           if (!calls) expect(JSON.stringify(sent.tools)).toContain("chart");
+          const chartRef = calls
+            ? JSON.parse(
+                sent.input.find(
+                  (item: { type: string }) =>
+                    item.type === "function_call_output",
+                ).output,
+              ).chartEvidenceId
+            : undefined;
           const output =
             calls++ === 0
               ? [
@@ -671,13 +679,8 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
                       {
                         type: "output_text",
                         text: JSON.stringify({
-                          language: "fr-FR",
-                          summary: "Voici la comparaison.",
-                          facts: [{ evidenceId: result!.chartEvidenceId! }],
-                          narrative: "Voici la comparaison.\n\n{{chart:0}}",
-                          interpretation: [],
+                          narrative: `Voici la comparaison.\n\n{{chart:${chartRef}}}`,
                           recommendations: [],
-                          questions: [],
                         }),
                         annotations: [],
                       },

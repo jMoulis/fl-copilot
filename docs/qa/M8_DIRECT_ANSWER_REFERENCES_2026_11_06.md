@@ -18,7 +18,7 @@ After a new answer is durably committed, an absent model title falls back to a b
 
 ## Validation
 
-**390 tests in nine suites pass, zero skipped**, including 17 real transactional Mongo/SQLite title cases and the installed SDK/provider transports with controlled HTTP responses. Three absent-model-title cases fail against the previous turn service (success, timeout and output-limit), then pass with the fallback. Existing manual rename, unauthorized/deleted scope and replay tests remain intact.
+**403 tests in ten suites pass, zero skipped**, including 17 real transactional Mongo/SQLite title cases and the installed SDK/provider transports with controlled HTTP responses. Three absent-model-title cases fail against the previous turn service (success, timeout and output-limit), then pass with the fallback. Existing manual rename, unauthorized/deleted scope and replay tests remain intact.
 
 The monthly fixture now emits the direct model wire shape itself. Both streaming/non-streaming cases inject an unknown reference, an unsupported amount, a malformed marker and an invalid chart, while retaining an independently verified valid chart and the safe table/prose. Actual rendered message/source validation succeeds; omitted blocks are explicitly qualified and unverified text does not survive. The old fixture unnecessarily copied 96 facts while displaying twelve: only the twelve used facts (thirteen with the chart) are now constructed server-side. A shared test-only translator migrates older transport fixtures; public/native response fixtures keep their old format. Numeric/source validation of canonical stored responses is not weakened.
 
