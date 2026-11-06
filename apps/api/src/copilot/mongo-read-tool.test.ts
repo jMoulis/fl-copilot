@@ -187,6 +187,61 @@ it("accepts flexible comparisons, filters, derived fields, grouping and sorting 
     ),
   ).toEqual(pipeline);
 });
+it("accepts sorting quantity groups by their nested year and unit keys", () => {
+  const pipeline = [
+    {
+      $group: {
+        _id: { year: { $substrCP: ["$date", 0, 4] }, unit: "$quantityUnit" },
+        quantity: { $sum: "$quantity" },
+      },
+    },
+    { $sort: { "_id.year": 1, "_id.unit": 1 } },
+  ];
+  expect(
+    validateMongoReadPipeline(
+      "productDailyPerformance",
+      JSON.stringify(pipeline),
+    ),
+  ).toEqual(pipeline);
+});
+it.each([
+  "storeId.secret",
+  "ownerId.secret",
+  "_id.__proto__",
+  "_id.constructor",
+  "_id.prototype",
+  "_id.$where",
+  "_id..unit",
+  "_id.unit.",
+])(
+  "rejects unsafe nested sort path %s before database access",
+  async (path) => {
+    const collection = vi.fn();
+    const result = await readMongoExploration(
+      { collection } as unknown as Db,
+      storeId,
+      {
+        action: "AGGREGATE",
+        collection: "productDailyPerformance",
+        period,
+        pipeline: JSON.stringify([{ $sort: { [path]: 1 } }]),
+      },
+    );
+    expect(result.status).toBe("INVALID_QUERY");
+    expect(collection).not.toHaveBeenCalled();
+  },
+);
+it("does not retain a removed public root as a sortable path", () => {
+  expect(() =>
+    validateMongoReadPipeline(
+      "productDailyPerformance",
+      JSON.stringify([
+        { $project: { date: 1 } },
+        { $sort: { "productId.child": 1 } },
+      ]),
+    ),
+  ).toThrow();
+});
 it.each(
   [
     [{ $group: { _id: null, quantity: { $sum: "$quantity" } } }],

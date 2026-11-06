@@ -143,17 +143,17 @@ export function validateMongoReadPipeline(
   if (!Array.isArray(raw) || raw.length > 12)
     return invalid("Le pipeline accepte au maximum 12 étapes.");
   let fields = new Set(Object.keys(mongoReadDictionary[collection].fields));
+  // Match expression references: nested keys are reachable only from the public
+  // view or outputs of earlier stages, never from the underlying raw document.
+  const publicFieldPath = (path: string) =>
+    path.split(".").every(key) && fields.has(path.split(".")[0]!);
   let nodes = 0;
   function visit(value: unknown, depth = 0, literal = false): void {
     if (++nodes > 1000 || depth > 12) invalid("Expression trop complexe.");
     if (typeof value === "string") {
       if (value.length > 500) invalid("Valeur textuelle trop longue.");
       if (!literal && value.startsWith("$")) {
-        if (
-          value.startsWith("$$") ||
-          !value.slice(1).split(".").every(key) ||
-          !fields.has(value.slice(1).split(".")[0]!)
-        )
+        if (value.startsWith("$$") || !publicFieldPath(value.slice(1)))
           invalid("Référence de champ inconnue ; consulter mongo_list.");
       }
     } else if (typeof value === "number") {
@@ -206,11 +206,12 @@ export function validateMongoReadPipeline(
         if (name === "$match" && k.startsWith("$")) {
           if (!["$expr", "$and", "$or", "$nor"].includes(k))
             invalid("Filtre non autorisé.");
-        } else if (!key(k)) invalid("Nom de champ non autorisé.");
+        } else if (name === "$sort" ? !publicFieldPath(k) : !key(k))
+          invalid("Nom de champ non autorisé.");
         if (
           (name === "$match" || name === "$sort") &&
           !k.startsWith("$") &&
-          !fields.has(k)
+          !(name === "$sort" ? publicFieldPath(k) : fields.has(k))
         )
           invalid("Champ inconnu ; consulter mongo_list.");
         if (name === "$sort" && v !== 1 && v !== -1) invalid("Tri invalide.");

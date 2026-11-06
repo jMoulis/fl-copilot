@@ -1,5 +1,9 @@
 # M8 — hardening and pilot release
 
+## Monthly quantity follow-up — 6 November
+
+The owner confirms that the monthly analytical answer now displays successfully. A remaining quantity-total query fails on nested group-key sorting; a focused validator correction passes 67 tests, including real Mongo execution and before-fix regression, plus full typecheck/lint/format/API build. CI, merge and API delivery remain separate. Read-only source inspection and owner confirmation establish fixed-price banana ribbons with fractional quantities already retained from Mercalys; their cause remains unresolved, with no source/catalogue rewrite or invented unit conversion. [Evidence and boundaries](../qa/M8_QUANTITY_GROUP_SORT_2026_11_06.md). Broader M8 gates remain open.
+
 ## Authority and scope — owner arbitration, 5 November 2026
 
 The owner explicitly starts M8 after accepting the supplied build-33 chat Source/return and long-press/cancel recipe. M0–M6 and M7 workstreams 1/3/4/5/7 retain their functional iPhone pilot acceptance. Numerical counter-promotion/daily purchase tariffs and deeper measured implantation remain deferred (2/6). Missing final AI illustration files, truthful provenance and approval remain a separate explicit prerequisite, not a fabricated completion.
