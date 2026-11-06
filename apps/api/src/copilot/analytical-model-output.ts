@@ -109,6 +109,20 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
       return item;
     };
     const projected = referenceFields(value) as Record<string, JSONValue>;
+    // Preserve every character, including decimal points and whitespace. Only
+    // repeated prose is shared; the model still cites the same direct refs.
+    const detailParts: JSONValue[] = [];
+    const partIndex = new Map<string, number>();
+    const sharedDetails = details.map((detail) =>
+      typeof detail === "string"
+        ? detail
+            .split(/(?<=\. )/u)
+            .map((part) => intern(part, detailParts, partIndex))
+        : detail,
+    );
+    const shareDetails =
+      JSON.stringify({ details: sharedDetails, detailParts }).length <
+      JSON.stringify({ details }).length;
     // Query metrics repeat identical coverage objects for each product/metric.
     // Share those exact objects and name the metric columns once; no sampling.
     if (family === "analytics-query" && Array.isArray(projected.rows)) {
@@ -150,6 +164,38 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         };
       });
       if (coverages.length) projected.coverages = coverages;
+      // A query uses the same metric columns for each product. Name them once
+      // when all rows agree, retaining heterogeneous/future shapes verbatim.
+      const tables = projected.rows.map((row) => {
+        const metrics =
+          row && typeof row === "object" && !Array.isArray(row)
+            ? (row as Record<string, JSONValue>).metrics
+            : null;
+        return metrics && typeof metrics === "object" && !Array.isArray(metrics)
+          ? (metrics as Record<string, JSONValue>)
+          : null;
+      });
+      const first = tables[0];
+      if (
+        first &&
+        Array.isArray(first.columns) &&
+        tables.every(
+          (table) =>
+            table &&
+            Object.keys(table).length === 2 &&
+            Array.isArray(table.rows) &&
+            JSON.stringify(table.columns) === JSON.stringify(first.columns),
+        )
+      ) {
+        projected.metricColumns = first.columns;
+        projected.rows = projected.rows.map((row) => {
+          const record = row as Record<string, JSONValue>;
+          return {
+            ...record,
+            metrics: (record.metrics as Record<string, JSONValue>).rows!,
+          };
+        });
+      }
     }
     const wire: JSONValue = {
       ...projected,
@@ -165,7 +211,8 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
           "extra",
         ],
         rows,
-        details,
+        details: shareDetails ? sharedDetails : details,
+        ...(shareDetails ? { detailParts } : {}),
       },
     };
     return {
