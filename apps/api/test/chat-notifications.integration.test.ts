@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Db } from "mongodb";
+import type { CollectionOptions, Db } from "mongodb";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { parseEnvironment } from "../src/config";
 import { buildApp } from "../src/build-app";
@@ -106,6 +106,98 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         send,
       };
     }
+    /** Pause after the actual persisted reply read, before provider dispatch. */
+    function pauseReplyRead() {
+      const messages = db.collection("copilotMessages"),
+        collection = db.collection.bind(db),
+        findOne = messages.findOne.bind(messages);
+      let release!: () => void, reached!: () => void;
+      const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+        ready = new Promise<void>((resolve) => {
+          reached = resolve;
+        });
+      const lookup = vi
+        .spyOn(db, "collection")
+        .mockImplementation(((name: string, options?: CollectionOptions) =>
+          name === "copilotMessages"
+            ? messages
+            : collection(name, options)) as typeof db.collection);
+      const read = vi
+        .spyOn(messages, "findOne")
+        .mockImplementation(async (filter, options) => {
+          const result = await findOne(filter, options);
+          reached();
+          await gate;
+          return result;
+        });
+      return {
+        ready,
+        release,
+        restore: () => {
+          release();
+          read.mockRestore();
+          lookup.mockRestore();
+        },
+      };
+    }
+    it.each(["logout", "disable", "transfer", "membership", "expiry"])(
+      "does not dispatch a captured token when %s wins during reply lookup",
+      async (kind) => {
+        const f = await fixture();
+        const next = kind === "transfer" ? await fixture() : undefined;
+        await updateDevicePushToken(db, f.principal, f.deviceId, {
+          storeId: f.storeId,
+          pushToken: f.token,
+        });
+        const pause = pauseReplyRead();
+        const pending = notifyChatCompletion(db, f.principal, f.data, {
+          fetch: f.send,
+        });
+        try {
+          await pause.ready;
+          if (kind === "logout") await f.auth.logout(f.session.accessToken);
+          if (kind === "disable")
+            await updateDevicePushToken(db, f.principal, f.deviceId, {
+              storeId: f.storeId,
+              pushToken: null,
+            });
+          if (next)
+            await updateDevicePushToken(db, next.principal, next.deviceId, {
+              storeId: next.storeId,
+              pushToken: f.token,
+            });
+          if (kind === "membership")
+            await db
+              .collection("storeMemberships")
+              .updateOne(
+                { userId: f.principal.userId, storeId: f.storeId },
+                { $set: { active: false } },
+              );
+          if (kind === "expiry")
+            await db
+              .collection<{ _id: string }>("deviceSessions")
+              .updateOne(
+                { _id: f.principal.sessionId },
+                { $set: { expiresAt: new Date(0) } },
+              );
+          pause.release();
+          await pending;
+          expect(f.send).not.toHaveBeenCalled();
+          expect(
+            await db
+              .collection<{ _id: string }>("copilotMessages")
+              .countDocuments({ _id: f.reply.id }),
+          ).toBe(1);
+          if (next)
+            expect(await registeredChatPush(db, next.principal)).toBe(f.token);
+        } finally {
+          pause.restore();
+          await pending;
+        }
+      },
+    );
     it("binds the canonical HTTP registration to the live device/store/session", async () => {
       const f = await fixture(),
         app = buildApp(config, { database, auth: f.auth });
