@@ -151,17 +151,28 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await app.close();
       }
     });
-    it("sends only identities with generic text after an actual persisted reply", async () => {
+    it("sends a plain excerpt from the persisted reply while navigation data remains identities only", async () => {
       const f = await fixture();
       await updateDevicePushToken(db, f.principal, f.deviceId, {
         storeId: f.storeId,
         pushToken: f.token,
       });
+      await db.collection<{ _id: string }>("copilotMessages").updateOne(
+        { _id: f.reply.id },
+        {
+          $set: {
+            text: "**La banane vrac progresse.** Regarde [le détail](https://example.test/private/details). [Source](copilot-source:private-reference)",
+          },
+        },
+      );
       await notifyChatCompletion(db, f.principal, f.data, { fetch: f.send });
       expect(f.send).toHaveBeenCalledTimes(1);
       const body = JSON.parse(f.send.mock.calls[0]![1]!.body as string);
       expect(body.data).toEqual(f.data);
-      expect(JSON.stringify(body)).not.toContain(f.reply.text);
+      expect(body.body).toBe("La banane vrac progresse. Regarde le détail.");
+      expect(JSON.stringify(body.data)).not.toContain("banane");
+      expect(JSON.stringify(body)).not.toContain("private-reference");
+      expect(JSON.stringify(body)).not.toContain("example.test");
       expect(body.collapseId).toBe(f.reply.id);
       expect(f.send.mock.calls[0]![0]).toBe(
         "https://exp.host/--/api/v2/push/send",
