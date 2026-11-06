@@ -150,3 +150,7 @@ The owner clarifies that **token consumption is the primary consumption concern*
 ## 6 November — token routing and titles authorized
 
 The owner authorizes a bounded light route for simple requests and automatic titles with manual editing. One configurable light request handles routing, a simple answer and a title proposal, while expert analysis/tools remain unchanged. Titles reuse canonical conversation history/change stream; iPhone renames use SQLite/Outbox, with manual priority over automatic-only versions. No new model/collection, dependency or paid synthetic request. **414 targeted tests across eleven files pass, zero skips**, ten-project strict typecheck and targeted lint pass. Actual token savings, model account access, native prompt acceptance and delivery remain separate gates. [Implementation, sample, acceptance and limits](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md).
+
+### Build39 title feedback
+
+The owner reports missing automatic titles. Two real DISPATCH traces fail before a successful model step, leaving the ordinary expert fallback to answer. Light-route acceptance and savings are therefore still open. Add safe provider status/code/parameter diagnostics to the existing content-free END event; **270 tests in two files pass**, with API typecheck/lint. Exact failure cause and correction remain pending an observed provider result after diagnostic delivery; no new native binary or paid synthetic AI request. [Details](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md#build39-owner-test--title-missing-6-november).
