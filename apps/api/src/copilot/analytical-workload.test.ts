@@ -495,6 +495,10 @@ it.each([
       expect(JSON.stringify(partials)).not.toMatch(/"evidenceId":"r\d+"/);
     }
     expect(result.outputLimited).toBe(truncated ? true : undefined);
+    expect(result.metadata).toMatchObject({
+      inputTokens: 30,
+      outputTokens: 60,
+    });
     if (truncated)
       expect(result.output.narrative).toContain("Cette réponse est partielle");
     const onFailure = vi.fn();

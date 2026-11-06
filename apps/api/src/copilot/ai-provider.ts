@@ -884,6 +884,8 @@ export function createCopilotAiProvider(
         completed = false,
         outputLimited = false,
         allStepsHaveUsage = true;
+      let observedInputTokens = 0,
+        observedOutputTokens = 0;
       const readFailures: Partial<Record<CopilotReadFailure, number>> = {};
       const reportUsage = (event: CopilotGenerationUsageDetails) => {
         try {
@@ -1253,6 +1255,8 @@ export function createCopilotAiProvider(
             toolCalls: readonly unknown[];
           }) => {
             completedSteps++;
+            observedInputTokens += usage.inputTokens ?? 0;
+            observedOutputTokens += usage.outputTokens ?? 0;
             allStepsHaveUsage &&=
               usage.inputTokens != null && usage.outputTokens != null;
             reportUsage({
@@ -3800,7 +3804,13 @@ export function createCopilotAiProvider(
             output: recovered,
             finishReason: "length",
             response: error.response,
-            totalUsage: error.usage,
+            // SDK parse errors expose only the last step; metadata covers the turn.
+            totalUsage: {
+              inputTokens: allStepsHaveUsage ? observedInputTokens : undefined,
+              outputTokens: allStepsHaveUsage
+                ? observedOutputTokens
+                : undefined,
+            },
           };
           outputLimited = true;
           completeFactTrace = false;
