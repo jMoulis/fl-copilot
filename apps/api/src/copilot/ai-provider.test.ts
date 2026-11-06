@@ -8232,3 +8232,49 @@ it.each([
     expect(daily).toHaveBeenCalledTimes(Math.min(calls, 7));
   },
 );
+
+it.each(["none", "eligible", "suppressed"] as const)(
+  "restricts the model recommendation contract to supplied eligible candidates: %s",
+  async (pool) => {
+    const { copilotResponseSchema } = await import("@fl-copilot/domain");
+    const f = fixture();
+    if (pool === "none") f.request.context.batch.candidates = [];
+    if (pool === "suppressed")
+      f.request.context.batch.candidates =
+        f.request.context.batch.candidates.map((c) => ({
+          ...c,
+          status: "SUPPRESSED" as const,
+        }));
+    const eligible = f.request.context.batch.candidates
+      .filter((c) => c.status === "ELIGIBLE")
+      .map((c) => c.id);
+    if (pool === "eligible") expect(eligible.length).toBeGreaterThan(0);
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const contract = body.text.format.schema.properties.recommendations;
+      if (!eligible.length) expect(contract.maxItems).toBe(0);
+      else {
+        expect(contract.maxItems).toBe(3);
+        expect(contract.items.properties.candidateId.enum).toEqual(eligible);
+      }
+      return response(
+        JSON.stringify({
+          language: "fr-FR",
+          summary: "Voici les pistes pour ton rayon.",
+          facts: [],
+          narrative:
+            "Mes priorités : vérifier la fraîcheur, la visibilité et la disponibilité.",
+          interpretation: [],
+          recommendations: [],
+          questions: [],
+        }),
+      );
+    };
+    const result = await createCopilotAiProvider(f.config, transport).generate(
+      f.request,
+      copilotResponseSchema,
+    );
+    expect(result.output.recommendations).toEqual([]);
+    expect(result.output.narrative).toContain("Mes priorités");
+  },
+);

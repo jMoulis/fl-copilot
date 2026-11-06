@@ -3,6 +3,7 @@ import type { Db } from "mongodb";
 import { expect, it, vi } from "vitest";
 import {
   copilotResponseSchema,
+  recommendationTypeSchema,
   type CopilotAnalyticsQuery,
 } from "@fl-copilot/domain";
 import {
@@ -395,6 +396,8 @@ it.each([
         const body = JSON.parse(init!.body as string);
         turns++;
         expect(body.max_output_tokens).toBe(turns === 1 ? 4000 : 10000);
+        const allowsUnboundPriorities =
+          body.text.format.schema.properties.recommendations.maxItems !== 0;
         if (turns === 1) {
           const names = body.tools.map((tool: { name: string }) => tool.name);
           expect(names).toEqual(
@@ -451,9 +454,28 @@ it.each([
                 .slice(1, 12)
                 .map((_, i) => `| {{label:${i + 1}}} | {{value:${i + 1}}} |`)
                 .join("\n") +
-              "\n\nLa couverture reste partielle. Je te propose de surveiller les produits moteurs, puis les prix réalisés et la casse renseignée.",
+              "\n\nMes priorités : surveiller les produits moteurs, vérifier les prix réalisés et suivre la casse renseignée.\n\nLa couverture reste partielle.",
             interpretation: [],
-            recommendations: [],
+            recommendations: allowsUnboundPriorities
+              ? [
+                  {
+                    candidateId:
+                      "qualitative-priority-without-deterministic-candidate",
+                    type: recommendationTypeSchema.options[0],
+                    title: "Surveiller les produits moteurs",
+                    explanation: "Une piste qualitative pour le rayon.",
+                    evidenceIds: [facts[0]!.evidenceId],
+                    confidence: "LOW",
+                    risks: [],
+                    missingData: [],
+                    measurement: {
+                      objective: "Suivre les contributions",
+                      evidenceIds: [],
+                      reviewWhen: "Au prochain bilan",
+                    },
+                  },
+                ]
+              : [],
             questions: [],
           },
           undefined,
@@ -513,8 +535,8 @@ it.each([
       undefined,
       onFailure,
     );
+    expect(onFailure.mock.calls).toEqual([]);
     expect(generation.mode).toBe("AI");
-    expect(onFailure).not.toHaveBeenCalled();
     const parent = {
       ...chatFixture(randomUUID).message,
       storeId: f.storeId,
@@ -539,6 +561,8 @@ it.each([
     expect(period).toHaveBeenCalledTimes(1);
     expect(analyticsQuery).toHaveBeenCalledTimes(3);
     expect(result.output.facts).toHaveLength(96);
+    expect(result.output.recommendations).toEqual([]);
+    expect(result.output.narrative).toContain("Mes priorités");
     expect(result.output.facts.every((v) => !/^r\d+$/.test(v.evidenceId))).toBe(
       true,
     );
