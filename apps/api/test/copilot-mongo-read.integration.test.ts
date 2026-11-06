@@ -189,6 +189,76 @@ describe.skipIf(!uri)(
         costEstimated: "0.68",
       });
     });
+    it("executes monthly quantity grouping by year/unit with nested sorting, without mixing units or stores", async () => {
+      await db
+        .collection<Document & { _id: string }>("productDailyPerformance")
+        .insertMany([
+          row("2025-10-02", "12", "4", "PIECE"),
+          row("2025-11-01", "6", "2", "PIECE"),
+          row("2025-11-02", "9999", "9999", "PIECE"),
+          row("2026-10-04", "5.94", "6", "PIECE"),
+        ]);
+      const pipeline = [
+        {
+          $match: {
+            $or: [
+              { date: { $gte: "2025-10-02", $lte: "2025-11-01" } },
+              { date: { $gte: "2026-10-01", $lte: "2026-10-31" } },
+            ],
+          },
+        },
+        {
+          $group: {
+            _id: {
+              year: { $substrCP: ["$date", 0, 4] },
+              unit: "$quantityUnit",
+            },
+            quantity: { $sum: "$quantity" },
+            knownInputs: {
+              $sum: { $cond: [{ $ne: ["$quantity", null] }, 1, 0] },
+            },
+            observedInputs: { $sum: 1 },
+            partialInputs: {
+              $sum: { $cond: [{ $eq: ["$quantityStatus", "PARTIAL"] }, 1, 0] },
+            },
+          },
+        },
+        { $sort: { "_id.year": 1, "_id.unit": 1 } },
+      ];
+      const result = await readMongoExploration(db, storeId, {
+        action: "AGGREGATE",
+        collection: "productDailyPerformance",
+        period: { start: "2025-10-02", end: "2026-10-31" },
+        pipeline: JSON.stringify(pipeline),
+      });
+      expect(result.status).toBe("AVAILABLE");
+      expect(result.rows).toEqual([
+        {
+          _id: { year: "2025", unit: "PIECE" },
+          quantity: "6",
+          knownInputs: 2,
+          observedInputs: 2,
+          partialInputs: 0,
+        },
+        {
+          _id: { year: "2026", unit: "KG" },
+          quantity: "0.03",
+          knownInputs: 2,
+          observedInputs: 3,
+          partialInputs: 0,
+        },
+        {
+          _id: { year: "2026", unit: "PIECE" },
+          quantity: "6",
+          knownInputs: 1,
+          observedInputs: 1,
+          partialInputs: 0,
+        },
+      ]);
+      expect(
+        result.evidence.some((e) => e.label === "Résultat 1 · _id.unit"),
+      ).toBe(true);
+    });
     it("pairs recorded purchase amounts with only the same available quantity days, retaining partial coverage and scalar citations", async () => {
       const collection = db.collection<Document & { _id: string }>(
         "productDailyPerformance",
