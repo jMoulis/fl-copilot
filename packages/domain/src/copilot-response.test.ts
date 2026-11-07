@@ -28,6 +28,27 @@ describe("French copilot response contract", () => {
   it("accepts ordinary clarification without mandatory priorities", () => {
     expect(copilotResponseSchema.parse(response)).toEqual(response);
   });
+  it("allows server-built long-analysis references while retaining narrative and fact-shape bounds", () => {
+    const facts = Array.from({ length: 120 }, (_, i) => ({
+      evidenceId: `verified-${i}`,
+    }));
+    expect(
+      copilotResponseSchema.parse({ ...response, facts }).facts,
+    ).toHaveLength(120);
+    expect(
+      copilotResponseSchema.safeParse({
+        ...response,
+        facts: [{ evidenceId: "verified", value: "invented" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      copilotResponseSchema.safeParse({
+        ...response,
+        facts,
+        narrative: "x".repeat(12001),
+      }).success,
+    ).toBe(false);
+  });
   it("requires recommendation evidence and measurement without model-authored facts", () => {
     expect(
       copilotResponseSchema.safeParse({

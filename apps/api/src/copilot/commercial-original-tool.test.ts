@@ -82,6 +82,39 @@ const answer = {
   questions: [],
 };
 
+it("keeps original PDF observations when other reads already supply a long fact list", async () => {
+  const f = fixture();
+  const input = { sourceDocumentId: f.sourceDocumentId };
+  const output = await f.factory.tool.execute!(input, call);
+  await f.factory.tool.toModelOutput!({
+    input,
+    output,
+    toolCallId: "pdf-long",
+  });
+  const facts = Array.from({ length: 97 }, (_, i) => ({
+    evidenceId: `prior-read-${i}`,
+  }));
+  const bound = bindCommercialOriginalReadings(
+    {
+      ...answer,
+      facts,
+      documentReadings: [
+        {
+          sourceDocumentId: f.sourceDocumentId,
+          pageNumber: 1,
+          text: "Offre annoncée à vérifier",
+        },
+      ],
+    },
+    f.factory.documents,
+  );
+  const parsed = copilotResponseSchema.parse(bound.output);
+  expect(parsed.facts.slice(0, 97)).toEqual(facts);
+  expect(parsed.facts).toHaveLength(98);
+  expect(
+    renderAnswerText(parsed.narrative!, parsed.facts, bound.evidence),
+  ).toContain("Offre annoncée à vérifier");
+});
 it("delivers actual original PDF bytes with all weeks, without an extraction result, URL or saved binary", async () => {
   const f = fixture(),
     input = { sourceDocumentId: f.sourceDocumentId };
