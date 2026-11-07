@@ -460,19 +460,17 @@ export async function readAnalyticsQuery(
             m.reference,
             detail,
             "KPI",
-            m.comparedDays !== undefined
-              ? destination
-              : {
-                  ...destination,
-                  period: {
-                    ...(destination.period as Extract<
-                      AnalyticsExplorerContext["period"],
-                      { kind: "range" }
-                    >),
-                    current: query.referencePeriod,
-                    reference: null,
-                  },
-                },
+            {
+              ...destination,
+              period: {
+                ...(destination.period as Extract<
+                  AnalyticsExplorerContext["period"],
+                  { kind: "range" }
+                >),
+                current: query.referencePeriod,
+                reference: null,
+              },
+            },
           )
         : null;
       return {

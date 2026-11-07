@@ -160,6 +160,18 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
     expect(ids[0]).toBe(ids[2]);
     expect(ids[1]).not.toBe(ids[3]);
     expect(
+      result.evidence.find((e) => e.id === ids[1])!.analyticsContext!.period,
+    ).toMatchObject({
+      current: { start: "2026-10-19", end: "2026-10-20" },
+      reference: null,
+    });
+    expect(
+      result.evidence.find((e) => e.id === ids[3])!.analyticsContext!.period,
+    ).toMatchObject({
+      current: { start: "2026-10-26", end: "2026-10-27" },
+      reference: { start: "2026-10-19", end: "2026-10-20" },
+    });
+    expect(
       ids.map((id) => result.evidence.find((e) => e.id === id)?.value),
     ).toEqual(["20", "1010", "20", "10", "10"]);
     expect(
