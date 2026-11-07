@@ -117,6 +117,60 @@ describe.skipIf(!uri)("flexible canonical analytics queries", () => {
         snapshot(otherStore, randomUUID(), "2025-10-01", "999999.00"),
       ]);
   });
+  it("keeps full totals and distinct matched-day evidence without inventing a decline from missing dates", async () => {
+    await db
+      .collection<Document & { _id: string }>("productDailyPerformance")
+      .insertMany([
+        snapshot(storeId, banana, "2026-10-26", "20"),
+        snapshot(storeId, banana, "2026-10-19", "10"),
+        snapshot(storeId, banana, "2026-10-20", "1000"),
+      ]);
+    const result = await readAnalyticsQuery(
+      db,
+      storeId,
+      query({
+        currentPeriod: { start: "2026-10-26", end: "2026-10-27" },
+        referencePeriod: { start: "2026-10-19", end: "2026-10-20" },
+        filters: {
+          productIds: [banana],
+          labelContains: null,
+          category: null,
+          nature: null,
+        },
+        sort: { metric: "sales", value: "CHANGE", direction: "ASC" },
+      }),
+    );
+    const metric = result.rows[0]!.metrics[0]!;
+    expect(metric).toMatchObject({
+      current: "20",
+      reference: "1010",
+      comparedCurrent: "20",
+      comparedReference: "10",
+      comparedDays: 1,
+      change: "10",
+      changePercent: "100.00",
+    });
+    const ids = [
+      metric.evidenceIds.current,
+      metric.evidenceIds.reference,
+      metric.evidenceIds.comparedCurrent!,
+      metric.evidenceIds.comparedReference!,
+      metric.evidenceIds.change!,
+    ];
+    expect(ids[0]).toBe(ids[2]);
+    expect(ids[1]).not.toBe(ids[3]);
+    expect(
+      ids.map((id) => result.evidence.find((e) => e.id === id)?.value),
+    ).toEqual(["20", "1010", "20", "10", "10"]);
+    expect(
+      renderAnswerText(
+        "Comparaison : {{value:0}} contre {{value:1}}, écart {{value:2}}.",
+        [ids[2]!, ids[3]!, ids[4]!].map((evidenceId) => ({ evidenceId })),
+        result.evidence,
+      ),
+    ).toContain("20 € contre 10 €, écart 10 €");
+    expect(await db.collection("outboxCommands").countDocuments()).toBe(0);
+  });
   it("compares both theme products in one Monday-to-Monday read despite unknown waste", async () => {
     await db
       .collection<Document & { _id: string }>("products")

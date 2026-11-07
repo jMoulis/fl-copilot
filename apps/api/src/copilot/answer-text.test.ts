@@ -106,7 +106,7 @@ it("rounds monetary presentation without changing exact citations or quantity pr
     evidence.map((item) => ({ evidenceId: item.id })),
     evidence,
   );
-  expect(text).toContain("| 2,36 € | 0,12345 |");
+  expect(text).toContain("| 2,36 € | 0,12345 kg |");
   expect(text).toContain("1,10 €/kg HT");
   expect(text).toContain("Écart : 0,00 €");
   const source = JSON.parse(
@@ -296,4 +296,42 @@ it("interns repeated source snapshots and retains analytical destinations when c
     readAnswerSource("ref:0", rich.analyticsDestinations, rich.answerSources)
       .analyticsContext,
   ).toEqual(evidence[0]!.analyticsContext);
+});
+
+it("retains recorded price/quantity units in prose and tables without converting fractional pieces", () => {
+  const evidence = [
+    {
+      ...e[0]!,
+      id: "price",
+      label: "Prix moyen réalisé (€/kg) — Raisin",
+      value: "3.297589",
+    },
+    {
+      ...e[0]!,
+      id: "quantity",
+      label: "Quantité vendue (kg) — Raisin",
+      value: "39.82",
+    },
+    {
+      ...e[0]!,
+      id: "pieces",
+      label: "Quantité vendue (pièce) — Banane ruban",
+      value: "20.53",
+    },
+  ];
+  const selected = evidence.map((item) => ({ evidenceId: item.id }));
+  const text = renderAnswerText(
+    "Prix {{value:0}} TTC ; vendu {{value:1}} ; ruban {{value:2}}.",
+    selected,
+    evidence,
+  );
+  expect(text).toContain("3,30 €/kg TTC");
+  expect(text).toContain("39,82 kg");
+  expect(text).toContain("20,53 pièce");
+  expect(
+    renderAnswerText("{{value:0}} €/kg", selected, evidence),
+  ).not.toContain("€/kg €/kg");
+  expect(renderAnswerText("{{value:1}} kg", selected, evidence)).not.toContain(
+    "kg kg",
+  );
 });

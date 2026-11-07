@@ -228,11 +228,21 @@ export function executeAnalyticsQuery(input: {
         metric,
         current: r.comparison.currentValue,
         reference: r.comparison.referenceValue,
-        change: r.comparison.absoluteDifference,
-        changePercent: r.comparison.percentageDifference,
+        change: (r.matchedComparison ?? r.comparison).absoluteDifference,
+        changePercent: (r.matchedComparison ?? r.comparison)
+          .percentageDifference,
+        ...(r.matchedComparison
+          ? {
+              comparedDays: r.matchedDays!,
+              comparedCurrent: r.matchedComparison.currentValue,
+              comparedReference: r.matchedComparison.referenceValue,
+            }
+          : {}),
         currentCoverage: r.currentCoverage,
         referenceCoverage: r.referenceCoverage,
-        warnings: query.referencePeriod ? r.warnings : [],
+        warnings: query.referencePeriod
+          ? (r.matchedComparison?.warnings ?? r.warnings)
+          : [],
       };
     });
     return {
