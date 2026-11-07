@@ -343,6 +343,10 @@ function compareExplicitExplorerPeriod(input: {
     !!p.reference && dates.length === explorerDays(p.reference).length;
   const comparable =
     result.complete && closed && (equalLength || p.aggregation === "AVERAGE");
+  // A cited product-query comparison must reopen on the same matched weekdays.
+  // Department/custom source totals retain their existing independent-period semantics.
+  const paired =
+    p.basis === "OBSERVED_PRODUCTS" && closed ? result.matchedComparison : null;
   return {
     mode: "EXPLICIT" as const,
     sourceBasis: p.basis,
@@ -368,8 +372,8 @@ function compareExplicitExplorerPeriod(input: {
           status: "UNAVAILABLE" as const,
         },
     ),
-    comparison: comparable ? result.comparison : null,
-    comparedDays: comparable ? dates.length : 0,
+    comparison: paired ?? (comparable ? result.comparison : null),
+    comparedDays: paired ? result.matchedDays! : comparable ? dates.length : 0,
     comparisonDates: [] as { current: string; reference: string }[],
     comparisonStatus: comparable
       ? ("comparable" as const)

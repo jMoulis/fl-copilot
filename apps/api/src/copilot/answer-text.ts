@@ -161,14 +161,25 @@ function render(
             )
             .join(",")
         : raw;
-      return (
-        escape(formatted) +
-        (monetary &&
-        /^-?\d+(?:\.\d+)?$/.test(raw) &&
-        !/^\s*(?:[*_]+\s*)?(?:€|EUR\b)/i.test(text.slice(at + _m.length))
-          ? " €"
-          : "")
-      );
+      const recordedUnit = ["KPI", "COMPARISON"].includes(item.sourceType)
+        ? item.label.match(/\((€\/)?(kg|pièce|unité conditionnée)\)/iu)
+        : null;
+      const unit = recordedUnit
+        ? `${recordedUnit[1] ?? ""}${recordedUnit[2]}`
+        : monetary
+          ? "€"
+          : null;
+      const following = text
+        .slice(at + _m.length)
+        .replace(/^\s*(?:[*_]+\s*)?/, "");
+      const explicitUnit =
+        /^(?:€|EUR\b|kg\b|pièce\b|unité conditionnée\b)/iu.test(following);
+      // Use only the unit recorded on this exact evidence; never infer it from the catalogue.
+      const suffix =
+        unit && !explicitUnit && /^-?\d+(?:\.\d+)?$/.test(raw)
+          ? ` ${unit}`
+          : "";
+      return escape(formatted) + suffix;
     }
     if (kind === "label") return escape(item.label);
     if (kind === "chart" && !item.chart) throw Error("UNKNOWN_ANSWER_CHART");

@@ -419,3 +419,75 @@ it("filters computed groups by exact numeric conditions before ranking, excludin
   expect(r.rows[0]!.key).toBe(a.id);
   expect(r.rows[0]!.metrics[0]!.change).toBe("-5");
 });
+
+it("ranks aligned-week declines on jointly recorded weekdays while retaining full observed totals", () => {
+  const a = product("Produit incomplet"),
+    b = product("Produit complet");
+  const q = query({
+    currentPeriod: { start: "2026-10-26", end: "2026-10-27" },
+    referencePeriod: { start: "2026-10-19", end: "2026-10-20" },
+    sort: { metric: "sales", value: "CHANGE", direction: "ASC" },
+  });
+  const r = executeAnalyticsQuery({
+    storeId,
+    query: q,
+    products: [a, b],
+    points: [
+      point(a.id, "20", "2026-10-26"),
+      point(a.id, "10", "2026-10-19"),
+      point(a.id, "1000", "2026-10-20"),
+      point(b.id, "10", "2026-10-26"),
+      point(b.id, "10", "2026-10-27"),
+      point(b.id, "20", "2026-10-19"),
+      point(b.id, "20", "2026-10-20"),
+    ],
+  });
+  expect(r.rows[0]!.key).toBe(b.id);
+  expect(r.rows[1]!.metrics[0]).toMatchObject({
+    current: "20",
+    reference: "1010",
+    comparedCurrent: "20",
+    comparedReference: "10",
+    comparedDays: 1,
+    change: "10",
+    changePercent: "100.00",
+  });
+  const disjoint = executeAnalyticsQuery({
+    storeId,
+    query: q,
+    products: [a],
+    points: [point(a.id, "0", "2026-10-26"), point(a.id, "20", "2026-10-20")],
+  });
+  expect(disjoint.rows[0]!.metrics[0]).toMatchObject({
+    current: "0",
+    reference: "20",
+    comparedCurrent: null,
+    comparedReference: null,
+    comparedDays: 0,
+    change: null,
+    changePercent: null,
+  });
+});
+
+it("qualifies a matched comparison with its own baseline rather than an unpaired zero total", () => {
+  const a = product("Référence compensée");
+  const r = executeAnalyticsQuery({
+    storeId,
+    products: [a],
+    query: query({
+      currentPeriod: { start: "2026-10-26", end: "2026-10-27" },
+      referencePeriod: { start: "2026-10-19", end: "2026-10-20" },
+    }),
+    points: [
+      point(a.id, "20", "2026-10-26"),
+      point(a.id, "10", "2026-10-19"),
+      point(a.id, "-10", "2026-10-20"),
+    ],
+  });
+  expect(r.rows[0]!.metrics[0]).toMatchObject({
+    reference: "0",
+    comparedReference: "10",
+    changePercent: "100.00",
+  });
+  expect(r.rows[0]!.metrics[0]!.warnings).not.toContain("ZERO_REFERENCE");
+});

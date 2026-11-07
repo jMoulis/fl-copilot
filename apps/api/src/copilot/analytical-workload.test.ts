@@ -328,14 +328,8 @@ it.each([
   [false, false, false, false, true],
   [true, false, false, false, true],
 ])(
-  "finishes monthly analysis with canonical sources (streaming %s, truncated %s, exhausted reads %s, malformed blocks %s, large answer %s)",
-  async (
-    streaming,
-    truncated,
-    exhaustedReads,
-    malformedBlocks,
-    largeAnswer,
-  ) => {
+  "finishes monthly analysis with canonical sources (streaming %s, truncated %s, cached read repeat %s, malformed blocks %s, large answer %s)",
+  async (streaming, truncated, cachedRepeat, malformedBlocks, largeAnswer) => {
     const f = workload();
     const fullPeriod = await readPeriodAnalysis(f.db, f.storeId, f.period);
     const fullProducts = await readAnalyticsQuery(f.db, f.storeId, f.base);
@@ -525,8 +519,8 @@ it.each([
           expect(queryTool.description).toContain("reuse returned measures");
         }
         expect(body.stream === true).toBe(streaming);
-        if (exhaustedReads && turns === 2)
-          expect(body.tool_choice).toBe("none");
+        if (cachedRepeat && turns === 2)
+          expect(body.tool_choice).not.toBe("none"); // Cached repeats consume no distinct read.
         if (turns === 1)
           return response(
             null,
@@ -535,7 +529,7 @@ it.each([
               { name: "analytics_query", input: f.base },
               { name: "analytics_query", input: f.category },
               { name: "analytics_query", input: f.measures },
-              ...(exhaustedReads
+              ...(cachedRepeat
                 ? [{ name: "analytics_query", input: f.measures }]
                 : []),
             ],
@@ -691,14 +685,9 @@ it.each([
         previous.input,
       );
     }
-    if (exhaustedReads) {
-      const last = requestBodies.at(-1)!;
-      expect(last.tool_choice).toBe("none");
-      expect(last.input.at(-1)).toMatchObject({
-        role: "system",
-        content:
-          "Conclude now using completed verified reads. State any uncompleted scope once; do not infer absent data.",
-      });
+    if (cachedRepeat) {
+      expect(requestBodies.at(-1)!.tool_choice).not.toBe("none");
+      expect(observed.at(-1)).toMatchObject({ readFailures: {} });
     }
     expect(period).toHaveBeenCalledTimes(1);
     expect(analyticsQuery).toHaveBeenCalledTimes(3);
@@ -745,12 +734,12 @@ it.each([
       result.factTrace?.reads.find((r) => r.read.kind === "PERIOD")?.digest,
     ).toBe(factDigest(fullPeriod));
     const payloads = observed.filter((e) => e.kind === "TOOL_RESULT");
-    expect(payloads).toHaveLength(exhaustedReads ? 5 : 4);
+    expect(payloads).toHaveLength(cachedRepeat ? 5 : 4);
     const before = payloads.reduce((sum, e) => sum + e.originalBytes, 0),
       after = payloads.reduce((sum, e) => sum + e.modelBytes, 0);
     expect(before).toBe(
       original.reduce((sum, v) => sum + bytes(v), 0) +
-        (exhaustedReads ? bytes(original[3]) : 0),
+        (cachedRepeat ? bytes(original[3]) : 0),
     );
     expect(before).toBeGreaterThan(256000);
     expect(after).toBeLessThan(256000);

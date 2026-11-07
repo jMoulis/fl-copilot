@@ -982,3 +982,147 @@ it.each([
     expect(result.choiceCreates).toHaveLength(3);
   },
 );
+
+it.each([false, true])(
+  "lists and reads an existing original directly in a large tool catalogue, then renders source-specific TG advice (%s)",
+  async (streaming) => {
+    const f = fixture();
+    f.file.snapshot.source.filename = "pense-bete45.pdf";
+    f.file.snapshot.evidence[0]!.value = "pense-bete45.pdf";
+    const documents = vi.fn(async () => ({
+      documents: [
+        {
+          sourceDocumentId: f.sourceDocumentId,
+          filename: "pense-bete45.pdf",
+          createdAt: evaluatedAt,
+        },
+      ],
+      nextCursor: null,
+      evidence: f.file.snapshot.evidence,
+    }));
+    const batch = scoreCopilotPriorities({
+      storeId,
+      evaluatedAt,
+      candidates: [],
+    });
+    const request: CopilotGenerationRequest = {
+      requestId: randomUUID(),
+      storeId,
+      context: detectCopilotConflicts({ batch, intents: [] }),
+      userQuestion:
+        "Propose des TG à partir du PDF déjà importé sans rien modifier",
+    };
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const names = body.tools.map((t: { name: string }) => t.name);
+      expect(names).toEqual(
+        expect.arrayContaining([
+          "commercial_documents",
+          "commercial_pdf",
+          "commercial_plan",
+          "commercial_preparation",
+        ]),
+      );
+      expect(names).not.toContain("commercial_execution_preview");
+      expect(body.tools).toEqual(initialTools ?? body.tools);
+      initialTools ??= body.tools;
+      const name = calls === 0 ? "commercial_documents" : "commercial_pdf";
+      if (calls++ < 2)
+        return envelope(
+          [
+            {
+              type: "function_call",
+              name,
+              id: `fc_${calls}`,
+              call_id: `call_${calls}`,
+              arguments: JSON.stringify(
+                name === "commercial_documents"
+                  ? { cursor: null, limit: 5 }
+                  : { sourceDocumentId: f.sourceDocumentId },
+              ),
+              status: "completed",
+            },
+          ],
+          streaming,
+        );
+      expect(JSON.stringify(body)).toContain("data:application/pdf;base64,");
+      return envelope(
+        [
+          {
+            id: "msg_advice",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  narrative:
+                    "Dans pense-bete45.pdf, {{document:0}}.\n\nMon conseil : une présentation à thème en blocs séparés et peu profonds, avec du réassort.",
+                  recommendations: [],
+                  documentReadings: [
+                    {
+                      sourceDocumentId: f.sourceDocumentId,
+                      pageNumber: 2,
+                      text: "Le document annonce une animation avocat pour la semaine à venir",
+                    },
+                  ],
+                }),
+                annotations: [],
+              },
+            ],
+          },
+        ],
+        streaming,
+      );
+    };
+    let initialTools: unknown;
+    const unused = vi.fn();
+    const result = await createCopilotAiProvider(
+      parseEnvironment({
+        NODE_ENV: "test",
+        OPENAI_API_KEY: "sk-test-only-not-a-real-secret",
+        COPILOT_AI_MODEL: "test-model",
+        COPILOT_AI_TIMEOUT_MS: "3000",
+      }),
+      transport,
+      {
+        daily: unused,
+        commercialDocuments: documents,
+        commercialPdfOriginal: f.read,
+        commercialPdf: unused,
+        period: unused,
+        commercialPlan: unused,
+        commercialPreparation: unused,
+        commercialOffers: unused,
+        conversationHistory: unused,
+        fieldEvents: unused,
+        productSearch: unused,
+      },
+    ).generate(
+      request,
+      copilotResponseSchema,
+      undefined,
+      streaming ? vi.fn() : undefined,
+    );
+    expect(calls).toBe(3);
+    expect(documents).toHaveBeenCalledTimes(1);
+    expect(f.read).toHaveBeenCalledTimes(1);
+    expect(unused).not.toHaveBeenCalled();
+    expect(result.outputLimited).not.toBe(true);
+    const validated = validateCopilotResponse(result.output, {
+      ...request,
+      evidence: result.toolEvidence,
+    });
+    const text = renderAnswerText(
+      validated.narrative!,
+      validated.facts,
+      result.toolEvidence!,
+    );
+    expect(text).toContain("pense-bete45.pdf");
+    expect(text).toContain("animation avocat");
+    expect(text).toContain("Mon conseil");
+    expect(text).not.toContain("Un passage");
+  },
+);

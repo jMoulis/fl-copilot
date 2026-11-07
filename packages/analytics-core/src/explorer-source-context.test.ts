@@ -122,3 +122,31 @@ it("buckets broad source ranges by clipped calendar months, without hourly inven
     expected: 4,
   });
 });
+
+it("reopens observed-product comparison sources on the same jointly recorded weekdays", () => {
+  const r = compareExplorerPeriod({
+    period: {
+      kind: "range",
+      basis: "OBSERVED_PRODUCTS",
+      aggregation: "SUM",
+      current: { start: "2026-10-26", end: "2026-10-27" },
+      reference: { start: "2026-10-19", end: "2026-10-20" },
+    },
+    today: "2026-11-07",
+    kpiId: "sales",
+    points: [
+      p("2026-10-26", "20"),
+      p("2026-10-19", "10"),
+      p("2026-10-20", "1000"),
+    ],
+  });
+  expect(r.total).toBe("20");
+  expect(r.comparedDays).toBe(1);
+  expect(r.comparison).toMatchObject({
+    currentValue: "20",
+    referenceValue: "10",
+    absoluteDifference: "10",
+  });
+  expect(r.comparisonStatus).toBe("partial");
+  expect(r.comparison?.status).toBe("PARTIAL");
+});

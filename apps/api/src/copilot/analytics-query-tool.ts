@@ -115,6 +115,9 @@ export const analyticsQueryResultSchema = z.strictObject({
               reference: decimal,
               change: decimal,
               changePercent: decimal,
+              comparedDays: z.number().int().nonnegative().optional(),
+              comparedCurrent: decimal.optional(),
+              comparedReference: decimal.optional(),
               currentCoverage: coverage,
               referenceCoverage: coverage.nullable(),
               warnings: z.array(z.string()).max(10),
@@ -123,6 +126,8 @@ export const analyticsQueryResultSchema = z.strictObject({
                 reference: z.string().nullable(),
                 change: z.string().nullable(),
                 changePercent: z.string().nullable(),
+                comparedCurrent: z.string().optional(),
+                comparedReference: z.string().optional(),
               }),
             }),
           )
@@ -406,7 +411,11 @@ export async function readAnalyticsQuery(
       const base = `${sourceId}/${query.offset + i}/${m.metric}`;
       const c = m.currentCoverage,
         ref = m.referenceCoverage;
-      const detail = `${metricLabels[m.metric]} · ${r.label} · ${period}. ${query.aggregation === "SUM" ? "Somme" : "Moyenne des jours renseignés"}. ${c.availableDays} jours complets, ${c.partialDays} partiels, ${c.missingDays} absents ou indisponibles sur ${c.expectedDays}. Univers des produits/journées observés, pas estimation des absents. Classification actuelle du catalogue. ${query.referencePeriod ? `Référence ${query.referencePeriod.start} au ${query.referencePeriod.end} ; ${ref?.missingDays ?? 0} jours absents/indisponibles. ${m.warnings.join(", ")}.` : ""} Une variation ne prouve pas une cause.`;
+      const comparisonDetail =
+        m.comparedDays !== undefined
+          ? `Comparaison sur ${m.comparedDays} paires de jours de semaine renseignés des deux côtés ; écarts sur cette même base. current/reference sont les cumuls observés complets ; comparedCurrent/comparedReference sont la base appariée. Autres journées non estimées. `
+          : "";
+      const detail = `${comparisonDetail}${metricLabels[m.metric]} · ${r.label} · ${period}. ${query.aggregation === "SUM" ? "Somme" : "Moyenne des jours renseignés"}. ${c.availableDays} jours complets, ${c.partialDays} partiels, ${c.missingDays} absents ou indisponibles sur ${c.expectedDays}. Univers des produits/journées observés, pas estimation des absents. Classification actuelle du catalogue. ${query.referencePeriod ? `Référence ${query.referencePeriod.start} au ${query.referencePeriod.end} ; ${ref?.missingDays ?? 0} jours absents/indisponibles. ${m.warnings.join(", ")}.` : ""} Une variation ne prouve pas une cause.`;
       const destinationFilters = {
         ...query.filters,
         productId: query.groupBy === "PRODUCT" ? r.key : null,
@@ -436,37 +445,65 @@ export async function readAnalyticsQuery(
         metric: m.metric,
         filters: destinationFilters,
       };
+      const currentId = add(
+        `${base}/current`,
+        r.label,
+        m.current,
+        detail,
+        "KPI",
+        destination,
+      );
+      const referenceId = query.referencePeriod
+        ? add(
+            `${base}/reference`,
+            `${r.label} — référence — ${metricLabels[m.metric]}`,
+            m.reference,
+            detail,
+            "KPI",
+            {
+              ...destination,
+              period: {
+                ...(destination.period as Extract<
+                  AnalyticsExplorerContext["period"],
+                  { kind: "range" }
+                >),
+                current: query.referencePeriod,
+                reference: null,
+              },
+            },
+          )
+        : null;
       return {
         ...m,
         evidenceIds: {
-          current: add(
-            `${base}/current`,
-            r.label,
-            m.current,
-            detail,
-            "KPI",
-            destination,
-          ),
-          reference: query.referencePeriod
-            ? add(
-                `${base}/reference`,
-                `${r.label} — référence — ${metricLabels[m.metric]}`,
-                m.reference,
-                detail,
-                "KPI",
-                {
-                  ...destination,
-                  period: {
-                    ...(destination.period as Extract<
-                      AnalyticsExplorerContext["period"],
-                      { kind: "range" }
-                    >),
-                    current: query.referencePeriod,
-                    reference: null,
-                  },
-                },
-              )
-            : null,
+          current: currentId,
+          reference: referenceId,
+          ...(m.comparedDays !== undefined
+            ? {
+                comparedCurrent:
+                  m.comparedCurrent === m.current
+                    ? currentId
+                    : add(
+                        `${base}/compared-current`,
+                        `${r.label} — montant sur jours comparables (€)`,
+                        m.comparedCurrent ?? null,
+                        detail,
+                        "KPI",
+                        destination,
+                      ),
+                comparedReference:
+                  m.comparedReference === m.reference
+                    ? referenceId!
+                    : add(
+                        `${base}/compared-reference`,
+                        `${r.label} — référence sur jours comparables (€)`,
+                        m.comparedReference ?? null,
+                        detail,
+                        "KPI",
+                        destination,
+                      ),
+              }
+            : {}),
           change: query.referencePeriod
             ? add(
                 `${base}/change`,

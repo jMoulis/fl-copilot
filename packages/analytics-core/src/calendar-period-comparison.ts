@@ -84,8 +84,61 @@ export function calculateCalendarPeriodComparison(input: {
     aggregation: input.aggregation,
     referenceMethod: "explicit calendar periods supplied by user request",
   });
+  // Equal calendar windows with the same weekdays can compare only their
+  // jointly recorded dates. Full-period totals remain separate and unchanged.
+  const matched =
+    referencePeriod &&
+    current.length === reference.length &&
+    (Date.parse(currentPeriod.start) - Date.parse(referencePeriod.start)) %
+      (7 * 86400000) ===
+      0
+      ? current.flatMap((p, index) => {
+          const other = reference[index]!;
+          return p.value !== null &&
+            p.status !== "UNAVAILABLE" &&
+            other.value !== null &&
+            other.status !== "UNAVAILABLE"
+            ? [{ current: p, reference: other }]
+            : [];
+        })
+      : null;
+  const pairedResult = matched
+    ? compareCustomReference({
+        kpiId: input.kpiId,
+        currentPoints: matched.map((p) => p.current),
+        referencePoints: matched.map((p) => p.reference),
+        aggregation: input.aggregation,
+        referenceMethod: "matching recorded weekdays in equal calendar windows",
+      })
+    : null;
+  const matchedComparison =
+    pairedResult &&
+    matched &&
+    matched.length < current.length &&
+    pairedResult.status !== "UNAVAILABLE"
+      ? {
+          ...pairedResult,
+          status: "PARTIAL" as const,
+          qualityScore: Math.min(
+            pairedResult.qualityScore,
+            matched.length / current.length,
+          ),
+          warnings: [
+            ...new Set([
+              ...pairedResult.warnings,
+              ...comparison.warnings.filter(
+                (warning) =>
+                  warning === "PARTIAL_CURRENT" ||
+                  warning === "PARTIAL_REFERENCE",
+              ),
+            ]),
+          ],
+        }
+      : pairedResult;
   return {
     comparison,
+    matchedComparison,
+    matchedDays: matched?.length ?? null,
     currentCoverage,
     referenceCoverage,
     complete:

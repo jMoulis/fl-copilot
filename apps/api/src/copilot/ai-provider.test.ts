@@ -8280,3 +8280,24 @@ it.each(["none", "eligible", "suppressed"] as const)(
     expect(result.output.narrative).toContain("Mes priorités");
   },
 );
+
+it.each([false, true])(
+  "avoids rereading complete private history unless source metadata was omitted (%s)",
+  async (sourcesOmitted) => {
+    const f = fixture();
+    f.request.history = { messages: [], earlierMessagesOmitted: false };
+    f.request.recentSourcesOmitted = sourcesOmitted;
+    const reads = discoveryReads();
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      const names = body.tools.map((tool: { name: string }) => tool.name);
+      expect(names.includes("conversation_history")).toBe(sourcesOmitted);
+      return response();
+    };
+    await createCopilotAiProvider(f.config, transport, reads).generate(
+      f.request,
+      schema,
+    );
+    expect(reads.conversationHistory).not.toHaveBeenCalled();
+  },
+);

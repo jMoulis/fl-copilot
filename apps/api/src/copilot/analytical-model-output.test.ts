@@ -445,3 +445,91 @@ it("rewrites nested evidence references without altering product and document id
     facts: [{ evidenceId: id }],
   });
 });
+
+it("binds exact numeric source names and catalogue labels without admitting literal figures or guessing ambiguous names", () => {
+  const transport = createAnalyticalModelOutput([]);
+  const source = {
+    id: "owned-document",
+    label: "PDF original",
+    value: "offres45.pdf",
+    sourceType: "SOURCE_DOCUMENT",
+    factKind: "QUALITY",
+  };
+  transport.prepare("documents", { evidence: [source] }, 4)!.accept();
+  const bound = transport.bindAnswer({
+    narrative: "Le fichier offres45.pdf est disponible.",
+    recommendations: [],
+  });
+  expect(bound.omittedBlocks).toBe(0);
+  expect(
+    renderAnswerText(
+      String(bound.output.narrative),
+      bound.output.facts as Parameters<typeof renderAnswerText>[1],
+      [
+        copilotEvidenceSchema.parse({
+          ...source,
+          sourceId: "owned",
+          sourceVersion: null,
+        }),
+      ],
+    ),
+  ).toContain("offres45.pdf est disponible");
+  const forged = transport.bindAnswer({
+    narrative: "Le fichier offres46.pdf affiche un CA de 999 €.",
+    recommendations: [],
+  });
+  expect(() =>
+    renderAnswerText(
+      String(forged.output.narrative),
+      forged.output.facts as Parameters<typeof renderAnswerText>[1],
+      [],
+    ),
+  ).toThrow("INVALID_ANSWER_TEMPLATE");
+  const rejected = transport.prepare(
+    "documents",
+    { evidence: [{ ...source, id: "not-accepted", value: "rejet46.pdf" }] },
+    0,
+  )!;
+  void rejected;
+  const unaccepted = transport.bindAnswer({
+    narrative: "rejet46.pdf",
+    recommendations: [],
+  });
+  expect(() =>
+    renderAnswerText(
+      String(unaccepted.output.narrative),
+      unaccepted.output.facts as Parameters<typeof renderAnswerText>[1],
+      [],
+    ),
+  ).toThrow("INVALID_ANSWER_TEMPLATE");
+  transport
+    .prepare(
+      "documents",
+      { evidence: [{ ...source, id: "another-document" }] },
+      2,
+    )!
+    .accept();
+  const ambiguous = transport.bindAnswer({
+    narrative: "offres45.pdf",
+    recommendations: [],
+  });
+  expect(ambiguous.output.facts).toHaveLength(0);
+});
+
+it("uses a turn reference for an echoed numeric label whose canonical ID contains JSON braces", () => {
+  const transport = createAnalyticalModelOutput([]),
+    value = fixture(1);
+  transport.prepare("period", value, 0)!.accept();
+  const bound = transport.bindAnswer({
+    narrative: "Repère : Produit 0.",
+    recommendations: [],
+  });
+  expect(bound.omittedBlocks).toBe(0);
+  expect(
+    renderAnswerText(
+      String(bound.output.narrative),
+      bound.output.facts as Parameters<typeof renderAnswerText>[1],
+      value.evidence,
+    ),
+  ).toBe("Repère : Produit 0.");
+});

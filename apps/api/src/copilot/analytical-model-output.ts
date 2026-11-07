@@ -5,6 +5,35 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
   const canonical = new Set(initialIds);
   const references = new Map<string, string>();
   const analyticalIds = new Set<string>();
+  // Verbatim labels/filenames are source text, not model-authored measurements.
+  // Keep their canonical identity even when the model echoes them without a marker.
+  const verbatim = new Map<string, { id: string; kind: "label" | "value" }>();
+  const rememberText = (entries: Array<Record<string, JSONValue>>) => {
+    for (const entry of entries) {
+      const candidates = [
+        { text: entry.label, kind: "label" as const },
+        ...(entry.sourceType === "SOURCE_DOCUMENT" &&
+        entry.factKind === "QUALITY"
+          ? [{ text: entry.value, kind: "value" as const }]
+          : []),
+      ];
+      for (const { text, kind } of candidates) {
+        if (
+          typeof text !== "string" ||
+          !/\p{L}/u.test(text) ||
+          !/\p{N}/u.test(text) ||
+          /[{}\r\n]|https?:|copilot-source:/i.test(text)
+        )
+          continue;
+        const old = verbatim.get(text);
+        // Identical labels may name different records: never choose one implicitly.
+        verbatim.set(text, {
+          id: old && old.id !== entry.id ? "" : String(entry.id),
+          kind,
+        });
+      }
+    }
+  };
   let initialIndex = 0;
   for (const id of canonical) {
     let ref: string;
@@ -33,6 +62,7 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         wire: value as JSONValue,
         accept() {
           for (const id of ids) canonical.add(id);
+          rememberText(entries);
         },
       };
     const staged = new Map(references);
@@ -220,6 +250,7 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
       accept() {
         // prepare/accept run synchronously around the existing byte/scope checks.
         for (const id of ids) canonical.add(id);
+        rememberText(entries);
         for (const [ref, id] of staged) references.set(ref, id);
         for (const entry of entries) analyticalIds.add(String(entry.id));
         next = counter;
@@ -281,7 +312,34 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
       for (const block of output.narrative.split(/\n\s*\n/)) {
         const selected = [...facts];
         let invalid = false;
-        const narrative = block.replace(
+        const names = [...verbatim]
+          .filter(([, entry]) => entry.id && canonical.has(entry.id))
+          .map(([text]) => text)
+          .sort((a, b) => b.length - a.length);
+        const pattern = names.length
+          ? new RegExp(
+              `(?<![\\p{L}\\p{N}_])(?:${names.map((text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?![\\p{L}\\p{N}_])`,
+              "gu",
+            )
+          : null;
+        const protectedBlock = pattern
+          ? block
+              .split(/(\{\{[^{}]*\}\})/g)
+              .map((part) =>
+                part.startsWith("{{")
+                  ? part
+                  : part.replace(pattern, (text) => {
+                      const { kind, id } = verbatim.get(text)!;
+                      const ref =
+                        [...references].find(
+                          ([, canonicalId]) => canonicalId === id,
+                        )?.[0] ?? id;
+                      return `{{${kind}:${ref}}}`;
+                    }),
+              )
+              .join("")
+          : block;
+        const narrative = protectedBlock.replace(
           /\{\{(value|label|source|chart):([^{}\r\n]+)\}\}/g,
           (_token, kind: string, ref: string) => {
             const key = ref.trim();
