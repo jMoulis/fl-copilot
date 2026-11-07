@@ -135,9 +135,10 @@ it("never resolves a rejected read or leaks a reference from another generation"
       .omittedBlocks,
   ).toBe(1);
 });
-it("keeps the existing fact ceiling and drops a whole over-limit block, never a table cell", () => {
+it("retains verified facts beyond the obsolete model-list ceiling", () => {
   const p = createAnalyticalModelOutput([]),
     value = fixture(97);
+  value.evidence[96]!.label = "Casse enregistrée";
   p.prepare("period", value, 0)!.accept();
   const first = Array.from({ length: 96 }, (_, i) => `{{value:r${i}}}`).join(
     " ",
@@ -145,11 +146,21 @@ it("keeps the existing fact ceiling and drops a whole over-limit block, never a 
   const result = p.bindAnswer({
     narrative:
       first +
-      "\n\n| Autre | Valeur |\n| --- | --- |\n| Excès | {{value:r96}} |",
+      "\n\n| Repère | Valeur |\n| --- | --- |\n| Casse | {{value:r96}} |",
   });
-  expect(result.output.facts as unknown[]).toHaveLength(96);
+  expect(result.output.facts as unknown[]).toHaveLength(97);
+  expect(result.omittedBlocks).toBe(0);
+  expect(result.output.narrative).toContain("Casse");
+});
+it("normalizes marker whitespace without guessing or accepting an unknown reference", () => {
+  const p = createAnalyticalModelOutput([]);
+  p.prepare("period", fixture(1), 0)!.accept();
+  const result = p.bindAnswer({
+    narrative: "{{value: r0 }}\n\n{{value: r0.unknown }}",
+  });
+  expect(result.output.facts).toHaveLength(1);
+  expect(result.output.narrative).toContain("{{value:0}}");
   expect(result.omittedBlocks).toBe(1);
-  expect(result.output.narrative).not.toContain("Excès");
 });
 it("shares exact query coverages without losing nulls, zeroes, dates, warnings or evidence references", () => {
   const coverage = {

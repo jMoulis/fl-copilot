@@ -163,8 +163,6 @@ export function bindCommercialOriginalReadings(
     combined.push({ evidenceId: id });
     return combined.length - 1;
   });
-  if (combined.length > 96)
-    throw Error("COMMERCIAL_ORIGINAL_OBSERVATIONS_LIMIT");
   let narrative = originalNarrative;
   const unresolved = /\{\{document:(\d+)(?:\}\}|$)/g;
   narrative = narrative.replace(unresolved, (token, index: string) => {

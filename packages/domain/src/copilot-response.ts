@@ -8,7 +8,10 @@ export const copilotResponseSchema = z
   .object({
     language: z.literal("fr-FR"),
     summary: prose,
-    facts: z.array(z.object({ evidenceId: reference }).strict()).max(96),
+    // Server-built references to bounded, authorized reads. Narrative and native
+    // message/source limits apply independently; never discard a verified value
+    // because a long analysis uses more entries than the former model fact list.
+    facts: z.array(z.object({ evidenceId: reference }).strict()),
     narrative: z.string().trim().min(1).max(12000).optional(),
     interpretation: z.array(prose).max(8),
     recommendations: z

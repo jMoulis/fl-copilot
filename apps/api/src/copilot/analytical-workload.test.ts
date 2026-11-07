@@ -318,16 +318,24 @@ function response(
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
 
 it.each([
-  [false, false, false, false],
-  [true, false, false, false],
-  [false, true, false, false],
-  [true, true, false, false],
-  [false, false, true, false],
-  [false, false, false, true],
-  [true, false, false, true],
+  [false, false, false, false, false],
+  [true, false, false, false, false],
+  [false, true, false, false, false],
+  [true, true, false, false, false],
+  [false, false, true, false, false],
+  [false, false, false, true, false],
+  [true, false, false, true, false],
+  [false, false, false, false, true],
+  [true, false, false, false, true],
 ])(
-  "finishes monthly analysis with canonical sources (streaming %s, truncated %s, exhausted reads %s, malformed blocks %s)",
-  async (streaming, truncated, exhaustedReads, malformedBlocks) => {
+  "finishes monthly analysis with canonical sources (streaming %s, truncated %s, exhausted reads %s, malformed blocks %s, large answer %s)",
+  async (
+    streaming,
+    truncated,
+    exhaustedReads,
+    malformedBlocks,
+    largeAnswer,
+  ) => {
     const f = workload();
     const fullPeriod = await readPeriodAnalysis(f.db, f.storeId, f.period);
     const fullProducts = await readAnalyticsQuery(f.db, f.storeId, f.base);
@@ -509,9 +517,15 @@ it.each([
             ]),
           );
           expect(names).not.toContain("commercial_pdf");
+          const queryTool = body.tools.find(
+            (t: { name: string }) => t.name === "analytics_query",
+          );
+          expect(queryTool.description).toContain("{{chart:REF}}");
+          expect(queryTool.description).not.toContain("zero-based");
+          expect(queryTool.description).toContain("reuse returned measures");
         }
         expect(body.stream === true).toBe(streaming);
-        if (exhaustedReads && turns === 3)
+        if (exhaustedReads && turns === 2)
           expect(body.tool_choice).toBe("none");
         if (turns === 1)
           return response(
@@ -520,14 +534,6 @@ it.each([
               { name: "analytics_period", input: f.period },
               { name: "analytics_query", input: f.base },
               { name: "analytics_query", input: f.category },
-            ],
-            streaming,
-          );
-        collect(body);
-        if (turns === 2)
-          return response(
-            null,
-            [
               { name: "analytics_query", input: f.measures },
               ...(exhaustedReads
                 ? [{ name: "analytics_query", input: f.measures }]
@@ -535,10 +541,20 @@ it.each([
             ],
             streaming,
           );
-        const refs = [...canonicalByRef.keys()].slice(0, 12);
+        collect(body);
+        const refs = [...canonicalByRef.keys()].slice(
+          0,
+          largeAnswer ? 108 : 12,
+        );
         const chartId = fullMeasures.evidence.find((e) => e.chart)!.id;
         const chartRef = [...canonicalByRef].find(
           ([, id]) => id === chartId,
+        )![0];
+        const wasteId = fullProducts.rows[0]!.metrics.find(
+          (m) => m.metric === "waste",
+        )!.evidenceIds.current;
+        const wasteRef = [...canonicalByRef].find(
+          ([, id]) => id === wasteId,
         )![0];
         return response(
           {
@@ -548,6 +564,9 @@ it.each([
                 .slice(1)
                 .map((ref) => `| {{label:${ref}}} | {{value:${ref}}} |`)
                 .join("\n") +
+              (largeAnswer
+                ? `\n\nLa casse renseignée reste consultable : {{value:${wasteRef}}}. {{source:${wasteRef}}}`
+                : "") +
               "\n\nMes priorités : surveiller les produits moteurs, vérifier les prix réalisés et suivre la casse renseignée.\n\nLa couverture reste partielle." +
               (malformedBlocks
                 ? `\n\nValeur inconnue {{value:r999999}}.\n\nMontant 999999 €.\n\nRéférence mal formée {{value:r0}.\n\nMauvais graphique {{chart:${refs[0]}}}.\n\nLa suite reste lisible. {{chart:${chartRef}}}`
@@ -615,8 +634,8 @@ it.each([
       truncated || malformedBlocks ? true : undefined,
     );
     expect(result.metadata).toMatchObject({
-      inputTokens: 30,
-      outputTokens: 60,
+      inputTokens: 20,
+      outputTokens: 40,
     });
     if (truncated)
       expect(result.output.narrative).toContain("Cette réponse est partielle");
@@ -654,7 +673,12 @@ it.each([
     expect(message.text).not.toContain(
       "L’analyse du copilote est momentanément indisponible",
     );
-    expect(turns).toBe(3);
+    expect(turns).toBe(2);
+    if (largeAnswer) {
+      expect(message.text).toContain("La casse renseignée reste consultable");
+      expect(message.text).not.toContain("Un passage n’a pas pu être vérifié");
+      expect(result.outputLimited).toBeUndefined();
+    }
     // The provider sees the same tools/schema and an append-only input even
     // when the final step forces conclusion. This qualifies prefix stability,
     // not an actual remote cache hit or billed-token reduction.
@@ -680,7 +704,9 @@ it.each([
     expect(analyticsQuery).toHaveBeenCalledTimes(3);
     // The server retains only the twelve facts actually used by this narrative;
     // the old fixture copied 96 entries, most of which were never displayed.
-    expect(result.output.facts).toHaveLength(malformedBlocks ? 13 : 12);
+    expect(result.output.facts).toHaveLength(
+      largeAnswer ? 108 : malformedBlocks ? 13 : 12,
+    );
     if (malformedBlocks) {
       expect(message.text).toContain("La suite reste lisible");
       expect(message.text).toContain("Un passage n’a pas pu être vérifié");
@@ -731,14 +757,10 @@ it.each([
     expect(after).toBeLessThan(before * 0.3);
     expect(
       observed.filter((e) => e.kind === "STEP").map((e) => e.toolNames),
-    ).toEqual([
-      ["analytics_period", "analytics_query"],
-      ["analytics_query"],
-      [],
-    ]);
+    ).toEqual([["analytics_period", "analytics_query"], []]);
     expect(
       observed.filter((e) => e.kind === "STEP").map((e) => e.outputTokenLimit),
-    ).toEqual([4000, 10000, 10000]);
+    ).toEqual([4000, 10000]);
     expect(observed.at(-1)).toMatchObject({
       kind: "END",
       outcome: truncated || malformedBlocks ? "PARTIAL" : "COMPLETED",
@@ -748,6 +770,11 @@ it.each([
     process.stdout.write(
       JSON.stringify({
         fixture: "monthly-analytics",
+        providerSteps: requestBodies.length,
+        requestInputBytes: requestBodies.reduce(
+          (sum, b) => sum + bytes(b.input),
+          0,
+        ),
         toolBytesBefore: before,
         toolBytesAfter: after,
         modelCopiedFactEntries: 0,

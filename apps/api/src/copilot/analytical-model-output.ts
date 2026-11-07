@@ -284,7 +284,8 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         const narrative = block.replace(
           /\{\{(value|label|source|chart):([^{}\r\n]+)\}\}/g,
           (_token, kind: string, ref: string) => {
-            const id = references.get(ref) ?? ref;
+            const key = ref.trim();
+            const id = references.get(key) ?? key;
             if (!canonical.has(id)) {
               invalid = true;
               return "";
@@ -297,7 +298,7 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
             return `{{${kind}:${index}}}`;
           },
         );
-        if (invalid || selected.length > 96) {
+        if (invalid) {
           omittedBlocks++;
           continue;
         }
