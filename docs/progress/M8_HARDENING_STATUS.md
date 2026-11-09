@@ -1,5 +1,9 @@
 # M8 — hardening and pilot release
 
+## Dated known-plan lookup — 9 November
+
+The mixed owner retest has correct independently checked matched-day rankings and 61,166 input tokens but still misses relevant TG context after two refused reads. Extend the existing plan tool with a latest-started-week lookup, keeping exact/future week reads and dated user declarations distinct from current physical installation. Preserve explicit-week provenance, original scopes, read quotas and cache; no new agent, tool, prompt rule or database entity. Three selected old-runtime regressions and 331 passing targeted tests qualify the correction; delivery and live owner acceptance remain separate. [Evidence and boundaries](../qa/M8_GENERALIZATION_REVIEW_2026_11_07.md#mixed-analysis-retest-and-dated-plan-lookup--9-november).
+
 ## Original-PDF retest remains open — 7 November
 
 The owner retest still produces no useful TG proposal despite fewer steps/tokens; the original was not read and a paragraph fails template validation. Verified identical PDF copies are exposed as competing metadata, and ordered Markdown lists reproduce a false number rejection. Group exact same-name/hash copies within the existing bounded discovery page without deleting sources or changing cursors; normalize list ordinals in the existing binder and classify template failures without private prose. Seven prior-runtime regressions and 362 passing targeted tests qualify the application correction, not live-model success. [Evidence and acceptance boundaries](../qa/M8_GENERALIZATION_REVIEW_2026_11_07.md#original-pdf-owner-retest-and-follow-up). API-only, no new agent/prompt rule/collection or paid synthetic request; owner PDF/mixed acceptance remains open.

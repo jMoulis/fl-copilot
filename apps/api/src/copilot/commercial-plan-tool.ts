@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { Db } from "mongodb";
 import {
   copilotPlanReadInputSchema,
+  copilotPlanLookupInputSchema,
   copilotPlanReadResultSchema,
   copilotEvidenceSchema,
 } from "@fl-copilot/domain";
@@ -19,6 +20,7 @@ import {
   commercialExecutionPlanChecksum,
   commercialExecutionSameTarget,
   commercialExecutionProgress,
+  currentCommercialWeek,
   commercialMechanismDescription,
 } from "@fl-copilot/commercial-core";
 import {
@@ -89,9 +91,26 @@ export async function readCommercialPlan(
   db: Db,
   storeId: string,
   raw: unknown,
+  now = new Date(),
 ) {
   z.uuid().parse(storeId);
-  const input = copilotPlanReadInputSchema.parse(raw);
+  const lookup = copilotPlanLookupInputSchema.parse(raw);
+  let weekStart = lookup.weekStart;
+  if (weekStart === null) {
+    const currentWeek = currentCommercialWeek(now).start;
+    const latest = await db
+      .collection<WeekPlanDocument>("commercialWeekPlans")
+      .findOne(
+        { storeId, weekStart: { $lte: currentWeek } },
+        {
+          projection: { weekStart: 1 },
+          sort: { weekStart: -1 },
+          maxTimeMS: 2000,
+        },
+      );
+    weekStart = latest?.weekStart ?? currentWeek;
+  }
+  const input = copilotPlanReadInputSchema.parse({ ...lookup, weekStart });
   const { p, proposals, records, matched, exceeded, status } =
     await readExecutionContext(db, storeId, input.weekStart);
   const page = exceeded

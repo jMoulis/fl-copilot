@@ -246,6 +246,7 @@ import {
   type ProductAnalysisResult,
 } from "./product-analysis-tool.js";
 import { z } from "zod";
+import { currentCommercialWeek } from "@fl-copilot/commercial-core";
 import { createOpenAI } from "@ai-sdk/openai";
 import {
   generateText,
@@ -283,7 +284,7 @@ import {
   copilotNeedCatalogueResultSchema,
   copilotNeedMembershipInputSchema,
   copilotNeedMembershipResultSchema,
-  copilotPlanReadInputSchema,
+  copilotPlanLookupInputSchema,
   copilotPlanReadResultSchema,
   copilotReceiptInputSchema,
   copilotReceiptResultSchema,
@@ -704,7 +705,7 @@ export function createCopilotAiProvider(
       input: z.infer<typeof copilotActionReviewInputSchema>,
     ): Promise<z.infer<typeof actionReviewResultSchema>>;
     commercialPlan?(
-      input: z.infer<typeof copilotPlanReadInputSchema>,
+      input: z.infer<typeof copilotPlanLookupInputSchema>,
     ): Promise<z.infer<typeof copilotPlanReadResultSchema>>;
     receiptDocuments?(
       input: z.infer<typeof copilotDocumentsInputSchema>,
@@ -2774,8 +2775,8 @@ export function createCopilotAiProvider(
                 ? {
                     commercial_plan: tool({
                       description:
-                        "Read the saved validated weekly plan and shared signage/TG checklist with exact revision/checksum-matching user declarations. Monday plus bounded task offset/limit. Plan sources are not revalidated here; DONE is user-declared, not automatic field proof. Missing plan/oversized reads have unknown progress. No business writes.",
-                      inputSchema: copilotPlanReadInputSchema,
+                        "Read the saved plan and signage/TG checklist with exact revision/checksum-matching user declarations. Set weekStart to an exact Monday for a particular week, or null for the latest saved plan whose week has started. The returned dates scope the plan and declarations; an older declaration does not prove today's installation. Bounded task offset/limit. Plan sources are not revalidated here; DONE is user-declared, not automatic field proof. Unknown progress for missing/oversized plans. No business writes.",
+                      inputSchema: copilotPlanLookupInputSchema,
                       execute: (input) =>
                         executeRead(
                           JSON.stringify(["commercial-plan", input]),
@@ -2784,7 +2785,13 @@ export function createCopilotAiProvider(
                               await reads.commercialPlan!(input),
                             );
                             if (
-                              result.weekStart !== input.weekStart ||
+                              (input.weekStart !== null &&
+                                result.weekStart !== input.weekStart) ||
+                              (input.weekStart === null &&
+                                result.weekStart >
+                                  currentCommercialWeek(
+                                    new Date(batch.evaluatedAt),
+                                  ).start) ||
                               result.tasks.some(
                                 (t) =>
                                   t.proposal.storeId !== request.storeId ||
