@@ -3,7 +3,7 @@ import {
   bootstrapResponseSchema,
 } from "@fl-copilot/sync-contracts";
 import { randomUUID, createHash } from "node:crypto";
-import { beforeAll, afterAll, describe, it, expect } from "vitest";
+import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { parseEnvironment } from "../src/config.js";
 import { createMongoDatabase } from "../src/database/mongo.js";
 import type { DatabaseService } from "../src/database/types.js";
@@ -206,7 +206,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       await processor.pending();
       const db = await database.getDb();
       const original = await db
-        .collection<{ _id: string }>("commercialDocumentJobs")
+        .collection<{ _id: string; [key: string]: unknown }>(
+          "commercialDocumentJobs",
+        )
         .findOne({ _id: s.sourceDocumentId });
       await Promise.all([
         processor.process(s.storeId, s.sourceDocumentId, 1),
@@ -228,7 +230,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(calls).toBe(1);
       expect(
         await db
-          .collection<{ _id: string }>("commercialDocumentJobs")
+          .collection<{ _id: string; [key: string]: unknown }>(
+            "commercialDocumentJobs",
+          )
           .findOne({ _id: s.sourceDocumentId }),
       ).toEqual(original);
       expect(
@@ -318,7 +322,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         database,
         async (path, expiry) => {
           signed.push({ path, expiry });
-          return "https://private.blob.vercel-storage.com/original.pdf?signed";
+          return "https://test.private.blob.vercel-storage.com/original.pdf?signed";
         },
         () => now,
       );
@@ -332,6 +336,61 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       ).rejects.toThrow();
       expect(signed).toHaveLength(1);
     }, 20000);
+    it.each([
+      "deleted-before",
+      "deleted-during",
+      "key-changed",
+      "expired",
+      "unsafe-url",
+    ])(
+      "never returns a withdrawn or unusable original capability: %s",
+      async (change) => {
+        const s = { storeId: randomUUID(), sourceDocumentId: randomUUID() },
+          sources = (await database.getDb()).collection<{
+            _id: string;
+            [key: string]: unknown;
+          }>("sourceDocuments");
+        await sources.insertOne({
+          _id: s.sourceDocumentId,
+          storeId: s.storeId,
+          sourceType: "WEEKLY_COMMERCIAL_PDF",
+          remoteUploadStatus: "CONFIRMED",
+          objectKey: "private-original.pdf",
+          originalFilename: "original.pdf",
+        });
+        let clock = new Date("2026-11-09T08:00:00Z");
+        if (change === "deleted-before")
+          await sources.updateOne(
+            { _id: s.sourceDocumentId },
+            { $set: { deletedAt: clock } },
+          );
+        const sign = vi.fn(async () => {
+          if (change === "deleted-during")
+            await sources.updateOne(
+              { _id: s.sourceDocumentId },
+              { $set: { deletedAt: clock } },
+            );
+          if (change === "key-changed")
+            await sources.updateOne(
+              { _id: s.sourceDocumentId },
+              { $set: { objectKey: "replacement.pdf" } },
+            );
+          if (change === "expired") clock = new Date(clock.getTime() + 120001);
+          return change === "unsafe-url"
+            ? "https://example.test/not-private.pdf"
+            : "https://test.private.blob.vercel-storage.com/original.pdf?signed";
+        });
+        const service = createCommercialOriginalLinkService(
+          database,
+          sign,
+          () => clock,
+        );
+        await expect(
+          service.link(s.storeId, s.sourceDocumentId),
+        ).rejects.toThrow();
+        expect(sign).toHaveBeenCalledTimes(change === "deleted-before" ? 0 : 1);
+      },
+    );
     it("backs off temporary failures and publishes only the eventual immutable result", async () => {
       const s = await seed();
       let clock = new Date("2026-10-11T21:59:00Z"),
