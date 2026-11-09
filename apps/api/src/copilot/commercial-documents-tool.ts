@@ -77,8 +77,21 @@ export async function readStoreSourceDocuments(
   const page = parsed.slice(0, input.limit),
     last = page.at(-1),
     hasMore = parsed.length > input.limit;
+  // A copied commercial original is not a competing version. Collapse only
+  // exact filename/hash pairs within this page; keep raw pagination and all IDs.
+  const seen = new Set<string>();
+  const visible =
+    sourceType === "WEEKLY_COMMERCIAL_PDF"
+      ? page.filter((s) => {
+          if (!/^sha256:[a-f0-9]{64}$/.test(s.checksum)) return true;
+          const identity = JSON.stringify([s.originalFilename, s.checksum]);
+          if (seen.has(identity)) return false;
+          seen.add(identity);
+          return true;
+        })
+      : page;
   return copilotDocumentsResultSchema.parse({
-    documents: page.map((s) => ({
+    documents: visible.map((s) => ({
       sourceDocumentId: s._id,
       filename: s.originalFilename,
       createdAt: s.createdAt.toISOString(),
@@ -88,7 +101,7 @@ export async function readStoreSourceDocuments(
         ? { id: last._id, createdAt: last.createdAt.toISOString() }
         : null,
     evidence: [
-      ...page.map((s) =>
+      ...visible.map((s) =>
         sourceType === "WEEKLY_COMMERCIAL_PDF"
           ? sourceEvidence(s)
           : copilotEvidenceSchema.parse({
@@ -110,7 +123,7 @@ export async function readStoreSourceDocuments(
           sourceType === "WEEKLY_COMMERCIAL_PDF"
             ? "Documents commerciaux disponibles"
             : "Photos de casse disponibles",
-        value: `${page.length} ${sourceType === "WEEKLY_COMMERCIAL_PDF" ? "PDF" : "photos de ticket"} dans cette page, triés par dépôt récent${hasMore ? " ; d’autres documents restent à consulter" : " ; fin de la liste"}. La date de dépôt ne détermine pas ${sourceType === "WEEKLY_COMMERCIAL_PDF" ? "la semaine commerciale" : "la date de casse"}. Une source déposée n’est pas une publication validée.`,
+        value: `${visible.length} ${sourceType === "WEEKLY_COMMERCIAL_PDF" ? "PDF" : "photos de ticket"} dans cette page, triés par dépôt récent${hasMore ? " ; d’autres documents restent à consulter" : " ; fin de la liste"}. La date de dépôt ne détermine pas ${sourceType === "WEEKLY_COMMERCIAL_PDF" ? "la semaine commerciale" : "la date de casse"}. Une source déposée n’est pas une publication validée.`,
         factKind: "QUALITY",
       }),
     ],

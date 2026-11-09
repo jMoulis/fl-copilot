@@ -533,3 +533,35 @@ it("uses a turn reference for an echoed numeric label whose canonical ID contain
     ),
   ).toBe("Repère : Produit 0.");
 });
+
+it("treats Markdown list ordinals as formatting while still rejecting unsupported figures", () => {
+  const transport = createAnalyticalModelOutput([]);
+  const output = transport.bindAnswer({
+    narrative: "1. Une TG à thème.\n2) Des blocs distincts.\n  3. Du réassort.",
+    recommendations: [],
+  }).output;
+  expect(
+    renderAnswerText(
+      String(output.narrative),
+      output.facts as Parameters<typeof renderAnswerText>[1],
+      [],
+    ),
+  ).toBe("- Une TG à thème.\n- Des blocs distincts.\n  - Du réassort.");
+  for (const narrative of [
+    "1. CA de 9999 €.",
+    "Prix : 1.99 €.",
+    "Le 2 novembre 2026.",
+    "1. {{value:forged}}",
+  ]) {
+    const bound = transport.bindAnswer({ narrative, recommendations: [] });
+    if (narrative.includes("forged")) expect(bound.omittedBlocks).toBe(1);
+    else
+      expect(() =>
+        renderAnswerText(
+          String(bound.output.narrative),
+          bound.output.facts as Parameters<typeof renderAnswerText>[1],
+          [],
+        ),
+      ).toThrow("INVALID_ANSWER_TEMPLATE");
+  }
+});

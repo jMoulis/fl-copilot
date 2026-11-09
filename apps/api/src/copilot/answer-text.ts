@@ -29,11 +29,15 @@ function render(
   sources?: CopilotAnswerSource[],
 ) {
   let text = partial ? narrative.replace(/\{(?:\{[^}]*\}?)?$/, "") : narrative;
-  if (
-    /\p{N}/u.test(answerProse(text)) ||
-    /\]\s*\(|https?:|copilot-source:/i.test(answerProse(text))
-  )
-    throw Error("INVALID_ANSWER_TEMPLATE");
+  const prose = answerProse(text);
+  const invalid = /\{\{|\}\}/.test(prose)
+    ? "MALFORMED_MARKER"
+    : /\p{N}/u.test(prose)
+      ? "LITERAL_NUMBER"
+      : /\]\s*\(|https?:|copilot-source:/i.test(prose)
+        ? "EXTERNAL_LINK"
+        : null;
+  if (invalid) throw new Error("INVALID_ANSWER_TEMPLATE", { cause: invalid });
   const byId = new Map<string, Evidence>();
   for (const item of evidence) {
     const old = byId.get(item.id);
@@ -235,7 +239,7 @@ function render(
     return `[${kind === "chart" ? "Graphique" : "Source"}](copilot-source:${source})`;
   });
   if (!partial && /\{\{|\}\}/.test(text))
-    throw Error("INVALID_ANSWER_TEMPLATE");
+    throw new Error("INVALID_ANSWER_TEMPLATE", { cause: "MALFORMED_MARKER" });
   if (!destinations && includeAnalytics && text.length > 16000)
     return render(narrative, facts, evidence, partial, false);
   return text;

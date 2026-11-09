@@ -1242,6 +1242,93 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(limited.candidates).toEqual([]);
       expect(limited.evidence[0]?.value).toContain("échantillon");
     });
+    it("collapses only identical commercial copies within a page, preserving raw cursors and every original", async () => {
+      const storeId = randomUUID(),
+        filename = "promotions45.pdf",
+        stamp = new Date("2026-11-07T10:00:00Z");
+      const source = {
+        _id: randomUUID(),
+        storeId,
+        originalFilename: filename,
+        checksum: `sha256:${"a".repeat(64)}`,
+        createdAt: stamp,
+        sourceType: "WEEKLY_COMMERCIAL_PDF",
+        remoteUploadStatus: "CONFIRMED",
+      };
+      const copy = {
+        ...source,
+        _id: randomUUID(),
+        createdAt: new Date(stamp.getTime() - 1000),
+      };
+      const corrected = {
+        ...source,
+        _id: randomUUID(),
+        checksum: `sha256:${"b".repeat(64)}`,
+        createdAt: new Date(stamp.getTime() - 2000),
+      };
+      const renamed = {
+        ...source,
+        _id: randomUUID(),
+        originalFilename: "autre-nom.pdf",
+        createdAt: new Date(stamp.getTime() - 3000),
+      };
+      const foreign = { ...source, _id: randomUUID(), storeId: randomUUID() };
+      await db
+        .collection<typeof source>("sourceDocuments")
+        .insertMany([source, copy, corrected, renamed, foreign]);
+      const before = await db
+        .collection("sourceDocuments")
+        .find({ storeId })
+        .sort({ _id: 1 })
+        .toArray();
+      const first = await readCommercialDocuments(db, storeId, {
+        cursor: null,
+        limit: 2,
+      });
+      expect(first.documents.map((d) => d.sourceDocumentId)).toEqual([
+        source._id,
+      ]);
+      expect(
+        first.evidence
+          .filter((e) => e.sourceType === "SOURCE_DOCUMENT")
+          .map((e) => e.sourceId),
+      ).toEqual([source._id]);
+      expect(first.evidence.at(-1)!.value).toContain("1 PDF");
+      expect(first.nextCursor).toEqual({
+        id: copy._id,
+        createdAt: copy.createdAt.toISOString(),
+      });
+      const rest = await readCommercialDocuments(db, storeId, {
+        cursor: first.nextCursor,
+        limit: 5,
+      });
+      expect(rest.documents.map((d) => d.sourceDocumentId)).toEqual([
+        corrected._id,
+        renamed._id,
+      ]);
+      expect(rest.nextCursor).toBeNull();
+      const together = await readCommercialDocuments(db, storeId, {
+        cursor: null,
+        limit: 5,
+      });
+      expect(together.documents.map((d) => d.sourceDocumentId)).toEqual([
+        source._id,
+        corrected._id,
+        renamed._id,
+      ]);
+      expect(
+        await db
+          .collection("sourceDocuments")
+          .find({ storeId })
+          .sort({ _id: 1 })
+          .toArray(),
+      ).toEqual(before);
+      expect(
+        await db
+          .collection("sourceDocuments")
+          .findOne({ _id: copy._id as never }),
+      ).not.toBeNull();
+    });
     it("discovers owned PDFs, scopes visual reading to the requested week and preserves citations without private URLs", async () => {
       const f = await commercialChoiceFixture();
       const stamp = new Date("2026-10-08T08:00:00Z");
