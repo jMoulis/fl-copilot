@@ -9,6 +9,7 @@ import {
   requireCommercialSourceCompatibility,
   requireCommercialAnalysisCompatibility,
   requireQualitativeCommercialPlanCompatibility,
+  requireTgPresentationCompatibility,
 } from "../commercial/source-compatibility";
 import {
   readableEmailDecisions,
@@ -814,6 +815,11 @@ export function createMongoSyncPullService(
         : (selected.at(-1)?.sequence ?? afterSequence);
 
       if (query.documentArchiveHistory !== "true") {
+        await requireTgPresentationCompatibility(
+          mongoDatabase,
+          storeId,
+          query.tgPresentations === "true",
+        );
         await requireQualitativeCommercialPlanCompatibility(
           mongoDatabase,
           storeId,

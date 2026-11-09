@@ -989,6 +989,10 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
               },
               ...(request.headers["x-copilot-preparation-proposals"] === "1"
                 ? {
+                    preparationPresentation:
+                      request.headers["x-copilot-tg-presentations"] === "1" &&
+                      request.headers["x-copilot-preparation-create"] === "1" &&
+                      request.headers["x-copilot-preparation-layout"] === "1",
                     preparationRefresh:
                       request.headers["x-copilot-preparation-layout"] === "1" &&
                       request.headers["x-copilot-preparation-selection"] ===
@@ -1010,6 +1014,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                         storeId,
                         input,
                         request.headers["x-copilot-layout-preparation"] === "1",
+                        request.headers["x-copilot-tg-presentations"] === "1",
                       );
                       await authorize();
                       return result;

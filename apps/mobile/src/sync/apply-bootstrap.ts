@@ -299,6 +299,20 @@ export async function applyBootstrap(
         "1",
         bootstrap.serverTime,
       );
+    if (bootstrap.entities.tgPresentations === true) {
+      if (
+        !bootstrap.entities.commercialWeekPlans ||
+        !bootstrap.entities.commercialWeekPreparations ||
+        !bootstrap.entities.commercialPlanRevisions
+      )
+        throw Error("TG_PRESENTATION_BOOTSTRAP_INVALID");
+      await transaction.runAsync(
+        "INSERT OR REPLACE INTO app_metadata(key,value,updated_at) VALUES(?,?,?)",
+        `tg-presentations:${storeId}`,
+        "1",
+        bootstrap.serverTime,
+      );
+    }
     if (bootstrap.entities.qualitativeCommercialPlans === true) {
       if (
         !bootstrap.entities.commercialWeekPlans ||
@@ -532,6 +546,7 @@ function assertOnlySupportedEntities(bootstrap: BootstrapResponse) {
     "storeContextSettings",
     "storeMerchandising",
     "qualitativeCommercialPlans",
+    "tgPresentations",
     "physicalAllocations",
     "storeLayouts",
     "storeLayoutRevisions",

@@ -1,3 +1,4 @@
+import { TgPresentationView } from "./tg-presentation-view";
 import { commercialOfferHref } from "./offer-navigation";
 import { PhysicalAllocationCard } from "./physical-allocation-card";
 import { Text, View } from "react-native";
@@ -34,7 +35,9 @@ export function CommercialPlanContent({
       </Text>
       {!operationId ? (
         <SectionCard title="TG prévues">
-          {plan.preparation.placements.length ? (
+          {plan.preparation.placements.some((p) => p.presentation) ? (
+            <TgPresentationView placements={plan.preparation.placements} />
+          ) : plan.preparation.placements.length ? (
             plan.preparation.placements.map((t) => (
               <View key={t.id} className="gap-1">
                 <Text className="font-semibold text-ink">

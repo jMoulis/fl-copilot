@@ -3,12 +3,21 @@ import {
   preparationBasisSchema,
   preparationIntent,
   preparationResultSchema,
+  reviewPreparationSurfaceShares,
+  readReviewedPreparationRequest,
   type CopilotMessage,
 } from "@fl-copilot/domain";
 import { verifyPrivateToolRecord } from "./private-tool-record";
 import { CommercialPreparationRepository } from "../commercial/week-preparation-repository";
 import { readCommercialChoices } from "../commercial/offer-choice-repository";
 import { CopilotCommercialPreparationRuntime } from "./commercial-preparation-runtime";
+import { joinedMutationDatabase } from "../sync/atomic-local-mutation";
+import { CommercialPlanRepository } from "../commercial/week-plan-repository";
+import {
+  readCommercialPlanReview,
+  saveReviewedCommercialPlan,
+} from "../commercial/plan-review";
+import { buildCommercialWeekPlan } from "@fl-copilot/commercial-core";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 export class CopilotPreparationProposalController {
@@ -33,11 +42,16 @@ export class CopilotPreparationProposalController {
     );
     const previous = await this.db.getFirstAsync<{
       result_json: string;
+      request_json: string;
       store_id: string;
       owner_id: string;
       conversation_id: string;
     }>("SELECT * FROM copilot_tool_results WHERE operation_id=?", message.id);
     if (previous) {
+      const reviewed = readReviewedPreparationRequest(
+        request,
+        JSON.parse(previous.request_json),
+      );
       const r = preparationResultSchema.parse(JSON.parse(previous.result_json));
       const { id, storeId, version, createdAt, updatedAt, ...draft } = r.after;
       void id;
@@ -51,13 +65,13 @@ export class CopilotPreparationProposalController {
         previous.conversation_id !== message.conversationId ||
         r.operationId !== message.id ||
         r.userMessageId !== message.replyToMessageId ||
-        JSON.stringify(draft) !== JSON.stringify(request.input.draft)
+        JSON.stringify(draft) !== JSON.stringify(reviewed.input.draft)
       )
         throw Error("PREPARATION_PROPOSAL_SCOPE");
       return {
         message,
         content,
-        request,
+        request: reviewed,
         status: "COMPLETED" as const,
         savedWeekAvailable: true,
       };
@@ -100,26 +114,98 @@ export class CopilotPreparationProposalController {
       savedWeekAvailable: !!prep,
     };
   }
-  async confirm(message: CopilotMessage, signal?: AbortSignal) {
+  async confirm(
+    message: CopilotMessage,
+    signal?: AbortSignal,
+    options?: {
+      shares: Array<{ placementId: string; shares: number[] }>;
+      retainPlan: boolean;
+    },
+  ) {
     if (!this.scope.canPrepareCommercialWeek)
       throw Error("PREPARATION_PROPOSAL_FORBIDDEN");
     const state = await this.open(message);
-    if (state.status === "COMPLETED") return state;
+    if (state.status === "COMPLETED") {
+      if (
+        options &&
+        preparationIntent(
+          reviewPreparationSurfaceShares(state.request, options.shares),
+        ) !== preparationIntent(state.request)
+      )
+        throw Error("PREPARATION_PROPOSAL_ALREADY_CONFIRMED");
+      return state;
+    }
     if (state.status !== "READY") throw Error("PREPARATION_PROPOSAL_STALE");
+    const request = options
+      ? reviewPreparationSurfaceShares(state.request, options.shares)
+      : state.request;
+    if (
+      options?.retainPlan &&
+      (request.input.draft.offerRefs.length ||
+        request.input.draft.physicalAllocation ||
+        !request.input.draft.placements.length ||
+        request.input.draft.placements.some((p) => !p.presentation))
+    )
+      throw Error("TG_PLAN_REVIEW_REQUIRED");
     await new CopilotCommercialPreparationRuntime(
       this.db,
       this.digest,
       this.id,
     ).execute(
-      state.request,
+      request,
       {
         ...this.scope,
         conversationId: message.conversationId,
         userMessageId: message.replyToMessageId!,
         decisionLevel: "REVIEWED",
-        authorizedRequestJson: preparationIntent(state.request),
+        authorizedRequestJson: preparationIntent(request),
       },
       signal,
+      options?.retainPlan
+        ? async (after, tx) => {
+            const db = joinedMutationDatabase(tx),
+              now = new Date().toISOString();
+            const current = await new CommercialPlanRepository(
+              db,
+              this.digest,
+            ).get(after.storeId, after.weekStart);
+            const review = await readCommercialPlanReview(
+              tx,
+              after,
+              this.digest,
+              now,
+            );
+            if (review.issues.length)
+              throw Error("COMMERCIAL_PLAN_DATA_CHANGED");
+            const candidate = await buildCommercialWeekPlan(
+              {
+                preparation: after,
+                version:
+                  (current?.syncState === "ERROR"
+                    ? (current.remoteVersion ?? 0)
+                    : (current?.entity.version ?? 0)) + 1,
+                createdAt: current?.entity.createdAt ?? now,
+                validatedAt: now,
+              },
+              review.context,
+              this.digest,
+            );
+            await saveReviewedCommercialPlan(
+              db,
+              candidate,
+              review.basis,
+              {
+                deviceId: this.scope.deviceId,
+                commandId: this.id(),
+                generateId: this.id,
+                appliedAt: now,
+                canConfirm: () =>
+                  this.scope.canPrepareCommercialWeek && !signal?.aborted,
+              },
+              this.digest,
+            );
+          }
+        : undefined,
     );
     return this.open(message);
   }

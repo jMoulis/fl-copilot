@@ -180,6 +180,7 @@ import {
   copilotPreparationEditPatchSchema,
   copilotPreparationLayoutPatchSchema,
   copilotPreparationPatchSchema,
+  copilotLegacyPreparationPatchSchema,
   copilotPreparationPreviewSchema,
   validatePreparationBasis,
   prepareWeekPatch,
@@ -604,6 +605,7 @@ export function createCopilotAiProvider(
       input: z.infer<typeof copilotPreparationReadInputSchema>,
     ): Promise<z.infer<typeof copilotPreparationReadResultSchema>>;
     preparationLayout?: boolean;
+    preparationPresentation?: boolean;
     preparationCreate?: boolean;
     preparationSelection?: boolean;
     preparationRefresh?: boolean;
@@ -1337,7 +1339,10 @@ export function createCopilotAiProvider(
                 ? {
                     commercial_preparation_preview: tool({
                       description:
-                        "Preview the requested week's TG draft, including future weeks. Read commercial_preparation for that explicit Monday first. Save agreed merchandising themes/presentation/location in themes/note without creating a commercial offer. Empty offerIds is valid and clears existing assignments; assign only resulting selected offers. Omitted fields/TGs/source links and offer revisions stay unchanged. Never invent capacity, prices, source review or product identity; ask for unknown capacity rather than silently increasing it. READY is one native before/after confirmation, not a saved draft, validated plan or field execution. UNCHANGED saves nothing; BLOCKED needs review; LIMIT_EXCEEDED uses the weekly screen without truncation. Combine changes for each week; at most three ready cards per turn. " +
+                        (reads.preparationPresentation
+                          ? "Present TG preparation ideas through this native visual preview: presentation.zones contains qualitative product labels, roles and proposed surface shares summing to 100 per TG, not quantities or measurements. counterPromotion is separate, outside that surface. A concise narrative accompanies the cards; details belong in the card. This prepares a review only, never a save or installation. "
+                          : "") +
+                        "Preview the requested week's TG draft, including future weeks. For existing-draft changes, read commercial_preparation for exact IDs; a missing-week create preview reads its own basis. Save agreed merchandising themes/presentation/location in themes/note without creating a commercial offer. Empty offerIds is valid and clears existing assignments; assign only resulting selected offers. Omitted fields/TGs/source links and offer revisions stay unchanged. Never invent capacity, prices, source review or product identity; ask for unknown capacity rather than silently increasing it. READY is one native before/after confirmation, not a saved draft, validated plan or field execution. UNCHANGED saves nothing; BLOCKED needs review; LIMIT_EXCEEDED uses the weekly screen without truncation. Combine changes for each week; at most three ready cards per turn. " +
                         (reads.preparationLayout
                           ? "tgAdditions supplies complete label/theme/offerIds without IDs or PDF links; application IDs survive retry. tgRemovals names exact existing TG IDs from an explicit removal intent, never inferred from a suggested layout. The card highlights removals and lost assignments/source-idea links. Removal affects only the draft, preserving selected offers, originals, validated plans and field declarations."
                           : "This client supports only existing TG edits, no creation or removal.") +
@@ -1350,19 +1355,21 @@ export function createCopilotAiProvider(
                         (reads.preparationRefresh
                           ? " refreshChoiceIds explicitly adopts current revisions of named already-selected retained offers after reviewing commercial_preparation and commercial_offers. Ask for missing business intent; never refresh every changed reference silently. The review shows old/current revision and current terms, not unavailable historical prices. Missing, withdrawn, outside-week or older revisions cannot be adopted. TG assignments and unrequested references are preserved. This does not validate an offer or a plan."
                           : " Updating pinned offer revisions is unavailable on this client."),
-                      inputSchema: reads.preparationRefresh
-                        ? reads.preparationCreate
-                          ? copilotPreparationPatchSchema
-                          : copilotPreparationRefreshPatchSchema
-                        : reads.preparationSelection
+                      inputSchema: reads.preparationPresentation
+                        ? copilotPreparationPatchSchema
+                        : reads.preparationRefresh
                           ? reads.preparationCreate
-                            ? copilotPreparationRetainedSelectionPatchSchema
-                            : copilotPreparationSelectionPatchSchema
-                          : reads.preparationCreate
-                            ? copilotPreparationCreatePatchSchema
-                            : reads.preparationLayout
-                              ? copilotPreparationLayoutPatchSchema
-                              : copilotPreparationEditPatchSchema,
+                            ? copilotLegacyPreparationPatchSchema
+                            : copilotPreparationRefreshPatchSchema
+                          : reads.preparationSelection
+                            ? reads.preparationCreate
+                              ? copilotPreparationRetainedSelectionPatchSchema
+                              : copilotPreparationSelectionPatchSchema
+                            : reads.preparationCreate
+                              ? copilotPreparationCreatePatchSchema
+                              : reads.preparationLayout
+                                ? copilotPreparationLayoutPatchSchema
+                                : copilotPreparationEditPatchSchema,
                       execute: (input) =>
                         executeRead(
                           JSON.stringify(["preparation-preview", input]),
@@ -3603,6 +3610,9 @@ export function createCopilotAiProvider(
                     ...definition,
                     deferLoading: ![
                       "request_information",
+                      ...(reads?.preparationPresentation
+                        ? ["commercial_preparation_preview"]
+                        : []),
                       "conversation_history",
                       "mongo_list",
                       // Canonical analytical replies already know these primary tools.

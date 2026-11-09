@@ -11,6 +11,8 @@ import {
 import {
   requireCommercialSourceCompatibility,
   requireQualitativeCommercialPlanCompatibility,
+  requireTgPresentationCompatibility,
+  requiresTgPresentationSupport,
 } from "../commercial/source-compatibility";
 import { isCommercialOriginalSource } from "@fl-copilot/domain";
 import { commercialOfferChoiceSchema } from "@fl-copilot/sync-contracts";
@@ -118,6 +120,35 @@ export function createMongoSyncPushService(
 
   return {
     async push(input, requestId, ownerId) {
+      if (!input.tgPresentations) {
+        if (
+          input.commands.some(
+            (c) =>
+              c.entityType.startsWith("commercial_") &&
+              requiresTgPresentationSupport(c.payload),
+          )
+        )
+          throw new AuthError(
+            426,
+            "TG_PRESENTATION_UPGRADE_REQUIRED",
+            "Mets l’application à jour pour synchroniser ces répartitions. Tes données locales sont conservées.",
+          );
+        try {
+          await requireTgPresentationCompatibility(
+            await database.getDb(),
+            input.storeId,
+            false,
+          );
+        } catch (error) {
+          if (error instanceof AuthError) throw error;
+          return {
+            results: input.commands.map((command) =>
+              retryableResult(command, requestId),
+            ),
+            serverTime: now().toISOString(),
+          };
+        }
+      }
       if (!input.qualitativeCommercialPlans) {
         if (
           input.commands.some((command) => {
@@ -312,6 +343,19 @@ export function createMongoSyncPushService(
       ) {
         await advanceProductUnitRefresh(database, input.storeId, now);
       }
+      if (
+        !input.tgPresentations &&
+        results.some(
+          (r) =>
+            r.entityType.startsWith("commercial_") &&
+            requiresTgPresentationSupport(r.remoteEntity),
+        )
+      )
+        throw new AuthError(
+          426,
+          "TG_PRESENTATION_UPGRADE_REQUIRED",
+          "Mets l’application à jour pour lire ces répartitions. Tes données locales sont conservées.",
+        );
       // A concurrent plan decision can arrive after the initial compatibility read.
       if (
         !input.qualitativeCommercialPlans &&

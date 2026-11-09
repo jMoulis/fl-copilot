@@ -19,6 +19,9 @@ const env = vi.hoisted(() => ({
   sync: vi.fn(),
   push: vi.fn(),
 }));
+vi.mock("./tg-presentation-view", () => ({
+  TgPresentationView: "TgPresentation",
+}));
 vi.mock("@/dates/calendar", () => import("../dates/calendar"));
 vi.mock("@/auth/auth-provider", () => ({
   useAuth: () => ({ session: env.session }),

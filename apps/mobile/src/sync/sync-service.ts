@@ -110,6 +110,7 @@ export interface MobileSyncServiceOptions {
   storeContext?: boolean;
   storeMerchandising?: boolean;
   qualitativeCommercialPlans?: boolean;
+  tgPresentations?: boolean;
   storeLayouts?: boolean;
   visualLibrary?: boolean;
   physicalAllocations?: boolean;
@@ -487,6 +488,16 @@ export class MobileSyncService {
           "Le service doit être mis à jour pour synchroniser ces plans de merchandising. Tes modifications locales sont conservées.",
         retryable: false,
       });
+    if (
+      this.options.tgPresentations &&
+      snapshot.entities.tgPresentations !== true
+    )
+      throw new ApiClientError(426, {
+        code: "TG_PRESENTATION_UPGRADE_REQUIRED",
+        messageFr:
+          "Le service doit être mis à jour pour enregistrer les répartitions TG. Tes modifications locales sont conservées.",
+        retryable: false,
+      });
     await applyBootstrap(
       this.database,
       storeId,
@@ -763,6 +774,14 @@ export class MobileSyncService {
     )
       await this.bootstrapUnlocked(storeId);
 
+    if (
+      this.options.tgPresentations &&
+      !(await this.database.getFirstAsync(
+        "SELECT value FROM app_metadata WHERE key=?",
+        `tg-presentations:${storeId}`,
+      ))
+    )
+      await this.bootstrapUnlocked(storeId);
     const summary = { pushed: 0, conflicts: 0, failed: 0 };
     const deferred = new Set<string>();
     for (let retry = 0; retry <= this.maxRetries; retry += 1) {
@@ -1477,6 +1496,7 @@ export class MobileSyncService {
     return {
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
       ...(this.options.storeMerchandising ? { storeMerchandising: true } : {}),
+      ...(this.options.tgPresentations ? { tgPresentations: true } : {}),
       ...(this.options.qualitativeCommercialPlans
         ? { qualitativeCommercialPlans: true }
         : {}),

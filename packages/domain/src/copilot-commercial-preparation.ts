@@ -38,6 +38,50 @@ export type PreparationAuthority = z.infer<typeof preparationAuthoritySchema>;
 export function preparationIntent(raw: unknown) {
   return JSON.stringify(preparationRequestSchema.parse(raw));
 }
+export const preparationSurfaceEditsSchema = z
+  .array(
+    z.strictObject({
+      placementId: z.uuid(),
+      shares: z.array(z.number().int().min(1).max(100)).min(1).max(6),
+    }),
+  )
+  .max(30)
+  .refine((v) => new Set(v.map((x) => x.placementId)).size === v.length);
+/** Native review may adjust proportions only; source cards and other business fields stay immutable. */
+export function reviewPreparationSurfaceShares(raw: unknown, edits: unknown) {
+  const request = preparationRequestSchema.parse(raw);
+  const adjustments = preparationSurfaceEditsSchema.parse(edits);
+  for (const edit of adjustments) {
+    const placement = request.input.draft.placements.find(
+      (p) => p.id === edit.placementId,
+    );
+    if (
+      !placement?.presentation ||
+      placement.presentation.zones.length !== edit.shares.length
+    )
+      throw Error("TG_PRESENTATION_REVIEW_INVALID");
+    placement.presentation.zones.forEach(
+      (z, i) => (z.sharePct = edit.shares[i]!),
+    );
+  }
+  return preparationRequestSchema.parse(request);
+}
+export function readReviewedPreparationRequest(
+  original: unknown,
+  stored: unknown,
+) {
+  const request = preparationRequestSchema.parse(stored);
+  const edits = request.input.draft.placements
+    .filter((p) => p.presentation)
+    .map((p) => ({
+      placementId: p.id,
+      shares: p.presentation!.zones.map((z) => z.sharePct),
+    }));
+  const expected = reviewPreparationSurfaceShares(original, edits);
+  if (preparationIntent(expected) !== preparationIntent(request))
+    throw Error("TG_PRESENTATION_REVIEW_INVALID");
+  return request;
+}
 export const preparationResultSchema = z.strictObject({
   operationId: z.string().uuid(),
   schemaVersion: z.literal(1),

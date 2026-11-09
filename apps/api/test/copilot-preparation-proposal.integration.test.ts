@@ -51,6 +51,53 @@ describe.skipIf(!uri)("private TG draft proposals", () => {
       },
     };
   }
+  it("previews visual allocations only for supported native cards, preserving the source draft until confirmation", async () => {
+    const f = await fixture();
+    const input = {
+      ...f.input,
+      patch: {
+        tgUpdates: [
+          {
+            placementId: f.preparation.placements[0].id,
+            presentation: {
+              zones: [
+                { label: "Raisin", role: "ACCROCHE", sharePct: 70 },
+                { label: "Pomme", role: "RELAIS", sharePct: 30 },
+              ],
+              reason: "Thème de saison",
+              counterPromotion: { label: "Banane", reason: "Hors TG" },
+            },
+          },
+        ],
+      },
+    };
+    await expect(readPreparationPreview(db, f.storeId, input)).rejects.toThrow(
+      "TG_PRESENTATION_CLIENT_REQUIRED",
+    );
+    const result = await readPreparationPreview(
+      db,
+      f.storeId,
+      input,
+      false,
+      true,
+    );
+    expect(result.status).toBe("READY");
+    expect(
+      result.input.patch.tgUpdates![0]!.presentation!.zones.map(
+        (z) => z.sharePct,
+      ),
+    ).toEqual([70, 30]);
+    expect(
+      await db
+        .collection("commercialWeekPreparations")
+        .findOne({ storeId: f.storeId }),
+    ).toMatchObject({ placements: f.preparation.placements });
+    expect(
+      await db
+        .collection("commercialWeekPlans")
+        .countDocuments({ storeId: f.storeId }),
+    ).toBe(0);
+  });
   it("blocks dangling TG assignments, accepts explicit replacement and scopes new retained offers", async () => {
     const f = await fixture(),
       added = await commercialChoiceFixture({ storeId: f.storeId });
