@@ -139,6 +139,7 @@ export interface SyncContextValue extends LocalSyncSnapshot {
   originals?: {
     state(sourceDocumentId: string): Promise<SourceOriginalState>;
     local(sourceDocumentId: string): Promise<SourceOriginalProof | null>;
+    recover(sourceDocumentId: string): Promise<SourceOriginalProof>;
     request(sourceDocumentId: string, retry?: boolean): Promise<void>;
     cancel(sourceDocumentId: string): Promise<void>;
   };
@@ -859,6 +860,12 @@ export function SyncProvider({ children }: PropsWithChildren) {
         await originalJobs.request(id, retry);
         check();
         void syncNow(defaultStoreId);
+      },
+      recover: async (id: string) => {
+        check();
+        const proof = await originalTransfer.recover(id);
+        check();
+        return proof;
       },
       cancel: async (id: string) => {
         check();
