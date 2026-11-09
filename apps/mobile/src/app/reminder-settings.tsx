@@ -251,12 +251,12 @@ export default function ReminderSettings() {
           />
         </View>
         <Text className="text-muted">
-          Une alerte discrète lorsque l’app est en arrière-plan, sans afficher
-          le contenu de ta conversation.
+          L’alerte peut afficher un aperçu de la réponse lorsque l’app est en
+          arrière-plan.
         </Text>
         {!chatPush.available ? (
           <Text className="text-muted">
-            Disponible sur iPhone avec le prochain build installé, hors Expo Go.
+            Disponible dans l’application iPhone installée, hors Expo Go.
           </Text>
         ) : null}
         {chatPush.error ? (
