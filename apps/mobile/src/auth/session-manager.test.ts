@@ -284,3 +284,65 @@ it("coalesces one failed startup read, preserves stored credentials and permits 
   expect(f.manager.getSnapshot().status).toBe("authenticated");
   expect(f.storage.clear).not.toHaveBeenCalled();
 });
+
+it.each(["logout", "account", "store"])(
+  "rejects a late ordinary response after %s without requiring a caller-supplied owner",
+  async (change) => {
+    const f = fixture();
+    await f.manager.establish(session("old"));
+    let release!: (value: string) => void;
+    const operation = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const request = f.manager.request(operation);
+    const result = expect(request).rejects.toBeInstanceOf(SessionChangedError);
+    await vi.waitFor(() => expect(operation).toHaveBeenCalledTimes(1));
+    if (change === "logout") await f.manager.logout();
+    else
+      await f.manager.establish({
+        ...session("current"),
+        ...(change === "account"
+          ? { user: { ...session("current").user, id: "other-owner" } }
+          : {
+              stores: [
+                { storeId: "other-store", name: "Other", role: "MANAGER" },
+              ],
+            }),
+      });
+    release("old response must not reach its consumer");
+    await result;
+    expect(f.refresh).not.toHaveBeenCalled();
+    expect(f.manager.getSnapshot().status).toBe(
+      change === "logout" ? "anonymous" : "authenticated",
+    );
+  },
+);
+it.each([200, 401, 500])(
+  "rejects a retired session's replay result (%s) without expiring its replacement",
+  async (status) => {
+    const f = fixture();
+    await f.manager.establish(session("old"));
+    let resolve!: (value: string) => void, reject!: (value: Error) => void;
+    const operation = vi.fn(async (token: string) => {
+      if (token === "old") throw error(401);
+      return new Promise<string>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
+    });
+    const request = f.manager.request(operation);
+    const result = expect(request).rejects.toBeInstanceOf(SessionChangedError);
+    await vi.waitFor(() => expect(operation).toHaveBeenCalledTimes(2));
+    await f.manager.establish(session("current"));
+    if (status === 200) resolve("retired result");
+    else reject(error(status));
+    await result;
+    expect(f.manager.getSnapshot().session?.accessToken).toBe("current");
+    expect(f.manager.getSnapshot().sessionExpired).toBe(false);
+    expect(f.storage.clear).not.toHaveBeenCalled();
+    expect(operation).toHaveBeenCalledTimes(2);
+  },
+);

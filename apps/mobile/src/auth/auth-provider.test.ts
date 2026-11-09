@@ -2,6 +2,8 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import type { AuthSessionResponse } from "@fl-copilot/sync-contracts";
+import { ApiClientError } from "@fl-copilot/api-client";
+import { SessionChangedError } from "./session-manager";
 import { AuthProvider, useAuth } from "./auth-provider";
 const runtime = vi.hoisted(() => ({
   expectedOwner: undefined as string | undefined,
@@ -57,11 +59,12 @@ function Probe() {
   return createElement("PrivateContent");
 }
 function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
+  let resolve!: (value: T) => void, reject!: (error: Error) => void;
+  const promise = new Promise<T>((r, fail) => {
     resolve = r;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 function session(owner = "owner"): AuthSessionResponse {
   return {
@@ -284,3 +287,52 @@ it("ignores a failed startup read after the provider closes without clearing a l
   expect(runtime.clear).not.toHaveBeenCalled();
   expect(runtime.remoteLogout).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["unmount", 200],
+  ["unmount", 401],
+  ["unmount", 500],
+  ["replacement", 200],
+  ["replacement", 401],
+  ["replacement", 500],
+] as const)(
+  "does not return or retry a retired provider's response after %s (%s)",
+  async (change, status) => {
+    await mount();
+    await act(async () => auth.requestCode("owner@example.test"));
+    await act(async () => auth.verifyCode("123456"));
+    const response = deferred<string>();
+    const operation = vi.fn(async () => response.promise);
+    const request = auth.withAccessToken(operation);
+    const result = request.then(
+      () => {
+        throw Error("Retired result returned");
+      },
+      (error: unknown) => error,
+    );
+    await vi.waitFor(() => expect(operation).toHaveBeenCalledTimes(1));
+    if (change === "unmount") await act(async () => tree!.unmount());
+    else {
+      runtime.expectedOwner = "owner";
+      await act(async () =>
+        tree!.update(createElement(AuthProvider, {}, createElement(Probe))),
+      );
+    }
+    const beforeRefresh = runtime.refresh.mock.calls.length;
+    await act(async () => {
+      if (status === 200) response.resolve("retired private read");
+      else
+        response.reject(
+          new ApiClientError(status, {
+            code: "STALE_REMOTE_FAILURE",
+            messageFr: "Old error",
+            retryable: false,
+          }),
+        );
+    });
+    expect(await result).toBeInstanceOf(SessionChangedError);
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(runtime.refresh).toHaveBeenCalledTimes(beforeRefresh);
+    expect(runtime.clear).not.toHaveBeenCalled();
+  },
+);

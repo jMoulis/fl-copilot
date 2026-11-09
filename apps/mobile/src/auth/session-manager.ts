@@ -108,33 +108,31 @@ export class NativeSessionManager {
     expectedOwnerId?: string,
   ): Promise<T> {
     const generation = this.generation;
-    const assertOwner = () => {
+    const assertContext = () => {
       if (
-        expectedOwnerId &&
-        (this.snapshot.session?.user.id !== expectedOwnerId ||
-          this.generation !== generation)
+        this.generation !== generation ||
+        (expectedOwnerId && this.snapshot.session?.user.id !== expectedOwnerId)
       )
         throw new SessionChangedError();
     };
-    assertOwner();
+    assertContext();
     const token = await this.getAccessToken();
-    if (generation !== this.generation) throw new SessionChangedError();
-    assertOwner();
+    assertContext();
     try {
       const result = await operation(token);
-      assertOwner();
+      assertContext();
       return result;
     } catch (error) {
+      assertContext();
       if (!isUnauthorized(error)) throw error;
-      if (generation !== this.generation) throw new SessionChangedError();
       const renewed = await this.renew(token);
-      if (generation !== this.generation) throw new SessionChangedError();
+      assertContext();
       try {
-        assertOwner();
         const result = await operation(renewed);
-        assertOwner();
+        assertContext();
         return result;
       } catch (retryError) {
+        assertContext();
         if (isUnauthorized(retryError)) await this.invalidate(generation, true);
         throw retryError;
       }
