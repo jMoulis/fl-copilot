@@ -2217,7 +2217,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         response: { 200: commercialOriginalLinkSchema },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const token = request.headers.authorization;
       if (!token?.startsWith("Bearer "))
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
@@ -2229,10 +2229,12 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "Le magasin doit être indiqué.",
         );
       await auth.authorizeStore(token.slice(7), storeId);
-      return createCommercialOriginalLinkService(dependencies.database).link(
-        storeId,
-        request.params.id,
-      );
+      const result = await createCommercialOriginalLinkService(
+        dependencies.database,
+      ).link(storeId, request.params.id);
+      await auth.authorizeStore(token.slice(7), storeId);
+      reply.header("cache-control", "private, no-store");
+      return result;
     },
   );
   app.get(
@@ -2363,7 +2365,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         response: { 200: initSourceUploadResponseSchema },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const authorization = request.headers.authorization;
       if (!authorization?.startsWith("Bearer ")) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
@@ -2380,7 +2382,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         authorization.slice("Bearer ".length),
         storeId,
       );
-      return sourceUploads.init(storeId, context.userId, request.body);
+      const result = await sourceUploads.init(
+        storeId,
+        context.userId,
+        request.body,
+      );
+      await auth.authorizeStore(authorization.slice(7), storeId);
+      reply.header("cache-control", "private, no-store");
+      return result;
     },
   );
   app.post(
@@ -2392,7 +2401,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         response: { 200: completeSourceUploadResponseSchema },
       },
     },
-    async (request) => {
+    async (request, reply) => {
       const authorization = request.headers.authorization;
       if (!authorization?.startsWith("Bearer ")) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
@@ -2409,12 +2418,15 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         authorization.slice("Bearer ".length),
         storeId,
       );
-      return sourceUploads.complete(
+      const result = await sourceUploads.complete(
         storeId,
         request.params.uploadId,
         request.body,
         context.userId,
       );
+      await auth.authorizeStore(authorization.slice(7), storeId);
+      reply.header("cache-control", "private, no-store");
+      return result;
     },
   );
   app.post(

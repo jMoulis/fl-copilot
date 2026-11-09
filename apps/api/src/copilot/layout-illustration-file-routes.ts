@@ -50,10 +50,12 @@ export function registerLayoutIllustrationFileRoutes(
     },
     async (request, reply) => {
       reply.header("cache-control", "private, no-store");
-      return files.manifest(
+      const result = await files.manifest(
         await authorize(request),
         request.params.preparationId,
       );
+      await authorize(request);
+      return result;
     },
   );
   app.get(
@@ -74,6 +76,7 @@ export function registerLayoutIllustrationFileRoutes(
         request.params.resultId,
         request.params.variant,
       );
+      await authorize(request);
       // Stream bounded verified chunks; private PNGs may exceed buffered Function response limits.
       async function* chunks() {
         for (let i = 0; i < result.bytes.byteLength; i += 64 * 1024)
