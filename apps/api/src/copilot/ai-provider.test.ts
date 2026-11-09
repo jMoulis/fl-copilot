@@ -8348,3 +8348,83 @@ it.each([false, true])(
     expect(reads.conversationHistory).not.toHaveBeenCalled();
   },
 );
+
+it("shares canonical expertise evidence through the SDK and restores native citations without changing the stored cards", async () => {
+  const { copilotResponseSchema } = await import("@fl-copilot/domain");
+  const { readRetailExpertise } = await import("./retail-expertise-tool");
+  const { renderAnswerText } = await import("./answer-text");
+  const { readAnswerSource } =
+    await import("../../../mobile/src/copilot/answer-source");
+  const f = fixture(),
+    input = { topics: ["DISPLAY_DESIGN", "FRESH_DISPLAY"] };
+  const value = readRetailExpertise(input, "2026-11-09T12:00:00.000Z");
+  const original = structuredClone(value),
+    usage = vi.fn();
+  let calls = 0;
+  const transport: typeof fetch = async (_url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (calls++ === 0) {
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_expertise",
+          call_id: "call_expertise",
+          name: "retail_expertise",
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return Response.json(envelope);
+    }
+    const wire = JSON.parse(
+      body.input.find(
+        (x: { type: string }) => x.type === "function_call_output",
+      ).output,
+    );
+    expect(wire.cards).toEqual(value.cards);
+    expect(wire.evidence.columns[0]).toBe("ref");
+    expect(wire.evidence.rows.map((r: string[]) => r[0])).toEqual(["r0", "r1"]);
+    expect(JSON.stringify(wire).length).toBeLessThan(
+      JSON.stringify(value).length,
+    );
+    return response(
+      JSON.stringify({
+        narrative:
+          "Je conserve une présentation lisible. {{source:r0}}\n\nJe privilégie une abondance visuelle sans surcharger. {{source:r1}}",
+        recommendations: [],
+      }),
+    );
+  };
+  const result = await createCopilotAiProvider(f.config, transport, {
+    daily: vi.fn(),
+    retailExpertise: vi.fn(async () => value),
+    onUsage: usage,
+  }).generate(f.request, copilotResponseSchema);
+  expect(calls).toBe(2);
+  expect(value).toEqual(original);
+  expect(result.toolEvidence).toEqual(value.evidence);
+  expect(result.output.facts.map((fact) => fact.evidenceId)).toEqual(
+    value.evidence.map((e) => e.id),
+  );
+  const rendered = renderAnswerText(
+    result.output.narrative!,
+    result.output.facts,
+    result.toolEvidence!,
+  );
+  const sources = [...rendered.matchAll(/copilot-source:([^)]*)/g)].map((m) =>
+    readAnswerSource(m[1]!),
+  );
+  expect(sources.map((s) => s.retailExpertise)).toEqual(
+    value.cards.map((card) => card.citation),
+  );
+  expect(usage).toHaveBeenCalledWith(
+    expect.objectContaining({
+      kind: "TOOL_RESULT",
+      toolFamily: "retail-expertise",
+      evidenceCount: 2,
+    }),
+  );
+});

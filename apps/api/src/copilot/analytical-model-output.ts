@@ -1,6 +1,6 @@
 import type { JSONValue } from "ai";
 
-/** Ephemeral model transport only. Canonical evidence, hashes and APIs never change. */
+/** Shared ephemeral evidence transport. Canonical evidence, hashes and APIs never change. */
 export function createAnalyticalModelOutput(initialIds: readonly string[]) {
   const canonical = new Set(initialIds);
   const references = new Map<string, string>();
@@ -57,14 +57,7 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
       )
     )
       throw Error("ANALYTICAL_REFERENCE_COLLISION");
-    if (!["analytics-query", "period", "mongo"].includes(family))
-      return {
-        wire: value as JSONValue,
-        accept() {
-          for (const id of ids) canonical.add(id);
-          rememberText(entries);
-        },
-      };
+    const analytical = ["analytics-query", "period", "mongo"].includes(family);
     const staged = new Map(references);
     const byId = new Map([...staged].map(([ref, id]) => [id, ref]));
     let counter = next;
@@ -227,7 +220,7 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         });
       }
     }
-    const wire: JSONValue = {
+    const compact: JSONValue = {
       ...projected,
       remainingReads,
       evidence: {
@@ -245,6 +238,12 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         ...(shareDetails ? { detailParts } : {}),
       },
     };
+    // Small nonanalytical results can cost less in their original shape.
+    const wire =
+      !analytical &&
+      JSON.stringify(compact).length >= JSON.stringify(value).length
+        ? value
+        : compact;
     return {
       wire,
       accept() {
@@ -252,7 +251,8 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
         for (const id of ids) canonical.add(id);
         rememberText(entries);
         for (const [ref, id] of staged) references.set(ref, id);
-        for (const entry of entries) analyticalIds.add(String(entry.id));
+        if (analytical)
+          for (const entry of entries) analyticalIds.add(String(entry.id));
         next = counter;
         outputs.set(raw as object, wire);
       },

@@ -286,7 +286,16 @@ it("does not add a shared-text dictionary when it would enlarge the result", () 
   expect(wire).not.toHaveProperty("evidence.detailParts");
   expect(unpack(wire)).toEqual(semantic(value.evidence));
 });
-it.each(["analytics-query", "period", "mongo"])(
+it.each([
+  "analytics-query",
+  "period",
+  "mongo",
+  "commercial-plan",
+  "commercial-preparation",
+  "store-settings",
+  "retail-expertise",
+  "recommendation-context",
+])(
   "preserves every exact field while sharing repeated evidence metadata: %s",
   (family) => {
     const value = fixture(),
@@ -403,13 +412,36 @@ it("keeps absent details distinct from empty strings, and preserves chart/extra 
     ),
   ).toEqual(semantic(value.evidence));
 });
-it("leaves nonanalytical workflows in their existing model shape", () => {
-  const value = fixture(1),
+it("keeps small read results verbatim when tabulation would enlarge them", () => {
+  const value = { status: "UNAVAILABLE", evidence: [] },
     p = createAnalyticalModelOutput([]),
     result = p.prepare("store-settings", value, 2)!;
   expect(result.wire).toBe(value);
   result.accept();
   expect(p.toModelOutput({ output: value }).value).toBe(value);
+  expect(p.factCount).toBe(0);
+});
+it("shares reference allocation across read families without triggering analytical budgets", () => {
+  const p = createAnalyticalModelOutput([]),
+    plan = fixture(2),
+    original = structuredClone(plan);
+  const projected = p.prepare("commercial-plan", plan, 2)!;
+  projected.accept();
+  expect(p.factCount).toBe(0);
+  expect(p.toModelOutput({ output: plan }).value).toBe(projected.wire);
+  expect(p.bind({ evidenceId: "r0", productId: "r0" })).toEqual({
+    evidenceId: plan.evidence[0]!.id,
+    productId: "r0",
+  });
+  const analytical = fixture(1);
+  analytical.evidence[0]!.id = "different-analytical-fact";
+  p.prepare("period", analytical, 1)!.accept();
+  expect(p.factCount).toBe(1);
+  expect(p.bind({ evidenceIds: ["r0", "r2"] })).toEqual({
+    evidenceIds: [plan.evidence[0]!.id, analytical.evidence[0]!.id],
+  });
+  expect(plan).toEqual(original);
+  expect(p.bindAnswer({ narrative: "{{source:r0}}" }).omittedBlocks).toBe(0);
 });
 
 it("rewrites nested evidence references without altering product and document identifiers", () => {
