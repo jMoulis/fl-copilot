@@ -48,7 +48,7 @@ it("rereads the existing inbox after a notification without remounting its unsav
   });
   const input = () =>
     tree!.root.findAll(
-      (n) => typeof n.type === "string" && n.type === "Input",
+      (n) => typeof n.type === "string" && String(n.type) === "Input",
     )[0]!;
   await act(async () => input().props.onChangeText("draft@example.test"));
   expect(inbox.refresh).toHaveBeenCalledTimes(1);
@@ -79,7 +79,7 @@ it("rereads the existing inbox after a notification without remounting its unsav
   );
   const button = () =>
     tree!.root
-      .findAll((n) => typeof n.type === "string" && n.type === "Button")
+      .findAll((n) => typeof n.type === "string" && String(n.type) === "Button")
       .find((n) => n.props.label === "Actualiser la réception")!;
   await act(async () => button().props.onPress());
   expect(inbox.refresh).toHaveBeenCalledTimes(3);
