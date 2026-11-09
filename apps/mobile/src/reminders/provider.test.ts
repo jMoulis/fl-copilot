@@ -365,7 +365,7 @@ it("opens a current owned reminder from local data and qualifies a lookup failur
   await act(async () => {
     listener(response(f.data));
   });
-  expect(runtime.push).toHaveBeenCalledExactlyOnceWith({
+  expect(runtime.navigate).toHaveBeenCalledExactlyOnceWith({
     pathname: "/commercial-operation/[id]",
     params: {
       id: f.reminder.operationId,
@@ -382,7 +382,7 @@ it("opens a current owned reminder from local data and qualifies a lookup failur
   expect(observed.error).toBe(
     "Le rappel ne peut pas être ouvert. Consultez votre plan de semaine.",
   );
-  expect(runtime.push).toHaveBeenCalledTimes(1);
+  expect(runtime.navigate).toHaveBeenCalledTimes(1);
 });
 
 it("does not enter the native adapter or write statuses after an unmounted refresh finishes reading", async () => {
@@ -421,7 +421,7 @@ it("keeps receiving notifications after a current cold-start lookup fails", asyn
   await act(async () => {
     [...runtime.responseListeners][0]!(response(f.data));
   });
-  expect(runtime.push).toHaveBeenCalledTimes(1);
+  expect(runtime.navigate).toHaveBeenCalledTimes(1);
 });
 
 it("keeps local navigation usable when background synchronization rejects", async () => {
@@ -432,7 +432,7 @@ it("keeps local navigation usable when background synchronization rejects", asyn
   await act(async () => {
     [...runtime.responseListeners][0]!(response(f.data));
   });
-  expect(runtime.push).toHaveBeenCalledTimes(1);
+  expect(runtime.navigate).toHaveBeenCalledTimes(1);
   expect(observed.error).toBe(
     "Le rappel est ouvert avec les données locales. L’actualisation n’a pas abouti ; réessayez depuis la synchronisation.",
   );
@@ -703,5 +703,95 @@ it.each([true, false])(
         params: { conversationId: data.conversationId },
       },
     });
+  },
+);
+
+it.each([
+  "OPEN_TWICE",
+  "ALREADY_OPEN",
+  "TEST_ALREADY_OPEN",
+  "BURIED_OPERATION",
+  "BURIED_TEST",
+])(
+  "reuses the native reminder destination instead of stacking it: %s",
+  async (mode) => {
+    const f = await notification();
+    const target = mode.includes("TEST")
+      ? "reminder-settings"
+      : "commercial-operation/[id]";
+    const sdk = StackRouter({ initialRouteName: "(tabs)" });
+    const options = {
+      routeNames: ["(tabs)", target, "product/[id]"],
+      routeParamList: {},
+      routeGetIdList: {},
+    };
+    let state = sdk.getInitialState(options);
+    const params = {
+      id: f.reminder.operationId,
+      weekStart: f.reminder.weekStart,
+      reminderRevision: f.reminder.planRevisionId,
+    };
+    if (mode !== "OPEN_TWICE")
+      state = sdk.getStateForAction(
+        state,
+        { type: "PUSH", payload: { name: target, params } },
+        options,
+      )! as typeof state;
+    const originalKey = state.routes[1]?.key;
+    if (mode.startsWith("BURIED"))
+      state = sdk.getStateForAction(
+        state,
+        {
+          type: "PUSH",
+          payload: { name: "product/[id]", params: { id: "other" } },
+        },
+        options,
+      )! as typeof state;
+    const apply = (
+      type: "PUSH" | "NAVIGATE" | "POP_TO",
+      destination:
+        string | { pathname: string; params?: Record<string, string> },
+    ) => {
+      const pathname =
+        typeof destination === "string" ? destination : destination.pathname;
+      state = sdk.getStateForAction(
+        state,
+        {
+          type,
+          payload: {
+            name: pathname.slice(1),
+            params:
+              typeof destination === "string" ? undefined : destination.params,
+          },
+        },
+        options,
+      )! as typeof state;
+    };
+    runtime.rootState = state;
+    runtime.push.mockImplementation((destination) =>
+      apply("PUSH", destination),
+    );
+    runtime.navigate.mockImplementation((destination) =>
+      apply("NAVIGATE", destination),
+    );
+    runtime.dismissTo.mockImplementation((destination) =>
+      apply("POP_TO", destination),
+    );
+    await render();
+    runtime.list.mockResolvedValue([{ reminder: f.reminder }]);
+    const data = mode.includes("TEST")
+      ? { kind: "COMMERCIAL_REMINDER_TEST", storeId: f.reminder.storeId }
+      : f.data;
+    await act(async () => {
+      [...runtime.responseListeners][0]!(response(data));
+    });
+    const firstKey = state.routes[state.index]!.key;
+    await act(async () => {
+      [...runtime.responseListeners][0]!(response(data));
+    });
+    expect(state.routes).toHaveLength(2);
+    expect(state.routes[state.index]!.name).toBe(target);
+    expect(state.routes[state.index]!.key).toBe(originalKey ?? firstKey);
+    expect(runtime.push).not.toHaveBeenCalled();
   },
 );

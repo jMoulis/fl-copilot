@@ -190,7 +190,13 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             data.storeId === storeId
           ) {
             n.clearLastNotificationResponse();
-            router.push("/reminder-settings");
+            if (
+              latestRoot.current?.routes.some(
+                (r) => r.name === "reminder-settings",
+              )
+            )
+              router.dismissTo("/reminder-settings");
+            else router.navigate("/reminder-settings");
             return;
           }
           const chat = copilotCompletionNotificationSchema.safeParse(data);
@@ -260,14 +266,25 @@ export function ReminderProvider({ children }: PropsWithChildren) {
                 "Le rappel est ouvert avec les données locales. L’actualisation n’a pas abouti ; réessayez depuis la synchronisation.",
               );
           });
-          router.push({
-            pathname: "/commercial-operation/[id]",
+          const destination = {
+            pathname: "/commercial-operation/[id]" as const,
             params: {
               id: parsed.data.operationId,
               weekStart: parsed.data.weekStart,
               reminderRevision: parsed.data.revisionId,
             },
-          });
+          };
+          const existing = latestRoot.current?.routes.some(
+            (route) =>
+              route.name === "commercial-operation/[id]" &&
+              route.params &&
+              "id" in route.params &&
+              route.params.id === parsed.data.operationId &&
+              "weekStart" in route.params &&
+              route.params.weekStart === parsed.data.weekStart,
+          );
+          if (existing) router.dismissTo(destination);
+          else router.navigate(destination);
         };
         const receive = async (data: unknown) => {
           try {
