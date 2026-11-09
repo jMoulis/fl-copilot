@@ -1,0 +1,35 @@
+# M8 T06/T11 — durable offline logout, 9 November 2026
+
+## Audited gap and bounded approach
+
+AuthProvider previously cleared local credentials and attempted remote logout only with an in-memory access token. An offline cold session or failed request had no durable revocation intent. Logout also left APNs registration, delivered previews and local reminders to independent cleanup; a cached native token could later be reused without registering the replacement session with iOS.
+
+Reuse the existing auth endpoint, opaque refresh credential, stored current/rotated token hashes, SecureStore, existing auth provider and Expo notification adapter. No new business model, database collection, AI tool/call, source deletion, user permission, polling timer or generic repair service. The only Mongo migration, 58, indexes current and rotated token hashes in the existing deviceSessions collection; it does not transform business data or change local schema62.
+
+## Remote revocation, not a new login path
+
+POST `/api/v1/auth/logout` retains the existing Bearer request and accepts the strict alternative `{refreshToken}` body. The body is a revocation credential: its hash identifies only that current/rotated session. It cannot grant data access or issue tokens. A single atomic update revokes the matching row and removes its push registration; missing/already-retired secrets return the same success. Fresh verified logins replace the session row and its hashes, so an old queued logout cannot revoke the new login, another account or another device. The existing conditional refresh write prevents a renewal from undoing revocation.
+
+No plaintext secret enters Mongo, SQLite, business Outbox, recovery-owner metadata, URLs, logs or model input. The refresh secret awaiting revocation stays in the existing encrypted SecureStore boundary, outside operational database copies. It is never used to restore a logged-out session. This follows the revocation-only principle of [RFC7009](https://www.rfc-editor.org/rfc/rfc7009.html), without claiming a new OAuth implementation or changing the application's JSON protocol.
+
+## Native intent and local privacy
+
+The canonical credential storage adapter serializes reads/writes across provider replacement. Before clearing live keys, it durably appends/deduplicates the revocation secret in `auth.pending-logouts`. Interrupted clearing cannot reopen a credential named by that intent. A completed remote acknowledgement removes only its own intent and clears leftover live keys only when they still match that exact old secret; a newer login remains intact. Malformed/orphaned credentials can be retired without exporting them through recovery metadata. Unknown/unreadable pending storage fails closed rather than being discarded.
+
+A coalesced drain runs at active startup, foreground return, explicit logout and before native push registration. Each network call uses the existing bounded HTTP request helper (60 seconds, including response body); it never blocks local logout. A new intent arriving during a drain is consumed by the same progressing pass. Network/storage failure preserves the intent for a later event; there is no background polling loop. No instantaneous server revocation is claimed while offline.
+
+Local cleanup unregisters remote delivery, cancels app reminders and dismisses delivered previews. A small generation fence in the existing native adapter invalidates earlier work; scheduling completed late is compensated by cancelling that exact notification. Native token caches belong to the current auth/database scope, unsolicited old token events cannot seed a fresh cache, and fresh iOS registration waits until pending remote revocations are acknowledged. Expo Go/web do not unregister their host's notifications. The iOS adapter maps to [Apple's unregisterForRemoteNotifications](https://developer.apple.com/documentation/uikit/uiapplication/unregisterforremotenotifications%28%29), as confirmed in the installed Expo module; callbacks accepted by an external delivery provider cannot be retrospectively recalled.
+
+Before destructive credential retirement or saving/marking a restored-owner login, AuthProvider rechecks its active manager after the asynchronous owner check. A retired provider cannot clear/revoke or overwrite a replacement account. Existing logical-session generation checks from PR480 remain unchanged. No operational row, original source, pending command, source ID or device identity is erased.
+
+## Verification and qualifications
+
+The focused suite includes real disposable transactional Mongo, file-backed SQLite/recovery and mounted production components with controlled SecureStore/native/network ports. It covers rotated/expired credentials, a logout/renewal race, harmless late revocation after a newer login, other devices/accounts, legacy/new HTTP requests, repeatable indexes, durable intent/retry/module restart, interrupted credential clearing, cross-provider serialization, a newly appended intent, old acknowledgement versus new login, native failures, foreground/listener stability, late owner checks and late native-token/reminder callbacks. Two fresh-cache cases reproduce failures against the prior native runtime. Recovery tests distinguish UUID-only ownership metadata from the separate encrypted revocation intent; they do not authorize copying credentials into a recovery manifest.
+
+Final focused verification: 235 tests passed across 16 suites, none skipped, with the real disposable transactional MongoDB fixture. Workspace typecheck (10 projects), changed-file lint and formatting pass. Exact-head CI and delivery identities are recorded in the release ledger. No live credential, production logout, real email, paid AI request or physical iOS fault was used. Real-engine/controlled-host evidence does not certify OS Keychain failure, actual APNs retirement or the whole T06/T11/M8 checklist. The owner-deferred Atlas backup rehearsal stays deferred.
+
+## Grouped delivery and device recipe
+
+Release the compatible API first, then group this native increment with PR480's retired-session response fix. Old binaries retain Bearer logout. On an API rollback predating the body credential, intents remain retained and fresh private-push registration waits for compatibility; do not interpret a rejected body request as a completed revocation. Keep existing verified artifacts/identities and qualify rollback rather than erasing pending intents.
+
+On the grouped iPhone binary, use the owner's normal account with no pending production edits for the focused recipe: keep an existing reply preview visible, switch offline, log out, verify previews disappear and cached private screens cannot reopen, restore connectivity and foreground the app, then authenticate normally and verify a new reply notification arrives. Do not uninstall/reset the working app or manufacture unsent business changes for this test. Device acceptance remains distinct from API release and signed-archive verification.

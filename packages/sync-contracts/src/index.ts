@@ -63,6 +63,11 @@ export const refreshSessionRequestSchema = z.object({
 });
 
 export const logoutResponseSchema = z.object({ revoked: z.literal(true) });
+/** Revocation only: possession cannot authorize data access or renew a session. */
+export const logoutSessionRequestSchema = z.strictObject({
+  refreshToken: z.string().min(32),
+});
+export type LogoutSessionRequest = z.infer<typeof logoutSessionRequestSchema>;
 export * from "./commercial-review";
 export * from "./commercial-original";
 export * from "./commercial-visual";

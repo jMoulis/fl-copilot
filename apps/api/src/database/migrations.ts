@@ -1195,6 +1195,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 58,
+    name: "session-revocation-token-lookups",
+    async up(database) {
+      await database
+        .collection("deviceSessions")
+        .createIndex({ refreshTokenHash: 1 });
+      await database
+        .collection("deviceSessions")
+        .createIndex({ rotatedTokenHashes: 1 });
+    },
+  },
 ];
 
 export async function runMongoMigrations(

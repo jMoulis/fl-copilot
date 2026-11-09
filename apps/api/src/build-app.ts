@@ -212,6 +212,7 @@ import {
   initSourceUploadResponseSchema,
   importVerificationResultSchema,
   logoutResponseSchema,
+  logoutSessionRequestSchema,
   refreshSessionRequestSchema,
   SYNC_PROTOCOL_VERSION,
   syncPullQuerySchema,
@@ -610,8 +611,17 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
   );
   app.post(
     "/api/v1/auth/logout",
-    { schema: { response: { 200: logoutResponseSchema } } },
+    {
+      schema: {
+        body: logoutSessionRequestSchema.nullish(),
+        response: { 200: logoutResponseSchema },
+      },
+    },
     async (request) => {
+      if (request.body) {
+        await auth.logout(request.body);
+        return { revoked: true as const };
+      }
       const authorization = request.headers.authorization;
       if (!authorization?.startsWith("Bearer ")) {
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");

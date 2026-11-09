@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import {
@@ -6,6 +7,23 @@ import {
 } from "@fl-copilot/domain";
 import type { NotificationAdapter } from "./reconcile";
 let modulePromise: Promise<typeof import("expo-notifications")> | undefined;
+let registrationGeneration = 0;
+export function nativeRegistrationIsCurrent() {
+  const generation = registrationGeneration;
+  return () => generation === registrationGeneration;
+}
+/** Local logout never needs connectivity to retire delivery or old previews. */
+export async function retirePrivateNotifications() {
+  registrationGeneration++;
+  if (Platform.OS === "web" || Constants.appOwnership === "expo") return;
+  const n = await notificationModule();
+  if (!n) return;
+  await Promise.all([
+    n.unregisterForNotificationsAsync(),
+    n.cancelAllScheduledNotificationsAsync(),
+    n.dismissAllNotificationsAsync(),
+  ]);
+}
 export function notificationsAvailable() {
   return (
     Platform.OS !== "web" &&
@@ -20,23 +38,30 @@ export async function notificationModule() {
   return modulePromise;
 }
 export async function notificationAdapter(): Promise<NotificationAdapter | null> {
+  const current = nativeRegistrationIsCurrent();
   const n = await notificationModule();
   if (!n) return null;
   return {
     permission: async () => {
+      if (!current()) return false;
       const p = await n.getPermissionsAsync();
       return (
         p.granted || p.ios?.status === n.IosAuthorizationStatus.PROVISIONAL
       );
     },
     pending: async () =>
-      (await n.getAllScheduledNotificationsAsync()).map((v) => ({
-        identifier: v.identifier,
-        data: v.content.data,
-      })),
-    cancel: (id) => n.cancelScheduledNotificationAsync(id),
-    schedule: (r: CommercialReminder) =>
-      n.scheduleNotificationAsync({
+      (current() ? await n.getAllScheduledNotificationsAsync() : []).map(
+        (v) => ({
+          identifier: v.identifier,
+          data: v.content.data,
+        }),
+      ),
+    cancel: async (id) => {
+      if (current()) await n.cancelScheduledNotificationAsync(id);
+    },
+    schedule: async (r: CommercialReminder) => {
+      if (!current()) throw Error("NOTIFICATION_CONTEXT_CHANGED");
+      const identifier = await n.scheduleNotificationAsync({
         identifier: `fl-reminder-${r.id}`,
         content: {
           title: "Préparer une opération",
@@ -57,7 +82,13 @@ export async function notificationAdapter(): Promise<NotificationAdapter | null>
           date: new Date(r.fireAt),
           channelId: "commercial-reminders",
         },
-      }),
+      });
+      if (!current()) {
+        await n.cancelScheduledNotificationAsync(identifier);
+        throw Error("NOTIFICATION_CONTEXT_CHANGED");
+      }
+      return identifier;
+    },
   };
 }
 export async function requestReminderPermission() {
