@@ -43,6 +43,7 @@ export function EmailInbox({
   conversationId,
   initialSender,
   revision,
+  refreshKey,
   onClose,
   onOpenSync,
   onOpenMercalys,
@@ -51,6 +52,7 @@ export function EmailInbox({
   conversationId: string;
   initialSender: string;
   revision?: string;
+  refreshKey?: string;
   onClose(): void;
   onOpenSync(conflictId?: string): void;
   onOpenMercalys?(batchId: string): void;
@@ -66,6 +68,7 @@ export function EmailInbox({
   const alive = useRef(true),
     pending = useRef(false);
   const loadEpoch = useRef(0);
+  const refreshedKey = useRef(refreshKey);
   const selections = useRef(new Map<string, EmailAdmissionSelection>());
   useEffect(() => {
     alive.current = true;
@@ -124,6 +127,12 @@ export function EmailInbox({
   useEffect(() => {
     void refresh();
   }, [refresh]);
+  useEffect(() => {
+    if (!refreshKey || refreshedKey.current === refreshKey || pending.current)
+      return;
+    refreshedKey.current = refreshKey;
+    void refresh();
+  }, [refresh, refreshKey, busy]);
   const active = cached.bindings.filter((binding) => !binding.revokedAt);
   const invalidSender =
     error === "Saisissez une adresse email valide pour l’expéditeur.";

@@ -4,6 +4,7 @@ import {
   copilotCompletionNotificationSchema,
   expoPushTokenSchema,
   type CopilotCompletionNotification,
+  type PushChannels,
 } from "@fl-copilot/sync-contracts";
 import {
   copilotConversationSchema,
@@ -14,13 +15,13 @@ import {
 } from "@fl-copilot/domain";
 import { AuthError, type AuthorizedStoreContext } from "../auth/service";
 
-type PushSession = {
+export type PushSession = {
   _id: string;
   userId: string;
   deviceId: string;
   expiresAt: Date;
   revokedAt?: Date;
-  push?: { storeId: string; token: string };
+  push?: { storeId: string; token: string; channels?: PushChannels };
 };
 /** Credentials belong to the current authenticated session; logout/re-login retires them. */
 export async function updateDevicePushToken(
@@ -57,7 +58,11 @@ export async function updateDevicePushToken(
         input.pushToken
           ? {
               $set: {
-                push: { storeId: input.storeId, token: input.pushToken },
+                push: {
+                  storeId: input.storeId,
+                  token: input.pushToken,
+                  ...(input.channels ? { channels: input.channels } : {}),
+                },
               },
             }
           : { $unset: { push: "" } },
@@ -95,6 +100,7 @@ export async function registeredChatPush(
     revokedAt: { $exists: false },
     expiresAt: { $gt: new Date() },
     "push.storeId": principal.storeId,
+    "push.channels.chat": { $ne: false },
   });
   return expoPushTokenSchema.safeParse(row?.push?.token).success
     ? row!.push!.token
@@ -171,6 +177,27 @@ export async function notifyChatCompletion(
   if (!membership) return;
   const token = await registeredChatPush(db, principal);
   if (!token) return;
+  await sendDevicePush(
+    db,
+    principal.sessionId,
+    token,
+    {
+      title: "Ta réponse est prête",
+      body: chatCompletionPreview(m.text),
+      data,
+      collapseId: data.replyId,
+    },
+    options,
+  );
+}
+/** Shared transport only: callers must resolve current delivery authority. */
+export async function sendDevicePush(
+  db: Db,
+  sessionId: string,
+  token: string,
+  message: { title: string; body: string; data: object; collapseId: string },
+  options: { fetch?: typeof fetch; accessToken?: string } = {},
+) {
   const response = await (options.fetch ?? fetch)(
     "https://exp.host/--/api/v2/push/send",
     {
@@ -184,12 +211,9 @@ export async function notifyChatCompletion(
       },
       body: JSON.stringify({
         to: token,
-        title: "Ta réponse est prête",
-        body: chatCompletionPreview(m.text),
-        data,
+        ...message,
         sound: "default",
         ttl: 3600,
-        collapseId: data.replyId,
       }),
     },
   );
@@ -201,7 +225,7 @@ export async function notifyChatCompletion(
     await db
       .collection<PushSession>("deviceSessions")
       .updateOne(
-        { _id: principal.sessionId, "push.token": token },
+        { _id: sessionId, "push.token": token },
         { $unset: { push: "" } },
       );
     return;

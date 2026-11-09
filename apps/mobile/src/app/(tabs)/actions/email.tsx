@@ -1,4 +1,5 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
+import { z } from "zod";
 import { useAuth } from "@/auth/auth-provider";
 import { useSync } from "@/sync/sync-provider";
 import { EmailInbox } from "@/intake/email-inbox";
@@ -10,6 +11,8 @@ import {
 } from "@/components/ui";
 
 export default function StoreEmailScreen() {
+  const { receiptId } = useLocalSearchParams<{ receiptId?: string }>();
+  const received = z.uuid().safeParse(receiptId);
   const { session } = useAuth();
   const { emailIntake, lastSyncedAt } = useSync();
   const store = session?.stores[0];
@@ -34,6 +37,7 @@ export default function StoreEmailScreen() {
       conversationId={store.storeId}
       initialSender={session.user.email}
       revision={lastSyncedAt}
+      refreshKey={received.success ? received.data : undefined}
       onClose={() => router.back()}
       onOpenMercalys={(batchId) =>
         router.push({ pathname: "/actions/email-import", params: { batchId } })

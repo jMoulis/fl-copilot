@@ -27,6 +27,7 @@ import {
 } from "./chat-push-registration";
 type State = ChatPushState & {
   available: boolean;
+  setEmailEnabled(enabled: boolean): Promise<void>;
   setEnabled(enabled: boolean): Promise<void>;
   refresh(): Promise<void>;
 };
@@ -98,6 +99,17 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
         !!storeId,
       read: () => SecureStore.getItemAsync(key),
       write: (value) => SecureStore.setItemAsync(key, value),
+      email: {
+        read: () =>
+          SecureStore.getItemAsync(
+            `fl.email-push.${ownerId}.${storeId}.${deviceId}`,
+          ),
+        write: (value) =>
+          SecureStore.setItemAsync(
+            `fl.email-push.${ownerId}.${storeId}.${deviceId}`,
+            value,
+          ),
+      },
       permission: async (request) => {
         if (request) return requestReminderPermission();
         const n = await notificationModule();
@@ -108,7 +120,7 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
         );
       },
       token: () => pushToken(nativeToken, nativeReads),
-      save: (token) =>
+      save: (token, channels) =>
         withAccessToken((accessToken) => {
           if (active.current !== scope)
             throw Error("CHAT_PUSH_CONTEXT_CHANGED");
@@ -117,6 +129,7 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
             deviceId,
             storeId!,
             token,
+            channels,
           );
         }, ownerId),
       publish: (value) => {
@@ -170,6 +183,7 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
       value={{
         ...value,
         available,
+        setEmailEnabled: (enabled) => registration.setEmailEnabled(enabled),
         setEnabled: (enabled) => registration.setEnabled(enabled),
         refresh,
       }}

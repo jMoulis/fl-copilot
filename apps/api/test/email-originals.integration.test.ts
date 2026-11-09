@@ -121,11 +121,15 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           objects.set(key, new Uint8Array(data));
         }),
       };
+      const afterPreservation = vi.fn(async (receiptId: string) => {
+        void receiptId;
+      });
       const processor = createEmailOriginalProcessor(
         database,
         { read },
         storage,
         now,
+        afterPreservation,
       );
       const jobs = () =>
         db.collection<{ _id: string }>("emailIntakeOriginalJobs");
@@ -141,6 +145,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         binding,
         receiptId,
         processor,
+        afterPreservation,
         first,
         pending,
         read,
@@ -156,6 +161,27 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         revoke: () => store.revokeBinding(scope, binding.id),
       };
     }
+    it("runs the notification hook after durable conservation, and never fails the original for delivery", async () => {
+      const f = await fixture();
+      f.afterPreservation.mockImplementationOnce(async (receiptId) => {
+        expect(receiptId).toBe(f.receiptId);
+        expect((await f.receipt()).files[0]?.status).toBe("READY");
+        expect(
+          (
+            await f.db
+              .collection<Document & { _id: string }>("emailIntakeOriginalJobs")
+              .findOne({ _id: f.first })
+          )?.status,
+        ).toBe("DONE");
+        throw Error("push unavailable");
+      });
+      expect(await f.processor.preserve(f.first)).toEqual({ status: "READY" });
+      expect(await f.processor.preserve(f.first)).toEqual({
+        status: "NOT_DUE",
+      });
+      expect(f.afterPreservation).toHaveBeenCalledTimes(1);
+      expect((await f.receipt()).files[0]?.status).toBe("READY");
+    });
     it("defers an owner limit without reading bytes or spending an error attempt, then resumes next day", async () => {
       const f = await fixture(2);
       const day = f.now().toISOString().slice(0, 10);

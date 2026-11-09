@@ -2,6 +2,7 @@ import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
 import {
   devicePushTokenRequestSchema,
   devicePushTokenResponseSchema,
+  type PushChannels,
 } from "@fl-copilot/sync-contracts";
 import {
   layoutIllustrationQuoteStateSchema,
@@ -437,8 +438,13 @@ export class ApiClient {
     deviceId: string,
     storeId: string,
     pushToken: string | null,
+    channels?: PushChannels,
   ) {
-    const input = devicePushTokenRequestSchema.parse({ storeId, pushToken });
+    const input = devicePushTokenRequestSchema.parse({
+      storeId,
+      pushToken,
+      channels,
+    });
     return this.request(
       `/api/v1/devices/${encodeURIComponent(deviceId)}/push-token`,
       {

@@ -249,6 +249,7 @@ export function createEmailOriginalProcessor(
   reader: Reader,
   storage: EmailOriginalStorage = createEmailOriginalBlobStorage(),
   now: () => Date = () => new Date(),
+  afterPreservation?: (receiptId: string) => Promise<void>,
 ) {
   async function context(db: Db, job: Job, session?: ClientSession) {
     const jobs = db.collection<Job>("emailIntakeOriginalJobs");
@@ -275,11 +276,13 @@ export function createEmailOriginalProcessor(
     retry = false,
     budgetDeferred = false,
   ) {
+    let terminal = false;
     await emailIntakeAtomic(db, async (session) => {
       await context(db, job, session);
       const timestamp = now();
       const pending =
         budgetDeferred || (retry && usedAttempts(job) < attemptsLimit);
+      terminal = !pending;
       const result = await db
         .collection<Job>("emailIntakeOriginalJobs")
         .updateOne(
@@ -337,6 +340,9 @@ export function createEmailOriginalProcessor(
           { session },
         );
     });
+    // Delivery failure must never turn conserved originals into failed jobs.
+    if (terminal)
+      await afterPreservation?.(job.receiptId).catch(() => undefined);
   }
   async function cancel(db: Db, job: Job) {
     await emailIntakeAtomic(db, async (session) => {

@@ -10,6 +10,9 @@ const runtime = vi.hoisted(() => ({
   list: vi.fn<(store: string) => Promise<unknown[]>>(async () => []),
   setEnabled: vi.fn(async () => {}),
   save: vi.fn(async () => {}),
+  emailEnabled: false,
+  pushAvailable: false,
+  setEmailEnabled: vi.fn(async () => {}),
   refresh: vi.fn(async () => {}),
   permission: vi.fn(async () => true),
   schedule: vi.fn<(input: { identifier: string }) => Promise<string>>(
@@ -21,9 +24,11 @@ const runtime = vi.hoisted(() => ({
 vi.mock("@/notifications/chat-push-provider", () => ({
   useChatPush: () => ({
     enabled: false,
-    ready: false,
+    ready: runtime.pushAvailable,
     busy: false,
-    available: false,
+    available: runtime.pushAvailable,
+    emailEnabled: runtime.emailEnabled,
+    setEmailEnabled: runtime.setEmailEnabled,
     refresh: async () => {},
     setEnabled: async () => {},
   }),
@@ -362,4 +367,27 @@ it("does not reload on ordinary rerenders with the same owner, store and databas
   expect(runtime.list).toHaveBeenCalledTimes(1);
   expect(runtime.preferences).toHaveBeenCalledTimes(1);
   expect(runtime.listeners.size).toBe(1);
+});
+
+it("keeps email consent separate and describes reception rather than completed publication", async () => {
+  runtime.pushAvailable = true;
+  runtime.setEmailEnabled.mockClear();
+  Object.assign(runtime.session.stores[0]!, { role: "MANAGER" });
+  try {
+    await act(async () => {
+      tree = create(createElement(ReminderSettings));
+    });
+    const email = hosts("Switch").find(
+      (node) =>
+        node.props.accessibilityLabel ===
+        "Activer les alertes des documents reçus par email",
+    )!;
+    expect(email.props.value).toBe(false);
+    expect(email.props.disabled).toBe(false);
+    await act(async () => email.props.onValueChange(true));
+    expect(runtime.setEmailEnabled).toHaveBeenCalledWith(true);
+    expect(runtime.setEnabled).not.toHaveBeenCalled();
+  } finally {
+    runtime.pushAvailable = false;
+  }
 });
