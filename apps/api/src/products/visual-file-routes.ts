@@ -59,8 +59,15 @@ export function registerVisualFileRoutes(
         response: { 200: initVisualFileResponseSchema },
       },
     },
-    async (request) =>
-      files.init(await authorize(request, true), request.body.assetId),
+    async (request, reply) => {
+      const result = await files.init(
+        await authorize(request, true),
+        request.body.assetId,
+      );
+      await authorize(request, true);
+      reply.header("cache-control", "private, no-store");
+      return result;
+    },
   );
   app.post(
     "/api/v1/visual-files/complete",
@@ -70,12 +77,16 @@ export function registerVisualFileRoutes(
         response: { 200: visualFileManifestSchema },
       },
     },
-    async (request) =>
-      files.complete(
+    async (request, reply) => {
+      const result = await files.complete(
         await authorize(request, true),
         request.body.assetId,
         request.body.uploadId,
-      ),
+      );
+      await authorize(request, true);
+      reply.header("cache-control", "private, no-store");
+      return result;
+    },
   );
   app.get(
     "/api/v1/visual-assets/:assetId/file-manifest",
@@ -88,10 +99,16 @@ export function registerVisualFileRoutes(
         response: { 200: visualFileManifestSchema },
       },
     },
-    async (request) =>
-      request.query.preview === "transparent"
-        ? files.manifest(await authorize(request), request.params.assetId, true)
-        : files.manifest(await authorize(request), request.params.assetId),
+    async (request, reply) => {
+      const principal = await authorize(request);
+      const result =
+        request.query.preview === "transparent"
+          ? await files.manifest(principal, request.params.assetId, true)
+          : await files.manifest(principal, request.params.assetId);
+      await authorize(request);
+      reply.header("cache-control", "private, no-store");
+      return result;
+    },
   );
   app.get(
     "/api/v1/visual-assets/:assetId/:variant",
@@ -121,6 +138,8 @@ export function registerVisualFileRoutes(
               request.params.assetId,
               request.params.variant,
             );
+      // File processing can outlive a logout, membership change or session expiry.
+      await authorize(request);
       return reply
         .type(result.mimeType)
         .header("cache-control", "private, no-store")

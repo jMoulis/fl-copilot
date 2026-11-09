@@ -54,6 +54,68 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       });
       return { auth, deviceId, storeId, first, login };
     }
+    it.each(["logout", "replacement-login", "membership", "expiry"] as const)(
+      "does not return private image bytes after %s during file preparation",
+      async (change) => {
+        const f = await fixture(),
+          assetId = randomUUID();
+        const bytes = new Uint8Array([0xca, 0xfe, 0xf0, 0x0d]);
+        const app = buildApp(config, {
+          auth: f.auth,
+          database: {
+            getDb: () => database.getDb(),
+            checkHealth: () => database.checkHealth(),
+            close: async () => {},
+          },
+          visualFiles: {
+            init: vi.fn(),
+            complete: vi.fn(),
+            manifest: vi.fn(),
+            read: async () => {
+              if (change === "logout")
+                await f.auth.logout({ refreshToken: f.first.refreshToken });
+              else if (change === "replacement-login") await f.login();
+              else if (change === "membership")
+                await db
+                  .collection("storeMemberships")
+                  .updateOne(
+                    { userId: f.first.user.id, storeId: f.storeId },
+                    { $set: { active: false } },
+                  );
+              else {
+                vi.useFakeTimers({ toFake: ["Date"] });
+                vi.setSystemTime(
+                  Date.now() +
+                    (config.AUTH_ACCESS_TOKEN_TTL_SECONDS + 1) * 1000,
+                );
+              }
+              return {
+                bytes,
+                mimeType: "image/jpeg",
+                contentHash: `sha256:${"a".repeat(64)}`,
+              };
+            },
+          },
+        });
+        try {
+          const response = await app.inject({
+            url: `/api/v1/visual-assets/${assetId}/source`,
+            headers: {
+              authorization: `Bearer ${f.first.accessToken}`,
+              "x-store-id": f.storeId,
+            },
+          });
+          expect(response.statusCode).toBe(change === "membership" ? 403 : 401);
+          expect(response.rawPayload).not.toEqual(Buffer.from(bytes));
+          expect(response.headers["content-type"]).toContain(
+            "application/json",
+          );
+        } finally {
+          vi.useRealTimers();
+          await app.close();
+        }
+      },
+    );
     it("revokes the same session from a rotated logout secret and removes its push registration", async () => {
       const f = await fixture();
       const second = await f.auth.refreshSession(
