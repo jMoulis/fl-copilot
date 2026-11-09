@@ -27,6 +27,10 @@ const p = vi.hoisted(() => ({
   close: vi.fn(),
   changed: vi.fn(),
   read: vi.fn(),
+  sqlite: { getFirstAsync: vi.fn() },
+  recover: vi.fn(),
+  originalsEnabled: false,
+  digest: vi.fn(),
   recompute: vi.fn(async () => ({ failedJobs: 0 })),
 }));
 vi.mock("expo-router", () => ({ useIsFocused: () => true }));
@@ -80,15 +84,18 @@ vi.mock("../auth/auth-provider", () => ({
   }),
 }));
 vi.mock("../providers/database-provider", () => ({
-  useLocalDatabase: () => ({ sqlite: {}, deviceId: "device" }),
+  useLocalDatabase: () => ({ sqlite: p.sqlite, deviceId: "device" }),
 }));
 vi.mock("../sync/sync-provider", () => ({
-  useSync: () => ({ syncNow: p.sync }),
+  useSync: () => ({
+    syncNow: p.sync,
+    originals: p.originalsEnabled ? { recover: p.recover } : undefined,
+  }),
 }));
 vi.mock("expo-crypto", () => ({
   randomUUID: () => "33333333-3333-4333-8333-333333333333",
   CryptoDigestAlgorithm: { SHA256: "SHA256" },
-  digest: async () => new Uint8Array(32).buffer,
+  digest: p.digest,
 }));
 vi.mock("expo-file-system", () => ({
   Paths: { document: "file:///documents" },
@@ -263,6 +270,11 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  p.originalsEnabled = false;
+  p.sqlite.getFirstAsync.mockReset().mockResolvedValue(null);
+  p.recover.mockReset();
+  p.continuation.mockReset().mockResolvedValue(null);
+  p.digest.mockReset().mockResolvedValue(new Uint8Array(32).buffer);
   p.remove.mockReset();
   p.referenced.mockReset().mockResolvedValue(false);
   p.read.mockResolvedValue(new Uint8Array([1]).slice());
@@ -600,3 +612,63 @@ it.each(["COMMITTED", "READ_FAILURE", "ROLLED_BACK", "DELETE_FAILED"])(
     expect(p.sync).not.toHaveBeenCalled();
   },
 );
+
+it("recovers an old import through the existing original service and offers retry without republication", async () => {
+  p.originalsEnabled = true;
+  p.sqlite.getFirstAsync.mockResolvedValue({
+    id: "55555555-5555-4555-8555-555555555555",
+    local_file_uri: null,
+  });
+  p.read.mockImplementation(async (uri: string) => {
+    if (uri === asset.uri)
+      throw Object.assign(new Error("old-private-container"), {
+        code: "ENOENT",
+      });
+    return new Uint8Array([1]).slice();
+  });
+  p.recover.mockRejectedValueOnce(new TypeError("offline"));
+  p.recover.mockResolvedValueOnce({
+    localUri: "file:///recovered-original.xlsx",
+    views: null,
+  });
+  p.duplicate.mockResolvedValue({
+    sourceDocumentId: "old-source",
+    sourceType: "MERCALYS_SALES",
+    createdAt: "2026-10-23T10:00:00Z",
+    localProcessingStatus: "PUBLISHED",
+  });
+  await mount();
+  expect(text(renderer!.root)).toContain("La récupération n’a pas abouti");
+  expect(text(renderer!.root)).not.toContain("old-private-container");
+  expect(p.publish).not.toHaveBeenCalled();
+  await press("Réessayer la lecture");
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  });
+  expect(p.recover).toHaveBeenCalledTimes(2);
+  expect(text(renderer!.root)).toContain("Ce fichier a déjà été importé");
+  expect(p.publish).not.toHaveBeenCalled();
+  expect(p.resume).not.toHaveBeenCalled();
+  expect(p.write).not.toHaveBeenCalled();
+  expect(p.changed).not.toHaveBeenCalled();
+});
+it("checks the recovered old import checksum before parsing or publishing it", async () => {
+  p.originalsEnabled = true;
+  p.sqlite.getFirstAsync.mockResolvedValue({
+    id: "55555555-5555-4555-8555-555555555555",
+    local_file_uri: null,
+  });
+  p.read.mockRejectedValueOnce(
+    Object.assign(new Error("missing"), { code: "ENOENT" }),
+  );
+  p.recover.mockResolvedValue({
+    localUri: "file:///recovered-original.xlsx",
+    views: null,
+  });
+  p.digest.mockResolvedValueOnce(new Uint8Array(32).fill(1).buffer);
+  await mount();
+  expect(p.recover).toHaveBeenCalledTimes(1);
+  expect(text(renderer!.root)).toContain("L’original conservé a changé");
+  expect(p.validate).not.toHaveBeenCalled();
+  expect(p.publish).not.toHaveBeenCalled();
+});

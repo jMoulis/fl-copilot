@@ -4,7 +4,8 @@ import { SourceOriginalButton } from "./source-original-button";
 import { SourceUploadRecoveryPanel } from "./source-upload-recovery-panel";
 import { MercalysBatchPanel } from "./mercalys-batch-panel";
 import { MercalysReconciliationReview } from "./mercalys-reconciliation-review";
-import { readRetainedMercalysBytes } from "./read-retained-mercalys";
+import { readMercalysReviewOriginal } from "./read-mercalys-review-original";
+import { sourceOriginalMessage } from "./source-original-actions";
 import {
   localOperationFailureCode,
   localOperationFailureMessage,
@@ -137,7 +138,7 @@ export function MercalysImportScreen({
   const [reviewSourceIndex, setReviewSourceIndex] = useState<number>();
   const { sqlite, deviceId } = useLocalDatabase();
   const { session } = useAuth();
-  const { syncNow, lastSyncedAt } = useSync();
+  const { syncNow, lastSyncedAt, originals } = useSync();
   const storeId = session?.stores[0]?.storeId;
   const actorUserId = session?.user.id;
   const archiveFocused = useIsFocused();
@@ -225,7 +226,13 @@ export function MercalysImportScreen({
 
         setStage("READING");
         await yieldToInterface();
-        const bytes = await readRetainedMercalysBytes(asset.uri);
+        const bytes = await readMercalysReviewOriginal(
+          asset.uri,
+          asset.expectedChecksum,
+          storeId,
+          sqlite,
+          originals,
+        );
         if (
           asset.expectedChecksum &&
           `sha256:${await sha256Hex(bytes)}` !== asset.expectedChecksum
@@ -285,7 +292,7 @@ export function MercalysImportScreen({
         setStage("ERROR");
       }
     },
-    [storeId, repository, publicationRepository],
+    [storeId, repository, publicationRepository, sqlite, originals],
   );
 
   const seeded = useRef(false);
@@ -878,7 +885,23 @@ export function MercalysImportScreen({
         ) : null}
 
         {error ? (
-          <InlineAlert title="Import impossible" message={error} />
+          <View className="gap-2">
+            <InlineAlert
+              title={
+                retainedAsset
+                  ? "Consultation du fichier impossible"
+                  : "Import impossible"
+              }
+              message={error}
+            />
+            {retainedAsset ? (
+              <SecondaryButton
+                label="Réessayer la lecture"
+                disabled={busy}
+                onPress={() => void chooseWorkbook(retainedAsset)}
+              />
+            ) : null}
+          </View>
         ) : null}
 
         {summary && section === "PRODUCTS" && productCatalog && storeId ? (
@@ -1462,6 +1485,14 @@ function progressState(stage: ImportStage, target: ImportStage) {
 }
 
 function importErrorMessage(error: unknown) {
+  if (
+    error instanceof Error &&
+    error.message === "MERCALYS_ORIGINAL_RECOVERY_FAILED"
+  ) {
+    const cause = error.cause as
+      { code?: string; message?: string } | undefined;
+    return sourceOriginalMessage(cause?.code ?? cause?.message);
+  }
   const localMessage = localOperationFailureMessage(
     localOperationFailureCode(error),
   );
