@@ -16,6 +16,14 @@ export const copilotPlanReadInputSchema = z.strictObject({
   offset: z.number().int().min(0).max(10000),
   limit: z.number().int().min(1).max(10),
 });
+/** Model lookup only. Exact reads and saved provenance keep an explicit week. */
+export const copilotPlanLookupInputSchema = copilotPlanReadInputSchema.extend({
+  weekStart: copilotPlanReadInputSchema.shape.weekStart
+    .nullable()
+    .describe(
+      "Exact Monday, or null for the latest saved plan whose week has started in Europe/Paris.",
+    ),
+});
 export const copilotPlanReadResultSchema = z
   .strictObject({
     weekStart: contextWeekQuerySchema.shape.weekStart,

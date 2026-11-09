@@ -1176,63 +1176,95 @@ it("lets the model discover and inspect a receipt without treating unavailable e
   expect(calls).toBe(3);
 });
 
-it("exposes saved plan reads without turning missing plans into zero progress", async () => {
-  const f = fixture(),
-    input = { weekStart: "2026-10-05", offset: 0, limit: 10 };
-  const commercialPlan = vi.fn(async () => ({
-    weekStart: input.weekStart,
-    status: "NO_PLAN" as const,
-    plan: null,
-    tasks: [],
-    progress: null,
-    unmatchedDeclarations: null,
-    nextOffset: null,
-    evidence: [
-      {
-        id: "commercial-plan-missing",
-        sourceType: "DATA_QUALITY" as const,
-        sourceId: f.request.storeId,
-        sourceVersion: null,
-        label: "Plan enregistré",
-        value: "Aucun plan synchronisé ; progression inconnue.",
-        factKind: "QUALITY" as const,
-      },
-    ],
-  }));
-  let calls = 0;
-  const transport: typeof fetch = async (_url, init) => {
-    const body = JSON.parse(String(init?.body));
-    if (calls++ === 0) {
-      expect(
-        body.tools.some((t: { name: string }) => t.name === "commercial_plan"),
-      ).toBe(true);
-      const envelope = z
-        .record(z.string(), z.unknown())
-        .parse(await response().json());
-      envelope.output = [
+it.each(["EXACT", "LATEST", "FUTURE_LATEST"])(
+  "scopes saved-plan lookup and preserves explicit provenance (%s)",
+  async (mode) => {
+    const f = fixture(),
+      input = {
+        weekStart: mode === "EXACT" ? "2026-10-05" : null,
+        offset: 0,
+        limit: 10,
+      };
+    const commercialPlan = vi.fn(async () => ({
+      weekStart: mode === "FUTURE_LATEST" ? "2026-10-12" : "2026-10-05",
+      status: "NO_PLAN" as const,
+      plan: null,
+      tasks: [],
+      progress: null,
+      unmatchedDeclarations: null,
+      nextOffset: null,
+      evidence: [
         {
-          type: "function_call",
-          id: "fc_plan",
-          call_id: "call_plan",
-          name: "commercial_plan",
-          arguments: JSON.stringify(input),
-          status: "completed",
+          id: "commercial-plan-missing",
+          sourceType: "DATA_QUALITY" as const,
+          sourceId: f.request.storeId,
+          sourceVersion: null,
+          label: "Plan enregistré",
+          value: "Aucun plan synchronisé ; progression inconnue.",
+          factKind: "QUALITY" as const,
         },
-      ];
-      return new Response(JSON.stringify(envelope), {
-        headers: { "content-type": "application/json" },
-      });
+      ],
+    }));
+    let calls = 0;
+    const transport: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      if (calls++ === 0) {
+        expect(
+          body.tools.some(
+            (t: { name: string }) => t.name === "commercial_plan",
+          ),
+        ).toBe(true);
+        const envelope = z
+          .record(z.string(), z.unknown())
+          .parse(await response().json());
+        envelope.output = [
+          {
+            type: "function_call",
+            id: "fc_plan",
+            call_id: "call_plan",
+            name: "commercial_plan",
+            arguments: JSON.stringify(input),
+            status: "completed",
+          },
+        ];
+        if (mode === "LATEST") {
+          const outputs = z
+            .array(z.record(z.string(), z.unknown()))
+            .parse(envelope.output);
+          outputs.push({
+            ...outputs[0],
+            id: "fc_plan_again",
+            call_id: "call_plan_again",
+          });
+          envelope.output = outputs;
+        }
+        return new Response(JSON.stringify(envelope), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      expect(JSON.stringify(body)).toContain(
+        mode === "FUTURE_LATEST" ? "unavailable" : "commercial-plan-missing",
+      );
+      return response();
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      commercialPlan,
+    }).generate(f.request, schema);
+    expect(commercialPlan).toHaveBeenCalledWith(input);
+    expect(commercialPlan).toHaveBeenCalledTimes(1);
+    if (mode === "FUTURE_LATEST") {
+      expect(result.toolEvidence ?? []).toEqual([]);
+    } else {
+      expect(result.toolEvidence?.[0]?.id).toBe("commercial-plan-missing");
+      expect(result.factTrace?.reads).toContainEqual(
+        expect.objectContaining({
+          read: { kind: "PLAN", input: { ...input, weekStart: "2026-10-05" } },
+        }),
+      );
     }
-    expect(JSON.stringify(body)).toContain("commercial-plan-missing");
-    return response();
-  };
-  const result = await createCopilotAiProvider(f.config, transport, {
-    daily: vi.fn(),
-    commercialPlan,
-  }).generate(f.request, schema);
-  expect(commercialPlan).toHaveBeenCalledWith(input);
-  expect(result.toolEvidence?.[0]?.id).toBe("commercial-plan-missing");
-});
+  },
+);
 
 it("lets the model discover shopper needs then inspect memberships without exposing unrelated capabilities", async () => {
   const f = fixture(),

@@ -714,6 +714,115 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         unmatchedDeclarations: null,
       });
     });
+    it("finds the latest started plan without guessing a week, preserving exact reads and declarations", async () => {
+      const f = await commercialExecutionFixture(),
+        p = f.plan;
+      const now = new Date("2026-10-12T08:00:00Z");
+      const lookup = { weekStart: null, offset: 0, limit: 10 };
+      const empty = await readCommercialPlan(db, p.storeId, lookup, now);
+      expect(empty).toMatchObject({
+        weekStart: "2026-10-12",
+        status: "NO_PLAN",
+        progress: null,
+      });
+      await db
+        .collection("commercialWeekPlans")
+        .insertOne({ _id: p.id, ...p } as never);
+      await db
+        .collection("commercialExecutionTasks")
+        .insertOne({ _id: f.task.id, ...f.task } as never);
+      // A future preparation and another store must not displace a dated known plan.
+      const futureId = randomUUID();
+      const future = JSON.parse(
+        JSON.stringify(p)
+          .replaceAll(p.id, futureId)
+          .replaceAll(p.revisionId, randomUUID())
+          .replace(/\d{4}-\d{2}-\d{2}/g, (d) =>
+            new Date(Date.parse(d) + 14 * 86400000).toISOString().slice(0, 10),
+          ),
+      );
+      await db.collection("commercialWeekPlans").insertMany([
+        { ...future, _id: futureId },
+        {
+          ...p,
+          id: randomUUID(),
+          _id: randomUUID(),
+          storeId: randomUUID(),
+          weekStart: "2026-10-12",
+        },
+      ] as never);
+      expect(
+        (
+          await readCommercialPlan(
+            db,
+            p.storeId,
+            { ...lookup, weekStart: future.weekStart },
+            now,
+          )
+        ).plan?.id,
+      ).toBe(futureId);
+      const latest = await readCommercialPlan(db, p.storeId, lookup, now);
+      const exact = await readCommercialPlan(
+        db,
+        p.storeId,
+        { ...lookup, weekStart: p.weekStart },
+        now,
+      );
+      expect(latest).toEqual(exact);
+      expect(latest).toMatchObject({
+        weekStart: p.weekStart,
+        plan: { id: p.id },
+        progress: { DONE: 1 },
+      });
+      expect(latest.tasks[0]!.record!.id).toBe(f.task.id);
+      expect(
+        latest.evidence.some(
+          (e) => typeof e.value === "string" && e.value.includes(p.weekStart),
+        ),
+      ).toBe(true);
+      expect(
+        latest.evidence.some(
+          (e) =>
+            typeof e.value === "string" &&
+            e.value.includes("pas une preuve automatique"),
+        ),
+      ).toBe(true);
+      const missingExact = await readCommercialPlan(
+        db,
+        p.storeId,
+        { ...lookup, weekStart: "2026-10-12" },
+        now,
+      );
+      expect(missingExact).toMatchObject({
+        weekStart: "2026-10-12",
+        status: "NO_PLAN",
+      });
+      expect(
+        (await readCommercialPlan(db, randomUUID(), lookup, now)).status,
+      ).toBe("NO_PLAN");
+      // Paris Monday has begun while UTC is still Sunday.
+      expect(
+        (
+          await readCommercialPlan(
+            db,
+            randomUUID(),
+            lookup,
+            new Date("2026-10-11T22:30:00Z"),
+          )
+        ).weekStart,
+      ).toBe("2026-10-12");
+      // No writer or migration is involved in either lookup mode.
+      expect(
+        await db
+          .collection("commercialWeekPlans")
+          .findOne({ _id: p.id } as never),
+      ).toEqual({ _id: p.id, ...p });
+      expect(
+        await db
+          .collection("commercialExecutionTasks")
+          .findOne({ _id: f.task.id } as never),
+      ).toEqual({ _id: f.task.id, ...f.task });
+    });
     it("reads receipt sources and immutable publication pages without mistaking extraction or exclusions for official waste", async () => {
       const p = wastePublicationFixture(),
         storeId = p.receipt.storeId,

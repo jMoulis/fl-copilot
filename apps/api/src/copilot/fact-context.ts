@@ -74,7 +74,13 @@ export function factReadFromTool(key: string, result: unknown) {
             : kind === "events"
               ? { kind: "EVENTS", input }
               : kind === "commercial-plan"
-                ? { kind: "PLAN", input }
+                ? {
+                    kind: "PLAN",
+                    input: {
+                      ...(input as object),
+                      weekStart: (result as { weekStart: string }).weekStart,
+                    },
+                  }
                 : kind === "product-search"
                   ? { kind: "PRODUCT_SEARCH", input }
                   : null;
