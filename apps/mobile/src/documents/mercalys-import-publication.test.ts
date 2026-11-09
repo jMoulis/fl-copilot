@@ -1,3 +1,4 @@
+import { isLocalOriginalReferenced } from "./source-upload-recovery";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1243,3 +1244,60 @@ function idGenerator() {
     return `aaaaaaaa-aaaa-4aaa-8aaa-${suffix}`;
   };
 }
+
+it("retains discoverable original ownership after a committed publication reports an error and reopens", async () => {
+  const { adapter, database, path } = await openDatabase();
+  insertProduct(database, "BULK");
+  const transaction = adapter.withExclusiveTransactionAsync.bind(adapter);
+  adapter.withExclusiveTransactionAsync = async (work) => {
+    await transaction(work);
+    throw Error("COMMIT_ACKNOWLEDGEMENT_LOST");
+  };
+  const publication = new MercalysImportPublicationRepository(
+    adapter,
+    idGenerator(),
+    () => timestamp,
+  );
+  const value = input(summary("MERCALYS_SALES"));
+  try {
+    await expect(publication.publish(value)).rejects.toThrow(
+      "COMMIT_ACKNOWLEDGEMENT_LOST",
+    );
+    expect(await isLocalOriginalReferenced(adapter, value.localFileUri)).toBe(
+      true,
+    );
+    expect(
+      await isLocalOriginalReferenced(
+        adapter,
+        "file:///documents/unclaimed.xlsx",
+      ),
+    ).toBe(false);
+  } finally {
+    database.close();
+  }
+  const reopened = new DatabaseSync(path);
+  try {
+    const db = new NodeDatabase(reopened);
+    expect(await isLocalOriginalReferenced(db, value.localFileUri)).toBe(true);
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM sales_observations").get(),
+    ).toEqual({ n: 1 });
+    expect(
+      reopened
+        .prepare("SELECT remote_upload_status FROM source_documents")
+        .get(),
+    ).toEqual({ remote_upload_status: "PENDING" });
+    await expect(
+      new MercalysImportPublicationRepository(
+        db,
+        idGenerator(),
+        () => timestamp,
+      ).publish(value),
+    ).rejects.toBeInstanceOf(MercalysExactDuplicateError);
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM sales_observations").get(),
+    ).toEqual({ n: 1 });
+  } finally {
+    reopened.close();
+  }
+});

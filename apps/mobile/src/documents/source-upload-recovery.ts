@@ -9,6 +9,18 @@ import type { OutboxDatabase } from "../sync/outbox-repository";
 import { assertIntakeConversation } from "./intake-conversation";
 
 type Database = OutboxDatabase & AtomicMutationDatabase;
+/** Any durable reference protects an original from failure-path cleanup. */
+export async function isLocalOriginalReferenced(
+  db: Pick<OutboxDatabase, "getFirstAsync">,
+  localUri: string,
+) {
+  return !!(await db.getFirstAsync(
+    `SELECT local_uri FROM local_files WHERE local_uri=? UNION ALL SELECT local_file_uri FROM source_documents WHERE local_file_uri=? UNION ALL SELECT restored_uri FROM source_original_restorations WHERE restored_uri=? LIMIT 1`,
+    localUri,
+    localUri,
+    localUri,
+  ));
+}
 export type UploadIntakeScope = { ownerId: string; conversationId: string };
 const payloadSchema = z.strictObject({
   storeId: z.uuid(),
@@ -269,12 +281,7 @@ export class SourceUploadRecoveryRepository {
     };
   }
   async isCopyReferenced(localUri: string) {
-    return !!(await this.db.getFirstAsync(
-      `SELECT local_uri FROM local_files WHERE local_uri=? UNION ALL SELECT local_file_uri FROM source_documents WHERE local_file_uri=? UNION ALL SELECT restored_uri FROM source_original_restorations WHERE restored_uri=? LIMIT 1`,
-      localUri,
-      localUri,
-      localUri,
-    ));
+    return isLocalOriginalReferenced(this.db, localUri);
   }
   async restoreOriginal(
     storeId: string,

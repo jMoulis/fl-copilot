@@ -1,3 +1,4 @@
+import { isLocalOriginalReferenced } from "./source-upload-recovery";
 import { useIsFocused } from "expo-router";
 import { SourceOriginalButton } from "./source-original-button";
 import { SourceUploadRecoveryPanel } from "./source-upload-recovery-panel";
@@ -547,7 +548,20 @@ export function MercalysImportScreen({
       }
       void syncNow(storeId);
     } catch (caught) {
-      if (durableFile?.exists) durableFile.delete();
+      if (durableFile) {
+        // A failed commit acknowledgement does not prove the transaction rolled back.
+        const referenced = await isLocalOriginalReferenced(
+          sqlite,
+          durableFile.uri,
+        ).catch(() => true);
+        if (!referenced) {
+          try {
+            if (durableFile.exists) durableFile.delete();
+          } catch {
+            // Preserve the publication error and retain the copy if cleanup fails.
+          }
+        }
+      }
       if (caught instanceof MercalysExactDuplicateError) {
         setSummary(undefined);
         setSelectedBytes(undefined);
@@ -577,6 +591,7 @@ export function MercalysImportScreen({
     continuation,
     actorUserId,
     publicationRepository,
+    sqlite,
     analyticsScheduler,
     syncNow,
     onChanged,

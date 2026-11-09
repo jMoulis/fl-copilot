@@ -22,6 +22,8 @@ const p = vi.hoisted(() => ({
   resume: vi.fn(),
   sync: vi.fn(),
   write: vi.fn(),
+  remove: vi.fn(),
+  referenced: vi.fn(),
   close: vi.fn(),
   changed: vi.fn(),
   read: vi.fn(),
@@ -96,10 +98,18 @@ vi.mock("expo-file-system", () => ({
   File: class {
     uri = "file:///documents/original.xlsx";
     exists = false;
-    create() {}
+    create() {
+      this.exists = true;
+    }
     write = p.write;
-    delete() {}
+    delete() {
+      p.remove();
+      this.exists = false;
+    }
   },
+}));
+vi.mock("./source-upload-recovery", () => ({
+  isLocalOriginalReferenced: p.referenced,
 }));
 vi.mock("./read-retained-mercalys", () => ({
   readRetainedMercalysBytes: p.read,
@@ -253,6 +263,8 @@ beforeEach(() => {
     globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
   ).IS_REACT_ACT_ENVIRONMENT = true;
   vi.clearAllMocks();
+  p.remove.mockReset();
+  p.referenced.mockReset().mockResolvedValue(false);
   p.read.mockResolvedValue(new Uint8Array([1]).slice());
   p.identifiers = [];
   p.products = [
@@ -560,3 +572,31 @@ it("explains an unavailable retained original without exposing native paths or e
   expect(p.publish).not.toHaveBeenCalled();
   expect(p.changed).not.toHaveBeenCalled();
 });
+
+it.each(["COMMITTED", "READ_FAILURE", "ROLLED_BACK", "DELETE_FAILED"])(
+  "preserves original ownership and the publication error during cleanup: %s",
+  async (mode) => {
+    await mount();
+    await press("Confirmer le produit");
+    await press("Associer à TOMATE VRAC");
+    p.publish.mockRejectedValue(new Error("PUBLICATION_FAILED"));
+    if (mode === "COMMITTED") p.referenced.mockResolvedValue(true);
+    if (mode === "READ_FAILURE")
+      p.referenced.mockRejectedValue(new Error("DATABASE_UNAVAILABLE"));
+    if (mode === "DELETE_FAILED")
+      p.remove.mockImplementation(() => {
+        throw Error("DISK_UNAVAILABLE");
+      });
+    await press("Appliquer la nouvelle version");
+    expect(p.remove).toHaveBeenCalledTimes(
+      ["COMMITTED", "READ_FAILURE"].includes(mode) ? 0 : 1,
+    );
+    expect(p.referenced).toHaveBeenCalledWith(
+      expect.anything(),
+      "file:///documents/original.xlsx",
+    );
+    expect(text(renderer!.root)).toContain("PUBLICATION_FAILED");
+    expect(text(renderer!.root)).not.toContain("publiée localement");
+    expect(p.sync).not.toHaveBeenCalled();
+  },
+);
