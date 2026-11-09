@@ -222,9 +222,13 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             lastEmailReceipt = email.data.receiptId;
             n.clearLastNotificationResponse();
             const state = latestRoot.current;
+            const destination = {
+              pathname: "/actions/email" as const,
+              params: { receiptId: email.data.receiptId },
+            };
             if (state?.routes[state.index ?? 0]?.name === "(tabs)")
-              router.navigate("/actions/email");
-            else router.dismissTo("/actions/email");
+              router.navigate(destination);
+            else router.dismissTo(destination);
             return;
           }
           const chat = copilotCompletionNotificationSchema.safeParse(data);

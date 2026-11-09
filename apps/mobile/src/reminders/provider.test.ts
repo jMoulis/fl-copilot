@@ -806,7 +806,10 @@ it("opens a store email alert in Actions once, without importing or writing", as
   };
   runtime.lastResponse = { notification: { request: { content: { data } } } };
   await render();
-  expect(runtime.navigate).toHaveBeenCalledWith("/actions/email");
+  expect(runtime.navigate).toHaveBeenCalledWith({
+    pathname: "/actions/email",
+    params: { receiptId: data.receiptId },
+  });
   for (const listener of runtime.responseListeners)
     await act(async () =>
       listener({ notification: { request: { content: { data } } } }),

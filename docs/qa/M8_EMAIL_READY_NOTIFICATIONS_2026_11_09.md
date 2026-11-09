@@ -16,7 +16,7 @@ Delivery is best-effort with an atomic at-most-once attempt per receipt, not gua
 
 ## Verification
 
-Focused suite: **131 tests passed in nine suites, zero skipped**, using a disposable transactional local Mongo database and mocked Expo delivery. Covers concurrent terminal workers, pending envelope, terminal failure wording, existing chat opt-in, independent channel disable/retry, token retirement, current and late authority revocation, and preserved READY/DONE jobs after failed notification. Mounted native components cover the independent switch, owned Actions destination, response deduplication and foreign owner/store/role refusal. Existing chat/reminder lifecycle tests remain included.
+Focused suite: **132 tests passed in ten suites, zero skipped**, using a disposable transactional local Mongo database and mocked Expo delivery. Covers concurrent terminal workers, pending envelope, terminal failure wording, existing chat opt-in, independent channel disable/retry, token retirement, current and late authority revocation, and preserved READY/DONE jobs after failed notification. A mounted inbox test also verifies notification-driven rereading, including a key arriving during an existing refresh, without remounting or losing unsaved input. Mounted native components cover the independent switch, owned Actions destination, response deduplication and foreign owner/store/role refusal. Existing chat/reminder lifecycle tests remain included.
 
 Workspace typecheck, changed-file lint/format and iOS export are required before commit. Exact-head push and PR checks, merge, compatible API deployment, grouped native binary identity and physical iPhone acceptance remain separate delivery gates. No live email/push or paid AI test was sent.
 
