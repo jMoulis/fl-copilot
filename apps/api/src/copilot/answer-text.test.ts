@@ -335,3 +335,21 @@ it("retains recorded price/quantity units in prose and tables without converting
     "kg kg",
   );
 });
+
+it.each([
+  ["CA 9999 €", "LITERAL_NUMBER"],
+  ["Source https://example.com", "EXTERNAL_LINK"],
+  ["Valeur {{value:r0}", "MALFORMED_MARKER"],
+])(
+  "classifies rejected syntax without retaining rejected content: %s",
+  (text, reason) => {
+    try {
+      renderAnswerText(text, [], []);
+      throw Error("EXPECTED_REJECTION");
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe("INVALID_ANSWER_TEMPLATE");
+      expect((error as Error).cause).toBe(reason);
+    }
+  },
+);

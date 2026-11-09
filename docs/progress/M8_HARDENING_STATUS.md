@@ -1,5 +1,9 @@
 # M8 — hardening and pilot release
 
+## Original-PDF retest remains open — 7 November
+
+The owner retest still produces no useful TG proposal despite fewer steps/tokens; the original was not read and a paragraph fails template validation. Verified identical PDF copies are exposed as competing metadata, and ordered Markdown lists reproduce a false number rejection. Group exact same-name/hash copies within the existing bounded discovery page without deleting sources or changing cursors; normalize list ordinals in the existing binder and classify template failures without private prose. Seven prior-runtime regressions and 362 passing targeted tests qualify the application correction, not live-model success. [Evidence and acceptance boundaries](../qa/M8_GENERALIZATION_REVIEW_2026_11_07.md#original-pdf-owner-retest-and-follow-up). API-only, no new agent/prompt rule/collection or paid synthetic request; owner PDF/mixed acceptance remains open.
+
 ## Six-scenario owner review — 7 November
 
 The small generalization pilot exposes multi-domain context/discovery cost (125,468 input tokens) and an unusable original-PDF answer, while simple reformulation, price calculation, merchandising and memory remain useful. Reuse directly exposed read-only commercial tools, existing cached reads and exact evidence binding; preserve deterministic numeric grounding and all review boundaries. Correct aligned weekday comparisons on jointly recorded days and retain recorded visible units. No new agent, orchestration layer, model, database or larger read budget. [Evidence, changes and acceptance boundaries](../qa/M8_GENERALIZATION_REVIEW_2026_11_07.md). Code checks, exact-head CI, release, owner token retests and physical-client source parity are distinct; future-week PDF qualification remains open.

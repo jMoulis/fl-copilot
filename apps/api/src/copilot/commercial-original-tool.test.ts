@@ -1059,7 +1059,7 @@ it.each([false, true])(
                 type: "output_text",
                 text: JSON.stringify({
                   narrative:
-                    "Dans pense-bete45.pdf, {{document:0}}.\n\nMon conseil : une présentation à thème en blocs séparés et peu profonds, avec du réassort.",
+                    "Dans pense-bete45.pdf, {{document:0}}.\n\n1. Mon conseil : une présentation à thème en blocs séparés et peu profonds.\n2. Une présentation gourmande avec du réassort.",
                   recommendations: [],
                   documentReadings: [
                     {
@@ -1122,7 +1122,8 @@ it.each([false, true])(
     );
     expect(text).toContain("pense-bete45.pdf");
     expect(text).toContain("animation avocat");
-    expect(text).toContain("Mon conseil");
+    expect(text).toContain("- Mon conseil");
+    expect(text).toContain("- Une présentation gourmande");
     expect(text).not.toContain("Un passage");
   },
 );

@@ -3917,7 +3917,18 @@ export function createCopilotAiProvider(
                   throw error;
                 omitted = true;
                 answerOmissions.render++;
-                renderFailureCodes.add(error.message);
+                const reason =
+                  typeof error.cause === "string" &&
+                  [
+                    "LITERAL_NUMBER",
+                    "EXTERNAL_LINK",
+                    "MALFORMED_MARKER",
+                  ].includes(error.cause)
+                    ? error.cause
+                    : null;
+                renderFailureCodes.add(
+                  reason ? `${error.message}:${reason}` : error.message,
+                );
                 return false;
               }
             });

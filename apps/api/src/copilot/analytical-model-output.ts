@@ -309,7 +309,12 @@ export function createAnalyticalModelOutput(initialIds: readonly string[]) {
       const facts: Array<{ evidenceId: string }> = [];
       const blocks: string[] = [];
       let omittedBlocks = 0;
-      for (const block of output.narrative.split(/\n\s*\n/)) {
+      // Markdown ordinals describe layout, not measured business quantities.
+      const prose = output.narrative.replace(
+        /^([ \t]*)\d{1,9}[.)][ \t]+(?=\S)/gm,
+        "$1- ",
+      );
+      for (const block of prose.split(/\n\s*\n/)) {
         const selected = [...facts];
         let invalid = false;
         const names = [...verbatim]
