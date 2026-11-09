@@ -88,3 +88,25 @@ it("prevents expertise metadata from becoming a measured KPI or live research", 
     renderAnswerText("Cette TG apportera 15 %.", [], [evidence]),
   ).toThrow();
 });
+
+it("carries new merchandising sources through the existing native citation and rejects tampering with their review dates", () => {
+  const r = readRetailExpertise(
+    { topics: ["DISPLAY_DESIGN", "FRESH_DISPLAY"] },
+    "2026-11-09T12:00:00.000Z",
+  );
+  expect(r.cards).toHaveLength(2);
+  expect(r.evidence).toHaveLength(2);
+  for (const [index, evidence] of r.evidence.entries()) {
+    const prose = renderAnswerText(
+      "Piste de présentation à adapter. {{source:0}}",
+      [{ evidenceId: evidence.id }],
+      [evidence],
+    );
+    const source = readAnswerSource(/copilot-source:([^)]*)/.exec(prose)![1]!);
+    expect(source.retailExpertise).toEqual(r.cards[index]!.citation);
+    expect(source.value).toContain(r.cards[index]!.applicationHypothesis);
+    expect(source.retailExpertise?.reviewedOn).toBe("2026-11-09");
+  }
+  r.cards[0]!.citation.reviewedOn = "2026-10-18";
+  expect(retailExpertiseToolResultSchema.safeParse(r).success).toBe(false);
+});

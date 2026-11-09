@@ -36,7 +36,7 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         await client?.close();
       }
     }, 60000);
-    async function fixture() {
+    async function fixture(merchandising = false) {
       const f = chatFixture(randomUUID);
       f.message.attachments = [];
       f.message.text = "Comment rendre l’offre plus visible ?";
@@ -49,8 +49,12 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ...f.message,
       });
       const reference = readRetailExpertise(
-        { topics: ["VISIBILITY"] },
-        "2026-10-18T12:00:00.000Z",
+        {
+          topics: merchandising
+            ? ["DISPLAY_DESIGN", "FRESH_DISPLAY"]
+            : ["VISIBILITY"],
+        },
+        merchandising ? "2026-11-09T12:00:00.000Z" : "2026-10-18T12:00:00.000Z",
       );
       const generate = vi.fn(async () => ({
         output: {
@@ -97,65 +101,68 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       };
       return { f, reference, generate, dependencies, turn };
     }
-    it("retains edition, caveats and original URLs in a private reply, replays once and restores the citation offline", async () => {
-      const s = await fixture();
-      const first = await runCopilotTurn(s.dependencies, s.turn);
-      expect(first.message.text).toContain("copilot-source:");
-      const encoded = /copilot-source:([^)]*)/.exec(first.message.text)![1]!;
-      expect(readAnswerSource(encoded).retailExpertise).toEqual(
-        s.reference.cards[0]!.citation,
-      );
-      const replay = await runCopilotTurn(s.dependencies, s.turn);
-      expect(replay.alreadyApplied).toBe(true);
-      expect(replay.message).toEqual(first.message);
-      expect(s.generate).toHaveBeenCalledOnce();
-      expect(
-        await collection("copilotMessages").countDocuments({
-          conversationId: s.f.conversation.id,
-          role: "ASSISTANT",
-        }),
-      ).toBe(1);
-      for (const name of [
-        "products",
-        "salesObservations",
-        "wasteObservations",
-        "sourceDocuments",
-        "copilotKnowledge",
-        "copilotWebResearch",
-      ])
-        expect(
-          await collection(name).countDocuments({ storeId: s.f.storeId }),
-        ).toBe(0);
-      const sqlite = new DatabaseSync(":memory:"),
-        local = new ReceiptTestDatabase(sqlite);
-      try {
-        await runLocalMigrations(local);
-        await local.withExclusiveTransactionAsync(async (tx) => {
-          await applyCopilotRecord(
-            tx,
-            s.f,
-            "copilot_conversation",
-            s.f.conversation,
-          );
-          await applyCopilotRecord(tx, s.f, "copilot_message", s.f.message);
-          await applyCopilotRecord(tx, s.f, "copilot_message", first.message);
-        });
-        const row = await local.getFirstAsync<{ payload_json: string }>(
-          "SELECT payload_json FROM copilot_messages WHERE id=?",
-          first.message.id,
+    it.each([false, true])(
+      "retains edition, caveats and original URLs in a private reply, replays once and restores the citation offline (merchandising=%s)",
+      async (merchandising) => {
+        const s = await fixture(merchandising);
+        const first = await runCopilotTurn(s.dependencies, s.turn);
+        expect(first.message.text).toContain("copilot-source:");
+        const encoded = /copilot-source:([^)]*)/.exec(first.message.text)![1]!;
+        expect(readAnswerSource(encoded).retailExpertise).toEqual(
+          s.reference.cards[0]!.citation,
         );
-        const restoredText = JSON.parse(row!.payload_json).text;
+        const replay = await runCopilotTurn(s.dependencies, s.turn);
+        expect(replay.alreadyApplied).toBe(true);
+        expect(replay.message).toEqual(first.message);
+        expect(s.generate).toHaveBeenCalledOnce();
         expect(
-          readAnswerSource(/copilot-source:([^)]*)/.exec(restoredText)![1]!)
-            .retailExpertise,
-        ).toEqual(s.reference.cards[0]!.citation);
-        expect(
-          sqlite.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
-        ).toEqual({ n: 0 });
-      } finally {
-        sqlite.close();
-      }
-    });
+          await collection("copilotMessages").countDocuments({
+            conversationId: s.f.conversation.id,
+            role: "ASSISTANT",
+          }),
+        ).toBe(1);
+        for (const name of [
+          "products",
+          "salesObservations",
+          "wasteObservations",
+          "sourceDocuments",
+          "copilotKnowledge",
+          "copilotWebResearch",
+        ])
+          expect(
+            await collection(name).countDocuments({ storeId: s.f.storeId }),
+          ).toBe(0);
+        const sqlite = new DatabaseSync(":memory:"),
+          local = new ReceiptTestDatabase(sqlite);
+        try {
+          await runLocalMigrations(local);
+          await local.withExclusiveTransactionAsync(async (tx) => {
+            await applyCopilotRecord(
+              tx,
+              s.f,
+              "copilot_conversation",
+              s.f.conversation,
+            );
+            await applyCopilotRecord(tx, s.f, "copilot_message", s.f.message);
+            await applyCopilotRecord(tx, s.f, "copilot_message", first.message);
+          });
+          const row = await local.getFirstAsync<{ payload_json: string }>(
+            "SELECT payload_json FROM copilot_messages WHERE id=?",
+            first.message.id,
+          );
+          const restoredText = JSON.parse(row!.payload_json).text;
+          expect(
+            readAnswerSource(/copilot-source:([^)]*)/.exec(restoredText)![1]!)
+              .retailExpertise,
+          ).toEqual(s.reference.cards[0]!.citation);
+          expect(
+            sqlite.prepare("SELECT COUNT(*) n FROM sync_outbox").get(),
+          ).toEqual({ n: 0 });
+        } finally {
+          sqlite.close();
+        }
+      },
+    );
     it.each(["OWNER", "STORE", "ARCHIVED"])(
       "does not return another private conversation’s curated reply (%s)",
       async (mode) => {

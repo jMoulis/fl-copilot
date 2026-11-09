@@ -6,7 +6,7 @@ import {
   retailExpertiseFreshness,
 } from "./retail-expertise";
 import { readRetailExpertiseReference } from "./retail-expertise-reference";
-const now = "2026-10-18T17:00:00.000Z";
+const now = "2026-11-09T17:00:00.000Z";
 it("covers every agreed topic with dated primary provenance, separate local hypotheses and discriminating checks", () => {
   for (const topic of retailExpertiseTopicSchema.options) {
     const result = readRetailExpertiseReference({ topics: [topic] }, now);
@@ -18,7 +18,11 @@ it("covers every agreed topic with dated primary provenance, separate local hypo
     expect(card.limits.length).toBeGreaterThan(0);
     expect(card.discriminatingQuestions.length).toBeGreaterThan(0);
     expect(card.citation.sources[0]!.scope.length).toBeGreaterThan(30);
-    expect(card.citation.reviewedOn).toBe("2026-10-18");
+    expect(card.citation.reviewedOn).toBe(
+      ["DISPLAY_DESIGN", "FRESH_DISPLAY"].includes(topic)
+        ? "2026-11-09"
+        : "2026-10-18",
+    );
   }
 });
 it("keeps selective ordered lookups independent and cannot mutate the shared corpus", () => {
@@ -83,4 +87,45 @@ it("validates publication precision, review dates and public source destinations
       }).success,
     ).toBe(false);
   expect(() => retailExpertiseFreshness(citation, "invalid")).toThrow();
+});
+
+it("uses the requested cards’ review dates without changing the older reference snapshots", () => {
+  const earlier = "2026-11-08T23:59:59.000Z";
+  expect(
+    readRetailExpertiseReference({ topics: ["VISIBILITY"] }, earlier).status,
+  ).toBe("CURRENT");
+  expect(
+    readRetailExpertiseReference({ topics: ["DISPLAY_DESIGN"] }, earlier),
+  ).toMatchObject({ status: "NOT_YET_REVIEWED", cards: [] });
+  const current = readRetailExpertiseReference(
+    { topics: ["DISPLAY_DESIGN", "FRESH_DISPLAY"] },
+    now,
+  );
+  expect(current.cards.map((c) => c.citation.reviewedOn)).toEqual([
+    "2026-11-09",
+    "2026-11-09",
+  ]);
+  expect(
+    current.cards.every(
+      (c) =>
+        c.citation.version === 1 && c.citation.sources[0]!.publishedOn === null,
+    ),
+  ).toBe(true);
+  const afterOldExpiry = "2027-04-18T00:00:00.000Z";
+  expect(
+    readRetailExpertiseReference({ topics: ["FRESH_DISPLAY"] }, afterOldExpiry)
+      .status,
+  ).toBe("CURRENT");
+  expect(
+    readRetailExpertiseReference(
+      { topics: ["VISIBILITY", "FRESH_DISPLAY"] },
+      afterOldExpiry,
+    ),
+  ).toMatchObject({ status: "REVALIDATION_REQUIRED", cards: [] });
+  expect(
+    readRetailExpertiseReference(
+      { topics: ["DISPLAY_DESIGN", "FRESH_DISPLAY"] },
+      "2027-05-09T00:00:00.000Z",
+    ),
+  ).toMatchObject({ status: "REVALIDATION_REQUIRED", cards: [] });
 });

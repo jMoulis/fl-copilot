@@ -4,10 +4,26 @@ import {
   retailExpertiseFreshness,
   type RetailExpertiseCard,
 } from "./retail-expertise";
-export const RETAIL_EXPERTISE_EDITION = "produce-retail.2026-10-18.v1";
+export const RETAIL_EXPERTISE_EDITION = "produce-retail.2026-11-09.v2";
 const reviewedOn = "2026-10-18",
   reviewAfterOn = "2027-04-18";
 const sources = {
+  display: {
+    title: "Creating Effective Displays",
+    publisher: "Penn State Extension",
+    publishedOn: null,
+    url: "https://extension.psu.edu/creating-effective-displays",
+    scope:
+      "Conseils généraux de présentation commerciale, page mise à jour le 1er décembre 2025 ; aucun essai propre à une TG F&L de ce magasin.",
+  },
+  freshDisplay: {
+    title: "Market Season-Ready, Set, Sell",
+    publisher: "University of Maryland Extension",
+    publishedOn: null,
+    url: "https://extension.umd.edu/resource/market-season-ready-set-sell",
+    scope:
+      "Conseils de vente directe de produits frais aux États-Unis, page mise à jour le 7 juin 2021 ; à adapter au magasin, sans valeur de protocole sanitaire français.",
+  },
   choice: {
     title: "Baromètre de confiance fruits et légumes — enquête 2025",
     publisher: "Interfel / CSA",
@@ -56,6 +72,8 @@ const draft: Array<
   Omit<RetailExpertiseCard, "citation"> & {
     referenceId: string;
     source: keyof typeof sources;
+    reviewedOn?: string;
+    reviewAfterOn?: string;
   }
 > = [
   {
@@ -205,19 +223,84 @@ const draft: Array<
     measurement:
       "Suivre les montants renseignés et leur couverture, distinguer les canaux Mercalys/photo et utiliser seulement des quantités de même unité lorsqu’elles sont fiables.",
   },
+  {
+    topic: "DISPLAY_DESIGN",
+    referenceId: "display-design",
+    source: "display",
+    reviewedOn: "2026-11-09",
+    reviewAfterOn: "2027-05-09",
+    title: "Arbitrer masse, thème et mise en scène",
+    sourceFinding:
+      "Penn State recommande un thème central, un point focal, un usage de la couleur et une présentation simple, sans accumulation d’éléments.",
+    applicationHypothesis:
+      "Comparer une présentation de masse, à thème ou scénarisée selon l’objectif. Proposer une accroche dominante et des compléments lisibles ; discuter une habitude du magasin si une autre composition sert mieux cet objectif.",
+    discriminatingQuestions: [
+      "Quel objectif prime : prix d’appel, idée de repas ou découverte ?",
+    ],
+    checks: [
+      "STORE_CONTEXT",
+      "COMMERCIAL_DOCUMENTS",
+      "PRODUCT",
+      "FIELD_OBSERVATION",
+      "ANALYTICS",
+    ],
+    limits: [
+      "La masse et les couleurs sont des leviers à arbitrer, pas des recettes universelles. Aucun gain ni pourcentage optimal n’est démontré ici.",
+      "Un complément utile au même usage n’est pas une contre-promotion substituable. Préserver lisibilité, accès et prix identifiables.",
+      "Une préférence habituelle peut admettre une exception expliquée ; respecter les contraintes explicites. Ne pas modifier la mémoire ou le plan sans décision.",
+    ],
+    measurement:
+      "Documenter la composition retenue, puis observer les résultats sur des jours comparables sans attribuer automatiquement un écart à l’esthétique.",
+  },
+  {
+    topic: "FRESH_DISPLAY",
+    referenceId: "fresh-display",
+    source: "freshDisplay",
+    reviewedOn: "2026-11-09",
+    reviewAfterOn: "2027-05-09",
+    title: "Créer l’abondance en préservant le frais",
+    sourceFinding:
+      "Le guide associe impression d’abondance, qualité visuelle, prévention de l’écrasement et accès aux produits. Il conseille de regrouper la présentation lorsqu’elle se dégarnit.",
+    applicationHypothesis:
+      "Adapter la profondeur d’exposition et le réassort à la fragilité des produits et aux moyens disponibles. Une touche complémentaire peut enrichir la présentation si elle préserve l’accroche, la fraîcheur et l’accès.",
+    discriminatingQuestions: [
+      "Quelles contraintes de fragilité et de réassort sont réellement connues ?",
+    ],
+    checks: [
+      "FIELD_OBSERVATION",
+      "PRODUCT",
+      "STORE_CONTEXT",
+      "ANALYTICS",
+      "EXECUTION",
+    ],
+    limits: [
+      "La vente directe américaine ne démontre pas l’effet d’une TG de ce magasin. Les conseils restent à adapter au terrain.",
+      "Ne pas inventer stock, cadence de réassort, compatibilité de conservation ou capacité du meuble à partir des ventes seules.",
+      "Aucune hauteur, quantité à exposer, baisse de casse ou hausse de ventes n’est certifiée par cette fiche.",
+    ],
+    measurement:
+      "Observer fraîcheur, accès et charge de réassort ; confronter ensuite ventes, marge et casse renseignées aux dates réelles d’exposition.",
+  },
 ];
-const cards = draft.map(({ referenceId, source, ...card }) =>
-  retailExpertiseCardSchema.parse({
-    ...card,
-    citation: {
-      kind: "RETAIL_EXPERTISE",
-      referenceId,
-      version: 1,
-      reviewedOn,
-      reviewAfterOn,
-      sources: [sources[source]],
-    },
-  }),
+const cards = draft.map(
+  ({
+    referenceId,
+    source,
+    reviewedOn: cardReviewedOn = reviewedOn,
+    reviewAfterOn: cardReviewAfterOn = reviewAfterOn,
+    ...card
+  }) =>
+    retailExpertiseCardSchema.parse({
+      ...card,
+      citation: {
+        kind: "RETAIL_EXPERTISE",
+        referenceId,
+        version: 1,
+        reviewedOn: cardReviewedOn,
+        reviewAfterOn: cardReviewAfterOn,
+        sources: [sources[source]],
+      },
+    }),
 );
 /** Curated snapshots, not live research, store memory or permission to execute an action. */
 export function readRetailExpertiseReference(
@@ -225,19 +308,22 @@ export function readRetailExpertiseReference(
   asOf = new Date().toISOString(),
 ) {
   const input = retailExpertiseInputSchema.parse(raw);
-  const status = retailExpertiseFreshness(cards[0]!.citation, asOf);
+  const selected = input.topics.map((topic) =>
+    retailExpertiseCardSchema.parse(cards.find((c) => c.topic === topic)!),
+  );
+  const freshness = selected.map((card) =>
+    retailExpertiseFreshness(card.citation, asOf),
+  );
+  const status = freshness.includes("REVALIDATION_REQUIRED")
+    ? "REVALIDATION_REQUIRED"
+    : freshness.includes("NOT_YET_REVIEWED")
+      ? "NOT_YET_REVIEWED"
+      : "CURRENT";
   return {
     input,
     edition: RETAIL_EXPERTISE_EDITION,
     evaluatedAt: asOf,
     status,
-    cards:
-      status === "CURRENT"
-        ? input.topics.map((topic) =>
-            retailExpertiseCardSchema.parse(
-              cards.find((c) => c.topic === topic)!,
-            ),
-          )
-        : [],
+    cards: status === "CURRENT" ? selected : [],
   };
 }
