@@ -1,4 +1,7 @@
-import { copilotCompletionNotificationSchema } from "@fl-copilot/sync-contracts";
+import {
+  copilotCompletionNotificationSchema,
+  emailReadyNotificationSchema,
+} from "@fl-copilot/sync-contracts";
 import { chatNotificationDestination } from "../notifications/chat-destination";
 import { CoalescedReminderRunner } from "./coalesced-runner";
 import {
@@ -46,10 +49,17 @@ export function ReminderProvider({ children }: PropsWithChildren) {
   const { session, status } = useAuth(),
     { lastSyncedAt, syncNow, syncMessages } = useSync(),
     { sqlite } = useLocalDatabase(),
-    storeId = session?.stores[0]?.storeId;
+    storeId = session?.stores[0]?.storeId,
+    role = session?.stores[0]?.role;
   const context = useMemo(
-    () => ({ storeId, status, ownerId: session?.user.id, sqlite }),
-    [storeId, status, session?.user.id, sqlite],
+    () => ({
+      storeId,
+      status,
+      ownerId: session?.user.id,
+      role,
+      sqlite,
+    }),
+    [storeId, status, session?.user.id, role, sqlite],
   );
   const root = useRootNavigationState(),
     latestRoot = useRef(root),
@@ -158,6 +168,7 @@ export function ReminderProvider({ children }: PropsWithChildren) {
     let alive = true,
       remove: (() => void) | undefined,
       lastChatReply: string | undefined,
+      lastEmailReceipt: string | undefined,
       chatRevision = 0;
     void notificationModule()
       .then(async (n) => {
@@ -197,6 +208,23 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             )
               router.dismissTo("/reminder-settings");
             else router.navigate("/reminder-settings");
+            return;
+          }
+          const email = emailReadyNotificationSchema.safeParse(data);
+          if (email.success) {
+            if (
+              email.data.ownerId !== context.ownerId ||
+              email.data.storeId !== storeId ||
+              context.role !== "MANAGER" ||
+              lastEmailReceipt === email.data.receiptId
+            )
+              return;
+            lastEmailReceipt = email.data.receiptId;
+            n.clearLastNotificationResponse();
+            const state = latestRoot.current;
+            if (state?.routes[state.index ?? 0]?.name === "(tabs)")
+              router.navigate("/actions/email");
+            else router.dismissTo("/actions/email");
             return;
           }
           const chat = copilotCompletionNotificationSchema.safeParse(data);

@@ -235,7 +235,7 @@ export default function ReminderSettings() {
     <AppScreen>
       <AppHeader
         title="Notifications sur ce téléphone"
-        subtitle="Alertes du copilote et rappels commerciaux."
+        subtitle="Réponses, documents reçus et rappels commerciaux."
       />
       <SecondaryButton label="Retour à Plus" onPress={() => router.back()} />
       <SectionCard title="Réponses du copilote">
@@ -267,6 +267,29 @@ export default function ReminderSettings() {
           disabled={!chatPush.available || chatPush.busy}
           onPress={() => void chatPush.refresh()}
         />
+      </SectionCard>
+      <SectionCard title="Documents reçus par email">
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="flex-1 text-base text-ink">
+            Me prévenir quand les pièces jointes sont prêtes
+          </Text>
+          <Switch
+            accessibilityLabel="Activer les alertes des documents reçus par email"
+            value={chatPush.emailEnabled ?? false}
+            disabled={
+              !chatPush.available ||
+              !chatPush.ready ||
+              chatPush.busy ||
+              session?.stores[0]?.role !== "MANAGER"
+            }
+            onValueChange={(v) => void chatPush.setEmailEnabled(v)}
+          />
+        </View>
+        <Text className="text-muted">
+          Une alerte par email lorsque ses pièces jointes sont conservées, ou si
+          un fichier est à vérifier. Elle ouvre Actions ; aucun document n’est
+          confirmé ni publié automatiquement.
+        </Text>
       </SectionCard>
       <SectionCard title="Notifications commerciales">
         <View className="flex-row items-center justify-between gap-3">

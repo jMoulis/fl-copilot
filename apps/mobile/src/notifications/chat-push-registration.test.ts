@@ -106,3 +106,68 @@ it("a late token from another owner/context cannot register or update UI", async
   await f.controller.refresh();
   expect(f.save).not.toHaveBeenCalled();
 });
+
+function emailFixture(chat: string | null = null, email: string | null = null) {
+  const f = fixture(chat);
+  const port = {
+    read: async () => email,
+    write: async (value: string) => {
+      email = value;
+    },
+  };
+  const save = vi.fn(
+    async (
+      _token: string | null,
+      _channels?: { chat: boolean; email: boolean },
+    ) => {
+      void _token;
+      void _channels;
+    },
+  );
+  const controller = new ChatPushRegistration({
+    ...f.ports,
+    email: port,
+    save,
+  });
+  return { ...f, controller, save, email: () => email };
+}
+it("legacy chat opt-in never opts into email and retains its original preference", async () => {
+  const f = emailFixture("1");
+  await f.controller.refresh();
+  expect(f.save).toHaveBeenCalledWith("token", { chat: true, email: false });
+  expect(f.email()).toBe(null);
+  expect(f.value()).toBe("1");
+});
+it("email-only opt-in survives disabling chat, and vice versa", async () => {
+  const f = emailFixture("1");
+  await f.controller.setEmailEnabled(true);
+  await f.controller.setEnabled(false);
+  expect(f.save).toHaveBeenLastCalledWith("token", {
+    chat: false,
+    email: true,
+  });
+  await f.controller.setEnabled(true);
+  await f.controller.setEmailEnabled(false);
+  expect(f.save).toHaveBeenLastCalledWith("token", {
+    chat: true,
+    email: false,
+  });
+  expect(f.email()).toBe("0");
+});
+it("serializes both channels and retries an offline email disable without losing chat", async () => {
+  const f = emailFixture("1", "1");
+  f.save.mockRejectedValueOnce(Error("offline"));
+  await f.controller.setEmailEnabled(false);
+  expect(f.email()).toBe("pending-disable");
+  await f.controller.refresh();
+  expect(f.email()).toBe("0");
+  expect(f.save.mock.calls).toEqual([
+    ["token", { chat: true, email: false }],
+    ["token", { chat: true, email: false }],
+  ]);
+});
+it("disabling the last channel removes the token", async () => {
+  const f = emailFixture(null, "1");
+  await f.controller.setEmailEnabled(false);
+  expect(f.save).toHaveBeenCalledWith(null, { chat: false, email: false });
+});

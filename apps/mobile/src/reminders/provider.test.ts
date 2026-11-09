@@ -12,6 +12,7 @@ type ResponseListener = (response: Response) => void;
 const runtime = vi.hoisted(() => ({
   storeId: "11111111-1111-4111-8111-111111111111" as string | undefined,
   status: "authenticated",
+  role: "MANAGER",
   ownerId: "33333333-3333-4333-8333-333333333333",
   list: vi.fn(),
   preferences: vi.fn(),
@@ -68,7 +69,7 @@ vi.mock("@/auth/auth-provider", () => ({
     status: runtime.status,
     session: runtime.storeId
       ? {
-          stores: [{ storeId: runtime.storeId }],
+          stores: [{ storeId: runtime.storeId, role: runtime.role }],
           user: { id: runtime.ownerId },
         }
       : undefined,
@@ -793,5 +794,43 @@ it.each([
     expect(state.routes[state.index]!.name).toBe(target);
     expect(state.routes[state.index]!.key).toBe(originalKey ?? firstKey);
     expect(runtime.push).not.toHaveBeenCalled();
+  },
+);
+
+it("opens a store email alert in Actions once, without importing or writing", async () => {
+  const data = {
+    kind: "STORE_EMAIL_READY",
+    storeId: runtime.storeId,
+    ownerId: runtime.ownerId,
+    receiptId: "77777777-7777-4777-8777-777777777777",
+  };
+  runtime.lastResponse = { notification: { request: { content: { data } } } };
+  await render();
+  expect(runtime.navigate).toHaveBeenCalledWith("/actions/email");
+  for (const listener of runtime.responseListeners)
+    await act(async () =>
+      listener({ notification: { request: { content: { data } } } }),
+    );
+  expect(runtime.navigate).toHaveBeenCalledTimes(1);
+  expect(runtime.syncNow).not.toHaveBeenCalled();
+  expect(runtime.destination).not.toHaveBeenCalled();
+});
+it.each(["owner", "store", "role"])(
+  "refuses an email alert for another %s",
+  async (field) => {
+    const data = {
+      kind: "STORE_EMAIL_READY",
+      storeId: runtime.storeId,
+      ownerId: runtime.ownerId,
+      receiptId: "77777777-7777-4777-8777-777777777777",
+    };
+    if (field === "owner") data.ownerId = data.receiptId;
+    if (field === "store") data.storeId = data.receiptId;
+    if (field === "role") runtime.role = "VIEWER";
+    runtime.lastResponse = { notification: { request: { content: { data } } } };
+    await render();
+    expect(runtime.navigate).not.toHaveBeenCalled();
+    expect(runtime.dismissTo).not.toHaveBeenCalled();
+    runtime.role = "MANAGER";
   },
 );

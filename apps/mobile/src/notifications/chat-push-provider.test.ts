@@ -13,7 +13,9 @@ const runtime = vi.hoisted(() => ({
   },
   states: new Set<(state: string) => void>(),
   tokens: new Set<(token: { type: "ios"; data: string }) => void>(),
-  read: vi.fn(async () => "1"),
+  read: vi.fn(async (key: string) =>
+    key.startsWith("fl.email-push.") ? null : "1",
+  ),
   write: vi.fn(async () => {}),
   save: vi.fn(async () => ({ enabled: true })),
   permission: vi.fn(async () => ({ granted: true })),
@@ -149,7 +151,7 @@ it("ordinary rerenders do not re-register tokens or accumulate listeners", async
   runtime.state = "active";
   await render();
   for (let i = 0; i < 100; i++) await render();
-  expect(runtime.read).toHaveBeenCalledTimes(1);
+  expect(runtime.read).toHaveBeenCalledTimes(2);
   expect(runtime.save).toHaveBeenCalledTimes(1);
   expect(runtime.states.size).toBe(1);
   expect(runtime.tokens.size).toBe(1);

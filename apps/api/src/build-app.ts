@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from "node:http";
+import { notifyEmailReady } from "./notifications/email-ready.js";
 import {
   copilotTurnTransportRequestSchema,
   type SyncPushRequest,
@@ -371,6 +372,24 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
                       "Received attachment metadata is unavailable",
                     ),
                 ),
+                undefined,
+                undefined,
+                async (receiptId) => {
+                  try {
+                    await notifyEmailReady(
+                      await dependencies.database.getDb(),
+                      receiptId,
+                      {
+                        accessToken: config.EXPO_PUSH_ACCESS_TOKEN,
+                      },
+                    );
+                  } catch {
+                    app.log.warn(
+                      { code: "EMAIL_PUSH_DELIVERY_FAILED" },
+                      "Document alert unavailable; originals retained",
+                    );
+                  }
+                },
               )
             : undefined,
           config.LAYOUT_ILLUSTRATION_GENERATION_ENABLED ||
