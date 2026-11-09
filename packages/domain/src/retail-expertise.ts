@@ -8,6 +8,8 @@ export const retailExpertiseTopicSchema = z.enum([
   "VISIBILITY",
   "SEASONALITY",
   "WASTE_DIAGNOSIS",
+  "DISPLAY_DESIGN",
+  "FRESH_DISPLAY",
 ]);
 export const retailExpertiseInputSchema = z
   .strictObject({

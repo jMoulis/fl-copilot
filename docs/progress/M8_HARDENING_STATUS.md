@@ -1,5 +1,9 @@
 # M8 — hardening and pilot release
 
+## Practical merchandising composition — 9 November
+
+Enrich the existing on-demand expertise lookup with display design and fresh-produce display guidance, sourced from Penn State and University of Maryland Extension. Preserve old references, check each requested card’s actual review dates, distinguish customary preferences from explicit constraints, and retain all user-confirmed write boundaries. No reviewer agent, mandatory second pass, larger read budget or new native build. [Source review, verification and dialogue acceptance](../qa/M8_MERCHANDISING_COMPOSITION_2026_11_09.md). Scripted transport/persistence checks and real owner reasoning/token acceptance remain distinct; M7 workstream 4 stays closed on its agreed baseline.
+
 ## Dated known-plan lookup — 9 November
 
 The mixed owner retest has correct independently checked matched-day rankings and 61,166 input tokens but still misses relevant TG context after two refused reads. Extend the existing plan tool with a latest-started-week lookup, keeping exact/future week reads and dated user declarations distinct from current physical installation. Preserve explicit-week provenance, original scopes, read quotas and cache; no new agent, tool, prompt rule or database entity. Three selected old-runtime regressions and 331 passing targeted tests qualify the correction; delivery and live owner acceptance remain separate. [Evidence and boundaries](../qa/M8_GENERALIZATION_REVIEW_2026_11_07.md#mixed-analysis-retest-and-dated-plan-lookup--9-november).

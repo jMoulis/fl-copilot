@@ -5351,19 +5351,27 @@ it.each([
   "TAMPERED",
   "STALE",
   "UNREVIEWED",
+  "DISPLAY_DESIGN",
 ])(
   "consults curated expertise through the SDK without live search or business authority (%s)",
   async (mode) => {
     const { readRetailExpertise } = await import("./retail-expertise-tool");
     const f = fixture(),
-      input = { topics: ["VISIBILITY", "SEASONALITY"] };
+      input = {
+        topics:
+          mode === "DISPLAY_DESIGN"
+            ? ["DISPLAY_DESIGN", "FRESH_DISPLAY"]
+            : ["VISIBILITY", "SEASONALITY"],
+      };
     const value = readRetailExpertise(
       input,
-      mode === "STALE"
-        ? "2027-04-18T00:00:00.000Z"
-        : mode === "UNREVIEWED"
-          ? "2026-10-17T12:00:00.000Z"
-          : "2026-10-18T12:00:00.000Z",
+      mode === "DISPLAY_DESIGN"
+        ? "2026-11-09T12:00:00.000Z"
+        : mode === "STALE"
+          ? "2027-04-18T00:00:00.000Z"
+          : mode === "UNREVIEWED"
+            ? "2026-10-17T12:00:00.000Z"
+            : "2026-10-18T12:00:00.000Z",
     );
     if (mode === "OTHER_TOPIC") value.input.topics = ["ASSOCIATIONS"];
     if (mode === "TAMPERED")
@@ -5382,11 +5390,17 @@ it.each([
         return response();
       }
       expect(definition.parameters.type).toBe("object");
+      if (mode === "DISPLAY_DESIGN") {
+        expect(definition.parameters.properties.topics.items.enum).toEqual(
+          expect.arrayContaining(["DISPLAY_DESIGN", "FRESH_DISPLAY"]),
+        );
+        expect(definition.description.length).toBeLessThan(1016);
+      }
       expect(JSON.stringify(definition.parameters)).not.toMatch(
         /storeId|ownerId|productId|query|asOf|url|amount|authority/,
       );
       if (calls++ === 0) {
-        if (mode === "CURRENT")
+        if (["CURRENT", "DISPLAY_DESIGN"].includes(mode))
           expect(JSON.stringify(body)).not.toContain(
             value.cards[0]!.sourceFinding,
           );
@@ -5425,11 +5439,12 @@ it.each([
       ...(mode === "DISABLED" ? {} : { retailExpertise }),
     }).generate(f.request, schema, undefined, undefined, activity);
     expect(publicResearch).not.toHaveBeenCalled();
+    if (mode === "DISPLAY_DESIGN") expect(calls).toBe(2);
     expect(retailExpertise).toHaveBeenCalledTimes(mode === "DISABLED" ? 0 : 1);
     expect(result.toolEvidence ?? []).toEqual(
-      mode === "CURRENT" ? value.evidence : [],
+      ["CURRENT", "DISPLAY_DESIGN"].includes(mode) ? value.evidence : [],
     );
-    if (mode === "CURRENT")
+    if (["CURRENT", "DISPLAY_DESIGN"].includes(mode))
       expect(activity).toHaveBeenCalledWith(
         expect.objectContaining({ stage: "CONTEXT", status: "DONE" }),
       );
