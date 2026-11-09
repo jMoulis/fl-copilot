@@ -1675,3 +1675,104 @@ it("negotiates qualitative plans before pushing, preserves Outbox and cursor on 
   ).toEqual({ value: "1" });
   database.close();
 });
+
+it("keeps a pending command when logout retires a committed push acknowledgement, then replays its identity", async () => {
+  const { NativeSessionManager, SessionChangedError } =
+    await import("../auth/session-manager");
+  const { adapter, database } = temporaryDatabase();
+  await runLocalMigrations(adapter);
+  await createSyncTestEntity(adapter, {
+    id: entityId,
+    commandId,
+    storeId,
+    deviceId,
+    label: "Retained edit",
+  });
+  const payload = database
+    .prepare("SELECT payload_json FROM sync_outbox WHERE command_id=?")
+    .get(commandId);
+  const storedSession = {
+    user: { id: deviceId, email: "owner@example.test", displayName: "Owner" },
+    stores: [{ storeId, name: "Store", role: "MANAGER" }],
+    accessToken: "access",
+    accessTokenExpiresAt: "2026-11-10T10:00:00Z",
+    refreshToken: "refresh",
+  };
+  const manager = new NativeSessionManager(
+    { load: async () => null, save: async () => {}, clear: async () => {} },
+    async () => storedSession,
+    () => Date.parse("2026-11-09T10:00:00Z"),
+  );
+  await manager.establish(storedSession);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const applied = new Set<string>();
+  const push = vi.fn<SyncTransport["push"]>((request) =>
+    manager.request(async () => {
+      const results = request.commands.map((command) => {
+        const duplicate = applied.has(command.commandId);
+        applied.add(command.commandId);
+        return {
+          commandId: command.commandId,
+          entityType: command.entityType,
+          entityId: command.entityId,
+          status: duplicate
+            ? ("ALREADY_APPLIED" as const)
+            : ("APPLIED" as const),
+          remoteVersion: 1,
+        };
+      });
+      if (push.mock.calls.length === 1) await gate;
+      return { results, serverTime: "2026-11-09T10:00:00Z" };
+    }),
+  );
+  const service = new MobileSyncService(
+    adapter,
+    {
+      push,
+      bootstrap: async () => bootstrapResponse(),
+      pull: async () => emptyPull("cursor"),
+    },
+    { appVersion: "test", deviceId, maxRetries: 0 },
+  );
+  const pending = service.push(storeId);
+  const result = pending.then(
+    () => {
+      throw Error("Retired acknowledgement applied locally");
+    },
+    (error: unknown) => error,
+  );
+  await vi.waitFor(() => expect(applied.size).toBe(1));
+  await manager.logout();
+  release();
+  expect(await result).toBeInstanceOf(SessionChangedError);
+  expect(
+    database
+      .prepare("SELECT status FROM sync_outbox WHERE command_id=?")
+      .get(commandId),
+  ).toEqual({ status: "PENDING" });
+  expect(
+    database
+      .prepare("SELECT payload_json FROM sync_outbox WHERE command_id=?")
+      .get(commandId),
+  ).toEqual(payload);
+  await manager.establish(storedSession);
+  expect(await service.push(storeId)).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    conflicts: 0,
+  });
+  expect(push).toHaveBeenCalledTimes(2);
+  expect(
+    push.mock.calls.map(([request]) => request.commands[0]!.commandId),
+  ).toEqual([commandId, commandId]);
+  expect(applied.size).toBe(1);
+  expect(
+    database
+      .prepare("SELECT status FROM sync_outbox WHERE command_id=?")
+      .get(commandId),
+  ).toEqual({ status: "ACKNOWLEDGED" });
+  database.close();
+});

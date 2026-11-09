@@ -155,7 +155,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       expectedOwnerId?: string,
     ) => {
       assertActive();
-      return manager.request(operation, expectedOwnerId);
+      return manager.request(async (token) => {
+        assertActive();
+        try {
+          return await operation(token);
+        } finally {
+          assertActive();
+        }
+      }, expectedOwnerId);
     },
     [manager, assertActive],
   );
