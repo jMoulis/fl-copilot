@@ -16,8 +16,24 @@ const runtime = vi.hoisted(() => ({
   verify: vi.fn(),
   refresh: vi.fn(),
   remoteLogout: vi.fn(),
+  state: "active",
+  states: new Set<(state: string) => void>(),
+  drain: vi.fn(async (revoke: (token: string) => Promise<void>) => {
+    void revoke;
+  }),
 }));
-vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
+vi.mock("react-native", () => ({
+  Platform: { OS: "ios" },
+  AppState: {
+    get currentState() {
+      return runtime.state;
+    },
+    addEventListener: (_: string, listener: (state: string) => void) => {
+      runtime.states.add(listener);
+      return { remove: () => runtime.states.delete(listener) };
+    },
+  },
+}));
 vi.mock("../components/ui", () => ({
   AppScreen: "Screen",
   AppHeader: "Header",
@@ -41,6 +57,7 @@ vi.mock("./auth-storage", () => ({
   loadStoredSession: runtime.load,
   saveStoredSession: runtime.save,
   clearStoredSession: runtime.clear,
+  drainPendingLogouts: runtime.drain,
   assertRestoredSessionOwner: runtime.assertOwner,
   markRestoredSessionVerified: runtime.markVerified,
 }));
@@ -51,6 +68,7 @@ vi.mock("@fl-copilot/api-client", async (original) => ({
     verifyLoginCode = runtime.verify;
     refreshSession = runtime.refresh;
     logout = runtime.remoteLogout;
+    logoutSession = runtime.remoteLogout;
   },
 }));
 let tree: ReactTestRenderer | undefined, auth: ReturnType<typeof useAuth>;
@@ -155,7 +173,10 @@ it("does not expose a retained marker from a foreign account when a restored cop
   expect(runtime.refresh).not.toHaveBeenCalled();
 });
 it("drains canonical logout and prevents an in-flight refresh from writing back after the operational tree closes", async () => {
-  runtime.load.mockResolvedValue({ refreshToken: "old", marker: session() });
+  runtime.load.mockResolvedValue({
+    refreshToken: "old",
+    marker: { user: session().user, stores: session().stores },
+  });
   const refresh = deferred<AuthSessionResponse>();
   runtime.refresh.mockReturnValue(refresh.promise);
   await mount();
@@ -336,3 +357,108 @@ it.each([
     expect(runtime.clear).not.toHaveBeenCalled();
   },
 );
+
+it("retries queued logouts at startup and foreground, without polling or accumulating listeners", async () => {
+  runtime.state = "background";
+  try {
+    await mount();
+    expect(runtime.drain).not.toHaveBeenCalled();
+    await act(async () => {
+      runtime.state = "active";
+      for (const listener of runtime.states) listener("active");
+    });
+    expect(runtime.drain).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 50; i++)
+      await act(async () =>
+        tree!.update(createElement(AuthProvider, {}, createElement(Probe))),
+      );
+    expect(runtime.drain).toHaveBeenCalledTimes(1);
+    expect(runtime.states.size).toBe(1);
+    await act(async () => tree!.unmount());
+    expect(runtime.states.size).toBe(0);
+  } finally {
+    runtime.state = "active";
+  }
+});
+it("finishes local logout without waiting for remote revocation", async () => {
+  await mount();
+  await act(async () => auth.requestCode("owner@example.test"));
+  await act(async () => auth.verifyCode("123456"));
+  runtime.drain.mockClear();
+  const network = deferred<void>();
+  runtime.drain.mockReturnValueOnce(network.promise);
+  await act(async () => auth.logout());
+  expect(auth.status).toBe("anonymous");
+  expect(runtime.clear).toHaveBeenCalledTimes(1);
+  expect(runtime.drain).toHaveBeenCalledTimes(1);
+  network.resolve();
+});
+it("tries the durable revocation even if local native retirement reports a failure", async () => {
+  await mount();
+  await act(async () => auth.requestCode("owner@example.test"));
+  await act(async () => auth.verifyCode("123456"));
+  runtime.drain.mockClear();
+  runtime.clear.mockRejectedValueOnce(Error("native retirement unavailable"));
+  await act(async () => {
+    await expect(auth.logout()).rejects.toThrow(
+      "native retirement unavailable",
+    );
+  });
+  expect(auth.status).toBe("anonymous");
+  expect(runtime.drain).toHaveBeenCalledTimes(1);
+});
+it("does not clear a replacement provider's credentials when an old refresh fails after unmount", async () => {
+  runtime.load.mockResolvedValue({
+    refreshToken: "old",
+    marker: { user: session().user, stores: session().stores },
+  });
+  const refresh = deferred<AuthSessionResponse>();
+  runtime.refresh.mockReturnValueOnce(refresh.promise);
+  await mount();
+  expect(runtime.refresh).toHaveBeenCalledTimes(1);
+  await act(async () => tree!.unmount());
+  await act(async () =>
+    refresh.reject(
+      new ApiClientError(401, {
+        code: "AUTH_SESSION_EXPIRED",
+        messageFr: "Expired",
+        retryable: false,
+      }),
+    ),
+  );
+  expect(runtime.clear).not.toHaveBeenCalled();
+});
+
+it("cannot save a retired provider's login after its restored-owner check completes late", async () => {
+  runtime.expectedOwner = "owner";
+  await mount();
+  await act(async () => auth.requestCode("owner@example.test"));
+  const ownerCheck = deferred<void>();
+  runtime.assertOwner.mockReturnValueOnce(ownerCheck.promise);
+  const verifying = auth.verifyCode("123456");
+  const result = verifying.then(
+    () => null,
+    (error: unknown) => error,
+  );
+  await vi.waitFor(() => expect(runtime.assertOwner).toHaveBeenCalledTimes(1));
+  await act(async () => tree!.unmount());
+  await act(async () => ownerCheck.resolve());
+  expect(await result).toBeInstanceOf(SessionChangedError);
+  expect(runtime.save).not.toHaveBeenCalled();
+  expect(runtime.markVerified).not.toHaveBeenCalled();
+});
+it("cannot clear or revoke a replacement login after a retired owner check reports a mismatch", async () => {
+  runtime.expectedOwner = "owner";
+  runtime.load.mockResolvedValue({
+    refreshToken: "old",
+    marker: { user: session("foreign").user, stores: session().stores },
+  });
+  const ownerCheck = deferred<void>();
+  runtime.assertOwner.mockReturnValueOnce(ownerCheck.promise);
+  await mount();
+  await vi.waitFor(() => expect(runtime.assertOwner).toHaveBeenCalledTimes(1));
+  await act(async () => tree!.unmount());
+  const { LocalCopyError } = await import("../db/local-copy-contracts");
+  await act(async () => ownerCheck.reject(new LocalCopyError("OWNER")));
+  expect(runtime.clear).not.toHaveBeenCalled();
+});

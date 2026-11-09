@@ -13,11 +13,13 @@ import type { DevicePushToken } from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { ApiClient } from "@fl-copilot/api-client";
 import { expoPushTokenSchema } from "@fl-copilot/sync-contracts";
+import { drainPendingLogouts } from "@/auth/auth-storage";
 import { useAuth } from "@/auth/auth-provider";
 import { useLocalDatabase } from "@/providers/database-provider";
 import { getApiBaseUrl } from "@/config/environment";
 import {
   notificationModule,
+  nativeRegistrationIsCurrent,
   requestReminderPermission,
 } from "@/reminders/native";
 import { CoalescedReminderRunner } from "@/reminders/coalesced-runner";
@@ -35,11 +37,13 @@ const Context = createContext<State | null>(null);
 async function pushToken(
   native: { current: DevicePushToken | undefined },
   reading: { current: number },
+  current: () => boolean,
 ) {
   const n = await notificationModule();
   const projectId =
     Constants.easConfig?.projectId ??
     Constants.expoConfig?.extra?.eas?.projectId;
+  if (!current()) throw Error("CHAT_PUSH_CONTEXT_CHANGED");
   if (!n || !projectId) throw Error("CHAT_PUSH_UNAVAILABLE");
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -54,6 +58,7 @@ async function pushToken(
             reading.current--;
           }
         }
+        if (!current()) throw Error("CHAT_PUSH_CONTEXT_CHANGED");
         return n.getExpoPushTokenAsync({
           projectId,
           devicePushToken: native.current,
@@ -85,18 +90,24 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
   }>();
   // Expo's native token read itself emits a token event. Reuse that value
   // instead of recursively asking native registration from its own listener.
-  const nativeToken = useRef<DevicePushToken | undefined>(undefined);
-  const nativeReads = useRef(0);
+  const nativeToken = useMemo(
+    () => ({ scope, current: undefined as DevicePushToken | undefined }),
+    [scope],
+  );
+  const nativeReads = useMemo(() => ({ scope, current: 0 }), [scope]);
   const available = Platform.OS === "ios" && Constants.appOwnership !== "expo";
   const registration = useMemo(() => {
     const key = `fl.chat-push.${ownerId}.${storeId}.${deviceId}`;
+    const nativeCurrent = nativeRegistrationIsCurrent();
+    const current = () =>
+      active.current === scope &&
+      available &&
+      status === "authenticated" &&
+      !!ownerId &&
+      !!storeId &&
+      nativeCurrent();
     return new ChatPushRegistration({
-      current: () =>
-        active.current === scope &&
-        available &&
-        status === "authenticated" &&
-        !!ownerId &&
-        !!storeId,
+      current,
       read: () => SecureStore.getItemAsync(key),
       write: (value) => SecureStore.setItemAsync(key, value),
       email: {
@@ -119,7 +130,13 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
           p.granted || p.ios?.status === n.IosAuthorizationStatus.PROVISIONAL
         );
       },
-      token: () => pushToken(nativeToken, nativeReads),
+      token: async () => {
+        await drainPendingLogouts((token) =>
+          new ApiClient(getApiBaseUrl()).logoutSession(token),
+        );
+        if (!current()) throw Error("CHAT_PUSH_CONTEXT_CHANGED");
+        return pushToken(nativeToken, nativeReads, current);
+      },
       save: (token, channels) =>
         withAccessToken((accessToken) => {
           if (active.current !== scope)
@@ -136,7 +153,17 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
         if (active.current === scope) setState({ scope, value });
       },
     });
-  }, [scope, available, status, ownerId, storeId, deviceId, withAccessToken]);
+  }, [
+    scope,
+    available,
+    status,
+    ownerId,
+    storeId,
+    deviceId,
+    withAccessToken,
+    nativeToken,
+    nativeReads,
+  ]);
   const queue = useMemo(() => new CoalescedReminderRunner(), []);
   const refresh = useMemo(
     () => () => queue.run(() => registration.refresh()),
@@ -156,6 +183,8 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
           if (!n || !alive) return;
           const listener = n.addPushTokenListener((token) => {
             const previous = nativeToken.current;
+            // An unsolicited late event does not prove this session registered with iOS.
+            if (!previous) return;
             nativeToken.current = token;
             if (
               nativeReads.current === 0 &&
@@ -173,7 +202,14 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
       stop?.();
       subscription.remove();
     };
-  }, [refresh, available, scope, session?.accessToken]);
+  }, [
+    refresh,
+    available,
+    scope,
+    session?.accessToken,
+    nativeToken,
+    nativeReads,
+  ]);
   const value =
     state?.scope === scope
       ? state.value

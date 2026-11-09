@@ -4,6 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ChatPushProvider } from "./chat-push-provider";
 const runtime = vi.hoisted(() => ({
   state: "background",
+  generation: 0,
+  drain: vi.fn(async (revoke: (token: string) => Promise<void>) => {
+    void revoke;
+  }),
   sqlite: {},
   deviceId: "11111111-1111-4111-8111-111111111111",
   session: {
@@ -54,6 +58,7 @@ vi.mock("@fl-copilot/api-client", () => ({
     updateDevicePushToken = runtime.save;
   },
 }));
+vi.mock("@/auth/auth-storage", () => ({ drainPendingLogouts: runtime.drain }));
 vi.mock("@/auth/auth-provider", () => ({
   useAuth: () => ({
     session: runtime.session,
@@ -75,6 +80,10 @@ vi.mock(
   async () => import("../reminders/coalesced-runner"),
 );
 vi.mock("@/reminders/native", () => ({
+  nativeRegistrationIsCurrent: () => {
+    const generation = runtime.generation;
+    return () => generation === runtime.generation;
+  },
   requestReminderPermission: vi.fn(async () => true),
   notificationModule: async () => ({
     getPermissionsAsync: runtime.permission,
@@ -119,6 +128,7 @@ beforeEach(() => {
   runtime.nativeToken.mockClear();
   runtime.permission.mockClear();
   runtime.access.mockClear();
+  runtime.drain.mockReset().mockResolvedValue(undefined);
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
@@ -219,6 +229,83 @@ it("caches background rollover and reconciles it only on foreground", async () =
   expect(runtime.token).toHaveBeenCalledWith(
     expect.objectContaining({
       devicePushToken: { type: "ios", data: "native-token-b" },
+    }),
+  );
+});
+
+it("registers with native again after account replacement rather than reusing a retired native token", async () => {
+  runtime.state = "active";
+  await render();
+  const owner = runtime.session.user.id;
+  runtime.generation++;
+  runtime.session = {
+    ...runtime.session,
+    user: { id: "44444444-4444-4444-8444-444444444444" },
+  };
+  try {
+    await render();
+    expect(runtime.nativeToken).toHaveBeenCalledTimes(2);
+    expect(runtime.save).toHaveBeenCalledTimes(2);
+  } finally {
+    runtime.session = { ...runtime.session, user: { id: owner } };
+  }
+});
+it("a native token obtained after logout cannot register the old destination", async () => {
+  runtime.state = "active";
+  let release!: (value: { type: "ios"; data: string }) => void;
+  runtime.nativeToken.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  await render();
+  expect(release).toBeTypeOf("function");
+  runtime.generation++;
+  await act(async () => release({ type: "ios", data: "old-native-token" }));
+  expect(runtime.token).not.toHaveBeenCalled();
+  expect(runtime.save).not.toHaveBeenCalled();
+});
+
+it("does not register for native delivery until the former session's revocation is acknowledged", async () => {
+  runtime.state = "active";
+  let release!: () => void;
+  runtime.drain.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  await render();
+  expect(release).toBeTypeOf("function");
+  expect(runtime.nativeToken).not.toHaveBeenCalled();
+  expect(runtime.save).not.toHaveBeenCalled();
+  await act(async () => release());
+  expect(runtime.nativeToken).toHaveBeenCalledTimes(1);
+  expect(runtime.save).toHaveBeenCalledTimes(1);
+});
+it("keeps remote delivery retired if the previous logout still cannot reach the server", async () => {
+  runtime.state = "active";
+  runtime.drain.mockRejectedValueOnce(Error("offline"));
+  await render();
+  expect(runtime.nativeToken).not.toHaveBeenCalled();
+  expect(runtime.save).not.toHaveBeenCalled();
+});
+
+it("does not reuse an unsolicited old native event as proof of registration for a fresh session", async () => {
+  await render();
+  await act(async () => {
+    for (const listener of runtime.tokens)
+      listener({ type: "ios", data: "retired-device-token" });
+  });
+  await act(async () => {
+    runtime.state = "active";
+    for (const listener of runtime.states) listener("active");
+  });
+  expect(runtime.nativeToken).toHaveBeenCalledTimes(1);
+  expect(runtime.token).toHaveBeenCalledWith(
+    expect.objectContaining({
+      devicePushToken: { type: "ios", data: "native-token-a" },
     }),
   );
 });

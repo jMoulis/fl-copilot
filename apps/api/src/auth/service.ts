@@ -12,6 +12,7 @@ import type {
   AuthChallengeRequest,
   AuthChallengeResponse,
   AuthSessionResponse,
+  LogoutSessionRequest,
 } from "@fl-copilot/sync-contracts";
 import type { ApiConfig } from "../config.js";
 import type { DatabaseService } from "../database/types.js";
@@ -65,7 +66,7 @@ export interface AuthService {
     storeId: string,
     deviceId?: string,
   ): Promise<AuthorizedStoreContext>;
-  logout(accessToken: string): Promise<void>;
+  logout(credential: string | LogoutSessionRequest): Promise<void>;
 }
 
 export interface AuthorizedStoreContext {
@@ -288,9 +289,25 @@ export function createMongoAuthService(
       };
     },
 
-    async logout(accessToken) {
-      const claims = verifyAccessToken(config.AUTH_TOKEN_SECRET, accessToken);
+    async logout(credential) {
       const db = await database.getDb();
+      if (typeof credential !== "string") {
+        const tokenHash = hashToken(credential.refreshToken);
+        await db.collection<SessionDocument>("deviceSessions").updateOne(
+          {
+            $or: [
+              { refreshTokenHash: tokenHash },
+              { rotatedTokenHashes: tokenHash },
+            ],
+          },
+          {
+            $set: { revokedAt: new Date(), updatedAt: new Date() },
+            $unset: { push: "" },
+          },
+        );
+        return;
+      }
+      const claims = verifyAccessToken(config.AUTH_TOKEN_SECRET, credential);
       await db.collection<SessionDocument>("deviceSessions").updateOne(
         {
           _id: claims.sessionId,

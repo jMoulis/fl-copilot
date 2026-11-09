@@ -5,7 +5,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
-it.each(["pull", "bootstrap", "refresh", "push"] as const)(
+it.each(["pull", "bootstrap", "refresh", "push", "logout"] as const)(
   "bounds a stalled %s request, including its JSON body, and aborts the transport",
   async (operation) => {
     for (const stalledBody of [false, true]) {
@@ -38,7 +38,9 @@ it.each(["pull", "bootstrap", "refresh", "push"] as const)(
                   storeId: "store",
                   commands: [],
                 })
-              : api.refreshSession("device", "refresh-token");
+              : operation === "logout"
+                ? api.logoutSession("revocation-secret-".repeat(3))
+                : api.refreshSession("device", "refresh-token");
       const checked = expect(request).rejects.toMatchObject({
         status: 0,
         response: { code: "SYNC_REQUEST_TIMEOUT", retryable: true },
@@ -70,4 +72,18 @@ it("clears the deadline after a valid response and keeps the authenticated store
     await new ApiClient("https://fixture.invalid").pullSync("token", "store"),
   ).toMatchObject({ nextCursor: "next" });
   expect(vi.getTimerCount()).toBe(0);
+});
+
+it("sends only the revocation credential to the existing logout endpoint without another login", async () => {
+  const secret = "revocation-secret-".repeat(3);
+  const fetch = vi.fn(async (url: string, init: RequestInit) => {
+    expect(url).toBe("https://fixture.invalid/api/v1/auth/logout");
+    expect(init.method).toBe("POST");
+    expect(new Headers(init.headers).get("authorization")).toBeNull();
+    expect(JSON.parse(init.body as string)).toEqual({ refreshToken: secret });
+    return Response.json({ revoked: true });
+  });
+  vi.stubGlobal("fetch", fetch);
+  await new ApiClient("https://fixture.invalid").logoutSession(secret);
+  expect(fetch).toHaveBeenCalledTimes(1);
 });

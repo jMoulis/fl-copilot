@@ -6,6 +6,9 @@ const state = vi.hoisted(() => ({
   fail: false,
   reads: [] as string[],
 }));
+vi.mock("../reminders/native", () => ({
+  retirePrivateNotifications: async () => {},
+}));
 vi.mock("react-native", () => ({ Platform: { OS: "ios" } }));
 vi.mock("expo-secure-store", () => ({
   getItemAsync: async (key: string) => {
@@ -47,7 +50,7 @@ function fixture() {
     key: `auth.local-recovery.${generation}`,
   };
 }
-it("preserves original account/store identity before logout without reading/copying tokens or retaining personal fields", async () => {
+it("preserves UUID-only recovery ownership while credential revocation stays in SecureStore", async () => {
   const f = fixture();
   await clearStoredSessionForDatabaseRecovery(f.generation);
   expect(JSON.parse(state.values.get(f.key)!)).toEqual({
@@ -55,8 +58,10 @@ it("preserves original account/store identity before logout without reading/copy
     ownerId: f.ownerId,
     storeIds: [f.storeId],
   });
-  expect([...state.values.keys()]).toEqual([f.key]);
-  expect(state.reads).not.toContain("auth.refresh-token");
+  expect([...state.values.keys()]).toEqual([f.key, "auth.pending-logouts"]);
+  expect(JSON.parse(state.values.get("auth.pending-logouts")!)).toEqual([
+    "private-refresh-token-not-for-archive",
+  ]);
   expect(state.values.get(f.key)).not.toContain("example.test");
   expect(state.values.get(f.key)).not.toContain("private-refresh");
 });
@@ -153,7 +158,9 @@ it("requires original-owner authentication once before normal account switching,
   ).rejects.toThrow("compte d’origine");
   await assertRestoredSessionOwner(f.generation, f.ownerId, f.ownerId);
   await markRestoredSessionVerified(f.generation, f.ownerId, f.ownerId);
+  expect(state.reads).not.toContain("auth.refresh-token");
   await clearStoredSessionForDatabaseRecovery(f.generation);
+  state.reads = [];
   await expect(
     assertRestoredSessionOwner(f.generation, f.ownerId, other),
   ).resolves.toBeUndefined();

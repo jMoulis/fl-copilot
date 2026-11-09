@@ -9,7 +9,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import Constants from "expo-constants";
 import { ApiClient } from "@fl-copilot/api-client";
 import {
@@ -26,6 +26,7 @@ import {
 } from "@/providers/database-provider";
 import {
   clearStoredSession,
+  drainPendingLogouts,
   loadStoredSession,
   saveStoredSession,
   assertRestoredSessionOwner,
@@ -83,6 +84,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
                   error.code !== "OWNER"
                 )
                   throw error;
+                if (active.current !== manager) throw new SessionChangedError();
                 await clearStoredSession();
                 return null;
               }
@@ -97,7 +99,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
                 accessOwnerId,
                 session.user.id,
               );
+            if (active.current !== manager) throw new SessionChangedError();
             await saveStoredSession(session);
+            if (active.current !== manager) throw new SessionChangedError();
             if (accessOwnerId && accessGeneration)
               await markRestoredSessionVerified(
                 accessGeneration,
@@ -105,7 +109,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
                 session.user.id,
               );
           },
-          clear: clearStoredSession,
+          clear: async () => {
+            if (active.current !== manager) throw new SessionChangedError();
+            await clearStoredSession();
+          },
         },
         (token) => api.refreshSession(deviceId, token),
       ),
@@ -215,22 +222,30 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setPendingChallenge(null);
   }, []);
 
+  const retryLogouts = useCallback(
+    () => drainPendingLogouts((token) => api.logoutSession(token)),
+    [api],
+  );
+  useEffect(() => {
+    if (AppState.currentState === "active") void retryLogouts().catch(() => {});
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void retryLogouts().catch(() => {});
+    });
+    return () => subscription.remove();
+  }, [retryLogouts]);
   const logout = useCallback(
     async (options?: { localOnly?: boolean }) => {
       assertActive();
       challengeEpoch.current++;
-      const accessToken = manager.getSnapshot().session?.accessToken;
-      await manager.logout();
-      if (active.current === manager) setPendingChallenge(null);
-      if (accessToken && !options?.localOnly) {
-        try {
-          await api.logout(accessToken);
-        } catch {
-          /* Local access is already cleared. */
-        }
+      try {
+        await manager.logout();
+      } finally {
+        if (active.current === manager) setPendingChallenge(null);
+        // The persisted intent survives either network or native retirement failure.
+        if (!options?.localOnly) void retryLogouts().catch(() => {});
       }
     },
-    [api, manager, assertActive],
+    [manager, assertActive, retryLogouts],
   );
 
   if (restoreState)

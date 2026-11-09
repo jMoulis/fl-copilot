@@ -1,4 +1,5 @@
 import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
+import { logoutSessionRequestSchema } from "@fl-copilot/sync-contracts";
 import {
   devicePushTokenRequestSchema,
   devicePushTokenResponseSchema,
@@ -430,6 +431,20 @@ export class ApiClient {
       "/api/v1/auth/logout",
       { method: "POST", headers: { authorization: `Bearer ${accessToken}` } },
       logoutResponseSchema,
+    );
+  }
+  async logoutSession(refreshToken: string) {
+    await this.request(
+      "/api/v1/auth/logout",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          logoutSessionRequestSchema.parse({ refreshToken }),
+        ),
+      },
+      logoutResponseSchema,
+      60_000,
     );
   }
 
