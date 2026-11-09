@@ -9,6 +9,9 @@ import { runLocalMigrations } from "../db/migrations";
 import { ReceiptTestDatabase } from "../../../../scripts/test-receipt-publication-sqlite";
 import { applyCommercialPreparation } from "./week-preparation-repository";
 import { applyCommercialPlan } from "./week-plan-repository";
+vi.mock("@/commercial/tg-presentation-view", () => ({
+  TgPresentationView: "TgPresentation",
+}));
 const env = vi.hoisted(() => ({
   sqlite: undefined as unknown,
   session: undefined as unknown,

@@ -1,3 +1,4 @@
+import { dropsCommercialTgPresentation } from "@fl-copilot/domain";
 import { assertRemotePhysicalAllocation } from "./physical-allocation-sources";
 import { createHash } from "node:crypto";
 import {
@@ -93,6 +94,17 @@ export async function applyCommercialPreparationCommand(
     return reject(
       "COMMERCIAL_PREPARATION_REVISION_INVALID",
       "Rouvrez la préparation avant de modifier sa révision.",
+    );
+  if (
+    previous &&
+    dropsCommercialTgPresentation(
+      serializeCommercialPreparation(previous).placements,
+      plan.placements,
+    )
+  )
+    return reject(
+      "TG_PRESENTATION_EXPLICIT_REMOVAL_REQUIRED",
+      "La répartition existante doit être conservée ou retirée explicitement.",
     );
   if (previous?.physicalAllocation && plan.physicalAllocation === undefined)
     return reject(

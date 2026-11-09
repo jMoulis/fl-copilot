@@ -648,6 +648,7 @@ it("rolls back added/removed TGs on failed commit and refuses deletion when its 
 async function newWeekCard(
   x: Awaited<ReturnType<typeof setup>>,
   strategyOnly = false,
+  visual = false,
 ) {
   const { copilotMessageSchema, copilotPreparationPatchSchema } =
       await import("@fl-copilot/domain"),
@@ -670,6 +671,21 @@ async function newWeekCard(
         : "",
       tgAdditions: [
         {
+          ...(visual
+            ? {
+                presentation: {
+                  zones: [
+                    { label: "Clémentine", role: "ACCROCHE", sharePct: 60 },
+                    { label: "Orange", role: "RELAIS", sharePct: 40 },
+                  ],
+                  reason: "Présentation saisonnière",
+                  counterPromotion: {
+                    label: "Banane",
+                    reason: "Alternative hors TG",
+                  },
+                },
+              }
+            : {}),
           label: "TG nouvelle",
           theme: "Saison",
           offerIds: strategyOnly ? [] : [x.choice.choice.id],
@@ -1008,6 +1024,117 @@ it("refuses a refresh when the reviewed current offer changes again", async () =
         .prepare("SELECT COUNT(*) n FROM commercial_preparation_history")
         .get(),
     ).toEqual({ n: 1 });
+  } finally {
+    x.db.close();
+  }
+});
+
+it("retains edited visual shares and the canonical plan atomically, reopens offline and never declares an installation", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "visual-tg-")),
+    path = join(dir, "local.db"),
+    x = await setup(path);
+  let reopened: DatabaseSync | undefined;
+  try {
+    const message = await newWeekCard(x, true, true),
+      controller = await preparationController(x);
+    const original = await controller.open(message),
+      placementId = original.request.input.draft.placements[0]!.id;
+    const options = {
+      shares: [{ placementId, shares: [70, 30] }],
+      retainPlan: true,
+    };
+    const completed = await controller.confirm(message, undefined, options);
+    expect(completed.status).toBe("COMPLETED");
+    expect(
+      completed.request.input.draft.placements[0]!.presentation!.zones.map(
+        (z) => z.sharePct,
+      ),
+    ).toEqual([70, 30]);
+    expect(
+      original.request.input.draft.placements[0]!.presentation!.zones.map(
+        (z) => z.sharePct,
+      ),
+    ).toEqual([60, 40]);
+    x.db.close();
+    reopened = new DatabaseSync(path);
+    const a = new Adapter(reopened),
+      next = await preparationController(x, true, a);
+    expect((await next.confirm(message, undefined, options)).status).toBe(
+      "COMPLETED",
+    );
+    const row = reopened
+      .prepare("SELECT payload_json FROM commercial_week_plans")
+      .get() as { payload_json: string };
+    expect(
+      JSON.parse(
+        row.payload_json,
+      ).preparation.placements[0].presentation.zones.map(
+        (z: { sharePct: number }) => z.sharePct,
+      ),
+    ).toEqual([70, 30]);
+    expect(
+      reopened.prepare("SELECT COUNT(*) n FROM commercial_plan_history").get(),
+    ).toEqual({ n: 1 });
+    expect(
+      reopened
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type IN ('commercial_week_plan','commercial_week_preparation')",
+        )
+        .get(),
+    ).toEqual({ n: 2 });
+    expect(
+      reopened
+        .prepare("SELECT COUNT(*) n FROM commercial_execution_tasks")
+        .get(),
+    ).toEqual({ n: 0 });
+    await expect(
+      next.confirm(message, undefined, {
+        ...options,
+        shares: [{ placementId, shares: [65, 35] }],
+      }),
+    ).rejects.toThrow("ALREADY_CONFIRMED");
+    await expect(
+      (await preparationController(x, false, a)).confirm(message),
+    ).rejects.toThrow("FORBIDDEN");
+  } finally {
+    reopened?.close();
+    try {
+      x.db.close();
+    } catch {
+      /* database already closed for restart */
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+it("rolls back visual retention as a whole on cancellation or failed commit", async () => {
+  const x = await setup();
+  try {
+    const m = await newWeekCard(x, true, true),
+      c = await preparationController(x),
+      abort = new AbortController();
+    const options = { shares: [], retainPlan: true };
+    abort.abort();
+    await expect(c.confirm(m, abort.signal, options)).rejects.toThrow();
+    x.a.fail = true;
+    await expect(c.confirm(m, undefined, options)).rejects.toThrow();
+    x.a.fail = false;
+    for (const table of [
+      "commercial_week_preparations",
+      "commercial_week_plans",
+      "commercial_plan_revisions",
+      "copilot_tool_results",
+    ])
+      expect(x.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()).toEqual({
+        n: 0,
+      });
+    expect(
+      x.db
+        .prepare(
+          "SELECT COUNT(*) n FROM sync_outbox WHERE entity_type IN ('commercial_week_plan','commercial_week_preparation')",
+        )
+        .get(),
+    ).toEqual({ n: 0 });
+    expect((await c.confirm(m, undefined, options)).status).toBe("COMPLETED");
   } finally {
     x.db.close();
   }

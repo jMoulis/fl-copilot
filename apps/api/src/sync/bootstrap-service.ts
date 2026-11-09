@@ -7,6 +7,7 @@ import {
   requireCommercialSourceCompatibility,
   requireCommercialAnalysisCompatibility,
   requireQualitativeCommercialPlanCompatibility,
+  requireTgPresentationCompatibility,
 } from "../commercial/source-compatibility";
 import {
   serializeLayoutIllustration,
@@ -657,6 +658,11 @@ export function createMongoSyncBootstrapService(
                     }
                   : {}),
                 ...visualEntities,
+                ...(query.tgPresentations === "true" &&
+                query.commercialPlans === "true" &&
+                query.commercialPreparation === "true"
+                  ? { tgPresentations: true }
+                  : {}),
                 ...(query.qualitativeCommercialPlans === "true"
                   ? { qualitativeCommercialPlans: true }
                   : {}),
@@ -773,6 +779,11 @@ export function createMongoSyncBootstrapService(
       if (!response) {
         throw new Error("Bootstrap snapshot transaction did not complete.");
       }
+      await requireTgPresentationCompatibility(
+        mongoDatabase,
+        store.storeId,
+        query.tgPresentations === "true",
+      );
       await requireQualitativeCommercialPlanCompatibility(
         mongoDatabase,
         store.storeId,

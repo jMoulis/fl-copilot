@@ -26,6 +26,10 @@ export class CopilotCommercialPreparationRuntime {
     raw: unknown,
     rawAuthority: PreparationAuthority,
     signal?: AbortSignal,
+    afterSave?: (
+      after: import("@fl-copilot/domain").CommercialWeekPreparation,
+      tx: OutboxDatabase,
+    ) => Promise<void>,
   ) {
     const parsed = preparationRequestSchema.safeParse(raw),
       authority = preparationAuthoritySchema.safeParse(rawAuthority);
@@ -83,6 +87,7 @@ export class CopilotCommercialPreparationRuntime {
             throw new ProductClassificationError("COMMERCIAL_SOURCE_INVALID");
           throw error;
         }
+        await afterSave?.(after.data, tx);
         return {
           operationId: request.operationId,
           schemaVersion: 1 as const,

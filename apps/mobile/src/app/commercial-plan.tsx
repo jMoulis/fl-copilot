@@ -1,3 +1,4 @@
+import { TgPresentationView } from "@/commercial/tg-presentation-view";
 import { useEffect, useMemo, useState } from "react";
 import { Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -45,7 +46,7 @@ const digest = (s: string) =>
 
 export default function CommercialPlanScreen() {
   const { session } = useAuth(),
-    params = useLocalSearchParams<{ weekStart?: string }>();
+    params = useLocalSearchParams<{ weekStart?: string; mode?: string }>();
   const explicit = contextWeekQuerySchema.safeParse({
     weekStart: params.weekStart,
   });
@@ -58,6 +59,7 @@ export default function CommercialPlanScreen() {
       key={`${storeId}:${session?.user.id}:${weekStart}`}
       storeId={storeId}
       weekStart={weekStart}
+      installationOnly={params.mode === "installation"}
     />
   ) : (
     <AppScreen>
@@ -72,9 +74,11 @@ export default function CommercialPlanScreen() {
 function StoreWeek({
   storeId,
   weekStart,
+  installationOnly = false,
 }: {
   storeId: string;
   weekStart: string;
+  installationOnly?: boolean;
 }) {
   const { sqlite } = useLocalDatabase(),
     { status, lastSyncedAt } = useSync();
@@ -144,8 +148,29 @@ function StoreWeek({
     plan && snapshot?.context
       ? commercialPlanNeedsReview(plan.entity, snapshot.context)
       : [];
-  const navigate = (pathname: "/week-preparation" | "/week") =>
-    router.push({ pathname, params: { weekStart } });
+  const navigate = (
+    pathname: "/week-preparation" | "/week" | "/commercial-plan",
+  ) => router.push({ pathname, params: { weekStart } });
+  if (installationOnly && plan && !draftAhead)
+    return (
+      <AppScreen>
+        <AppHeader
+          title={`Installer mes TG · semaine ${week.number}`}
+          subtitle={`${formatFrenchCalendarDate(week.start)} au ${formatFrenchCalendarDate(week.end)}`}
+        />
+        <SecondaryButton
+          label="Retour à ma semaine"
+          onPress={() =>
+            router.canGoBack() ? router.back() : navigate("/commercial-plan")
+          }
+        />
+        <CommercialExecutionView
+          key={plan.entity.revisionId}
+          plan={plan.entity}
+          installationOnly
+        />
+      </AppScreen>
+    );
   return (
     <AppScreen>
       <AppHeader
@@ -188,13 +213,17 @@ function StoreWeek({
               }
             />
           ) : null}
-          {draft.entity.placements.map((tg) => (
-            <SectionCard key={tg.id} title={tg.label}>
-              <Text selectable className="text-base text-ink">
-                {tg.theme || "Thème à préciser"}
-              </Text>
-            </SectionCard>
-          ))}
+          {draft.entity.placements.some((p) => p.presentation) ? (
+            <TgPresentationView placements={draft.entity.placements} />
+          ) : (
+            draft.entity.placements.map((tg) => (
+              <SectionCard key={tg.id} title={tg.label}>
+                <Text selectable className="text-base text-ink">
+                  {tg.theme || "Thème à préciser"}
+                </Text>
+              </SectionCard>
+            ))
+          )}
           {draft.entity.note ? (
             <DetailsDisclosure title="Consignes de la semaine">
               <Text selectable className="text-base text-ink">
@@ -242,6 +271,17 @@ function StoreWeek({
         <>
           <Text className="font-semibold text-forest">Choix confirmés</Text>
           <CommercialPlanContent plan={plan.entity} />
+          {plan.entity.preparation.placements.some((p) => p.presentation) ? (
+            <PrimaryButton
+              label="Installer les TG"
+              onPress={() =>
+                router.push({
+                  pathname: "/commercial-plan",
+                  params: { weekStart, mode: "installation" },
+                })
+              }
+            />
+          ) : null}
           <SecondaryButton
             label={
               plan.syncState === "CONFLICT"

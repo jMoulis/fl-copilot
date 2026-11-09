@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { storeLayoutScenarioSchema } from "./store-layout-scenario";
+import { commercialTgPresentationSchema } from "./commercial-tg-presentation";
 const date = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -35,6 +36,7 @@ export const commercialWeekPreparationSchema = z
             label: z.string().trim().min(1).max(80),
             theme: z.string().trim().max(240),
             offerIds: z.array(z.string().uuid()).max(20),
+            presentation: commercialTgPresentationSchema.nullable().optional(),
             sourceIdea: z
               .object({
                 readingId: z.string().uuid(),

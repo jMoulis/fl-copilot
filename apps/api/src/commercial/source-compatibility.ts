@@ -1,5 +1,53 @@
 import type { Db } from "mongodb";
 import { AuthError } from "../auth/service";
+
+export function requiresTgPresentationSupport(raw: unknown) {
+  if (!raw || typeof raw !== "object") return false;
+  const value = raw as {
+    placements?: unknown;
+    preparation?: { placements?: unknown };
+    plan?: { preparation?: { placements?: unknown } };
+  };
+  const placements =
+    value.placements ??
+    value.preparation?.placements ??
+    value.plan?.preparation?.placements;
+  return (
+    Array.isArray(placements) &&
+    placements.some(
+      (p) => p && typeof p === "object" && Object.hasOwn(p, "presentation"),
+    )
+  );
+}
+/** No lossy projection: older clients keep local work and their previous cursor. */
+export async function requireTgPresentationCompatibility(
+  db: Db,
+  storeId: string,
+  supported: boolean,
+) {
+  if (supported) return;
+  const paths = [
+    ["commercialWeekPreparations", "placements.presentation"],
+    ["commercialWeekPlans", "preparation.placements.presentation"],
+    ["commercialPlanRevisions", "plan.preparation.placements.presentation"],
+  ];
+  const found = await Promise.all(
+    paths.map(([collection, path]) =>
+      db
+        .collection(collection!)
+        .findOne(
+          { storeId, [path!]: { $exists: true } },
+          { projection: { _id: 1 }, maxTimeMS: 2000 },
+        ),
+    ),
+  );
+  if (found.some(Boolean))
+    throw new AuthError(
+      426,
+      "TG_PRESENTATION_UPGRADE_REQUIRED",
+      "Mets l’application à jour pour retrouver les répartitions de tes TG. Tes données locales sont conservées.",
+    );
+}
 /** Call only after store authorization. Never advance an older client's cursor past unreadable data. */
 export async function requireCommercialSourceCompatibility(
   db: Db,

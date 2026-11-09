@@ -86,6 +86,7 @@ export * from "./waste-receipt-draft";
 export * from "./copilot-waste-receipts";
 
 export * from "./copilot-commercial-plan-read";
+export * from "./commercial-tg-presentation";
 
 export * from "./copilot-need-reads";
 export * from "./copilot-store-settings-read";

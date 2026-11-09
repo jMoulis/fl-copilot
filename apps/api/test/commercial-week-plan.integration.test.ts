@@ -382,6 +382,133 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
           .countDocuments({ storeId: x.storeId }),
       ).toBe(2);
     }, 20000);
+    it("round-trips visual allocations and separate counter-promotions through push, immutable history and a second SQLite device", async () => {
+      const x = await seed(),
+        push = createMongoSyncPushService(database);
+      const presentation = {
+        zones: [
+          { label: "Raisin", role: "ACCROCHE" as const, sharePct: 70 },
+          { label: "Pomme", role: "RELAIS" as const, sharePct: 30 },
+        ],
+        reason: "Choix de présentation",
+        counterPromotion: { label: "Banane", reason: "Hors TG" },
+      };
+      const prep = {
+        ...x.preparation,
+        placements: x.preparation.placements.map((p) => ({
+          ...p,
+          presentation,
+        })),
+      };
+      await x.db
+        .collection<{ _id: string }>("commercialWeekPreparations")
+        .replaceOne({ _id: prep.id }, { ...prep, _id: prep.id });
+      const plan = await buildCommercialWeekPlan(
+        {
+          preparation: prep,
+          version: 1,
+          createdAt: x.plan.createdAt,
+          validatedAt: x.plan.validatedAt,
+        },
+        { ...x.context, preparation: prep },
+        testChoiceDigest,
+      );
+      const requestNew = { ...request(plan), tgPresentations: true };
+      await expect(push.push(request(plan), "legacy")).rejects.toMatchObject({
+        statusCode: 426,
+      });
+      expect((await push.push(requestNew, "visual")).results[0]?.status).toBe(
+        "APPLIED",
+      );
+      expect((await push.push(requestNew, "replay")).results[0]?.status).toBe(
+        "ALREADY_APPLIED",
+      );
+      const pull = createMongoSyncPullService(database);
+      await expect(
+        pull.pull(x.storeId, { limit: 500, commercialPlans: "true" }),
+      ).rejects.toMatchObject({ statusCode: 426 });
+      const page = await pull.pull(x.storeId, {
+        limit: 500,
+        commercialPlans: "true",
+        tgPresentations: "true",
+      });
+      expect(JSON.stringify(page.changes)).toContain("Choix de présentation");
+      const boot = createMongoSyncBootstrapService(database),
+        store = {
+          storeId: x.storeId,
+          storeName: "Test",
+          role: "MANAGER" as const,
+          userId: randomUUID(),
+          sessionId: randomUUID(),
+          deviceId: randomUUID(),
+        };
+      await expect(
+        boot.bootstrap(store, {
+          rawObservationDays: 90,
+          commercialPlans: "true",
+        }),
+      ).rejects.toMatchObject({ statusCode: 426 });
+      const snapshot = await boot.bootstrap(store, {
+        rawObservationDays: 90,
+        commercialPlans: "true",
+        commercialPreparation: "true",
+        tgPresentations: "true",
+      });
+      expect(snapshot.entities.tgPresentations).toBe(true);
+      const { DatabaseSync } = await import("node:sqlite"),
+        { ReceiptTestDatabase } =
+          await import("../../../scripts/test-receipt-publication-sqlite"),
+        { runLocalMigrations } = await import("../../mobile/src/db/migrations"),
+        { applyBootstrap } =
+          await import("../../mobile/src/sync/apply-bootstrap"),
+        { CommercialPlanRepository } =
+          await import("../../mobile/src/commercial/week-plan-repository");
+      const local = new DatabaseSync(":memory:");
+      try {
+        const sqlite = new ReceiptTestDatabase(local);
+        await runLocalMigrations(sqlite);
+        await applyBootstrap(sqlite, x.storeId, snapshot);
+        const restored = await new CommercialPlanRepository(
+          sqlite,
+          testChoiceDigest,
+        ).get(x.storeId, prep.weekStart);
+        expect(restored?.entity).toEqual(plan);
+        expect(
+          local
+            .prepare("SELECT value FROM app_metadata WHERE key=?")
+            .get(`tg-presentations:${x.storeId}`),
+        ).toBeTruthy();
+        expect(
+          local
+            .prepare("SELECT COUNT(*) n FROM commercial_execution_tasks")
+            .get(),
+        ).toEqual({ n: 0 });
+      } finally {
+        local.close();
+      }
+      expect(
+        await x.db
+          .collection("commercialPlanRevisions")
+          .findOne({ storeId: x.storeId }),
+      ).toMatchObject({
+        plan: { preparation: { placements: [{ presentation }] } },
+      });
+      const stale = {
+        ...request(plan, 1),
+        commands: request(plan, 1).commands.map((c) => ({
+          ...c,
+          payload: { ...plan, version: 2, preparation: x.preparation },
+        })),
+      };
+      await expect(push.push(stale, "old-overwrite")).rejects.toMatchObject({
+        statusCode: 426,
+      });
+      expect(
+        await x.db
+          .collection("commercialWeekPlans")
+          .findOne({ storeId: x.storeId }),
+      ).toMatchObject({ version: 1 });
+    }, 20000);
     it("restores current plans and every confirmed revision on capable bootstrap/pull while protecting older clients", async () => {
       const x = await seed();
       await createMongoSyncPushService(database).push(request(x.plan), "saved");

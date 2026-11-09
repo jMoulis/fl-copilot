@@ -1,3 +1,4 @@
+import { TgPresentationView } from "./tg-presentation-view";
 import { commercialExecutionActualsNotFuture } from "@fl-copilot/domain";
 import {
   ExecutionActualsEditor,
@@ -5,7 +6,7 @@ import {
   parseExecutionActualsDraft,
   type ExecutionActualsDraft,
 } from "./execution-actuals-editor";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useRef } from "react";
 import {
   Text,
   TextInput,
@@ -69,11 +70,13 @@ type Editor = {
 export function CommercialExecutionView({
   plan,
   compact = false,
+  installationOnly = false,
   filter: controlledFilter,
   onFilter,
 }: {
   plan: CommercialWeekPlan;
   compact?: boolean;
+  installationOnly?: boolean;
   filter?: ExecutionFilter;
   onFilter?(filter: ExecutionFilter): void;
 }) {
@@ -84,6 +87,10 @@ export function CommercialExecutionView({
       () => new CommercialExecutionRepository(sqlite, digest),
       [sqlite],
     );
+  const [selectedTg, setSelectedTg] = useState(
+    plan.preparation.placements[0]?.id,
+  );
+  const saveLock = useRef(false);
   const [loadedRevision, setLoadedRevision] = useState<string>();
   const [localFilter, setLocalFilter] = useState<ExecutionFilter>("TODO");
   const filter = controlledFilter ?? localFilter;
@@ -165,16 +172,16 @@ export function CommercialExecutionView({
       setBusy(false);
     }
   }
-  async function save() {
-    if (!editor || busy) return;
+  async function save(value: Editor | null = editor) {
+    if (!value || busy || saveLock.current) return;
     setError(undefined);
     setNoteError(undefined);
     setActualsError(undefined);
     const now = new Date().toISOString(),
-      old = editor.record?.entity;
+      old = value.record?.entity;
     let actuals;
     try {
-      actuals = parseExecutionActualsDraft(editor.actuals);
+      actuals = parseExecutionActualsDraft(value.actuals);
     } catch {
       setActualsOpen(true);
       setActualsError(
@@ -188,19 +195,19 @@ export function CommercialExecutionView({
       return;
     }
     const parsed = commercialExecutionTaskSchema.safeParse({
-      ...editor.proposal,
+      ...value.proposal,
       ...(actuals === null && old?.actuals === undefined ? {} : { actuals }),
-      status: editor.status,
-      note: editor.note,
+      status: value.status,
+      note: value.note,
       completedAt:
-        editor.status === "DONE"
+        value.status === "DONE"
           ? old?.status === "DONE"
             ? old.completedAt
             : now
           : null,
       version:
-        (editor.record?.syncState === "ERROR"
-          ? (editor.record.remoteVersion ?? 0)
+        (value.record?.syncState === "ERROR"
+          ? (value.record.remoteVersion ?? 0)
           : (old?.version ?? 0)) + 1,
       createdAt: old?.createdAt ?? now,
       updatedAt: now,
@@ -212,6 +219,7 @@ export function CommercialExecutionView({
       );
       return;
     }
+    saveLock.current = true;
     setBusy(true);
     try {
       await repo.save(parsed.data, { commandId: randomUUID(), deviceId });
@@ -229,6 +237,7 @@ export function CommercialExecutionView({
         commercialExecutionError(e instanceof Error ? e.message : undefined),
       );
     } finally {
+      saveLock.current = false;
       setBusy(false);
     }
   }
@@ -274,7 +283,11 @@ export function CommercialExecutionView({
   return (
     <SectionCard
       title={
-        compact ? "Vos tâches" : `Suivi d’exécution · version ${plan.version}`
+        installationOnly
+          ? "Installer mes TG"
+          : compact
+            ? "Vos tâches"
+            : `Suivi d’exécution · version ${plan.version}`
       }
       description="Affiches et TG du plan validé. Ouvrez une tâche pour déclarer sa réalisation."
     >
@@ -300,7 +313,95 @@ export function CommercialExecutionView({
           />
         </>
       ) : null}
-      {loaded ? (
+      {loaded && installationOnly ? (
+        <>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {plan.preparation.placements.map((p) => (
+              <Pressable
+                key={p.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedTg === p.id }}
+                onPress={() => setSelectedTg(p.id)}
+                style={{
+                  padding: 12,
+                  minHeight: 44,
+                  borderRadius: 12,
+                  backgroundColor:
+                    selectedTg === p.id
+                      ? colors.forestSoft
+                      : colors.surfaceMuted,
+                }}
+              >
+                <Text
+                  style={{
+                    color: selectedTg === p.id ? colors.forest : colors.muted,
+                  }}
+                >
+                  {p.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {plan.preparation.placements
+            .filter((p) => p.id === selectedTg)
+            .map((placement) => {
+              const proposal = visibleProposals.find(
+                (p) => p.kind === "INSTALL_TG" && p.targetId === placement.id,
+              );
+              const record = proposal
+                ? (visibleRecords.find((r) =>
+                    commercialExecutionSameTarget(r.entity, proposal),
+                  ) ?? null)
+                : null;
+              return (
+                <View key={placement.id} style={{ gap: 12 }}>
+                  <TgPresentationView placements={[placement]} large />
+                  <Text style={{ color: colors.muted }}>
+                    Vérifie la disposition, la fraîcheur et le balisage avant de
+                    déclarer la TG installée.
+                  </Text>
+                  {record ? (
+                    <Text style={{ color: colors.forest }}>
+                      {executionStatusLabels[record.entity.status]}
+                    </Text>
+                  ) : null}
+                  {proposal ? (
+                    <PrimaryButton
+                      disabled={busy}
+                      label={
+                        record?.syncState === "CONFLICT"
+                          ? "Comparer dans Synchronisation"
+                          : record && record.entity.status !== "TODO"
+                            ? "Revoir la déclaration"
+                            : "Déclarer cette TG installée"
+                      }
+                      onPress={() => {
+                        if (record?.syncState === "CONFLICT") {
+                          router.push("/sync-center");
+                          return;
+                        }
+                        if (record && record.entity.status !== "TODO") {
+                          void edit(proposal, record, plan);
+                          return;
+                        }
+                        void save({
+                          proposal,
+                          record,
+                          status: "DONE",
+                          note: record?.entity.note ?? "",
+                          actuals: executionActualsDraft(
+                            record?.entity.actuals,
+                          ),
+                          plan,
+                        });
+                      }}
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+        </>
+      ) : loaded ? (
         <ExecutionChecklistView
           plan={plan}
           proposals={visibleProposals}

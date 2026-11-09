@@ -19,6 +19,7 @@ export async function readPreparationPreview(
   storeId: string,
   raw: unknown,
   physicalAllocationClient = false,
+  presentationClient = false,
 ) {
   const input = copilotPreparationPatchSchema.parse(raw);
   // At most 100 references, no unbounded source/product scan. All issue checks cover all references.
@@ -38,6 +39,13 @@ export async function readPreparationPreview(
     r.preparation?.physicalAllocation !== undefined
   )
     throw Error("PHYSICAL_ALLOCATION_CLIENT_REQUIRED");
+  if (
+    !presentationClient &&
+    (r.preparation?.placements.some((p) => p.presentation !== undefined) ||
+      input.patch.tgAdditions?.some((p) => p.presentation !== undefined) ||
+      input.patch.tgUpdates?.some((p) => p.presentation !== undefined))
+  )
+    throw Error("TG_PRESENTATION_CLIENT_REQUIRED");
   const all = r.all;
   let status:
     | "READY"

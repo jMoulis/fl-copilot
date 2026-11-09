@@ -49,6 +49,7 @@ export const copilotPreparationPatchSchema = z
             label: placement.label,
             theme: placement.theme,
             offerIds: placement.offerIds,
+            presentation: placement.presentation,
           }),
         )
         .min(1)
@@ -63,6 +64,7 @@ export const copilotPreparationPatchSchema = z
               label: placement.label.optional(),
               theme: placement.theme.optional(),
               offerIds: placement.offerIds.optional(),
+              presentation: placement.presentation,
             })
             .refine((v) => Object.keys(v).length > 1),
         )
@@ -127,56 +129,96 @@ export const copilotPreparationPatchSchema = z
       });
   });
 /** Legacy capable clients can still edit; they cannot review additions/removals. */
-export const copilotPreparationEditPatchSchema = z
+/** Earlier clients must not advertise a field their confirmation cards cannot read. */
+const legacyAdditions =
+  copilotPreparationPatchSchema.shape.patch.shape.tgAdditions
+    .unwrap()
+    .element.omit({ presentation: true });
+const updateShape =
+  copilotPreparationPatchSchema.shape.patch.shape.tgUpdates.unwrap().element
+    .shape;
+const { presentation: _presentation, ...legacyUpdateShape } = updateShape;
+void _presentation;
+export const copilotLegacyPreparationPatchSchema = z
   .strictObject({
     weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    create: copilotPreparationPatchSchema.shape.create,
+    patch: z.strictObject({
+      ...copilotPreparationPatchSchema.shape.patch.shape,
+      tgAdditions: z.array(legacyAdditions).min(1).max(30).optional(),
+      tgUpdates: z
+        .array(
+          z
+            .strictObject(legacyUpdateShape)
+            .refine((v) => Object.keys(v).length > 1),
+        )
+        .min(1)
+        .max(30)
+        .optional(),
+    }),
+  })
+  .superRefine((v, c) => {
+    const parsed = copilotPreparationPatchSchema.safeParse(v);
+    if (!parsed.success)
+      for (const issue of parsed.error.issues)
+        c.addIssue({
+          code: "custom",
+          path: issue.path,
+          message: issue.message,
+        });
+  });
+export const copilotPreparationEditPatchSchema = z
+  .strictObject({
+    weekStart: copilotLegacyPreparationPatchSchema.shape.weekStart,
     patch: z
       .strictObject({
-        tgCapacity: copilotPreparationPatchSchema.shape.patch.shape.tgCapacity,
-        note: copilotPreparationPatchSchema.shape.patch.shape.note,
-        tgUpdates: copilotPreparationPatchSchema.shape.patch.shape.tgUpdates,
+        tgCapacity:
+          copilotLegacyPreparationPatchSchema.shape.patch.shape.tgCapacity,
+        note: copilotLegacyPreparationPatchSchema.shape.patch.shape.note,
+        tgUpdates:
+          copilotLegacyPreparationPatchSchema.shape.patch.shape.tgUpdates,
       })
       .refine((v) => Object.keys(v).length > 0),
   })
-  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+  .refine((v) => copilotLegacyPreparationPatchSchema.safeParse(v).success);
 const previousPreparationPatchSchema = z
-  .strictObject(copilotPreparationPatchSchema.shape.patch.shape)
+  .strictObject(copilotLegacyPreparationPatchSchema.shape.patch.shape)
   .omit({ offerSelection: true, refreshChoiceIds: true });
 export const copilotPreparationLayoutPatchSchema = z
   .strictObject({
-    weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    weekStart: copilotLegacyPreparationPatchSchema.shape.weekStart,
     patch: previousPreparationPatchSchema,
   })
-  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+  .refine((v) => copilotLegacyPreparationPatchSchema.safeParse(v).success);
 export const copilotPreparationCreatePatchSchema = z
   .strictObject({
-    weekStart: copilotPreparationPatchSchema.shape.weekStart,
-    create: copilotPreparationPatchSchema.shape.create,
+    weekStart: copilotLegacyPreparationPatchSchema.shape.weekStart,
+    create: copilotLegacyPreparationPatchSchema.shape.create,
     patch: previousPreparationPatchSchema,
   })
-  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+  .refine((v) => copilotLegacyPreparationPatchSchema.safeParse(v).success);
 const selectionOnlyPatch = z
-  .strictObject(copilotPreparationPatchSchema.shape.patch.shape)
+  .strictObject(copilotLegacyPreparationPatchSchema.shape.patch.shape)
   .omit({ refreshChoiceIds: true });
 export const copilotPreparationRetainedSelectionPatchSchema = z
   .strictObject({
-    weekStart: copilotPreparationPatchSchema.shape.weekStart,
-    create: copilotPreparationPatchSchema.shape.create,
+    weekStart: copilotLegacyPreparationPatchSchema.shape.weekStart,
+    create: copilotLegacyPreparationPatchSchema.shape.create,
     patch: selectionOnlyPatch,
   })
-  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+  .refine((v) => copilotLegacyPreparationPatchSchema.safeParse(v).success);
 export const copilotPreparationRefreshPatchSchema = z
   .strictObject({
-    weekStart: copilotPreparationPatchSchema.shape.weekStart,
-    patch: copilotPreparationPatchSchema.shape.patch,
+    weekStart: copilotLegacyPreparationPatchSchema.shape.weekStart,
+    patch: copilotLegacyPreparationPatchSchema.shape.patch,
   })
-  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+  .refine((v) => copilotLegacyPreparationPatchSchema.safeParse(v).success);
 export const copilotPreparationSelectionPatchSchema = z
   .strictObject({
-    weekStart: copilotPreparationPatchSchema.shape.weekStart,
+    weekStart: copilotLegacyPreparationPatchSchema.shape.weekStart,
     patch: selectionOnlyPatch,
   })
-  .refine((v) => copilotPreparationPatchSchema.safeParse(v).success);
+  .refine((v) => copilotLegacyPreparationPatchSchema.safeParse(v).success);
 export function hasPreparationLayoutChange(
   input: z.infer<typeof copilotPreparationPatchSchema>,
 ) {

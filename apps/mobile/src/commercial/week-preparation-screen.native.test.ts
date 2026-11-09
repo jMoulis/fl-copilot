@@ -21,6 +21,9 @@ const runtime = vi.hoisted(() => ({
   focused: true,
   sync: vi.fn(async () => {}),
 }));
+vi.mock("@/commercial/tg-presentation-view", () => ({
+  TgPresentationView: "TgPresentation",
+}));
 vi.mock("@/components/dashboard", () => ({
   DetailsDisclosure: ({ children }: { children: unknown }) => children,
 }));

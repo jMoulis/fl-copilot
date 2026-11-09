@@ -1,3 +1,4 @@
+import { dropsCommercialTgPresentation } from "@fl-copilot/domain";
 import {
   commercialWeekPreparationSchema,
   type CommercialWeekPreparation,
@@ -139,6 +140,14 @@ export class CommercialPreparationRepository {
           choice.storeId,
         ),
         previous = row ? mapped(row) : null;
+      if (
+        previous &&
+        dropsCommercialTgPresentation(
+          previous.entity.placements,
+          choice.placements,
+        )
+      )
+        throw Error("TG_PRESENTATION_EXPLICIT_REMOVAL_REQUIRED");
       if (row?.sync_state === "CONFLICT")
         throw Error("COMMERCIAL_PREPARATION_RESOLVE_REQUIRED");
       if (

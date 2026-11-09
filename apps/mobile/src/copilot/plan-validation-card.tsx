@@ -1,3 +1,4 @@
+import { TgPresentationView } from "../commercial/tg-presentation-view";
 import { commercialOfferHref } from "../commercial/offer-navigation";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, View } from "react-native";
@@ -179,25 +180,29 @@ export function PlanValidationCard({
               ) : null}
             </View>
           ))}
-          {plan.preparation.placements.map((p) => (
-            <View key={p.id} style={{ gap: 4 }}>
-              <Text style={{ fontWeight: "600" }}>
-                {p.label}
-                {p.theme ? ` · ${p.theme}` : ""}
-              </Text>
-              {p.offerIds.length ? (
-                <Text>
-                  {p.offerIds
-                    .map(
-                      (id) =>
-                        plan.offers.find((o) => o.choiceId === id)
-                          ?.rawProductLabel ?? "Offre indisponible",
-                    )
-                    .join(" · ")}
+          {plan.preparation.placements.some((p) => p.presentation) ? (
+            <TgPresentationView placements={plan.preparation.placements} />
+          ) : (
+            plan.preparation.placements.map((p) => (
+              <View key={p.id} style={{ gap: 4 }}>
+                <Text style={{ fontWeight: "600" }}>
+                  {p.label}
+                  {p.theme ? ` · ${p.theme}` : ""}
                 </Text>
-              ) : null}
-            </View>
-          ))}
+                {p.offerIds.length ? (
+                  <Text>
+                    {p.offerIds
+                      .map(
+                        (id) =>
+                          plan.offers.find((o) => o.choiceId === id)
+                            ?.rawProductLabel ?? "Offre indisponible",
+                      )
+                      .join(" · ")}
+                  </Text>
+                ) : null}
+              </View>
+            ))
+          )}
           <Text>
             Cette confirmation enregistre une révision du plan. Elle ne déclare
             aucune impression d’affiche ni installation en rayon.

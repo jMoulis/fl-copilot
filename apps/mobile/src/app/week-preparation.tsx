@@ -1,3 +1,4 @@
+import { TgPresentationView } from "@/commercial/tg-presentation-view";
 import { DetailsDisclosure } from "@/components/dashboard";
 import { formatFrenchCalendarDate } from "@/dates/calendar";
 import { PhysicalAllocationCard } from "@/commercial/physical-allocation-card";
@@ -551,6 +552,22 @@ export default function WeekPreparationScreen() {
                 ? "Présentation à thème, sans offre promotionnelle affectée."
                 : "Décris le thème ou affecte une offre à cet emplacement."}
             </Text>
+          ) : null}
+          {p.presentation ? (
+            <TgPresentationView
+              placements={[p]}
+              onSharesChange={(_, shares) =>
+                changePlacement(p.id, {
+                  presentation: {
+                    ...p.presentation!,
+                    zones: p.presentation!.zones.map((z, i) => ({
+                      ...z,
+                      sharePct: shares[i]!,
+                    })),
+                  },
+                })
+              }
+            />
           ) : null}
           <SecondaryButton
             label="Retirer cet emplacement du brouillon"

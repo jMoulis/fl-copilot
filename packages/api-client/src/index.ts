@@ -142,6 +142,7 @@ export class ApiClient {
       choiceReassociation?: boolean;
       choiceWithdrawal?: boolean;
       preparationProposals?: boolean;
+      tgPresentations?: boolean;
       preparationLayout?: boolean;
       preparationCreate?: boolean;
       preparationSelection?: boolean;
@@ -234,6 +235,9 @@ export class ApiClient {
                 ...(streaming.preparationLayout &&
                 streaming.preparationProposals
                   ? { "x-copilot-preparation-layout": "1" }
+                  : {}),
+                ...(streaming.tgPresentations
+                  ? { "x-copilot-tg-presentations": "1" }
                   : {}),
                 ...(streaming.preparationProposals
                   ? { "x-copilot-preparation-proposals": "1" }
@@ -507,6 +511,7 @@ export class ApiClient {
     if (commercialPlans) {
       query.set("commercialPlans", "true");
       query.set("qualitativeCommercialPlans", "true");
+      query.set("tgPresentations", "true");
     }
     if (commercialExecution) query.set("commercialExecution", "true");
     if (commercialExecutionActuals)
@@ -616,6 +621,7 @@ export class ApiClient {
     if (commercialPlans) {
       query.set("commercialPlans", "true");
       query.set("qualitativeCommercialPlans", "true");
+      query.set("tgPresentations", "true");
     }
     if (commercialExecution) query.set("commercialExecution", "true");
     if (commercialExecutionActuals)

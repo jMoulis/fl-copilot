@@ -1168,6 +1168,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
               choiceReassociation: canManageProducts,
               choiceWithdrawal: canManageProducts,
               preparationProposals: canPrepareCommercialWeek,
+              tgPresentations: true,
               preparationLayout: canPrepareCommercialWeek,
               preparationCreate: canPrepareCommercialWeek,
               preparationSelection: canPrepareCommercialWeek,
