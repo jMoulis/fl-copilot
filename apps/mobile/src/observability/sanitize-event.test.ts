@@ -64,3 +64,92 @@ describe("mobile Sentry event sanitization", () => {
     ).not.toHaveProperty("context_line");
   });
 });
+
+it("removes exception/cause prose, frame variables and unknown tags while retaining diagnostic locations", () => {
+  const event: ErrorEvent = {
+    type: undefined,
+    message: "private document",
+    tags: { route: "root", arbitrary: "private product" },
+    exception: {
+      values: [
+        {
+          type: "TypeError",
+          value: "private filename",
+          mechanism: {
+            type: "generic",
+            handled: true,
+            data: { sql: "private SQL" },
+          },
+          stacktrace: {
+            frames: [
+              {
+                filename: "app.js",
+                lineno: 42,
+                colno: 3,
+                vars: { source: "private source" },
+              },
+            ],
+          },
+        },
+        { type: "private customer", value: "private cause" },
+      ],
+    },
+    threads: {
+      values: [
+        {
+          stacktrace: {
+            frames: [
+              {
+                filename: "native.mm",
+                lineno: 9,
+                vars: { token: "private token" },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+  const sanitized = sanitizeMobileEvent(event);
+  expect(JSON.stringify(sanitized)).not.toContain("private");
+  expect(sanitized.tags).toEqual({
+    route: "root",
+    local_failure: "MOBILE_SCREEN_ERROR",
+  });
+  expect(sanitized.exception?.values?.[0]).toMatchObject({
+    type: "TypeError",
+    value: "MOBILE_SCREEN_ERROR",
+    stacktrace: { frames: [{ filename: "app.js", lineno: 42, colno: 3 }] },
+  });
+  expect(sanitized.exception?.values?.[1]?.type).toBe("Error");
+});
+
+it("preserves only known local failure and phase tags, with automatic native failure classification", () => {
+  expect(
+    sanitizeMobileEvent({
+      type: undefined,
+      tags: {
+        local_operation: "mercalys-publish",
+        local_failure: "LOCAL_DATABASE_FULL",
+        route: "private route",
+      },
+    }).tags,
+  ).toEqual({
+    local_operation: "mercalys-publish",
+    local_failure: "LOCAL_DATABASE_FULL",
+  });
+  const native: ErrorEvent = {
+    type: undefined,
+    exception: {
+      values: [
+        {
+          type: "Error",
+          value:
+            "SQLiteErrorException: Error code 5: database is locked private SQL",
+        },
+      ],
+    },
+  };
+  expect(sanitizeMobileEvent(native).message).toBe("LOCAL_DATABASE_BUSY");
+  expect(JSON.stringify(native)).not.toContain("private");
+});

@@ -4,32 +4,43 @@ import { sanitizeMobileEvent } from "./sanitize-event";
 import { localOperationFailureCode } from "./local-operation-failure";
 
 let initialized = false;
+let initializationAttempted = false;
 
 export function initializeObservability() {
-  if (initialized) return;
-  initialized = true;
+  if (initializationAttempted) return;
+  initializationAttempted = true;
 
   const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN?.trim();
   if (!dsn) return;
 
-  Sentry.init({
-    dsn,
-    environment: getAppEnvironment(),
-    sendDefaultPii: false,
-    attachScreenshot: false,
-    attachViewHierarchy: false,
-    enableLogs: true,
-    enableAutoPerformanceTracing: false,
-    tracesSampleRate: 0,
-    beforeSend: sanitizeMobileEvent,
-  });
+  try {
+    Sentry.init({
+      dsn,
+      environment: getAppEnvironment(),
+      sendDefaultPii: false,
+      attachScreenshot: false,
+      attachViewHierarchy: false,
+      enableLogs: true,
+      enableAutoPerformanceTracing: false,
+      tracesSampleRate: 0,
+      beforeSend: sanitizeMobileEvent,
+    });
+    initialized = true;
+  } catch {
+    /* Optional monitoring must not prevent local startup or recovery. */
+  }
 }
 
 export function captureScreenError(error: unknown, route: string) {
-  Sentry.withScope((scope) => {
-    scope.setTag("route", route);
-    Sentry.captureException(error);
-  });
+  if (!initialized) return;
+  try {
+    Sentry.withScope((scope) => {
+      scope.setTag("route", route);
+      Sentry.captureException(error);
+    });
+  } catch {
+    /* Keep the screen's existing recovery path usable if the SDK fails. */
+  }
 }
 
 const localReports = new Map<string, number>();
@@ -41,6 +52,7 @@ export function captureLocalOperationFailure(
     | "mercalys-repair"
     | "synchronization",
 ) {
+  if (!initialized) return;
   // Native/Zod messages may contain file paths, SQL or product/source values.
   // Report the fixed category and phase, never the raw exception or its cause.
   const code = localOperationFailureCode(reason) ?? "LOCAL_OPERATION_FAILED";
@@ -60,12 +72,17 @@ export function captureLocalOperationFailure(
 }
 
 export async function sendMobileObservabilityTest() {
-  Sentry.logger.info("Mobile observability test", {
-    environment: getAppEnvironment(),
-    source: "manual-test",
-  });
-  Sentry.captureException(new Error("M0-T10 mobile monitoring test error"));
-  return Sentry.flush();
+  if (!initialized) return false;
+  try {
+    Sentry.logger.info("Mobile observability test", {
+      environment: getAppEnvironment(),
+      source: "manual-test",
+    });
+    Sentry.captureException(new Error("M0-T10 mobile monitoring test error"));
+    return await Sentry.flush();
+  } catch {
+    return false;
+  }
 }
 
 export const withSentry = Sentry.wrap;
