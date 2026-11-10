@@ -208,17 +208,20 @@ it.each<Boundary>([
           if (req.url === "/binary" && req.method === "PUT") {
             uploadAttempts++;
             const chunks: Buffer[] = [];
-            let first = true;
+            let first = true,
+              receivedBytes = 0;
             req.on("error", () => {
               /* Expected when the client or socket is killed. */
             });
             for await (const data of req) {
               chunks.push(Buffer.from(data));
-              if (first) {
+              receivedBytes += Buffer.byteLength(data);
+              // TCP may split a write across reads. Await the complete checkpoint.
+              if (first && receivedBytes >= 1024) {
                 first = false;
                 if (!retry && boundary !== "kill-after-confirmation") {
                   injected = true;
-                  firstChunkBytes = Buffer.byteLength(data);
+                  firstChunkBytes = receivedBytes;
                   if (boundary === "socket-drop") req.socket.destroy();
                   else activeChild!.kill("SIGKILL");
                   return;
