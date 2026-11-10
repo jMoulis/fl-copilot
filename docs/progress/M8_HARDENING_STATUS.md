@@ -258,3 +258,11 @@ Review source uploads, legacy PDF links and illustration manifest/stream respons
 ## T01/T04 — recover originals when consulting Mercalys history, 9 November
 
 The owner reports a missing local original while opening `08112026.xlsx` on build43. Read-only server inspection confirms its upload registration and 128 published source rows. Reuse an existing published local copy before the canonical original transfer; keep scoped lookup, checksum-before-parse and duplicate read-only behavior, and provide an explicit retry after recovery failure. **177 tests in eight suites pass, none skipped; two mounted regressions fail on the prior screen.** [Evidence, limits and new-binary recipe](../qa/M8_MERCALYS_HISTORY_ORIGINAL_RECOVERY_2026_11_09.md). No new endpoint, schema, full sync or AI request. Native delivery/phone acceptance remain separate; API-only releases do not fix the already-installed screen.
+
+## Build44 Mercalys history — owner accepted, 10 November
+
+The owner confirms “Ok c’est bon c’est fixé”. Close the reported old-import consultation defect on delivered build44 (`3be371c6-3345-42bd-9647-d14fb695ccba`, source `3397ac2`); do not request the same recipe again. Both exact-head checks and master pass 5,912 tests with six existing skips, and the signed archive is verified. This is the reported history fix, not a fabricated physical certification of every interruption/offline scenario or full M8 closure.
+
+## T06/T10 — API diagnostic reference and monitoring isolation, 10 November
+
+The previous beforeSend removed the requestId extra while retaining raw exception/cause prose; optional SDK failures could replace the normal API response. Preserve the generated UUID as a safe tag, remove collected exception/frame payloads, keep technical locations, and isolate optional init/log/capture/flush failures through the existing adapter. **73 tests in six suites pass, none skipped; eight new cases fail against the prior runtime.** [Evidence, boundaries and delivery limits](../qa/M8_API_ERROR_DIAGNOSTICS_2026_11_10.md). No new provider, trace/log settings, AI call, migration or native change. Exact-head CI, merge/API delivery and actual monitoring receipt remain distinct; wider T10/M8 remain open.
