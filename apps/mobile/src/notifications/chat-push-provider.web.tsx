@@ -5,6 +5,14 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
 export function useChatPush() {
   return {
     enabled: false,
+    emailEnabled: false,
+    documentsEnabled: false,
+    setEmailEnabled: async (enabled: boolean) => {
+      void enabled;
+    },
+    setDocumentsEnabled: async (enabled: boolean) => {
+      void enabled;
+    },
     ready: false,
     busy: false,
     available: false,

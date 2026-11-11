@@ -78,6 +78,7 @@ export function createCommercialPdfPageProcessor(
   adapter: CommercialPdfTextAdapter = pdfJsTextAdapter,
   storage: PdfSourceStorage = privatePdfStorage,
   now: () => Date = () => new Date(),
+  onReady?: (storeId: string, sourceDocumentId: string) => Promise<void>,
 ) {
   return {
     async pending() {
@@ -215,6 +216,14 @@ export function createCommercialPdfPageProcessor(
             },
           },
         );
+        if (result.modifiedCount && onReady) {
+          // Optional delivery must never turn committed extraction into a failed job.
+          try {
+            await onReady(storeId, sourceDocumentId);
+          } catch {
+            /* result remains available */
+          }
+        }
         return {
           status: result.modifiedCount ? "TEXT_READY" : "LEASE_LOST",
           pageCount: pages.length,

@@ -38,7 +38,7 @@ const runtime = vi.hoisted(() => ({
   reminderListeners: new Set<() => void>(),
   outboxListeners: new Set<() => void>(),
   stateListeners: new Set<(state: string) => void>(),
-  sqlite: { getAllAsync: vi.fn() },
+  sqlite: { getAllAsync: vi.fn(), getFirstAsync: vi.fn() },
   destination: vi.fn(),
 }));
 vi.mock("../notifications/chat-destination", () => ({
@@ -183,6 +183,7 @@ beforeEach(() => {
     index: 0,
     routes: [{ key: "tabs", name: "(tabs)" }],
   };
+  runtime.sqlite.getFirstAsync.mockReset().mockResolvedValue(undefined);
   runtime.destination.mockReset().mockResolvedValue(undefined);
   runtime.syncNow.mockReset().mockResolvedValue(undefined);
   runtime.syncMessages = undefined;
@@ -837,3 +838,54 @@ it.each(["owner", "store", "role"])(
     runtime.role = "MANAGER";
   },
 );
+
+it("opens the existing document detail once for repeated concurrent notification taps", async () => {
+  runtime.sqlite.getFirstAsync.mockResolvedValue({
+    source_type: "WEEKLY_COMMERCIAL_PDF",
+  });
+  await render();
+  const data = {
+    kind: "SOURCE_DOCUMENT_READY",
+    resultKey: "a".repeat(64),
+    storeId: runtime.storeId,
+    ownerId: runtime.ownerId,
+    sourceDocumentId: "77777777-7777-4777-8777-777777777777",
+    sourceType: "WEEKLY_COMMERCIAL_PDF",
+  };
+  await act(async () => {
+    const listener = [...runtime.responseListeners][0]!;
+    listener(response(data));
+    listener(response(data));
+  });
+  expect(runtime.navigate).toHaveBeenCalledTimes(1);
+  expect(runtime.navigate).toHaveBeenCalledWith({
+    pathname: "/(tabs)/commercial-review/[id]",
+    params: { id: data.sourceDocumentId },
+  });
+  expect(runtime.syncNow).not.toHaveBeenCalled();
+});
+it("does not open a document after account change during notification synchronization", async () => {
+  await render();
+  const pending = deferred<void>();
+  runtime.syncNow.mockReturnValue(pending.promise);
+  const data = {
+    kind: "SOURCE_DOCUMENT_READY",
+    resultKey: "a".repeat(64),
+    storeId: runtime.storeId,
+    ownerId: runtime.ownerId,
+    sourceDocumentId: "77777777-7777-4777-8777-777777777777",
+    sourceType: "WEEKLY_COMMERCIAL_PDF",
+  };
+  let handling: unknown;
+  await act(async () => {
+    handling = [...runtime.responseListeners][0]!(response(data));
+  });
+  runtime.ownerId = "88888888-8888-4888-8888-888888888888";
+  await render();
+  await act(async () => {
+    pending.resolve();
+    await handling;
+  });
+  expect(runtime.navigate).not.toHaveBeenCalled();
+  expect(runtime.dismissTo).not.toHaveBeenCalled();
+});

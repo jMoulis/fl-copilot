@@ -1,3 +1,4 @@
+import { notifyDocumentReady } from "./notifications/document-ready.js";
 import type { IncomingHttpHeaders } from "node:http";
 import { notifyEmailReady } from "./notifications/email-ready.js";
 import {
@@ -397,6 +398,21 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
             config.LAYOUT_ILLUSTRATION_GENERATION_POLICY
             ? illustrationGeneration
             : undefined,
+          async (storeId, sourceDocumentId) => {
+            try {
+              await notifyDocumentReady(
+                await dependencies.database.getDb(),
+                storeId,
+                sourceDocumentId,
+                { accessToken: config.EXPO_PUSH_ACCESS_TOKEN },
+              );
+            } catch {
+              app.log.warn(
+                { code: "DOCUMENT_PUSH_DELIVERY_FAILED" },
+                "Document alert unavailable; result retained",
+              );
+            }
+          },
         )
       : undefined;
   const commercialRecovery =
@@ -2425,6 +2441,30 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         context.userId,
       );
       await auth.authorizeStore(authorization.slice(7), storeId);
+      if (result.wasteReceiptDraft) {
+        const notification = (async () => {
+          try {
+            await notifyDocumentReady(
+              await dependencies.database.getDb(),
+              storeId,
+              result.sourceDocumentId,
+              { accessToken: config.EXPO_PUSH_ACCESS_TOKEN },
+            );
+          } catch {
+            app.log.warn(
+              { code: "DOCUMENT_PUSH_DELIVERY_FAILED" },
+              "Document alert unavailable; result retained",
+            );
+          }
+        })();
+        if (dependencies.waitUntil) {
+          try {
+            dependencies.waitUntil(notification);
+          } catch {
+            await notification;
+          }
+        } else await notification;
+      }
       reply.header("cache-control", "private, no-store");
       return result;
     },

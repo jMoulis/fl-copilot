@@ -31,6 +31,7 @@ export function createCommercialInngestWorkflows(
     LayoutIllustrationGenerationService,
     "process" | "pending"
   >,
+  documentReady?: (storeId: string, sourceDocumentId: string) => Promise<void>,
 ) {
   const client = new Inngest({
     id: "fl-copilot-api",
@@ -118,7 +119,13 @@ export function createCommercialInngestWorkflows(
       });
     },
   );
-  const processor = createCommercialPdfPageProcessor(database);
+  const processor = createCommercialPdfPageProcessor(
+    database,
+    undefined,
+    undefined,
+    undefined,
+    documentReady,
+  );
   const extract = client.createFunction(
     {
       id: "commercial-pdf-extract-pages-v1",

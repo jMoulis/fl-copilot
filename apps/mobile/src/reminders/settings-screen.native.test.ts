@@ -11,6 +11,7 @@ const runtime = vi.hoisted(() => ({
   setEnabled: vi.fn(async () => {}),
   save: vi.fn(async () => {}),
   emailEnabled: false,
+  setDocumentsEnabled: vi.fn(async () => {}),
   pushAvailable: false,
   setEmailEnabled: vi.fn(async () => {}),
   refresh: vi.fn(async () => {}),
@@ -28,6 +29,8 @@ vi.mock("@/notifications/chat-push-provider", () => ({
     busy: false,
     available: runtime.pushAvailable,
     emailEnabled: runtime.emailEnabled,
+    documentsEnabled: false,
+    setDocumentsEnabled: runtime.setDocumentsEnabled,
     setEmailEnabled: runtime.setEmailEnabled,
     refresh: async () => {},
     setEnabled: async () => {},
@@ -387,6 +390,30 @@ it("keeps email consent separate and describes reception rather than completed p
     await act(async () => email.props.onValueChange(true));
     expect(runtime.setEmailEnabled).toHaveBeenCalledWith(true);
     expect(runtime.setEnabled).not.toHaveBeenCalled();
+  } finally {
+    runtime.pushAvailable = false;
+  }
+});
+
+it("keeps document-result alerts default-off and independent of email reception", async () => {
+  runtime.pushAvailable = true;
+  runtime.setDocumentsEnabled.mockClear();
+  runtime.setEmailEnabled.mockClear();
+  Object.assign(runtime.session.stores[0]!, { role: "MANAGER" });
+  try {
+    await act(async () => {
+      tree = create(createElement(ReminderSettings));
+    });
+    const toggle = hosts("Switch").find(
+      (node) =>
+        node.props.accessibilityLabel ===
+        "Activer les alertes de lecture des documents",
+    )!;
+    expect(toggle.props.value).toBe(false);
+    expect(toggle.props.disabled).toBe(false);
+    await act(async () => toggle.props.onValueChange(true));
+    expect(runtime.setDocumentsEnabled).toHaveBeenCalledWith(true);
+    expect(runtime.setEmailEnabled).not.toHaveBeenCalled();
   } finally {
     runtime.pushAvailable = false;
   }

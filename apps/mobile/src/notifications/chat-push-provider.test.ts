@@ -161,7 +161,7 @@ it("ordinary rerenders do not re-register tokens or accumulate listeners", async
   runtime.state = "active";
   await render();
   for (let i = 0; i < 100; i++) await render();
-  expect(runtime.read).toHaveBeenCalledTimes(2);
+  expect(runtime.read).toHaveBeenCalledTimes(3);
   expect(runtime.save).toHaveBeenCalledTimes(1);
   expect(runtime.states.size).toBe(1);
   expect(runtime.tokens.size).toBe(1);

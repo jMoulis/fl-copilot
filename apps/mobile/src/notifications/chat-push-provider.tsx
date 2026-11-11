@@ -29,6 +29,7 @@ import {
 } from "./chat-push-registration";
 type State = ChatPushState & {
   available: boolean;
+  setDocumentsEnabled(enabled: boolean): Promise<void>;
   setEmailEnabled(enabled: boolean): Promise<void>;
   setEnabled(enabled: boolean): Promise<void>;
   refresh(): Promise<void>;
@@ -118,6 +119,17 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
         write: (value) =>
           SecureStore.setItemAsync(
             `fl.email-push.${ownerId}.${storeId}.${deviceId}`,
+            value,
+          ),
+      },
+      documents: {
+        read: () =>
+          SecureStore.getItemAsync(
+            `fl.documents-push.${ownerId}.${storeId}.${deviceId}`,
+          ),
+        write: (value) =>
+          SecureStore.setItemAsync(
+            `fl.documents-push.${ownerId}.${storeId}.${deviceId}`,
             value,
           ),
       },
@@ -219,6 +231,8 @@ export function ChatPushProvider({ children }: PropsWithChildren) {
       value={{
         ...value,
         available,
+        setDocumentsEnabled: (enabled) =>
+          registration.setDocumentsEnabled(enabled),
         setEmailEnabled: (enabled) => registration.setEmailEnabled(enabled),
         setEnabled: (enabled) => registration.setEnabled(enabled),
         refresh,

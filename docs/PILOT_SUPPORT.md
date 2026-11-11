@@ -69,3 +69,9 @@ Au 10 novembre 2026, le **build 44** est la dernière recette iPhone acceptée p
 Pour chaque livraison, appliquer le [processus de release](RELEASE_PROCESS.md) : source exacte et contrôles identifiés, compatibilité API/app, précédent déploiement conservé et vérification après activation. Un retour serveur doit vérifier les contrats et migrations compatibles ; il ne restaure ni MongoDB, ni la base locale, ni des commandes non synchronisées. Revenir à un ancien binaire peut réintroduire une correction déjà validée : examiner le défaut et les données concernées avant cette décision.
 
 Les recettes acceptées et les réserves encore ouvertes figurent dans le [suivi M8](progress/M8_HARDENING_STATUS.md). Ce guide documente le support et la reprise ; les mesures de performance sur iPhone, la qualification complète des interruptions, TestFlight et la restauration cloud restent des critères distincts.
+
+### Alerte de lecture d’un document
+
+Dans les réglages des notifications, « Lecture des documents » dispose de son propre interrupteur, désactivé au départ. Il est indépendant des réponses du copilote et de la réception des emails. Une alerte indique que les pages du pense-bête sont consultables, ou que la lecture et le rapprochement produit d’un ticket sont disponibles. Elle ne valide ni n’importe automatiquement les résultats.
+
+Si l’alerte n’arrive pas, le résultat reste accessible dans Documents commerciaux ou Casse. En cas de résultat absent sur ce téléphone, l’ouverture peut actualiser la synchronisation puis revenir à Actions si le document n’est pas disponible. Un document retiré ou un autre compte ne doit jamais être ouvert par une ancienne alerte.

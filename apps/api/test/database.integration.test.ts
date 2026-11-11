@@ -231,6 +231,38 @@ describeWithMongo("MongoDB infrastructure", () => {
         .toArray(),
     ).toEqual(pages);
   }, 20_000);
+  it("keeps committed PDF pages ready when optional completion delivery fails", async () => {
+    const { db, storeId, sourceDocumentId, bytes } = await pdfSource();
+    let notified = 0;
+    const processor = createCommercialPdfPageProcessor(
+      database,
+      undefined,
+      { read: async () => bytes },
+      undefined,
+      async (store, id) => {
+        expect([store, id]).toEqual([storeId, sourceDocumentId]);
+        expect(
+          await db
+            .collection("commercialDocumentPages")
+            .countDocuments({ storeId, sourceDocumentId }),
+        ).toBe(2);
+        notified++;
+        throw Error("optional delivery unavailable");
+      },
+    );
+    expect(await processor.process(storeId, sourceDocumentId)).toMatchObject({
+      status: "TEXT_READY",
+    });
+    expect(await processor.process(storeId, sourceDocumentId)).toMatchObject({
+      status: "SKIPPED",
+    });
+    expect(notified).toBe(1);
+    expect(
+      await db
+        .collection("commercialDocumentJobs")
+        .findOne({ storeId, sourceDocumentId }),
+    ).toMatchObject({ status: "TEXT_READY", pageCount: 2 });
+  });
   it("rejects changed binary bytes before storing page text", async () => {
     const { db, storeId, sourceDocumentId } = await pdfSource();
     const processor = createCommercialPdfPageProcessor(database, undefined, {

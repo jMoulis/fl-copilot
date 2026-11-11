@@ -1,5 +1,11 @@
 # M8 — hardening and pilot release
 
+## Grouped closure pass — owner request, 11 November
+
+The owner requests one coherent pass across interruptions/conflicts, performance/storage, security/monitoring, remaining notifications and final delivery. Reuse accepted cases; do not add unrelated features or reopen M0–M7. The web-research incident is deployed and owner accepted on API source 9e3ed92; its earlier diagnostic entries below are historical, not an open retest.
+
+[The grouped evidence register](../qa/M8_GROUPED_CLOSURE_2026_11_11.md) records the current tests, host timing scope, retained-original policy, missing document-readiness alert and one remaining physical recipe. New document alerts use a separate default-off preference and existing source/job/session/push services; PDF page readiness is not AI approval or publication. Failed delivery cannot fail a committed read or delay ordinary PDF acknowledgment. No paid AI call, new collection, polling or automatic original purge. Merge, compatible API release, grouped signed binary and physical acceptance remain separate gates; Atlas restoration stays owner-deferred, Android/dedicated accessibility stay M9.
+
 ## Practical merchandising composition — 9 November
 
 Enrich the existing on-demand expertise lookup with display design and fresh-produce display guidance, sourced from Penn State and University of Maryland Extension. Preserve old references, check each requested card’s actual review dates, distinguish customary preferences from explicit constraints, and retain all user-confirmed write boundaries. No reviewer agent, mandatory second pass, larger read budget or new native build. [Source review, verification and dialogue acceptance](../qa/M8_MERCHANDISING_COMPOSITION_2026_11_09.md). Scripted transport/persistence checks and real owner reasoning/token acceptance remain distinct; M7 workstream 4 stays closed on its agreed baseline.

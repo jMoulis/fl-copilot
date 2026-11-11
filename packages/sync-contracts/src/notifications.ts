@@ -6,6 +6,7 @@ export const expoPushTokenSchema = z
 export const pushChannelsSchema = z.strictObject({
   chat: z.boolean(),
   email: z.boolean(),
+  documents: z.boolean().optional(),
 });
 export type PushChannels = z.infer<typeof pushChannelsSchema>;
 /** Device/session delivery preference, never a store business mutation. */
@@ -35,4 +36,14 @@ export const emailReadyNotificationSchema = z.strictObject({
   ownerId: z.string().uuid(),
   storeId: z.string().uuid(),
   receiptId: z.string().uuid(),
+});
+
+/** Processing result only; never publishes business observations. */
+export const documentReadyNotificationSchema = z.strictObject({
+  kind: z.literal("SOURCE_DOCUMENT_READY"),
+  resultKey: z.string().regex(/^[a-f0-9]{64}$/),
+  ownerId: z.string().uuid(),
+  storeId: z.string().uuid(),
+  sourceDocumentId: z.string().uuid(),
+  sourceType: z.enum(["WEEKLY_COMMERCIAL_PDF", "WASTE_RECEIPT"]),
 });

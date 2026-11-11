@@ -2,6 +2,7 @@ import type { PushChannels } from "@fl-copilot/sync-contracts";
 export type ChatPushState = {
   enabled: boolean;
   emailEnabled?: boolean;
+  documentsEnabled?: boolean;
   ready: boolean;
   busy: boolean;
   error?: string;
@@ -15,6 +16,10 @@ export class ChatPushRegistration {
       read(): Promise<string | null>;
       write(value: string): Promise<void>;
       email?: {
+        read(): Promise<string | null>;
+        write(value: string): Promise<void>;
+      };
+      documents?: {
         read(): Promise<string | null>;
         write(value: string): Promise<void>;
       };
@@ -34,6 +39,7 @@ export class ChatPushRegistration {
         const values = await this.read().catch(() => ({
           chat: null,
           email: null,
+          documents: null,
         }));
         if (!this.ports.current()) return;
         this.publish(
@@ -49,14 +55,19 @@ export class ChatPushRegistration {
     return task;
   }
   private async read() {
-    const [chat, email] = await Promise.all([
+    const [chat, email, documents] = await Promise.all([
       this.ports.read(),
       this.ports.email?.read() ?? null,
+      this.ports.documents?.read() ?? null,
     ]);
-    return { chat, email };
+    return { chat, email, documents };
   }
   private publish(
-    values: { chat: string | null; email: string | null },
+    values: {
+      chat: string | null;
+      email: string | null;
+      documents: string | null;
+    },
     busy: boolean,
     error?: string,
   ) {
@@ -64,6 +75,9 @@ export class ChatPushRegistration {
       this.ports.publish({
         enabled: values.chat === "1",
         ...(this.ports.email ? { emailEnabled: values.email === "1" } : {}),
+        ...(this.ports.documents
+          ? { documentsEnabled: values.documents === "1" }
+          : {}),
         ready: true,
         busy,
         error,
@@ -72,14 +86,20 @@ export class ChatPushRegistration {
   private async register(values: {
     chat: string | null;
     email: string | null;
+    documents: string | null;
   }) {
     const allowed = await this.ports.permission(false);
     if (!this.ports.current()) return;
-    const channels = { chat: values.chat === "1", email: values.email === "1" };
-    const enabled = channels.chat || channels.email;
+    const channels = {
+      chat: values.chat === "1",
+      email: values.email === "1",
+      ...(this.ports.documents ? { documents: values.documents === "1" } : {}),
+    };
+    const enabled = Object.values(channels).some(Boolean);
     const token = enabled && allowed ? await this.ports.token() : null;
     if (!this.ports.current()) return;
-    if (this.ports.email) await this.ports.save(token, channels);
+    if (this.ports.email || this.ports.documents)
+      await this.ports.save(token, channels);
     else await this.ports.save(token);
     if (enabled && !token) throw Error("PUSH_PERMISSION_DENIED");
   }
@@ -96,6 +116,8 @@ export class ChatPushRegistration {
       if (values.chat === "pending-disable") await this.ports.write("0");
       if (values.email === "pending-disable")
         await this.ports.email?.write("0");
+      if (values.documents === "pending-disable")
+        await this.ports.documents?.write("0");
     });
   }
   setEnabled(enabled: boolean) {
@@ -104,9 +126,15 @@ export class ChatPushRegistration {
   setEmailEnabled(enabled: boolean) {
     return this.setChannel("email", enabled);
   }
-  private setChannel(channel: "chat" | "email", enabled: boolean) {
+  setDocumentsEnabled(enabled: boolean) {
+    return this.setChannel("documents", enabled);
+  }
+  private setChannel(
+    channel: "chat" | "email" | "documents",
+    enabled: boolean,
+  ) {
     return this.run(async () => {
-      const port = channel === "chat" ? this.ports : this.ports.email;
+      const port = channel === "chat" ? this.ports : this.ports[channel];
       if (!port) return;
       const values = await this.read();
       if (!this.ports.current()) return;
