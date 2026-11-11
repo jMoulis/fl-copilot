@@ -48,6 +48,44 @@ const metrics = {
   waste: "Casse au prix de vente",
   wasteCost: "Casse au prix d’achat",
 } as const;
+/** Placeholder only: no synthetic amounts or chart observations. */
+export function ExplorerLoadingSkeleton({ chart = true }: { chart?: boolean }) {
+  return (
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel="Lecture des chiffres locaux"
+      accessibilityState={{ busy: true }}
+      style={{ gap: 16 }}
+    >
+      <View
+        style={{
+          height: 36,
+          width: "65%",
+          borderRadius: 8,
+          backgroundColor: colors.surfaceMuted,
+        }}
+      />
+      <View
+        style={{
+          height: 16,
+          width: "40%",
+          borderRadius: 6,
+          backgroundColor: colors.surfaceMuted,
+        }}
+      />
+      {chart ? (
+        <View
+          style={{
+            height: 180,
+            borderRadius: 12,
+            backgroundColor: colors.surfaceMuted,
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
 export function ExplorerContent({
   view,
   data,
@@ -286,38 +324,7 @@ export function ExplorerContent({
               Les chiffres ne sont pas disponibles pour le moment.
             </Text>
           ) : (
-            <View
-              accessibilityRole="progressbar"
-              accessibilityLabel="Lecture des chiffres locaux"
-              accessibilityState={{ busy: true }}
-              style={{ gap: 16 }}
-            >
-              <View
-                style={{
-                  height: 36,
-                  width: "65%",
-                  borderRadius: 8,
-                  backgroundColor: colors.surfaceMuted,
-                }}
-              />
-              <View
-                style={{
-                  height: 16,
-                  width: "40%",
-                  borderRadius: 6,
-                  backgroundColor: colors.surfaceMuted,
-                }}
-              />
-              {period.kind !== "day" ? (
-                <View
-                  style={{
-                    height: 180,
-                    borderRadius: 12,
-                    backgroundColor: colors.surfaceMuted,
-                  }}
-                />
-              ) : null}
-            </View>
+            <ExplorerLoadingSkeleton chart={period.kind !== "day"} />
           )
         ) : (
           <>

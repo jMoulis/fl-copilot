@@ -6,7 +6,6 @@ import {
   BackHandler,
   Keyboard,
   ScrollView,
-  Text,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from "react-native";
@@ -42,7 +41,11 @@ import {
   backExplorerView,
   type ExplorerView,
 } from "./explorer-state";
-import { ExplorerContent, ExplorerPeriodPicker } from "./explorer-view";
+import {
+  ExplorerContent,
+  ExplorerPeriodPicker,
+  ExplorerLoadingSkeleton,
+} from "./explorer-view";
 import { IconButton } from "../components/dashboard";
 import { colors } from "../design/tokens";
 import { useVisualLibrary } from "../products/use-visual-library";
@@ -343,9 +346,7 @@ function StoreExplorer({
         ) : null}
         {!view ? (
           <>
-            <Text style={{ color: colors.muted }}>
-              Ouverture des analyses locales…
-            </Text>
+            {!error ? <ExplorerLoadingSkeleton /> : null}
             {error ? (
               <SecondaryButton
                 label="Réessayer"
