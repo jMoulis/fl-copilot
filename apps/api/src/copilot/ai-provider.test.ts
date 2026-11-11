@@ -2420,6 +2420,10 @@ it("performs bounded public research through the real SDK loop and exposes exter
       expect(
         body.tools.some((t: { name: string }) => t.name === "public_research"),
       ).toBe(true);
+      expect(
+        body.tools.find((t: { name: string }) => t.name === "public_research")
+          .parameters.properties.query.maxLength,
+      ).toBe(400);
       const envelope = z
         .record(z.string(), z.unknown())
         .parse(await response().json());
@@ -2450,6 +2454,64 @@ it("performs bounded public research through the real SDK loop and exposes exter
   expect(result.toolEvidence).toEqual(research.evidence);
   expect(calls).toBe(2);
 });
+
+it.each([
+  {
+    name: "public_research",
+    input: { query: "PRIVATE_TEST_QUERY ".repeat(30), purpose: "MARKET" },
+    reason: "INVALID_INPUT",
+  },
+  {
+    name: "public_research",
+    input: { query: "PRIVATE_TEST_QUERY prix 15%", purpose: "MARKET" },
+    reason: "INVALID_INPUT",
+  },
+  { name: "PRIVATE_TEST_QUERY", input: {}, reason: "UNKNOWN_TOOL" },
+])(
+  "records a content-free pre-execution tool refusal: $reason",
+  async ({ name, input, reason }) => {
+    const f = fixture();
+    const publicResearch = vi.fn();
+    const onUsage = vi.fn();
+    let calls = 0;
+    const transport: typeof fetch = async () => {
+      if (calls++ > 0) return response();
+      const envelope = z
+        .record(z.string(), z.unknown())
+        .parse(await response().json());
+      envelope.output = [
+        {
+          type: "function_call",
+          id: "fc_invalid",
+          call_id: "call_invalid",
+          name,
+          arguments: JSON.stringify(input),
+          status: "completed",
+        },
+      ];
+      return new Response(JSON.stringify(envelope), {
+        headers: { "content-type": "application/json" },
+      });
+    };
+    const result = await createCopilotAiProvider(f.config, transport, {
+      daily: vi.fn(),
+      publicResearch,
+      onUsage,
+    }).generate(f.request, schema);
+    expect(result.output.answer).toBe("Vérifier les ventes.");
+    expect(publicResearch).not.toHaveBeenCalled();
+    expect(calls).toBe(2);
+    expect(onUsage.mock.calls.at(-1)?.[0]).toMatchObject({
+      kind: "END",
+      outcome: "COMPLETED",
+      readFailures: {},
+      toolCallFailures: { [reason]: 1 },
+    });
+    expect(JSON.stringify(onUsage.mock.calls)).not.toContain(
+      "PRIVATE_TEST_QUERY",
+    );
+  },
+);
 
 it.each([false, true])(
   "lets the model request a product ranking and citable concentration=%s without enumerating product IDs",
