@@ -120,6 +120,21 @@ it.each([["searching"], ["completed", "completed", "completed"]])(
     ).rejects.toMatchObject({ code: "NO_CITATIONS" });
   },
 );
+it("rejects a provider-truncated answer even with valid citations and completed searches, without retrying", async () => {
+  const raw = z.record(z.string(), z.unknown()).parse(await response().json());
+  raw.status = "incomplete";
+  raw.incomplete_details = { reason: "max_output_tokens" };
+  const transport = vi.fn<typeof fetch>(
+    async () =>
+      new Response(JSON.stringify(raw), {
+        headers: { "content-type": "application/json" },
+      }),
+  );
+  await expect(
+    createCopilotWebResearch(config(), transport).research(request()),
+  ).rejects.toMatchObject({ code: "UNAVAILABLE" });
+  expect(transport).toHaveBeenCalledTimes(1);
+});
 it("uses the real SDK/web tool, retains citation spans and external provenance, enforces request bounds and sends no private context", async () => {
   let body: Record<string, unknown> | undefined;
   const transport = vi.fn<typeof fetch>(async (url, init) => {
