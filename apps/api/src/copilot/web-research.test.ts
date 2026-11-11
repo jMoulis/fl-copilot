@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import { it, expect, vi } from "vitest";
 import { parseEnvironment } from "../config";
 import { createCopilotWebResearch } from "./web-research";
@@ -67,6 +68,58 @@ function response(
     { headers: { "content-type": "application/json" } },
   );
 }
+it.each(["searching", "in_progress"])(
+  "accepts a cited answer with two completed searches and an uncompleted %s record",
+  async (status) => {
+    const body = await response().json();
+    const raw = z.record(z.string(), z.unknown()).parse(body);
+    const output = z.array(z.record(z.string(), z.unknown())).parse(raw.output);
+    raw.output = [
+      output[0],
+      { ...output[0], id: "second-search" },
+      { ...output[0], id: "pending-search", status },
+      output[1],
+    ];
+    const transport = vi.fn<typeof fetch>(
+      async () =>
+        new Response(JSON.stringify(raw), {
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    const result = await createCopilotWebResearch(config(), transport).research(
+      request(),
+    );
+    expect(result.summaryFr).toBe("Les périodes varient selon les variétés.");
+    expect(result.citations).toHaveLength(1);
+    expect(transport).toHaveBeenCalledTimes(1);
+  },
+);
+it.each([["searching"], ["completed", "completed", "completed"]])(
+  "requires one or two completed searches, independently of pending records: %j",
+  async (...statuses) => {
+    const raw = z
+      .record(z.string(), z.unknown())
+      .parse(await response().json());
+    const output = z.array(z.record(z.string(), z.unknown())).parse(raw.output);
+    raw.output = [
+      ...statuses.map((status, i) => ({
+        ...output[0],
+        id: `search-${i}`,
+        status,
+      })),
+      output[1],
+    ];
+    await expect(
+      createCopilotWebResearch(
+        config(),
+        async () =>
+          new Response(JSON.stringify(raw), {
+            headers: { "content-type": "application/json" },
+          }),
+      ).research(request()),
+    ).rejects.toMatchObject({ code: "NO_CITATIONS" });
+  },
+);
 it("uses the real SDK/web tool, retains citation spans and external provenance, enforces request bounds and sends no private context", async () => {
   let body: Record<string, unknown> | undefined;
   const transport = vi.fn<typeof fetch>(async (url, init) => {
