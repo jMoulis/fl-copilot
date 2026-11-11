@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Text, View, Pressable } from "react-native";
 import { explorerHasFilters } from "@fl-copilot/analytics-core";
 import {
@@ -5,7 +6,7 @@ import {
   type AnalyticsProductList,
   type AnalyticsExplorerFilters,
 } from "@fl-copilot/domain";
-import { InlineAlert, SecondaryButton } from "../components/ui";
+import { BottomSheet, InlineAlert, SecondaryButton } from "../components/ui";
 import {
   DetailsDisclosure,
   IconButton,
@@ -79,6 +80,16 @@ export function ExplorerBreakdown({
   storeId?: string;
 }) {
   const details = data.details;
+  const [info, setInfo] = useState<{
+    kind: "category" | "product";
+    id: string;
+  }>();
+  const inspected =
+    info?.kind === "category"
+      ? details?.categories.find((c) => c.category === info.id)
+      : info?.kind === "product"
+        ? details?.contributors.find((p) => p.productId === info.id)
+        : undefined;
   return (
     <View style={{ gap: 14 }}>
       <Text
@@ -112,32 +123,40 @@ export function ExplorerBreakdown({
           ) : null}
           {!data.filters.productId
             ? details.categories.map((c) => (
-                <Pressable
+                <View
                   key={c.category}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Explorer ${c.label}`}
-                  onPress={() => onCategory(c.category)}
                   style={{
-                    minHeight: 48,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 10,
                     padding: 14,
-                    gap: 6,
                     borderRadius: 14,
                     backgroundColor: colors.surface,
                     borderWidth: 1,
                     borderColor: colors.line,
                   }}
                 >
-                  <Text style={{ color: colors.ink, fontWeight: "600" }}>
-                    {c.label} ·{" "}
-                    {c.analysis.total === null
-                      ? "Indisponible"
-                      : formatCurrency(c.analysis.total)}
-                  </Text>
-                  <Text style={{ color: colors.muted }}>
-                    {c.analysis.coverage.complete}/
-                    {c.analysis.coverage.expected} jours complets
-                  </Text>
-                </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Explorer ${c.label}`}
+                    onPress={() => onCategory(c.category)}
+                    style={{ flex: 1, minHeight: 48, justifyContent: "center" }}
+                  >
+                    <Text style={{ color: colors.ink, fontWeight: "600" }}>
+                      {c.label} ·{" "}
+                      {c.analysis.total === null
+                        ? "Indisponible"
+                        : formatCurrency(c.analysis.total)}
+                    </Text>
+                  </Pressable>
+                  <IconButton
+                    label={`Informations sur les chiffres : ${c.label}`}
+                    icon="information-circle-outline"
+                    onPress={() =>
+                      setInfo({ kind: "category", id: c.category })
+                    }
+                  />
+                </View>
               ))
             : null}
           {onProductList ? (
@@ -253,21 +272,6 @@ export function ExplorerBreakdown({
                       ? "Indisponible"
                       : formatCurrency(p.analysis.total)}
                   </Text>
-                  <Text
-                    style={{
-                      color:
-                        p.analysis.coverage.partial ||
-                        p.analysis.coverage.missing
-                          ? colors.warning
-                          : colors.muted,
-                      fontSize: 12,
-                    }}
-                  >
-                    {p.analysis.coverage.complete}/
-                    {p.analysis.coverage.expected} jours complets ·{" "}
-                    {p.analysis.coverage.partial} partiels ·{" "}
-                    {p.analysis.coverage.missing} sans donnée
-                  </Text>
                   {p.analysis.comparison?.absoluteDifference !== null &&
                   p.analysis.comparison ? (
                     <Text style={{ color: colors.muted, fontSize: 12 }}>
@@ -295,13 +299,11 @@ export function ExplorerBreakdown({
                   accessible={false}
                 />
               </Pressable>
-              {!data.filters.productId ? (
-                <IconButton
-                  label={`Ouvrir la fiche produit : ${p.label}`}
-                  icon="information-circle-outline"
-                  onPress={() => onOpenProduct(p.productId)}
-                />
-              ) : null}
+              <IconButton
+                label={`Informations sur les chiffres : ${p.label}`}
+                icon="information-circle-outline"
+                onPress={() => setInfo({ kind: "product", id: p.productId })}
+              />
             </View>
           ))}
           {!details.contributors.length ? (
@@ -329,6 +331,37 @@ export function ExplorerBreakdown({
           ) : null}
         </>
       )}
+      <BottomSheet
+        visible={!!inspected}
+        title={inspected?.label ?? "Informations sur les chiffres"}
+        onClose={() => setInfo(undefined)}
+        swipeToClose
+      >
+        {inspected ? (
+          <View style={{ gap: 12 }}>
+            <Text style={{ color: colors.ink }}>
+              {inspected.analysis.coverage.complete}/
+              {inspected.analysis.coverage.expected} jours complets ·{" "}
+              {inspected.analysis.coverage.partial} partiels ·{" "}
+              {inspected.analysis.coverage.missing} sans donnée
+            </Text>
+            <Text style={{ color: colors.muted }}>
+              Ces informations concernent l’indicateur et la période
+              sélectionnés. Une journée sans donnée reste inconnue, pas à zéro.
+              Les écarts portent sur les jours comparables renseignés.
+            </Text>
+            {info?.kind === "product" ? (
+              <SecondaryButton
+                label="Ouvrir la fiche produit"
+                onPress={() => {
+                  setInfo(undefined);
+                  onOpenProduct(info.id);
+                }}
+              />
+            ) : null}
+          </View>
+        ) : null}
+      </BottomSheet>
     </View>
   );
 }

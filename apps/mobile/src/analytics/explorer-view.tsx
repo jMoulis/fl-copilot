@@ -281,11 +281,44 @@ export function ExplorerContent({
           </Text>
         ) : null}
         {!data ? (
-          <Text style={{ color: colors.muted }}>
-            {loadingError
-              ? "Les chiffres ne sont pas disponibles pour le moment."
-              : "Lecture des chiffres locaux…"}
-          </Text>
+          loadingError ? (
+            <Text style={{ color: colors.muted }}>
+              Les chiffres ne sont pas disponibles pour le moment.
+            </Text>
+          ) : (
+            <View
+              accessibilityRole="progressbar"
+              accessibilityLabel="Lecture des chiffres locaux"
+              accessibilityState={{ busy: true }}
+              style={{ gap: 16 }}
+            >
+              <View
+                style={{
+                  height: 36,
+                  width: "65%",
+                  borderRadius: 8,
+                  backgroundColor: colors.surfaceMuted,
+                }}
+              />
+              <View
+                style={{
+                  height: 16,
+                  width: "40%",
+                  borderRadius: 6,
+                  backgroundColor: colors.surfaceMuted,
+                }}
+              />
+              {period.kind !== "day" ? (
+                <View
+                  style={{
+                    height: 180,
+                    borderRadius: 12,
+                    backgroundColor: colors.surfaceMuted,
+                  }}
+                />
+              ) : null}
+            </View>
+          )
         ) : (
           <>
             <Text
@@ -296,27 +329,10 @@ export function ExplorerContent({
                 ? "Indisponible"
                 : formatCurrency(data.total)}
             </Text>
-            <Text
-              style={{
-                color:
-                  data.coverage.partial || data.coverage.missing
-                    ? colors.warning
-                    : colors.muted,
-                fontSize: 12,
-                lineHeight: 18,
-              }}
-            >
+            <Text style={{ color: colors.muted, fontSize: 12 }}>
               {period.kind === "range" && period.aggregation === "AVERAGE"
                 ? "Moyenne des jours renseignés"
-                : "Cumul renseigné"}{" "}
-              · {data.coverage.complete}/{data.coverage.expected} journées
-              complètes
-              {data.coverage.partial
-                ? ` · ${data.coverage.partial} partielles`
-                : ""}
-              {data.coverage.missing
-                ? ` · ${data.coverage.missing} sans donnée`
-                : ""}
+                : "Cumul renseigné"}
             </Text>
             {c ? (
               <View
@@ -398,6 +414,29 @@ export function ExplorerContent({
         ) : null}
         {data ? (
           <DetailsDisclosure title="Couverture et comparaison">
+            <Text
+              style={{
+                color:
+                  data.coverage.partial || data.coverage.missing
+                    ? colors.warning
+                    : colors.muted,
+                fontSize: 12,
+                lineHeight: 18,
+              }}
+            >
+              {period.kind === "range" && period.aggregation === "AVERAGE"
+                ? "Moyenne des jours renseignés"
+                : "Cumul renseigné"}{" "}
+              · {data.coverage.complete}/{data.coverage.expected} journées
+              complètes
+              {data.coverage.partial
+                ? ` · ${data.coverage.partial} partielles`
+                : ""}
+              {data.coverage.missing
+                ? ` · ${data.coverage.missing} sans donnée`
+                : ""}
+            </Text>
+
             {c ? (
               <View
                 style={{

@@ -206,3 +206,39 @@ it("reads ordinary answer text as text while retaining the long-press menu and r
     ).props.visible,
   ).toBe(true);
 });
+
+it("pauses following only for a reader gesture and retains that choice through subsequent reflow", async () => {
+  await mount();
+  const list = () =>
+    tree!.root.find(
+      (node) =>
+        typeof node.type !== "string" &&
+        typeof node.props.onScrollBeginDrag === "function",
+    );
+  const event = (offset: number, height = 2200) => ({
+    nativeEvent: {
+      contentOffset: { y: offset },
+      contentSize: { height },
+      layoutMeasurement: { height: 500 },
+    },
+  });
+  const latest = () =>
+    tree!.root.findAll(
+      (node) =>
+        String(node.type) === "Pressable" &&
+        node.props.accessibilityLabel === "Revenir aux derniers messages",
+    );
+  await act(() => list().props.onScroll(event(1500)));
+  await act(() => list().props.onScroll(event(1300)));
+  expect(latest()).toHaveLength(0);
+  await act(() => {
+    list().props.onScrollBeginDrag();
+    list().props.onScroll(event(1100));
+  });
+  expect(latest()).toHaveLength(1);
+  await act(() => list().props.onScrollEndDrag(event(1100)));
+  await act(() => list().props.onScroll(event(1100, 1600)));
+  expect(latest()).toHaveLength(1);
+  await act(() => latest()[0].props.onPress());
+  expect(latest()).toHaveLength(0);
+});

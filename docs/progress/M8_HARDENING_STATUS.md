@@ -1,5 +1,11 @@
 # M8 — hardening and pilot release
 
+## Pilote iPhone accepté — 11 novembre
+
+Le propriétaire valide les recettes groupées notifications de résultat, interruption/reprise d’import, navigation produits et remontée Sentry sur build45 ; il confirme ensuite l’installation et la connexion du build47 via TestFlight, puis la gestion du conflit iPhone/simulateur sur la fiche Abricot. **M8 est clôturé pour le pilote iPhone avec la réserve sauvegarde/restauration Atlas explicitement reportée.** Ne pas présenter cette réserve comme qualifiée ou activée. Android et la qualification d’accessibilité dédiée restent M9. Les mesures hôte restent distinctes d’un benchmark instrumenté sur iPhone ; les détails non rapportés de la résolution ne sont pas inventés.
+
+Build47 STORE : `ece3ac5d-3c71-4947-be6d-cd3cd292706c`, version `0.1.0 (47)`, source native `c4228fc0c1fec4f062e8a2d092fc8937c612c4c5`. Soumission `fbc634f4-aa5e-4a20-90c7-5adc989d7c9a` terminée, traitement Apple VALID/prêt pour tests internes et rattachement au groupe propriétaire vérifiés. Aucun accès public App Store ni autre testeur ajouté. Le registre de livraison privé conserve les preuves exactes. Les anciennes mentions ouvertes ci-dessous sont historiques ; les finitions UX du [backlog produit](PRODUCT_BACKLOG_2026_11_06.md) ne rouvrent pas ces recettes acceptées.
+
 ## Grouped closure pass — owner request, 11 November
 
 The owner requests one coherent pass across interruptions/conflicts, performance/storage, security/monitoring, remaining notifications and final delivery. Reuse accepted cases; do not add unrelated features or reopen M0–M7. The web-research incident is deployed and owner accepted on API source 9e3ed92; its earlier diagnostic entries below are historical, not an open retest.

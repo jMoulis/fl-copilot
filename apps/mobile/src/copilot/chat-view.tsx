@@ -100,6 +100,7 @@ export function CopilotChatView({
 }) {
   const list = useRef<FlatList<CopilotMessage>>(null);
   const followLatest = useRef(true);
+  const userScrolling = useRef(false);
   const scrollPosition = useRef<ChatScrollPosition | undefined>(undefined);
   const [showLatest, setShowLatest] = useState(false);
   const visible = messages.filter(
@@ -124,6 +125,7 @@ export function CopilotChatView({
       followLatest.current,
       scrollPosition.current,
       position,
+      userScrolling.current,
     );
     scrollPosition.current = position;
     setShowLatest(!followLatest.current);
@@ -168,6 +170,20 @@ export function CopilotChatView({
           keyExtractor={(item) => item.id}
           keyboardShouldPersistTaps="handled"
           onScroll={onScroll}
+          onScrollBeginDrag={() => {
+            userScrolling.current = true;
+          }}
+          onScrollEndDrag={(event) => {
+            onScroll(event);
+            userScrolling.current = false;
+          }}
+          onMomentumScrollBegin={() => {
+            userScrolling.current = true;
+          }}
+          onMomentumScrollEnd={(event) => {
+            onScroll(event);
+            userScrolling.current = false;
+          }}
           scrollEventThrottle={100}
           contentContainerStyle={styles.history}
           onLayout={() => {
@@ -365,7 +381,7 @@ export function CopilotChatView({
             onPress={() => {
               followLatest.current = true;
               setShowLatest(false);
-              list.current?.scrollToEnd({ animated: true });
+              list.current?.scrollToEnd({ animated: false });
             }}
           >
             <Ionicons name="arrow-down" size={22} color={colors.ink} />

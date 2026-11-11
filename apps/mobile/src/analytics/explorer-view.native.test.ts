@@ -105,3 +105,73 @@ it.each([true, false])(
     }
   },
 );
+
+it("shows a skeleton only without local values and retains figures during background sync", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const originalError = console.error;
+  const silence = vi.spyOn(console, "error").mockImplementation((...args) => {
+    if (!String(args[0]).includes("react-test-renderer is deprecated"))
+      originalError(...args);
+  });
+  const period = { kind: "day" as const, date: "2026-10-23" };
+  const initial = initialExplorerView("2026-10-23");
+  const props = {
+    view: { ...initial, frame: { ...initial.frame, period } },
+    syncStatus: "syncing" as const,
+    onMetric: vi.fn(),
+    onFilters: vi.fn(),
+    onClearFilters: vi.fn(),
+    onGranularity: vi.fn(),
+    onShift: vi.fn(),
+    onPick: vi.fn(),
+    onDrill: vi.fn(),
+    onBack: vi.fn(),
+    onRefresh: vi.fn(),
+    onWeek: vi.fn(),
+    onChartScroll: vi.fn(),
+  };
+  let tree: ReturnType<typeof create> | undefined;
+  const skeleton = () =>
+    tree!.root.findAll(
+      (node) =>
+        String(node.type) === "View" &&
+        node.props.accessibilityRole === "progressbar",
+    );
+  try {
+    await act(() => {
+      tree = create(createElement(ExplorerContent, props));
+    });
+    expect(skeleton()).toHaveLength(1);
+    await act(() =>
+      tree!.update(
+        createElement(ExplorerContent, { ...props, loadingError: true }),
+      ),
+    );
+    expect(skeleton()).toHaveLength(0);
+    expect(JSON.stringify(tree!.toJSON())).toContain(
+      "Les chiffres ne sont pas disponibles",
+    );
+    const data = {
+      ...compareExplorerPeriod({
+        period,
+        today: "2026-10-30",
+        kpiId: "sales",
+        points: [
+          { businessDate: "2026-10-23", value: "100", status: "AVAILABLE" },
+        ],
+      }),
+      filters: emptyExplorerFilters(),
+      details: null,
+      detailsUnavailable: false,
+    };
+    await act(() =>
+      tree!.update(createElement(ExplorerContent, { ...props, data })),
+    );
+    expect(skeleton()).toHaveLength(0);
+    expect(JSON.stringify(tree!.toJSON())).toContain("100,00");
+  } finally {
+    await act(() => tree?.unmount());
+    silence.mockRestore();
+    vi.unstubAllGlobals();
+  }
+});

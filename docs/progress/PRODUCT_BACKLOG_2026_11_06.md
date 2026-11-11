@@ -2,10 +2,20 @@
 
 Liste consignée à la demande du propriétaire. Ces points restent à faire ou à cadrer : leur inscription ne vaut ni implémentation ni validation. Leur priorité et leur rattachement à la V1 ou à une livraison ultérieure restent à arbitrer, sauf la génération d’images de TG explicitement réservée à la V2. Les clôtures fonctionnelles M0–M7 et les réserves M8 existantes restent celles de leurs suivis respectifs.
 
+## Reprise après clôture du pilote M8 — 11 novembre
+
+Le propriétaire valide le conflit iPhone/simulateur et l’installation/connexion TestFlight 47. Le pilote M8 est accepté avec la réserve explicite de sauvegarde/restauration Atlas reportée ; ces finitions ne rouvrent pas ses parcours validés. Android et la qualification d’accessibilité dédiée restent M9.
+
+Ordre retenu : (1) défilement du chat, skeleton Analyses et couverture dans le détail ; (2) maquettes/navigation Actions et séparation préparation/gestion des données ; (3) graphiques de liste et images produits après précision de l’usage ; (4) journal de bord à définir ensemble. Les images de TG restent V2.
+
+Le premier lot réutilise FlatList, le panneau natif et les lectures locales : seul un geste de lecture modifie le suivi du chat ; les corrections de mise en page conservent l’intention ; les comptes de journées des catégories/produits passent derrière « i » avec accès à la fiche ; le compte global reste dans « Couverture et comparaison ». Le skeleton remplace seulement l’attente sans données, jamais des chiffres locaux déjà affichés ni une erreur. Aucun calcul, contrat, source, instruction IA, modèle ou appel fournisseur n’est modifié. **Code en validation, pas encore livré dans TestFlight 47 ni accepté sur iPhone.**
+
+Vérification locale initiale : 28 tests de défilement, vues montées chat/analyses, contexte et graphique passent dans six suites, sans ignorés. Les contrôles complets, la fusion, la livraison groupée et la recette native restent distincts.
+
 ## Chat
 
 - [ ] **Défilement automatique inconsistant** : reproduire les situations signalées et stabiliser le suivi de la réponse. Préserver la lecture des anciens messages lorsque l’utilisateur remonte volontairement.
-- [ ] **Titre de conversation généré par l’IA**, avec possibilité de **modifier manuellement le nom du chat**. Moment de génération et règles de remplacement à définir ; éviter les appels répétés et l’écrasement d’un titre choisi par l’utilisateur.
+- [x] **Titre automatique et renommage manuel** : livrés et validés pendant M8. Priorité du titre manuel, persistance hors connexion et synchronisation conservées. Voir [la qualification](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md).
 
 ## UX et analyses
 
@@ -19,13 +29,15 @@ Liste consignée à la demande du propriétaire. Ces points restent à faire ou 
 ## Images produits
 
 - [ ] **Générer une image par IA depuis la fiche produit**, en réutilisant le service de fichiers visuels, les droits et le processus d’approbation existants. Définir l’aperçu, la validation et le remplacement de l’image.
-- [ ] **Supprimer le fond d’une image** : cadrer l’action de détourage et la conservation de la transparence. Distinguer un fond réellement présent dans le fichier d’un fond blanc ajouté par l’affichage ; préserver l’original.
+      La correction des aperçus PNG transparents et la suppression du libellé récurrent « Générique » sont déjà livrées et acceptées ; ne pas les recréer. Voir [les aperçus transparents](../qa/M7_TRANSPARENT_PRODUCT_PREVIEWS_2026_11_04.md).
+
+- [ ] **Supprimer un fond réellement présent dans une image** : cadrer l’action de détourage et la conservation de la transparence. Distinguer un fond réellement présent dans le fichier d’un fond blanc ajouté par l’affichage ; préserver l’original.
 
 ## Coût et fonctionnement de l’IA
 
 **Priorité précisée par le propriétaire le 6 novembre : consommation de tokens.** Commencer par mesurer les entrées/sorties/cache par étape, le contexte répété et les appels d’outils. La revue des réveils réseau/batterie passe après ce sujet. Le choix de modèles selon la complexité doit être évalué sur ces mesures, Le propriétaire autorise ensuite un routage léger et les titres automatiques ; l’implémentation et ses limites sont suivies dans la qualification M8.
 
-- [ ] **Optimiser le coût selon la complexité de la tâche** : étudier l’orientation des tâches simples et complexes vers des modèles adaptés. S’appuyer sur les consommations réelles et vérifier qualité et latence ; ne pas ajouter un appel de classification systématique qui annulerait le gain. Premier incrément autorisé : un seul appel léger borné oriente la demande, répond au cas simple et propose le titre. Les mesures réelles et la qualité restent à qualifier ; les demandes analytiques conservent le parcours expert. Voir [la qualification](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md).
+- [ ] **Optimiser le coût selon la complexité de la tâche** : étudier l’orientation des tâches simples et complexes vers des modèles adaptés. S’appuyer sur les consommations réelles et vérifier qualité et latence ; ne pas ajouter un appel de classification systématique qui annulerait le gain. Premier incrément autorisé : un seul appel léger borné oriente la demande, répond au cas simple et propose le titre. Le routage léger, les titres et les optimisations des résultats d’outils sont livrés ; les scénarios de généralisation ont été testés avec le propriétaire. Conserver les mesures réelles et surveiller la qualité, sans présenter l’optimisation continue comme une absence d’implémentation. Les demandes analytiques conservent le parcours expert. Voir [la qualification](../qa/M8_COPILOT_ECONOMY_TITLES_2026_11_06.md).
 
 ## Priorité de cadrage — journal de bord quotidien, à définir ensemble
 
