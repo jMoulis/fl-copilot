@@ -24,6 +24,7 @@ const responseBody = z.object({
   output: z.array(
     z.object({
       type: z.string(),
+      status: z.string().optional(),
       content: z
         .array(
           z.object({
@@ -101,7 +102,9 @@ export function createCopilotWebResearch(
           throw new CopilotResearchError("UNAVAILABLE");
         const body = responseBody.parse(result.response.body);
         const searches = body.output.filter(
-          (o) => o.type === "web_search_call",
+          // The provider can include a pending call after its completed-call cap.
+          // Only completed searches qualify the cited answer; keep the cap above.
+          (o) => o.type === "web_search_call" && o.status === "completed",
         );
         if (!searches.length || searches.length > 2)
           throw new CopilotResearchError("NO_CITATIONS");
