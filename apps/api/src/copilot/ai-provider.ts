@@ -253,6 +253,7 @@ import {
   generateText,
   streamText,
   ToolLoopAgent,
+  NoSuchToolError,
   tool,
   toolSearch,
   isStepCount,
@@ -418,6 +419,9 @@ type CopilotGenerationUsageDetails =
       durationMs: number;
       initialContextBytes: number;
       readFailures: Partial<Record<CopilotReadFailure, number>>;
+      toolCallFailures?: Partial<
+        Record<"INVALID_INPUT" | "UNKNOWN_TOOL", number>
+      >;
       // A failed call may have consumed tokens without returning usage.
       usageComplete: boolean;
       answerOmissions?: { reference: number; render: number };
@@ -902,6 +906,9 @@ export function createCopilotAiProvider(
       const answerOmissions = { reference: 0, render: 0 };
       const renderFailureCodes = new Set<string>();
       const readFailures: Partial<Record<CopilotReadFailure, number>> = {};
+      const toolCallFailures: Partial<
+        Record<"INVALID_INPUT" | "UNKNOWN_TOOL", number>
+      > = {};
       const reportUsage = (event: CopilotGenerationUsageDetails) => {
         try {
           reads?.onUsage?.({ ...event, requestId: request.requestId });
@@ -1280,6 +1287,22 @@ export function createCopilotAiProvider(
             toolCalls: readonly unknown[];
           }) => {
             completedSteps++;
+            // Invalid SDK tool calls never enter executeRead. Count only fixed
+            // categories, never their arguments, error prose or unknown names.
+            for (const call of toolCalls) {
+              if (
+                call &&
+                typeof call === "object" &&
+                "invalid" in call &&
+                call.invalid === true
+              ) {
+                const reason =
+                  "error" in call && NoSuchToolError.isInstance(call.error)
+                    ? "UNKNOWN_TOOL"
+                    : "INVALID_INPUT";
+                toolCallFailures[reason] = (toolCallFailures[reason] ?? 0) + 1;
+              }
+            }
             observedInputTokens += usage.inputTokens ?? 0;
             observedOutputTokens += usage.outputTokens ?? 0;
             allStepsHaveUsage &&=
@@ -4098,6 +4121,7 @@ export function createCopilotAiProvider(
           durationMs: Date.now() - startedAt,
           initialContextBytes: Buffer.byteLength(prompt, "utf8"),
           readFailures,
+          ...(Object.keys(toolCallFailures).length ? { toolCallFailures } : {}),
           usageComplete: completed && completedSteps > 0 && allStepsHaveUsage,
           ...(answerOmissions.reference || answerOmissions.render
             ? { answerOmissions }

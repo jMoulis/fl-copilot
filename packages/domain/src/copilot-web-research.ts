@@ -95,13 +95,14 @@ export type PublicWebResearchResult = z.infer<
 
 /** Model may supply only a general public topic, never private identifiers or metrics. */
 export const copilotPublicResearchInputSchema = z.strictObject({
-  query: publicResearchQuerySchema.refine(
-    (q) =>
-      q.length <= 400 &&
-      !/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|\d{8,}|[€$%]|\b(?:mon|ma|mes|notre|nos|my|our)\b/i.test(
-        q,
-      ),
-  ),
+  query: publicResearchQuerySchema
+    .max(400)
+    .refine(
+      (q) =>
+        !/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b|\d{8,}|[€$%]|\b(?:mon|ma|mes|notre|nos|my|our)\b/i.test(
+          q,
+        ),
+    ),
   purpose: publicWebResearchRequestSchema.shape.purpose,
 });
 export const copilotExternalResearchSourceSchema = z
