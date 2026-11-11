@@ -22,3 +22,11 @@ Official configuration reference: https://vercel.com/docs/project-configuration/
 The staging/internal profile uses the existing remote app-version source and increments the native build number for each new cloud build, as production already does. A fresh staging binary must have a distinct native build version: consecutive binaries previously reused `0.1.0` / build `1`, making installed-version checks and the default Sentry release/dist harder to distinguish. This does not start a build or change the Mac toolchain.
 
 For a grouped acceptance release, record the EAS build ID, exact source commit, profile, app version and native build number after completion. Verify the API-compatible release first and retain its predecessor for rollback. A finished EAS artifact is available for installation; only the owner's actual device feedback proves acceptance. The current application version remains `0.1.0`; the build number identifies the binary iteration.
+
+## TestFlight pilot target
+
+The production submission profile targets the private App Store Connect record `6833595029` (FL Copilot, French locale), existing bundle identifier `com.flcopilot.mobile` and team `54QQCYMGXT`. These identifiers are not secrets. Reuse the existing EAS submission credentials; never commit keys, passwords or session files.
+
+Submit a verified STORE-distribution archive by its exact EAS build ID, with automatic TestFlight tester setup disabled. Keep the owner-only internal pilot group explicit; do not invite other account members or enable a public link by default. Record EAS submission success, Apple processing and actual owner TestFlight access separately. Uploading the beta archive does not authorize public App Store release.
+
+This submission metadata does not change the already-built native code or require another EAS build. Build45 phone acceptance remains attached to its original source and the corresponding STORE archive retains its own build number/source.
