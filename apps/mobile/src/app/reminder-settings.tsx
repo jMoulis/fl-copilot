@@ -291,6 +291,29 @@ export default function ReminderSettings() {
           confirmé ni publié automatiquement.
         </Text>
       </SectionCard>
+      <SectionCard title="Lecture des documents">
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="flex-1 text-base text-ink">
+            Me prévenir quand un document est prêt à consulter
+          </Text>
+          <Switch
+            accessibilityLabel="Activer les alertes de lecture des documents"
+            value={chatPush.documentsEnabled ?? false}
+            disabled={
+              !chatPush.available ||
+              !chatPush.ready ||
+              chatPush.busy ||
+              session?.stores[0]?.role !== "MANAGER"
+            }
+            onValueChange={(v) => void chatPush.setDocumentsEnabled(v)}
+          />
+        </View>
+        <Text className="text-muted">
+          Après la lecture d’un pense-bête ou d’un ticket de casse que tu as
+          envoyé. Les résultats restent à vérifier ; aucune donnée n’est publiée
+          par cette alerte.
+        </Text>
+      </SectionCard>
       <SectionCard title="Notifications commerciales">
         <View className="flex-row items-center justify-between gap-3">
           <Text className="flex-1 text-base text-ink">

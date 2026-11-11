@@ -171,3 +171,45 @@ it("disabling the last channel removes the token", async () => {
   await f.controller.setEmailEnabled(false);
   expect(f.save).toHaveBeenCalledWith(null, { chat: false, email: false });
 });
+
+it("keeps document completion opt-in independent and retries a failed disable without enabling other channels", async () => {
+  let value: string | null = null;
+  const f = fixture();
+  const save = vi.fn(
+    async (
+      _token: string | null,
+      _channels?: import("@fl-copilot/sync-contracts").PushChannels,
+    ) => {
+      void _token;
+      void _channels;
+    },
+  );
+  const controller = new ChatPushRegistration({
+    ...f.ports,
+    save,
+    documents: {
+      read: async () => value,
+      write: async (v) => {
+        value = v;
+      },
+    },
+  });
+  await controller.refresh();
+  expect(save).not.toHaveBeenCalled();
+  await controller.setDocumentsEnabled(true);
+  expect(save).toHaveBeenLastCalledWith("token", {
+    chat: false,
+    email: false,
+    documents: true,
+  });
+  save.mockRejectedValueOnce(Error("offline"));
+  await controller.setDocumentsEnabled(false);
+  expect(value).toBe("pending-disable");
+  await controller.refresh();
+  expect(value).toBe("0");
+  expect(save).toHaveBeenLastCalledWith(null, {
+    chat: false,
+    email: false,
+    documents: false,
+  });
+});

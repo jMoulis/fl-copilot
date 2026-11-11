@@ -1,7 +1,9 @@
 import {
   copilotCompletionNotificationSchema,
   emailReadyNotificationSchema,
+  documentReadyNotificationSchema,
 } from "@fl-copilot/sync-contracts";
+import { documentNotificationDestination } from "../notifications/document-destination";
 import { chatNotificationDestination } from "../notifications/chat-destination";
 import { CoalescedReminderRunner } from "./coalesced-runner";
 import {
@@ -169,7 +171,9 @@ export function ReminderProvider({ children }: PropsWithChildren) {
       remove: (() => void) | undefined,
       lastChatReply: string | undefined,
       lastEmailReceipt: string | undefined,
-      chatRevision = 0;
+      lastDocument: string | undefined,
+      chatRevision = 0,
+      documentRevision = 0;
     void notificationModule()
       .then(async (n) => {
         if (!n || !alive) return;
@@ -229,6 +233,55 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             if (state?.routes[state.index ?? 0]?.name === "(tabs)")
               router.navigate(destination);
             else router.dismissTo(destination);
+            return;
+          }
+          const document = documentReadyNotificationSchema.safeParse(data);
+          if (document.success) {
+            if (
+              document.data.ownerId !== context.ownerId ||
+              document.data.storeId !== storeId ||
+              context.role !== "MANAGER" ||
+              lastDocument === document.data.resultKey
+            )
+              return;
+            lastDocument = document.data.resultKey;
+            const revision = ++documentRevision;
+            const readDestination = () =>
+              documentNotificationDestination(
+                sqlite,
+                {
+                  ownerId: context.ownerId!,
+                  storeId: storeId!,
+                  role: context.role!,
+                },
+                document.data,
+              );
+            let destination = await readDestination();
+            if (!destination && alive && active.current === context) {
+              try {
+                await syncNow();
+              } catch {
+                /* conserved result can be opened after reconnect */
+              }
+              if (alive && active.current === context)
+                destination = await readDestination();
+            }
+            if (
+              !alive ||
+              active.current !== context ||
+              revision !== documentRevision
+            )
+              return;
+            n.clearLastNotificationResponse();
+            const target = destination ?? {
+              pathname: "/(tabs)/actions" as const,
+            };
+            if (
+              latestRoot.current?.routes[latestRoot.current.index ?? 0]
+                ?.name === "(tabs)"
+            )
+              router.navigate(target);
+            else router.dismissTo(target);
             return;
           }
           const chat = copilotCompletionNotificationSchema.safeParse(data);
