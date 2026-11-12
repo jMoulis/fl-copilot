@@ -64,6 +64,91 @@ async function setup() {
     },
   };
 }
+it("keeps generated packaging illustrative, preserves AI provenance and commits canonical metadata plus its file job only after confirmation", async () => {
+  const s = await setup();
+  try {
+    const packaged = {
+      ...s.f.product,
+      nature: "PACKAGED" as const,
+      packaging: {
+        quantity: "250",
+        unit: "G" as const,
+        sourceLabel: "barquette 250g",
+      },
+    };
+    await s.products.upsertProduct(packaged, {
+      commandId: randomUUID(),
+      deviceId: s.f.deviceId,
+    });
+    const basis = {
+      product: (await loadProductEditorSnapshot(s.products, packaged.id))!,
+      link: null,
+    };
+    const source = {
+      ...s.source,
+      mimeType: "image/png" as const,
+      width: 1024 as const,
+      height: 1024 as const,
+      relativePath: visualFilePath(
+        s.f.storeId,
+        "SOURCE",
+        "image/png",
+        s.source.contentHash,
+      ),
+    };
+    const { relativePath: _path, ...descriptor } = source;
+    void _path;
+    const generated = {
+      ...descriptor,
+      provenance: {
+        type: "AI_GENERATED" as const,
+        provider: "TEST_FIXTURE_NOT_REAL_AI",
+        model: "test",
+        promptVersion: "test",
+      },
+    };
+    await expect(
+      assignCapturedVisual(s.db, basis, source, false, s.ctx, generated),
+    ).rejects.toThrow("VISUAL_RIGHTS_REQUIRED");
+    expect(await s.library.list("visual_asset", s.f.storeId)).toHaveLength(0);
+    const asset = await assignCapturedVisual(
+      s.db,
+      basis,
+      source,
+      true,
+      s.ctx,
+      generated,
+    );
+    expect(asset.provenance).toEqual(generated.provenance);
+    const identities = await s.library.list("visual_identity", s.f.storeId);
+    expect(identities[0]!.entity.specificity).toBe("GENERIC");
+    const resolution = await s.library.resolve(basis.product.product.entity);
+    expect(resolution.kind).toBe("ASSET");
+    if (resolution.kind === "ASSET") {
+      expect(resolution.illustrative).toBe(true);
+      expect(resolution.link.linkType).toBe("MANUAL_OVERRIDE");
+    }
+    expect(
+      s.db.raw
+        .prepare(
+          "SELECT COUNT(*) n FROM local_jobs WHERE type='VISUAL_FILE_TRANSFER'",
+        )
+        .get()!.n,
+    ).toBe(1);
+    await expect(
+      assignCapturedVisual(
+        s.db,
+        basis,
+        { ...source, sizeBytes: source.sizeBytes + 1 },
+        true,
+        s.ctx,
+        generated,
+      ),
+    ).rejects.toThrow("VISUAL_FILE_BINDING_INVALID");
+  } finally {
+    s.db.raw.close();
+  }
+});
 it("atomically creates one reusable visual and a retained file/upload job, with explicit rights and no product mutation", async () => {
   const s = await setup();
   try {

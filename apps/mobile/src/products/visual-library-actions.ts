@@ -25,6 +25,10 @@ import {
 import { VisualFileCache, type VerifiedVisualFile } from "./visual-file-cache";
 import type { VisualAsset } from "@fl-copilot/domain";
 import { enqueueVisualFileJob } from "./visual-file-jobs";
+import {
+  generatedProductImageSchema,
+  type GeneratedProductImage,
+} from "@fl-copilot/sync-contracts";
 type Database = OutboxDatabase & AtomicMutationDatabase;
 export interface VisualActionContext {
   storeId: string;
@@ -168,8 +172,20 @@ export async function assignCapturedVisual(
   source: CapturedVisualSource,
   rightsConfirmed: boolean,
   ctx: VisualActionContext,
+  generated?: GeneratedProductImage,
 ) {
   if (!rightsConfirmed) throw Error("VISUAL_RIGHTS_REQUIRED");
+  if (generated) {
+    const checked = generatedProductImageSchema.parse(generated);
+    if (
+      checked.contentHash !== source.contentHash ||
+      checked.sizeBytes !== source.sizeBytes ||
+      checked.mimeType !== source.mimeType ||
+      checked.width !== source.width ||
+      checked.height !== source.height
+    )
+      throw Error("VISUAL_FILE_BINDING_INVALID");
+  }
   z.uuid().parse(ctx.actorId);
   let result: VisualAsset | undefined;
   await db.withExclusiveTransactionAsync(async (tx) => {
@@ -202,7 +218,7 @@ export async function assignCapturedVisual(
         width: source.width,
         height: source.height,
         sizeBytes: source.sizeBytes,
-        provenance: {
+        provenance: generated?.provenance ?? {
           type: "USER_UPLOAD",
           rights: "USER_CONFIRMED",
           confirmedBy: ctx.actorId,
@@ -214,16 +230,18 @@ export async function assignCapturedVisual(
     }
     const cache = new VisualFileCache(current.db);
     await cache.remember(ctx.storeId, asset.id, "SOURCE", source);
+    const specificity = generated
+      ? "GENERIC"
+      : current.product.product.entity.nature === "PACKAGED"
+        ? "PACKAGED_EXACT"
+        : "GENERIC";
     const priorIdentity = (
       await current.repo.list("visual_identity", ctx.storeId)
     ).find(
       (r) =>
         !r.entity.deletedAt &&
         r.entity.primaryAssetId === asset.id &&
-        r.entity.specificity ===
-          (current.product.product.entity.nature === "PACKAGED"
-            ? "PACKAGED_EXACT"
-            : "GENERIC") &&
+        r.entity.specificity === specificity &&
         !["ERROR", "CONFLICT"].includes(r.syncState),
     );
     let identity = priorIdentity?.entity;
@@ -231,10 +249,7 @@ export async function assignCapturedVisual(
       identity = visualIdentitySchema.parse({
         ...base(ctx, at),
         canonicalName: current.product.product.entity.label,
-        specificity:
-          current.product.product.entity.nature === "PACKAGED"
-            ? "PACKAGED_EXACT"
-            : "GENERIC",
+        specificity,
         variety: null,
         appearance: null,
         brand: null,

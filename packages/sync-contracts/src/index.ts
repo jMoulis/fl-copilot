@@ -4,6 +4,7 @@ export * from "./api-error";
 export * from "./sync";
 export * from "./uploads";
 export * from "./visual-files";
+export * from "./product-images";
 export * from "./waste-publication";
 
 /** API and database readiness, introduced in M0-T05. */

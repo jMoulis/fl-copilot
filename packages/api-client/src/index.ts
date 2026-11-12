@@ -1,4 +1,12 @@
 import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
+import {
+  productImageOptionsSchema,
+  productImageRequestSchema,
+  productImageResultSchema,
+  generatedProductImageSchema,
+  type ProductImageRequest,
+  type GeneratedProductImage,
+} from "@fl-copilot/sync-contracts";
 import { logoutSessionRequestSchema } from "@fl-copilot/sync-contracts";
 import {
   devicePushTokenRequestSchema,
@@ -1008,6 +1016,51 @@ export class ApiClient {
         body: JSON.stringify({ assetId }),
       },
       initVisualFileResponseSchema,
+    );
+  }
+  productImageOptions(accessToken: string, storeId: string, productId: string) {
+    return this.request(
+      `/api/v1/product-images/options/${encodeURIComponent(productId)}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      productImageOptionsSchema,
+    );
+  }
+  generateProductImage(
+    accessToken: string,
+    storeId: string,
+    raw: ProductImageRequest,
+  ) {
+    const input = productImageRequestSchema.parse(raw);
+    return this.request(
+      "/api/v1/product-images/generate",
+      {
+        method: "POST",
+        headers: authorizedStoreHeaders(accessToken, storeId),
+        body: JSON.stringify(input),
+      },
+      productImageResultSchema,
+      220_000,
+    );
+  }
+  productImageStatus(accessToken: string, storeId: string, requestId: string) {
+    return this.request(
+      `/api/v1/product-images/${encodeURIComponent(requestId)}`,
+      { method: "GET", headers: authorizedStoreHeaders(accessToken, storeId) },
+      productImageResultSchema,
+    );
+  }
+  downloadGeneratedProductImage(
+    accessToken: string,
+    storeId: string,
+    requestId: string,
+    raw: GeneratedProductImage,
+  ) {
+    const image = generatedProductImageSchema.parse(raw);
+    return this.downloadPrivateBinary(
+      `/api/v1/product-images/${encodeURIComponent(requestId)}/file`,
+      authorizedStoreHeaders(accessToken, storeId),
+      image,
+      "PRODUCT_IMAGE",
     );
   }
   completeVisualFile(
