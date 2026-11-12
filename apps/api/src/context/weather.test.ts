@@ -77,6 +77,12 @@ it("negotiates a dated provider symbol near Paris noon without changing legacy p
   expect(
     forecastDaySchema.safeParse({
       ...day,
+      symbol: { ...day.symbol, validTo: "bad" },
+    }).success,
+  ).toBe(false);
+  expect(
+    forecastDaySchema.safeParse({
+      ...day,
       symbol: { ...day.symbol, validTo: "2026-10-11T12:00:00.000Z" },
     }).success,
   ).toBe(false);

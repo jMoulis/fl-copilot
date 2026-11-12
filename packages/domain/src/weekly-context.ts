@@ -51,7 +51,9 @@ export const forecastDaySchema = z
   .superRefine((d, c) => {
     if (
       d.symbol &&
-      (d.symbol.validTo <= d.symbol.validFrom ||
+      (!Number.isFinite(Date.parse(d.symbol.validFrom)) ||
+        !Number.isFinite(Date.parse(d.symbol.validTo)) ||
+        d.symbol.validTo <= d.symbol.validFrom ||
         parisDate(d.symbol.validFrom) !== d.validDate ||
         parisDate(new Date(Date.parse(d.symbol.validTo) - 1).toISOString()) !==
           d.validDate)
