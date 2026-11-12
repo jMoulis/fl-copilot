@@ -15,6 +15,14 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
 vi.mock("../components/ui", () => ({
+  BottomSheet: ({
+    visible,
+    children,
+    ...props
+  }: {
+    visible: boolean;
+    children: import("react").ReactNode;
+  }) => (visible ? createElement("Sheet", props, children) : null),
   InlineAlert: "Alert",
   SecondaryButton: "Button",
 }));
@@ -33,7 +41,8 @@ it("uses accessible real controls to select declines, percentage and reverse ord
   const storeId = "00000000-0000-4000-8000-000000000001",
     productId = "00000000-0000-4000-8000-000000000002";
   const changes = vi.fn(),
-    onProduct = vi.fn();
+    onProduct = vi.fn(),
+    onOpenProduct = vi.fn();
   let tree: ReactTestRenderer | undefined;
   function Harness() {
     const [productList, setList] = useState<AnalyticsProductList>(
@@ -84,7 +93,7 @@ it("uses accessible real controls to select declines, percentage and reverse ord
       },
       onCategory: vi.fn(),
       onProduct,
-      onOpenProduct: vi.fn(),
+      onOpenProduct,
       onPage: vi.fn(),
     });
   }
@@ -137,6 +146,44 @@ it("uses accessible real controls to select declines, percentage and reverse ord
         .props.onPress(),
     );
     expect(onProduct).toHaveBeenCalledWith(productId);
+    expect(JSON.stringify(tree!.toJSON())).not.toContain("jours complets");
+    await act(() =>
+      find("Informations sur les chiffres : Poire").props.onPress(),
+    );
+    expect(JSON.stringify(tree!.toJSON())).toContain("jours complets");
+    expect(onOpenProduct).not.toHaveBeenCalled();
+    expect(
+      tree!.root.find((node) => String(node.type) === "Sheet").props
+        .swipeToClose,
+    ).toBe(true);
+    await act(() =>
+      tree!.root
+        .findAll(
+          (node) =>
+            String(node.type) === "Button" &&
+            node.props.label === "Ouvrir la fiche produit",
+        )[0]
+        .props.onPress(),
+    );
+    expect(onOpenProduct).toHaveBeenCalledWith(productId);
+    expect(
+      tree!.root.findAll((node) => String(node.type) === "Sheet"),
+    ).toHaveLength(0);
+    await act(() =>
+      find("Informations sur les chiffres : Fruits").props.onPress(),
+    );
+    expect(JSON.stringify(tree!.toJSON())).toContain("jours complets");
+    expect(
+      tree!.root.findAll(
+        (node) =>
+          String(node.type) === "Button" &&
+          node.props.label === "Ouvrir la fiche produit",
+      ),
+    ).toHaveLength(0);
+    await act(() =>
+      tree!.root.find((node) => String(node.type) === "Sheet").props.onClose(),
+    );
+
     await act(() =>
       find("Évolution des produits : Sans comparaison").props.onPress(),
     );

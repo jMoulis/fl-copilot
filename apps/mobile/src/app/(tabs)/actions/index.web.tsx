@@ -8,14 +8,14 @@ import { router } from "expo-router";
 export default function ActionsWeb() {
   return (
     <AppScreen>
-      <AppHeader title="Actions" />
+      <AppHeader title="Imports" />
       <InlineAlert
         title="Application mobile"
-        message="Les actions enregistrées restent disponibles dans la base locale de votre téléphone."
+        message="Les documents et imports enregistrés restent disponibles dans la base locale de votre téléphone."
       />
       <SecondaryButton
         label="Magasin et réglages"
-        onPress={() => router.push("/more")}
+        onPress={() => router.push("/settings")}
       />
     </AppScreen>
   );

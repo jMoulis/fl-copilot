@@ -339,11 +339,10 @@ Total/report metadata rows are not product observations.
 Primary navigation:
 
 ```text
-Aujourd’hui
+Journal
 Analyses
-Produits
 Copilote
-Actions
+Imports
 ```
 
 The user must understand relevant states such as:
@@ -357,7 +356,7 @@ Analyse IA en attente
 Données incomplètes
 ```
 
-The approved 19 October UX arbitration keeps the conversational Copilot central. Each primary domain owns its Stack and preserves its context. Existing week, waste, import, settings and synchronization routes remain reachable; the new tab layout must not discard these workflows. `docs/ux/AUDIT.md` records decisions that adapt the external UX pack to the complete product. Written product invariants govern the illustrative mockups; never fabricate hourly data, stock or supplier orders.
+The owner-approved 12 November navigation replaces the old five tabs with Journal, Analyses, Copilote and Imports. Products and settings remain available from the shared fixed header. Ma semaine belongs to Journal; document intake belongs to Imports. Product detail and editing push above the originating screen and return to its preserved period, filters and list position. The complete contextual Journal remains a separate scope; do not fabricate weather or tasks. The approved 19 October UX arbitration keeps the conversational Copilot central. Each primary domain owns its Stack and preserves its context. Existing week, waste, import, settings and synchronization routes remain reachable; the new tab layout must not discard these workflows. `docs/ux/AUDIT.md` records decisions that adapt the external UX pack to the complete product. Written product invariants govern the illustrative mockups; never fabricate hourly data, stock or supplier orders.
 
 Normal background synchronization must not replace existing local content with empty loading states.
 
@@ -521,7 +520,7 @@ Do not use superseded technical documents from outside this repository.
 
 ## 17. Current implementation scope
 
-M8 hardening is active for the iPhone pilot. Owner arbitration of 5 November retains data protection, interruptions/conflicts, performance/consumption, security/monitoring/delivery and useful notifications including chat completion. Android-specific work and the dedicated accessibility qualification move to M9 (`docs/progress/M9_PLATFORM_ACCESSIBILITY_STATUS.md`) and do not block M8; preserve existing cross-platform code, accessible behavior and shared CI. The functional iPhone M7 pilot baseline for workstreams 1/3/4/5/7 is closed; 2/6 retain owner-deferred scopes and missing AI illustration prerequisites remain explicit. Read `docs/progress/M8_HARDENING_STATUS.md` and `docs/progress/M7_WORKSTREAM_STATUS.md` and the latest code before relying on older milestone introductions. Keep the seven agreed workstreams and the complete V1 objective, including approved UX, rather than narrowing to a presentation demo. `docs/ux/V1_REMAINING_ROADMAP.md` decomposes the remaining work; it does not replace the seven workstreams.
+M8 is closed for the iPhone pilot with the owner-deferred Atlas backup/isolated restore reserve explicitly open. Owner arbitration of 5 November retains data protection, interruptions/conflicts, performance/consumption, security/monitoring/delivery and useful notifications including chat completion. Android-specific work and the dedicated accessibility qualification move to M9 (`docs/progress/M9_PLATFORM_ACCESSIBILITY_STATUS.md`) and do not block M8; preserve existing cross-platform code, accessible behavior and shared CI. The functional iPhone M7 pilot baseline for workstreams 1/3/4/5/7 is closed; 2/6 retain owner-deferred scopes and missing AI illustration prerequisites remain explicit. Read `docs/progress/M8_HARDENING_STATUS.md` and `docs/progress/M7_WORKSTREAM_STATUS.md` and the latest code before relying on older milestone introductions. Keep the seven agreed workstreams and the complete V1 objective, including approved UX, rather than narrowing to a presentation demo. `docs/ux/V1_REMAINING_ROADMAP.md` decomposes the remaining work; it does not replace the seven workstreams.
 
 Reuse the canonical architecture and validated functions. Distinguish code ready, merged, deployed and device accepted. Follow `docs/RELEASE_PROCESS.md`: both exact-head push and PR checks must pass before merge; delete the merged branch. Group releases and reserve paid EAS builds for substantial native acceptance. No automatic Vercel deployment per PR, system-toolchain modification, new provider spending or fabricated production demo data.
 

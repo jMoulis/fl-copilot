@@ -10,7 +10,9 @@ import {
   SecondaryButton,
 } from "@/components/ui";
 
-export default function StoreEmailScreen() {
+export default function StoreEmailScreen({
+  configuration = false,
+}: { configuration?: boolean } = {}) {
   const { receiptId } = useLocalSearchParams<{ receiptId?: string }>();
   const received = z.uuid().safeParse(receiptId);
   const { session } = useAuth();
@@ -24,10 +26,7 @@ export default function StoreEmailScreen() {
           title="Réception indisponible"
           message="Connectez-vous avec les droits de gestion du magasin pour retrouver sa réception."
         />
-        <SecondaryButton
-          label="Retour aux actions"
-          onPress={() => router.back()}
-        />
+        <SecondaryButton label="Retour" onPress={() => router.back()} />
       </AppScreen>
     );
   return (
@@ -37,14 +36,16 @@ export default function StoreEmailScreen() {
       conversationId={store.storeId}
       initialSender={session.user.email}
       revision={lastSyncedAt}
+      view={configuration ? "settings" : "inbox"}
+      onSettings={() => router.push("/email-settings")}
       refreshKey={received.success ? received.data : undefined}
       onClose={() => router.back()}
       onOpenMercalys={(batchId) =>
-        router.push({ pathname: "/actions/email-import", params: { batchId } })
+        router.push({ pathname: "/email-import", params: { batchId } })
       }
       onOpenSync={(id) =>
         id
-          ? router.push({ pathname: "/sync-conflict/[id]", params: { id } })
+          ? router.push({ pathname: "/conflict/[id]", params: { id } })
           : router.push("/sync-status")
       }
     />

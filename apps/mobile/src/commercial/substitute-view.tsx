@@ -358,7 +358,7 @@ export function WeeklySubstitutesView({
                   <SecondaryButton
                     label="Ouvrir la fiche de ce candidat"
                     onPress={() =>
-                      router.push(`/(tabs)/products/${c.productId}` as Href)
+                      router.push(`/product/${c.productId}` as Href)
                     }
                   />
                 </View>

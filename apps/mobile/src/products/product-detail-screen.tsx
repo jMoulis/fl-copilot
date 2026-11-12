@@ -53,7 +53,7 @@ function ScopedProductDetailScreen({
     <AppScreen>
       <View className="flex-row items-center justify-between gap-3">
         <IconButton
-          label="Retour aux produits"
+          label="Revenir à l’écran précédent"
           icon="chevron-back"
           onPress={() => returnToProducts(router)}
         />
@@ -65,7 +65,7 @@ function ScopedProductDetailScreen({
             label="Modifier la fiche produit"
             icon="create-outline"
             disabled={Boolean(conflictId) || !gallery.canWrite}
-            onPress={() => router.push(`/(tabs)/products/edit/${id}` as Href)}
+            onPress={() => router.push(`/product/edit/${id}` as Href)}
           />
         ) : (
           <View style={{ width: 48 }} />
@@ -127,9 +127,7 @@ function ScopedProductDetailScreen({
               />
               <SecondaryButton
                 label="Examiner le conflit"
-                onPress={() =>
-                  router.push(`/(tabs)/sync-conflict/${conflictId}` as Href)
-                }
+                onPress={() => router.push(`/conflict/${conflictId}` as Href)}
               />
             </>
           ) : null}

@@ -62,7 +62,7 @@ it.each(["WEEKLY_COMMERCIAL_PDF", "WASTE_RECEIPT"])(
         kind === "WASTE_RECEIPT"
           ? { pathname: "/waste-receipt/[id]", params: { id: f.receiptId } }
           : {
-              pathname: "/(tabs)/commercial-review/[id]",
+              pathname: "/document-review/[id]",
               params: { id: f.id },
             },
       );

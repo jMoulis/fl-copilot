@@ -41,3 +41,19 @@ it("preserves the reader’s intent across keyboard resizing and prepended histo
     }),
   ).toBe(false);
 });
+
+it("ignores layout corrections and keyboard events until an actual reader gesture", () => {
+  const previous = { offset: 1500, height: 2200, viewport: 500 };
+  const shifted = { offset: 1300, height: 2200, viewport: 500 };
+  expect(followsChatEnd(true, previous, shifted, false)).toBe(true);
+  expect(followsChatEnd(true, previous, shifted, true)).toBe(false);
+  // A shrinking layout must not pull a reader back into automatic following.
+  expect(
+    followsChatEnd(
+      false,
+      shifted,
+      { offset: 1300, height: 1800, viewport: 500 },
+      false,
+    ),
+  ).toBe(false);
+});

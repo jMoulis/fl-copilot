@@ -152,14 +152,12 @@ function PriorityDetail({
 
       <SecondaryButton
         label="Ouvrir la fiche produit"
-        onPress={() =>
-          router.push(`/(tabs)/products/${priority.productId}` as Href)
-        }
+        onPress={() => router.push(`/product/${priority.productId}` as Href)}
       />
       {priority.incompleteMetricLabels.length > 0 ? (
         <SecondaryButton
           label="Examiner les imports"
-          onPress={() => router.push("/(tabs)/imports" as Href)}
+          onPress={() => router.push("/mercalys-imports" as Href)}
         />
       ) : null}
     </>

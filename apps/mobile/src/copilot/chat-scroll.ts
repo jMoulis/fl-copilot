@@ -8,7 +8,9 @@ export function followsChatEnd(
   following: boolean,
   previous: ChatScrollPosition | undefined,
   current: ChatScrollPosition,
+  userScrolling = true,
 ) {
+  if (!userScrolling) return following;
   if (current.height - current.viewport - current.offset < 80) return true;
   if (!previous || previous.viewport !== current.viewport) return following;
   return current.offset < previous.offset - 1 ? false : following;

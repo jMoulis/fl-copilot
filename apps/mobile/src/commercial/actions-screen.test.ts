@@ -7,7 +7,7 @@ import { runLocalMigrations } from "../db/migrations";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { ActionsViewRepository, initialActionsView } from "./actions-view";
 import { CopilotActivityPanel } from "./copilot-activity-panel";
-import ActionsScreen from "../app/(tabs)/actions";
+import ActionsScreen from "./weekly-pilot-screen";
 
 const runtime = vi.hoisted(() => ({
   scope: {
@@ -56,6 +56,13 @@ vi.mock("./week-plan-repository", () => ({
   CommercialPlanRepository: class {
     get = runtime.readPlan;
   },
+}));
+vi.mock("../store/weekly-context-view", () => ({
+  WeeklyContextView: () => null,
+}));
+vi.mock("./substitute-view", () => ({ WeeklySubstitutesView: () => null }));
+vi.mock("./version-decision-list", () => ({
+  CommercialVersionDecisionList: () => null,
 }));
 vi.mock("./execution-view", () => ({
   CommercialExecutionView: "ExecutionView",
@@ -125,9 +132,9 @@ afterEach(async () => {
   db.close();
   vi.unstubAllGlobals();
 });
-async function render() {
+async function render(initialWeek?: string) {
   await act(async () => {
-    const node = createElement(ActionsScreen);
+    const node = createElement(ActionsScreen, { initialWeek });
     if (rendered) rendered.update(node);
     else rendered = create(node);
   });
@@ -142,7 +149,7 @@ it("restores the week and filter and preserves that context in both preparation 
   await render();
   expect(date().props.value).toBe("2025-12-29");
   expect(execution().props.filter).toBe("ALL");
-  for (const title of ["Voir ma semaine"]) {
+  for (const title of ["Mon plan et mes TG"]) {
     const link = rendered!.root
       .findAllByType("MenuRow" as never)
       .find((n) => n.props.title === title)!;
@@ -285,9 +292,10 @@ it("makes preparation visible before activity and selects next ISO week from tod
     await render();
     const nodes = rendered!.root.findAll(
       (n) =>
-        n.type === CopilotActivityPanel || n.props.title === "Voir ma semaine",
+        n.type === CopilotActivityPanel ||
+        n.props.title === "Mon plan et mes TG",
     );
-    expect(nodes[0]!.props.title).toBe("Voir ma semaine");
+    expect(nodes[0]!.props.title).toBe("Mon plan et mes TG");
     const next = rendered!.root
       .findAllByType("SecondaryButton" as never)
       .find((n) => n.props.label === "Préparer la semaine prochaine")!;
@@ -299,20 +307,17 @@ it("makes preparation visible before activity and selects next ISO week from tod
     });
     const preparation = rendered!.root
       .findAllByType("MenuRow" as never)
-      .find((n) => n.props.title === "Voir ma semaine")!;
+      .find((n) => n.props.title === "Mon plan et mes TG")!;
     await act(() => preparation.props.onPress());
     expect(runtime.push.mock.lastCall?.[0]).toEqual({
       pathname: "/commercial-plan",
       params: { weekStart: "2026-12-28" },
     });
-    const documents = rendered!.root
-      .findAllByType("MenuRow" as never)
-      .find((n) => n.props.title === "Documents commerciaux")!;
-    await act(() => documents.props.onPress());
-    expect(runtime.push.mock.lastCall?.[0]).toEqual({
-      pathname: "/week",
-      params: { weekStart: "2026-12-28" },
-    });
+    expect(
+      rendered!.root
+        .findAllByType("MenuRow" as never)
+        .some((n) => n.props.title === "Documents commerciaux"),
+    ).toBe(false);
     expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
     await act(() => rendered!.unmount());
     rendered = undefined;
@@ -329,4 +334,20 @@ it("makes preparation visible before activity and selects next ISO week from tod
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("opens an explicit historical week above the saved selection without publishing a business change", async () => {
+  await new ActionsViewRepository(runtime.sqlite, runtime.scope).save({
+    ...initialActionsView("2026-11-09"),
+    filter: "DONE",
+  });
+  await render("2026-10-19");
+  expect(date().props.value).toBe("2026-10-19");
+  expect(execution().props.filter).toBe("DONE");
+  const plan = rendered!.root
+    .findAllByType("MenuRow" as never)
+    .find((node) => node.props.title === "Mon plan et mes TG")!;
+  await act(() => plan.props.onPress());
+  expect(runtime.push.mock.lastCall?.[0].params.weekStart).toBe("2026-10-19");
+  expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
 });

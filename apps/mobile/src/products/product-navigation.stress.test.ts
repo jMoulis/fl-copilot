@@ -169,7 +169,7 @@ function navigation() {
   };
   const destination = (href: Href) => {
     const path = typeof href === "string" ? href : href.pathname;
-    if (path === "/(tabs)/products") return { name: "index" };
+    if (path === "/catalogue") return { name: "index" };
     const id =
       typeof href === "string"
         ? path.split("/").at(-1)
@@ -220,50 +220,73 @@ it("replaces an isolated deep link when its destination is absent instead of req
   expect(nav.state.routes).toHaveLength(1);
 });
 
-it("pops a root-level product form back to the existing tabs container rather than duplicating it", () => {
+it("keeps the exact origin and selected product detail in the root stack through 500 edits and nested returns", () => {
   const options = {
-    routeNames: ["(tabs)", "store-event", "product-substitution"],
+    routeNames: [
+      "(tabs)",
+      "catalogue",
+      "product/[id]",
+      "product/edit/[id]",
+      "store-event",
+    ],
     routeParamList: {},
     routeGetIdList: {},
   };
   const router = StackRouter({ initialRouteName: "(tabs)" });
   let state = router.getInitialState(options);
-  const key = state.routes[0]!.key;
-  const port = {
-    dismissTo: (href: Href) => {
-      expect(String(href)).toBe("/(tabs)/products/a");
-      state = router.getStateForAction(
-        state,
-        {
-          type: "POP_TO",
-          payload: {
-            name: "(tabs)",
-            params: {
-              screen: "products",
-              params: { screen: "[id]", params: { id: "a" } },
-            },
-          },
-        },
-        options,
-      ) as typeof state;
-    },
+  const dispatch = (action: Parameters<typeof router.getStateForAction>[1]) => {
+    state = router.getStateForAction(state, action, options) as typeof state;
   };
-  for (let i = 0; i < 500; i++) {
-    state = router.getStateForAction(
-      state,
-      {
+  const port = {
+    canGoBack: () => state.index > 0,
+    back: () => dispatch({ type: "POP", payload: { count: 1 } }),
+    dismissTo: (href: Href) =>
+      dispatch({
+        type: "POP_TO",
+        payload: {
+          name: String(href) === "/catalogue" ? "catalogue" : "product/[id]",
+          params: { id: "a" },
+        },
+      }),
+  };
+  const tabKey = state.routes[0]!.key;
+  for (const origin of ["analytics", "imports", "copilot", "catalogue"]) {
+    if (origin === "catalogue")
+      dispatch({
         type: "PUSH",
-        payload: { name: i % 2 ? "store-event" : "product-substitution" },
-      },
-      options,
-    ) as typeof state;
-    returnToProduct(port, "a");
-    expect(state.routes).toHaveLength(1);
-    expect(state.routes[0]!.key).toBe(key);
-    expect(state.routes[0]!.params).toMatchObject({
-      screen: "products",
-      params: { screen: "[id]", params: { id: "a" } },
-    });
+        payload: {
+          name: "catalogue",
+          params: { query: "abricot", scroll: 640 },
+        },
+      });
+    const before = state;
+    for (let i = 0; i < 125; i++) {
+      dispatch({
+        type: "PUSH",
+        payload: {
+          name: "product/[id]",
+          params: { id: "a", selection: "retained-period-and-metric" },
+        },
+      });
+      const detail = state.routes.at(-1)!;
+      dispatch({
+        type: "PUSH",
+        payload: { name: "product/edit/[id]", params: { id: "a" } },
+      });
+      returnToProduct(port, "a", true);
+      expect(state.routes.at(-1)).toBe(detail);
+      expect(state.routes.at(-1)!.params).toEqual({
+        id: "a",
+        selection: "retained-period-and-metric",
+      });
+      dispatch({ type: "PUSH", payload: { name: "store-event" } });
+      returnToProduct(port, "a");
+      expect(state.routes.at(-1)!.key).toBe(detail.key);
+      returnToProducts(port);
+      expect(state.routes).toEqual(before.routes);
+      expect(state.routes[0]!.key).toBe(tabKey);
+    }
+    if (origin === "catalogue") port.back();
   }
 });
 

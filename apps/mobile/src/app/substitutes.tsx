@@ -225,9 +225,7 @@ export default function SubstituteLookupScreen() {
                 ) : null}
                 <SecondaryButton
                   label="Ouvrir la fiche produit"
-                  onPress={() =>
-                    router.push(`/(tabs)/products/${c.productId}` as Href)
-                  }
+                  onPress={() => router.push(`/product/${c.productId}` as Href)}
                 />
               </SectionCard>
             ))
@@ -254,7 +252,7 @@ export default function SubstituteLookupScreen() {
                       <SecondaryButton
                         label="Consulter ce produit"
                         onPress={() =>
-                          router.push(`/(tabs)/products/${e.productId}` as Href)
+                          router.push(`/product/${e.productId}` as Href)
                         }
                       />
                     </View>

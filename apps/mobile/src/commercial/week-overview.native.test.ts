@@ -220,16 +220,16 @@ it("refreshes after returning from chat and keeps current execution separate fro
   expect(hosts("Substitutes")).toHaveLength(0);
   expect(db.prepare("SELECT COUNT(*) n FROM sync_outbox").get()?.n).toBe(0);
 });
-it("offers source selection or manual preparation for an empty week and falls back to Actions on direct entry", async () => {
+it("offers source selection or manual preparation for an empty week and falls back to Journal on direct entry", async () => {
   const { preparation } = await setup(false);
   await render();
   expect(hosts("Empty")).toHaveLength(1);
   await act(() => button("Choisir mon pense-bête").props.onPress());
   expect(env.push).toHaveBeenLastCalledWith({
-    pathname: "/week",
+    pathname: "/commercial-documents",
     params: { weekStart: preparation.weekStart },
   });
   env.canGoBack = false;
   await act(() => button("Retour").props.onPress());
-  expect(env.replace).toHaveBeenCalledWith("/(tabs)/actions");
+  expect(env.replace).toHaveBeenCalledWith("/(tabs)/today");
 });

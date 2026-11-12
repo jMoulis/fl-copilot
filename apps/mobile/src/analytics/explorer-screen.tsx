@@ -6,7 +6,6 @@ import {
   BackHandler,
   Keyboard,
   ScrollView,
-  Text,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from "react-native";
@@ -21,12 +20,7 @@ import { emptyExplorerFilters } from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
 import { useLocalDatabase } from "../providers/database-provider";
 import { useSync } from "../sync/sync-provider";
-import {
-  AppScreen,
-  AppHeader,
-  InlineAlert,
-  SecondaryButton,
-} from "../components/ui";
+import { AppScreen, InlineAlert, SecondaryButton } from "../components/ui";
 import { applyExplorerLink } from "./explorer-link";
 import { ExplorerFilters } from "./explorer-filters";
 import { ExplorerBreakdown } from "./explorer-breakdown";
@@ -42,9 +36,15 @@ import {
   backExplorerView,
   type ExplorerView,
 } from "./explorer-state";
-import { ExplorerContent, ExplorerPeriodPicker } from "./explorer-view";
+import {
+  ExplorerContent,
+  ExplorerPeriodPicker,
+  ExplorerLoadingSkeleton,
+} from "./explorer-view";
 import { IconButton } from "../components/dashboard";
 import { colors } from "../design/tokens";
+import { MainHeader } from "../components/main-header";
+import { View } from "react-native";
 import { useVisualLibrary } from "../products/use-visual-library";
 export default function AnalyticsExplorerScreen() {
   const { selection } = useLocalSearchParams<{
@@ -62,7 +62,7 @@ export default function AnalyticsExplorerScreen() {
     />
   ) : (
     <AppScreen>
-      <AppHeader title="Analyses" />
+      <MainHeader title="Analyses" />
       <InlineAlert
         title="Magasin indisponible"
         message="Reconnectez-vous pour retrouver votre magasin."
@@ -306,6 +306,7 @@ function StoreExplorer({
       edges={["top", "left", "right"]}
       style={{ flex: 1, backgroundColor: colors.canvas }}
     >
+      <MainHeader title="Analyses" />
       <ScrollView
         ref={scroller}
         contentContainerStyle={{
@@ -318,23 +319,18 @@ function StoreExplorer({
         scrollEventThrottle={120}
         keyboardShouldPersistTaps="handled"
       >
-        <AppHeader
-          compact
-          title="Analyses"
-          subtitle="Comprenez les performances de votre rayon."
-          action={
-            <IconButton
-              label={
-                view && explorerHasFilters(view.frame.filters)
-                  ? "Filtres actifs : modifier la sélection"
-                  : "Affiner : catégorie, nature ou produit"
-              }
-              active={Boolean(view && explorerHasFilters(view.frame.filters))}
-              icon="funnel-outline"
-              onPress={() => setFilterSheet(true)}
-            />
-          }
-        />
+        <View style={{ alignItems: "flex-end" }}>
+          <IconButton
+            label={
+              view && explorerHasFilters(view.frame.filters)
+                ? "Filtres actifs : modifier la sélection"
+                : "Affiner : catégorie, nature ou produit"
+            }
+            active={Boolean(view && explorerHasFilters(view.frame.filters))}
+            icon="funnel-outline"
+            onPress={() => setFilterSheet(true)}
+          />
+        </View>
         {notice ? (
           <InlineAlert title="Contexte de navigation" message={notice} />
         ) : null}
@@ -343,9 +339,7 @@ function StoreExplorer({
         ) : null}
         {!view ? (
           <>
-            <Text style={{ color: colors.muted }}>
-              Ouverture des analyses locales…
-            </Text>
+            {!error ? <ExplorerLoadingSkeleton /> : null}
             {error ? (
               <SecondaryButton
                 label="Réessayer"

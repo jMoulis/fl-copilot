@@ -2,7 +2,7 @@ import { createElement, useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { CommercialReviewRepository } from "./review-repository";
-import CommercialReviewScreen from "../app/(tabs)/commercial-review/[id]";
+import CommercialReviewScreen from "../app/document-review/[id]";
 import { nativeCommercialTranscriptionFixture } from "../../../../scripts/test-commercial-transcription-fixtures";
 const runtime = vi.hoisted(() => ({
   session: undefined as unknown,

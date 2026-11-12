@@ -35,7 +35,7 @@ export default function TodayScreen() {
           <IconButton
             label="Magasin et synchronisation"
             icon="options-outline"
-            onPress={() => router.push("/(tabs)/more" as Href)}
+            onPress={() => router.push("/settings" as Href)}
           />
         }
         subtitle={
@@ -91,11 +91,11 @@ function EmptyToday() {
     >
       <PrimaryButton
         label="Importer les ventes"
-        onPress={() => router.push("/(tabs)/imports" as Href)}
+        onPress={() => router.push("/mercalys-imports" as Href)}
       />
       <SecondaryButton
         label="Voir les produits"
-        onPress={() => router.push("/(tabs)/products" as Href)}
+        onPress={() => router.push("/catalogue" as Href)}
       />
     </EmptyState>
   );

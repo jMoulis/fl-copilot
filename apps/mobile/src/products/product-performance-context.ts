@@ -52,7 +52,7 @@ export function productDetailHref(
 ) {
   const scoped = productPerformanceView(productId, view.frame.anchor, view);
   return {
-    pathname: "/(tabs)/products/[id]" as const,
+    pathname: "/product/[id]" as const,
     params: {
       id: productId,
       selection: explorerHref({

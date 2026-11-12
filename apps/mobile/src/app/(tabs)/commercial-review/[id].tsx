@@ -477,8 +477,8 @@ function CommercialReviewContent({
           discardEdits(() =>
             router.replace(
               weekStart
-                ? { pathname: "/week", params: { weekStart } }
-                : ("/week" as Href),
+                ? { pathname: "/commercial-documents", params: { weekStart } }
+                : ("/commercial-documents" as Href),
             ),
           )
         }

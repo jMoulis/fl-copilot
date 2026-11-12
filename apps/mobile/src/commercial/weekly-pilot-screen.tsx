@@ -1,0 +1,357 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Text, View, Pressable, type ScrollView } from "react-native";
+import { useIsFocused } from "expo-router/react-navigation";
+import { router } from "expo-router";
+import { digestStringAsync, CryptoDigestAlgorithm } from "expo-crypto";
+import { currentCommercialWeek } from "@fl-copilot/commercial-core";
+import { addExplorerDays } from "@fl-copilot/analytics-core";
+import type { CommercialWeekPlan } from "@fl-copilot/domain";
+import { useAuth } from "../auth/auth-provider";
+import { useLocalDatabase } from "../providers/database-provider";
+import { useSync } from "../sync/sync-provider";
+import { CommercialPlanRepository } from "./week-plan-repository";
+import { CopilotActivityPanel } from "./copilot-activity-panel";
+import { CommercialExecutionView } from "./execution-view";
+import {
+  ActionsViewRepository,
+  initialActionsView,
+  type ActionsView,
+} from "./actions-view";
+import { formatFrenchCalendarDate, tradingToday } from "../dates/calendar";
+import { WeeklyContextView } from "../store/weekly-context-view";
+import { WeeklySubstitutesView } from "./substitute-view";
+import { CommercialVersionDecisionList } from "./version-decision-list";
+import { DetailsDisclosure } from "../components/dashboard";
+import { DateSelector } from "../components/date-selector";
+import {
+  AppScreen,
+  AppHeader,
+  SecondaryButton,
+  InlineAlert,
+  SectionCard,
+  MenuRow,
+} from "../components/ui";
+export default function ActionsScreen({
+  initialWeek,
+}: {
+  initialWeek?: string;
+}) {
+  const { session } = useAuth(),
+    storeId = session?.stores[0]?.storeId,
+    ownerId = session?.user.id;
+  return storeId && ownerId ? (
+    <StoreActions
+      key={`${storeId}:${ownerId}`}
+      storeId={storeId}
+      ownerId={ownerId}
+      initialWeek={initialWeek}
+    />
+  ) : (
+    <AppScreen>
+      <AppHeader title="Ma semaine" />
+      <InlineAlert
+        title="Aucun magasin actif"
+        message="Reconnectez-vous pour retrouver les actions de votre magasin."
+      />
+    </AppScreen>
+  );
+}
+function StoreActions({
+  storeId,
+  ownerId,
+  initialWeek,
+}: {
+  storeId: string;
+  ownerId: string;
+  initialWeek?: string;
+}) {
+  const { sqlite } = useLocalDatabase(),
+    sync = useSync();
+  const scroll = useRef<ScrollView>(null),
+    activityTop = useRef(0);
+  const repo = useMemo(
+    () =>
+      new CommercialPlanRepository(sqlite, (s) =>
+        digestStringAsync(CryptoDigestAlgorithm.SHA256, s),
+      ),
+    [sqlite],
+  );
+  const views = useMemo(
+    () => new ActionsViewRepository(sqlite, { storeId, ownerId }),
+    [sqlite, storeId, ownerId],
+  );
+  const [view, setView] = useState<ActionsView>();
+  const [notice, setNotice] = useState<string>();
+  const initialized = view !== undefined;
+  const week = currentCommercialWeek(
+    new Date(`${view?.weekStart ?? initialActionsView().weekStart}T12:00:00Z`),
+  );
+  const [snapshot, setSnapshot] = useState<{
+    week: string;
+    plan: CommercialWeekPlan | null;
+  }>();
+  const [error, setError] = useState<string>();
+  const [retry, setRetry] = useState(0);
+  const focused = useIsFocused();
+  const displayed = useRef(snapshot);
+  const wasFocused = useRef(false),
+    lastReadRetry = useRef(-1);
+  displayed.current = snapshot;
+  const revision =
+    sync.status === "syncing"
+      ? "syncing"
+      : JSON.stringify([
+          sync.pendingCommandCount ?? sync.pendingCount,
+          sync.conflictCount,
+          sync.failedCount,
+          sync.lastSyncedAt,
+          sync.status,
+        ]);
+  useEffect(() => {
+    if (!focused || initialized) return;
+    let active = true;
+    void views
+      .read()
+      .then((saved) => {
+        if (active)
+          setView(
+            initialWeek
+              ? {
+                  ...(saved ?? initialActionsView(initialWeek)),
+                  weekStart: initialWeek,
+                }
+              : (saved ?? initialActionsView()),
+          );
+      })
+      .catch(() => {
+        if (active) {
+          setView(initialActionsView(initialWeek));
+          setNotice(
+            "La semaine mémorisée ne peut pas être relue. La semaine courante reste consultable ; vos actions ne sont pas modifiées.",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [views, focused, initialized, initialWeek]);
+  useEffect(() => {
+    const entering = focused && !wasFocused.current;
+    wasFocused.current = focused;
+    if (!focused || !initialized) return;
+    if (
+      sync.status === "syncing" &&
+      displayed.current?.week === week.start &&
+      !entering &&
+      lastReadRetry.current === retry
+    )
+      return;
+    lastReadRetry.current = retry;
+    let active = true;
+    void repo
+      .get(storeId, week.start)
+      .then((record) => {
+        if (active) {
+          setSnapshot({ week: week.start, plan: record?.entity ?? null });
+          setError(undefined);
+        }
+      })
+      .catch(() => {
+        if (active)
+          setError(
+            "Les actions locales n’ont pas pu être relues. Les déclarations déjà affichées restent conservées.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    focused,
+    initialized,
+    storeId,
+    week.start,
+    repo,
+    revision,
+    sync.status,
+    retry,
+  ]);
+  const change = (next: ActionsView) => {
+    setView(next);
+    void views
+      .save(next)
+      .then(() => setNotice(undefined))
+      .catch(() => {
+        setNotice(
+          "La sélection reste affichée, mais n’a pas pu être mémorisée pour le prochain démarrage. Choisissez à nouveau la semaine ou le filtre pour réessayer.",
+        );
+      });
+  };
+  const visible = snapshot?.week === week.start ? snapshot : undefined;
+  const selected = (date: string) => {
+    if (!view) return;
+    change({ ...view, weekStart: initialActionsView(date).weekStart });
+    setError(undefined);
+  };
+  if (!view)
+    return (
+      <AppScreen>
+        <AppHeader compact title="Ma semaine" />
+        <Text className="text-muted">Lecture de votre semaine…</Text>
+      </AppScreen>
+    );
+  return (
+    <AppScreen scrollRef={scroll}>
+      <AppHeader
+        compact
+        title="Ma semaine"
+        subtitle="Tes TG, tes choix et leur réalisation."
+      />
+      <SecondaryButton
+        label="Retour"
+        onPress={() =>
+          router.canGoBack() ? router.back() : router.replace("/(tabs)/today")
+        }
+      />
+      {notice ? (
+        <InlineAlert title="Affichage conservé" message={notice} />
+      ) : null}
+      <View className="gap-3">
+        <View className="flex-row items-center justify-between gap-2">
+          <WeekArrow
+            label="Semaine précédente"
+            sign="‹"
+            onPress={() => selected(addExplorerDays(week.start, -7))}
+          />
+          <View className="flex-1">
+            <DateSelector
+              value={week.start}
+              label="Choisir la semaine"
+              triggerLabel={`Semaine ${week.number} · ${week.year}`}
+              description="Choisissez une date de la semaine à consulter. Aucune déclaration n’est modifiée."
+              onConfirm={selected}
+            />
+          </View>
+          <WeekArrow
+            label="Semaine suivante"
+            sign="›"
+            onPress={() => selected(addExplorerDays(week.start, 7))}
+          />
+        </View>
+
+        <Text className="text-center text-sm text-muted">
+          Du {formatFrenchCalendarDate(week.start)} au{" "}
+          {formatFrenchCalendarDate(week.end)}
+        </Text>
+        <SecondaryButton
+          label="Préparer la semaine prochaine"
+          onPress={() => {
+            const weekStart = addExplorerDays(
+              initialActionsView().weekStart,
+              7,
+            );
+            selected(weekStart);
+            router.push({
+              pathname: "/commercial-plan",
+              params: { weekStart },
+            });
+          }}
+        />
+        {week.start !== initialActionsView().weekStart ? (
+          <SecondaryButton
+            label="Revenir à cette semaine"
+            onPress={() => selected(tradingToday())}
+          />
+        ) : null}
+      </View>
+      {error ? (
+        <>
+          <InlineAlert title="Lecture interrompue" message={error} />
+          <SecondaryButton
+            label="Réessayer la lecture"
+            onPress={() => setRetry((n) => n + 1)}
+          />
+        </>
+      ) : null}
+      <SectionCard title="Plan commercial">
+        <MenuRow
+          title="Mon plan et mes TG"
+          description="Tes TG et les choix enregistrés avec le copilote."
+          icon="calendar-outline"
+          onPress={() =>
+            router.push({
+              pathname: "/commercial-plan",
+              params: { weekStart: week.start },
+            })
+          }
+        />
+      </SectionCard>
+      <CopilotActivityPanel
+        db={sqlite}
+        storeId={storeId}
+        ownerId={ownerId}
+        weekStart={week.start}
+        focused={focused}
+        revision={revision}
+        filter={view.copilotFilter ?? "ALL"}
+        onFilter={(copilotFilter) => change({ ...view, copilotFilter })}
+        onLayout={(y) => {
+          activityTop.current = y;
+        }}
+        onNavigate={() =>
+          scroll.current?.scrollTo({ y: activityTop.current, animated: false })
+        }
+      />
+      {!visible ? (
+        !error ? (
+          <Text className="text-muted">Lecture des actions de la semaine…</Text>
+        ) : null
+      ) : visible.plan ? (
+        <CommercialExecutionView
+          key={week.start}
+          plan={visible.plan}
+          compact
+          filter={view.filter}
+          onFilter={(filter) => change({ ...view, filter })}
+        />
+      ) : null}
+      <DetailsDisclosure title="Contexte et historique de préparation">
+        <SecondaryButton
+          label="Préparer les choix de cette semaine"
+          onPress={() =>
+            router.push({
+              pathname: "/week-preparation",
+              params: { weekStart: week.start },
+            })
+          }
+        />
+        <WeeklyContextView
+          key={week.start}
+          storeId={storeId}
+          weekStart={week.start}
+        />
+        <WeeklySubstitutesView storeId={storeId} weekStart={week.start} />
+        <CommercialVersionDecisionList storeId={storeId} />
+      </DetailsDisclosure>
+    </AppScreen>
+  );
+}
+function WeekArrow({
+  label,
+  sign,
+  onPress,
+}: {
+  label: string;
+  sign: string;
+  onPress(): void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      className="min-h-12 min-w-12 items-center justify-center rounded-xl border border-line bg-surface"
+    >
+      <Text className="text-2xl text-forest">{sign}</Text>
+    </Pressable>
+  );
+}

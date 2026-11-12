@@ -141,6 +141,7 @@ import {
   InlineAlert,
 } from "@/components/ui";
 import { colors } from "@/design/tokens";
+import { MainHeader } from "@/components/main-header";
 import { useVisualLibrary } from "@/products/use-visual-library";
 const executionDigest = (s: string) =>
   digestStringAsync(CryptoDigestAlgorithm.SHA256, s);
@@ -1647,19 +1648,14 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
             }}
           />
         ))}
-      <SecondaryButton
-        label="Retour à l’application"
-        onPress={() => router.back()}
-      />
     </View>
   );
   if (!active)
     return (
-      <AppScreen>
-        <AppHeader
-          title="Copilote"
-          subtitle="Vos conversations et brouillons restent disponibles sur ce téléphone."
-        />
+      <AppScreen header={<MainHeader title="Copilote" />}>
+        <Text className="text-muted">
+          Tes conversations et brouillons restent disponibles sur ce téléphone.
+        </Text>
         {linkError ? (
           <InlineAlert title="Conversation indisponible" message={linkError} />
         ) : null}
@@ -1671,6 +1667,7 @@ function StoreChat({ storeId, ownerId }: { storeId: string; ownerId: string }) {
       edges={["top", "bottom", "left", "right"]}
       style={{ flex: 1, backgroundColor: colors.canvas }}
     >
+      <MainHeader title="Copilote" />
       {linkError ? (
         <InlineAlert title="Conversation indisponible" message={linkError} />
       ) : null}

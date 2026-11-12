@@ -51,7 +51,7 @@ export function EmailDecisionConflict({
         if (!emailIntake) throw Error("EMAIL_INTAKE_SESSION_REQUIRED");
         await emailIntake.adoptDecision(local.data.conversationId, conflict.id);
       }}
-      onOpenInbox={() => router.push("/actions/email")}
+      onOpenInbox={() => router.push("/email-inbox")}
     />
   );
 }

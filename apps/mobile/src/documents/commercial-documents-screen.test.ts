@@ -288,26 +288,11 @@ it("bounds a 200-document list while search and review-only sources stay reachab
   ).toEqual(ids);
 });
 
-it("does not mount hidden preparation readers until requested, then keeps their state when folded", async () => {
+it("keeps preparation controls and readers out of document intake", async () => {
   await render();
   expect(runtime.contextMounts).toBe(0);
-  await act(async () =>
-    button("Contexte et préparation de la semaine").props.onPress(),
-  );
-  expect(runtime.contextMounts).toBe(1);
-  await act(async () =>
-    renderer!.root
-      .findAll((node) => String(node.type) === "ContextDraft")[0]!
-      .props.onChange("saisie conservée"),
-  );
-  await act(async () =>
-    button("Masquer le contexte et la préparation").props.onPress(),
-  );
-  await act(async () =>
-    button("Contexte et préparation de la semaine").props.onPress(),
-  );
-  expect(runtime.contextMounts).toBe(1);
-  expect(nodes("ContextDraft")[0]!.props.value).toBe("saisie conservée");
+  expect(text()).not.toContain("Contexte et préparation de la semaine");
+  expect(text()).not.toContain("Préparer mon plan de semaine et mes TG");
 });
 
 it.each([false, true])(
@@ -519,25 +504,8 @@ it("keeps the explicitly selected Actions week when opening a synchronized comme
   await render();
   await act(async () => button("Voir la synthèse commerciale").props.onPress());
   expect(runtime.push).toHaveBeenLastCalledWith({
-    pathname: "/commercial-review/[id]",
+    pathname: "/document-review/[id]",
     params: { id: "document-1", weekStart: "2026-11-02" },
-  });
-  await act(async () =>
-    button("Contexte et préparation de la semaine").props.onPress(),
-  );
-  await act(async () =>
-    button("Préparer mon plan de semaine et mes TG").props.onPress(),
-  );
-  expect(runtime.push).toHaveBeenLastCalledWith({
-    pathname: "/week-preparation",
-    params: { weekStart: "2026-11-02" },
-  });
-  await act(async () =>
-    button("Voir mon plan de semaine validé").props.onPress(),
-  );
-  expect(runtime.push).toHaveBeenLastCalledWith({
-    pathname: "/commercial-plan",
-    params: { weekStart: "2026-11-02" },
   });
   expect(runtime.capture).not.toHaveBeenCalled();
 });

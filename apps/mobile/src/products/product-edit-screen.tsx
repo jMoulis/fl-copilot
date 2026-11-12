@@ -59,8 +59,8 @@ function OwnedProductEditScreen({
           title={id === "new" ? "Nouveau produit" : "Modifier le produit"}
         />
         <SecondaryButton
-          label="Retour aux produits"
-          onPress={() => returnToProducts(router)}
+          label={backLabel ?? "Retour"}
+          onPress={() => (onBack ? onBack() : returnToProducts(router))}
         />
         {state.loading ? (
           <Text className="text-muted">Chargement de la fiche…</Text>
@@ -127,9 +127,9 @@ function LoadedProductEditor({
   useEffect(() => {
     if (savedId && !form.dirty && !form.saving) {
       if (onSaved) onSaved(savedId);
-      else returnToProduct(router, savedId);
+      else returnToProduct(router, savedId, id !== "new");
     }
-  }, [savedId, form.dirty, form.saving, onSaved]);
+  }, [savedId, form.dirty, form.saving, onSaved, id]);
   function reload() {
     const apply = () => {
       setBase(state.snapshot);
@@ -169,7 +169,7 @@ function LoadedProductEditor({
               ? router.back()
               : id === "new"
                 ? returnToProducts(router)
-                : returnToProduct(router, id)
+                : returnToProduct(router, id, true)
         }
       />
       {state.error ? (
@@ -197,9 +197,7 @@ function LoadedProductEditor({
           <SecondaryButton
             label="Examiner le conflit"
             disabled={form.saving}
-            onPress={() =>
-              router.push(`/(tabs)/sync-conflict/${state.conflictId}` as Href)
-            }
+            onPress={() => router.push(`/conflict/${state.conflictId}` as Href)}
           />
         </>
       ) : null}

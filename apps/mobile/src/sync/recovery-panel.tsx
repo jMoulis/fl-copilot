@@ -226,7 +226,7 @@ function FailedCommands({
           z.uuid().safeParse(item.conversationId).success
             ? {
                 label: "Examiner les documents reçus",
-                path: "/actions/email",
+                path: "/email-inbox",
               }
             : examinationTarget(item.entityType, item.entityId);
         return (
@@ -291,14 +291,14 @@ function examinationTarget(type: string, id: string) {
   if (isVisualEntityType(type) && z.uuid().safeParse(id).success)
     return {
       label: "Reprendre ce visuel",
-      path: `/(tabs)/visual-recovery/${type}/${id}`,
+      path: `/visual-review/${type}/${id}`,
     };
   if (["product", "product_identifier", "product_alias"].includes(type))
-    return { label: "Examiner le référentiel", path: "/(tabs)/products" };
+    return { label: "Examiner le référentiel", path: "/catalogue" };
   if (type === "mercalys_publication")
-    return { label: "Examiner les imports", path: "/(tabs)/imports" };
+    return { label: "Examiner les imports", path: "/mercalys-imports" };
   if (type === "waste_receipt_publication")
-    return { label: "Examiner les tickets", path: "/(tabs)/waste" };
+    return { label: "Examiner les tickets", path: "/waste-tickets" };
   if (type.startsWith("commercial_"))
     return { label: "Examiner Ma semaine", path: "/(tabs)/week" };
   return null;

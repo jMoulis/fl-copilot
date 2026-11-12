@@ -163,7 +163,7 @@ export function TodayContent({
           {summary.dataQuality.unresolvedProductCount > 0 ? (
             <SecondaryButton
               label="Voir les imports"
-              onPress={() => router.push("/(tabs)/imports" as Href)}
+              onPress={() => router.push("/mercalys-imports" as Href)}
             />
           ) : null}
         </View>
@@ -258,9 +258,7 @@ function MovementRow({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${movement.productLabel}. ${movementLabel(movement)}`}
-      onPress={() =>
-        router.push(`/(tabs)/products/${movement.productId}` as Href)
-      }
+      onPress={() => router.push(`/product/${movement.productId}` as Href)}
       className="flex-row items-center gap-3 border-b border-line py-3"
       style={({ pressed }) => ({ opacity: pressed ? 0.72 : 1 })}
     >
