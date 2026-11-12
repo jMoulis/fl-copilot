@@ -280,7 +280,7 @@ export function ProductVisualPanel({
   };
   return (
     <View className="gap-3 rounded-3xl border border-line bg-surface p-4">
-      <View className="relative items-center justify-center rounded-2xl bg-surface-muted py-2">
+      <View className="relative items-center justify-center rounded-2xl py-2">
         <ProductVisual
           category={product.category}
           resolution={resolution}
@@ -471,7 +471,7 @@ export function ProductVisualPanel({
                   width: "100%",
                   height: 220,
                   borderRadius: 16,
-                  backgroundColor: colors.surfaceMuted,
+                  backgroundColor: "transparent",
                 }}
                 onLoad={() => setPreviewReady(true)}
                 onError={() => setPreviewReady(false)}

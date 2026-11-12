@@ -8,7 +8,7 @@ Le propriétaire valide le conflit iPhone/simulateur et l’installation/connexi
 
 Ordre retenu : (1) défilement du chat, skeleton Analyses et couverture dans le détail ; (2) maquettes/navigation Actions et séparation préparation/gestion des données ; (3) graphiques de liste et images produits après précision de l’usage ; (4) journal de bord à définir ensemble. Les images de TG restent V2.
 
-Le premier lot réutilise FlatList, le panneau natif et les lectures locales : seul un geste de lecture modifie le suivi du chat ; les corrections de mise en page conservent l’intention ; les comptes de journées des catégories/produits passent derrière « i » avec accès à la fiche ; le compte global reste dans « Couverture et comparaison ». Le skeleton remplace seulement l’attente sans données, jamais des chiffres locaux déjà affichés ni une erreur. Aucun calcul, contrat, source, instruction IA, modèle ou appel fournisseur n’est modifié. **Code en validation, pas encore livré dans TestFlight 47 ni accepté sur iPhone.**
+Le premier lot réutilise FlatList, le panneau natif et les lectures locales : seul un geste de lecture modifie le suivi du chat ; les corrections de mise en page conservent l’intention ; les comptes de journées des catégories/produits passent derrière « i » avec accès à la fiche ; le compte global reste dans « Couverture et comparaison ». Le skeleton remplace seulement l’attente sans données, jamais des chiffres locaux déjà affichés ni une erreur. Aucun calcul, contrat, source, instruction IA, modèle ou appel fournisseur n’est modifié. **Livré dans le build TestFlight 48 après les contrôles exacts ; recette iPhone détaillée non présumée.**
 
 Vérification locale initiale : 28 tests de défilement, vues montées chat/analyses, contexte et graphique passent dans six suites, sans ignorés. Les contrôles complets, la fusion, la livraison groupée et la recette native restent distincts.
 
@@ -16,7 +16,7 @@ Vérification locale initiale : 28 tests de défilement, vues montées chat/anal
 
 Maquettes approuvées puis demande de réaliser le tout en un lot : Journal · Analyses · Copilote · Imports, raccourcis Produits/Réglages fixes, Ma semaine et observations dans Journal, réception des documents dans Imports, configuration et compte dans Réglages. La navigation produit revient à son origine et conserve la sélection analytique ou le catalogue. Les anciens accès restent compatibles.
 
-Le code est en validation dans la PR 494, avec le lot défilement/skeleton/couverture. Ce statut ne vaut ni fusion, ni livraison TestFlight, ni recette iPhone. Aucun nouveau journal automatique, appel IA, schéma ou workflow d’import n’est ajouté. Le graphique de liste, la génération/détourage d’images et le journal contextualisé restent les prochains sujets à cadrer.
+Les PR 494/495 sont fusionnées et livrées dans le build TestFlight 48 avec le lot défilement/skeleton/couverture. Les retouches des icônes de la barre du haut et de l’espacement d’Imports (PR 496) sont fusionnées et attendent la prochaine livraison native. La recette iPhone détaillée reste distincte de la livraison. Aucun nouveau journal automatique, appel IA, schéma ou workflow d’import n’est ajouté. Le graphique de liste, la génération/détourage d’images et le journal contextualisé restent les prochains sujets à cadrer.
 
 ## Chat
 
@@ -26,7 +26,7 @@ Le code est en validation dans la PR 494, avec le lot défilement/skeleton/couve
 ## UX et analyses
 
 - [ ] **Revue UX à partir des maquettes** : reprendre les maquettes existantes avec les arbitrages métier du projet, sans reproduire leurs omissions.
-- [ ] **Liste des produits avec un graphique** : définir ensemble l’écran concerné, l’indicateur, la période et la forme du graphique avant réalisation.
+- [ ] **Liste des produits avec un graphique** : maquette du ZIP retenue le 12 novembre. Courbes compactes sur la liste Analyses, tri allégé et photos sans fond d’interface en validation ; voir [la qualification](../qa/ANALYTICS_PRODUCT_SPARKLINES_2026_11_12.md). Livraison et recette iPhone restent distinctes.
 - [ ] **Chargement skeleton de la page Analyses** : représenter le chargement sans masquer inutilement des chiffres locaux déjà disponibles.
 - [ ] **Redéfinir le design du menu Actions** : simplifier sa lecture et l’accès aux fonctions utiles.
 - [ ] **Séparer les imports et la synchronisation de Ma semaine** : clarifier la navigation entre préparation commerciale et gestion des données, en réutilisant les parcours existants.

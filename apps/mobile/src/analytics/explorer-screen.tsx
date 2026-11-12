@@ -399,6 +399,8 @@ function StoreExplorer({
             {data ? (
               <ExplorerBreakdown
                 data={data}
+                period={view.frame.period}
+                metric={view.metric}
                 productList={view.frame.productList}
                 onProductList={(productList) =>
                   change({
