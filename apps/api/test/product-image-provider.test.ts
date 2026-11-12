@@ -36,11 +36,9 @@ it("uses one direct image call, transparent PNG parameters and no paid automatic
     fetcher as typeof fetch,
   ).generate(f.product);
   expect(result.image).toMatchObject({
-    width: 1024,
-    height: 1024,
-    sizeBytes: bytes.length,
     provenance: { type: "AI_GENERATED", model: "gpt-image-2.6-flare" },
   });
+  expect(result.bytes).toEqual(bytes);
   expect(fetcher).toHaveBeenCalledTimes(1);
   const fails = vi.fn(
     async () =>

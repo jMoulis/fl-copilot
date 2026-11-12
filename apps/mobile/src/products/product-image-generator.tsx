@@ -169,7 +169,17 @@ export function ProductImageGenerator({
             ),
           );
         } catch (e) {
-          if (!(e instanceof ApiClientError) || e.status !== 404) throw e;
+          if (
+            e instanceof ApiClientError &&
+            e.status === 422 &&
+            [
+              "PRODUCT_IMAGE_INVALID",
+              "PRODUCT_IMAGE_TRANSPARENCY_INVALID",
+            ].includes(e.response.code)
+          ) {
+            setError(e.message);
+          } else if (!(e instanceof ApiClientError) || e.status !== 404)
+            throw e;
         }
       }
       const value = await auth.withAccessToken(

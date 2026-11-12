@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Image, Text, View } from "react-native";
+import { Image, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type {
   ProductVisualResolution,
@@ -93,24 +93,6 @@ export function ProductVisual({
           accessibilityLabel="Aucun visuel disponible sur cet appareil"
         />
       )}
-      {uri && visual?.illustrative ? (
-        <View
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            backgroundColor: colors.overlay,
-            padding: 3,
-          }}
-        >
-          <Text
-            style={{ fontSize: 10, color: colors.ink, textAlign: "center" }}
-          >
-            Illustration
-          </Text>
-        </View>
-      ) : null}
     </View>
   );
 }
