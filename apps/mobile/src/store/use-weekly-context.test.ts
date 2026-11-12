@@ -114,18 +114,34 @@ it("ignores a previous store's late refresh response before writing the local ca
   const pending = new Promise<WeeklyContext>((r) => {
     resolve = r;
   });
-  vi.spyOn(ApiClient.prototype, "weeklyContext").mockReturnValue(pending);
-  const save = vi.spyOn(WeeklyContextRepository.prototype, "save");
+  let resolveNext!: (c: WeeklyContext) => void;
+  const next = new Promise<WeeklyContext>((r) => {
+    resolveNext = r;
+  });
+  const call = vi
+    .spyOn(ApiClient.prototype, "weeklyContext")
+    .mockReturnValueOnce(pending)
+    .mockReturnValueOnce(next);
+  const save = vi
+    .spyOn(WeeklyContextRepository.prototype, "save")
+    .mockImplementation(async (input) => input);
   await render();
   expect(value.context).toBe(previous);
   settings = storeContextFixture();
   cached = weeklyContextFixture(settings);
   await render();
   expect(value.context?.storeId).toBe(settings.storeId);
+  expect(call).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    resolveNext(cached);
+    await next;
+  });
+  expect(value.busy).toBe(false);
   await act(async () => {
     resolve(previous);
     await pending;
   });
-  expect(save).not.toHaveBeenCalled();
+  expect(save).toHaveBeenCalledTimes(1);
+  expect(save).toHaveBeenCalledWith(cached, settings);
   expect(value.context?.storeId).toBe(settings.storeId);
 });

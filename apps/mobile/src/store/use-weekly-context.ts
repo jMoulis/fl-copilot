@@ -36,11 +36,12 @@ export function useWeeklyContext(
   const scope = `${session?.user.id}:${storeId}:${weekStart}`;
   const current = useRef(scope);
   current.current = scope;
-  const alive = useRef(true),
-    locked = useRef(false);
+  const alive = useRef(true);
+  const requests = useRef(new Set<string>());
   const focused = useRef(false);
   const attempts = useRef(new Map<string, number>());
-  const [busy, setBusy] = useState(false);
+  const [busyScopes, setBusyScopes] = useState<string[]>([]);
+  const busy = busyScopes.includes(scope);
   const [data, setData] = useState<{
     scope: string;
     settings: LocalStoreContext | null;
@@ -55,9 +56,10 @@ export function useWeeklyContext(
   }, []);
 
   const refresh = useCallback(async () => {
-    if (locked.current) return;
-    locked.current = true;
-    setBusy(true);
+    if (requests.current.has(scope)) return;
+    requests.current.add(scope);
+    attempts.current.set(scope, Date.now());
+    setBusyScopes((previous) => [...previous, scope]);
     setFailure(undefined);
     const valid = () => alive.current && current.current === scope;
     try {
@@ -108,8 +110,9 @@ export function useWeeklyContext(
               : "Actualisation impossible. Les données enregistrées restent disponibles.",
         });
     } finally {
-      locked.current = false;
-      if (alive.current) setBusy(false);
+      requests.current.delete(scope);
+      if (alive.current)
+        setBusyScopes((previous) => previous.filter((s) => s !== scope));
     }
   }, [api, cache, scope, settingsRepo, storeId, weekStart, withAccessToken]);
 
