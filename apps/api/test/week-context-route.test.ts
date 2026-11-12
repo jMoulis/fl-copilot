@@ -72,7 +72,13 @@ it("requires store authorization before any provider request and validates week 
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().storeId).toBe(settings.storeId);
-    expect(read).toHaveBeenCalledWith(settings.storeId, "2026-10-05");
+    expect(read).toHaveBeenCalledWith(settings.storeId, "2026-10-05", false);
+    const symbolic = await app.inject({
+      url: "/api/v1/store/context?weekStart=2026-10-05",
+      headers: { ...headers, "x-context-weather-symbols": "1" },
+    });
+    expect(symbolic.statusCode).toBe(200);
+    expect(read).toHaveBeenLastCalledWith(settings.storeId, "2026-10-05", true);
   } finally {
     await app.close();
   }

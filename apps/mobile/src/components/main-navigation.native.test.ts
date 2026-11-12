@@ -1,6 +1,7 @@
 import {
   createElement,
   Fragment,
+  useEffect,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -10,7 +11,25 @@ import { MainHeader } from "./main-header";
 import TabLayout from "../app/(tabs)/_layout";
 import ImportsHub from "../app/(tabs)/actions";
 import JournalScreen from "../app/(tabs)/today";
-const runtime = vi.hoisted(() => ({ push: vi.fn() }));
+const runtime = vi.hoisted(() => ({ push: vi.fn(), sqlite: {} }));
+vi.mock("expo-crypto", () => ({ randomUUID: () => "test-id" }));
+vi.mock("../providers/database-provider", () => ({
+  useLocalDatabase: () => ({ sqlite: runtime.sqlite, deviceId: "test-device" }),
+}));
+vi.mock("../journal/journal-observations", () => ({
+  journalObservations: async () => [],
+}));
+vi.mock("../store/use-weekly-context", () => ({
+  useWeeklyContext: () => ({
+    settings: null,
+    context: null,
+    busy: false,
+    refresh: async () => {},
+  }),
+}));
+vi.mock("../journal/journal-weather", () => ({
+  JournalWeather: (props: object) => createElement("Weather", props),
+}));
 vi.mock("react-native", () => ({
   Text: "Text",
   View: "View",
@@ -20,6 +39,8 @@ vi.mock("react-native", () => ({
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
 vi.mock("expo-router", () => ({
   router: { push: runtime.push },
+  useFocusEffect: (callback: () => void | (() => void)) =>
+    useEffect(callback, [callback]),
   Redirect: "Redirect",
   Tabs: Object.assign(
     ({ children }: { children: ReactNode }) =>
@@ -28,7 +49,10 @@ vi.mock("expo-router", () => ({
   ),
 }));
 vi.mock("../auth/auth-provider", () => ({
-  useAuth: () => ({ status: "authenticated" }),
+  useAuth: () => ({
+    status: "authenticated",
+    session: { user: { id: "owner" }, stores: [{ storeId: "store" }] },
+  }),
 }));
 vi.mock("../sync/sync-provider", () => ({
   useSync: () => ({ status: "synced", pendingCount: 0 }),
@@ -130,20 +154,27 @@ it("keeps four direct intake destinations and routes the shared file chooser int
   expect(runtime.push).toHaveBeenLastCalledWith("/mercalys-imports");
   expect(tree!.root.findAll((n) => String(n.type) === "Sheet")).toHaveLength(0);
 });
-it("uses existing observations and weekly execution as the Journal entry without introducing a data collector", async () => {
+it("retains the selected Journal week and reuses existing observation capture", async () => {
   await mount(createElement(JournalScreen));
   await act(() => menu("Ma semaine").props.onPress());
-  expect(runtime.push).toHaveBeenLastCalledWith("/my-week");
-  await act(() => menu("Observations du rayon").props.onPress());
+  expect(runtime.push).toHaveBeenLastCalledWith(
+    expect.objectContaining({ pathname: "/my-week" }),
+  );
+  await act(() => menu("Historique des observations").props.onPress());
   expect(runtime.push).toHaveBeenLastCalledWith("/store-events");
   await act(() =>
     tree!.root
       .find(
         (n) =>
           String(n.type) === "Button" &&
-          n.props.label === "Signaler une observation",
+          n.props.label === "Noter une observation produit",
       )
       .props.onPress(),
   );
-  expect(runtime.push).toHaveBeenLastCalledWith("/store-event");
+  expect(runtime.push).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      pathname: "/store-event",
+      params: { date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) },
+    }),
+  );
 });

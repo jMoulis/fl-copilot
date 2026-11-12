@@ -402,10 +402,23 @@ export class ApiClient {
       });
     return result;
   }
-  weeklyContext(accessToken: string, storeId: string, weekStart: string) {
+  weeklyContext(
+    accessToken: string,
+    storeId: string,
+    weekStart: string,
+    includeWeatherSymbols = false,
+  ) {
     return this.request(
       `/api/v1/store/context?${new URLSearchParams({ weekStart })}`,
-      { method: "GET", headers: syncHeaders(accessToken, storeId) },
+      {
+        method: "GET",
+        headers: {
+          ...syncHeaders(accessToken, storeId),
+          ...(includeWeatherSymbols
+            ? { "x-context-weather-symbols": "1" }
+            : {}),
+        },
+      },
       weeklyContextSchema,
     ) as Promise<WeeklyContext>;
   }

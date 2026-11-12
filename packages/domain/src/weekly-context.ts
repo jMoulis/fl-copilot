@@ -36,9 +36,30 @@ export const forecastDaySchema = z
     precipitationMm: z.number().finite().nonnegative().nullable(),
     precipitationHours: z.number().int().nonnegative(),
     dayHours: z.number().int().min(23).max(25),
+    // Optional for cached contexts and older API versions. A point forecast is
+    // labelled with its own interval; it is not a whole-day weather summary.
+    symbol: z
+      .object({
+        code: z.string().regex(/^[a-z_]{1,80}$/),
+        validFrom: z.string().datetime(),
+        validTo: z.string().datetime(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .superRefine((d, c) => {
+    if (
+      d.symbol &&
+      (d.symbol.validTo <= d.symbol.validFrom ||
+        parisDate(d.symbol.validFrom) !== d.validDate ||
+        parisDate(new Date(Date.parse(d.symbol.validTo) - 1).toISOString()) !==
+          d.validDate)
+    )
+      c.addIssue({
+        code: "custom",
+        message: "Invalid weather symbol interval",
+      });
     if (
       (d.temperatureSampleCount === 0) !==
         (d.temperatureMinC === null && d.temperatureMaxC === null) ||

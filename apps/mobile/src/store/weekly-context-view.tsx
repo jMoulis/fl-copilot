@@ -1,27 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Text, View, Linking } from "react-native";
-import { router, useFocusEffect } from "expo-router";
-import { ApiClient } from "@fl-copilot/api-client";
+import { router } from "expo-router";
 import { currentCommercialWeek } from "@fl-copilot/commercial-core";
 import {
   addContextDays,
   parisDate,
-  storeContextFingerprint,
   type WeeklyContext,
 } from "@fl-copilot/domain";
-import { useAuth } from "@/auth/auth-provider";
-import { useLocalDatabase } from "@/providers/database-provider";
-import { useSync } from "@/sync/sync-provider";
-import { getApiBaseUrl } from "@/config/environment";
 import { SectionCard, SecondaryButton, InlineAlert } from "@/components/ui";
-import {
-  StoreContextRepository,
-  type LocalStoreContext,
-} from "./context-repository";
-import {
-  WeeklyContextRepository,
-  contextIsStale,
-} from "./weekly-context-repository";
+import { contextIsStale } from "./weekly-context-repository";
+import { useWeeklyContext } from "./use-weekly-context";
 function dateLabel(s: string) {
   return new Date(`${s}T12:00:00Z`).toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -49,100 +37,20 @@ export function WeeklyContextView({
   storeId: string;
   weekStart?: string;
 }) {
-  const { sqlite } = useLocalDatabase(),
-    { withAccessToken } = useAuth(),
-    { lastSyncedAt } = useSync();
-  const settingsRepository = useMemo(
-      () => new StoreContextRepository(sqlite),
-      [sqlite],
-    ),
-    cache = useMemo(() => new WeeklyContextRepository(sqlite), [sqlite]),
-    api = useMemo(() => new ApiClient(getApiBaseUrl()), []);
   const week = currentCommercialWeek(
-      requestedWeek ? new Date(`${requestedWeek}T12:00:00Z`) : new Date(),
-    ),
-    weekStart = week.start;
-  const [settings, setSettings] = useState<LocalStoreContext | null>(null),
-    [context, setContext] = useState<WeeklyContext | null>(null),
-    [busy, setBusy] = useState(false),
-    [expanded, setExpanded] = useState(false),
-    [error, setError] = useState<string>();
-  const watchLocal = useCallback(() => {
-    let active = true;
-    void settingsRepository
-      .get(storeId)
-      .then(async (s) => {
-        const cached = s ? await cache.get(s.entity, weekStart) : null;
-        if (active) {
-          setSettings(s);
-          setContext(cached);
-        }
-      })
-      .catch(() => {
-        if (active)
-          setError(
-            "Le contexte local ne peut pas être lu. Le plan reste disponible.",
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, [settingsRepository, cache, storeId, weekStart]);
-  useFocusEffect(watchLocal);
-  useEffect(() => {
-    if (lastSyncedAt) return watchLocal();
-  }, [lastSyncedAt, watchLocal]);
-  async function refresh() {
-    if (busy) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      const initial = await settingsRepository.get(storeId);
-      if (!initial || initial.syncState !== "SYNCED")
-        throw Error(
-          "Enregistrez puis synchronisez les réglages dans Mon magasin.",
-        );
-      const result = await withAccessToken((token) =>
-        api.weeklyContext(token, storeId, weekStart),
-      );
-      const latest = await settingsRepository.get(storeId);
-      if (
-        !latest ||
-        storeContextFingerprint(latest.entity) !== result.settingsFingerprint
-      )
-        throw Error(
-          "Les réglages du magasin ont changé. Synchronisez-les puis actualisez le contexte.",
-        );
-      const saved = await cache.save(result, latest.entity);
-      setSettings(latest);
-      setContext(saved);
-      if (
-        [result.weather, result.publicHolidays, result.schoolHolidays].some(
-          (p) => p.status === "UNAVAILABLE" || p.status === "STALE",
-        )
-      )
-        setError(
-          "Une source est indisponible. Les dernières données disponibles sont conservées ; le plan reste utilisable.",
-        );
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Actualisation impossible. Le contexte enregistré reste disponible.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-  const validContext =
-      settings &&
-      settings.entity.storeId === storeId &&
-      context?.storeId === storeId &&
-      context.weekStart === weekStart &&
-      context.settingsFingerprint === storeContextFingerprint(settings.entity)
-        ? context
-        : null,
-    now = new Date();
+    requestedWeek ? new Date(`${requestedWeek}T12:00:00Z`) : new Date(),
+  );
+  const weekStart = week.start;
+  const {
+    settings,
+    context: validContext,
+    busy,
+    error,
+    refresh,
+  } = useWeeklyContext(storeId, weekStart);
+  const [expanded, setExpanded] = useState(false);
+  const [sourceError, setError] = useState<string>();
+  const now = new Date();
   return (
     <SectionCard title="Contexte de la semaine">
       <Text>
@@ -322,8 +230,11 @@ export function WeeklyContextView({
           )}
         </>
       )}
-      {error ? (
-        <InlineAlert title="Contexte incomplet" message={error} />
+      {error || sourceError ? (
+        <InlineAlert
+          title="Contexte incomplet"
+          message={error ?? sourceError!}
+        />
       ) : null}
     </SectionCard>
   );
