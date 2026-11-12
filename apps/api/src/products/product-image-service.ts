@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 import type { Collection } from "mongodb";
-import { productSchema, type Product } from "@fl-copilot/domain";
+import { type Product } from "@fl-copilot/domain";
+import {
+  serializeProductDocument,
+  type ProductDocument,
+} from "./product-master";
 import {
   productImageResultSchema,
   type ProductImageOptions,
@@ -88,12 +92,10 @@ export function createProductImageService(
   async function product(ctx: VisualFilePrincipal, productId: string) {
     const db = await database.getDb();
     const row = await db
-      .collection<Record<string, unknown> & { _id: string }>("products")
+      .collection<ProductDocument>("products")
       .findOne({ _id: productId, storeId: ctx.storeId, deletedAt: null });
     if (!row) throw missing();
-    const { _id, ...raw } = row;
-    void _id;
-    const p = productSchema.parse(raw);
+    const p = serializeProductDocument(row);
     if (p.status === "INACTIVE") throw missing();
     try {
       productImagePrompt(p);
