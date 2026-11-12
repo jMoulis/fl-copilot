@@ -33,7 +33,7 @@ import {
 } from "../components/ui";
 export default function ActionsScreen({
   initialWeek,
-}: { initialWeek?: string } = {}) {
+}: { initialWeek?: string }) {
   const { session } = useAuth(),
     storeId = session?.stores[0]?.storeId,
     ownerId = session?.user.id;
