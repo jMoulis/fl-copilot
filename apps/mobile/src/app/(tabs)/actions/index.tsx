@@ -20,7 +20,7 @@ export default function ImportsHub() {
         label="Importer un fichier"
         onPress={() => setChoosing(true)}
       />
-      <View className="rounded-3xl border border-line bg-surface px-4">
+      <View className="gap-3 rounded-3xl border border-line bg-surface p-4">
         <MenuRow
           title="Mercalys"
           description="Fichiers Excel, ZIP et lots importés"

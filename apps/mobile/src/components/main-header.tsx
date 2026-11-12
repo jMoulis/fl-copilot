@@ -54,7 +54,6 @@ function Shortcut({
         minHeight: 48,
         alignItems: "center",
         justifyContent: "center",
-        gap: 4,
         opacity: pressed ? 0.7 : 1,
       })}
     >
@@ -64,7 +63,6 @@ function Shortcut({
         size={22}
         accessible={false}
       />
-      <Text style={{ color: colors.ink, fontSize: 11 }}>{label}</Text>
     </Pressable>
   );
 }
