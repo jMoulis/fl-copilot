@@ -1207,6 +1207,27 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ rotatedTokenHashes: 1 });
     },
   },
+  {
+    version: 59,
+    name: "product-image-generation-attempts",
+    async up(database) {
+      const collection = database.collection("productImageGenerations");
+      await collection.createIndex({
+        storeId: 1,
+        ownerId: 1,
+        productId: 1,
+        createdAt: -1,
+      });
+      await collection.createIndex(
+        { storeId: 1 },
+        {
+          unique: true,
+          partialFilterExpression: { status: "RUNNING" },
+          name: "one_running_product_image_per_store",
+        },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(

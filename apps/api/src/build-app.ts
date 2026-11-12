@@ -55,6 +55,12 @@ import {
 } from "./products/visual-file-service";
 import { registerVisualFileRoutes } from "./products/visual-file-routes";
 import {
+  createProductImageService,
+  type ProductImageService,
+} from "./products/product-image-service";
+import { createProductImageProvider } from "./products/product-image-provider";
+import { registerProductImageRoutes } from "./products/product-image-routes";
+import {
   isChatType,
   serializeChatForClient,
   updateGeneratedConversationTitle,
@@ -288,6 +294,7 @@ type AppDependencies = {
     typeof registerEmailIntakeRoutes
   >[1]["retryOriginal"];
   visualFiles?: VisualFileService;
+  productImages?: ProductImageService;
   layoutIllustrationFiles?: LayoutIllustrationFiles;
   layoutIllustrationGeneration?: LayoutIllustrationGenerationService;
   commercialRecovery?: CommercialProcessingRecoveryService;
@@ -2367,6 +2374,23 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
     },
   );
   registerIllustrationGenerationRoutes(app, auth, illustrationGeneration);
+  registerProductImageRoutes(
+    app,
+    auth,
+    dependencies.productImages ??
+      createProductImageService(
+        dependencies.database,
+        {
+          enabled: config.PRODUCT_IMAGE_GENERATION_ENABLED,
+          model: config.PRODUCT_IMAGE_MODEL,
+          estimatedCostUsd: config.PRODUCT_IMAGE_ESTIMATED_COST_USD,
+        },
+        createProductImageProvider(
+          config.OPENAI_API_KEY,
+          config.PRODUCT_IMAGE_MODEL,
+        ),
+      ),
+  );
   registerLayoutIllustrationFileRoutes(app, auth, illustrationFiles);
   registerVisualFileRoutes(
     app,

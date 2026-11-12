@@ -49,6 +49,16 @@ const environmentSchema = z.object({
   AUTH_EMAIL_FROM: z.string().trim().email().optional(),
   EXPO_PUSH_ACCESS_TOKEN: z.string().trim().min(1).optional(),
   OPENAI_API_KEY: z.string().trim().startsWith("sk-").min(20).optional(),
+  PRODUCT_IMAGE_GENERATION_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  PRODUCT_IMAGE_MODEL: z.string().trim().min(1).default("gpt-image-2.6-flare"),
+  PRODUCT_IMAGE_ESTIMATED_COST_USD: z.coerce
+    .number()
+    .positive()
+    .max(5)
+    .optional(),
   AI_GATEWAY_API_KEY: z.string().trim().min(20).optional(),
   VERCEL_OIDC_TOKEN: z.string().trim().min(20).optional(),
   COMMERCIAL_PDF_AI_MODEL: z
@@ -176,6 +186,14 @@ export function parseEnvironment(
         "Invalid environment: LAYOUT_ILLUSTRATION_GENERATION_POLICY, OPENAI_API_KEY, INNGEST_EVENT_KEY, INNGEST_SIGNING_KEY, AUTH_TOKEN_SECRET",
       );
   }
+  if (
+    result.data.PRODUCT_IMAGE_GENERATION_ENABLED &&
+    (!result.data.OPENAI_API_KEY ||
+      !result.data.PRODUCT_IMAGE_ESTIMATED_COST_USD)
+  )
+    throw new Error(
+      "Invalid environment: OPENAI_API_KEY, PRODUCT_IMAGE_ESTIMATED_COST_USD",
+    );
   if (result.data.NODE_ENV === "production" && !result.data.MONGODB_URI) {
     throw new Error("Invalid environment: MONGODB_URI");
   }

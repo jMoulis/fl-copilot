@@ -19,6 +19,7 @@ import {
 } from "../components/ui";
 import { colors } from "../design/tokens";
 import { ProductVisual } from "./product-visual";
+import { ProductImageGenerator } from "./product-image-generator";
 import {
   resolveLibraryState,
   visualTransferLabel,
@@ -55,6 +56,7 @@ export function ProductVisualPanel({
   header?: ReactNode;
 }) {
   const [options, setOptions] = useState(false);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
   const [recovery, setRecovery] = useState<{
     kind: "visual_asset" | "visual_identity" | "product_visual_link";
     id: string;
@@ -106,6 +108,7 @@ export function ProductVisualPanel({
   const close = () => {
     if (!busy) {
       setOpen(false);
+      setGeneratorOpen(false);
       setChoice(null);
       setChecked(false);
     }
@@ -138,6 +141,7 @@ export function ProductVisualPanel({
       )
         throw Error("VISUAL_SELECTION_CHANGED");
       setBasis(fresh);
+      setGeneratorOpen(false);
       setChoice(null);
       setChecked(false);
       setQuery("");
@@ -449,188 +453,220 @@ export function ProductVisualPanel({
       ) : null}
       <BottomSheet
         visible={open}
-        title={choice ? "Confirmer le visuel" : "Choisir une image"}
+        title={
+          generatorOpen
+            ? "Illustration du produit"
+            : choice
+              ? "Confirmer le visuel"
+              : "Choisir une image"
+        }
         onClose={close}
         swipeToClose={!busy}
       >
-        <Text className="text-base font-semibold text-ink">
-          {basis?.product.product.entity.label}
-        </Text>
-        {error ? (
-          <InlineAlert title="Vérification nécessaire" message={error} />
-        ) : null}
-        {choice ? (
+        <ProductImageGenerator
+          product={product}
+          gallery={gallery}
+          visible={open && generatorOpen}
+          onClose={close}
+          onSaved={() =>
+            saved(
+              "Illustration choisie pour ce produit. La synchronisation se poursuivra en arrière-plan.",
+            )
+          }
+        />
+        {!generatorOpen ? (
           <>
-            {choice.kind === "PHOTO" ? (
-              <Image
-                source={{ uri: choice.uri }}
-                accessibilityLabel="Photo à associer au produit"
-                resizeMode="contain"
-                resizeMethod="resize"
-                style={{
-                  width: "100%",
-                  height: 220,
-                  borderRadius: 16,
-                  backgroundColor: "transparent",
-                }}
-                onLoad={() => setPreviewReady(true)}
-                onError={() => setPreviewReady(false)}
-              />
-            ) : selectedAsset ? (
+            <Text className="text-base font-semibold text-ink">
+              {basis?.product.product.entity.label}
+            </Text>
+            {error ? (
+              <InlineAlert title="Vérification nécessaire" message={error} />
+            ) : null}
+            {choice ? (
               <>
-                <ProductVisual
-                  category={product.category}
-                  candidate={{
-                    asset: selectedAsset,
-                    illustrative:
-                      selectedAsset.provenance.type === "AI_GENERATED",
-                    generic:
-                      choice.identity.entity.specificity !== "PACKAGED_EXACT",
-                  }}
-                  size={220}
-                  readUri={gallery.readDetailUri}
-                  onAvailability={setPreviewReady}
-                />
-                <Text className="text-base text-ink">
-                  {choice.identity.entity.canonicalName}
-                </Text>
-                <Provenance asset={selectedAsset} />
-                {!previewReady ? (
-                  <SecondaryButton
-                    label="Charger l’aperçu avant de choisir"
-                    disabled={busy}
-                    onPress={() => {
-                      void gallery
-                        .requestPreview(selectedAsset.id)
-                        .catch(showError);
+                {choice.kind === "PHOTO" ? (
+                  <Image
+                    source={{ uri: choice.uri }}
+                    accessibilityLabel="Photo à associer au produit"
+                    resizeMode="contain"
+                    resizeMethod="resize"
+                    style={{
+                      width: "100%",
+                      height: 220,
+                      borderRadius: 16,
+                      backgroundColor: "transparent",
                     }}
+                    onLoad={() => setPreviewReady(true)}
+                    onError={() => setPreviewReady(false)}
+                  />
+                ) : selectedAsset ? (
+                  <>
+                    <ProductVisual
+                      category={product.category}
+                      candidate={{
+                        asset: selectedAsset,
+                        illustrative:
+                          selectedAsset.provenance.type === "AI_GENERATED",
+                        generic:
+                          choice.identity.entity.specificity !==
+                          "PACKAGED_EXACT",
+                      }}
+                      size={220}
+                      readUri={gallery.readDetailUri}
+                      onAvailability={setPreviewReady}
+                    />
+                    <Text className="text-base text-ink">
+                      {choice.identity.entity.canonicalName}
+                    </Text>
+                    <Provenance asset={selectedAsset} />
+                    {!previewReady ? (
+                      <SecondaryButton
+                        label="Charger l’aperçu avant de choisir"
+                        disabled={busy}
+                        onPress={() => {
+                          void gallery
+                            .requestPreview(selectedAsset.id)
+                            .catch(showError);
+                        }}
+                      />
+                    ) : null}
+                  </>
+                ) : (
+                  <InlineAlert
+                    title="Image indisponible"
+                    message="Relisez la bibliothèque avant de confirmer."
+                  />
+                )}
+                <Pressable
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked }}
+                  aria-checked={checked}
+                  onPress={() => setChecked(!checked)}
+                  className="min-h-12 flex-row gap-3 rounded-2xl border border-line p-4"
+                >
+                  <Text className="text-lg text-forest">
+                    {checked ? "☑" : "☐"}
+                  </Text>
+                  <Text className="flex-1 text-base text-ink">
+                    {choice.kind === "PHOTO"
+                      ? "Cette photo correspond au produit et je suis autorisé à l’utiliser dans l’application."
+                      : "J’ai vérifié que ce visuel convient à ce produit."}
+                  </Text>
+                </Pressable>
+                <PrimaryButton
+                  label={busy ? "Enregistrement…" : "Utiliser cette image"}
+                  disabled={busy || !checked || !previewReady}
+                  onPress={() => {
+                    void confirm();
+                  }}
+                />
+                <SecondaryButton
+                  label="Revenir aux images"
+                  disabled={busy}
+                  onPress={() => {
+                    setChoice(null);
+                    setChecked(false);
+                  }}
+                />
+              </>
+            ) : (
+              <>
+                <SecondaryButton
+                  label="Générer une illustration"
+                  disabled={busy || !gallery.canWrite}
+                  onPress={() => {
+                    setGeneratorOpen(true);
+                  }}
+                />
+                <SecondaryButton
+                  label="Choisir une photo sur cet appareil"
+                  disabled={busy}
+                  onPress={() => {
+                    void photo();
+                  }}
+                />
+                <TextInput
+                  value={query}
+                  onChangeText={(text) => {
+                    setQuery(text);
+                    setPage(0);
+                  }}
+                  placeholder="Rechercher dans la bibliothèque"
+                  placeholderTextColor={colors.muted}
+                  accessibilityLabel="Rechercher un visuel"
+                  maxLength={200}
+                  className="min-h-12 rounded-2xl border border-line bg-surface px-4 text-base text-ink"
+                />
+                <Text className="text-sm text-muted">
+                  {identities.length}{" "}
+                  {identities.length === 1
+                    ? "visuel disponible"
+                    : "visuels disponibles"}
+                </Text>
+                {identities.slice(page * 20, page * 20 + 20).map((identity) => {
+                  const candidate = state!.assets.get(
+                    identity.entity.primaryAssetId!,
+                  )!.entity;
+                  return (
+                    <Pressable
+                      key={identity.entity.id}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Examiner ${identity.entity.canonicalName}`}
+                      onPress={() => {
+                        if (basis) {
+                          setChecked(false);
+                          setPreviewReady(false);
+                          setChoice({ kind: "LIBRARY", identity, basis });
+                        }
+                      }}
+                      className="min-h-20 flex-row items-center gap-3 rounded-2xl border border-line bg-surface p-3"
+                    >
+                      <ProductVisual
+                        category={product.category}
+                        candidate={{
+                          asset: candidate,
+                          illustrative:
+                            candidate.provenance.type === "AI_GENERATED",
+                          generic:
+                            identity.entity.specificity !== "PACKAGED_EXACT",
+                        }}
+                        readUri={gallery.readUri}
+                      />
+                      <View className="flex-1 gap-1">
+                        <Text className="font-semibold text-ink">
+                          {identity.entity.canonicalName}
+                        </Text>
+                        <Text className="text-sm text-muted">
+                          {identity.entity.specificity === "PACKAGED_EXACT"
+                            ? "Conditionné exact"
+                            : "Visuel générique"}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                {!identities.length ? (
+                  <Text className="text-base text-muted">
+                    Aucun visuel approuvé pour cette recherche. Vous pouvez
+                    choisir votre propre photo.
+                  </Text>
+                ) : null}
+                {page > 0 ? (
+                  <SecondaryButton
+                    label="Page précédente"
+                    onPress={() => setPage(page - 1)}
+                  />
+                ) : null}
+                {(page + 1) * 20 < identities.length ? (
+                  <SecondaryButton
+                    label="Page suivante"
+                    onPress={() => setPage(page + 1)}
                   />
                 ) : null}
               </>
-            ) : (
-              <InlineAlert
-                title="Image indisponible"
-                message="Relisez la bibliothèque avant de confirmer."
-              />
             )}
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked }}
-              aria-checked={checked}
-              onPress={() => setChecked(!checked)}
-              className="min-h-12 flex-row gap-3 rounded-2xl border border-line p-4"
-            >
-              <Text className="text-lg text-forest">{checked ? "☑" : "☐"}</Text>
-              <Text className="flex-1 text-base text-ink">
-                {choice.kind === "PHOTO"
-                  ? "Cette photo correspond au produit et je suis autorisé à l’utiliser dans l’application."
-                  : "J’ai vérifié que ce visuel convient à ce produit."}
-              </Text>
-            </Pressable>
-            <PrimaryButton
-              label={busy ? "Enregistrement…" : "Utiliser cette image"}
-              disabled={busy || !checked || !previewReady}
-              onPress={() => {
-                void confirm();
-              }}
-            />
-            <SecondaryButton
-              label="Revenir aux images"
-              disabled={busy}
-              onPress={() => {
-                setChoice(null);
-                setChecked(false);
-              }}
-            />
           </>
-        ) : (
-          <>
-            <SecondaryButton
-              label="Choisir une photo sur cet appareil"
-              disabled={busy}
-              onPress={() => {
-                void photo();
-              }}
-            />
-            <TextInput
-              value={query}
-              onChangeText={(text) => {
-                setQuery(text);
-                setPage(0);
-              }}
-              placeholder="Rechercher dans la bibliothèque"
-              placeholderTextColor={colors.muted}
-              accessibilityLabel="Rechercher un visuel"
-              maxLength={200}
-              className="min-h-12 rounded-2xl border border-line bg-surface px-4 text-base text-ink"
-            />
-            <Text className="text-sm text-muted">
-              {identities.length}{" "}
-              {identities.length === 1
-                ? "visuel disponible"
-                : "visuels disponibles"}
-            </Text>
-            {identities.slice(page * 20, page * 20 + 20).map((identity) => {
-              const candidate = state!.assets.get(
-                identity.entity.primaryAssetId!,
-              )!.entity;
-              return (
-                <Pressable
-                  key={identity.entity.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Examiner ${identity.entity.canonicalName}`}
-                  onPress={() => {
-                    if (basis) {
-                      setChecked(false);
-                      setPreviewReady(false);
-                      setChoice({ kind: "LIBRARY", identity, basis });
-                    }
-                  }}
-                  className="min-h-20 flex-row items-center gap-3 rounded-2xl border border-line bg-surface p-3"
-                >
-                  <ProductVisual
-                    category={product.category}
-                    candidate={{
-                      asset: candidate,
-                      illustrative:
-                        candidate.provenance.type === "AI_GENERATED",
-                      generic: identity.entity.specificity !== "PACKAGED_EXACT",
-                    }}
-                    readUri={gallery.readUri}
-                  />
-                  <View className="flex-1 gap-1">
-                    <Text className="font-semibold text-ink">
-                      {identity.entity.canonicalName}
-                    </Text>
-                    <Text className="text-sm text-muted">
-                      {identity.entity.specificity === "PACKAGED_EXACT"
-                        ? "Conditionné exact"
-                        : "Visuel générique"}
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            })}
-            {!identities.length ? (
-              <Text className="text-base text-muted">
-                Aucun visuel approuvé pour cette recherche. Vous pouvez choisir
-                votre propre photo.
-              </Text>
-            ) : null}
-            {page > 0 ? (
-              <SecondaryButton
-                label="Page précédente"
-                onPress={() => setPage(page - 1)}
-              />
-            ) : null}
-            {(page + 1) * 20 < identities.length ? (
-              <SecondaryButton
-                label="Page suivante"
-                onPress={() => setPage(page + 1)}
-              />
-            ) : null}
-          </>
-        )}
+        ) : null}
       </BottomSheet>
     </View>
   );
