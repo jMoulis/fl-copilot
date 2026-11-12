@@ -1,4 +1,5 @@
 import { returnToProduct } from "../products/product-navigation";
+import { calendarDate, tradingToday } from "../dates/calendar";
 import { EvidenceView } from "@/needs/evidence-view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Text, TextInput, View, Switch } from "react-native";
@@ -49,13 +50,23 @@ function nowInput(): StoreEventTimeInput {
   return { ...storeEventTimeParts(instant), occurrence: instant };
 }
 export default function StoreEventEditor() {
-  const params = useLocalSearchParams<{ productId?: string; id?: string }>(),
+  const params = useLocalSearchParams<{
+      productId?: string;
+      id?: string;
+      date?: string;
+    }>(),
     { session } = useAuth(),
     storeId = session?.stores[0]?.storeId,
     { sqlite, deviceId } = useLocalDatabase(),
     { syncNow, status: syncStatus } = useSync(),
     repo = useMemo(() => new StoreProductEventRepository(sqlite), [sqlite]);
-  const scope = `${storeId}:${params.productId ?? "select"}:${params.id ?? "new"}`,
+  const captureDate =
+    typeof params.date === "string" &&
+    calendarDate(params.date) &&
+    params.date <= tradingToday()
+      ? params.date
+      : undefined;
+  const scope = `${storeId}:${params.productId ?? "select"}:${params.id ?? "new"}:${captureDate ?? "now"}`,
     currentScope = useRef(scope),
     busyRef = useRef(false);
   useEffect(() => {
@@ -132,12 +143,16 @@ export default function StoreEventEditor() {
     setType(undefined);
     setSeverity(null);
     setComment("");
-    setStart(nowInput());
+    setStart(
+      captureDate && captureDate !== tradingToday()
+        ? { date: captureDate, time: "" }
+        : nowInput(),
+    );
     setEnd(nowInput());
     setFinished(false);
     setIssues({});
     setError(undefined);
-  }, [current, formScope, scope, params.productId]);
+  }, [current, formScope, scope, params.productId, captureDate]);
   function clear() {
     setIssues({});
     setError(undefined);

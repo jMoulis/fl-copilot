@@ -2113,7 +2113,11 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       return (
         dependencies.weekContext ??
         createWeekContextService(dependencies.database)
-      ).read(storeId, request.query.weekStart);
+      ).read(
+        storeId,
+        request.query.weekStart,
+        request.headers["x-context-weather-symbols"] === "1",
+      );
     },
   );
   app.get(

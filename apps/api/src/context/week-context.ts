@@ -62,7 +62,11 @@ const metadata = <T>(r: ProviderResult<T>) =>
     issue: r.failed ? "PROVIDER_UNAVAILABLE" : null,
   }) as const;
 export type WeekContextService = {
-  read(storeId: string, weekStart: string): Promise<WeeklyContext>;
+  read(
+    storeId: string,
+    weekStart: string,
+    includeWeatherSymbols?: boolean,
+  ): Promise<WeeklyContext>;
 };
 export function createWeekContextService(
   database: DatabaseService,
@@ -70,7 +74,7 @@ export function createWeekContextService(
   now: () => Date = () => new Date(),
 ): WeekContextService {
   return {
-    async read(storeId, weekStart) {
+    async read(storeId, weekStart, includeWeatherSymbols = false) {
       const db = await database.getDb(),
         raw = await db.collection("storeContextSettings").findOne({ storeId });
       if (!raw)
@@ -170,7 +174,9 @@ export function createWeekContextService(
             issuedAt: r.data
               ? new Date(r.data.properties.meta.updated_at).toISOString()
               : null,
-            days: r.data ? forecastDays(r.data, weekStart) : [],
+            days: r.data
+              ? forecastDays(r.data, weekStart, includeWeatherSymbols)
+              : [],
           };
         })(),
         (async () => {

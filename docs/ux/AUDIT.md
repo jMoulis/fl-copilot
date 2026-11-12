@@ -8,6 +8,12 @@ This owner arbitration supersedes historical Actions/Plus/five-tab descriptions 
 
 # Audit UX et arbitrages V1 — 19 octobre 2026
 
+## Journal quotidien — direction approuvée le 12 novembre
+
+Le propriétaire retient la proposition interactive inspirée du bloc météo des planches : carte dominante, condition illustrée, températures, sélection des journées, calendrier discret et observations terrain. Le détail des sources et de la fraîcheur appartient à un volet, pas à une accumulation de boutons sur l’accueil. L’arbitrage conserve les quatre onglets et les accès Produits/Réglages du bandeau partagé.
+
+Le premier incrément natif reprend uniquement les données réellement disponibles : prévisions/calendriers du cache existant, observations produit et préparation canonique Ma semaine. Les anciennes prévisions restent des prévisions archivées ; les notes magasin générales, les signaux locaux et la conjoncture mensuelle ne sont pas simulés pour imiter la maquette. Voir `docs/qa/JOURNAL_DAILY_FIRST_INCREMENT.md` pour la recette et les limites du lot.
+
 ## Arbitrage complémentaire — 24 octobre : PDF dans la conversation
 
 Le retour de Julien précise la séparation entre lecture et action métier. Joindre un PDF doit permettre au copilote de lire immédiatement son original dès l’envoi terminé, de discuter de toute période demandée et de préparer la semaine suivante. La revue d’une extraction et la semaine courante ne sont pas des prérequis à cette discussion. Les validations canoniques restent liées à l’enregistrement des offres, décisions et réalisations ; une lecture IA du document ne devient pas un indicateur officiel du magasin.

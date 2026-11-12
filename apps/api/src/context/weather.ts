@@ -5,6 +5,9 @@ import {
   type ForecastDay,
 } from "@fl-copilot/domain";
 const period = z.object({
+  summary: z
+    .object({ symbol_code: z.string().regex(/^[a-z_]{1,80}$/) })
+    .optional(),
   details: z.object({
     precipitation_amount: z.number().finite().nonnegative().optional(),
   }),
@@ -40,6 +43,7 @@ export const metForecastSchema = z.object({
 export function forecastDays(
   input: z.infer<typeof metForecastSchema>,
   weekStart: string,
+  includeSymbols = false,
 ): ForecastDay[] {
   const series = [...input.properties.timeseries].sort((a, b) =>
     a.time.localeCompare(b.time),
@@ -48,6 +52,10 @@ export function forecastDays(
     const validDate = addContextDays(weekStart, i),
       temperatures: number[] = [],
       rain = new Map<string, number>();
+    const symbols: {
+      symbol: NonNullable<ForecastDay["symbol"]>;
+      distance: number;
+    }[] = [];
     // Count actual hourly slots in Europe/Paris: DST days can have 23 or 25 hours.
     const dayHours = Array.from({ length: 72 }, (_, j) =>
       new Date(
@@ -55,6 +63,38 @@ export function forecastDays(
       ).toISOString(),
     ).filter((t) => parisDate(t) === validDate).length;
     for (const s of series) {
+      if (includeSymbols && parisDate(s.time) === validDate) {
+        const candidate = s.data.next_1_hours?.summary
+          ? { summary: s.data.next_1_hours.summary, hours: 1 }
+          : s.data.next_6_hours?.summary
+            ? { summary: s.data.next_6_hours.summary, hours: 6 }
+            : null;
+        if (candidate) {
+          const from = new Date(s.time).toISOString();
+          const to = new Date(
+            Date.parse(s.time) + candidate.hours * 3600000,
+          ).toISOString();
+          if (
+            parisDate(new Date(Date.parse(to) - 1).toISOString()) === validDate
+          ) {
+            const hour = Number(
+              new Intl.DateTimeFormat("en-GB", {
+                timeZone: "Europe/Paris",
+                hour: "2-digit",
+                hourCycle: "h23",
+              }).format(new Date(s.time)),
+            );
+            symbols.push({
+              symbol: {
+                code: candidate.summary.symbol_code,
+                validFrom: from,
+                validTo: to,
+              },
+              distance: Math.abs(hour - 12),
+            });
+          }
+        }
+      }
       if (
         parisDate(s.time) === validDate &&
         s.data.instant.details.air_temperature !== undefined
@@ -76,6 +116,9 @@ export function forecastDays(
       for (const t of slots) rain.set(t, period.mm / period.hours);
     }
     return {
+      ...(symbols.length
+        ? { symbol: symbols.sort((a, b) => a.distance - b.distance)[0]!.symbol }
+        : {}),
       validDate,
       type: "FORECAST",
       temperatureMinC: temperatures.length ? Math.min(...temperatures) : null,
