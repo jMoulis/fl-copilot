@@ -197,3 +197,29 @@ it("after a lost response and remount, reads the retained request instead of mak
   expect(s.generate).toHaveBeenCalledOnce();
   expect(tree!.root.findByType(Image)).toBeDefined();
 });
+
+it("reopens a rejected output with its reason and a usable abandon action, without generating again", async () => {
+  const s = await setup();
+  const failure = new ApiClientError(422, {
+    code: "PRODUCT_IMAGE_TRANSPARENCY_INVALID",
+    messageFr: "Le fond n’est pas transparent.",
+    retryable: false,
+  });
+  s.generate.mockRejectedValueOnce(failure);
+  await click("Générer l’image");
+  s.status.mockRejectedValueOnce(failure);
+  await act(() => tree!.unmount());
+  tree = undefined;
+  await s.mount();
+  expect(s.options).toHaveBeenCalledTimes(2);
+  expect(s.generate).toHaveBeenCalledOnce();
+  expect(
+    tree!.root.findAll((n) => n.props.message === failure.message).length,
+  ).toBeGreaterThan(0);
+  await click("Abandonner cette demande");
+  const button = tree!.root.findAll(
+    (n) => n.props.label === "Générer l’image" && typeof n.type === "string",
+  )[0]!;
+  expect(button.props.disabled).toBe(false);
+  expect(s.generate).toHaveBeenCalledOnce();
+});
