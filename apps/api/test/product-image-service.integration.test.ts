@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { randomUUID } from "node:crypto";
 import { MongoClient, Decimal128 } from "mongodb";
 import type { ProductDocument } from "../src/products/product-master";
@@ -333,6 +334,56 @@ describe.skipIf(!process.env.TEST_MONGODB_URI)(
       complete();
       await first;
       expect(s.provider.generate).toHaveBeenCalledTimes(1);
+    });
+    it("retains billed rejected output and reports its cause without regenerating or serving it", async () => {
+      const s = await setup();
+      const bytes = await sharp(s.bytes)
+        .flatten({ background: "white" })
+        .png()
+        .toBuffer();
+      const provider = {
+        generate: vi.fn(async () => ({
+          bytes,
+          image: s.image,
+          usage: { inputTokens: 100, outputTokens: 1758 },
+        })),
+      };
+      const service = createProductImageService(
+        database,
+        s.policy,
+        provider,
+        s.storage,
+      );
+      const reject = { publicCode: "PRODUCT_IMAGE_INVALID", statusCode: 422 };
+      await expect(service.generate(s.ctx, s.input)).rejects.toMatchObject(
+        reject,
+      );
+      await expect(
+        service.status(s.ctx, s.input.requestId),
+      ).rejects.toMatchObject(reject);
+      await expect(service.generate(s.ctx, s.input)).rejects.toMatchObject(
+        reject,
+      );
+      expect(provider.generate).toHaveBeenCalledTimes(1);
+      expect(s.storage.writeImmutable).toHaveBeenCalledWith(
+        expect.any(String),
+        bytes,
+        "image/png",
+      );
+      expect(
+        await db
+          .collection("productImageGenerations")
+          .findOne({ _id: s.input.requestId } as never),
+      ).toMatchObject({
+        status: "UNKNOWN",
+        image: null,
+        failureStage: "VALIDATION",
+        failureCode: "PRODUCT_IMAGE_INVALID",
+        providerUsage: { outputTokens: 1758 },
+      });
+      await expect(
+        service.file(s.ctx, s.input.requestId),
+      ).rejects.toMatchObject({ statusCode: 404 });
     });
     it("keeps an uncertain or expired outcome without automatically charging a second attempt", async () => {
       const s = await setup();

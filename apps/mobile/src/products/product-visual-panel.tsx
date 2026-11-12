@@ -455,7 +455,7 @@ export function ProductVisualPanel({
         visible={open}
         title={
           generatorOpen
-            ? "Illustration du produit"
+            ? "Image du produit"
             : choice
               ? "Confirmer le visuel"
               : "Choisir une image"
@@ -572,7 +572,7 @@ export function ProductVisualPanel({
             ) : (
               <>
                 <SecondaryButton
-                  label="Générer une illustration"
+                  label="Générer une image"
                   disabled={busy || !gallery.canWrite}
                   onPress={() => {
                     setGeneratorOpen(true);

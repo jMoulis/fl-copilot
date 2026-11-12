@@ -89,12 +89,10 @@ export function createProductImageProvider(
       });
       if (result.images.length !== 1) throw Error("PRODUCT_IMAGE_INVALID");
       const bytes = result.image.uint8Array;
-      const descriptor = await inspectGeneratedProductImage(bytes);
       return {
         bytes,
         usage: result.usage,
         image: {
-          ...descriptor,
           provenance: {
             type: "AI_GENERATED" as const,
             provider: "OPENAI",

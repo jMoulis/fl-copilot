@@ -146,7 +146,7 @@ it("keeps the legacy image visible, queues its PNG upgrade once, then renders th
     ))!.manifest!.processorVersion,
   ).toBe("visual-image.v2");
 });
-it("keeps the illustration disclosure for AI imagery while hiding the generic photo label", async () => {
+it("keeps AI provenance accessible without overlaying a badge on the image", async () => {
   fixture = visualLibraryFixture();
   db = new VisualTestDatabase(new DatabaseSync(":memory:"));
   await act(async () => {
@@ -160,6 +160,8 @@ it("keeps the illustration disclosure for AI imagery while hiding the generic ph
   });
   const text = JSON.stringify(tree!.toJSON());
   expect(text).toContain("Illustration de synthèse");
-  expect(text).toContain("Illustration");
+  expect(
+    tree!.root.findAll((node) => String(node.type) === "Text"),
+  ).toHaveLength(0);
   expect(text).not.toContain("Générique");
 });

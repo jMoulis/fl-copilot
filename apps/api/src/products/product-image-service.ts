@@ -1,3 +1,5 @@
+import { APICallError } from "ai";
+import { captureApiError } from "../observability";
 import { createHash } from "node:crypto";
 import type { Collection } from "mongodb";
 import { type Product } from "@fl-copilot/domain";
@@ -34,6 +36,9 @@ type Attempt = ProductImageResult & {
   updatedAt: Date;
   createdAt: Date;
   product: Product;
+  failureCode?: string;
+  failureStage?: string;
+  providerStatus?: number;
   providerUsage?: {
     inputTokens?: number;
     outputTokens?: number;
@@ -55,7 +60,7 @@ export function createProductImageService(
   provider: {
     generate(product: Product): Promise<{
       bytes: Uint8Array;
-      image: GeneratedProductImage;
+      image: Pick<GeneratedProductImage, "provenance">;
       usage?: {
         inputTokens?: number;
         outputTokens?: number;
@@ -138,14 +143,27 @@ export function createProductImageService(
     }
     return row;
   }
-  const result = (a: Attempt) =>
-    productImageResultSchema.parse({
+  const result = (a: Attempt) => {
+    if (a.failureCode === "PRODUCT_IMAGE_TRANSPARENCY_INVALID")
+      throw fail(
+        a.failureCode,
+        "L’image reçue n’a pas un fond suffisamment transparent. Elle n’a pas été appliquée. Abandonne cet essai avant d’en demander une autre.",
+        422,
+      );
+    if (a.failureCode === "PRODUCT_IMAGE_INVALID")
+      throw fail(
+        a.failureCode,
+        "L’image reçue ne respecte pas le format attendu. Elle n’a pas été appliquée. Abandonne cet essai avant d’en demander une autre.",
+        422,
+      );
+    return productImageResultSchema.parse({
       requestId: a.requestId,
       productId: a.productId,
       productVersion: a.productVersion,
       status: a.status,
       image: a.image,
     });
+  };
   return {
     async options(
       ctx: VisualFilePrincipal,
@@ -243,14 +261,35 @@ export function createProductImageService(
           "Une génération est déjà en cours pour ce magasin. Consulte son résultat avant d’en lancer une autre.",
         );
       }
+      let stage = "PROVIDER";
       try {
         const generated = await provider.generate(p);
+        stage = "PERSISTENCE";
+        // Record usage before inspecting pixels: rejected output can still be billed.
+        await c.updateOne(
+          { _id: attempt._id },
+          {
+            $set: {
+              ...(generated.usage ? { providerUsage: generated.usage } : {}),
+              updatedAt: now(),
+            },
+          },
+        );
+        stage = "STORAGE";
+        // Keep the private original even when validation rejects the preview.
+        if (generated.bytes.length <= 12 * 1024 * 1024)
+          await files.writeImmutable(
+            key(attempt),
+            generated.bytes,
+            "image/png",
+          );
+        stage = "VALIDATION";
         const descriptor = await inspectGeneratedProductImage(generated.bytes);
         const image: GeneratedProductImage = {
           ...descriptor,
           provenance: generated.image.provenance,
         };
-        await files.writeImmutable(key(attempt), generated.bytes, "image/png");
+        stage = "PERSISTENCE";
         await c.updateOne(
           { _id: attempt._id, storeId: ctx.storeId, ownerId: ctx.userId },
           {
@@ -262,11 +301,45 @@ export function createProductImageService(
             },
           },
         );
-      } catch {
-        // Never expose provider bodies/base64/prompts or repeat a potentially billable request.
+      } catch (error) {
+        const code =
+          error instanceof Error &&
+          [
+            "PRODUCT_IMAGE_INVALID",
+            "PRODUCT_IMAGE_TRANSPARENCY_INVALID",
+          ].includes(error.message)
+            ? error.message
+            : "PRODUCT_IMAGE_GENERATION_FAILED";
+        const providerStatus = APICallError.isInstance(error)
+          ? error.statusCode
+          : undefined;
+        captureApiError(new Error(code), {
+          code,
+          method: "POST",
+          requestId: attempt.requestId,
+        });
+        // Log only allowlisted technical metadata, never provider bodies or prompts.
+        console.warn(
+          JSON.stringify({
+            event: "product_image_generation_failed",
+            requestId: attempt.requestId,
+            stage,
+            code,
+            providerStatus,
+          }),
+        );
+        // Never repeat a potentially billable request.
         await c.updateOne(
           { _id: attempt._id, status: "RUNNING" },
-          { $set: { status: "UNKNOWN", updatedAt: now() } },
+          {
+            $set: {
+              status: "UNKNOWN",
+              failureCode: code,
+              failureStage: stage,
+              ...(providerStatus ? { providerStatus } : {}),
+              updatedAt: now(),
+            },
+          },
         );
       }
       return result(await read(ctx, input.requestId));
