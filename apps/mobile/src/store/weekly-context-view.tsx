@@ -42,7 +42,13 @@ function freshness(
   if (!p.retrievedAt) return null;
   return `${contextIsStale(p, now) ? "Données anciennes · " : ""}Récupérées le ${new Date(p.retrievedAt).toLocaleString("fr-FR", { timeZone: "Europe/Paris", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
 }
-export function WeeklyContextView({ storeId }: { storeId: string }) {
+export function WeeklyContextView({
+  storeId,
+  weekStart: requestedWeek,
+}: {
+  storeId: string;
+  weekStart?: string;
+}) {
   const { sqlite } = useLocalDatabase(),
     { withAccessToken } = useAuth(),
     { lastSyncedAt } = useSync();
@@ -52,7 +58,9 @@ export function WeeklyContextView({ storeId }: { storeId: string }) {
     ),
     cache = useMemo(() => new WeeklyContextRepository(sqlite), [sqlite]),
     api = useMemo(() => new ApiClient(getApiBaseUrl()), []);
-  const week = currentCommercialWeek(),
+  const week = currentCommercialWeek(
+      requestedWeek ? new Date(`${requestedWeek}T12:00:00Z`) : new Date(),
+    ),
     weekStart = week.start;
   const [settings, setSettings] = useState<LocalStoreContext | null>(null),
     [context, setContext] = useState<WeeklyContext | null>(null),

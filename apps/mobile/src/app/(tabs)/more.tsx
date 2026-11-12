@@ -6,37 +6,28 @@ import {
   AppHeader,
   SectionCard,
   SecondaryButton,
-  BottomSheet,
-  SyncState,
   MenuRow,
 } from "@/components/ui";
-import { useUiStore } from "@/store/ui";
-import { useAuth } from "@/auth/auth-provider";
+import { DetailsDisclosure } from "@/components/dashboard";
 import { getAppEnvironment } from "@/config/environment";
 import { sendMobileObservabilityTest } from "@/observability/sentry";
-import { useSync } from "@/sync/sync-provider";
-
-export default function MoreScreen() {
-  const visible = useUiStore((state) => state.aboutVisible);
-  const setVisible = useUiStore((state) => state.setAboutVisible);
-  const { session, logout } = useAuth();
-  const { status: syncStatus, pendingCount } = useSync();
+export default function SettingsScreen() {
   const [monitoringStatus, setMonitoringStatus] = useState<string>();
-  const canTestMonitoring = getAppEnvironment() !== "production";
-
   return (
     <AppScreen>
-      <AppHeader
-        title="Plus"
-        subtitle="Données du rayon, synchronisation et réglages."
+      <AppHeader title="Réglages" />
+      <SecondaryButton
+        label="Retour"
+        onPress={() =>
+          router.canGoBack() ? router.back() : router.replace("/(tabs)/today")
+        }
       />
-
-      <SectionCard title="Copilote">
+      <SectionCard title="Configurer mon magasin">
         <MenuRow
-          title="Discuter avec le copilote"
-          description="Chiffres du rayon et PDF commerciaux"
-          icon="chatbubbles-outline"
-          onPress={() => router.push("/copilot")}
+          title="Magasin et implantation"
+          description="Localisation, mobilier, TG et circulation"
+          icon="storefront-outline"
+          onPress={() => router.push("/store-settings")}
         />
         <MenuRow
           title="Mémoire du copilote"
@@ -44,145 +35,69 @@ export default function MoreScreen() {
           icon="bookmark-outline"
           onPress={() => router.push("/copilot-memory")}
         />
-      </SectionCard>
-
-      <SectionCard
-        title="Données du rayon"
-        description="Gérez les sources qui alimentent vos analyses."
-      >
         <MenuRow
-          title="Produits"
-          description="Référentiel, identifiants et alias"
-          icon="leaf-outline"
-          onPress={() => router.push("/(tabs)/products" as Href)}
-        />
-        <MenuRow
-          title="Imports Mercalys"
-          description="Ventes et casse à vérifier puis publier"
-          icon="document-text-outline"
-          onPress={() => router.push("/(tabs)/imports" as Href)}
-        />
-      </SectionCard>
-
-      <SectionCard
-        title="Synchronisation"
-        description="Vos données restent disponibles hors connexion."
-      >
-        <SyncState
-          status={syncStatus}
-          onPress={() => router.push("/(tabs)/sync" as Href)}
-        />
-        <Text className="text-base leading-6 text-muted">
-          {pendingCount === 0
-            ? "Toutes les modifications locales ont été traitées."
-            : `${pendingCount} modification${pendingCount > 1 ? "s" : ""} à synchroniser.`}
-        </Text>
-        <MenuRow
-          title="Voir la synchronisation"
-          description="Activité, éléments en attente et conflits"
-          icon="sync-outline"
-          onPress={() => router.push("/(tabs)/sync" as Href)}
-        />
-      </SectionCard>
-
-      <SecondaryButton
-        label="Signalements magasin"
-        onPress={() => router.push("/store-events" as Href)}
-      />
-      <SectionCard title="Magasin">
-        <MenuRow
-          title="Mon magasin"
-          description="Commune, position et zone de vacances scolaires"
-          icon="storefront-outline"
-          onPress={() => router.push("/store-settings")}
-        />
-      </SectionCard>
-      <SectionCard title="Besoins clients">
-        <MenuRow
-          title="Unités de besoin"
-          description="Salade, apéritif et autres usages des clients"
+          title="Besoins clients"
+          description="Usages et associations de produits"
           icon="people-outline"
           onPress={() => router.push("/need-units")}
         />
-      </SectionCard>
-      <SectionCard title="Notifications">
         <MenuRow
-          title="Notifications sur ce téléphone"
-          description="Réponses du copilote et rappels commerciaux"
+          title="Réception email"
+          description="Adresse du magasin et expéditeurs autorisés"
+          icon="mail-outline"
+          onPress={() => router.push("/email-settings")}
+        />
+      </SectionCard>
+      <SectionCard title="Gérer l’application">
+        <MenuRow
+          title="Notifications"
+          description="Copilote, documents et rappels"
           icon="notifications-outline"
           onPress={() => router.push("/reminder-settings")}
         />
-      </SectionCard>
-      <SectionCard title="Compte et application">
-        <Text className="text-sm leading-5 text-muted">Compte connecté</Text>
-        <Text className="text-base font-semibold text-ink">
-          {session?.user.email ?? "Session locale"}
-        </Text>
         <MenuRow
-          title="À propos"
-          description="Version et rôle de l’application"
-          icon="information-circle-outline"
-          onPress={() => setVisible(true)}
+          title="Synchronisation"
+          description="Envois, conflits et copies locales"
+          icon="sync-outline"
+          onPress={() => router.push("/sync-center")}
         />
-        <SecondaryButton
-          label="Se déconnecter"
-          onPress={() => {
-            void logout();
-          }}
+        <MenuRow
+          title="Compte et application"
+          description="Compte connecté, version et déconnexion"
+          icon="person-circle-outline"
+          onPress={() => router.push("/account")}
         />
       </SectionCard>
-
-      {canTestMonitoring ? (
-        <SectionCard
-          title="Outils de développement"
-          description="Ces outils sont masqués dans l’application de production."
-        >
+      {getAppEnvironment() !== "production" ? (
+        <DetailsDisclosure title="Outils de développement">
           <MenuRow
             title="Tester le suivi des erreurs"
             description="Envoyer un événement volontaire à Sentry"
             icon="bug-outline"
             onPress={() => {
               setMonitoringStatus("Envoi en cours…");
-              void sendMobileObservabilityTest().then((sent) => {
+              void sendMobileObservabilityTest().then((sent) =>
                 setMonitoringStatus(
                   sent
                     ? "Événement de test envoyé."
                     : "Événement non envoyé. Vérifiez la configuration Sentry.",
-                );
-              });
+                ),
+              );
             }}
           />
           {monitoringStatus ? (
-            <Text
-              accessibilityLiveRegion="polite"
-              className="text-sm text-muted"
-            >
+            <Text accessibilityLiveRegion="polite" className="text-muted">
               {monitoringStatus}
             </Text>
           ) : null}
           <MenuRow
             title="Diagnostic XLSX"
-            description="Vérifier la lecture d’un fichier sur cet appareil"
+            description="Vérifier la lecture sur cet appareil"
             icon="grid-outline"
             onPress={() => router.push("/(tabs)/xlsx-diagnostic" as Href)}
           />
-        </SectionCard>
+        </DetailsDisclosure>
       ) : null}
-
-      <BottomSheet
-        visible={visible}
-        title="Fruits & Légumes"
-        onClose={() => setVisible(false)}
-      >
-        <Text className="text-base leading-7 text-muted">
-          Votre copilote de rayon, pour suivre les résultats et préparer vos
-          actions.
-        </Text>
-        <Text className="text-base leading-7 text-muted">
-          Version de développement 0.1.0. Les fonctionnalités métier sont en
-          cours de construction.
-        </Text>
-      </BottomSheet>
     </AppScreen>
   );
 }

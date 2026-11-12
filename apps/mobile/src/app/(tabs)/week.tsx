@@ -3,10 +3,6 @@ import { DocumentArchiveControl } from "../../documents/document-archive-control
 import type { DocumentArchive } from "@fl-copilot/domain";
 import { CommercialOriginalButton } from "../../commercial/original-button";
 import { CommercialAnalysisRecoveryPanel } from "../../commercial/analysis-recovery-panel";
-import { WeeklySubstitutesView } from "../../commercial/substitute-view";
-import { currentCommercialWeek } from "@fl-copilot/commercial-core";
-import { WeeklyContextView } from "../../store/weekly-context-view";
-import { CommercialVersionDecisionList } from "../../commercial/version-decision-list";
 import {
   commercialDocumentPage,
   commercialDocumentRows,
@@ -131,8 +127,6 @@ function StoreWeekScreen() {
   );
   const [archiveEntries, setArchiveEntries] = useState<DocumentArchive[]>([]);
   const [duplicateSourceId, setDuplicateSourceId] = useState<string>();
-  const [preparation, setPreparation] = useState(false);
-  const [preparationLoaded, setPreparationLoaded] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CommercialDocumentFilter>("ALL");
   const [page, setPage] = useState(0);
@@ -295,7 +289,13 @@ function StoreWeekScreen() {
     <AppScreen scrollRef={scroll} keyboardAware>
       <AppHeader
         title="Documents commerciaux"
-        subtitle="Vos PDF et leurs analyses, disponibles après réception."
+        subtitle="Tes PDF, leurs originaux et leurs analyses."
+      />
+      <SecondaryButton
+        label="Retour"
+        onPress={() =>
+          router.canGoBack() ? router.back() : router.replace("/(tabs)/actions")
+        }
       />
       <View className="gap-2">
         <PrimaryButton
@@ -457,7 +457,7 @@ function StoreWeekScreen() {
                         router.push(
                           typeof weekStart === "string"
                             ? {
-                                pathname: "/commercial-review/[id]",
+                                pathname: "/document-review/[id]",
                                 params: { id: sourceId, weekStart },
                               }
                             : (`/commercial-review/${sourceId}` as Href),
@@ -567,60 +567,9 @@ function StoreWeekScreen() {
         />
       ) : null}
       <SecondaryButton
-        expanded={preparation}
-        label={
-          preparation
-            ? "Masquer le contexte et la préparation"
-            : "Contexte et préparation de la semaine"
-        }
-        onPress={() => {
-          setPreparationLoaded(true);
-          setPreparation(!preparation);
-        }}
+        label="Comparer un PDF corrigé"
+        onPress={() => router.push("/commercial-comparison")}
       />
-      {preparationLoaded ? (
-        <View
-          style={{ display: preparation ? "flex" : "none" }}
-          accessibilityElementsHidden={!preparation}
-          importantForAccessibility={
-            preparation ? "auto" : "no-hide-descendants"
-          }
-          className="gap-6"
-        >
-          <SecondaryButton
-            label="Préparer mon plan de semaine et mes TG"
-            onPress={() =>
-              router.push(
-                weekStart
-                  ? { pathname: "/week-preparation", params: { weekStart } }
-                  : "/week-preparation",
-              )
-            }
-          />
-          <SecondaryButton
-            label="Voir mon plan de semaine validé"
-            onPress={() =>
-              router.push(
-                weekStart
-                  ? { pathname: "/commercial-plan", params: { weekStart } }
-                  : "/commercial-plan",
-              )
-            }
-          />
-          <SecondaryButton
-            label="Comparer un PDF corrigé"
-            onPress={() => router.push("/commercial-comparison")}
-          />
-          {storeId ? <CommercialVersionDecisionList storeId={storeId} /> : null}
-          {storeId ? <WeeklyContextView storeId={storeId} /> : null}
-          {storeId ? (
-            <WeeklySubstitutesView
-              storeId={storeId}
-              weekStart={weekStart ?? currentCommercialWeek().start}
-            />
-          ) : null}
-        </View>
-      ) : null}
     </AppScreen>
   );
 }

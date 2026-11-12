@@ -28,6 +28,7 @@ export function ReceiptList({
   onImport,
   onOpen,
   onSync,
+  onBack,
 }: {
   receipts: LocalWasteReceiptSummary[];
   loading: boolean;
@@ -39,6 +40,7 @@ export function ReceiptList({
   onImport(): void;
   onOpen(id: string): void;
   onSync(): void;
+  onBack?(): void;
 }) {
   const [query, setQuery] = useState(""),
     [filter, setFilter] = useState<ReceiptListFilter>("ALL");
@@ -62,6 +64,9 @@ export function ReceiptList({
         onRefresh={onRefresh}
         ListHeaderComponent={
           <View className="gap-4 pb-2">
+            {onBack ? (
+              <SecondaryButton label="Retour" onPress={onBack} />
+            ) : null}
             <AppHeader
               title="Casse"
               subtitle="Vos tickets, de la capture à la publication."

@@ -59,7 +59,7 @@ it.each(["day", "week", "month", "year", "range"] as const)(
     const snapshot = JSON.stringify(input);
     const view = productPerformanceView(id, "2026-10-15", input);
     const link = productDetailHref(id, randomUUID(), view);
-    expect(link.pathname).toBe("/(tabs)/products/[id]");
+    expect(link.pathname).toBe("/product/[id]");
     expect(link.params.id).toBe(id);
     const opened = applyProductPerformanceLink(
       id,

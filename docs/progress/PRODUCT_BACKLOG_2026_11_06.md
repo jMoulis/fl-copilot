@@ -12,6 +12,12 @@ Le premier lot réutilise FlatList, le panneau natif et les lectures locales : s
 
 Vérification locale initiale : 28 tests de défilement, vues montées chat/analyses, contexte et graphique passent dans six suites, sans ignorés. Les contrôles complets, la fusion, la livraison groupée et la recette native restent distincts.
 
+## Lot navigation approuvé — 12 novembre
+
+Maquettes approuvées puis demande de réaliser le tout en un lot : Journal · Analyses · Copilote · Imports, raccourcis Produits/Réglages fixes, Ma semaine et observations dans Journal, réception des documents dans Imports, configuration et compte dans Réglages. La navigation produit revient à son origine et conserve la sélection analytique ou le catalogue. Les anciens accès restent compatibles.
+
+Le code est en validation dans la PR 494, avec le lot défilement/skeleton/couverture. Ce statut ne vaut ni fusion, ni livraison TestFlight, ni recette iPhone. Aucun nouveau journal automatique, appel IA, schéma ou workflow d’import n’est ajouté. Le graphique de liste, la génération/détourage d’images et le journal contextualisé restent les prochains sujets à cadrer.
+
 ## Chat
 
 - [ ] **Défilement automatique inconsistant** : reproduire les situations signalées et stabiliser le suivi de la réponse. Préserver la lecture des anciens messages lorsque l’utilisateur remonte volontairement.

@@ -57,7 +57,10 @@ export default function NeedUnits() {
         title="Besoins clients"
         subtitle="Les usages qui guideront les associations de produits et les substitutions."
       />
-      <SecondaryButton label="Retour à Plus" onPress={() => router.back()} />
+      <SecondaryButton
+        label="Retour aux réglages"
+        onPress={() => router.back()}
+      />
       <PrimaryButton
         label="Créer un besoin client"
         disabled={!storeId}

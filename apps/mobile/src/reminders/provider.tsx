@@ -227,7 +227,7 @@ export function ReminderProvider({ children }: PropsWithChildren) {
             n.clearLastNotificationResponse();
             const state = latestRoot.current;
             const destination = {
-              pathname: "/actions/email" as const,
+              pathname: "/email-inbox" as const,
               params: { receiptId: email.data.receiptId },
             };
             if (state?.routes[state.index ?? 0]?.name === "(tabs)")

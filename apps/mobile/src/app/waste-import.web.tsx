@@ -20,7 +20,7 @@ export default function WasteImportWebScreen() {
       />
       <SecondaryButton
         label="Retour à Casse"
-        onPress={() => router.replace("/(tabs)/waste")}
+        onPress={() => router.replace("/waste-tickets")}
       />
     </AppScreen>
   );

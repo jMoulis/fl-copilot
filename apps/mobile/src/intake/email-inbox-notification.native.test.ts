@@ -96,3 +96,40 @@ it("rereads the existing inbox after a notification without remounting its unsav
   expect(inbox.refresh).toHaveBeenCalledTimes(4);
   expect(input().props.value).toBe("draft@example.test");
 });
+
+it("separates email configuration from inbox refresh and preserves the explicit settings entry", async () => {
+  const inbox = {
+    status: vi.fn(async () => true),
+    list: vi.fn(async () => ({ bindings: [], receipts: [] })),
+    refresh: vi.fn(async () => null),
+  } as unknown as Parameters<typeof EmailInbox>[0]["inbox"];
+  const onSettings = vi.fn();
+  const props = {
+    inbox,
+    conversationId: "11111111-1111-4111-8111-111111111111",
+    initialSender: "owner@example.test",
+    onClose: vi.fn(),
+    onOpenSync: vi.fn(),
+    onSettings,
+  };
+  await act(async () => {
+    tree = create(createElement(EmailInbox, { ...props, view: "settings" }));
+  });
+  expect(inbox.refresh).not.toHaveBeenCalled();
+  expect(tree!.root.findAll((n) => String(n.type) === "Input")).toHaveLength(1);
+  await act(async () =>
+    tree!.update(createElement(EmailInbox, { ...props, view: "inbox" })),
+  );
+  expect(inbox.refresh).toHaveBeenCalledOnce();
+  expect(tree!.root.findAll((n) => String(n.type) === "Input")).toHaveLength(0);
+  await act(() =>
+    tree!.root
+      .find(
+        (n) =>
+          String(n.type) === "Button" &&
+          n.props.label === "Configurer la réception email",
+      )
+      .props.onPress(),
+  );
+  expect(onSettings).toHaveBeenCalledOnce();
+});

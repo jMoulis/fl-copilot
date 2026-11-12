@@ -40,6 +40,7 @@ export function CatalogueList({
   onChange,
   onOpen,
   onAdd,
+  onBack,
   loading,
   error,
   notice,
@@ -52,6 +53,7 @@ export function CatalogueList({
   onChange(value: CatalogueView): void;
   onOpen(id: string): void;
   onAdd(): void;
+  onBack?(): void;
   loading: boolean;
   error?: string;
   notice?: string;
@@ -111,6 +113,9 @@ export function CatalogueList({
         scrollEventThrottle={120}
         ListHeaderComponent={
           <View className="gap-4 pb-4">
+            {onBack ? (
+              <SecondaryButton label="Retour" onPress={onBack} />
+            ) : null}
             <AppHeader
               compact
               title="Produits"

@@ -105,6 +105,9 @@ function StoreWaste({ storeId }: { storeId: string }) {
       onCapture={() => router.push("/waste-capture")}
       onImport={() => router.push("/waste-import")}
       onOpen={(id) => router.push(`/waste-receipt/${id}`)}
+      onBack={() =>
+        router.canGoBack() ? router.back() : router.replace("/(tabs)/actions")
+      }
       onSync={() => router.push("/sync-center")}
     />
   );

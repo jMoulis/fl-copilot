@@ -47,6 +47,8 @@ export function EmailInbox({
   onClose,
   onOpenSync,
   onOpenMercalys,
+  view = "combined",
+  onSettings,
 }: {
   inbox: Inbox;
   conversationId: string;
@@ -56,6 +58,8 @@ export function EmailInbox({
   onClose(): void;
   onOpenSync(conflictId?: string): void;
   onOpenMercalys?(batchId: string): void;
+  view?: "combined" | "inbox" | "settings";
+  onSettings?(): void;
 }) {
   const [cached, setCached] = useState<Cached>({ bindings: [], receipts: [] }),
     [enabled, setEnabled] = useState<boolean>(),
@@ -114,7 +118,7 @@ export function EmailInbox({
         await load();
         const available = await inbox.status(conversationId);
         if (alive.current) setEnabled(available);
-        if (available) {
+        if (available && view !== "settings") {
           const continuation = await inbox.refresh(conversationId, cursor);
           if (alive.current) setNext(continuation);
         }
@@ -122,7 +126,7 @@ export function EmailInbox({
         if (alive.current) setBindingKnown(available);
       }, "La réception ne peut pas être actualisée. Les documents déjà chargés restent disponibles.");
     },
-    [inbox, conversationId, run, load],
+    [inbox, conversationId, run, load, view],
   );
   useEffect(() => {
     void refresh();
@@ -157,12 +161,14 @@ export function EmailInbox({
           accessibilityRole="header"
           style={{ fontSize: 24, fontWeight: "700", color: colors.ink }}
         >
-          Documents reçus par email
+          {view === "settings"
+            ? "Réception email"
+            : "Documents reçus par email"}
         </Text>
-        <SecondaryButton label="Retour aux actions" onPress={onClose} />
+        <SecondaryButton label="Retour" onPress={onClose} />
       </View>
       <FlatList
-        data={cached.receipts}
+        data={view === "settings" ? [] : cached.receipts}
         keyExtractor={(receipt) => receipt.id}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets
@@ -194,7 +200,9 @@ export function EmailInbox({
                 <Text selectable style={{ color: colors.ink, fontSize: 16 }}>
                   {binding.recipient}
                 </Text>
-                <EmailSenderSettings inbox={inbox} bindingId={binding.id} />
+                {view !== "inbox" ? (
+                  <EmailSenderSettings inbox={inbox} bindingId={binding.id} />
+                ) : null}
                 <SecondaryButton
                   label="Copier l’adresse"
                   disabled={busy}
@@ -208,7 +216,7 @@ export function EmailInbox({
                 />
               </View>
             ))}
-            {!active.length && enabled === true ? (
+            {view !== "inbox" && !active.length && enabled === true ? (
               <View style={{ gap: 12 }}>
                 {!bindingKnown ? (
                   <Text style={{ color: colors.muted }}>
@@ -247,17 +255,31 @@ export function EmailInbox({
                 />
               </View>
             ) : null}
+            {view === "inbox" && onSettings ? (
+              <SecondaryButton
+                label="Configurer la réception email"
+                onPress={onSettings}
+              />
+            ) : null}
             <SecondaryButton
-              label={busy ? "Actualisation…" : "Actualiser la réception"}
+              label={
+                busy
+                  ? "Actualisation…"
+                  : view === "settings"
+                    ? "Actualiser la configuration"
+                    : "Actualiser la réception"
+              }
               disabled={busy}
               onPress={() => void refresh()}
             />
           </View>
         }
         ListEmptyComponent={
-          <Text style={{ color: colors.muted, paddingVertical: 20 }}>
-            Aucun document reçu par email dans ce magasin.
-          </Text>
+          view === "settings" ? null : (
+            <Text style={{ color: colors.muted, paddingVertical: 20 }}>
+              Aucun document reçu par email dans ce magasin.
+            </Text>
+          )
         }
         renderItem={({ item }) => (
           <EmailReceivedCard
@@ -275,7 +297,7 @@ export function EmailInbox({
           />
         )}
         ListFooterComponent={
-          next ? (
+          next && view !== "settings" ? (
             <SecondaryButton
               label="Charger les emails précédents"
               disabled={busy}

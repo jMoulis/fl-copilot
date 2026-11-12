@@ -279,7 +279,7 @@ export function ReceiptPublicationCard({
         <Pressable
           accessibilityRole="button"
           style={{ minHeight: 44, padding: 10 }}
-          onPress={() => router.push("/(tabs)/waste")}
+          onPress={() => router.push("/waste-tickets")}
         >
           <Text style={{ color: colors.forest }}>
             Ouvrir les tickets de casse

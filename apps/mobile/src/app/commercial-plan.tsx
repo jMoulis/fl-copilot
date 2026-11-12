@@ -149,7 +149,8 @@ function StoreWeek({
       ? commercialPlanNeedsReview(plan.entity, snapshot.context)
       : [];
   const navigate = (
-    pathname: "/week-preparation" | "/week" | "/commercial-plan",
+    pathname:
+      "/week-preparation" | "/commercial-documents" | "/commercial-plan",
   ) => router.push({ pathname, params: { weekStart } });
   if (installationOnly && plan && !draftAhead)
     return (
@@ -180,7 +181,7 @@ function StoreWeek({
       <SecondaryButton
         label="Retour"
         onPress={() =>
-          router.canGoBack() ? router.back() : router.replace("/(tabs)/actions")
+          router.canGoBack() ? router.back() : router.replace("/(tabs)/today")
         }
       />
       {error ? (
@@ -303,7 +304,7 @@ function StoreWeek({
           />
           <PrimaryButton
             label="Choisir mon pense-bête"
-            onPress={() => navigate("/week")}
+            onPress={() => navigate("/commercial-documents")}
           />
           <SecondaryButton
             label="Préparer manuellement"

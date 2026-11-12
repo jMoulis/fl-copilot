@@ -47,6 +47,12 @@ export default function SynchronizationScreen() {
         }
       />
 
+      <SecondaryButton
+        label="Retour"
+        onPress={() =>
+          router.canGoBack() ? router.back() : router.replace("/(tabs)/actions")
+        }
+      />
       <LocalDatabaseRecoveryNotice />
       <SectionCard title="État actuel">
         <View accessibilityLiveRegion="polite">
@@ -157,9 +163,7 @@ export default function SynchronizationScreen() {
               </Text>
               <SecondaryButton
                 label="Examiner"
-                onPress={() =>
-                  router.push(`/(tabs)/sync-conflict/${conflict.id}` as Href)
-                }
+                onPress={() => router.push(`/conflict/${conflict.id}` as Href)}
               />
             </View>
           ))}

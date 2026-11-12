@@ -1,8 +1,8 @@
 import { Redirect, Tabs, type Href } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useWindowDimensions } from "react-native";
-import { useAuth } from "@/auth/auth-provider";
-import { colors } from "@/design/tokens";
+import { useAuth } from "../../auth/auth-provider";
+import { colors } from "../../design/tokens";
 export default function TabLayout() {
   const { status } = useAuth();
   const { fontScale } = useWindowDimensions();
@@ -27,11 +27,11 @@ export default function TabLayout() {
       <Tabs.Screen
         name="today"
         options={{
-          title: "Aujourd’hui",
-          tabBarAccessibilityLabel: "Aujourd’hui",
+          title: "Journal",
+          tabBarAccessibilityLabel: "Journal",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? "home" : "home-outline"}
+              name={focused ? "journal" : "journal-outline"}
               color={color}
               size={size}
             />
@@ -46,20 +46,6 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? "bar-chart" : "bar-chart-outline"}
-              color={color}
-              size={size}
-            />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="products"
-        options={{
-          title: "Produits",
-          tabBarAccessibilityLabel: "Produits",
-          tabBarIcon: ({ color, size, focused }) => (
-            <Ionicons
-              name={focused ? "nutrition" : "nutrition-outline"}
               color={color}
               size={size}
             />
@@ -83,17 +69,18 @@ export default function TabLayout() {
       <Tabs.Screen
         name="actions"
         options={{
-          title: "Actions",
-          tabBarAccessibilityLabel: "Actions",
+          title: "Imports",
+          tabBarAccessibilityLabel: "Imports",
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
-              name={focused ? "checkbox" : "checkbox-outline"}
+              name={focused ? "folder" : "folder-outline"}
               color={color}
               size={size}
             />
           ),
         }}
       />
+      <Tabs.Screen name="products" options={{ href: null }} />
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="week" options={{ href: null }} />
       <Tabs.Screen name="waste" options={{ href: null }} />

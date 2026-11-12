@@ -26,11 +26,13 @@ import { colors } from "@/design/tokens";
 
 export function AppScreen({
   children,
+  header,
   refreshing = false,
   onRefresh,
   scrollRef,
   keyboardAware = false,
 }: PropsWithChildren<{
+  header?: React.ReactNode;
   scrollRef?: Ref<ScrollView>;
   refreshing?: boolean;
   onRefresh?: () => void;
@@ -38,6 +40,7 @@ export function AppScreen({
 }>) {
   return (
     <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-canvas">
+      {header}
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 32 }}

@@ -1,355 +1,93 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Text, View, Pressable, type ScrollView } from "react-native";
-import { useIsFocused } from "expo-router/react-navigation";
+import { useState } from "react";
+import { Text, View } from "react-native";
 import { router } from "expo-router";
-import { digestStringAsync, CryptoDigestAlgorithm } from "expo-crypto";
-import { currentCommercialWeek } from "@fl-copilot/commercial-core";
-import { addExplorerDays } from "@fl-copilot/analytics-core";
-import type { CommercialWeekPlan } from "@fl-copilot/domain";
-import { useAuth } from "../../../auth/auth-provider";
-import { useLocalDatabase } from "../../../providers/database-provider";
-import { useSync } from "../../../sync/sync-provider";
-import { CommercialPlanRepository } from "../../../commercial/week-plan-repository";
-import { CopilotActivityPanel } from "../../../commercial/copilot-activity-panel";
-import { CommercialExecutionView } from "../../../commercial/execution-view";
-import {
-  ActionsViewRepository,
-  initialActionsView,
-  type ActionsView,
-} from "../../../commercial/actions-view";
-import {
-  formatFrenchCalendarDate,
-  tradingToday,
-} from "../../../dates/calendar";
-import { DetailsDisclosure } from "../../../components/dashboard";
-import { DateSelector } from "../../../components/date-selector";
+import { MainHeader } from "../../../components/main-header";
 import {
   AppScreen,
-  AppHeader,
-  SecondaryButton,
-  InlineAlert,
-  SectionCard,
+  BottomSheet,
   MenuRow,
+  PrimaryButton,
+  SecondaryButton,
 } from "../../../components/ui";
-export default function ActionsScreen() {
-  const { session } = useAuth(),
-    storeId = session?.stores[0]?.storeId,
-    ownerId = session?.user.id;
-  return storeId && ownerId ? (
-    <StoreActions
-      key={`${storeId}:${ownerId}`}
-      storeId={storeId}
-      ownerId={ownerId}
-    />
-  ) : (
-    <AppScreen>
-      <AppHeader title="Actions" />
-      <InlineAlert
-        title="Aucun magasin actif"
-        message="Reconnectez-vous pour retrouver les actions de votre magasin."
-      />
-    </AppScreen>
-  );
-}
-function StoreActions({
-  storeId,
-  ownerId,
-}: {
-  storeId: string;
-  ownerId: string;
-}) {
-  const { sqlite } = useLocalDatabase(),
-    sync = useSync();
-  const scroll = useRef<ScrollView>(null),
-    activityTop = useRef(0);
-  const repo = useMemo(
-    () =>
-      new CommercialPlanRepository(sqlite, (s) =>
-        digestStringAsync(CryptoDigestAlgorithm.SHA256, s),
-      ),
-    [sqlite],
-  );
-  const views = useMemo(
-    () => new ActionsViewRepository(sqlite, { storeId, ownerId }),
-    [sqlite, storeId, ownerId],
-  );
-  const [view, setView] = useState<ActionsView>();
-  const [notice, setNotice] = useState<string>();
-  const initialized = view !== undefined;
-  const week = currentCommercialWeek(
-    new Date(`${view?.weekStart ?? initialActionsView().weekStart}T12:00:00Z`),
-  );
-  const [snapshot, setSnapshot] = useState<{
-    week: string;
-    plan: CommercialWeekPlan | null;
-  }>();
-  const [error, setError] = useState<string>();
-  const [retry, setRetry] = useState(0);
-  const focused = useIsFocused();
-  const displayed = useRef(snapshot);
-  const wasFocused = useRef(false),
-    lastReadRetry = useRef(-1);
-  displayed.current = snapshot;
-  const revision =
-    sync.status === "syncing"
-      ? "syncing"
-      : JSON.stringify([
-          sync.pendingCommandCount ?? sync.pendingCount,
-          sync.conflictCount,
-          sync.failedCount,
-          sync.lastSyncedAt,
-          sync.status,
-        ]);
-  useEffect(() => {
-    if (!focused || initialized) return;
-    let active = true;
-    void views
-      .read()
-      .then((saved) => {
-        if (active) setView(saved ?? initialActionsView());
-      })
-      .catch(() => {
-        if (active) {
-          setView(initialActionsView());
-          setNotice(
-            "La semaine mémorisée ne peut pas être relue. La semaine courante reste consultable ; vos actions ne sont pas modifiées.",
-          );
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [views, focused, initialized]);
-  useEffect(() => {
-    const entering = focused && !wasFocused.current;
-    wasFocused.current = focused;
-    if (!focused || !initialized) return;
-    if (
-      sync.status === "syncing" &&
-      displayed.current?.week === week.start &&
-      !entering &&
-      lastReadRetry.current === retry
-    )
-      return;
-    lastReadRetry.current = retry;
-    let active = true;
-    void repo
-      .get(storeId, week.start)
-      .then((record) => {
-        if (active) {
-          setSnapshot({ week: week.start, plan: record?.entity ?? null });
-          setError(undefined);
-        }
-      })
-      .catch(() => {
-        if (active)
-          setError(
-            "Les actions locales n’ont pas pu être relues. Les déclarations déjà affichées restent conservées.",
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, [
-    focused,
-    initialized,
-    storeId,
-    week.start,
-    repo,
-    revision,
-    sync.status,
-    retry,
-  ]);
-  const change = (next: ActionsView) => {
-    setView(next);
-    void views
-      .save(next)
-      .then(() => setNotice(undefined))
-      .catch(() => {
-        setNotice(
-          "La sélection reste affichée, mais n’a pas pu être mémorisée pour le prochain démarrage. Choisissez à nouveau la semaine ou le filtre pour réessayer.",
-        );
-      });
-  };
-  const visible = snapshot?.week === week.start ? snapshot : undefined;
-  const selected = (date: string) => {
-    if (!view) return;
-    change({ ...view, weekStart: initialActionsView(date).weekStart });
-    setError(undefined);
-  };
-  if (!view)
-    return (
-      <AppScreen>
-        <AppHeader compact title="Actions" />
-        <Text className="text-muted">Lecture de votre semaine…</Text>
-      </AppScreen>
-    );
+import { useSync } from "../../../sync/sync-provider";
+export default function ImportsHub() {
+  const [choosing, setChoosing] = useState(false);
+  const sync = useSync();
   return (
-    <AppScreen scrollRef={scroll}>
-      <AppHeader
-        compact
-        title="Actions"
-        subtitle="Vos tâches et décisions sur le terrain."
+    <AppScreen header={<MainHeader title="Imports" />}>
+      <Text className="text-muted">Ajouter et retrouver tes données.</Text>
+      <PrimaryButton
+        label="Importer un fichier"
+        onPress={() => setChoosing(true)}
       />
-      {notice ? (
-        <InlineAlert title="Affichage conservé" message={notice} />
-      ) : null}
-      <View className="gap-3">
-        <View className="flex-row items-center justify-between gap-2">
-          <WeekArrow
-            label="Semaine précédente"
-            sign="‹"
-            onPress={() => selected(addExplorerDays(week.start, -7))}
-          />
-          <View className="flex-1">
-            <DateSelector
-              value={week.start}
-              label="Choisir la semaine"
-              triggerLabel={`Semaine ${week.number} · ${week.year}`}
-              description="Choisissez une date de la semaine à consulter. Aucune déclaration n’est modifiée."
-              onConfirm={selected}
-            />
-          </View>
-          <WeekArrow
-            label="Semaine suivante"
-            sign="›"
-            onPress={() => selected(addExplorerDays(week.start, 7))}
-          />
-        </View>
-
-        <Text className="text-center text-sm text-muted">
-          Du {formatFrenchCalendarDate(week.start)} au{" "}
-          {formatFrenchCalendarDate(week.end)}
-        </Text>
-        <SecondaryButton
-          label="Préparer la semaine prochaine"
-          onPress={() => {
-            const weekStart = addExplorerDays(
-              initialActionsView().weekStart,
-              7,
-            );
-            selected(weekStart);
-            router.push({
-              pathname: "/commercial-plan",
-              params: { weekStart },
-            });
-          }}
-        />
-        {week.start !== initialActionsView().weekStart ? (
-          <SecondaryButton
-            label="Revenir à cette semaine"
-            onPress={() => selected(tradingToday())}
-          />
-        ) : null}
-      </View>
-      {error ? (
-        <>
-          <InlineAlert title="Lecture interrompue" message={error} />
-          <SecondaryButton
-            label="Réessayer la lecture"
-            onPress={() => setRetry((n) => n + 1)}
-          />
-        </>
-      ) : null}
-      <SectionCard title="Ma semaine">
+      <View className="rounded-3xl border border-line bg-surface px-4">
         <MenuRow
-          title="Voir ma semaine"
-          description="Tes TG et les choix enregistrés avec le copilote."
-          icon="calendar-outline"
-          onPress={() =>
-            router.push({
-              pathname: "/commercial-plan",
-              params: { weekStart: week.start },
-            })
-          }
-        />
-      </SectionCard>
-      <CopilotActivityPanel
-        db={sqlite}
-        storeId={storeId}
-        ownerId={ownerId}
-        weekStart={week.start}
-        focused={focused}
-        revision={revision}
-        filter={view.copilotFilter ?? "ALL"}
-        onFilter={(copilotFilter) => change({ ...view, copilotFilter })}
-        onLayout={(y) => {
-          activityTop.current = y;
-        }}
-        onNavigate={() =>
-          scroll.current?.scrollTo({ y: activityTop.current, animated: false })
-        }
-      />
-      {!visible ? (
-        !error ? (
-          <Text className="text-muted">Lecture des actions de la semaine…</Text>
-        ) : null
-      ) : visible.plan ? (
-        <CommercialExecutionView
-          key={week.start}
-          plan={visible.plan}
-          compact
-          filter={view.filter}
-          onFilter={(filter) => change({ ...view, filter })}
-        />
-      ) : null}
-      <DetailsDisclosure title="Documents, imports et gestion du magasin">
-        <MenuRow
-          title="Recevoir des documents par email"
-          description="L’adresse unique du magasin et les fichiers reçus."
-          icon="mail-outline"
-          onPress={() => router.push("/actions/email")}
-        />
-        <MenuRow
-          title="Documents commerciaux"
-          description="Tes pense-bêtes et PDF originaux."
+          title="Mercalys"
+          description="Fichiers Excel, ZIP et lots importés"
           icon="document-text-outline"
-          onPress={() =>
-            router.push({
-              pathname: "/week",
-              params: { weekStart: week.start },
-            })
-          }
+          onPress={() => router.push("/mercalys-imports")}
         />
         <MenuRow
           title="Casse"
-          description="Tickets, photos et imports de casse."
+          description="Photographier ou examiner un ticket"
           icon="camera-outline"
-          onPress={() => router.push("/waste")}
+          onPress={() => router.push("/waste-tickets")}
         />
         <MenuRow
-          title="Imports Mercalys"
-          description="Retrouver les ventes et les fichiers importés."
-          icon="cloud-upload-outline"
-          onPress={() => router.push("/imports")}
+          title="Documents commerciaux"
+          description="Pense-bêtes et PDF originaux"
+          icon="documents-outline"
+          onPress={() => router.push("/commercial-documents")}
         />
         <MenuRow
-          title="Magasin et synchronisation"
-          description="Plan du rayon, réglages et modifications en attente."
-          icon="settings-outline"
-          onPress={() => router.push("/more")}
+          title="Emails reçus"
+          description="Les documents envoyés au magasin"
+          icon="mail-outline"
+          onPress={() => router.push("/email-inbox")}
         />
-      </DetailsDisclosure>
+      </View>
+      <SecondaryButton
+        label={
+          sync.pendingCount
+            ? `Synchronisation · ${sync.pendingCount} éléments en attente`
+            : "Synchronisation et envois"
+        }
+        onPress={() => router.push("/sync-center")}
+      />
+      <BottomSheet
+        visible={choosing}
+        title="Importer un document"
+        onClose={() => setChoosing(false)}
+        swipeToClose
+      >
+        <MenuRow
+          title="Ventes Mercalys"
+          description="Excel ou ZIP"
+          icon="document-text-outline"
+          onPress={() => {
+            setChoosing(false);
+            router.push("/mercalys-imports");
+          }}
+        />
+        <MenuRow
+          title="Ticket de casse"
+          description="Photo ou fichier"
+          icon="camera-outline"
+          onPress={() => {
+            setChoosing(false);
+            router.push("/waste-tickets");
+          }}
+        />
+        <MenuRow
+          title="Document commercial"
+          description="Pense-bête PDF"
+          icon="documents-outline"
+          onPress={() => {
+            setChoosing(false);
+            router.push("/commercial-documents");
+          }}
+        />
+      </BottomSheet>
     </AppScreen>
-  );
-}
-function WeekArrow({
-  label,
-  sign,
-  onPress,
-}: {
-  label: string;
-  sign: string;
-  onPress(): void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      className="min-h-12 min-w-12 items-center justify-center rounded-xl border border-line bg-surface"
-    >
-      <Text className="text-2xl text-forest">{sign}</Text>
-    </Pressable>
   );
 }

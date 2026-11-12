@@ -237,7 +237,10 @@ export default function ReminderSettings() {
         title="Notifications sur ce téléphone"
         subtitle="Réponses, documents reçus et rappels commerciaux."
       />
-      <SecondaryButton label="Retour à Plus" onPress={() => router.back()} />
+      <SecondaryButton
+        label="Retour aux réglages"
+        onPress={() => router.back()}
+      />
       <SectionCard title="Réponses du copilote">
         <View className="flex-row items-center justify-between gap-3">
           <Text className="flex-1 text-base text-ink">

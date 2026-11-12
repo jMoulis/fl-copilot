@@ -250,7 +250,7 @@ export function SubstitutionView({ productId }: { productId: string }) {
                     label={`Ouvrir ${showIncoming ? source : substitute}`}
                     onPress={() =>
                       router.push(
-                        `/(tabs)/products/${showIncoming ? e.sourceProductId : e.substituteProductId}` as Href,
+                        `/product/${showIncoming ? e.sourceProductId : e.substituteProductId}` as Href,
                       )
                     }
                   />

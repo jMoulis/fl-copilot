@@ -23,7 +23,7 @@ export async function documentNotificationDestination(
   if (source?.source_type !== data.sourceType) return;
   if (data.sourceType === "WEEKLY_COMMERCIAL_PDF")
     return {
-      pathname: "/(tabs)/commercial-review/[id]" as const,
+      pathname: "/document-review/[id]" as const,
       params: { id: data.sourceDocumentId },
     };
   const receipt = await db.getFirstAsync<{ id: string }>(

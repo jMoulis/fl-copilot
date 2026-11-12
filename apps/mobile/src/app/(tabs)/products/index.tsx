@@ -117,7 +117,7 @@ function StoreCatalogue({
     setView(next);
   }, []);
   const open = useCallback(
-    (id: string) => router.push(`/(tabs)/products/${id}` as Href),
+    (id: string) => router.push(`/product/${id}` as Href),
     [],
   );
   if (!view)
@@ -133,7 +133,10 @@ function StoreCatalogue({
       view={view}
       onChange={update}
       onOpen={open}
-      onAdd={() => router.push("/(tabs)/products/new" as Href)}
+      onBack={() =>
+        router.canGoBack() ? router.back() : router.replace("/(tabs)/copilot")
+      }
+      onAdd={() => router.push("/product/new" as Href)}
       loading={state.loading}
       error={state.error}
       notice={notice}

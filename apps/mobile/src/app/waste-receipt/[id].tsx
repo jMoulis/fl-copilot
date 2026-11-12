@@ -441,7 +441,7 @@ function ReceiptEditor({ id, storeId }: { id: string; storeId: string }) {
           {showCatalogWarnings ? (
             <SecondaryButton
               label="Ouvrir le référentiel"
-              onPress={() => router.push("/(tabs)/products")}
+              onPress={() => router.push("/catalogue")}
             />
           ) : null}
         </SectionCard>
@@ -1273,7 +1273,7 @@ function LineEditor({
           <SecondaryButton
             label="Compléter la fiche produit"
             onPress={() =>
-              router.push(`/(tabs)/products/${draft.line.matchedProductId}`)
+              router.push(`/product/${draft.line.matchedProductId}`)
             }
           />
         ) : null}

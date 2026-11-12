@@ -808,7 +808,7 @@ it("opens a store email alert in Actions once, without importing or writing", as
   runtime.lastResponse = { notification: { request: { content: { data } } } };
   await render();
   expect(runtime.navigate).toHaveBeenCalledWith({
-    pathname: "/actions/email",
+    pathname: "/email-inbox",
     params: { receiptId: data.receiptId },
   });
   for (const listener of runtime.responseListeners)
@@ -859,7 +859,7 @@ it("opens the existing document detail once for repeated concurrent notification
   });
   expect(runtime.navigate).toHaveBeenCalledTimes(1);
   expect(runtime.navigate).toHaveBeenCalledWith({
-    pathname: "/(tabs)/commercial-review/[id]",
+    pathname: "/document-review/[id]",
     params: { id: data.sourceDocumentId },
   });
   expect(runtime.syncNow).not.toHaveBeenCalled();

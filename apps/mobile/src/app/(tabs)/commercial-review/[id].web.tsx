@@ -15,7 +15,7 @@ export default function CommercialReviewWeb() {
       />
       <SecondaryButton
         label="Retour à Ma semaine"
-        onPress={() => router.replace("/week" as Href)}
+        onPress={() => router.replace("/commercial-documents" as Href)}
       />
     </AppScreen>
   );

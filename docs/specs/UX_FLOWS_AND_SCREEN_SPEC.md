@@ -1,3 +1,11 @@
+## Owner-approved navigation batch — 12 November 2026
+
+The approved navigation is **Journal · Analyses · Copilote · Imports**. Each root has fixed Products and Settings shortcuts. Details are full pages with Back; filters and contextual information use dismissible sheets. Returning from a product detail or editor preserves the originating analysis/catalogue screen, selection and saved list position.
+
+Journal gives access to Ma semaine and existing store observations. The future contextual daily journal is separate. Imports groups Mercalys, waste tickets, commercial PDFs and received emails; synchronization is directly accessible. Settings separates store configuration from application/account management, including logout only within Account. Commercial preparation/context/history is located in Ma semaine, not the PDF intake screen. The same email service serves separate inbox and sender-configuration views.
+
+This owner arbitration supersedes historical Actions/Plus/five-tab descriptions below. It reuses the existing local repositories, source processing, synchronization and approvals; it adds no model, KPI calculation or AI call. Legacy routes remain compatible. Code verification and owner iPhone acceptance are recorded separately.
+
 ## Native chat semantics — 4 November 2026
 
 Read ordinary assistant paragraphs, table cells and the author as text, and headings as headings. A long-press context menu must not label all prose as hyperlinks. Actual source spans remain independently discoverable links and open the existing source sheet; copy/delete controls, long press and horizontal table scrolling remain available. This changes accessibility semantics without changing the conversational workflow.

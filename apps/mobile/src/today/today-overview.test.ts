@@ -230,7 +230,7 @@ it("shares one visual library across three priorities and five movements, with s
     String(n.props.accessibilityLabel).startsWith("POMME 0."),
   )!;
   await act(() => movement.props.onPress());
-  expect(runtime.push).toHaveBeenLastCalledWith("/(tabs)/products/product-0");
+  expect(runtime.push).toHaveBeenLastCalledWith("/product/product-0");
   const trends = rendered!.root
     .findAllByType("Icon" as never)
     .filter((n) => n.props.name === "trending-down");
