@@ -1,15 +1,17 @@
 import Constants from "expo-constants";
 import { Alert, Text } from "react-native";
-import { router } from "expo-router";
-import { useAuth } from "@/auth/auth-provider";
+import { Redirect, router } from "expo-router";
+import { useAuth } from "../auth/auth-provider";
 import {
   AppHeader,
   AppScreen,
   SectionCard,
   SecondaryButton,
-} from "@/components/ui";
+} from "../components/ui";
 export default function AccountScreen() {
-  const { session, logout } = useAuth();
+  const { status, session, logout } = useAuth();
+  if (status === "loading") return null;
+  if (status !== "authenticated") return <Redirect href="/login" />;
   return (
     <AppScreen>
       <AppHeader title="Compte et application" />
