@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { MongoClient } from "mongodb";
+import { MongoClient, Decimal128 } from "mongodb";
+import type { ProductDocument } from "../src/products/product-master";
 import { DatabaseSync } from "node:sqlite";
 import { VisualTestDatabase } from "../../../scripts/test-visual-sqlite";
 import { runLocalMigrations } from "../../mobile/src/db/migrations";
@@ -51,9 +52,17 @@ describe.skipIf(!process.env.TEST_MONGODB_URI)(
     });
     async function setup() {
       const f = visualLibraryFixture();
-      await db
-        .collection("products")
-        .insertOne({ ...f.product, _id: f.product.id } as never);
+      const { id, packaging: _packaging, ...base } = f.product;
+      void _packaging;
+      await db.collection<ProductDocument>("products").insertOne({
+        ...base,
+        _id: id,
+        packaging: null,
+        schemaVersion: 1,
+        createdAt: new Date(f.product.createdAt),
+        updatedAt: new Date(f.product.updatedAt),
+        deletedAt: null,
+      });
       const bytes = await alphaProductImageFixture();
       const image = {
         ...(await inspectGeneratedProductImage(bytes)),
@@ -99,6 +108,38 @@ describe.skipIf(!process.env.TEST_MONGODB_URI)(
         input,
       };
     }
+    it("reads canonical BSON IDs, dates and Decimal128 packaging before constructing the image prompt", async () => {
+      const s = await setup();
+      await db.collection<ProductDocument>("products").updateOne(
+        { _id: s.f.product.id },
+        {
+          $set: {
+            nature: "PACKAGED",
+            packaging: {
+              quantity: Decimal128.fromString("250"),
+              unit: "G",
+              sourceLabel: "barquette 250 g",
+            },
+          },
+        },
+      );
+      expect((await s.service.options(s.ctx, s.f.product.id)).available).toBe(
+        true,
+      );
+      expect((await s.service.generate(s.ctx, s.input)).status).toBe("READY");
+      expect(s.provider.generate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: s.f.product.id,
+          createdAt: s.f.product.createdAt,
+          nature: "PACKAGED",
+          packaging: {
+            quantity: "250",
+            unit: "G",
+            sourceLabel: "barquette 250 g",
+          },
+        }),
+      );
+    });
     it("carries an explicitly chosen generated PNG through canonical sync and visual-file manifests to another local device", async () => {
       const s = await setup();
       const generation = await s.service.generate(s.ctx, s.input);
