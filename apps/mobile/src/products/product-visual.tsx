@@ -61,7 +61,7 @@ export function ProductVisual({
         width: size,
         height: size,
         borderRadius: 16,
-        backgroundColor: colors.surfaceMuted,
+        backgroundColor: uri ? "transparent" : colors.surfaceMuted,
         overflow: "hidden",
         alignItems: "center",
         justifyContent: "center",

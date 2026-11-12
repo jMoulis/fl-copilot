@@ -133,6 +133,10 @@ it("keeps the legacy image visible, queues its PNG upgrade once, then renders th
   snapshot = await loadVisualLibraryState(db, fixture.storeId, fixture.actorId);
   await act(async () => tree!.update(createElement(Harness)));
   expect(image().props.source.uri).toMatch(/\.png$/);
+  expect(
+    tree!.root.findAll((node) => String(node.type) === "View")[0]!.props.style
+      .backgroundColor,
+  ).toBe("transparent");
   expect(queue).toHaveBeenCalledTimes(1);
   expect(
     (await new VisualFileCache(db).get(

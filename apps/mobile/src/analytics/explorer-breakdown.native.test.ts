@@ -44,6 +44,7 @@ it("uses accessible real controls to select declines, percentage and reverse ord
     onProduct = vi.fn(),
     onOpenProduct = vi.fn();
   let tree: ReactTestRenderer | undefined;
+  let referenceValue = "100";
   function Harness() {
     const [productList, setList] = useState<AnalyticsProductList>(
       defaultAnalyticsProductList(),
@@ -61,7 +62,7 @@ it("uses accessible real controls to select declines, percentage and reverse ord
         storeId,
         productId,
         businessDate: "2025-10-24",
-        sales: { value: "100", status: "AVAILABLE" as const },
+        sales: { value: referenceValue, status: "AVAILABLE" as const },
         margin: { value: null, status: "UNAVAILABLE" as const },
         waste: { value: null, status: "UNAVAILABLE" as const },
       },
@@ -86,6 +87,8 @@ it("uses accessible real controls to select declines, percentage and reverse ord
         filters,
         detailsUnavailable: false,
       },
+      period: { kind: "day", date: "2026-10-23" },
+      metric: "sales",
       productList,
       onProductList: (next) => {
         changes(next);
@@ -114,6 +117,7 @@ it("uses accessible real controls to select declines, percentage and reverse ord
       direction: "ASC",
     });
     expect(JSON.stringify(tree!.toJSON())).toContain("−50");
+    await act(() => find("Choisir le tri des produits").props.onPress());
     await act(() =>
       find("Trier les produits par : Évolution %").props.onPress(),
     );
@@ -122,15 +126,7 @@ it("uses accessible real controls to select declines, percentage and reverse ord
       sort: "PERCENTAGE",
       direction: "ASC",
     });
-    await act(() =>
-      tree!.root
-        .findAll(
-          (n) =>
-            String(n.type) === "Button" &&
-            n.props.accessibilityLabel === "Inverser l’ordre des produits",
-        )[0]
-        .props.onPress(),
-    );
+    await act(() => find("Inverser l’ordre des produits").props.onPress());
     expect(changes).toHaveBeenLastCalledWith({
       trend: "DOWN",
       sort: "PERCENTAGE",
@@ -146,6 +142,7 @@ it("uses accessible real controls to select declines, percentage and reverse ord
         .props.onPress(),
     );
     expect(onProduct).toHaveBeenCalledWith(productId);
+    expect(JSON.stringify(tree!.toJSON())).toContain("Jour");
     expect(JSON.stringify(tree!.toJSON())).not.toContain("jours complets");
     await act(() =>
       find("Informations sur les chiffres : Poire").props.onPress(),
@@ -190,6 +187,17 @@ it("uses accessible real controls to select declines, percentage and reverse ord
     expect(JSON.stringify(tree!.toJSON())).toContain(
       "Aucun produit ne correspond",
     );
+    referenceValue = "0";
+    await act(() => find("Évolution des produits : Tous").props.onPress());
+    const zeroReferenceRow = tree!.root.findAll(
+      (node) =>
+        String(node.type) === "Pressable" &&
+        String(node.props.accessibilityLabel).startsWith("Explorer : Poire"),
+    )[0]!;
+    expect(zeroReferenceRow.props.accessibilityLabel).toContain(
+      "Évolution : +50",
+    );
+    expect(zeroReferenceRow.props.accessibilityLabel).not.toContain("%");
   } finally {
     await act(() => tree?.unmount());
     silence.mockRestore();
