@@ -364,6 +364,18 @@ describe.skipIf(!uri)(
       });
       expect(list.rows).toHaveLength(1);
       expect(list.rows[0]).toMatchObject({ id: productId, status: "ACTIVE" });
+      await db
+        .collection<Document & { _id: string }>("products")
+        .updateOne({ _id: productId }, { $set: { isPetitPrix: true } });
+      const range = await aggregate(
+        [
+          { $match: { isPetitPrix: true } },
+          { $project: { _id: 0, id: 1, isPetitPrix: 1 } },
+        ],
+        "products",
+      );
+      expect(range.rows).toEqual([{ id: productId, isPetitPrix: true }]);
+
       expect(JSON.stringify(list)).not.toMatch(/never-visible|FOREIGN SECRET/);
       const alien = await db
         .collection<Document & { _id: string }>("products")

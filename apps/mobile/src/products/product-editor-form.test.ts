@@ -9,6 +9,7 @@ import {
 
 vi.mock("react-native", () => ({
   View: "View",
+  Switch: "Switch",
   Text: "Text",
   TextInput: "Input",
   Pressable: "Pressable",
@@ -265,4 +266,15 @@ it("does not focus a previous form after its unmount when another invalid draft 
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("keeps Petit Prix changes in the draft until explicit save", async () => {
+  await mount();
+  const toggle = () => rendered!.root.findByType("Switch" as never);
+  expect(toggle().props.value).toBe(false);
+  await act(async () => toggle().props.onValueChange(true));
+  expect(save).not.toHaveBeenCalled();
+  expect(toggle().props.value).toBe(true);
+  await press("Enregistrer le produit");
+  expect(save.mock.calls[0]?.[0]).toMatchObject({ isPetitPrix: true });
 });

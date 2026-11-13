@@ -33,9 +33,30 @@ it("upgrades v60 atomically with every legacy payload, history, dirty state and 
     await runLocalMigrations(db, localMigrations.slice(0, 60));
     const f = await commercialChoiceFixture();
     await applyCommercialVisualReading(db, f.storeId, f.reading);
-    await new ProductMasterRepository(db).upsertProduct(f.product, {
+    // Seed schema v60 without using the latest repository's additive columns.
+    await db.runAsync(
+      "INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at,sync_state,dirty) VALUES(?,?,?,?,?,?,?,?,?,?,?,1)",
+      f.product.id,
+      f.storeId,
+      f.product.label,
+      f.product.category,
+      f.product.nature,
+      f.product.salesUnit,
+      f.product.status,
+      f.product.version,
+      f.product.createdAt,
+      f.product.updatedAt,
+      "PENDING",
+    );
+    await new OutboxRepository(db).enqueue({
       commandId: randomUUID(),
+      storeId: f.storeId,
       deviceId: randomUUID(),
+      commandType: "PRODUCT_UPSERT",
+      entityType: "product",
+      entityId: f.product.id,
+      payload: f.product,
+      createdAt: f.product.updatedAt,
     });
     await new CommercialChoiceRepository(db, testChoiceDigest).save(f.choice, {
       commandId: randomUUID(),
@@ -65,7 +86,7 @@ it("upgrades v60 atomically with every legacy payload, history, dirty state and 
     expect(snapshot()).toEqual(before);
     db.execAsync = exec;
     await runLocalMigrations(db);
-    expect(await getLocalSchemaVersion(db)).toBe(62);
+    expect(await getLocalSchemaVersion(db)).toBe(localMigrations.length);
     expect(snapshot()).toEqual(before);
     db.raw.close();
     db = new VisualTestDatabase(new DatabaseSync(path));

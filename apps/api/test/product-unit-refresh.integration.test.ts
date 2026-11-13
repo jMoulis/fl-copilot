@@ -215,6 +215,37 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       );
     }
 
+    it("synchronizes Petit Prix and preserves it when a legacy writer omits it", async () => {
+      const f = await fixture(1, "KG");
+      const before = await f.raw();
+      const marked = command(f.product, "KG");
+      marked.payload = {
+        ...productSchema.parse(marked.payload),
+        isPetitPrix: true,
+      };
+      const first = await push(f.product, marked);
+      expect(first.results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { isPetitPrix: true },
+      });
+      const legacy = command(f.product, "KG", 2);
+      const second = await push(f.product, legacy);
+      expect(second.results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { isPetitPrix: true },
+      });
+      const cleared = command(f.product, "KG", 3);
+      cleared.payload = {
+        ...productSchema.parse(cleared.payload),
+        isPetitPrix: false,
+      };
+      expect((await push(f.product, cleared)).results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { isPetitPrix: false },
+      });
+      expect(await f.raw()).toBe(before);
+    });
+
     it("refreshes quantities/prices through a real SQLite editor/Outbox command, retaining raw values and context", async () => {
       const f = await fixture();
       const before = await f.snapshots(),

@@ -512,7 +512,13 @@ INSERT INTO sync_conflicts(id,store_id,command_id,entity_type,entity_id,local_pa
     await runLocalMigrations(adapter);
     expect(
       tables.map((t) => database.prepare(`SELECT * FROM ${t}`).all()),
-    ).toEqual(before);
+    ).toEqual(
+      before.map((rows, index) =>
+        index === 0
+          ? rows.map((row) => ({ ...row, is_petit_prix: null }))
+          : rows,
+      ),
+    );
     expect(
       database
         .prepare("SELECT COUNT(*) n FROM product_master_conflict_history")
@@ -581,7 +587,13 @@ INSERT INTO local_jobs(id,type,payload_json,status,attempt_count,last_error,crea
     await runLocalMigrations(adapter);
     expect(
       tables.map((table) => database.prepare(`SELECT * FROM ${table}`).all()),
-    ).toEqual(before);
+    ).toEqual(
+      before.map((rows, index) =>
+        tables[index] === "products"
+          ? rows.map((row) => ({ ...row, is_petit_prix: null }))
+          : rows,
+      ),
+    );
     expect(
       database
         .prepare("PRAGMA table_info(visual_asset_files)")

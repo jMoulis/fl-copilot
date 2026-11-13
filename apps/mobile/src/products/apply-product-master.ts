@@ -177,8 +177,8 @@ async function upsertProduct(
         id, store_id, label, category, nature, sales_unit,
         packaging_quantity, packaging_unit, packaging_source_label,
         family_id, subfamily_id, status, version, created_at, updated_at,
-        deleted_at, sync_state, remote_version, dirty
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, 0)
+        deleted_at, sync_state, remote_version, dirty, is_petit_prix
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, 0, ?)
       ON CONFLICT(id) DO UPDATE SET
         store_id = excluded.store_id, label = excluded.label,
         category = excluded.category, nature = excluded.nature,
@@ -190,7 +190,8 @@ async function upsertProduct(
         status = excluded.status, version = excluded.version,
         created_at = excluded.created_at, updated_at = excluded.updated_at,
         deleted_at = excluded.deleted_at, sync_state = 'SYNCED',
-        remote_version = excluded.remote_version, dirty = 0
+        remote_version = excluded.remote_version, dirty = 0,
+        is_petit_prix = COALESCE(excluded.is_petit_prix, products.is_petit_prix)
       WHERE (products.dirty = 0 OR products.version = ?)
         AND excluded.version >= COALESCE(products.remote_version, -1)
     `,
@@ -211,6 +212,7 @@ async function upsertProduct(
     product.updatedAt,
     product.deletedAt ?? null,
     product.version,
+    product.isPetitPrix === undefined ? null : Number(product.isPetitPrix),
     expectedLocalVersion ?? -1,
   );
 }

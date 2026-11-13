@@ -426,7 +426,22 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       expect(empty.evidence[0]?.value).toContain(
         "ne prouve pas une absence de rupture",
       );
-      const before = all.evidence.find((e) => e.sourceId === late.id)!.id;
+      const oldEvidence = all.evidence.find((e) => e.sourceId === late.id)!;
+      await db
+        .collection<{ _id: string }>("products")
+        .updateOne({ _id: productId }, { $set: { isPetitPrix: true } });
+      const marked = await readFieldEvents(db, storeId, input);
+      expect(marked.events).toEqual(all.events);
+      const markedEvidence = marked.evidence.find(
+        (e) => e.sourceId === late.id,
+      )!;
+      expect(markedEvidence.value).toContain(
+        "Gamme Petit Prix marquée sur la fiche actuelle",
+      );
+      expect(markedEvidence.value).toContain("25/10/2026");
+      expect(markedEvidence.value).toContain("26/10/2026");
+      expect(markedEvidence.id).not.toBe(oldEvidence.id);
+      const before = markedEvidence.id;
       await db
         .collection<{ _id: string }>("storeProductEvents")
         .updateOne(

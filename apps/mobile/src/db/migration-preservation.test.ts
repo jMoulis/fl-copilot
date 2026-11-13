@@ -7,7 +7,6 @@ import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
 import { productSchema } from "@fl-copilot/domain";
-import { ProductMasterRepository } from "../products/product-master-repository";
 import { OutboxRepository } from "../sync/outbox-repository";
 import { ReceiptTestDatabase } from "../../../../scripts/test-receipt-publication-sqlite";
 import { getOrCreateDeviceId } from "./device-identity";
@@ -194,10 +193,32 @@ async function fixture(version: number) {
         updatedAt: at,
         deletedAt: null,
       });
-      await new ProductMasterRepository(adapter).upsertProduct(product, {
+      // Seed the historical schema explicitly, independently of today's repository columns.
+      db.prepare(
+        "INSERT INTO products(id,store_id,label,category,nature,sales_unit,status,version,created_at,updated_at,sync_state,dirty,remote_version) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,1)",
+      ).run(
+        product.id,
+        storeId,
+        product.label,
+        product.category,
+        product.nature,
+        product.salesUnit,
+        product.status,
+        product.version,
+        at,
+        at,
+        "PENDING",
+      );
+      await new OutboxRepository(adapter).enqueue({
         commandId: randomUUID(),
+        storeId,
         deviceId,
+        commandType: "PRODUCT_UPSERT",
+        entityType: "product",
+        entityId: product.id,
         expectedRemoteVersion: 1,
+        payload: product,
+        createdAt: at,
       });
     }
     // Keep a second-store row to ensure interruption recovery stays scoped.
@@ -359,7 +380,9 @@ async function verifyUpgrade(
   );
   if (s.version >= 6)
     expect(db.prepare("SELECT * FROM products ORDER BY id").all()).toEqual(
-      beforeProducts,
+      beforeProducts.map((row) =>
+        s.version < 63 ? { ...row, is_petit_prix: null } : row,
+      ),
     );
   expect(
     await getOrCreateDeviceId(adapter, () => {

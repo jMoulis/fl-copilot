@@ -1502,6 +1502,7 @@ type ProductDocument = {
   category: "FRUIT" | "VEGETABLE" | "OTHER" | "UNKNOWN";
   nature: "BULK" | "PACKAGED" | "UNKNOWN";
   salesUnit: "KG" | "PIECE" | "PACK" | "UNKNOWN";
+  isPetitPrix?: boolean; // current range marking; omission preserves stored value
 
   packaging?: {
     quantity: Decimal128;
@@ -5473,3 +5474,13 @@ The existing authenticated PUT `/api/v1/devices/:deviceId/push-token` accepts op
 POST `/api/v1/auth/logout` accepts either its legacy Bearer credential with no body, or a strict `{refreshToken}` body. The latter is revocation only: hash-match the existing current/rotated secret in deviceSessions, atomically set revocation and remove push registration, return the same result for missing/retired secrets. Never authorize data or issue credentials from this route. A fresh verified login has a new session row/hash history; delayed revocation cannot retire its replacement. Mongo migration58 adds nonunique current/rotated hash indexes only. No business DTO/local schema change.
 
 Native SecureStore retains `auth.pending-logouts` separately from active keys and UUID-only recovery ownership. Serialize credential storage, persist intent before clearing, refuse to restore matching credentials, acknowledge only the exact old intent and retain failures. Active startup/foreground/logout/push-registration events reuse one coalesced progressing drain and the existing bounded HTTP helper. Native private-delivery retirement and per-scope token caches prevent old registration callbacks from reactivating private delivery; fresh registration waits for remote intent acknowledgement. No business Outbox command, source deletion, model input or new background polling service. [Delivery, authority and physical qualification](../qa/M8_OFFLINE_LOGOUT_2026_11_09.md).
+
+### Product range marker — 13 November 2026
+
+`Product.isPetitPrix?: boolean` identifies the current Petit Prix range marking.
+It is independent of commercial promotion and product nature/unit. Legacy omission
+preserves a stored marker; explicit `false` clears it. SQLite migration 63 adds
+nullable `products.is_petit_prix` (0/1), with the existing product upsert, Outbox,
+version/conflict and pull contracts. No automatic catalogue classification occurs.
+Copilot product exploration and field-event evidence expose the current marker,
+without claiming historical range membership at an event's date.
