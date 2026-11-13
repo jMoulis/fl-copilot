@@ -269,6 +269,16 @@ function TransportEditor({
       ) : (
         <>
           <SectionCard title="Point de départ">
+            <Text className="text-sm text-muted">
+              {(
+                {
+                  SYNCED: "Synchronisé",
+                  PENDING: "À synchroniser",
+                  CONFLICT: "Conflit à résoudre",
+                  ERROR: "Envoi refusé · réglages locaux conservés",
+                } as Record<string, string>
+              )[saved.syncState] ?? saved.syncState}
+            </Text>
             <Text className="text-muted">
               {saved.entity.city} · {saved.entity.postalCode}. Cette
               localisation reste fixe ; aucun suivi de tes déplacements.

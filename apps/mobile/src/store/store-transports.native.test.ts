@@ -139,6 +139,7 @@ it("discovers from a typed address, saves selection through SQLite/Outbox and ke
   ).get(runtime.storeId);
   expect(saved?.entity.transports?.lines[0]?.enabled).toBe(false);
   expect(saved?.syncState).toBe("PENDING");
+  expect(text()).toContain("À synchroniser");
   expect(raw.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()?.n).toBe(2);
 });
 it("does not offer an employee editable settings or launch provider calls", async () => {
