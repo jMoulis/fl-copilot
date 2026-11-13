@@ -25,7 +25,8 @@ accusé tardif ne peut réactiver une note retirée. Le retrait reprend la captu
 exacte pour vérifier qu'il concerne bien le texte montré au gestionnaire.
 
 Le copilote utilise `store_events` existant, avec productId null pour les notes
-générales. La page combine cinq identifiants distincts, conserve les collisions
+générales. Une page mixte combine cinq identifiants distincts (dix pour une seule
+source), conserve les collisions
 entre les deux espaces d'identité et reste dans l'enveloppe installée de dix faits
 plus la couverture. La période, la saisie, l'identifiant et la révision sont cités.
 Une note est une déclaration, pas une mesure vérifiée ni une preuve causale.

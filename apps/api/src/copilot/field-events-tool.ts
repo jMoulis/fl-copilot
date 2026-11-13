@@ -51,7 +51,7 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
       throw Error("COPILOT_EVENTS_SCOPE_INVALID");
     return event;
   });
-  // A page contains at most five distinct IDs when store-wide notes are included.
+  // A page contains at most five distinct IDs when product episodes and store notes share the page.
   // Keeping both namespaces at an ID boundary prevents a tied UUID from being skipped.
   const endDay = parisDate(new Date(Date.parse(input.endAt) - 1).toISOString());
   const noteRows = input.productId
@@ -89,7 +89,7 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
   ].sort();
   const selectedIds = ids.slice(
     0,
-    input.productId ? input.limit : Math.min(input.limit, 5),
+    parsed.length && notes.length ? Math.min(input.limit, 5) : input.limit,
   );
   const page = parsed.filter((e) => selectedIds.includes(e.id));
   const notePage = notes.filter((n) => selectedIds.includes(n.id));
