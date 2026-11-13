@@ -2,7 +2,7 @@ import { z } from "zod";
 import { expect, it } from "vitest";
 import {
   legacyStoreContext,
-  preserveStoreMerchandising,
+  preserveStoreContextExtensions,
   storeContextSettingsSchema,
   storeMerchandisingSchema,
   storeMerchandisingSummary,
@@ -89,11 +89,11 @@ it("preserves context omitted by older writers, supports explicit clear and proj
   expect(oldSchema.safeParse(legacy).success).toBe(true);
   expect(oldSchema.safeParse(current).success).toBe(false);
   expect(
-    preserveStoreMerchandising({ ...legacy, city: "Paris" }, current)
+    preserveStoreContextExtensions({ ...legacy, city: "Paris" }, current)
       .merchandising,
   ).toEqual(current.merchandising);
   expect(
-    preserveStoreMerchandising({ ...legacy, merchandising: null }, current)
+    preserveStoreContextExtensions({ ...legacy, merchandising: null }, current)
       .merchandising,
   ).toBeNull();
   expect(current.merchandising?.zones[0]?.label).toBe("TG1");

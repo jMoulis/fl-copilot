@@ -4561,3 +4561,19 @@ Journal focus/manual refresh, never empties offline local content and performs
 no model call. Existing “Analyse this day” drafts request this sourced context
 through store_week and store_events, with equivalent weekday comparisons and
 no inferred causal effect. This does not add the deferred daily task manager.
+
+## Mon magasin → Transports à proximité — 13 November 2026
+
+A dedicated settings screen keeps the main shop form small. Save the shop's
+pending location changes before opening it. Choose Address or Recorded position,
+search explicitly at a default 800 m radius, resolve ambiguous addresses and
+review nearby lines with their nearest returned stop and distance. Switches
+include/exclude lines; an explicit Save writes locally then synchronizes. Search
+never publishes changes or uses AI. Read-only staff cannot edit. Draft changes
+invalidate late lookups, and leaving an unsaved draft reuses the existing guard.
+
+Journal adds a transit entry with original messages, published application dates,
+source/capture freshness, past samples and a direct settings link. Unavailable,
+partial and archived data remain explicit and do not empty existing local values.
+Neither proximity nor a published disruption establishes a shop traffic/sales
+impact. No background device tracking or unsolicited push notification is added.

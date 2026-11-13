@@ -2,6 +2,7 @@ import { z } from "zod";
 import { layoutIllustrationGenerationPolicySchema } from "@fl-copilot/domain";
 import { emailIntakeReceivingDomainSchema } from "@fl-copilot/sync-contracts";
 const environmentSchema = z.object({
+  PRIM_API_KEY: z.string().trim().min(1).max(4096).optional(),
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),

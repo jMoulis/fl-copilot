@@ -531,10 +531,11 @@ export function createMongoSyncPullService(
                 entityId: change.entityId,
                 operation: change.operation,
                 entityVersion: row.version,
-                entity:
-                  query.storeMerchandising === "true"
-                    ? serializeStoreContext(row)
-                    : legacyStoreContext(serializeStoreContext(row)),
+                entity: legacyStoreContext(
+                  serializeStoreContext(row),
+                  query.storeMerchandising === "true",
+                  query.storeTransports === "true",
+                ),
                 changedAt: change.changedAt.toISOString(),
               };
             }

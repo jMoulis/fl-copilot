@@ -693,10 +693,15 @@ export function createMongoSyncBootstrapService(
                       ...(query.storeMerchandising === "true"
                         ? { storeMerchandising: true }
                         : {}),
+                      ...(query.storeTransports === "true"
+                        ? { storeTransports: true }
+                        : {}),
                       storeContextSettings: contextSettings.map((row) =>
-                        query.storeMerchandising === "true"
-                          ? serializeStoreContext(row)
-                          : legacyStoreContext(serializeStoreContext(row)),
+                        legacyStoreContext(
+                          serializeStoreContext(row),
+                          query.storeMerchandising === "true",
+                          query.storeTransports === "true",
+                        ),
                       ),
                     }
                   : {}),

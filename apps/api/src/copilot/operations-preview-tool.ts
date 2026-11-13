@@ -51,7 +51,8 @@ export async function readOperationsPreview(
       : null;
   const settings = settingsRow
     ? copilotVisibleStoreSettingsSchema.parse(
-        (({ position, ...visible }) => {
+        (({ position, transports, ...visible }) => {
+          void transports;
           void position;
           return visible;
         })(serializeStoreContext(settingsRow)),

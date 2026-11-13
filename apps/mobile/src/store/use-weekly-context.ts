@@ -163,6 +163,13 @@ export function useWeeklyContext(
           (!context ||
             !context.economy ||
             !context.journal ||
+            (typeof context.journal.transport === "object" &&
+              context.journal.transport.status !== "NOT_CONFIGURED" &&
+              (context.journal.transport.status === "UNAVAILABLE" ||
+                context.journal.transport.lines.some(
+                  (l) =>
+                    !l.validUntil || l.validUntil <= new Date().toISOString(),
+                ))) ||
             context.journal.sources.some(
               (p) =>
                 p.status !== "NOT_CONFIGURED" &&

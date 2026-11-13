@@ -1,3 +1,4 @@
+import { storeTransportsFixture } from "../../../scripts/test-store-transports-fixtures";
 import {
   legacyStoreContext,
   storeContextSettingsSchema,
@@ -139,6 +140,96 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         ).entities.storeContextSettings,
       ).toHaveLength(1);
     }, 20000);
+    it("negotiates transport settings on ACK/bootstrap/pull, preserving legacy omission and exact conflict state", async () => {
+      const s = {
+          ...storeContextFixture(),
+          transports: storeTransportsFixture(),
+        },
+        push = createMongoSyncPushService(database);
+      const r = {
+        ...request(s),
+        storeTransports: true,
+        storeMerchandising: true,
+      };
+      expect((await push.push(r, "transports")).results[0]).toMatchObject({
+        status: "APPLIED",
+        remoteEntity: { transports: s.transports },
+      });
+      const oldAck = await push.push(
+        { ...r, storeTransports: false },
+        "legacy-transport-replay",
+      );
+      expect(oldAck.results[0]?.status).toBe("ALREADY_APPLIED");
+      expect(oldAck.results[0]?.remoteEntity).not.toHaveProperty("transports");
+      const edit = legacyStoreContext({
+        ...s,
+        version: 2,
+        updatedAt: "2026-11-13T11:00:00.000Z",
+      });
+      await push.push(request(edit, 1), "legacy-edit");
+      expect(
+        await (
+          await database.getDb()
+        )
+          .collection<StoreContextDocument>("storeContextSettings")
+          .findOne({ _id: s.storeId }),
+      ).toMatchObject({ transports: s.transports, version: 2 });
+      const conflict = await push.push(
+        { ...request({ ...s, version: 2 }, 1), storeTransports: true },
+        "transport-conflict",
+      );
+      expect(conflict.results[0]).toMatchObject({
+        status: "CONFLICT",
+        remoteEntity: { transports: s.transports },
+      });
+      const pull = createMongoSyncPullService(database);
+      const old = await pull.pull(s.storeId, {
+        limit: 500,
+        storeContext: "true",
+        storeMerchandising: "true",
+      });
+      expect(
+        old.changes.every(
+          (c) => !Object.hasOwn(c.entity as object, "transports"),
+        ),
+      ).toBe(true);
+      const current = await pull.pull(s.storeId, {
+        limit: 500,
+        storeContext: "true",
+        storeTransports: "true",
+      });
+      expect(current.changes[0]?.entity).toHaveProperty(
+        "transports",
+        s.transports,
+      );
+      const boot = await createMongoSyncBootstrapService(database).bootstrap(
+        {
+          storeId: s.storeId,
+          storeName: "Test",
+          role: "MANAGER",
+          userId: randomUUID(),
+          sessionId: randomUUID(),
+          deviceId: randomUUID(),
+        },
+        {
+          rawObservationDays: 90,
+          storeContext: "true",
+          storeTransports: "true",
+        },
+      );
+      expect(boot.entities.storeTransports).toBe(true);
+      expect(boot.entities.storeContextSettings?.[0]).toHaveProperty(
+        "transports",
+        s.transports,
+      );
+      const visible = await readCopilotStoreSettings(
+        await database.getDb(),
+        s.storeId,
+        {},
+      );
+      expect(visible.settings).not.toHaveProperty("transports");
+      expect(JSON.stringify(visible)).not.toContain("48.910648");
+    }, 30000);
     it("negotiates merchandising on all sync paths and preserves it through legacy writes, retries and conflicts", async () => {
       const s = {
         ...storeContextFixture(),

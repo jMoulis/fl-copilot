@@ -71,6 +71,7 @@ function RootLayout() {
         />
         <Stack.Screen name="commercial-plan" />
         <Stack.Screen name="store-settings" />
+        <Stack.Screen name="store-transports" />
         <Stack.Screen name="store-layout" />
         <Stack.Screen name="copilot-memory" />
         <Stack.Screen name="reminder-settings" />

@@ -337,6 +337,21 @@ function StoreSettingsEditor({
       />
       <SecondaryButton label="Retour" onPress={() => router.back()} />
       <MenuRow
+        title="Transports à proximité"
+        description="Adresse, rayon de recherche et lignes à suivre dans le Journal."
+        icon="bus-outline"
+        onPress={() => {
+          if (busy || saved === undefined) return;
+          if (dirty || !saved) {
+            setNotice(
+              "Enregistre d’abord les réglages du magasin pour configurer ses transports.",
+            );
+            return;
+          }
+          router.push("/store-transports");
+        }}
+      />
+      <MenuRow
         title="Plan et mobilier"
         description="Consulter les îlots, les TG et leurs surfaces de vente."
         icon="map-outline"

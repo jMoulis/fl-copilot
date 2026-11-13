@@ -1,3 +1,4 @@
+import { JournalTransports } from "./journal-transports";
 import { JournalExternalContext } from "./journal-context";
 import { JournalNotes } from "./journal-notes";
 import clementineArt from "../../assets/journal/clementinier.webp";
@@ -273,6 +274,12 @@ function StoreJournal({
         context={context?.journal}
         busy={busy}
         configured={settings?.syncState === "SYNCED"}
+        onRefresh={() => void refresh()}
+      />
+      <JournalTransports
+        context={context?.journal}
+        date={date}
+        busy={busy}
         onRefresh={() => void refresh()}
       />
       <View style={styles.terrain}>

@@ -1,4 +1,4 @@
-import { preserveStoreMerchandising } from "@fl-copilot/domain";
+import { preserveStoreContextExtensions } from "@fl-copilot/domain";
 import {
   storeContextSettingsSchema,
   type StoreContextSettings,
@@ -48,7 +48,7 @@ export async function applyStoreContextCommand(
       { _id: id, storeId },
       { session: ctx.session },
     );
-  plan = preserveStoreMerchandising(plan, previous);
+  plan = preserveStoreContextExtensions(plan, previous);
   if ((command.expectedRemoteVersion ?? null) !== (previous?.version ?? null))
     return {
       resultStatus: "CONFLICT",

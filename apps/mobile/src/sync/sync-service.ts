@@ -110,6 +110,7 @@ export interface MobileSyncServiceOptions {
   commercialExecutionActuals?: boolean;
   storeContext?: boolean;
   storeMerchandising?: boolean;
+  storeTransports?: boolean;
   qualitativeCommercialPlans?: boolean;
   tgPresentations?: boolean;
   storeLayouts?: boolean;
@@ -270,6 +271,12 @@ export class MobileSyncService {
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
           `store-layouts:${storeId}`,
+        )
+      : true;
+    const storeTransportsAdopted = this.options.storeTransports
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `store-transports:${storeId}`,
         )
       : true;
     const storeMerchandisingAdopted = this.options.storeMerchandising
@@ -441,6 +448,7 @@ export class MobileSyncService {
       !versionsAdopted ||
       !storeContextAdopted ||
       !storeMerchandisingAdopted ||
+      !storeTransportsAdopted ||
       !visualsAdopted ||
       !layoutsAdopted ||
       !physicalAllocationsAdopted ||
@@ -482,6 +490,11 @@ export class MobileSyncService {
     const snapshot = await this.withRetry(() =>
       this.transport.bootstrap(storeId),
     );
+    if (
+      this.options.storeTransports &&
+      snapshot.entities.storeTransports !== true
+    )
+      throw Error("STORE_TRANSPORTS_UPGRADE_REQUIRED");
     if (
       this.options.storeMerchandising &&
       snapshot.entities.storeMerchandising !== true
@@ -1530,6 +1543,7 @@ export class MobileSyncService {
     return {
       syncProtocolVersion: SYNC_PROTOCOL_VERSION,
       ...(this.options.storeMerchandising ? { storeMerchandising: true } : {}),
+      ...(this.options.storeTransports ? { storeTransports: true } : {}),
       ...(this.options.tgPresentations ? { tgPresentations: true } : {}),
       ...(this.options.qualitativeCommercialPlans
         ? { qualitativeCommercialPlans: true }

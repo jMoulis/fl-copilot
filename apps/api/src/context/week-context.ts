@@ -1,3 +1,4 @@
+import { readTransportContext } from "./transport-traffic.js";
 import { z } from "zod";
 import {
   storeContextSettingsSchema,
@@ -81,6 +82,7 @@ export function createWeekContextService(
   database: DatabaseService,
   fetcher: typeof fetch = fetch,
   now: () => Date = () => new Date(),
+  options: { primApiKey?: string } = {},
 ): WeekContextService {
   return {
     async read(
@@ -148,13 +150,18 @@ export function createWeekContextService(
         ...(includeJournal
           ? [
               (async () => {
-                result.journal = await readJournalContext(
-                  db,
-                  cache,
-                  settings,
-                  weekEnd,
-                  now(),
-                );
+                const [journal, transport] = await Promise.all([
+                  readJournalContext(db, cache, settings, weekEnd, now()),
+                  readTransportContext(
+                    db,
+                    settings,
+                    weekEnd,
+                    options.primApiKey,
+                    fetcher,
+                    now,
+                  ),
+                ]);
+                result.journal = { ...journal, transport };
               })(),
             ]
           : []),
