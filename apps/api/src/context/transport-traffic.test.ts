@@ -124,6 +124,9 @@ it("contains the key in the PRIM header only, archives normalized data and retai
           rows.push(u.$setOnInsert);
         return { modifiedCount: 1 };
       },
+      aggregate: () => ({
+        toArray: async () => rows.filter((r) => r.snapshotOf).reverse(),
+      }),
       find: () => ({
         sort: () => ({
           limit: () => ({

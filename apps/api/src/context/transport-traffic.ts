@@ -5,6 +5,7 @@ import {
   transportContextSchema,
   transportDisruptionSchema,
   parisDate,
+  addContextDays,
   type StoreContextSettings,
   type TransportContext,
 } from "@fl-copilot/domain";
@@ -285,21 +286,42 @@ export async function readTransportContext(
             }
             const at = now(),
               past = weekEnd < parisDate(at.toISOString());
+            const anchor = past ? weekEnd : parisDate(at.toISOString());
+            // Select daily captures in Mongo rather than truncating raw updates:
+            // a busy line may publish dozens of versions on a single day.
             const snapshots = await collection
-              .find({
-                snapshotOf: url,
-                ...(past
-                  ? {
-                      firstCapturedAt: {
-                        $lt: new Date(
-                          Date.parse(`${weekEnd}T00:00:00Z`) + 86400000,
-                        ).toISOString(),
+              .aggregate<Snapshot>([
+                {
+                  $match: {
+                    snapshotOf: url,
+                    firstCapturedAt: {
+                      $gte: `${addContextDays(anchor, -7)}T00:00:00.000Z`,
+                      $lt: `${addContextDays(anchor, 1)}T00:00:00.000Z`,
+                    },
+                  },
+                },
+                { $sort: { firstCapturedAt: -1 } },
+                {
+                  $group: {
+                    _id: {
+                      $dateToString: {
+                        date: { $toDate: "$firstCapturedAt" },
+                        format: "%Y-%m-%d",
+                        timezone: "Europe/Paris",
                       },
-                    }
-                  : {}),
-              })
-              .sort({ firstCapturedAt: -1 })
-              .limit(40)
+                    },
+                    capture: { $first: "$$ROOT" },
+                  },
+                },
+                {
+                  $match: {
+                    _id: { $gte: addContextDays(anchor, -6), $lte: anchor },
+                  },
+                },
+                { $sort: { "capture.firstCapturedAt": -1 } },
+                { $limit: 7 },
+                { $replaceRoot: { newRoot: "$capture" } },
+              ])
               .toArray();
             const row = snapshots.find(
                 (s) => !past || parisDate(s.firstCapturedAt) <= weekEnd,
