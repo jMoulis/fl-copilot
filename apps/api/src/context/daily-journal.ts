@@ -191,6 +191,7 @@ export async function readDailyJournalWeek(
   db: Db,
   settings: StoreContextSettings,
   weekStart: string,
+  at = new Date(),
 ): Promise<WeeklyContext | null> {
   const scope = dailyJournalScope(settings);
   const source = namespace(settings.storeId, scope);
@@ -219,6 +220,32 @@ export async function readDailyJournalWeek(
     if (context) result = mergeDailyWeek(result, context);
   }
   if (!result) return null;
+  // Scheduler downtime must not leave an old capture labelled as fresh.
+  const age = (value: { status: string; validUntil: string | null }) => {
+    if (
+      value.status === "AVAILABLE" &&
+      (!value.validUntil || Date.parse(value.validUntil) <= at.getTime())
+    )
+      value.status = "STALE";
+  };
+  for (const provider of [
+    result.weather,
+    result.publicHolidays,
+    result.schoolHolidays,
+    result.economy,
+    result.observedWeather,
+  ])
+    if (provider) age(provider);
+  for (const source of result.journal?.sources ?? []) age(source);
+  const traffic = result.journal?.transport;
+  if (traffic && typeof traffic !== "string") {
+    for (const line of traffic.lines) age(line);
+    if (
+      traffic.status === "AVAILABLE" &&
+      traffic.lines.some((line) => line.status !== "AVAILABLE")
+    )
+      traffic.status = "STALE";
+  }
   return { ...result, settingsFingerprint: storeContextFingerprint(settings) };
 }
 

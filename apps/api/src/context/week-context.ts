@@ -104,7 +104,7 @@ export function createWeekContextService(
       const { _id, ...payload } = raw;
       void _id;
       const settings = storeContextSettingsSchema.parse(payload);
-      const saved = await readDailyJournalWeek(db, settings, weekStart);
+      const saved = await readDailyJournalWeek(db, settings, weekStart, now());
       if (saved) return projectContext(saved, false, true, true, true);
       const empty = emptyWeekContext(settings, weekStart, now(), true);
       // No collection is not evidence that a provider failed.
@@ -136,7 +136,12 @@ export function createWeekContextService(
         cache = new ContextProviderCache(db, fetcher, now),
         weekEnd = addContextDays(weekStart, 6);
       if (options.preferStored) {
-        const saved = await readDailyJournalWeek(db, settings, weekStart);
+        const saved = await readDailyJournalWeek(
+          db,
+          settings,
+          weekStart,
+          now(),
+        );
         if (saved)
           return projectContext(
             saved,

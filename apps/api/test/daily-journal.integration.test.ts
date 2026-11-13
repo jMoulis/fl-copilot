@@ -171,6 +171,15 @@ describe.skipIf(!uri)("durable daily shop context", () => {
     expect(empty.weather.status).toBe("UNAVAILABLE");
     expect(empty.weather.days).toEqual([]);
     expect(network).not.toHaveBeenCalled();
+    const later = createWeekContextService(
+      database,
+      network,
+      () => new Date("2026-10-10T12:00:00Z"),
+    );
+    expect(
+      (await later.readStored!(settings.storeId, "2026-10-05")).weather.status,
+    ).toBe("STALE");
+    expect(network).not.toHaveBeenCalled();
   });
   it("uses the Paris capture day and creates no fabricated entry for past observation days", async () => {
     const { settings, db, read } = await setup();
