@@ -430,11 +430,12 @@ export class ApiClient {
     includeEconomicContext = false,
     includeObservedWeather = false,
     includeJournal = false,
+    collect = false,
   ) {
     return this.request(
       `/api/v1/store/context?${new URLSearchParams({ weekStart })}`,
       {
-        method: "GET",
+        method: collect ? "POST" : "GET",
         headers: {
           ...syncHeaders(accessToken, storeId),
           ...(includeJournal ? { "x-context-journal": "1" } : {}),
@@ -448,6 +449,7 @@ export class ApiClient {
         },
       },
       weeklyContextSchema,
+      collect ? 120_000 : undefined,
     ) as Promise<WeeklyContext>;
   }
   requestLoginCode(input: AuthChallengeRequest) {

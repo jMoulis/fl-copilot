@@ -2127,15 +2127,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
       );
     },
   );
-  app.get(
-    "/api/v1/store/context",
-    {
-      schema: {
-        querystring: contextWeekQuerySchema,
-        response: { 200: weeklyContextSchema },
-      },
+  app.route({
+    method: ["GET", "POST"],
+    url: "/api/v1/store/context",
+    schema: {
+      querystring: contextWeekQuerySchema,
+      response: { 200: weeklyContextSchema },
     },
-    async (request) => {
+    handler: async (request) => {
       const token = request.headers.authorization;
       if (!token?.startsWith("Bearer "))
         throw new AuthError(401, "AUTH_REQUIRED", "Veuillez vous connecter.");
@@ -2150,20 +2149,32 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "Le magasin doit être indiqué.",
         );
       await auth.authorizeStore(token.slice(7), storeId);
-      const result = await (
+      const service =
         dependencies.weekContext ??
         createWeekContextService(dependencies.database, fetch, undefined, {
           primApiKey: config.PRIM_API_KEY,
           preferStored: true,
-        })
-      ).read(
-        storeId,
-        request.query.weekStart,
-        request.headers["x-context-weather-symbols"] === "1",
-        request.headers["x-context-economy"] === "1",
-        request.headers["x-context-observed-weather"] === "1",
-        request.headers["x-context-journal"] === "1",
-      );
+        });
+      const manual = request.method === "POST";
+      if (manual) {
+        if (!service.collect || !service.readStored)
+          throw Error("JOURNAL_COLLECTION_UNAVAILABLE");
+        await service.collect(storeId);
+      }
+      const result = manual
+        ? await service.readStored!(
+            storeId,
+            request.query.weekStart,
+            request.headers["x-context-weather-symbols"] === "1",
+          )
+        : await service.read(
+            storeId,
+            request.query.weekStart,
+            request.headers["x-context-weather-symbols"] === "1",
+            request.headers["x-context-economy"] === "1",
+            request.headers["x-context-observed-weather"] === "1",
+            request.headers["x-context-journal"] === "1",
+          );
       const { economy, observedWeather, journal, ...legacy } = result;
       return {
         ...legacy,
@@ -2179,7 +2190,7 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           : {}),
       };
     },
-  );
+  });
   app.get(
     "/api/v1/commercial/:id/processing",
     {

@@ -56,83 +56,89 @@ export function useWeeklyContext(
     };
   }, []);
 
-  const refresh = useCallback(async () => {
-    if (requests.current.has(scope)) return;
-    requests.current.add(scope);
-    attempts.current.set(scope, Date.now());
-    setBusyScopes((previous) => [...previous, scope]);
-    setFailure(undefined);
-    const valid = () => alive.current && current.current === scope;
-    try {
-      const initial = await settingsRepo.get(storeId);
-      if (!valid()) return;
-      if (!initial || initial.syncState !== "SYNCED")
-        throw Error(
-          "Enregistre puis synchronise les réglages de ton magasin avant d’actualiser le contexte.",
+  const refresh = useCallback(
+    async (collect = false) => {
+      if (requests.current.has(scope)) return;
+      requests.current.add(scope);
+      attempts.current.set(scope, Date.now());
+      setBusyScopes((previous) => [...previous, scope]);
+      setFailure(undefined);
+      const valid = () => alive.current && current.current === scope;
+      try {
+        const initial = await settingsRepo.get(storeId);
+        if (!valid()) return;
+        if (!initial || initial.syncState !== "SYNCED")
+          throw Error(
+            "Enregistre puis synchronise les réglages de ton magasin avant d’actualiser le contexte.",
+          );
+        const result = await withAccessToken((token) =>
+          api.weeklyContext(
+            token,
+            storeId,
+            weekStart,
+            true,
+            autoRefresh,
+            autoRefresh,
+            autoRefresh,
+            collect,
+          ),
         );
-      const result = await withAccessToken((token) =>
-        api.weeklyContext(
-          token,
-          storeId,
-          weekStart,
-          true,
-          autoRefresh,
-          autoRefresh,
-          autoRefresh,
-        ),
-      );
-      if (!valid()) return;
-      if (result.storeId !== storeId || result.weekStart !== weekStart)
-        throw Error(
-          "Le contexte reçu ne correspond pas à la semaine de ce magasin.",
-        );
-      const latest = await settingsRepo.get(storeId);
-      if (!valid()) return;
-      if (
-        !latest ||
-        storeContextFingerprint(latest.entity) !== result.settingsFingerprint
-      )
-        throw Error(
-          "Les réglages du magasin ont changé. Synchronise-les puis actualise le contexte.",
-        );
-      const saved = await cache.save(result, latest.entity);
-      if (valid()) setData({ scope, settings: latest, context: saved });
-      if (
-        valid() &&
-        [saved.weather, saved.publicHolidays, saved.schoolHolidays].some(
-          (p) => p.status === "UNAVAILABLE" || p.status === "STALE",
+        if (!valid()) return;
+        if (result.storeId !== storeId || result.weekStart !== weekStart)
+          throw Error(
+            "Le contexte reçu ne correspond pas à la semaine de ce magasin.",
+          );
+        const latest = await settingsRepo.get(storeId);
+        if (!valid()) return;
+        if (
+          !latest ||
+          storeContextFingerprint(latest.entity) !== result.settingsFingerprint
         )
-      ) {
-        setFailure({
-          scope,
-          message:
-            "Une source est indisponible. Les dernières données enregistrées restent consultables.",
-        });
+          throw Error(
+            "Les réglages du magasin ont changé. Synchronise-les puis actualise le contexte.",
+          );
+        const saved = await cache.save(result, latest.entity);
+        if (valid()) setData({ scope, settings: latest, context: saved });
+        if (
+          valid() &&
+          [saved.weather, saved.publicHolidays, saved.schoolHolidays].some(
+            (p) => p.status === "UNAVAILABLE" || p.status === "STALE",
+          )
+        ) {
+          setFailure({
+            scope,
+            message:
+              "Une source est indisponible. Les dernières données enregistrées restent consultables.",
+          });
+        }
+      } catch (e) {
+        if (valid())
+          setFailure({
+            scope,
+            message:
+              e instanceof Error
+                ? e.message
+                : "Actualisation impossible. Les données enregistrées restent disponibles.",
+          });
+      } finally {
+        requests.current.delete(scope);
+        if (alive.current)
+          setBusyScopes((previous) => previous.filter((s) => s !== scope));
       }
-    } catch (e) {
-      if (valid())
-        setFailure({
-          scope,
-          message:
-            e instanceof Error
-              ? e.message
-              : "Actualisation impossible. Les données enregistrées restent disponibles.",
-        });
-    } finally {
-      requests.current.delete(scope);
-      if (alive.current)
-        setBusyScopes((previous) => previous.filter((s) => s !== scope));
-    }
-  }, [
-    api,
-    autoRefresh,
-    cache,
-    scope,
-    settingsRepo,
-    storeId,
-    weekStart,
-    withAccessToken,
-  ]);
+    },
+    [
+      api,
+      autoRefresh,
+      cache,
+      scope,
+      settingsRepo,
+      storeId,
+      weekStart,
+      withAccessToken,
+    ],
+  );
+
+  const collect = useCallback(() => refresh(true), [refresh]);
 
   const readLocal = useCallback(() => {
     let active = true;
@@ -236,5 +242,6 @@ export function useWeeklyContext(
     loading: !visible,
     error: failure?.scope === scope ? failure.message : undefined,
     refresh,
+    collect,
   };
 }

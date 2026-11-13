@@ -5588,3 +5588,18 @@ line-level feed; disabled lines are removed and newly selected lines without a
 capture remain unavailable, never normal traffic. Fixed shop-location validation
 is shared by live and archived transit readers. No business record, migration,
 provider request during an AI turn or new public contract is added.
+
+
+## Explicit daily Journal collection — 13 November 2026
+
+POST on the existing authorized `/api/v1/store/context?weekStart=…` resource
+collects the real current Paris day with the canonical daily collector, then
+reads its saved projection for the requested ISO week. GET and Copilot stored
+reads remain noncollecting. Authorization precedes any collection; provider
+TTLs, leases, source revisions, daily CAS/unique keys and source-failure retention
+are reused. Optional response capabilities retain their meanings. No new model,
+migration, AI call or operational command. Historical weeks without a retained
+projection remain unavailable instead of being rebuilt from today's feed.
+Native explicit collection uses a bounded request and existing SQLite cache
+scope guards, preserves cached content on failure and never queues provider
+collection into the business Outbox. Automatic focus refresh remains GET.

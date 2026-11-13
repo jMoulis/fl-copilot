@@ -15,6 +15,8 @@ it("requires store authorization before any provider request and validates week 
   source.economy = economicContextFixture();
   source.observedWeather = observedWeatherContextFixture();
   const read = vi.fn(async () => source);
+  const collect = vi.fn(async () => {});
+  const readStored = vi.fn(async () => source);
   const auth: AuthService = {
     requestChallenge: vi.fn(),
     verifyChallenge: vi.fn(),
@@ -40,7 +42,7 @@ it("requires store authorization before any provider request and validates week 
       close: async () => {},
     },
     auth,
-    weekContext: { read },
+    weekContext: { read, collect, readStored },
   });
   try {
     expect(
@@ -134,6 +136,52 @@ it("requires store authorization before any provider request and validates week 
     expect(journal.statusCode).toBe(200);
     expect(journal.json().journal).toEqual(source.journal);
     expect(journal.json()).not.toHaveProperty("economy");
+    expect(collect).not.toHaveBeenCalled();
+    for (const badHeaders of [{}, { ...headers, "x-store-id": randomUUID() }]) {
+      const denied = await app.inject({
+        method: "POST",
+        url: "/api/v1/store/context?weekStart=2026-10-05",
+        headers: badHeaders,
+      });
+      expect([401, 403]).toContain(denied.statusCode);
+    }
+    expect(collect).not.toHaveBeenCalled();
+    const malformed = await app.inject({
+      method: "POST",
+      url: "/api/v1/store/context?weekStart=2026-10-06",
+      headers,
+    });
+    expect(malformed.statusCode).toBe(400);
+    expect(collect).not.toHaveBeenCalled();
+    collect.mockImplementationOnce(async () => {
+      expect(readStored).not.toHaveBeenCalled();
+    });
+    const refreshed = await app.inject({
+      method: "POST",
+      url: "/api/v1/store/context?weekStart=2026-10-05",
+      headers: {
+        ...headers,
+        "x-context-journal": "1",
+        "x-context-weather-symbols": "1",
+      },
+    });
+    expect(refreshed.statusCode).toBe(200);
+    expect(collect).toHaveBeenCalledExactlyOnceWith(settings.storeId);
+    expect(readStored).toHaveBeenCalledExactlyOnceWith(
+      settings.storeId,
+      "2026-10-05",
+      true,
+    );
+    expect(refreshed.json().journal).toEqual(source.journal);
+    expect(refreshed.json()).not.toHaveProperty("economy");
+    collect.mockRejectedValueOnce(Error("COLLECTION_INTERRUPTED"));
+    const failed = await app.inject({
+      method: "POST",
+      url: "/api/v1/store/context?weekStart=2026-10-05",
+      headers,
+    });
+    expect(failed.statusCode).toBe(500);
+    expect(readStored).toHaveBeenCalledTimes(1);
   } finally {
     await app.close();
   }
