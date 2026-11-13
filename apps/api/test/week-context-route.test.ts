@@ -1,3 +1,4 @@
+import { economicContextFixture } from "../../../scripts/test-economic-fixtures";
 import { it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { buildApp } from "../src/build-app";
@@ -7,7 +8,9 @@ import { weeklyContextFixture } from "../../../scripts/test-weekly-context-fixtu
 import { storeContextFixture } from "../../../scripts/test-store-context-fixtures";
 it("requires store authorization before any provider request and validates week boundaries", async () => {
   const settings = storeContextFixture(),
-    read = vi.fn(async () => weeklyContextFixture(settings));
+    source = weeklyContextFixture(settings);
+  source.economy = economicContextFixture();
+  const read = vi.fn(async () => source);
   const auth: AuthService = {
     requestChallenge: vi.fn(),
     verifyChallenge: vi.fn(),
@@ -72,13 +75,38 @@ it("requires store authorization before any provider request and validates week 
     });
     expect(response.statusCode).toBe(200);
     expect(response.json().storeId).toBe(settings.storeId);
-    expect(read).toHaveBeenCalledWith(settings.storeId, "2026-10-05", false);
+    expect(response.json()).not.toHaveProperty("economy");
+    expect(read).toHaveBeenCalledWith(
+      settings.storeId,
+      "2026-10-05",
+      false,
+      false,
+    );
     const symbolic = await app.inject({
       url: "/api/v1/store/context?weekStart=2026-10-05",
       headers: { ...headers, "x-context-weather-symbols": "1" },
     });
     expect(symbolic.statusCode).toBe(200);
-    expect(read).toHaveBeenLastCalledWith(settings.storeId, "2026-10-05", true);
+    expect(symbolic.json()).not.toHaveProperty("economy");
+    const economic = await app.inject({
+      url: "/api/v1/store/context?weekStart=2026-10-05",
+      headers: { ...headers, "x-context-economy": "1" },
+    });
+    expect(economic.statusCode).toBe(200);
+    expect(economic.json().economy).toEqual(source.economy);
+    expect(read).toHaveBeenLastCalledWith(
+      settings.storeId,
+      "2026-10-05",
+      false,
+      true,
+    );
+    expect(read).toHaveBeenNthCalledWith(
+      2,
+      settings.storeId,
+      "2026-10-05",
+      true,
+      false,
+    );
   } finally {
     await app.close();
   }

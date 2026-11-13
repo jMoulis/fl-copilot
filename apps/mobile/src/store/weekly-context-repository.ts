@@ -25,6 +25,21 @@ export class WeeklyContextRepository {
       throw Error("CONTEXT_SETTINGS_CHANGED");
     const previous = await this.get(settings, next.weekStart);
     if (previous && previous.retrievedAt > next.retrievedAt) return previous;
+    if (
+      previous?.economy &&
+      (!next.economy ||
+        next.economy.status === "UNAVAILABLE" ||
+        (next.economy.retrievedAt &&
+          previous.economy.retrievedAt &&
+          next.economy.retrievedAt < previous.economy.retrievedAt))
+    ) {
+      next.economy = {
+        ...previous.economy,
+        ...(next.economy?.status === "UNAVAILABLE"
+          ? { status: "STALE" as const, issue: "PROVIDER_UNAVAILABLE" as const }
+          : {}),
+      };
+    }
     // A failed provider retains its last local value and original freshness timestamps.
     for (const key of [
       "weather",
@@ -60,7 +75,8 @@ export function contextIsStale(
   provider:
     | WeeklyContext["weather"]
     | WeeklyContext["publicHolidays"]
-    | WeeklyContext["schoolHolidays"],
+    | WeeklyContext["schoolHolidays"]
+    | NonNullable<WeeklyContext["economy"]>,
   now: Date,
 ) {
   return (

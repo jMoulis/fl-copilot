@@ -26,3 +26,5 @@ export * from "./waste-purchase-cost";
 export * from "./copilot-comparison-period";
 
 export * from "./analytics-query-chart";
+
+export * from "./economic-context";

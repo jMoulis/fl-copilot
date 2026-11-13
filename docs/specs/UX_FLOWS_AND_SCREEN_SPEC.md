@@ -1,3 +1,13 @@
+## Journal continuation — monthly economic context, 13 November 2026
+
+The compact Journal gains a national-context row after field observations. Its
+existing-style detail sheet shows INSEE food-price inflation and household
+confidence with each actual month, units, source and freshness. Keep monthly
+national context distinct from daily store observations and causal claims.
+No source availability blocks ordinary capture or changes store KPIs. Current
+revised historical values do not reconstruct what was known at that date.
+[Contracts, verification and delivery boundary](../qa/JOURNAL_ECONOMIC_CONTEXT_2026_11_13.md).
+
 ## Approved design implementation — 13 November 2026: carnet de rayon
 
 The Journal uses the owner-approved botanical masthead and existing system font,

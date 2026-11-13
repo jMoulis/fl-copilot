@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { economicContextSchema } from "./economic-context";
 import type { StoreContextSettings } from "./store-context-settings";
 const date = z
   .string()
@@ -86,6 +87,7 @@ export const weeklyContextSchema = z
     weekEnd: date,
     retrievedAt: z.string().datetime(),
     locationLabel: z.string(),
+    economy: economicContextSchema.optional(),
     weather: z
       .object({
         ...metadata,

@@ -1,3 +1,12 @@
+## Latest Journal arbitration — 13 November 2026
+
+The owner approves the compact Carnet de rayon design delivered in build 53:
+botanical masthead, system typography, compact forecast, observation rows and
+Signaler severity cards. This supersedes the “dominant weather card” direction
+below. The next code increment adds a compact national-context row and detail
+sheet for two monthly INSEE series; no fake store data or causal uplift is added.
+See `../qa/JOURNAL_ECONOMIC_CONTEXT_2026_11_13.md` for scope/delivery boundaries.
+
 ## Owner-approved navigation batch — 12 November 2026
 
 The approved navigation is **Journal · Analyses · Copilote · Imports**. Each root has fixed Products and Settings shortcuts. Details are full pages with Back; filters and contextual information use dismissible sheets. Returning from a product detail or editor preserves the originating analysis/catalogue screen, selection and saved list position.

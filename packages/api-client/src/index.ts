@@ -407,6 +407,7 @@ export class ApiClient {
     storeId: string,
     weekStart: string,
     includeWeatherSymbols = false,
+    includeEconomicContext = false,
   ) {
     return this.request(
       `/api/v1/store/context?${new URLSearchParams({ weekStart })}`,
@@ -414,6 +415,7 @@ export class ApiClient {
         method: "GET",
         headers: {
           ...syncHeaders(accessToken, storeId),
+          ...(includeEconomicContext ? { "x-context-economy": "1" } : {}),
           ...(includeWeatherSymbols
             ? { "x-context-weather-symbols": "1" }
             : {}),
