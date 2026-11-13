@@ -2119,10 +2119,14 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
         request.headers["x-context-weather-symbols"] === "1",
         request.headers["x-context-economy"] === "1",
         request.headers["x-context-observed-weather"] === "1",
+        request.headers["x-context-journal"] === "1",
       );
-      const { economy, observedWeather, ...legacy } = result;
+      const { economy, observedWeather, journal, ...legacy } = result;
       return {
         ...legacy,
+        ...(request.headers["x-context-journal"] === "1" && journal
+          ? { journal }
+          : {}),
         ...(request.headers["x-context-economy"] === "1" && economy
           ? { economy }
           : {}),

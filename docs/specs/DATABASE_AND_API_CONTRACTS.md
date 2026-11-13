@@ -5504,3 +5504,18 @@ is null. Evidence retains note ID, revision, declared period and capture time.
 Bounded pagination merges the two namespaces by UUID, keeps tied IDs together,
 and preserves the installed result envelope (at most ten facts plus coverage).
 The notes do not change sales, margin, availability or causal estimates.
+
+## Journal external sources — 13 November 2026
+
+WeeklyContext optionally includes `journal` only with `x-context-journal: 1`.
+Existing positional API client/service arguments retain their meaning; the new
+boolean is appended. Older responses omit the field and local cache merges
+retain previously captured Journal data. No operational entity or business
+command is added. Mongo migration 61 adds a partial source/date lookup index to
+existing contextProviderCache. Immutable normalized snapshots use a reserved
+`journal-snapshot:` URL namespace plus original URL, UTC capture day and content
+hash; normal provider cache entries remain unchanged. First capture is distinct
+from last provider validation and original publication (unknown). Up to twelve recent daily/content captures are exposed, including unchanged
+content confirmed on different days so historical day selection remains valid. No historical
+vintage is fabricated. Transport remains explicitly NOT_CONFIGURED pending
+scoped line selection and official PRIM credentials.

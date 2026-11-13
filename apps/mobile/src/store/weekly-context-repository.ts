@@ -25,6 +25,17 @@ export class WeeklyContextRepository {
       throw Error("CONTEXT_SETTINGS_CHANGED");
     const previous = await this.get(settings, next.weekStart);
     if (previous && previous.retrievedAt > next.retrievedAt) return previous;
+    if (!next.journal && previous?.journal) next.journal = previous.journal;
+    if (next.journal && previous?.journal) {
+      next.journal.sources = next.journal.sources.map((source) => {
+        const prior = previous.journal!.sources.find(
+          (p) => p.kind === source.kind,
+        );
+        return source.status === "UNAVAILABLE" && prior?.payload
+          ? { ...prior, status: "STALE", issue: source.issue }
+          : source;
+      });
+    }
     if (
       previous?.economy &&
       (!next.economy ||

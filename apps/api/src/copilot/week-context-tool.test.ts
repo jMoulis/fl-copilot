@@ -1,3 +1,4 @@
+import { journalContextFixture } from "../../../../scripts/test-journal-context-fixtures";
 import { observedWeatherContextFixture } from "../../../../scripts/test-observed-weather-fixtures";
 import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
 import { randomUUID } from "node:crypto";
@@ -20,7 +21,14 @@ it("projects scoped weekly providers, forecast coverage and public sources witho
     { weekStart: c.weekStart },
     now,
   );
-  expect(read).toHaveBeenCalledWith(c.storeId, c.weekStart, false, true, true);
+  expect(read).toHaveBeenCalledWith(
+    c.storeId,
+    c.weekStart,
+    false,
+    true,
+    true,
+    true,
+  );
   expect(result.context?.weather.days[0]).toMatchObject({
     type: "FORECAST",
     precipitationMm: 0,
@@ -173,4 +181,26 @@ it("keeps observed station days separate from forecasts in compact existing evid
       )
     ).evidence[0]!.id,
   ).not.toBe(result.evidence[0]!.id);
+});
+
+it("keeps bounded journal summaries in existing evidence, never repeats revision payloads into model context", async () => {
+  const c = weeklyContextFixture();
+  c.journal = journalContextFixture();
+  c.weekStart = "2026-11-09";
+  c.weekEnd = "2026-11-15";
+  c.weather.days = [];
+  const result = await readCopilotWeek(
+    { read: async () => c },
+    c.storeId,
+    { weekStart: c.weekStart },
+    new Date("2026-11-14T12:00:00Z"),
+  );
+  expect(result.context).not.toHaveProperty("journal");
+  expect(result.evidence).toHaveLength(4);
+  expect(result.evidence[3]!.value).toContain("Consommation 2026-09");
+  expect(result.evidence[3]!.value).toContain("6.59 kg/ménage");
+  expect(result.evidence[3]!.value).toContain("Salon local");
+  expect(result.evidence[3]!.value).toContain("Transport non configuré");
+  expect(String(result.evidence[3]!.value).length).toBeLessThan(7000);
+  expect(JSON.stringify(result)).not.toContain('"history"');
 });

@@ -1,3 +1,4 @@
+import { JournalExternalContext } from "./journal-context";
 import { JournalNotes } from "./journal-notes";
 import clementineArt from "../../assets/journal/clementinier.webp";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -137,7 +138,7 @@ function StoreJournal({
       const conversation = await controller.create(`Journal du ${date}`);
       await controller.editText(
         conversation.id,
-        `Fais le point sur la journée du ${date} pour mon rayon. Consulte les chiffres disponibles, les observations terrain et le contexte météo/calendrier de cette date si disponible. Compare des jours de semaine équivalents et distingue les faits des explications possibles. Une prévision archivée n’est pas une météo observée. Ne modifie rien.`,
+        `Fais le point sur la journée du ${date} pour mon rayon. Consulte les chiffres disponibles, les observations terrain et le contexte du Journal (météo observée, calendrier, annonces locales et conjoncture) de cette date si disponible. Compare des jours de semaine équivalents et distingue les faits des explications possibles. Une prévision archivée n’est pas une météo observée. Ne modifie rien.`,
       );
       if (alive.current)
         router.push({
@@ -267,6 +268,13 @@ function StoreJournal({
           onSettings={() => router.push("/store-settings")}
         />
       </View>
+      <JournalExternalContext
+        date={date}
+        context={context?.journal}
+        busy={busy}
+        configured={settings?.syncState === "SYNCED"}
+        onRefresh={() => void refresh()}
+      />
       <View style={styles.terrain}>
         <View style={styles.sectionHead}>
           <Text accessibilityRole="header" style={styles.sectionTitle}>

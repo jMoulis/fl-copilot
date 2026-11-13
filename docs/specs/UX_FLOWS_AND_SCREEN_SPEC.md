@@ -4548,3 +4548,16 @@ must never revive a withdrawn note. Copilot reads notes through existing bounded
 field-observation reads, without a new agent/tool. Installed clients opt into the
 new sync entity, while old envelopes and existing records remain compatible.
 No EAS/TestFlight build or production deployment is authorized for this increment.
+
+## Journal external context — 13 November 2026
+
+Under weather, three compact entries open bottom sheets: works/access, municipal
+agenda and fruit/vegetable consumption. Keep national INSEE context and manager
+notes. Show actual consumption month, original links, capture/refresh timestamps,
+revision history and independent unavailable/stale states inside details. City
+announcements are a partial selection, not observed shop effects. Historical
+local day views exclude revisions first collected later. Provider refresh reuses
+Journal focus/manual refresh, never empties offline local content and performs
+no model call. Existing “Analyse this day” drafts request this sourced context
+through store_week and store_events, with equivalent weekday comparisons and
+no inferred causal effect. This does not add the deferred daily task manager.

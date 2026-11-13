@@ -163,3 +163,21 @@ via ses observations existantes ; aucun nouvel agent ou outil d'écriture IA.
 Qualification : `docs/qa/JOURNAL_STORE_NOTES_2026_11_13.md`. Ce code ne clôture ni les
 sources locales/transports ni les études d'utilité ; disponibilité API, binaire et
 recette iPhone restent séparées. Aucun nouveau build demandé pour ce lot.
+
+### Journal — lot sources et historique du 13 novembre
+
+Le lot suivant raccorde les annonces officielles de travaux et une sélection
+municipale d'événements pour Asnières, les achats/prix moyens fruits et légumes
+publiés par FranceAgriMer, leurs sources et versions collectées, les volets natifs
+et leur résumé dans store_week. La météo observée, les calendriers, l'INSEE et les
+notes restent réutilisés. Aucun appel IA à la collecte, nouveau modèle métier,
+moteur causal ou gestionnaire de tâches. Les versions anciennes ne sont pas
+inventées ; les preuves de collecte commencent avec la livraison réelle. La
+sélection locale n'est pas exhaustive et ne prouve pas un effet sur le magasin.
+
+Le propriétaire demande l'API RATP : la voie officielle PRIM IDFM est identifiée,
+mais les lignes/stations et l'accès serveur restent à configurer. Cette réserve
+reste explicitement ouverte ; pas d'alerte fictive ni de trafic régional présenté
+comme un impact local. Détails et recette :
+`docs/qa/JOURNAL_EXTERNAL_CONTEXT_2026_11_13.md`. Livraison API, binaire et
+acceptation sur iPhone restent distincts. Aucun build ni déploiement dans ce lot.

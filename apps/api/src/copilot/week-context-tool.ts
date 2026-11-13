@@ -3,6 +3,8 @@ import {
   economicDataUrl,
   economicSeriesLabels,
   type EconomicContext,
+  type JournalContext,
+  journalItemsForPeriod,
   type ObservedWeatherContext,
 } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
@@ -26,11 +28,12 @@ export async function readCopilotWeek(
   z.string().uuid().parse(storeId);
   const input = copilotWeekInputSchema.parse(raw);
   let context: z.infer<typeof copilotWeekResultSchema>["context"] = null;
+  let journal: JournalContext | undefined;
   let economy: EconomicContext | undefined;
   let observed: ObservedWeatherContext | undefined;
   try {
     const source = weeklyContextSchema.parse(
-      await service.read(storeId, input.weekStart, false, true, true),
+      await service.read(storeId, input.weekStart, false, true, true, true),
     );
     if (
       source.storeId !== storeId ||
@@ -46,9 +49,18 @@ export async function readCopilotWeek(
     const {
       settingsFingerprint,
       economy: economicSource,
+      journal: journalSource,
       observedWeather,
       ...visible
     } = source;
+    journal = journalSource;
+    for (const s of journal?.sources ?? []) {
+      if (
+        s.status === "AVAILABLE" &&
+        (!s.validUntil || Date.parse(s.validUntil) <= now.getTime())
+      )
+        s.status = "STALE";
+    }
     observed = observedWeather;
     if (
       observed?.status === "AVAILABLE" &&
@@ -91,6 +103,7 @@ export async function readCopilotWeek(
         context,
         economy ?? null,
         observed ?? null,
+        journal ?? null,
       ]),
     )
     .digest("hex");
@@ -168,6 +181,30 @@ export async function readCopilotWeek(
   const economicText = economy
     ? ` Conjoncture INSEE nationale mensuelle, édition actuelle révisable, relevée le ${stamp(economy.retrievedAt)} ; statut ${states[economy.status]}. ${economicSummary.map((s) => `${economicSeriesLabels[s.id]} : ${s.period ?? "mois indisponible"}, indice ${s.value ?? "indisponible"}${s.id === "011813720" ? ` (base 2025=100), évolution sur un an ${s.annualChangePercent ?? "indisponible"} %` : ` (moyenne de long terme 100), écart au mois précédent ${s.monthlyDifferencePoints ?? "indisponible"} points`}.`).join(" ")} Ces périodes peuvent différer du mois demandé ; ce ne sont ni des statistiques quotidiennes du magasin, ni une explication causale de ses ventes. Les dates de publication de chaque valeur historique sont inconnues : ne pas prétendre reconstituer ce qui était connu ce jour-là.`
     : "";
+  const journalText = journal
+    ? ` Journal externe : ${journal.sources
+        .map(
+          (s) =>
+            `${s.provider} / ${s.kind} : ${states[s.status]}, collecte ${stamp(s.firstCapturedAt)}, dernière vérification ${stamp(s.retrievedAt)}. ${
+              s.payload?.consumption
+                ? `Consommation ${s.payload.consumption.period} : ${s.payload.consumption.groups.map((g) => `${g.group}, ${g.quantityKgPerHousehold} kg/ménage (${g.quantityAnnualPercent}% / an), prix moyen ${g.averagePriceEurPerKg} €/kg (${g.priceAnnualPercent}% / an)`).join(" ; ")}. Prix moyen de mélange, pas indice inflation ; dépenses inconnues, publication historique inconnue. ${s.payload.consumption.reportUrl ?? s.sourceUrl}`
+                : journalItemsForPeriod(
+                    s,
+                    input.weekStart,
+                    context?.weekEnd ?? input.weekStart,
+                  )
+                    .slice(0, 3)
+                    .map(
+                      (i) =>
+                        `${i.title} (${i.periodLabel}), ${i.summary.slice(0, 140)} ; ${i.sourceUrl}`,
+                    )
+                    .join(" ; ")
+            }. Source ${s.sourceUrl}.`,
+        )
+        .join(
+          " ",
+        )} Annonces municipales partielles et non confirmées au magasin, pas absence prouvée si vides. Transport non configuré. Ne pas attribuer causalement les écarts ni répéter les valeurs mensuelles comme observations quotidiennes indépendantes.`
+    : "";
   evidence.push(
     fact(
       "coverage",
@@ -175,7 +212,8 @@ export async function readCopilotWeek(
       (context
         ? "Semaine du lundi au dimanche, magasin et sources configurés. Les prévisions peuvent couvrir seulement une partie de la semaine ; conserver la fraîcheur et les données manquantes de chaque fournisseur. Contexte externe distinct des chiffres Mercalys, des observations magasin et des horaires d'ouverture. Aucun impact causal, stock, fréquentation ou chiffre de vente n'est calculé."
         : "Réglages du magasin absents ou non synchronisés. Demander la commune, le code postal et la zone scolaire si nécessaires ; aucun contexte local n'a été inventé. Les analyses déjà disponibles restent utilisables.") +
-        economicText,
+        economicText +
+        journalText,
       economy ? economicDataUrl : storeId,
       economy ? "DERIVED" : "QUALITY",
     ),

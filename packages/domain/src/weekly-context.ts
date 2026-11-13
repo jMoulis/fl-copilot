@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { journalContextSchema } from "./journal-context";
 import { economicContextSchema } from "./economic-context";
 import { observedWeatherContextSchema } from "./observed-weather-context";
 import type { StoreContextSettings } from "./store-context-settings";
@@ -89,6 +90,7 @@ export const weeklyContextSchema = z
     retrievedAt: z.string().datetime(),
     locationLabel: z.string(),
     economy: economicContextSchema.optional(),
+    journal: journalContextSchema.optional(),
     observedWeather: observedWeatherContextSchema.optional(),
     weather: z
       .object({

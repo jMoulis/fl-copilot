@@ -1,3 +1,4 @@
+import { journalContextFixture } from "../../../scripts/test-journal-context-fixtures";
 import { observedWeatherContextFixture } from "../../../scripts/test-observed-weather-fixtures";
 import { economicContextFixture } from "../../../scripts/test-economic-fixtures";
 import { it, expect, vi } from "vitest";
@@ -10,6 +11,7 @@ import { storeContextFixture } from "../../../scripts/test-store-context-fixture
 it("requires store authorization before any provider request and validates week boundaries", async () => {
   const settings = storeContextFixture(),
     source = weeklyContextFixture(settings);
+  source.journal = journalContextFixture();
   source.economy = economicContextFixture();
   source.observedWeather = observedWeatherContextFixture();
   const read = vi.fn(async () => source);
@@ -78,10 +80,12 @@ it("requires store authorization before any provider request and validates week 
     expect(response.statusCode).toBe(200);
     expect(response.json().storeId).toBe(settings.storeId);
     expect(response.json()).not.toHaveProperty("economy");
+    expect(response.json()).not.toHaveProperty("journal");
     expect(response.json()).not.toHaveProperty("observedWeather");
     expect(read).toHaveBeenCalledWith(
       settings.storeId,
       "2026-10-05",
+      false,
       false,
       false,
       false,
@@ -112,6 +116,7 @@ it("requires store authorization before any provider request and validates week 
       false,
       false,
       true,
+      false,
     );
     expect(read).toHaveBeenNthCalledWith(
       2,
@@ -120,7 +125,15 @@ it("requires store authorization before any provider request and validates week 
       true,
       false,
       false,
+      false,
     );
+    const journal = await app.inject({
+      url: "/api/v1/store/context?weekStart=2026-10-05",
+      headers: { ...headers, "x-context-journal": "1" },
+    });
+    expect(journal.statusCode).toBe(200);
+    expect(journal.json().journal).toEqual(source.journal);
+    expect(journal.json()).not.toHaveProperty("economy");
   } finally {
     await app.close();
   }

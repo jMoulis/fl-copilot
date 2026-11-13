@@ -1240,6 +1240,19 @@ export const mongoMigrations: readonly MongoMigration[] = [
         .createIndex({ storeId: 1, noteId: 1, version: 1 }, { unique: true });
     },
   },
+  {
+    version: 61,
+    name: "journal_context_revision_lookup",
+    async up(db) {
+      await db.collection("contextProviderCache").createIndex(
+        { snapshotOf: 1, firstCapturedAt: -1 },
+        {
+          name: "journal_context_revisions",
+          partialFilterExpression: { snapshotOf: { $exists: true } },
+        },
+      );
+    },
+  },
 ];
 
 export async function runMongoMigrations(
