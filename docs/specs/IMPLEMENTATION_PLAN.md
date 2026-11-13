@@ -1,3 +1,13 @@
+## Journal corrective increment — 13 November: explicit context capture
+
+Owner requests manual capture without waiting for fixed collection slots. Reuse
+the daily collector through an authorized POST on the existing context resource
+and a visible native « Actualiser maintenant » action. GET/focus/Copilot reads
+remain noncollecting; provider cache, daily archive, SQLite and scope guards are
+unchanged. No new model, agent, job, migration or paid AI call. See
+`../qa/JOURNAL_MANUAL_COLLECTION_2026_11_13.md`. Compatible API then native release;
+physical acceptance stays pending.
+
 ## M8 checkpoint — restored command replay and T03 closure, 5 November 2026
 
 Actual SQLite backup/activation/reopen and the canonical mobile/Mongo services now jointly qualify in-flight business commands before commit and after lost acknowledgement. Both cases retain exact command identities/payloads, acknowledge APPLIED/ALREADY_APPLIED and resume the previous location without duplicate changes or version bumps. **21 native-recovery suite tests pass, zero skips**, with real Mongo transactions and controlled Expo ports. Mark T03 closed for all declared schemas through 62 using the existing complete upgrade/rollback/SIGKILL matrix; T04 native interruption/corruption/source checks and T12 cloud restore remain open. [Evidence and boundaries](../qa/M8_RESTORED_COMMAND_REPLAY_2026_11_05.md). Test/documentation only; no runtime, paid build or deployment.

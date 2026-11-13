@@ -64,11 +64,13 @@ function StoreJournal({
   const [today, setToday] = useState(tradingToday),
     [date, setDate] = useState(tradingToday);
   const weekStart = currentCommercialWeek(new Date(`${date}T12:00:00Z`)).start;
-  const { settings, context, busy, error, refresh } = useWeeklyContext(
-    storeId,
-    weekStart,
-    true,
-  );
+  const {
+    settings,
+    context,
+    busy,
+    error,
+    collect: refresh,
+  } = useWeeklyContext(storeId, weekStart, true);
   const [observations, setObservations] = useState<{
     date: string;
     rows: Awaited<ReturnType<typeof journalObservations>>;
@@ -253,6 +255,17 @@ function StoreJournal({
           <Text style={styles.activeLabel}>Revenir à aujourd’hui</Text>
         </Pressable>
       ) : null}
+      <View style={{ marginTop: 12, gap: 8 }}>
+        <SecondaryButton
+          label={busy ? "Actualisation…" : "Actualiser maintenant"}
+          disabled={busy || settings?.syncState !== "SYNCED"}
+          onPress={() => void refresh()}
+        />
+        <Text style={{ color: c.muted, fontSize: 12 }}>
+          Enregistre un relevé du contexte maintenant, sans attendre la collecte
+          automatique.
+        </Text>
+      </View>
       <View style={{ marginTop: 12 }}>
         <JournalWeather
           date={date}

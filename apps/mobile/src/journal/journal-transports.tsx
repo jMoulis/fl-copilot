@@ -190,14 +190,15 @@ export function JournalTransports({
           <Text className="text-critical">Impossible d’ouvrir la source.</Text>
         ) : null}
         <SecondaryButton
-          label={busy ? "Actualisation…" : "Actualiser le Journal"}
+          label={busy ? "Actualisation…" : "Actualiser maintenant"}
           disabled={busy}
           onPress={onRefresh}
         />
         <Text className="text-sm text-muted">
-          Le trafic est mis en cache 30 minutes et récupéré à l’ouverture ou sur
-          demande. Les périodes d’application annoncées restent distinctes de la
-          date de collecte.
+          Un relevé est enregistré sur demande ou lors des collectes
+          automatiques. Le cache trafic est partagé pendant 30 minutes. Les
+          périodes d’application annoncées restent distinctes de la date de
+          collecte.
         </Text>
       </BottomSheet>
     </>

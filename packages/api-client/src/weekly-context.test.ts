@@ -2,9 +2,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ApiClient } from "./index";
 import type { WeeklyContext } from "@fl-copilot/sync-contracts";
 afterEach(() => vi.unstubAllGlobals());
-it.each([false, true])(
-  "requests visual weather only when supported, while accepting older responses (%s)",
-  async (enabled) => {
+it.each([
+  [false, false],
+  [true, false],
+  [true, true],
+])(
+  "requests visual weather only when supported, while accepting older responses (%s, collect=%s)",
+  async (enabled, collect) => {
     const meta = {
       status: "UNAVAILABLE" as const,
       retrievedAt: null,
@@ -53,6 +57,7 @@ it.each([false, true])(
       enabled,
       enabled,
       enabled,
+      collect,
     );
     expect(
       new Headers(
@@ -62,6 +67,7 @@ it.each([false, true])(
     expect(result).toEqual(context);
     const init = (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1];
     const headers = new Headers(init.headers);
+    expect(init.method).toBe(collect ? "POST" : "GET");
     expect(headers.get("x-context-weather-symbols")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-economy")).toBe(enabled ? "1" : null);
     expect(headers.get("x-context-journal")).toBe(enabled ? "1" : null);

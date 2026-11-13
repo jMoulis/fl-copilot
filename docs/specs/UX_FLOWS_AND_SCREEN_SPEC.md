@@ -1,3 +1,14 @@
+## Journal refinement — 13 November 2026: collect now
+
+A visible « Actualiser maintenant » action in Journal and transport details saves
+an external-context capture immediately through the existing daily collector.
+Existing source-sheet refreshes and Journal pull-to-refresh use the same explicit
+action. Keep local content visible while busy or offline; disable repeated presses.
+Saving store settings and collecting provider context remain distinct. Scheduled
+captures continue without the app. Source freshness and historical gaps remain
+qualified; manual collection never invents the past. See
+`../qa/JOURNAL_MANUAL_COLLECTION_2026_11_13.md`.
+
 ## Journal continuation — observed station weather, 13 November 2026
 
 Past days may show source-qualified Météo-France station measurements in the

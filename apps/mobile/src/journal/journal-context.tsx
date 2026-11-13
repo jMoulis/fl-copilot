@@ -272,8 +272,9 @@ export function JournalExternalContext({
           onPress={onRefresh}
         />
         <Text className="text-muted">
-          Actualisation à l’ouverture du Journal lorsque les sources sont
-          anciennes, ou sur demande. Aucun appel IA pour récupérer ces repères.
+          Collecte automatique ou sur demande ; les données des fournisseurs
+          encore valides sont réutilisées. Aucun appel IA pour récupérer ces
+          repères.
         </Text>
       </BottomSheet>
     </>

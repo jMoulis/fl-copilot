@@ -145,3 +145,57 @@ it("ignores a previous store's late refresh response before writing the local ca
   expect(save).toHaveBeenCalledWith(cached, settings);
   expect(value.context?.storeId).toBe(settings.storeId);
 });
+
+it("collects only on explicit demand, deduplicates repeated presses and keeps local context while pending", async () => {
+  let resolve!: (c: WeeklyContext) => void;
+  const pending = new Promise<WeeklyContext>((r) => {
+    resolve = r;
+  });
+  const call = vi
+    .spyOn(ApiClient.prototype, "weeklyContext")
+    .mockReturnValue(pending);
+  const save = vi
+    .spyOn(WeeklyContextRepository.prototype, "save")
+    .mockImplementation(async (input) => input);
+  await render();
+  expect(call).not.toHaveBeenCalled();
+  await act(async () => {
+    void value.collect();
+    void value.collect();
+  });
+  expect(value.busy).toBe(true);
+  expect(value.context).toBe(cached);
+  expect(call).toHaveBeenCalledExactlyOnceWith(
+    "token",
+    settings.storeId,
+    cached.weekStart,
+    true,
+    false,
+    false,
+    false,
+    true,
+  );
+  await act(async () => {
+    resolve(cached);
+    await pending;
+  });
+  expect(save).toHaveBeenCalledExactlyOnceWith(cached, settings);
+  expect(value.busy).toBe(false);
+});
+it("preserves local context after a failed manual collection without automatic write retries", async () => {
+  const call = vi
+    .spyOn(ApiClient.prototype, "weeklyContext")
+    .mockRejectedValue(Error("Hors connexion"));
+  const save = vi.spyOn(WeeklyContextRepository.prototype, "save");
+  await render();
+  await act(async () => {
+    await value.collect();
+  });
+  expect(value.context).toBe(cached);
+  expect(value.busy).toBe(false);
+  expect(value.error).toBe("Hors connexion");
+  expect(save).not.toHaveBeenCalled();
+  await render(false);
+  await render(true);
+  expect(call).toHaveBeenCalledTimes(1);
+});

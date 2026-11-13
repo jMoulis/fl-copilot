@@ -1,4 +1,8 @@
-import { readDailyJournalWeek, projectContext } from "./daily-journal.js";
+import {
+  collectDailyJournal,
+  readDailyJournalWeek,
+  projectContext,
+} from "./daily-journal.js";
 import { readTransportContext } from "./transport-traffic.js";
 import { z } from "zod";
 import {
@@ -72,7 +76,13 @@ const metadata = <T>(r: ProviderResult<T>) =>
   }) as const;
 export type WeekContextService = {
   /** Database-only access for the Copilot. No provider refresh in an AI turn. */
-  readStored?: (storeId: string, weekStart: string) => Promise<WeeklyContext>;
+  readStored?: (
+    storeId: string,
+    weekStart: string,
+    symbols?: boolean,
+  ) => Promise<WeeklyContext>;
+  /** Explicit collection only; normal reads and Copilot turns never call it. */
+  collect?: (storeId: string) => Promise<void>;
 
   read(
     storeId: string,
@@ -90,7 +100,17 @@ export function createWeekContextService(
   options: { primApiKey?: string; preferStored?: boolean } = {},
 ): WeekContextService {
   return {
-    async readStored(storeId, weekStart) {
+    async collect(storeId) {
+      await collectDailyJournal(
+        database,
+        createWeekContextService(database, fetcher, now, {
+          primApiKey: options.primApiKey,
+        }),
+        storeId,
+        now(),
+      );
+    },
+    async readStored(storeId, weekStart, symbols = false) {
       const db = await database.getDb();
       const raw = await db
         .collection("storeContextSettings")
@@ -105,7 +125,7 @@ export function createWeekContextService(
       void _id;
       const settings = storeContextSettingsSchema.parse(payload);
       const saved = await readDailyJournalWeek(db, settings, weekStart, now());
-      if (saved) return projectContext(saved, false, true, true, true);
+      if (saved) return projectContext(saved, symbols, true, true, true);
       const empty = emptyWeekContext(settings, weekStart, now(), true);
       // No collection is not evidence that a provider failed.
       empty.weather.issue = null;
