@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { economicContextSchema } from "./economic-context";
+import { observedWeatherContextSchema } from "./observed-weather-context";
 import type { StoreContextSettings } from "./store-context-settings";
 const date = z
   .string()
@@ -88,6 +89,7 @@ export const weeklyContextSchema = z
     retrievedAt: z.string().datetime(),
     locationLabel: z.string(),
     economy: economicContextSchema.optional(),
+    observedWeather: observedWeatherContextSchema.optional(),
     weather: z
       .object({
         ...metadata,
@@ -144,7 +146,10 @@ export const weeklyContextSchema = z
         (d) => d.validDate < s.weekStart || d.validDate > s.weekEnd,
       ) ||
       new Set(s.weather.days.map((d) => d.validDate)).size !==
-        s.weather.days.length
+        s.weather.days.length ||
+      s.observedWeather?.days.some(
+        (d) => d.producerDate < s.weekStart || d.producerDate > s.weekEnd,
+      )
     )
       c.addIssue({ code: "custom", message: "Invalid forecast dates" });
   });

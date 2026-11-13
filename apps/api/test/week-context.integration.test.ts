@@ -1,3 +1,5 @@
+import { gzipSync } from "node:zlib";
+import { readObservedWeather } from "../src/context/observed-weather";
 import { readFileSync } from "node:fs";
 import { readEconomicContext } from "../src/context/economy";
 import { readCopilotWeek } from "../src/copilot/week-context-tool";
@@ -96,7 +98,7 @@ describe.skipIf(!uri)("remote context cache", () => {
     expect(copilot.context?.weather.status).toBe("AVAILABLE");
     expect(copilot.context).not.toHaveProperty("settingsFingerprint");
     expect(copilot.evidence).toHaveLength(4);
-    expect(calls).toHaveLength(5);
+    expect(calls).toHaveLength(6);
     at = new Date("2026-10-09T10:00:00Z");
     fail = true;
     const stale = await service.read(settings.storeId, "2026-10-05");
@@ -177,6 +179,65 @@ describe.skipIf(!uri)("remote context cache", () => {
     expect(calls).toBe(3);
     expect(await db.collection("contextProviderCache").countDocuments()).toBe(
       1,
+    );
+    expect(await db.collection("commercialWeekPlans").countDocuments()).toBe(0);
+  });
+  it("shares real-format weather archives, retains provenance through failure and renews 304 without inventing a new download", async () => {
+    const db = await database.getDb(),
+      csv = readFileSync(
+        new URL(
+          "../../../scripts/fixtures/meteofrance-92-sample.csv",
+          import.meta.url,
+        ),
+        "utf8",
+      );
+    const url =
+      "https://meteofrance.s3.sbg.io.cloud.ovh.net/data/synchro_ftp/BASE/QUOT/Q_92_latest-2025-2026_RR-T-Vent.csv.gz";
+    let at = new Date("2026-11-13T08:00:00Z"),
+      mode = "ok",
+      calls = 0;
+    const fetcher: typeof fetch = async (input) => {
+      calls++;
+      if (mode === "fail") throw Error("network lost");
+      if (mode === "304") return new Response(null, { status: 304 });
+      return String(input).includes("data.gouv.fr/api")
+        ? Response.json({ resources: [{ url }] })
+        : new Response(gzipSync(csv), {
+            headers: {
+              "content-type": "application/gzip",
+              "last-modified": "Thu, 12 Nov 2026 07:27:12 GMT",
+            },
+          });
+    };
+    const read = () =>
+      readObservedWeather(
+        new ContextProviderCache(db, fetcher, () => at),
+        { latitude: 48.9181, longitude: 2.2935 },
+        "92",
+        "2026-09-28",
+        "2026-10-04",
+        at,
+      );
+    const first = await read();
+    expect(first.status).toBe("AVAILABLE");
+    expect(first.days).toHaveLength(2);
+    expect((await read()).days).toEqual(first.days);
+    expect(calls).toBe(2);
+    at = new Date("2026-11-14T09:00:00Z");
+    mode = "fail";
+    const stale = await read();
+    expect(stale.status).toBe("STALE");
+    expect(stale.days).toEqual(first.days);
+    await read();
+    expect(calls).toBe(4);
+    at = new Date("2026-11-14T09:02:00Z");
+    mode = "304";
+    const renewed = await read();
+    expect(renewed.status).toBe("AVAILABLE");
+    expect(renewed.days).toEqual(first.days);
+    expect(calls).toBe(6);
+    expect(await db.collection("contextProviderCache").countDocuments()).toBe(
+      2,
     );
     expect(await db.collection("commercialWeekPlans").countDocuments()).toBe(0);
   });

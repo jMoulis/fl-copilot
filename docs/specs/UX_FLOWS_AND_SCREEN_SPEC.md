@@ -1,3 +1,15 @@
+## Journal continuation — observed station weather, 13 November 2026
+
+Past days may show source-qualified Météo-France station measurements in the
+existing compact weather banner. Future/current days retain forecasts. Never
+infer sunshine from zero rain or convert an archived forecast into observation.
+The existing detail sheet exposes station/distance, automatic departmental
+selection, original rain window, freshness and source link. Cached forecasts
+remain explicitly separate and collapsible when retained. A source outage does
+not erase local context or block store figures/capture. No manager station
+approval or causal store effect is inferred.
+[Scope, source qualification and delivery boundaries](../qa/JOURNAL_OBSERVED_WEATHER_CONTEXT_2026_11_13.md).
+
 ## Journal continuation — monthly economic context, 13 November 2026
 
 The compact Journal gains a national-context row after field observations. Its

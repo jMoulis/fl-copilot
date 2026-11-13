@@ -1,3 +1,14 @@
+## Journal continuation — historical weather, 13 November 2026
+
+Reuse the approved compact weather/banner and source sheet for observed station
+values on past dates. The proposed reference is automatic within the configured
+department, with distance and scope visible; it is not a manager-confirmed
+station choice. Preserve archived forecasts separately, missing/zero and the
+producer UTC rain window. No new primary screen, settings model or AI agent.
+Build 54's economic-context recipe remains unaccepted until owner feedback.
+Code, API delivery, native delivery and device acceptance remain distinct:
+`../qa/JOURNAL_OBSERVED_WEATHER_CONTEXT_2026_11_13.md`.
+
 ## Latest Journal arbitration — 13 November 2026
 
 The owner approves the compact Carnet de rayon design delivered in build 53:
