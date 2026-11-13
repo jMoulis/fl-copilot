@@ -1,8 +1,12 @@
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { EventSeverity } from "@/needs/event-severity";
+import { journalColors as c } from "@/journal/journal-theme";
+import { journalDateLabel } from "@/journal/journal-presentation";
 import { returnToProduct } from "../products/product-navigation";
 import { calendarDate, tradingToday } from "../dates/calendar";
 import { EvidenceView } from "@/needs/evidence-view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Text, TextInput, View, Switch } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import {
   router,
   useFocusEffect,
@@ -37,7 +41,6 @@ import {
 import { substitutionIdentifierLabels } from "@/needs/substitution-details";
 import {
   AppScreen,
-  AppHeader,
   SectionCard,
   InlineAlert,
   PrimaryButton,
@@ -224,7 +227,8 @@ export default function StoreEventEditor() {
       }
       void syncNow(storeId).catch(() => undefined);
       if (currentScope.current === scope) {
-        if (source) returnToProduct(router, source.id);
+        if (captureDate && router.canGoBack()) router.back();
+        else if (source) returnToProduct(router, source.id);
         else router.replace("/store-events");
       }
     } catch (e) {
@@ -248,18 +252,40 @@ export default function StoreEventEditor() {
         .includes(search.toLocaleLowerCase("fr-FR")),
     ) ?? [];
   return (
-    <AppScreen>
-      <AppHeader
-        title={params.id ? "Clôturer le signalement" : "Signaler"}
-        subtitle="Une observation magasin, distincte d’une instruction commerciale."
-      />
-      <SecondaryButton
-        label={source ? "Retour à la fiche produit" : "Retour"}
-        disabled={busy}
-        onPress={() =>
-          source ? returnToProduct(router, source.id) : router.back()
-        }
-      />
+    <AppScreen
+      keyboardAware
+      backgroundColor={c.canvas}
+      contentContainerStyle={{ gap: 16, padding: 20, paddingTop: 0 }}
+    >
+      <View style={styles.nav}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Retour"
+          disabled={busy}
+          onPress={() => {
+            if (router.canGoBack()) router.back();
+            else if (source) returnToProduct(router, source.id);
+            else router.replace("/today");
+          }}
+          style={styles.back}
+        >
+          <Ionicons name="arrow-back" size={19} color={c.mint} />
+          <Text style={{ color: c.mint, fontWeight: "600" }}>Retour</Text>
+        </Pressable>
+        <Text style={{ color: c.muted, fontSize: 13 }}>
+          {captureDate ? "Journal" : "Observation magasin"}
+        </Text>
+      </View>
+      <View style={{ gap: 4 }}>
+        <Text accessibilityRole="header" style={styles.title}>
+          {params.id ? "Clôturer le signalement" : "Signaler"}
+        </Text>
+        <Text
+          style={{ color: c.muted, fontSize: 13, textTransform: "capitalize" }}
+        >
+          {journalDateLabel(captureDate ?? tradingToday())}
+        </Text>
+      </View>
       {!current || formScope !== scope ? (
         <Text className="text-muted">Lecture des données locales…</Text>
       ) : params.id && !record ? (
@@ -269,70 +295,93 @@ export default function StoreEventEditor() {
         />
       ) : (
         <>
-          <SectionCard title="Produit concerné">
-            {params.productId || params.id ? (
-              <>
-                <Text className="font-semibold text-ink">
-                  {source?.label ?? "Produit indisponible"}
-                </Text>
-                {source ? (
-                  <Text className="text-muted">
-                    {current.identifiers[source.id] ??
-                      "Aucun code produit enregistré"}
+          <View style={{ gap: 7 }}>
+            <Text style={styles.label}>Produit concerné</Text>
+            {source ? (
+              <View style={styles.chosen}>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <Text style={styles.label}>{source.label}</Text>
+                  <Text style={styles.muted}>
+                    {current.identifiers[source.id] ?? "Aucun code enregistré"}
                   </Text>
+                </View>
+                {!params.productId && !params.id ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Changer de produit"
+                    disabled={busy}
+                    onPress={() => {
+                      setProductId("");
+                      setSearch("");
+                      clear();
+                    }}
+                    style={styles.back}
+                  >
+                    <Ionicons
+                      name="close-circle-outline"
+                      size={22}
+                      color={c.mint}
+                    />
+                  </Pressable>
                 ) : null}
-              </>
+              </View>
+            ) : params.productId || params.id ? (
+              <Text style={styles.muted}>Produit indisponible</Text>
             ) : (
               <>
-                <TextInput
-                  accessibilityLabel="Rechercher le produit à signaler"
-                  placeholder="Nom, EAN ou code produit"
-                  value={search}
-                  editable={!busy}
-                  onChangeText={setSearch}
-                  className="rounded-xl border border-line p-3 text-ink"
-                />
-                {matches.slice(0, 20).map((p) => (
-                  <View
-                    key={p.id}
-                    className="flex-row items-center justify-between gap-2"
-                  >
-                    <View className="flex-1">
-                      <Text className="text-ink">{p.label}</Text>
-                      <Text className="text-muted">
-                        {current.identifiers[p.id] ?? "Aucun code enregistré"}
+                <View style={styles.search}>
+                  <Ionicons name="search-outline" size={20} color={c.muted} />
+                  <TextInput
+                    accessibilityLabel="Rechercher le produit à signaler"
+                    placeholder="Rechercher un produit"
+                    placeholderTextColor={c.muted}
+                    value={search}
+                    editable={!busy}
+                    onChangeText={setSearch}
+                    style={styles.searchInput}
+                  />
+                </View>
+                {search.trim() ? (
+                  <View style={styles.matches}>
+                    {matches.slice(0, 6).map((p) => (
+                      <Pressable
+                        key={p.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Choisir ${p.label} ${current.identifiers[p.id] ?? ""}`}
+                        disabled={busy}
+                        onPress={() => {
+                          setProductId(p.id);
+                          setSearch("");
+                          clear();
+                        }}
+                        style={styles.match}
+                      >
+                        <Text style={styles.label}>{p.label}</Text>
+                        <Text style={styles.muted}>
+                          {current.identifiers[p.id] ?? "Aucun code enregistré"}
+                        </Text>
+                      </Pressable>
+                    ))}
+                    {!matches.length ? (
+                      <Text style={styles.muted}>
+                        Aucun produit trouvé. Essaie un autre nom ou code.
                       </Text>
-                    </View>
-                    <Switch
-                      accessibilityLabel={`Signaler ${p.label} ${current.identifiers[p.id] ?? ""}`}
-                      value={productId === p.id}
-                      disabled={busy}
-                      onValueChange={(v) => {
-                        setProductId(v ? p.id : "");
-                        clear();
-                      }}
-                    />
+                    ) : null}
+                    {matches.length > 6 ? (
+                      <Text style={styles.muted}>
+                        6 produits sur {matches.length}. Précise ta recherche.
+                      </Text>
+                    ) : null}
                   </View>
-                ))}
-                {matches.length > 20 ? (
-                  <Text className="text-muted">
-                    20 produits affichés sur {matches.length}. Précisez la
-                    recherche.
-                  </Text>
-                ) : null}
-                {source ? (
-                  <Text className="font-semibold text-ink">
-                    Produit choisi : {source.label}
-                  </Text>
                 ) : null}
               </>
             )}
             {issues.product ? (
-              <Text accessibilityRole="alert" className="text-danger">
+              <Text accessibilityRole="alert" className="text-critical">
                 {issues.product}
               </Text>
             ) : null}
-          </SectionCard>
+          </View>
           {record ? (
             <>
               <SecondaryButton
@@ -396,98 +445,123 @@ export default function StoreEventEditor() {
             </>
           ) : (
             <>
-              <SectionCard title="Type de signalement">
-                {Object.entries(storeEventLabels).map(([key, label]) => (
-                  <View
-                    key={key}
-                    className="flex-row items-center justify-between"
-                  >
-                    <Text className="flex-1 text-ink">{label}</Text>
-                    <Switch
-                      accessibilityLabel={`Signaler : ${label}`}
+              <View style={{ gap: 7 }}>
+                <Text style={styles.label}>Type de signalement</Text>
+                <View
+                  accessibilityRole="radiogroup"
+                  accessibilityLabel="Type de signalement"
+                  style={styles.types}
+                >
+                  {eventTypes.map(({ value, icon }) => (
+                    <Pressable
+                      key={value}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`Signaler : ${storeEventLabels[value]}`}
+                      accessibilityState={{
+                        checked: type === value,
+                        disabled: busy,
+                      }}
                       disabled={busy}
-                      value={type === key}
-                      onValueChange={(v) => {
-                        setType(
-                          v ? (key as StoreProductEvent["type"]) : undefined,
-                        );
+                      onPress={() => {
+                        setType(value);
                         clear();
                       }}
-                    />
-                  </View>
-                ))}
+                      className="active:opacity-70"
+                      style={[
+                        styles.type,
+                        {
+                          borderColor: type === value ? c.mint : c.line,
+                          backgroundColor:
+                            type === value ? "#233B2C" : "transparent",
+                          opacity: 1,
+                        },
+                      ]}
+                    >
+                      <Ionicons
+                        name={icon}
+                        size={16}
+                        color={type === value ? c.mint : c.muted}
+                      />
+                      <Text
+                        style={[
+                          styles.typeLabel,
+                          type === value && { color: c.mint },
+                        ]}
+                      >
+                        {storeEventLabels[value]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
                 {issues.type ? (
-                  <Text accessibilityRole="alert" className="text-danger">
+                  <Text accessibilityRole="alert" className="text-critical">
                     {issues.type}
                   </Text>
                 ) : null}
-              </SectionCard>
-              <SectionCard title="Quand ?">
+              </View>
+              <EventSeverity
+                value={severity}
+                disabled={busy}
+                onChange={(v) => {
+                  setSeverity(v);
+                  clear();
+                }}
+              />
+              <StoreEventTimeField
+                compact
+                label="Début"
+                value={start}
+                onChange={(v) => {
+                  setStart(v);
+                  clear();
+                }}
+                disabled={busy}
+                issue={issues.start}
+              />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  finished ? "Retirer la date de fin" : "Ajouter une fin"
+                }
+                accessibilityState={{ expanded: finished, disabled: busy }}
+                disabled={busy}
+                onPress={() => {
+                  setFinished((v) => !v);
+                  clear();
+                }}
+                style={styles.back}
+              >
+                <Ionicons
+                  name={finished ? "remove" : "add"}
+                  size={18}
+                  color={c.mint}
+                />
+                <Text style={styles.linkLabel}>
+                  {finished ? "Retirer la fin" : "Ajouter une fin"}
+                </Text>
+              </Pressable>
+              {finished ? (
                 <StoreEventTimeField
-                  label="Début"
-                  value={start}
+                  compact
+                  label="Fin"
+                  value={end}
                   onChange={(v) => {
-                    setStart(v);
+                    setEnd(v);
                     clear();
                   }}
                   disabled={busy}
-                  issue={issues.start}
+                  issue={issues.end}
                 />
-                <View className="flex-row items-center justify-between">
-                  <Text className="flex-1 text-ink">
-                    Le problème est déjà terminé
-                  </Text>
-                  <Switch
-                    accessibilityLabel="Le problème est déjà terminé"
-                    disabled={busy}
-                    value={finished}
-                    onValueChange={(v) => {
-                      setFinished(v);
-                      clear();
-                    }}
-                  />
+              ) : null}
+              <View style={{ gap: 7 }}>
+                <View style={{ flexDirection: "row", gap: 9 }}>
+                  <Text style={styles.label}>Note</Text>
+                  <Text style={styles.muted}>Facultative</Text>
                 </View>
-                {finished ? (
-                  <StoreEventTimeField
-                    label="Fin"
-                    value={end}
-                    onChange={(v) => {
-                      setEnd(v);
-                      clear();
-                    }}
-                    disabled={busy}
-                    issue={issues.end}
-                  />
-                ) : null}
-              </SectionCard>
-              <SectionCard title="Précisions facultatives">
-                {([null, "LOW", "MEDIUM", "HIGH"] as const).map((level) => (
-                  <View
-                    key={level ?? "none"}
-                    className="flex-row items-center justify-between"
-                  >
-                    <Text className="flex-1 text-ink">
-                      Gravité :{" "}
-                      {level === null
-                        ? "non précisée"
-                        : { LOW: "faible", MEDIUM: "moyenne", HIGH: "élevée" }[
-                            level
-                          ]}
-                    </Text>
-                    <Switch
-                      accessibilityLabel={`Gravité ${level ?? "non précisée"}`}
-                      value={severity === level}
-                      disabled={busy}
-                      onValueChange={(v) => {
-                        setSeverity(v ? level : null);
-                        clear();
-                      }}
-                    />
-                  </View>
-                ))}
                 <TextInput
                   accessibilityLabel="Note du signalement, facultative"
-                  placeholder="Une précision utile pour le rayon"
+                  placeholder="Que constates-tu en rayon ?"
+                  placeholderTextColor={c.muted}
                   value={comment}
                   onChangeText={(v) => {
                     setComment(v);
@@ -496,18 +570,28 @@ export default function StoreEventEditor() {
                   maxLength={1200}
                   multiline
                   editable={!busy}
-                  className="rounded-xl border border-line p-3 text-ink"
+                  style={styles.note}
                 />
-              </SectionCard>
-              <PrimaryButton
-                label={busy ? "Enregistrement…" : "Enregistrer le signalement"}
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  busy ? "Enregistrement…" : "Enregistrer le signalement"
+                }
+                accessibilityState={{ disabled: busy }}
                 disabled={busy}
                 onPress={() => void save()}
-              />
-              <Text className="text-muted">
-                Enregistré sur cet appareil, même hors connexion. Aucun stock,
-                chiffre de vente ou score appris n’est calculé à partir de ce
-                seul signalement.
+                className="active:opacity-70"
+                style={[styles.submit, { opacity: busy ? 0.5 : 1 }]}
+              >
+                <Ionicons name="checkmark" size={20} color={c.canvas} />
+                <Text style={styles.submitLabel}>
+                  {busy ? "Enregistrement…" : "Enregistrer le signalement"}
+                </Text>
+              </Pressable>
+              <Text style={styles.muted}>
+                Enregistré sur cet appareil, même hors connexion. Heures du
+                magasin (Europe/Paris).
               </Text>
             </>
           )}
@@ -520,3 +604,102 @@ export default function StoreEventEditor() {
     </AppScreen>
   );
 }
+
+const eventTypes: {
+  value: StoreProductEvent["type"];
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+}[] = [
+  { value: "OUT_OF_STOCK", icon: "ban-outline" },
+  { value: "LOW_STOCK", icon: "layers-outline" },
+  { value: "QUALITY_ISSUE", icon: "leaf-outline" },
+  { value: "TENSION", icon: "pulse-outline" },
+  { value: "PRICE_INCREASE", icon: "trending-up-outline" },
+  { value: "SUPPLIER_SHORTAGE", icon: "cube-outline" },
+];
+const styles = StyleSheet.create({
+  nav: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    minHeight: 52,
+    borderBottomWidth: 1,
+    borderColor: c.line,
+  },
+  back: { flexDirection: "row", alignItems: "center", gap: 7, minHeight: 44 },
+  title: { color: c.ink, fontSize: 28, fontWeight: "700" },
+  label: { color: c.ink, fontSize: 14, fontWeight: "600" },
+  muted: { color: c.muted, fontSize: 12, lineHeight: 17 },
+  search: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.line,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 44,
+    color: c.ink,
+    fontSize: 16,
+    paddingVertical: 8,
+  },
+  chosen: {
+    borderWidth: 1,
+    borderColor: c.line,
+    backgroundColor: c.surface,
+    borderRadius: 10,
+    padding: 10,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  matches: {
+    borderWidth: 1,
+    borderColor: c.line,
+    borderRadius: 10,
+    backgroundColor: c.surface,
+    padding: 8,
+    gap: 4,
+  },
+  match: { minHeight: 44, justifyContent: "center", padding: 6, gap: 3 },
+  types: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  type: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexGrow: 1,
+    flexBasis: "47%",
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: 9,
+    padding: 8,
+  },
+  typeLabel: { fontSize: 12, color: c.ink, fontWeight: "500", flexShrink: 1 },
+  linkLabel: { color: c.mint, fontSize: 13, fontWeight: "600" },
+  note: {
+    color: c.ink,
+    fontSize: 16,
+    textAlignVertical: "top",
+    minHeight: 64,
+    borderWidth: 1,
+    borderColor: c.line,
+    backgroundColor: c.surface,
+    borderRadius: 10,
+    padding: 10,
+  },
+  submit: {
+    backgroundColor: c.mint,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    minHeight: 48,
+    padding: 10,
+    borderRadius: 12,
+  },
+  submitLabel: { color: c.canvas, fontWeight: "700", fontSize: 14 },
+});

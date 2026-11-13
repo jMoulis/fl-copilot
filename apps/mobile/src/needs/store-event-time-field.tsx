@@ -16,12 +16,14 @@ export function StoreEventTimeField({
   onChange,
   disabled = false,
   issue,
+  compact = false,
 }: {
   label: string;
   value: StoreEventTimeInput;
   onChange(v: StoreEventTimeInput): void;
   disabled?: boolean;
   issue?: string;
+  compact?: boolean;
 }) {
   let candidates: string[] = [];
   try {
@@ -32,32 +34,46 @@ export function StoreEventTimeField({
   return (
     <View className="gap-2">
       <Text className="font-semibold text-ink">
-        {label} · heure du magasin (Europe/Paris)
+        {label}
+        {compact ? "" : " · heure du magasin (Europe/Paris)"}
       </Text>
-      <View pointerEvents={disabled ? "none" : "auto"}>
-        <DateSelector
-          disabled={disabled}
-          label={`Date de ${label.toLocaleLowerCase("fr-FR")}`}
-          description="Choisissez la date réelle de l’observation magasin."
-          value={value.date}
-          issue={issue}
-          onConfirm={(date) =>
-            onChange({ ...value, date, occurrence: undefined })
+      <View style={compact ? { flexDirection: "row", gap: 6 } : { gap: 8 }}>
+        <View
+          style={compact ? { flex: 1.35 } : undefined}
+          pointerEvents={disabled ? "none" : "auto"}
+        >
+          <DateSelector
+            disabled={disabled}
+            label={`Date de ${label.toLocaleLowerCase("fr-FR")}`}
+            description="Choisissez la date réelle de l’observation magasin."
+            value={value.date}
+            triggerLabel={
+              compact ? value.date.split("-").reverse().join("/") : undefined
+            }
+            issue={issue}
+            onConfirm={(date) =>
+              onChange({ ...value, date, occurrence: undefined })
+            }
+          />
+        </View>
+        <TextInput
+          accessibilityLabel={`Heure de ${label.toLocaleLowerCase("fr-FR")}, format 24 heures`}
+          placeholder="HH:MM"
+          value={value.time}
+          onChangeText={(time) =>
+            onChange({ ...value, time, occurrence: undefined })
           }
+          editable={!disabled}
+          keyboardType="numbers-and-punctuation"
+          maxLength={5}
+          style={
+            compact
+              ? { flex: 1, minWidth: 0, fontVariant: ["tabular-nums"] }
+              : undefined
+          }
+          className={`rounded-xl border p-3 text-ink ${issue ? "border-danger" : "border-line"}`}
         />
       </View>
-      <TextInput
-        accessibilityLabel={`Heure de ${label.toLocaleLowerCase("fr-FR")}, format 24 heures`}
-        placeholder="HH:MM"
-        value={value.time}
-        onChangeText={(time) =>
-          onChange({ ...value, time, occurrence: undefined })
-        }
-        editable={!disabled}
-        keyboardType="numbers-and-punctuation"
-        maxLength={5}
-        className={`rounded-xl border p-3 text-ink ${issue ? "border-danger" : "border-line"}`}
-      />
       {candidates.length > 1 ? (
         <>
           <Text className="text-muted">

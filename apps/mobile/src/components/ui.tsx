@@ -19,6 +19,8 @@ import {
   View,
   findNodeHandle,
   type ViewProps,
+  type StyleProp,
+  type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -31,19 +33,30 @@ export function AppScreen({
   onRefresh,
   scrollRef,
   keyboardAware = false,
+  contentContainerStyle,
+  backgroundColor,
 }: PropsWithChildren<{
   header?: React.ReactNode;
   scrollRef?: Ref<ScrollView>;
   refreshing?: boolean;
   onRefresh?: () => void;
   keyboardAware?: boolean;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  backgroundColor?: string;
 }>) {
   return (
-    <SafeAreaView edges={["top", "left", "right"]} className="flex-1 bg-canvas">
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      className="flex-1 bg-canvas"
+      style={backgroundColor ? { backgroundColor } : undefined}
+    >
       {header}
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 32 }}
+        contentContainerStyle={[
+          { padding: 16, gap: 20, paddingBottom: 32 },
+          contentContainerStyle,
+        ]}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets={keyboardAware}
         keyboardDismissMode={
