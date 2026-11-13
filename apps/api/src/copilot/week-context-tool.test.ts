@@ -1,3 +1,4 @@
+import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
 import { randomUUID } from "node:crypto";
 import { it, expect, vi } from "vitest";
 import { weeklyContextFixture } from "../../../../scripts/test-weekly-context-fixtures";
@@ -18,7 +19,7 @@ it("projects scoped weekly providers, forecast coverage and public sources witho
     { weekStart: c.weekStart },
     now,
   );
-  expect(read).toHaveBeenCalledWith(c.storeId, c.weekStart);
+  expect(read).toHaveBeenCalledWith(c.storeId, c.weekStart, false, true);
   expect(result.context?.weather.days[0]).toMatchObject({
     type: "FORECAST",
     precipitationMm: 0,
@@ -108,4 +109,36 @@ it("asks for unsynchronized settings while rejecting invalid dates, foreign stor
       { weekStart: c.weekStart },
     ),
   ).rejects.toThrow("internal");
+});
+
+it("adds compact national monthly facts without widening the old context shape or serializing the full source series", async () => {
+  const c = weeklyContextFixture();
+  c.weekStart = "2026-11-09";
+  c.weekEnd = "2026-11-15";
+  c.weather.days = [];
+  c.economy = economicContextFixture();
+  const result = await readCopilotWeek(
+    { read: async () => c },
+    c.storeId,
+    { weekStart: c.weekStart },
+    new Date("2026-11-13T09:00:00Z"),
+  );
+  expect(result.evidence).toHaveLength(4);
+  expect(result.context).not.toHaveProperty("economy");
+  const fact = result.evidence.at(-1)!;
+  expect(fact.value).toContain("2026-09, indice 102");
+  expect(fact.value).toContain("2.00 %");
+  expect(fact.value).toContain("2026-10, indice 80");
+  expect(fact.value).toContain("-5.00 points");
+  expect(fact.value).toContain("inconnues");
+  expect(fact.sourceId).toContain("bdm.insee.fr");
+  expect(JSON.stringify(result)).not.toContain('"points":');
+  c.economy.series[0]!.points.at(-1)!.value = "103";
+  expect(
+    (
+      await readCopilotWeek({ read: async () => c }, c.storeId, {
+        weekStart: c.weekStart,
+      })
+    ).evidence.at(-1)!.id,
+  ).not.toBe(fact.id);
 });

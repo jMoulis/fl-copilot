@@ -70,7 +70,7 @@ export function useWeeklyContext(
           "Enregistre puis synchronise les réglages de ton magasin avant d’actualiser le contexte.",
         );
       const result = await withAccessToken((token) =>
-        api.weeklyContext(token, storeId, weekStart, true),
+        api.weeklyContext(token, storeId, weekStart, true, autoRefresh),
       );
       if (!valid()) return;
       if (result.storeId !== storeId || result.weekStart !== weekStart)
@@ -114,7 +114,16 @@ export function useWeeklyContext(
       if (alive.current)
         setBusyScopes((previous) => previous.filter((s) => s !== scope));
     }
-  }, [api, cache, scope, settingsRepo, storeId, weekStart, withAccessToken]);
+  }, [
+    api,
+    autoRefresh,
+    cache,
+    scope,
+    settingsRepo,
+    storeId,
+    weekStart,
+    withAccessToken,
+  ]);
 
   const readLocal = useCallback(() => {
     let active = true;
@@ -143,10 +152,12 @@ export function useWeeklyContext(
           focused.current &&
           settings?.syncState === "SYNCED" &&
           (!context ||
+            !context.economy ||
             [
               context.weather,
               context.publicHolidays,
               context.schoolHolidays,
+              ...(context.economy ? [context.economy] : []),
             ].some(
               (p) =>
                 p.status === "UNAVAILABLE" || contextIsStale(p, new Date()),

@@ -26,6 +26,7 @@ import { tradingToday } from "../dates/calendar";
 import { journalColors as c } from "./journal-theme";
 import { SeverityBars } from "../needs/event-severity";
 import { storeEventSyncState } from "../needs/store-event-presentation";
+import { JournalEconomy } from "./journal-economy";
 import { JournalWeather } from "./journal-weather";
 import { journalDateLabel, journalWeekDates } from "./journal-presentation";
 import { journalObservations } from "./journal-observations";
@@ -338,6 +339,14 @@ function StoreJournal({
           }
           icon="time-outline"
           onPress={() => router.push("/store-events")}
+        />
+        <JournalEconomy
+          date={date}
+          context={context?.economy}
+          busy={busy}
+          error={error}
+          configured={settings?.syncState === "SYNCED"}
+          onRefresh={() => void refresh()}
         />
         <JournalLink
           label={

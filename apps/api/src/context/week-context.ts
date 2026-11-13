@@ -10,6 +10,7 @@ import {
 import type { DatabaseService } from "../database/types.js";
 import { AuthError } from "../auth/service.js";
 import { ContextProviderCache, type ProviderResult } from "./provider-cache.js";
+import { readEconomicContext } from "./economy.js";
 import { metForecastSchema, forecastDays } from "./weather.js";
 const communes = z
   .array(
@@ -66,6 +67,7 @@ export type WeekContextService = {
     storeId: string,
     weekStart: string,
     includeWeatherSymbols?: boolean,
+    includeEconomicContext?: boolean,
   ): Promise<WeeklyContext>;
 };
 export function createWeekContextService(
@@ -74,7 +76,12 @@ export function createWeekContextService(
   now: () => Date = () => new Date(),
 ): WeekContextService {
   return {
-    async read(storeId, weekStart, includeWeatherSymbols = false) {
+    async read(
+      storeId,
+      weekStart,
+      includeWeatherSymbols = false,
+      includeEconomicContext = false,
+    ) {
       const db = await database.getDb(),
         raw = await db.collection("storeContextSettings").findOne({ storeId });
       if (!raw)
@@ -126,6 +133,18 @@ export function createWeekContextService(
       };
       // Independent failures: none can block commercial plans or erase other providers.
       await Promise.allSettled([
+        ...(includeEconomicContext
+          ? [
+              (async () => {
+                result.economy = await readEconomicContext(
+                  cache,
+                  weekStart,
+                  weekEnd,
+                  now(),
+                );
+              })(),
+            ]
+          : []),
         (async () => {
           let point: { latitude: number; longitude: number } | null =
               settings.position,

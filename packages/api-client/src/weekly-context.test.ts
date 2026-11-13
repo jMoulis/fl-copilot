@@ -50,11 +50,13 @@ it.each([false, true])(
       context.storeId,
       context.weekStart,
       enabled,
+      enabled,
     );
     expect(result).toEqual(context);
     const init = (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1];
     const headers = new Headers(init.headers);
     expect(headers.get("x-context-weather-symbols")).toBe(enabled ? "1" : null);
+    expect(headers.get("x-context-economy")).toBe(enabled ? "1" : null);
     expect(headers.get("x-store-id")).toBe(context.storeId);
   },
 );

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { readEconomicContext } from "../src/context/economy";
 import { readCopilotWeek } from "../src/copilot/week-context-tool";
 import { randomUUID } from "node:crypto";
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
@@ -94,7 +96,7 @@ describe.skipIf(!uri)("remote context cache", () => {
     expect(copilot.context?.weather.status).toBe("AVAILABLE");
     expect(copilot.context).not.toHaveProperty("settingsFingerprint");
     expect(copilot.evidence).toHaveLength(4);
-    expect(calls).toHaveLength(4);
+    expect(calls).toHaveLength(5);
     at = new Date("2026-10-09T10:00:00Z");
     fail = true;
     const stale = await service.read(settings.storeId, "2026-10-05");
@@ -116,6 +118,66 @@ describe.skipIf(!uri)("remote context cache", () => {
     await expect(
       service.read(randomUUID(), "2026-10-05"),
     ).rejects.toMatchObject({ publicCode: "STORE_SETTINGS_NOT_SYNCED" });
+    expect(await db.collection("commercialWeekPlans").countDocuments()).toBe(0);
+  });
+  it("shares the normalized INSEE cache across devices and retains its real values after timeout/304", async () => {
+    const db = await database.getDb();
+    const xml = readFileSync(
+      new URL(
+        "../../../scripts/fixtures/insee-monthly-2026-11-13.xml",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    let at = new Date("2026-11-13T08:00:00Z"),
+      calls = 0,
+      mode = "ok";
+    const fetcher: typeof fetch = async (_input, init) => {
+      calls++;
+      expect(new Headers(init?.headers).get("accept")).toContain(
+        "structurespecificdata+xml",
+      );
+      if (mode === "fail") throw Error("network lost");
+      if (mode === "304") return new Response(null, { status: 304 });
+      return new Response(xml, {
+        headers: {
+          "content-type": "application/xml",
+          expires: "Fri, 01 Jan 2038 00:00:00 GMT",
+          "last-modified": "Fri, 13 Nov 2026 08:00:00 GMT",
+        },
+      });
+    };
+    const read = () =>
+      readEconomicContext(
+        new ContextProviderCache(db, fetcher, () => at),
+        "2026-11-09",
+        "2026-11-15",
+        at,
+      );
+    const first = await read();
+    expect(first.status).toBe("AVAILABLE");
+    expect(first.validUntil).toBe("2026-11-14T08:00:00.000Z");
+    expect((await read()).series).toEqual(first.series);
+    expect(calls).toBe(1);
+    at = new Date("2026-11-14T09:00:00Z");
+    mode = "fail";
+    const stale = await read();
+    expect(stale).toMatchObject({
+      status: "STALE",
+      retrievedAt: first.retrievedAt,
+      series: first.series,
+    });
+    await read();
+    expect(calls).toBe(2);
+    at = new Date("2026-11-14T09:02:00Z");
+    mode = "304";
+    const renewed = await read();
+    expect(renewed.status).toBe("AVAILABLE");
+    expect(renewed.series).toEqual(first.series);
+    expect(calls).toBe(3);
+    expect(await db.collection("contextProviderCache").countDocuments()).toBe(
+      1,
+    );
     expect(await db.collection("commercialWeekPlans").countDocuments()).toBe(0);
   });
   it("handles school-zone boundaries, year-crossing holidays and truncated responses safely", async () => {

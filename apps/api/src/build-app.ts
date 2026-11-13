@@ -2110,14 +2110,19 @@ export function buildApp(config: ApiConfig, dependencies: AppDependencies) {
           "Le magasin doit être indiqué.",
         );
       await auth.authorizeStore(token.slice(7), storeId);
-      return (
+      const result = await (
         dependencies.weekContext ??
         createWeekContextService(dependencies.database)
       ).read(
         storeId,
         request.query.weekStart,
         request.headers["x-context-weather-symbols"] === "1",
+        request.headers["x-context-economy"] === "1",
       );
+      if (request.headers["x-context-economy"] === "1") return result;
+      const { economy, ...legacy } = result;
+      void economy;
+      return legacy;
     },
   );
   app.get(

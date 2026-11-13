@@ -26,6 +26,11 @@ export class ContextProviderCache {
     url: string,
     schema: z.ZodType<T>,
     ttl: number,
+    representation?: {
+      accept: string;
+      respectExpires?: boolean;
+      decode(response: Response): Promise<unknown>;
+    },
   ): Promise<ProviderResult<T>> {
     const collection = this.db.collection<Cached>("contextProviderCache"),
       at = this.now(),
@@ -77,7 +82,7 @@ export class ContextProviderCache {
       const headers: Record<string, string> = {
         "User-Agent":
           "FruitsVegetablesCopilot/1.0 (https://github.com/jMoulis/fl-copilot)",
-        Accept: "application/json",
+        Accept: representation?.accept ?? "application/json",
       };
       if (parsed.success && cached?.lastModified)
         headers["If-Modified-Since"] = cached.lastModified;
@@ -89,11 +94,15 @@ export class ContextProviderCache {
       const data =
         r.status === 304 && parsed.success
           ? parsed.data
-          : schema.parse(await r.json());
+          : schema.parse(
+              await (representation ? representation.decode(r) : r.json()),
+            );
       const expiry = Date.parse(r.headers.get("expires") ?? "");
       // MET's Expires takes precedence; calendars/communes use a conservative daily TTL.
       const validUntil = new Date(
-        Number.isFinite(expiry) && expiry > at.getTime()
+        representation?.respectExpires !== false &&
+          Number.isFinite(expiry) &&
+          expiry > at.getTime()
           ? expiry
           : at.getTime() + ttl,
       ).toISOString();

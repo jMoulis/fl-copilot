@@ -1,3 +1,9 @@
+import { economicPeriodSummary } from "@fl-copilot/analytics-core";
+import {
+  economicDataUrl,
+  economicSeriesLabels,
+  type EconomicContext,
+} from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -19,9 +25,10 @@ export async function readCopilotWeek(
   z.string().uuid().parse(storeId);
   const input = copilotWeekInputSchema.parse(raw);
   let context: z.infer<typeof copilotWeekResultSchema>["context"] = null;
+  let economy: EconomicContext | undefined;
   try {
     const source = weeklyContextSchema.parse(
-      await service.read(storeId, input.weekStart),
+      await service.read(storeId, input.weekStart, false, true),
     );
     if (
       source.storeId !== storeId ||
@@ -34,7 +41,13 @@ export async function readCopilotWeek(
       )
     )
       throw Error("COPILOT_WEEK_SCOPE_INVALID");
-    const { settingsFingerprint, ...visible } = source;
+    const { settingsFingerprint, economy: economicSource, ...visible } = source;
+    economy = economicSource;
+    if (
+      economy?.status === "AVAILABLE" &&
+      (!economy.validUntil || Date.parse(economy.validUntil) <= now.getTime())
+    )
+      economy.status = "STALE";
     void settingsFingerprint;
     context = visible;
     for (const key of [
@@ -58,7 +71,7 @@ export async function readCopilotWeek(
       throw error;
   }
   const revision = createHash("sha256")
-    .update(JSON.stringify([storeId, input, context]))
+    .update(JSON.stringify([storeId, input, context, economy ?? null]))
     .digest("hex");
   const evidence: z.infer<typeof copilotEvidenceSchema>[] = [];
   const states = {
@@ -119,15 +132,23 @@ export async function readCopilotWeek(
       ),
     );
   }
+  const economicSummary = economicPeriodSummary(
+    economy,
+    (context?.weekEnd ?? input.weekStart).slice(0, 7),
+  );
+  const economicText = economy
+    ? ` Conjoncture INSEE nationale mensuelle, édition actuelle révisable, relevée le ${stamp(economy.retrievedAt)} ; statut ${states[economy.status]}. ${economicSummary.map((s) => `${economicSeriesLabels[s.id]} : ${s.period ?? "mois indisponible"}, indice ${s.value ?? "indisponible"}${s.id === "011813720" ? ` (base 2025=100), évolution sur un an ${s.annualChangePercent ?? "indisponible"} %` : ` (moyenne de long terme 100), écart au mois précédent ${s.monthlyDifferencePoints ?? "indisponible"} points`}.`).join(" ")} Ces périodes peuvent différer du mois demandé ; ce ne sont ni des statistiques quotidiennes du magasin, ni une explication causale de ses ventes. Les dates de publication de chaque valeur historique sont inconnues : ne pas prétendre reconstituer ce qui était connu ce jour-là.`
+    : "";
   evidence.push(
     fact(
       "coverage",
       `Contexte externe — semaine du ${input.weekStart}`,
-      context
+      (context
         ? "Semaine du lundi au dimanche, magasin et sources configurés. Les prévisions peuvent couvrir seulement une partie de la semaine ; conserver la fraîcheur et les données manquantes de chaque fournisseur. Contexte externe distinct des chiffres Mercalys, des observations magasin et des horaires d'ouverture. Aucun impact causal, stock, fréquentation ou chiffre de vente n'est calculé."
-        : "Réglages du magasin absents ou non synchronisés. Demander la commune, le code postal et la zone scolaire si nécessaires ; aucun contexte local n'a été inventé. Les analyses déjà disponibles restent utilisables.",
-      storeId,
-      "QUALITY",
+        : "Réglages du magasin absents ou non synchronisés. Demander la commune, le code postal et la zone scolaire si nécessaires ; aucun contexte local n'a été inventé. Les analyses déjà disponibles restent utilisables.") +
+        economicText,
+      economy ? economicDataUrl : storeId,
+      economy ? "DERIVED" : "QUALITY",
     ),
   );
   return copilotWeekResultSchema.parse({

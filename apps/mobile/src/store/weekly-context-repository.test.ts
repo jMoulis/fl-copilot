@@ -1,3 +1,4 @@
+import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -75,5 +76,47 @@ it("retains independent last-known providers offline after restart, isolates cha
   } finally {
     db.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("preserves monthly context through offline restart and an older response that omits the optional extension", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    await runLocalMigrations(adapter(db));
+    const settings = storeContextFixture(),
+      repo = new WeeklyContextRepository(adapter(db)),
+      c = weeklyContextFixture(settings);
+    c.economy = economicContextFixture();
+    await repo.save(c, settings);
+    const olderResponse = structuredClone(c);
+    delete olderResponse.economy;
+    olderResponse.retrievedAt = "2026-11-14T08:00:00.000Z";
+    expect((await repo.save(olderResponse, settings)).economy).toEqual(
+      c.economy,
+    );
+    const failed = structuredClone(olderResponse);
+    failed.retrievedAt = "2026-11-15T08:00:00.000Z";
+    failed.economy = {
+      ...c.economy,
+      status: "UNAVAILABLE",
+      series: [],
+      retrievedAt: null,
+      validUntil: null,
+      issue: "PROVIDER_UNAVAILABLE",
+    };
+    const saved = await repo.save(failed, settings);
+    expect(saved.economy).toEqual({
+      ...c.economy,
+      status: "STALE",
+      issue: "PROVIDER_UNAVAILABLE",
+    });
+    expect(
+      (await new WeeklyContextRepository(adapter(db)).get(
+        settings,
+        c.weekStart,
+      ))!.economy,
+    ).toEqual(saved.economy);
+  } finally {
+    db.close();
   }
 });

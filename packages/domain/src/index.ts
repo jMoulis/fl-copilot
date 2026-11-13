@@ -177,3 +177,5 @@ export * from "./document-archive";
 export * from "./copilot-mongo-read";
 
 export * from "./copilot-chart";
+
+export * from "./economic-context";

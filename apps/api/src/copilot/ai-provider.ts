@@ -2884,7 +2884,7 @@ export function createCopilotAiProvider(
                 ? {
                     store_week: tool({
                       description:
-                        "Read the configured store's weekly weather forecast and public/school calendars, with fixed public sources and independent freshness/coverage. Input is a valid Monday. Existing provider cache may refresh. No arbitrary coordinates/URLs or business writes. Forecast is not observed weather or causal sales evidence.",
+                        "Read the configured store's weekly weather forecast, public/school calendars and monthly national INSEE food prices/household confidence. Fixed public sources, explicit periods and freshness; no daily economic or store causal estimate. Input is a valid Monday. Existing provider cache may refresh. No arbitrary coordinates/URLs or business writes.",
                       inputSchema: copilotWeekInputSchema,
                       execute: (input) =>
                         executeRead(
