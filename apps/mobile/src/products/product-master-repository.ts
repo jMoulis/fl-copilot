@@ -324,8 +324,8 @@ async function writeEntity(
           id, store_id, label, category, nature, sales_unit,
           packaging_quantity, packaging_unit, packaging_source_label,
           family_id, subfamily_id, status, version, created_at, updated_at,
-          deleted_at, sync_state, remote_version, dirty
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, 1)
+          deleted_at, sync_state, remote_version, dirty, is_petit_prix
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, 1, ?)
         ON CONFLICT(id) DO UPDATE SET
           label = excluded.label, category = excluded.category,
           nature = excluded.nature, sales_unit = excluded.sales_unit,
@@ -335,7 +335,8 @@ async function writeEntity(
           family_id = excluded.family_id, subfamily_id = excluded.subfamily_id,
           status = excluded.status, version = excluded.version,
           updated_at = excluded.updated_at, deleted_at = excluded.deleted_at,
-          sync_state = 'PENDING', dirty = 1
+          sync_state = 'PENDING', dirty = 1,
+          is_petit_prix = COALESCE(excluded.is_petit_prix, products.is_petit_prix)
         WHERE products.store_id = excluded.store_id
       `,
       product.id,
@@ -355,6 +356,7 @@ async function writeEntity(
       product.updatedAt,
       product.deletedAt ?? null,
       remoteVersion ?? null,
+      product.isPetitPrix === undefined ? null : Number(product.isPetitPrix),
     );
     return;
   }
@@ -440,6 +442,7 @@ interface ProductRow extends SyncColumns {
   category: Product["category"];
   nature: Product["nature"];
   sales_unit: Product["salesUnit"];
+  is_petit_prix: number | null;
   packaging_quantity: string | null;
   packaging_unit: NonNullable<Product["packaging"]>["unit"] | null;
   packaging_source_label: string | null;
@@ -500,6 +503,9 @@ function mapProduct(row: ProductRow) {
       category: row.category,
       nature: row.nature,
       salesUnit: row.sales_unit,
+      ...(row.is_petit_prix == null
+        ? {}
+        : { isPetitPrix: row.is_petit_prix === 1 }),
       packaging:
         row.packaging_quantity && row.packaging_unit
           ? {

@@ -279,7 +279,7 @@ it.each([
         if (mode === "LIMIT")
           for (let n = 0; n < 2000; n++)
             await s.a.runAsync(
-              "INSERT INTO products SELECT ?,store_id,label,category,nature,sales_unit,packaging_quantity,packaging_unit,packaging_source_label,family_id,subfamily_id,status,version,created_at,updated_at,deleted_at,sync_state,remote_version,dirty FROM products WHERE id=?",
+              "INSERT INTO products(id,store_id,label,category,nature,sales_unit,packaging_quantity,packaging_unit,packaging_source_label,family_id,subfamily_id,status,version,created_at,updated_at,deleted_at,sync_state,remote_version,dirty) SELECT ?,store_id,label,category,nature,sales_unit,packaging_quantity,packaging_unit,packaging_source_label,family_id,subfamily_id,status,version,created_at,updated_at,deleted_at,sync_state,remote_version,dirty FROM products WHERE id=?",
               randomUUID(),
               other.id,
             );

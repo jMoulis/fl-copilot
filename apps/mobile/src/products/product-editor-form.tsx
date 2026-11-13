@@ -7,7 +7,7 @@ import {
   type FieldPath,
 } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Pressable, Switch, Text, TextInput, View } from "react-native";
 import { z } from "zod";
 import {
   InlineAlert,
@@ -23,6 +23,7 @@ import {
 const editorSchema = z
   .object({
     label: z.string().trim().min(1, "Saisissez un libellé."),
+    isPetitPrix: z.boolean().optional(),
     category: z.enum(["FRUIT", "VEGETABLE", "OTHER", "UNKNOWN"]),
     nature: z.enum(["BULK", "PACKAGED", "UNKNOWN"]),
     salesUnit: z.enum(["KG", "PIECE", "PACK", "UNKNOWN"]),
@@ -234,6 +235,22 @@ export function ProductEditorForm({
       ) : null}
 
       <SectionCard title="Identité">
+        <Controller
+          control={control}
+          name="isPetitPrix"
+          render={({ field: { value, onChange } }) => (
+            <View className="flex-row items-center justify-between gap-3">
+              <Text className="text-base text-ink">Gamme Petit Prix</Text>
+              <Switch
+                accessibilityLabel="Gamme Petit Prix"
+                disabled={isSubmitting}
+                value={value ?? false}
+                onValueChange={onChange}
+              />
+            </View>
+          )}
+        />
+
         <FormLabel label="Libellé" />
         <Controller
           control={control}

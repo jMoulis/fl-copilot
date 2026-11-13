@@ -98,6 +98,7 @@ function ScopedProductDetailScreen({
                 <Text className="text-sm text-muted">
                   {categoryLabels[p.category]} · {natureLabels[p.nature]} ·{" "}
                   {unitLabels[p.salesUnit]}
+                  {p.isPetitPrix ? " · Gamme Petit Prix" : ""}
                 </Text>
                 <View className="flex-row flex-wrap items-center gap-3">
                   <StatusBadge

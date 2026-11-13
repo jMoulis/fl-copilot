@@ -503,3 +503,52 @@ describe("guarded manual product editing", () => {
     }
   });
 });
+
+it("persists Petit Prix offline, preserves it for legacy drafts and permits explicitly clearing it", async () => {
+  const { adapter, database } = await temporaryDatabase();
+  try {
+    const options = {
+      storeId: "11111111-1111-4111-8111-111111111111",
+      deviceId: "22222222-2222-4222-8222-222222222222",
+      now: () => "2026-11-13T10:00:00.000Z",
+      generateId: idSequence(),
+    };
+    const productId = await saveProductEditorLocally(
+      adapter,
+      { ...emptyProductDraft, label: "Tomate", isPetitPrix: true },
+      options,
+    );
+    const repository = new ProductMasterRepository(adapter);
+    let snapshot = (await loadProductEditorSnapshot(repository, productId))!;
+    expect(snapshot.product.entity.isPetitPrix).toBe(true);
+    const legacyDraft = productSnapshotToDraft(snapshot);
+    delete legacyDraft.isPetitPrix;
+    await saveProductEditorLocally(
+      adapter,
+      { ...legacyDraft, label: "Tomate ronde" },
+      { ...options, productId },
+      snapshot,
+    );
+    snapshot = (await loadProductEditorSnapshot(repository, productId))!;
+    expect(snapshot.product.entity.isPetitPrix).toBe(true);
+    await saveProductEditorLocally(
+      adapter,
+      { ...productSnapshotToDraft(snapshot), isPetitPrix: false },
+      { ...options, productId },
+      snapshot,
+    );
+    expect((await repository.getProduct(productId))?.entity.isPetitPrix).toBe(
+      false,
+    );
+    const commands = database
+      .prepare(
+        "SELECT payload_json FROM sync_outbox WHERE command_type='PRODUCT_UPSERT' ORDER BY local_sequence",
+      )
+      .all();
+    expect(
+      commands.map((row) => JSON.parse(row.payload_json as string).isPetitPrix),
+    ).toEqual([true, true, false]);
+  } finally {
+    database.close();
+  }
+});

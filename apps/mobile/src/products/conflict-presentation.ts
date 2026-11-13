@@ -33,7 +33,7 @@ export function catalogueConflictSummary(
   const e = catalogueConflictSchemas[kind].parse(raw);
   if (kind === "PRODUCT") {
     const p = productSchema.parse(e);
-    return `${p.label} · version ${p.version}\n${{ FRUIT: "Fruit", VEGETABLE: "Légume", OTHER: "Autre", UNKNOWN: "Catégorie à préciser" }[p.category]} · ${{ BULK: "Vrac", PACKAGED: "Conditionné", UNKNOWN: "Nature à préciser" }[p.nature]} · ${units[p.salesUnit]}\nConditionnement : ${p.packaging ? `${p.packaging.quantity} ${p.packaging.unit}${p.packaging.sourceLabel ? ` · ${p.packaging.sourceLabel}` : ""}` : "non renseigné"}\n${p.deletedAt ? "Supprimé du référentiel" : statuses[p.status]}\nFamille : ${p.familyId ?? "non renseignée"} · Sous-famille : ${p.subfamilyId ?? "non renseignée"}`;
+    return `${p.label} · version ${p.version}\n${{ FRUIT: "Fruit", VEGETABLE: "Légume", OTHER: "Autre", UNKNOWN: "Catégorie à préciser" }[p.category]} · ${{ BULK: "Vrac", PACKAGED: "Conditionné", UNKNOWN: "Nature à préciser" }[p.nature]} · ${units[p.salesUnit]}\nGamme Petit Prix : ${p.isPetitPrix ? "marquée" : "non marquée"}\nConditionnement : ${p.packaging ? `${p.packaging.quantity} ${p.packaging.unit}${p.packaging.sourceLabel ? ` · ${p.packaging.sourceLabel}` : ""}` : "non renseigné"}\n${p.deletedAt ? "Supprimé du référentiel" : statuses[p.status]}\nFamille : ${p.familyId ?? "non renseignée"} · Sous-famille : ${p.subfamilyId ?? "non renseignée"}`;
   }
   if (kind === "IDENTIFIER") {
     const id = productIdentifierSchema.parse(e);

@@ -57,6 +57,7 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
           label: string;
           deletedAt?: unknown;
           version?: number;
+          isPetitPrix?: boolean;
         }>("products")
         .find({ storeId, _id: { $in: productIds } })
         .maxTimeMS(2000)
@@ -97,27 +98,49 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
       dateStyle: "short",
       timeStyle: "short",
     }).format(new Date(s));
-  const evidence = events.map(({ event: e, productLabel }) =>
-    copilotEvidenceSchema.parse({
+  const evidence = events.map(({ event: e, productLabel }) => {
+    const product = products.find((p) => p._id === e.productId);
+    const marker = product
+      ? product.isPetitPrix === true
+        ? "Gamme Petit Prix marquée sur la fiche actuelle"
+        : "Fiche actuelle non marquée Gamme Petit Prix"
+      : "Marquage de gamme inconnu : fiche indisponible";
+    return copilotEvidenceSchema.parse({
       id: `store-event/${createHash("sha256")
-        .update(JSON.stringify([storeId, e, productLabel]))
+        .update(
+          JSON.stringify([
+            storeId,
+            e,
+            productLabel,
+            product?.isPetitPrix ?? null,
+            product?.version ?? null,
+          ]),
+        )
         .digest("hex")}`,
       sourceType: e.source === "USER" ? "EVENT" : "SOURCE_DOCUMENT",
       sourceId: e.id,
       sourceVersion: e.version,
       label: `${labels[e.type]} — ${productLabel}`,
-      value: `${statuses[e.status]} ; début ${date(e.startedAt)} ; ${e.endedAt ? "fin " + date(e.endedAt) : "sans date de fin connue"} ; capture ${date(e.clientCapturedAt)} (Europe/Paris). Gravité : ${e.severity ? severities[e.severity] : "non précisée"}. ${e.source === "USER" ? "Signalement magasin" : "Information issue d’un PDF, pas une observation magasin"}${e.status === "TO_REVIEW" ? ", à examiner" : ""}.${e.comment ? " Note : " + e.comment : ""} Aucun stock chiffré ni lien de causalité n’est établi.`,
+      value: `${marker} (pas un historique de gamme à la date du signalement). ${statuses[e.status]} ; début ${date(e.startedAt)} ; ${e.endedAt ? "fin " + date(e.endedAt) : "sans date de fin connue"} ; capture ${date(e.clientCapturedAt)} (Europe/Paris). Gravité : ${e.severity ? severities[e.severity] : "non précisée"}. ${e.source === "USER" ? "Signalement magasin" : "Information issue d’un PDF, pas une observation magasin"}${e.status === "TO_REVIEW" ? ", à examiner" : ""}.${e.comment ? " Note : " + e.comment : ""} Aucun stock chiffré ni lien de causalité n’est établi.`,
       factKind:
         e.source !== "USER"
           ? "SOURCE_INSTRUCTION"
           : e.status === "TO_REVIEW"
             ? "QUALITY"
             : "OBSERVED",
-    }),
-  );
+    });
+  });
   const nextAfterId = hasMore ? page.at(-1)!.id : null;
   const revision = createHash("sha256")
-    .update(JSON.stringify([storeId, input, events, hasMore]))
+    .update(
+      JSON.stringify([
+        storeId,
+        input,
+        events,
+        products.map((p) => [p._id, p.version, p.isPetitPrix]),
+        hasMore,
+      ]),
+    )
     .digest("hex");
   evidence.push(
     copilotEvidenceSchema.parse({

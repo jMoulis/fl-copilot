@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it, expect } from "vitest";
 import {
+  catalogueSnapshotDraft,
   productCatalogueIntent,
   productSaveResultSchema,
   productRetireResultSchema,
@@ -15,7 +16,6 @@ import { runLocalMigrations } from "../db/migrations";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import {
   emptyProductDraft,
-  productSnapshotToDraft,
   loadProductEditorSnapshot,
 } from "../products/product-editor-service";
 import { ProductMasterRepository } from "../products/product-master-repository";
@@ -126,7 +126,7 @@ function edit(
           version: r.entity.version,
         })),
       },
-      draft: productSnapshotToDraft(after),
+      draft: catalogueSnapshotDraft(after),
     },
   };
 }

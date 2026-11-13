@@ -15,6 +15,8 @@ const productFields = {
   category: "Catégorie actuelle, pas historique",
   nature: "Nature actuelle : BULK/PACKAGED/UNKNOWN",
   salesUnit: "Unité actuelle : KG/PIECE/PACK/UNKNOWN",
+  isPetitPrix:
+    "Marquage actuel de gamme Petit Prix (booléen), pas une promotion ni un historique ; false signifie non marqué",
   status:
     "Statut courant ACTIVE/INACTIVE/TO_REVIEW ; distinct de la suppression logique",
   deletedAt:
@@ -384,6 +386,7 @@ function sourcePipeline(
           category: 1,
           nature: 1,
           salesUnit: 1,
+          isPetitPrix: { $ifNull: ["$isPetitPrix", false] },
           status: 1,
           deletedAt: { $ifNull: ["$deletedAt", null] },
           version: 1,

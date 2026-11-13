@@ -7,6 +7,7 @@ import { runLocalMigrations } from "../db/migrations";
 import type { AtomicMutationDatabase } from "../sync/atomic-local-mutation";
 import type { OutboxDatabase } from "../sync/outbox-repository";
 import { ProductMasterRepository } from "./product-master-repository";
+import { applyProductMasterSnapshot } from "./apply-product-master";
 
 type SQLiteValue = string | number | null;
 
@@ -208,4 +209,54 @@ describe("ProductMasterRepository", () => {
     ).toEqual({ command_type: "PRODUCT_DELETE" });
     database.close();
   });
+});
+
+it("retains the range flag across remote snapshot replay, legacy omission and explicit removal", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "fl-copilot-range-"));
+  directories.push(directory);
+  const path = join(directory, "local.db");
+  let database = new DatabaseSync(path);
+  let adapter = new NodeDatabase(database);
+  await runLocalMigrations(adapter);
+  const product = {
+    id: productId,
+    storeId,
+    label: "Tomate",
+    category: "VEGETABLE",
+    nature: "BULK",
+    salesUnit: "KG",
+    packaging: null,
+    familyId: null,
+    subfamilyId: null,
+    status: "ACTIVE",
+    version: 1,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    deletedAt: null,
+  };
+  const pull = (entity: unknown) =>
+    applyProductMasterSnapshot(adapter, storeId, {
+      products: [entity],
+      productIdentifiers: [],
+      productAliases: [],
+    });
+  await pull({ ...product, isPetitPrix: true });
+  database.close();
+  database = new DatabaseSync(path);
+  adapter = new NodeDatabase(database);
+  try {
+    await runLocalMigrations(adapter);
+    const repo = new ProductMasterRepository(adapter);
+    expect((await repo.getProduct(productId))?.entity.isPetitPrix).toBe(true);
+    await pull({ ...product, version: 2 });
+    expect((await repo.getProduct(productId))?.entity.isPetitPrix).toBe(true);
+    await pull({ ...product, version: 3, isPetitPrix: false });
+    await pull({ ...product, version: 3, isPetitPrix: false });
+    expect((await repo.getProduct(productId))?.entity.isPetitPrix).toBe(false);
+    expect(
+      database.prepare("SELECT COUNT(*) n FROM sync_outbox").get()!.n,
+    ).toBe(0);
+  } finally {
+    database.close();
+  }
 });

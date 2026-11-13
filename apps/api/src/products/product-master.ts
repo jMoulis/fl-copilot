@@ -208,6 +208,11 @@ export async function applyProductMasterCommand(
   if (descriptor.entityType === "product") {
     const before = existing as ProductDocument | null;
     const after = document as ProductDocument;
+    if (
+      (parsed.data as Product).isPetitPrix === undefined &&
+      before?.isPetitPrix !== undefined
+    )
+      after.isPetitPrix = before.isPetitPrix;
     if (before && before.salesUnit !== after.salesUnit) {
       after.analyticsRefresh = {
         generation: command.commandId,
@@ -268,6 +273,9 @@ export function serializeProductMasterDocument(
       category: product.category,
       nature: product.nature,
       salesUnit: product.salesUnit,
+      ...(product.isPetitPrix !== undefined
+        ? { isPetitPrix: product.isPetitPrix }
+        : {}),
       packaging: product.packaging
         ? {
             quantity: product.packaging.quantity.toString(),
@@ -349,6 +357,9 @@ function toDocument(
       category: product.category,
       nature: product.nature,
       salesUnit: product.salesUnit,
+      ...(product.isPetitPrix !== undefined
+        ? { isPetitPrix: product.isPetitPrix }
+        : {}),
       packaging: product.packaging
         ? {
             quantity: Decimal128.fromString(product.packaging.quantity),

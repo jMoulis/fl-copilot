@@ -20,6 +20,7 @@ import {
 } from "./product-master-repository";
 
 export interface ProductEditorDraft {
+  isPetitPrix?: boolean;
   label: string;
   category: Product["category"];
   nature: Product["nature"];
@@ -80,6 +81,11 @@ export async function saveProductEditor(
     category: draft.category,
     nature: draft.nature,
     salesUnit: draft.salesUnit,
+    ...((draft.isPetitPrix ?? existingProduct?.entity.isPetitPrix) === undefined
+      ? {}
+      : {
+          isPetitPrix: draft.isPetitPrix ?? existingProduct?.entity.isPetitPrix,
+        }),
     packaging: draft.packagingQuantity.trim()
       ? {
           quantity: normalizeDecimal(draft.packagingQuantity),
@@ -221,7 +227,10 @@ export async function saveProductEditor(
 export function productSnapshotToDraft(
   snapshot: ProductEditorSnapshot,
 ): ProductEditorDraft {
-  return catalogueSnapshotDraft(snapshot);
+  return {
+    ...catalogueSnapshotDraft(snapshot),
+    isPetitPrix: snapshot.product.entity.isPetitPrix ?? false,
+  };
 }
 
 export const emptyProductDraft: ProductEditorDraft = {
@@ -250,6 +259,7 @@ function normalizeDecimal(value: string) {
 function productContentChanged(before: Product, after: Product) {
   return (
     before.label !== after.label ||
+    before.isPetitPrix !== after.isPetitPrix ||
     before.category !== after.category ||
     before.nature !== after.nature ||
     before.salesUnit !== after.salesUnit ||

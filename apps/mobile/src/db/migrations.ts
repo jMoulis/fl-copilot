@@ -939,6 +939,11 @@ CREATE INDEX copilot_layout_illustration_generation_scope ON copilot_layout_illu
     name: "personal-document-archives",
     sql: "CREATE TABLE document_archives(id TEXT NOT NULL,store_id TEXT NOT NULL,owner_id TEXT NOT NULL,target_kind TEXT NOT NULL,archived INTEGER NOT NULL CHECK(archived IN (0,1)),payload_json TEXT NOT NULL,remote_payload_json TEXT,remote_version INTEGER,pending_command_id TEXT,PRIMARY KEY(store_id,owner_id,id)); CREATE INDEX document_archives_visibility ON document_archives(store_id,owner_id,target_kind,archived,id);",
   },
+  {
+    version: 63,
+    name: "product-petit-prix-marker",
+    sql: "ALTER TABLE products ADD COLUMN is_petit_prix INTEGER CHECK(is_petit_prix IN (0,1));",
+  },
 ];
 
 function validateMigrations(migrations: readonly LocalMigration[]) {

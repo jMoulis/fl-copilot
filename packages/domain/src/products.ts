@@ -64,6 +64,8 @@ export const productSchema = z.object({
   category: productCategorySchema,
   nature: productNatureSchema,
   salesUnit: salesUnitSchema,
+  // Optional for legacy writers; omission must preserve an existing marker.
+  isPetitPrix: z.boolean().optional(),
   packaging: packagingSchema.nullable().optional(),
   familyId: nullableIdSchema,
   subfamilyId: nullableIdSchema,

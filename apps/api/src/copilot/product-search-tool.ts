@@ -169,7 +169,7 @@ export async function readProductSearch(db: Db, storeId: string, raw: unknown) {
       sourceId: c.product.id,
       sourceVersion: c.product.version || null,
       label: `Fiche produit — ${c.product.label}`,
-      value: `Catégorie : ${categories[c.product.category]} ; nature : ${natures[c.product.nature]} ; unité de vente : ${units[c.product.salesUnit]} ; correspondance : ${bases[c.basis]}${c.basis === "LABEL_TERMS" || c.basis === "FUZZY_LABEL" ? " (proposition à confirmer)" : ""}. ${c.identifiersComplete ? (c.identifiers.length ? "Codes validés : " + c.identifiers.map((i) => `${i.type} ${i.value}`).join(" ; ") + "." : "Aucun code validé renseigné.") : "Limite de lecture des codes dépassée ; aucun code ni absence de code ne peut être confirmé par cette réponse."} Aucun produit n’a été modifié.`,
+      value: `Catégorie : ${categories[c.product.category]} ; nature : ${natures[c.product.nature]} ; unité de vente : ${units[c.product.salesUnit]} ; gamme Petit Prix actuellement ${c.product.isPetitPrix === true ? "marquée" : "non marquée"} ; correspondance : ${bases[c.basis]}${c.basis === "LABEL_TERMS" || c.basis === "FUZZY_LABEL" ? " (proposition à confirmer)" : ""}. ${c.identifiersComplete ? (c.identifiers.length ? "Codes validés : " + c.identifiers.map((i) => `${i.type} ${i.value}`).join(" ; ") + "." : "Aucun code validé renseigné.") : "Limite de lecture des codes dépassée ; aucun code ni absence de code ne peut être confirmé par cette réponse."} Aucun produit n’a été modifié.`,
       factKind: "QUALITY",
     }),
   );
