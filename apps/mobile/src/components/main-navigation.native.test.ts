@@ -8,6 +8,7 @@ import {
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MainHeader } from "./main-header";
+import { EventSeverity } from "../needs/event-severity";
 import TabLayout from "../app/(tabs)/_layout";
 import ImportsHub from "../app/(tabs)/actions";
 import JournalScreen from "../app/(tabs)/today";
@@ -34,6 +35,8 @@ vi.mock("react-native", () => ({
   Text: "Text",
   View: "View",
   Pressable: "Pressable",
+  Image: "Image",
+  StyleSheet: { create: (styles: object) => styles },
   useWindowDimensions: () => ({ fontScale: 1 }),
 }));
 vi.mock("@expo/vector-icons/Ionicons", () => ({ default: "Icon" }));
@@ -156,18 +159,35 @@ it("keeps four direct intake destinations and routes the shared file chooser int
 });
 it("retains the selected Journal week and reuses existing observation capture", async () => {
   await mount(createElement(JournalScreen));
-  await act(() => menu("Ma semaine").props.onPress());
+  await act(() =>
+    tree!.root
+      .find(
+        (n) =>
+          String(n.type) === "Pressable" &&
+          n.props.accessibilityRole === "tab" &&
+          !n.props.accessibilityState.selected,
+      )
+      .props.onPress(),
+  );
   expect(runtime.push).toHaveBeenLastCalledWith(
     expect.objectContaining({ pathname: "/my-week" }),
   );
-  await act(() => menu("Historique des observations").props.onPress());
+  await act(() =>
+    tree!.root
+      .find(
+        (n) =>
+          typeof n.type === "function" &&
+          n.props.label === "Historique des observations",
+      )
+      .props.onPress(),
+  );
   expect(runtime.push).toHaveBeenLastCalledWith("/store-events");
   await act(() =>
     tree!.root
       .find(
         (n) =>
-          String(n.type) === "Button" &&
-          n.props.label === "Noter une observation produit",
+          String(n.type) === "Pressable" &&
+          n.props.accessibilityLabel === "Signaler une observation produit",
       )
       .props.onPress(),
   );
@@ -177,4 +197,39 @@ it("retains the selected Journal week and reuses existing observation capture", 
       params: { date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) },
     }),
   );
+});
+
+it("selects one severity at a time, keeps unknown distinct from low, and exposes the saved selection", async () => {
+  const onChange = vi.fn();
+  await mount(createElement(EventSeverity, { value: null, onChange }));
+  function radio(label: string) {
+    return tree!.root.find(
+      (n) =>
+        String(n.type) === "Pressable" && n.props.accessibilityLabel === label,
+    );
+  }
+  expect(radio("Gravité non précisée").props.accessibilityState.checked).toBe(
+    true,
+  );
+  await act(() => radio("Gravité élevée").props.onPress());
+  expect(onChange).toHaveBeenLastCalledWith("HIGH");
+  await act(() =>
+    tree!.update(createElement(EventSeverity, { value: "HIGH", onChange })),
+  );
+  expect(radio("Gravité élevée").props.accessibilityState.checked).toBe(true);
+  expect(radio("Gravité non précisée").props.accessibilityState.checked).toBe(
+    false,
+  );
+  await act(() => radio("Gravité non précisée").props.onPress());
+  expect(onChange).toHaveBeenLastCalledWith(null);
+  await act(() =>
+    tree!.update(
+      createElement(EventSeverity, { value: "HIGH", onChange, disabled: true }),
+    ),
+  );
+  expect(
+    tree!.root
+      .findAll((n) => String(n.type) === "Pressable")
+      .every((n) => n.props.disabled),
+  ).toBe(true);
 });

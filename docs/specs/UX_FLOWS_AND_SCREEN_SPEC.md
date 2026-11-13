@@ -1,3 +1,15 @@
+## Approved design implementation — 13 November 2026: carnet de rayon
+
+The Journal uses the owner-approved botanical masthead and existing system font,
+with a compact forecast banner, independent seven-day navigation, three compact
+observation rows and a read-only detail sheet. Forecast qualifications, source
+links and calendar details remain available in its swipeable sheet. Signaler
+uses exclusive type buttons and three labelled severity cards with an explicit
+unknown choice; capture/closure, actual time validation and local-first writes
+keep their existing semantics. Returning from capture restores the originating
+Journal date. Other primary headers keep their existing design. See
+[implementation and acceptance](../qa/JOURNAL_CARNET_DESIGN_2026_11_13.md).
+
 ## Owner-approved navigation batch — 12 November 2026
 
 The approved navigation is **Journal · Analyses · Copilote · Imports**. Each root has fixed Products and Settings shortcuts. Details are full pages with Back; filters and contextual information use dismissible sheets. Returning from a product detail or editor preserves the originating analysis/catalogue screen, selection and saved list position.
