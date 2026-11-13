@@ -3,6 +3,7 @@ import { useFocusEffect } from "expo-router";
 import { ApiClient } from "@fl-copilot/api-client";
 import {
   storeContextFingerprint,
+  parisDate,
   type WeeklyContext,
 } from "@fl-copilot/domain";
 import { useAuth } from "../auth/auth-provider";
@@ -70,7 +71,14 @@ export function useWeeklyContext(
           "Enregistre puis synchronise les réglages de ton magasin avant d’actualiser le contexte.",
         );
       const result = await withAccessToken((token) =>
-        api.weeklyContext(token, storeId, weekStart, true, autoRefresh),
+        api.weeklyContext(
+          token,
+          storeId,
+          weekStart,
+          true,
+          autoRefresh,
+          autoRefresh,
+        ),
       );
       if (!valid()) return;
       if (result.storeId !== storeId || result.weekStart !== weekStart)
@@ -153,6 +161,10 @@ export function useWeeklyContext(
           settings?.syncState === "SYNCED" &&
           (!context ||
             !context.economy ||
+            (weekStart < parisDate(new Date().toISOString()) &&
+              (!context.observedWeather ||
+                context.observedWeather.issue === "PROVIDER_UNAVAILABLE" ||
+                contextIsStale(context.observedWeather, new Date()))) ||
             [
               context.weather,
               context.publicHolidays,

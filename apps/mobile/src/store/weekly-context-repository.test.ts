@@ -1,3 +1,4 @@
+import { observedWeatherContextFixture } from "../../../../scripts/test-observed-weather-fixtures";
 import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
 import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -116,6 +117,80 @@ it("preserves monthly context through offline restart and an older response that
         c.weekStart,
       ))!.economy,
     ).toEqual(saved.economy);
+  } finally {
+    db.close();
+  }
+});
+
+it("preserves source-qualified observed days through old readers, source failure and SQLite reopening without Outbox writes", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    await runLocalMigrations(adapter(db));
+    const settings = storeContextFixture(),
+      c = weeklyContextFixture(settings),
+      repo = new WeeklyContextRepository(adapter(db));
+    c.observedWeather = observedWeatherContextFixture();
+    await repo.save(c, settings);
+    const old = structuredClone(c);
+    delete old.observedWeather;
+    old.retrievedAt = "2026-10-10T08:00:00.000Z";
+    expect((await repo.save(old, settings)).observedWeather).toEqual(
+      c.observedWeather,
+    );
+    const failed = structuredClone(old);
+    failed.retrievedAt = "2026-10-11T08:00:00.000Z";
+    failed.observedWeather = {
+      ...c.observedWeather,
+      status: "UNAVAILABLE",
+      issue: "PROVIDER_UNAVAILABLE",
+      days: [],
+      reference: null,
+      retrievedAt: null,
+      validUntil: null,
+    };
+    const saved = await repo.save(failed, settings);
+    expect(saved.observedWeather).toEqual({
+      ...c.observedWeather,
+      status: "STALE",
+      issue: "PROVIDER_UNAVAILABLE",
+    });
+    expect(
+      (
+        await new WeeklyContextRepository(adapter(db)).get(
+          settings,
+          c.weekStart,
+        )
+      )?.observedWeather,
+    ).toEqual(saved.observedWeather);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM sync_outbox").get()).toEqual({
+      n: 0,
+    });
+  } finally {
+    db.close();
+  }
+});
+
+it("keeps an archived forecast explicitly stale beside observed data when the refreshed forecast horizon has moved on", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    await runLocalMigrations(adapter(db));
+    const settings = storeContextFixture(),
+      c = weeklyContextFixture(settings),
+      repo = new WeeklyContextRepository(adapter(db));
+    await repo.save(c, settings);
+    const next = structuredClone(c);
+    next.retrievedAt = "2026-10-12T08:00:00.000Z";
+    next.weather = {
+      ...next.weather,
+      days: [],
+      retrievedAt: next.retrievedAt,
+      validUntil: "2026-10-12T09:00:00.000Z",
+    };
+    next.observedWeather = observedWeatherContextFixture();
+    const saved = await repo.save(next, settings);
+    expect(saved.weather).toEqual({ ...c.weather, status: "STALE" });
+    expect(saved.observedWeather).toEqual(next.observedWeather);
+    expect(saved.weather.days[0]!.type).toBe("FORECAST");
   } finally {
     db.close();
   }

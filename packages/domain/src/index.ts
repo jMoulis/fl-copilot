@@ -179,3 +179,5 @@ export * from "./copilot-mongo-read";
 export * from "./copilot-chart";
 
 export * from "./economic-context";
+
+export * from "./observed-weather-context";

@@ -5,7 +5,7 @@ import { addContextDays } from "@fl-copilot/domain";
 
 const MAX_COMPRESSED_BYTES = 4_000_000;
 const MAX_EXPANDED_BYTES = 32_000_000;
-const MAX_ROWS = 150_000;
+const MAX_ROWS = 500_000;
 const MAX_STATION_DAYS = 40_000;
 const required = [
   "NUM_POSTE",
@@ -81,7 +81,7 @@ export function qualifyWeatherMeasurement(raw: string, code: string) {
       sourceValue !== null && (code === "0" || code === "1")
         ? sourceValue
         : null,
-  };
+  } as const;
 }
 function date(raw: string): string {
   if (!/^\d{8}$/.test(raw)) throw Error("WEATHER_DATE_INVALID");
@@ -99,6 +99,113 @@ function coordinate(raw: string, min: number, max: number): number {
   if (value === null || Number(value) < min || Number(value) > max)
     throw Error("WEATHER_STATION_POSITION_INVALID");
   return Number(value);
+}
+
+function archiveRows(compressed: Uint8Array) {
+  if (!compressed.byteLength || compressed.byteLength > MAX_COMPRESSED_BYTES)
+    throw Error("WEATHER_COMPRESSED_SIZE_INVALID");
+  const expanded = gunzipSync(compressed, {
+    maxOutputLength: MAX_EXPANDED_BYTES,
+  });
+  const text = new TextDecoder("utf-8", { fatal: true })
+    .decode(expanded)
+    .replace(/^\uFEFF/, "");
+  // Bound line count before allocating an array, including on highly compressible input.
+  let count = 1;
+  for (let i = 0; i < text.length; i++)
+    if (text[i] === "\n" && ++count > MAX_ROWS + 2)
+      throw Error("WEATHER_TOO_MANY_ROWS");
+  const lines = text.split(/\r?\n/);
+  if (lines.length > MAX_ROWS + 2) throw Error("WEATHER_TOO_MANY_ROWS");
+  const header = cells(lines[0] ?? "");
+  if (
+    new Set(header).size !== header.length ||
+    required.some((key) => !header.includes(key))
+  )
+    throw Error("WEATHER_HEADER_INVALID");
+  const columns = Object.fromEntries(
+    required.map((key) => [key, header.indexOf(key)]),
+  ) as Record<(typeof required)[number], number>;
+  return { lines, header, columns };
+}
+export function nearestObservedWeatherStation(
+  compressed: Uint8Array,
+  point: { latitude: number; longitude: number },
+) {
+  if (
+    !Number.isFinite(point.latitude) ||
+    Math.abs(point.latitude) > 90 ||
+    !Number.isFinite(point.longitude) ||
+    Math.abs(point.longitude) > 180
+  )
+    throw Error("WEATHER_POINT_INVALID");
+  const { lines, header, columns } = archiveRows(compressed);
+  const stations = new Map<
+    string,
+    {
+      date: string;
+      station: {
+        id: string;
+        name: string;
+        latitude: number;
+        longitude: number;
+        altitudeM: string | null;
+      };
+    }
+  >();
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i]) {
+      if (i !== lines.length - 1) throw Error("WEATHER_EMPTY_ROW");
+      continue;
+    }
+    const row = cells(lines[i]!);
+    if (row.length !== header.length) throw Error("WEATHER_ROW_INVALID");
+    const get = (k: (typeof required)[number]) => row[columns[k]]!;
+    if (
+      !["TN", "TX", "RR"].some(
+        (k) =>
+          get(k as (typeof required)[number]) !== "" &&
+          ["0", "1"].includes(get(`Q${k}` as (typeof required)[number])),
+      )
+    )
+      continue;
+    const id = get("NUM_POSTE"),
+      at = date(get("AAAAMMJJ"));
+    if (!/^\d{8}$/.test(id)) continue;
+    if ((stations.get(id)?.date ?? "") > at) continue;
+    stations.set(id, {
+      date: at,
+      station: {
+        id,
+        name: get("NOM_USUEL"),
+        latitude: coordinate(get("LAT"), -90, 90),
+        longitude: coordinate(get("LON"), -180, 180),
+        altitudeM: decimal(get("ALTI")),
+      },
+    });
+  }
+  const radians = (n: number) => (n * Math.PI) / 180;
+  return (
+    [...stations.values()]
+      .map(({ station }) => {
+        const a =
+          Math.sin(radians(station.latitude - point.latitude) / 2) ** 2 +
+          Math.cos(radians(point.latitude)) *
+            Math.cos(radians(station.latitude)) *
+            Math.sin(radians(station.longitude - point.longitude) / 2) ** 2;
+        return {
+          station,
+          distanceKm:
+            Math.round(6371 * 2 * Math.asin(Math.sqrt(Math.min(1, a))) * 100) /
+            100,
+        };
+      })
+      .sort(
+        (a, b) =>
+          a.distanceKm - b.distanceKm ||
+          a.station.id.localeCompare(b.station.id),
+      )[0] ?? null
+  );
 }
 
 /** Pure source qualification; no store assignment, fetch, cache write or forecast substitution. */
@@ -140,25 +247,7 @@ export function parseObservedWeatherSource(
     )
   )
     throw Error("WEATHER_STATION_SOURCE_MISMATCH");
-  if (!compressed.byteLength || compressed.byteLength > MAX_COMPRESSED_BYTES)
-    throw Error("WEATHER_COMPRESSED_SIZE_INVALID");
-  const expanded = gunzipSync(compressed, {
-    maxOutputLength: MAX_EXPANDED_BYTES,
-  });
-  const text = new TextDecoder("utf-8", { fatal: true })
-    .decode(expanded)
-    .replace(/^\uFEFF/, "");
-  const lines = text.split(/\r?\n/);
-  if (lines.length > MAX_ROWS + 2) throw Error("WEATHER_TOO_MANY_ROWS");
-  const header = cells(lines[0] ?? "");
-  if (
-    new Set(header).size !== header.length ||
-    required.some((key) => !header.includes(key))
-  )
-    throw Error("WEATHER_HEADER_INVALID");
-  const columns = Object.fromEntries(
-    required.map((key) => [key, header.indexOf(key)]),
-  ) as Record<(typeof required)[number], number>;
+  const { lines, header, columns } = archiveRows(compressed);
   const days = [];
   const dates = new Set<string>();
   for (let i = 1; i < lines.length; i++) {

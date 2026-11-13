@@ -3,6 +3,7 @@ import {
   economicDataUrl,
   economicSeriesLabels,
   type EconomicContext,
+  type ObservedWeatherContext,
 } from "@fl-copilot/domain";
 import { createHash } from "node:crypto";
 import { z } from "zod";
@@ -26,9 +27,10 @@ export async function readCopilotWeek(
   const input = copilotWeekInputSchema.parse(raw);
   let context: z.infer<typeof copilotWeekResultSchema>["context"] = null;
   let economy: EconomicContext | undefined;
+  let observed: ObservedWeatherContext | undefined;
   try {
     const source = weeklyContextSchema.parse(
-      await service.read(storeId, input.weekStart, false, true),
+      await service.read(storeId, input.weekStart, false, true, true),
     );
     if (
       source.storeId !== storeId ||
@@ -41,7 +43,18 @@ export async function readCopilotWeek(
       )
     )
       throw Error("COPILOT_WEEK_SCOPE_INVALID");
-    const { settingsFingerprint, economy: economicSource, ...visible } = source;
+    const {
+      settingsFingerprint,
+      economy: economicSource,
+      observedWeather,
+      ...visible
+    } = source;
+    observed = observedWeather;
+    if (
+      observed?.status === "AVAILABLE" &&
+      (!observed.validUntil || Date.parse(observed.validUntil) <= now.getTime())
+    )
+      observed.status = "STALE";
     economy = economicSource;
     if (
       economy?.status === "AVAILABLE" &&
@@ -71,7 +84,15 @@ export async function readCopilotWeek(
       throw error;
   }
   const revision = createHash("sha256")
-    .update(JSON.stringify([storeId, input, context, economy ?? null]))
+    .update(
+      JSON.stringify([
+        storeId,
+        input,
+        context,
+        economy ?? null,
+        observed ?? null,
+      ]),
+    )
     .digest("hex");
   const evidence: z.infer<typeof copilotEvidenceSchema>[] = [];
   const states = {
@@ -102,12 +123,20 @@ export async function readCopilotWeek(
   if (context) {
     const c = context,
       w = c.weather;
+    const forecastPoints = w.days.filter(
+      (d) =>
+        d.temperatureSampleCount > 0 || !!d.symbol || d.precipitationHours > 0,
+    );
+    const observedText = observed
+      ? ` Mesures observées Météo-France : ${states[observed.status]}. Référence automatique la plus proche parmi le fichier récent du département, non approuvée comme représentative par le magasin : ${observed.reference?.station.name ?? "station indisponible"} (${observed.reference?.station.id ?? "inconnue"}), distance ${observed.reference?.distanceKm ?? "inconnue"} km. ${observed.days.map((d) => `${d.producerDate} : min ${d.measurements.TN.analysisValue ?? "inconnue"} / max ${d.measurements.TX.analysisValue ?? "inconnue"} °C ; pluie ${d.measurements.RR.analysisValue ?? "inconnue"} mm`).join(" ; ")}. Codes qualité 0/1 retenus uniquement. Pluie affectée à la date producteur, de 06h UTC à 06h UTC le lendemain ; pas aux horaires du magasin. Autres jours/valeurs inconnus, pas zéro. Sources récupérées (pas des archives de publication historique) : ${[...new Set(observed.days.map((d) => `${d.sourceUrl} — récupération ${d.sourceRetrievedAt}`))].join(" ; ") || observed.sourceUrl}. Aucune causalité météo/ventes établie.`
+      : "";
     evidence.push(
       fact(
         "weather",
-        `Prévisions météo — ${c.locationLabel}`,
-        `${meta(w)} Émission ${stamp(w.issuedAt)}. ${w.days.length} jours de prévision disponibles sur cette semaine. ${w.days.map((d) => `${d.validDate} : température min ${d.temperatureMinC ?? "inconnue"} °C / max ${d.temperatureMaxC ?? "inconnue"} °C (${d.temperatureSampleCount} échantillons) ; pluie ${d.precipitationMm ?? "inconnue"} mm, couverture ${d.precipitationHours}/${d.dayHours} heures`).join(" ; ")}. Les jours absents et la pluie incomplète sont inconnus, pas nuls. Ce sont des prévisions, jamais une météo observée ni la cause démontrée des ventes.`,
-        w.sourceUrl,
+        `${observed ? "Météo — mesures de station et prévisions" : "Prévisions météo"} — ${c.locationLabel}`,
+        `${meta(w)} Émission ${stamp(w.issuedAt)}. ${forecastPoints.length} jours de prévision disponibles sur cette semaine. ${forecastPoints.map((d) => `${d.validDate} : température min ${d.temperatureMinC ?? "inconnue"} °C / max ${d.temperatureMaxC ?? "inconnue"} °C (${d.temperatureSampleCount} échantillons) ; pluie ${d.precipitationMm ?? "inconnue"} mm, couverture ${d.precipitationHours}/${d.dayHours} heures`).join(" ; ")}. Les jours absents et la pluie incomplète sont inconnus, pas nuls. Ce sont des prévisions, jamais une météo observée ni la cause démontrée des ventes.` +
+          observedText,
+        observed ? observed.sourceUrl : w.sourceUrl,
         "DERIVED",
       ),
     );

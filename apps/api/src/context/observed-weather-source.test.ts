@@ -168,11 +168,18 @@ describe("Météo-France observed daily source qualification", () => {
       new Uint8Array(4_000_001),
       gzipSync(Buffer.alloc(32_000_001)),
       gzipSync(new Uint8Array([0xff])),
+      gzipSync("\n".repeat(500_003)),
     ]) {
       expect(() =>
         parseObservedWeatherSource(b, "75110001", provenance),
       ).toThrow();
     }
+  });
+  it("reads bounded older archives above 150,000 rows without retaining unrelated station rows", () => {
+    const unrelated = row.replace("75110001", "75199999") + "\n";
+    const result = parse(`${header}\n${row}\n${unrelated.repeat(200_000)}`);
+    expect(result.days).toHaveLength(1);
+    expect(result.days[0]!.station.id).toBe("75110001");
   });
   it("checks source identity, station and retrieval date before parsing", () => {
     for (const sourceUrl of [

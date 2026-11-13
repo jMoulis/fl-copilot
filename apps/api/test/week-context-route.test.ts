@@ -1,3 +1,4 @@
+import { observedWeatherContextFixture } from "../../../scripts/test-observed-weather-fixtures";
 import { economicContextFixture } from "../../../scripts/test-economic-fixtures";
 import { it, expect, vi } from "vitest";
 import { randomUUID } from "node:crypto";
@@ -10,6 +11,7 @@ it("requires store authorization before any provider request and validates week 
   const settings = storeContextFixture(),
     source = weeklyContextFixture(settings);
   source.economy = economicContextFixture();
+  source.observedWeather = observedWeatherContextFixture();
   const read = vi.fn(async () => source);
   const auth: AuthService = {
     requestChallenge: vi.fn(),
@@ -76,9 +78,11 @@ it("requires store authorization before any provider request and validates week 
     expect(response.statusCode).toBe(200);
     expect(response.json().storeId).toBe(settings.storeId);
     expect(response.json()).not.toHaveProperty("economy");
+    expect(response.json()).not.toHaveProperty("observedWeather");
     expect(read).toHaveBeenCalledWith(
       settings.storeId,
       "2026-10-05",
+      false,
       false,
       false,
     );
@@ -94,9 +98,18 @@ it("requires store authorization before any provider request and validates week 
     });
     expect(economic.statusCode).toBe(200);
     expect(economic.json().economy).toEqual(source.economy);
+    expect(economic.json()).not.toHaveProperty("observedWeather");
+    const measured = await app.inject({
+      url: "/api/v1/store/context?weekStart=2026-10-05",
+      headers: { ...headers, "x-context-observed-weather": "1" },
+    });
+    expect(measured.statusCode).toBe(200);
+    expect(measured.json().observedWeather).toEqual(source.observedWeather);
+    expect(measured.json()).not.toHaveProperty("economy");
     expect(read).toHaveBeenLastCalledWith(
       settings.storeId,
       "2026-10-05",
+      false,
       false,
       true,
     );
@@ -105,6 +118,7 @@ it("requires store authorization before any provider request and validates week 
       settings.storeId,
       "2026-10-05",
       true,
+      false,
       false,
     );
   } finally {

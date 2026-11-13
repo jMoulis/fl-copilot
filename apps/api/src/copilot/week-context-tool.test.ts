@@ -1,3 +1,4 @@
+import { observedWeatherContextFixture } from "../../../../scripts/test-observed-weather-fixtures";
 import { economicContextFixture } from "../../../../scripts/test-economic-fixtures";
 import { randomUUID } from "node:crypto";
 import { it, expect, vi } from "vitest";
@@ -19,7 +20,7 @@ it("projects scoped weekly providers, forecast coverage and public sources witho
     { weekStart: c.weekStart },
     now,
   );
-  expect(read).toHaveBeenCalledWith(c.storeId, c.weekStart, false, true);
+  expect(read).toHaveBeenCalledWith(c.storeId, c.weekStart, false, true, true);
   expect(result.context?.weather.days[0]).toMatchObject({
     type: "FORECAST",
     precipitationMm: 0,
@@ -141,4 +142,35 @@ it("adds compact national monthly facts without widening the old context shape o
       })
     ).evidence.at(-1)!.id,
   ).not.toBe(fact.id);
+});
+
+it("keeps observed station days separate from forecasts in compact existing evidence and changes provenance on revision", async () => {
+  const c = weeklyContextFixture();
+  c.observedWeather = observedWeatherContextFixture();
+  const result = await readCopilotWeek(
+    { read: async () => c },
+    c.storeId,
+    { weekStart: c.weekStart },
+    new Date("2026-10-09T08:30:00Z"),
+  );
+  expect(result.evidence).toHaveLength(4);
+  expect(result.context).not.toHaveProperty("observedWeather");
+  expect(result.evidence[0]!.value).toContain("Mesures observées");
+  expect(result.evidence[0]!.value).toContain(
+    "2026-10-08 : min 9.0 / max 18.0 °C ; pluie 0.0 mm",
+  );
+  expect(result.evidence[0]!.value).toContain("06h UTC");
+  expect(result.evidence[0]!.value).toContain("Référence automatique");
+  expect(JSON.stringify(result)).not.toContain("base64");
+  c.observedWeather.days[0]!.sourceSha256 = "b".repeat(64);
+  expect(
+    (
+      await readCopilotWeek(
+        { read: async () => c },
+        c.storeId,
+        { weekStart: c.weekStart },
+        new Date("2026-10-09T08:30:00Z"),
+      )
+    ).evidence[0]!.id,
+  ).not.toBe(result.evidence[0]!.id);
 });

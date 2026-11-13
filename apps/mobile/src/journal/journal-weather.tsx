@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import type { WeeklyContext } from "@fl-copilot/domain";
+import { parisDate, type WeeklyContext } from "@fl-copilot/domain";
+import {
+  JournalObservedWeather,
+  observedValue,
+} from "./journal-observed-weather";
 import { journalColors as c } from "./journal-theme";
 import { BottomSheet, InlineAlert, SecondaryButton } from "../components/ui";
 import { contextIsStale } from "../store/weekly-context-repository";
@@ -33,12 +37,36 @@ export function JournalWeather({
   onSettings(): void;
 }) {
   const [detail, setDetail] = useState(false),
-    [linkError, setLinkError] = useState(false);
+    [linkError, setLinkError] = useState(false),
+    [showForecast, setShowForecast] = useState(false);
   const now = new Date(),
     day = context?.weather.days.find((d) => d.validDate === date);
-  const presentation = weatherPresentation(day),
-    stale = !!context && contextIsStale(context.weather, now);
-  const available = !!day?.temperatureSampleCount || !!day?.symbol;
+  const observing =
+    date < parisDate(now.toISOString()) && !!context?.observedWeather;
+  const observed = context?.observedWeather?.days.find(
+    (d) => d.producerDate === date,
+  );
+  const forecastPresentation = weatherPresentation(day);
+  const presentation = observing
+      ? {
+          icon: "thermometer-outline" as const,
+          label: "Mesures de station",
+          tone: "neutral" as const,
+        }
+      : forecastPresentation,
+    stale =
+      !!context &&
+      contextIsStale(
+        observing ? context.observedWeather! : context.weather,
+        now,
+      );
+  const available = observing
+    ? !!observed &&
+      Object.values(observed.measurements).some((m) => m.analysisValue !== null)
+    : !!day?.temperatureSampleCount || !!day?.symbol;
+  const maximum = observing
+    ? observedValue(observed?.measurements.TX.analysisValue)
+    : day?.temperatureMaxC;
   const background = !available
     ? c.surface
     : presentation.tone === "sun"
@@ -53,13 +81,14 @@ export function JournalWeather({
       : presentation.tone === "rain"
         ? c.rainInk
         : c.neutralInk;
-  const symbolTime = day?.symbol
-    ? new Intl.DateTimeFormat("fr-FR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "Europe/Paris",
-      }).format(new Date(day.symbol.validFrom))
-    : undefined;
+  const symbolTime =
+    !observing && day?.symbol
+      ? new Intl.DateTimeFormat("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+          timeZone: "Europe/Paris",
+        }).format(new Date(day.symbol.validFrom))
+      : undefined;
   const calendar = journalCalendar(context, date, now);
   const timestamp = (value: string) =>
     new Date(value).toLocaleString("fr-FR", {
@@ -81,33 +110,44 @@ export function JournalWeather({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Ouvrir le détail de la météo et du calendrier"
-        onPress={() => setDetail(true)}
+        onPress={() => {
+          setShowForecast(false);
+          setDetail(true);
+        }}
         className="active:opacity-70"
         style={[styles.weather, { backgroundColor: background, opacity: 1 }]}
       >
         <Ionicons name={presentation.icon} size={31} color={ink} />
         <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
           <Text style={[styles.eyebrow, { color: ink }]}>
-            {available
-              ? `${journalWeatherDate(date, now)}${symbolTime ? ` · ${symbolTime}` : ""}${stale ? " · ancienne" : error ? " · à actualiser" : ""}`
-              : "Météo"}
+            {observing
+              ? `Météo observée${stale ? " · ancienne" : ""}`
+              : available
+                ? `${journalWeatherDate(date, now)}${symbolTime ? ` · ${symbolTime}` : ""}${stale ? " · ancienne" : error ? " · à actualiser" : ""}`
+                : "Météo"}
           </Text>
-          <Text style={[styles.condition, { color: ink }]}>
-            {day?.symbol
-              ? presentation.label
-              : day?.temperatureSampleCount
-                ? "Températures prévues"
-                : configured
-                  ? "Prévision indisponible"
-                  : "Magasin à configurer"}
+          <Text numberOfLines={1} style={[styles.condition, { color: ink }]}>
+            {observing
+              ? available
+                ? context?.observedWeather?.reference?.station.name
+                : "Mesure indisponible"
+              : day?.symbol
+                ? presentation.label
+                : day?.temperatureSampleCount
+                  ? "Températures prévues"
+                  : configured
+                    ? "Prévision indisponible"
+                    : "Magasin à configurer"}
           </Text>
         </View>
-        {day?.temperatureMaxC != null ? (
+        {maximum != null ? (
           <View style={{ alignItems: "center", gap: 2 }}>
             <Text style={[styles.temperature, { color: ink }]}>
-              {weatherNumber(day.temperatureMaxC)}°
+              {weatherNumber(maximum)}°
             </Text>
-            <Text style={{ color: ink, fontSize: 10 }}>max. indic.</Text>
+            <Text style={{ color: ink, fontSize: 10 }}>
+              {observing ? "max. mesurée" : "max. indic."}
+            </Text>
           </View>
         ) : null}
         <Ionicons name="chevron-forward" size={16} color={ink} />
@@ -125,57 +165,87 @@ export function JournalWeather({
         {error ? (
           <InlineAlert title="Contexte à actualiser" message={error} />
         ) : null}
-        <Text className="text-ink">
-          {day?.precipitationMm == null
-            ? "Cumul de pluie indisponible"
-            : `${weatherNumber(day.precipitationMm)} mm prévus sur la journée`}
-        </Text>
+        {observing ? (
+          <JournalObservedWeather
+            context={context!.observedWeather!}
+            date={date}
+            onSource={(url) => void source(url)}
+          />
+        ) : (
+          <Text className="text-ink">
+            {day?.precipitationMm == null
+              ? "Cumul de pluie indisponible"
+              : `${weatherNumber(day.precipitationMm)} mm prévus sur la journée`}
+          </Text>
+        )}
         {calendar.map((line) => (
           <Text key={line} className="text-ink">
             {line}
           </Text>
         ))}
-        <Text className="text-ink">
-          Les températures min/max sont indicatives, calculées sur les points de
-          prévision disponibles. Le cumul de pluie est affiché seulement si
-          toute la journée est couverte.
-        </Text>
-        {day?.temperatureSampleCount ? (
-          <Text className="text-ink">
-            De {weatherNumber(day.temperatureMinC)} à{" "}
-            {weatherNumber(day.temperatureMaxC)} °C ·{" "}
-            {day.temperatureSampleCount} points de prévision.
-          </Text>
+        {observing && day?.temperatureSampleCount ? (
+          <SecondaryButton
+            label={
+              showForecast
+                ? "Masquer la prévision archivée"
+                : "Consulter la prévision archivée"
+            }
+            onPress={() => setShowForecast((v) => !v)}
+          />
         ) : null}
-        {day?.symbol ? (
-          <Text className="text-muted">
-            {presentation.label} · fenêtre de prévision du{" "}
-            {timestamp(day.symbol.validFrom)} au {timestamp(day.symbol.validTo)}
-            . Ce symbole ne résume pas toute la journée.
-          </Text>
+        {!observing || showForecast ? (
+          <>
+            {observing ? (
+              <Text className="text-lg font-semibold text-ink">
+                Prévision archivée · distincte des mesures
+              </Text>
+            ) : null}
+            <Text className="text-ink">
+              Les températures min/max sont indicatives, calculées sur les
+              points de prévision disponibles. Le cumul de pluie est affiché
+              seulement si toute la journée est couverte.
+            </Text>
+            {day?.temperatureSampleCount ? (
+              <Text className="text-ink">
+                De {weatherNumber(day.temperatureMinC)} à{" "}
+                {weatherNumber(day.temperatureMaxC)} °C ·{" "}
+                {day.temperatureSampleCount} points de prévision.
+              </Text>
+            ) : null}
+            {day?.symbol ? (
+              <Text className="text-muted">
+                {forecastPresentation.label} · fenêtre de prévision du{" "}
+                {timestamp(day.symbol.validFrom)} au{" "}
+                {timestamp(day.symbol.validTo)}. Ce symbole ne résume pas toute
+                la journée.
+              </Text>
+            ) : null}
+            {context?.weather.retrievedAt ? (
+              <Text className="text-muted">
+                {stale ? "Données anciennes · " : ""}Récupérées le{" "}
+                {timestamp(context.weather.retrievedAt)}.
+              </Text>
+            ) : null}
+            {context?.weather.issuedAt ? (
+              <Text className="text-muted">
+                Prévision émise le {timestamp(context.weather.issuedAt)}.
+              </Text>
+            ) : null}
+            <Text className="text-muted">
+              Une prévision archivée reste une prévision : elle n’est pas une
+              mesure météo observée. La météo ne démontre pas à elle seule un
+              effet sur les ventes.
+            </Text>
+          </>
         ) : null}
-        {context?.weather.retrievedAt ? (
-          <Text className="text-muted">
-            {stale ? "Données anciennes · " : ""}Récupérées le{" "}
-            {timestamp(context.weather.retrievedAt)}.
-          </Text>
-        ) : null}
-        {context?.weather.issuedAt ? (
-          <Text className="text-muted">
-            Prévision émise le {timestamp(context.weather.issuedAt)}.
-          </Text>
-        ) : null}
-        <Text className="text-muted">
-          Une prévision archivée reste une prévision : elle n’est pas une mesure
-          météo observée. La météo ne démontre pas à elle seule un effet sur les
-          ventes.
-        </Text>
         {context ? (
           <>
-            <SecondaryButton
-              label="Source météo · MET Norway · CC BY 4.0"
-              onPress={() => void source(context.weather.sourceUrl)}
-            />
+            {!observing || showForecast ? (
+              <SecondaryButton
+                label="Source météo · MET Norway · CC BY 4.0"
+                onPress={() => void source(context.weather.sourceUrl)}
+              />
+            ) : null}
             <Text className="text-muted">
               Calendrier national :{" "}
               {context.publicHolidays.status === "UNAVAILABLE"

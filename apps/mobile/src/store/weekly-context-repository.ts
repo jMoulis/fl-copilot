@@ -40,6 +40,42 @@ export class WeeklyContextRepository {
           : {}),
       };
     }
+    if (
+      previous?.observedWeather &&
+      (!next.observedWeather ||
+        next.observedWeather.status === "UNAVAILABLE" ||
+        (next.observedWeather.retrievedAt &&
+          previous.observedWeather.retrievedAt &&
+          next.observedWeather.retrievedAt <
+            previous.observedWeather.retrievedAt))
+    ) {
+      next.observedWeather = {
+        ...previous.observedWeather,
+        ...(next.observedWeather?.status === "UNAVAILABLE"
+          ? { status: "STALE" as const, issue: "PROVIDER_UNAVAILABLE" as const }
+          : {}),
+      };
+    }
+    // A fresh horizon no longer contains past forecasts. Retain the explicitly
+    // archived local forecast, with its original timestamps, beside observations.
+    const hasForecast = (days: WeeklyContext["weather"]["days"]) =>
+      days.some(
+        (d) =>
+          d.temperatureSampleCount > 0 ||
+          !!d.symbol ||
+          d.precipitationHours > 0,
+      );
+    if (
+      previous &&
+      hasForecast(previous.weather.days) &&
+      !hasForecast(next.weather.days)
+    ) {
+      next.weather = {
+        ...previous.weather,
+        status: "STALE",
+        issue: next.weather.issue,
+      };
+    }
     // A failed provider retains its last local value and original freshness timestamps.
     for (const key of [
       "weather",
@@ -76,7 +112,8 @@ export function contextIsStale(
     | WeeklyContext["weather"]
     | WeeklyContext["publicHolidays"]
     | WeeklyContext["schoolHolidays"]
-    | NonNullable<WeeklyContext["economy"]>,
+    | NonNullable<WeeklyContext["economy"]>
+    | NonNullable<WeeklyContext["observedWeather"]>,
   now: Date,
 ) {
   return (

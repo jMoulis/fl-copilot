@@ -10,6 +10,10 @@ import {
 import type { DatabaseService } from "../database/types.js";
 import { AuthError } from "../auth/service.js";
 import { ContextProviderCache, type ProviderResult } from "./provider-cache.js";
+import {
+  readObservedWeather,
+  emptyObservedWeather,
+} from "./observed-weather.js";
 import { readEconomicContext } from "./economy.js";
 import { metForecastSchema, forecastDays } from "./weather.js";
 const communes = z
@@ -68,6 +72,7 @@ export type WeekContextService = {
     weekStart: string,
     includeWeatherSymbols?: boolean,
     includeEconomicContext?: boolean,
+    includeObservedWeather?: boolean,
   ): Promise<WeeklyContext>;
 };
 export function createWeekContextService(
@@ -81,6 +86,7 @@ export function createWeekContextService(
       weekStart,
       includeWeatherSymbols = false,
       includeEconomicContext = false,
+      includeObservedWeather = false,
     ) {
       const db = await database.getDb(),
         raw = await db.collection("storeContextSettings").findOne({ storeId });
@@ -102,6 +108,9 @@ export function createWeekContextService(
         issue: "PROVIDER_UNAVAILABLE",
       } as const;
       const result: WeeklyContext = {
+        ...(includeObservedWeather
+          ? { observedWeather: emptyObservedWeather("LOCATION_UNAVAILABLE") }
+          : {}),
         storeId,
         settingsFingerprint: storeContextFingerprint(settings),
         weekStart,
@@ -153,7 +162,11 @@ export function createWeekContextService(
               | "CITY_NOT_FOUND"
               | "PROVIDER_UNAVAILABLE"
               | null = null;
-          if (settings.locationMode === "CITY") {
+          let department = settings.postalCode.slice(0, 2);
+          if (
+            settings.locationMode === "CITY" ||
+            (includeObservedWeather && department === "20")
+          ) {
             const r = await cache.read(
               `https://geo.api.gouv.fr/communes?${new URLSearchParams({ codePostal: settings.postalCode, fields: "nom,code,centre", format: "json", geometry: "centre" })}`,
               communes,
@@ -165,10 +178,12 @@ export function createWeekContextService(
               ) ?? [];
             if (matches.length === 1 && !r.failed) {
               const c = matches[0]!;
-              point = {
-                longitude: c.centre.coordinates[0],
-                latitude: c.centre.coordinates[1],
-              };
+              if (settings.locationMode === "CITY")
+                point = {
+                  longitude: c.centre.coordinates[0],
+                  latitude: c.centre.coordinates[1],
+                };
+              department = c.code.slice(0, 2);
             } else
               locationIssue = r.failed
                 ? "PROVIDER_UNAVAILABLE"
@@ -182,21 +197,45 @@ export function createWeekContextService(
           }
           const lat = point.latitude.toFixed(4),
             lon = point.longitude.toFixed(4);
-          const r = await cache.read(
-            `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`,
-            metForecastSchema,
-            3600000,
-          );
-          result.weather = {
-            ...result.weather,
-            ...metadata(r),
-            issuedAt: r.data
-              ? new Date(r.data.properties.meta.updated_at).toISOString()
-              : null,
-            days: r.data
-              ? forecastDays(r.data, weekStart, includeWeatherSymbols)
-              : [],
-          };
+          await Promise.allSettled([
+            (async () => {
+              const r = await cache.read(
+                `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`,
+                metForecastSchema,
+                3600000,
+              );
+              result.weather = {
+                ...result.weather,
+                ...metadata(r),
+                issuedAt: r.data
+                  ? new Date(r.data.properties.meta.updated_at).toISOString()
+                  : null,
+                days: r.data
+                  ? forecastDays(r.data, weekStart, includeWeatherSymbols)
+                  : [],
+              };
+            })(),
+            ...(includeObservedWeather
+              ? [
+                  (async () => {
+                    try {
+                      result.observedWeather = await readObservedWeather(
+                        cache,
+                        point!,
+                        department,
+                        weekStart,
+                        weekEnd,
+                        now(),
+                      );
+                    } catch {
+                      result.observedWeather = emptyObservedWeather(
+                        "PROVIDER_UNAVAILABLE",
+                      );
+                    }
+                  })(),
+                ]
+              : []),
+          ]);
         })(),
         (async () => {
           const years = [

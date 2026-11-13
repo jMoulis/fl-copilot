@@ -51,7 +51,13 @@ it.each([false, true])(
       context.weekStart,
       enabled,
       enabled,
+      enabled,
     );
+    expect(
+      new Headers(
+        (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1].headers,
+      ).get("x-context-observed-weather"),
+    ).toBe(enabled ? "1" : null);
     expect(result).toEqual(context);
     const init = (fetcher.mock.calls[0] as unknown as [string, RequestInit])[1];
     const headers = new Headers(init.headers);
