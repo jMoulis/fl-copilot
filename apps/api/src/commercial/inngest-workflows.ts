@@ -1,3 +1,5 @@
+import { createJournalWorkflows } from "../context/journal-workflows.js";
+import type { WeekContextService } from "../context/week-context.js";
 import { advanceProductUnitRefresh } from "../analytics/product-unit-refresh";
 import type { LayoutIllustrationGenerationService } from "../copilot/layout-illustration-generation";
 import { createCommercialProcessingRecovery } from "./processing-recovery.js";
@@ -32,6 +34,7 @@ export function createCommercialInngestWorkflows(
     "process" | "pending"
   >,
   documentReady?: (storeId: string, sourceDocumentId: string) => Promise<void>,
+  journalContext?: WeekContextService,
 ) {
   const client = new Inngest({
     id: "fl-copilot-api",
@@ -304,6 +307,9 @@ export function createCommercialInngestWorkflows(
     dispatchEmailOriginals,
     dispatchIllustrations,
     functions: [
+      ...(journalContext
+        ? createJournalWorkflows(client, database, journalContext)
+        : []),
       resume,
       extract,
       recover,

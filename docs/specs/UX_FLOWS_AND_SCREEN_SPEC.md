@@ -4577,3 +4577,16 @@ source/capture freshness, past samples and a direct settings link. Unavailable,
 partial and archived data remain explicit and do not empty existing local values.
 Neither proximity nor a published disruption establishes a shop traffic/sales
 impact. No background device tracking or unsolicited push notification is added.
+
+
+## Journal daily memory — 13 November 2026
+
+Daily external-context collection runs on the server without requiring the app
+to remain open. Keep existing Journal source sheets and local cached content;
+no extra validation, button, notification or assistant turn is introduced.
+The context route prefers recorded data and preserves existing opt-in fields.
+Source capture/validation times and unavailable/stale states stay visible; a
+manual screen refresh reads the retained daily collection when present.
+Copilot analysis consults the stored context without provider refresh. No archive
+yet means unavailable context, not no event/zero rain/normal traffic. Planned
+weather and published events remain distinct from observations at the shop.
