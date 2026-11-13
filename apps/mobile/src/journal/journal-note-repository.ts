@@ -79,12 +79,13 @@ export class JournalNoteRepository {
     includeWithdrawn = false,
   ) {
     const rows = await this.db.getAllAsync<Row>(
-      `SELECT * FROM store_journal_notes WHERE store_id=? AND start_date<=? AND end_date>=? AND (? IS NULL OR id>?) ${includeWithdrawn ? "" : "AND json_extract(payload_json,'$.withdrawnAt') IS NULL"} ORDER BY id LIMIT 26`,
+      `SELECT * FROM store_journal_notes WHERE store_id=? AND start_date<=? AND end_date>=? AND (? IS NULL OR (json_extract(payload_json,'$.capturedAt'),id) < (SELECT json_extract(payload_json,'$.capturedAt'),id FROM store_journal_notes WHERE id=? AND store_id=?)) ${includeWithdrawn ? "" : "AND json_extract(payload_json,'$.withdrawnAt') IS NULL"} ORDER BY json_extract(payload_json,'$.capturedAt') DESC,id DESC LIMIT 26`,
       storeId,
       date,
       date,
       afterId,
       afterId,
+      storeId,
     );
     const page = rows.slice(0, 25).map((r) => ({
       entity: storeJournalNoteSchema.parse(JSON.parse(r.payload_json)),

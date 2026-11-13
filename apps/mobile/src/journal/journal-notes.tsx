@@ -145,7 +145,8 @@ export function JournalNotes({
         setEndDate("");
         setPeriod(false);
         noteId.current = randomUUID();
-        await refresh();
+        if (cursor) setCursor(null);
+        else await refresh();
       }
       void syncNow(storeId).catch(() => undefined);
     } catch {

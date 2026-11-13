@@ -164,6 +164,15 @@ it("paginates date notes without losing rows and validates period/text before an
     29,
   );
   expect(two.hasMore).toBe(false);
+  const newest = {
+    ...f.capture,
+    id: randomUUID(),
+    capturedAt: "2026-11-13T09:00:00Z",
+  };
+  await f.repo.create(f.storeId, newest, { ...f.ctx, commandId: randomUUID() });
+  expect((await f.repo.list(f.storeId, "2026-11-13")).rows[0]!.entity.id).toBe(
+    newest.id,
+  );
   expect(() =>
     prepareJournalNote(f.storeId, { ...f.capture, endDate: "2026-11-11" }),
   ).toThrow();

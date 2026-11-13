@@ -241,6 +241,17 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       );
       for (const note of notes)
         await push.push(request({ ...f, note }), "note");
+      const onlyNotes = await readFieldEvents(db, f.storeId, {
+        startAt: "2026-11-13T00:00:00Z",
+        endAt: "2026-11-14T00:00:00Z",
+        productId: null,
+        afterId: null,
+        limit: 10,
+      });
+      expect(
+        onlyNotes.evidence.filter((e) => e.label === "Note du magasin"),
+      ).toHaveLength(8);
+      expect(onlyNotes.hasMore).toBe(false);
       const tied = notes.map((n) => n.id).sort()[0]!,
         productId = randomUUID();
       const event = prepareStoreProductEvent(f.storeId, {
@@ -254,7 +265,9 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
       });
       await db
         .collection("storeProductEvents")
-        .insertOne({ ...event, _id: event.id } as never);
+        .insertMany(
+          notes.map((n) => ({ ...event, id: n.id, _id: n.id })) as never,
+        );
       await db.collection("products").insertOne({
         _id: productId,
         storeId: f.storeId,
@@ -267,6 +280,13 @@ describe.skipIf(!uri || process.env.TEST_MONGODB_TRANSACTIONS !== "true")(
         afterId: null as string | null,
         limit: 1,
       };
+      const mixed = await readFieldEvents(db, f.storeId, {
+        ...input,
+        limit: 10,
+      });
+      expect(mixed.evidence).toHaveLength(11);
+      expect(mixed.events).toHaveLength(5);
+      expect(mixed.hasMore).toBe(true);
       const seen = new Set<string>();
       let pages = 0;
       do {
