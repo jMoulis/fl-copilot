@@ -1,3 +1,4 @@
+import { applyJournalNote } from "../journal/journal-note-repository";
 import { copilotTurnTransportRequestSchema } from "@fl-copilot/sync-contracts";
 import {
   copilotTurnRequestSchema,
@@ -118,6 +119,7 @@ export interface MobileSyncServiceOptions {
   needMemberships?: boolean;
   productSubstitutions?: boolean;
   storeProductEvents?: boolean;
+  journalNotes?: boolean;
   substitutionEvidence?: boolean;
   substitutionScores?: boolean;
   layoutIllustrations?: boolean;
@@ -300,6 +302,12 @@ export class MobileSyncService {
           `product-substitutions:${storeId}`,
         )
       : true;
+    const journalNotesAdopted = this.options.journalNotes
+      ? await this.database.getFirstAsync(
+          "SELECT value FROM app_metadata WHERE key=?",
+          `journal-notes:${storeId}`,
+        )
+      : true;
     const storeProductEventsAdopted = this.options.storeProductEvents
       ? await this.database.getFirstAsync(
           "SELECT value FROM app_metadata WHERE key=?",
@@ -440,6 +448,7 @@ export class MobileSyncService {
       !needMembershipsAdopted ||
       !productSubstitutionsAdopted ||
       !storeProductEventsAdopted ||
+      !journalNotesAdopted ||
       !evidenceAdopted ||
       !scoresAdopted ||
       !chatAdopted ||
@@ -884,6 +893,7 @@ export class MobileSyncService {
                 "need_membership",
                 "product_substitution",
                 "store_product_event",
+                "store_journal_note",
                 "commercial_week_plan",
                 "commercial_version_decision",
               ].includes(item.entityType) &&
@@ -1136,6 +1146,18 @@ export class MobileSyncService {
               result.remoteEntity,
               (command.payload as { version: number }).version,
             );
+          if (command.entityType === "store_journal_note") {
+            if (
+              !result.remoteEntity ||
+              typeof result.remoteEntity !== "object" ||
+              !("id" in result.remoteEntity) ||
+              result.remoteEntity.id !== command.entityId ||
+              !("version" in result.remoteEntity) ||
+              result.remoteEntity.version !== result.remoteVersion
+            )
+              throw Error("JOURNAL_NOTE_ENVELOPE_INVALID");
+            await applyJournalNote(transaction, storeId, result.remoteEntity);
+          }
           if (command.entityType === "store_product_event")
             await applyStoreProductEvent(
               transaction,
@@ -1288,6 +1310,12 @@ export class MobileSyncService {
               command.entityId,
               storeId,
             );
+          if (command.entityType === "store_journal_note")
+            await transaction.runAsync(
+              "UPDATE store_journal_notes SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
           if (command.entityType === "store_product_event")
             await transaction.runAsync(
               "UPDATE store_product_events SET sync_state='CONFLICT' WHERE id=? AND store_id=?",
@@ -1427,6 +1455,12 @@ export class MobileSyncService {
           if (command.entityType === "product_substitution")
             await transaction.runAsync(
               "UPDATE product_substitutions SET sync_state='ERROR' WHERE id=? AND store_id=?",
+              command.entityId,
+              storeId,
+            );
+          if (command.entityType === "store_journal_note")
+            await transaction.runAsync(
+              "UPDATE store_journal_notes SET sync_state='ERROR' WHERE id=? AND store_id=?",
               command.entityId,
               storeId,
             );

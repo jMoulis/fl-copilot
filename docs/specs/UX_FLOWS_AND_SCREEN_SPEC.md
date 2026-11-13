@@ -4533,3 +4533,18 @@ mandatory question, AI call or native build is required. Hide these buttons for
 other report types and existing reports. Label user stockout timestamps as
 observations in history and Copilot evidence; non-closure is not proof of continuous
 unavailability. Existing timestamps and history are not rewritten.
+
+### Store Journal notes — owner-approved next increment, 13 November 2026
+
+Journal supports a short store-wide note, the selected calendar date and an
+optional inclusive last day. Notes are manager declarations, not product incidents
+or independently verified external events. Capture time remains separate from the
+declared period; a future period is not proof that an event has happened. No
+mandatory taxonomy, AI call, causal score or source collector. Capture is local
+first, with canonical Outbox/bootstrap/pull and store authorization. Text/period
+are immutable after save; explicit withdrawal preserves the original and history,
+and a correction is entered as a new note. Concurrent withdrawals commute and
+must never revive a withdrawn note. Copilot reads notes through existing bounded
+field-observation reads, without a new agent/tool. Installed clients opt into the
+new sync entity, while old envelopes and existing records remain compatible.
+No EAS/TestFlight build or production deployment is authorized for this increment.

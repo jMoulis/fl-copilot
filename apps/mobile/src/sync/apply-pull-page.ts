@@ -1,3 +1,4 @@
+import { applyJournalNote } from "../journal/journal-note-repository";
 import { applyDocumentArchive } from "../documents/document-archive-repository";
 import { isVisualEntityType, visualEntitySchemas } from "@fl-copilot/domain";
 import { applyVisualEntity } from "../products/visual-library-repository";
@@ -258,6 +259,20 @@ export async function applyPullPage(
           storeId,
           change.entity,
         );
+        continue;
+      }
+      if (change.entityType === "store_journal_note") {
+        if (
+          change.operation !== "UPSERT" ||
+          !change.entity ||
+          typeof change.entity !== "object" ||
+          !("id" in change.entity) ||
+          change.entity.id !== change.entityId ||
+          !("version" in change.entity) ||
+          change.entity.version !== change.entityVersion
+        )
+          throw Error("JOURNAL_NOTE_ENVELOPE_INVALID");
+        await applyJournalNote(transaction, storeId, change.entity);
         continue;
       }
       if (change.entityType === "store_product_event") {

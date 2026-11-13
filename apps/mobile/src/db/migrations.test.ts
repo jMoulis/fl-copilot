@@ -156,6 +156,8 @@ describe("local SQLite migrations", () => {
       "source_records",
       "store_context_history",
       "store_context_settings",
+      "store_journal_note_history",
+      "store_journal_notes",
       "store_layout_operations",
       "store_layout_revisions",
       "store_layouts",

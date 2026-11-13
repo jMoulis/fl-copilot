@@ -1,3 +1,7 @@
+import {
+  serializeJournalNote,
+  type JournalNoteDocument,
+} from "../journal-note-sync";
 import { legacyStoreContext } from "@fl-copilot/domain";
 import {
   documentArchiveKey,
@@ -329,6 +333,8 @@ export function createMongoSyncPullService(
                 change.entityType !== "need_membership") &&
               (query.productSubstitutions === "true" ||
                 change.entityType !== "product_substitution") &&
+              (query.journalNotes === "true" ||
+                change.entityType !== "store_journal_note") &&
               (query.storeProductEvents === "true" ||
                 change.entityType !== "store_product_event") &&
               (query.substitutionScores === "true" ||
@@ -593,6 +599,22 @@ export function createMongoSyncPullService(
                 operation: change.operation,
                 entityVersion: 1,
                 entity: serializeScoreHistory(row),
+                changedAt: change.changedAt.toISOString(),
+              };
+            }
+            if (change.entityType === "store_journal_note") {
+              const row = await mongoDatabase
+                .collection<JournalNoteDocument>("storeJournalNotes")
+                .findOne({ _id: change.entityId, storeId });
+              if (!row || change.operation !== "UPSERT")
+                throw Error("JOURNAL_NOTE_SYNC_INVALID");
+              return {
+                sequence: change.sequence.toString(),
+                entityType: change.entityType,
+                entityId: change.entityId,
+                operation: change.operation,
+                entityVersion: row.version,
+                entity: serializeJournalNote(row),
                 changedAt: change.changedAt.toISOString(),
               };
             }

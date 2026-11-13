@@ -5484,3 +5484,23 @@ nullable `products.is_petit_prix` (0/1), with the existing product upsert, Outbo
 version/conflict and pull contracts. No automatic catalogue classification occurs.
 Copilot product exploration and field-event evidence expose the current marker,
 without claiming historical range membership at an event's date.
+
+### Store Journal notes — 13 November 2026
+
+`StoreJournalNote` contains a UUID, storeId, immutable text (1–1,200 characters),
+startDate, optional inclusive endDate, capturedAt, withdrawnAt and version 1/2.
+Dates are declarations of an applicable calendar period; capture time is not the
+start of the event and a future interval does not imply execution. Creation and
+withdrawal use CREATE_JOURNAL_NOTE / WITHDRAW_JOURNAL_NOTE, the canonical Outbox
+and optional `journalNotes=true` bootstrap/pull extension. SQLite migration 64
+and `storeJournalNotes` / `storeJournalNoteHistory` retain originals and actions.
+Text changes require explicit withdrawal and a new capture, not last-write-wins.
+Withdrawals commute; no late creation or pull can revive a retired note. Foreign
+store IDs and changed immutable content are rejected. Existing clients do not
+receive this new entity without opting in.
+
+The existing store_events Copilot reader includes store-wide notes when productId
+is null. Evidence retains note ID, revision, declared period and capture time.
+Bounded pagination merges the two namespaces by UUID, keeps tied IDs together,
+and preserves the installed result envelope (at most ten facts plus coverage).
+The notes do not change sales, margin, availability or causal estimates.

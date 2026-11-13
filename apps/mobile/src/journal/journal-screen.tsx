@@ -1,3 +1,4 @@
+import { JournalNotes } from "./journal-notes";
 import clementineArt from "../../assets/journal/clementinier.webp";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
@@ -339,6 +340,11 @@ function StoreJournal({
           }
           icon="time-outline"
           onPress={() => router.push("/store-events")}
+        />
+        <JournalNotes
+          key={`${storeId}:${ownerId}:${date}`}
+          storeId={storeId}
+          date={date}
         />
         <JournalEconomy
           date={date}

@@ -17,6 +17,7 @@ const labels: Record<string, string> = {
   need_membership: "Association produit/besoin",
   product_substitution: "Substitution",
   store_product_event: "Signalement magasin",
+  store_journal_note: "Note du magasin",
   store_layout: "Plan physique du magasin",
   visual_asset: "Image produit",
   visual_identity: "Identité visuelle",

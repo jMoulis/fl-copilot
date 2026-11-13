@@ -1,4 +1,8 @@
 import {
+  applyJournalNoteCommand,
+  JournalNoteParentPendingError,
+} from "../journal-note-sync";
+import {
   legacyStoreContext,
   storeContextSettingsSchema,
 } from "@fl-copilot/domain";
@@ -315,7 +319,8 @@ export function createMongoSyncPushService(
                   error instanceof ChatParentPendingError ||
                   error instanceof NeedMembershipParentPendingError ||
                   error instanceof ProductSubstitutionParentPendingError ||
-                  error instanceof StoreEventParentPendingError
+                  error instanceof StoreEventParentPendingError ||
+                  error instanceof JournalNoteParentPendingError
                 ? {
                     ...retryableResult(command, requestId),
                     error: {
@@ -536,6 +541,17 @@ async function applyCommand(
     );
   if (command.type === "PRODUCT_SUBSTITUTION_UPSERT")
     return applyProductSubstitutionCommand(
+      context,
+      storeId,
+      command,
+      requestId,
+      syncChanges,
+    );
+  if (
+    command.type === "CREATE_JOURNAL_NOTE" ||
+    command.type === "WITHDRAW_JOURNAL_NOTE"
+  )
+    return applyJournalNoteCommand(
       context,
       storeId,
       command,

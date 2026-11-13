@@ -1,3 +1,8 @@
+import { parisDate } from "@fl-copilot/domain";
+import {
+  serializeJournalNote,
+  type JournalNoteDocument,
+} from "../journal-note-sync";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { Db } from "mongodb";
@@ -46,8 +51,49 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
       throw Error("COPILOT_EVENTS_SCOPE_INVALID");
     return event;
   });
-  const page = parsed.slice(0, input.limit),
-    hasMore = parsed.length > input.limit;
+  // A page contains at most five distinct IDs when product episodes and store notes share the page.
+  // Keeping both namespaces at an ID boundary prevents a tied UUID from being skipped.
+  const endDay = parisDate(new Date(Date.parse(input.endAt) - 1).toISOString());
+  const noteRows = input.productId
+    ? []
+    : await db
+        .collection<JournalNoteDocument>("storeJournalNotes")
+        .find({
+          storeId,
+          withdrawnAt: null,
+          startDate: { $lte: endDay },
+          $or: [
+            { endDate: { $gte: parisDate(input.startAt) } },
+            { endDate: null, startDate: { $gte: parisDate(input.startAt) } },
+          ],
+          ...(input.afterId ? { _id: { $gt: input.afterId } } : {}),
+        })
+        .sort({ _id: 1 })
+        .maxTimeMS(2000)
+        .limit(input.limit + 1)
+        .toArray();
+  const notes = noteRows.map((row) => {
+    const note = serializeJournalNote(row);
+    if (
+      note.storeId !== storeId ||
+      note.withdrawnAt ||
+      note.startDate > endDay ||
+      (note.endDate ?? note.startDate) < parisDate(input.startAt) ||
+      (input.afterId && note.id <= input.afterId)
+    )
+      throw Error("COPILOT_EVENTS_SCOPE_INVALID");
+    return note;
+  });
+  const ids = [
+    ...new Set([...parsed.map((e) => e.id), ...notes.map((n) => n.id)]),
+  ].sort();
+  const selectedIds = ids.slice(
+    0,
+    parsed.length && notes.length ? Math.min(input.limit, 5) : input.limit,
+  );
+  const page = parsed.filter((e) => selectedIds.includes(e.id));
+  const notePage = notes.filter((n) => selectedIds.includes(n.id));
+  const hasMore = ids.length > selectedIds.length;
   const productIds = [...new Set(page.map((e) => e.productId))];
   const products = productIds.length
     ? await db
@@ -130,13 +176,26 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
             : "OBSERVED",
     });
   });
-  const nextAfterId = hasMore ? page.at(-1)!.id : null;
+  for (const n of notePage)
+    evidence.push(
+      copilotEvidenceSchema.parse({
+        id: `journal-note/${createHash("sha256").update(JSON.stringify(n)).digest("hex")}`,
+        sourceType: "EVENT",
+        sourceId: n.id,
+        sourceVersion: n.version,
+        label: "Note du magasin",
+        value: `${n.text} Période déclarée : ${n.startDate}${n.endDate ? " au " + n.endDate : " (une journée)"}. Saisie : ${date(n.capturedAt)} (Europe/Paris). Déclaration du gestionnaire ; ce n’est ni une mesure vérifiée indépendamment ni une preuve d’effet sur les ventes. Une période à venir n’est pas une réalisation constatée.`,
+        factKind: "QUALITY",
+      }),
+    );
+  const nextAfterId = hasMore ? selectedIds.at(-1)! : null;
   const revision = createHash("sha256")
     .update(
       JSON.stringify([
         storeId,
         input,
         events,
+        notePage,
         products.map((p) => [p._id, p.version, p.isPetitPrix]),
         hasMore,
       ]),
@@ -149,7 +208,7 @@ export async function readFieldEvents(db: Db, storeId: string, raw: unknown) {
       sourceId: storeId,
       sourceVersion: null,
       label: `Couverture des observations — ${date(input.startAt)} au ${date(input.endAt)} (fin exclue)`,
-      value: `${events.length} observations dans cette page${hasMore ? " ; d’autres observations restent à consulter" : " ; fin des observations enregistrées pour ce périmètre"}. Une absence de signalement ne prouve pas une absence de rupture. Une observation non clôturée peut être ancienne ; son statut ne prouve pas le stock actuel. Un chevauchement avec une variation de ventes ne prouve pas sa cause.`,
+      value: `${events.length} signalements produit et ${notePage.length} notes du magasin dans cette page${hasMore ? " ; d’autres observations restent à consulter" : " ; fin des observations enregistrées pour ce périmètre"}. Une absence de signalement ne prouve pas une absence de rupture. Une observation non clôturée peut être ancienne ; son statut ne prouve pas le stock actuel. Un chevauchement avec une variation de ventes ne prouve pas sa cause.`,
       factKind: "QUALITY",
     }),
   );

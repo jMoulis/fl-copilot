@@ -1228,6 +1228,18 @@ export const mongoMigrations: readonly MongoMigration[] = [
       );
     },
   },
+  {
+    version: 60,
+    name: "store-journal-notes",
+    async up(db) {
+      await db
+        .collection("storeJournalNotes")
+        .createIndex({ storeId: 1, startDate: 1, endDate: 1 });
+      await db
+        .collection("storeJournalNoteHistory")
+        .createIndex({ storeId: 1, noteId: 1, version: 1 }, { unique: true });
+    },
+  },
 ];
 
 export async function runMongoMigrations(
